@@ -108,6 +108,7 @@ class ScoringFacetsRatingRecord(CanonicalContract):
     observation_fingerprint: str
     respondent_id: str
     response_id: str
+    response_content_fingerprint: str
     task_id: str
     occasion_id: str
     criterion_id: str
@@ -134,6 +135,7 @@ class ScoringFacetsRatingRecord(CanonicalContract):
             "request_fingerprint",
             "result_fingerprint",
             "observation_fingerprint",
+            "response_content_fingerprint",
             "engine_fingerprint",
         ):
             object.__setattr__(
@@ -194,6 +196,7 @@ class ScoringFacetsRatingRecord(CanonicalContract):
             "observation_fingerprint": self.observation_fingerprint,
             "respondent_id": self.respondent_id,
             "response_id": self.response_id,
+            "response_content_fingerprint": self.response_content_fingerprint,
             "task_id": self.task_id,
             "occasion_id": self.occasion_id,
             "criterion_id": self.criterion_id,
@@ -531,6 +534,7 @@ def build_scoring_facets_rating_records(
             observation_fingerprint=observation.observation_fingerprint,
             respondent_id=request.respondent_id,
             response_id=request.response_id,
+            response_content_fingerprint=request.response_content_fingerprint,
             task_id=request.task_id,
             occasion_id=request.occasion_id,
             criterion_id=observation.criterion_id,
@@ -558,18 +562,27 @@ def build_scoring_facets_rating_records(
 
 def _identity_provenance(
     records: tuple[ScoringFacetsRatingRecord, ...],
-) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, str]]]:
+) -> tuple[dict[str, tuple[str, str, str]], dict[str, tuple[str, str]]]:
     """Validate response and rater identities across one record collection."""
-    response_contracts: dict[str, tuple[str, str]] = {}
+    response_contracts: dict[str, tuple[str, str, str]] = {}
     rater_contracts: dict[str, tuple[str, str]] = {}
     for index, record in enumerate(records):
-        response_contract = (record.respondent_id, record.task_id)
+        response_contract = (
+            record.respondent_id,
+            record.task_id,
+            record.response_content_fingerprint,
+        )
         previous_response = response_contracts.get(record.response_id)
         if previous_response is not None and previous_response != response_contract:
+            conflict_field = (
+                "response_content_fingerprint"
+                if previous_response[2] != response_contract[2]
+                else "response_id"
+            )
             raise assessment_error(
                 "response_provenance_conflict",
-                f"$.records[{index}].response_id",
-                "one response identity has conflicting respondent or task provenance",
+                f"$.records[{index}].{conflict_field}",
+                "one response identity has conflicting respondent, task, or content provenance",
             )
         response_contracts[record.response_id] = response_contract
 
