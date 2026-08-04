@@ -1,5 +1,6 @@
 """Provider-neutral automated-scoring contracts and orchestration boundaries."""
 
+from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
 from .contracts import AdjudicationPolicy as AdjudicationPolicy
 from .contracts import AdjudicationRule as AdjudicationRule
 from .contracts import AssessmentSpec as AssessmentSpec
@@ -17,6 +18,7 @@ from .contracts import ValidationPolicy as ValidationPolicy
 from .contracts import build_assessment_spec as build_assessment_spec
 
 __all__ = [
+    "ASSESSMENT_SCHEMA_VERSION",
     "AdjudicationPolicy",
     "AdjudicationRule",
     "AssessmentSpec",
