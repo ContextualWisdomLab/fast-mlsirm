@@ -43,7 +43,7 @@ Callers may add organization-specific policy triggers. The absence of a trigger 
 
 ## Standalone HTML audit artifact
 
-`render_essay_facets_calibration_report_html` writes a deterministic standalone artifact containing exact report, design, assessment, rubric, construct, occasion, criterion, respondent, task-revision, rater-engine, category, estimate, convergence, connectedness, iteration, and review-trigger evidence. It intentionally excludes source text and does not produce fit, reliability, fairness, scoreability, global-optimum, or deployment decisions.
+`render_essay_facets_calibration_report_html` writes a deterministic standalone artifact containing exact report, design, assessment, rubric, construct, occasion, criterion, respondent, task-revision, rater-engine, category, estimate, convergence, connectedness, iteration, and review-trigger evidence. It intentionally excludes source text and does not produce fit, reliability, fairness, scoreability, global-optimum, or deployment decisions. The renderer does not invent a backend implementation identifier: backend provenance must be established by the governed fit path and deployment evidence rather than inferred from a report payload.
 
 The artifact is designed for audit review rather than interactive decision automation:
 
