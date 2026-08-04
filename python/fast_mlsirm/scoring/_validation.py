@@ -206,7 +206,7 @@ def bounded_positive_integer(
         )
     try:
         normalized = operator.index(value)
-    except Exception:  # noqa: BLE001 - user-defined numeric callback boundary
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -239,7 +239,7 @@ def bounded_values(
         )
     try:
         iterator = iter(values)
-    except Exception:  # noqa: BLE001 - user-defined iterator callback boundary
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -257,7 +257,7 @@ def bounded_values(
             output.append(value)
     except AssessmentSpecError:
         raise
-    except Exception:  # noqa: BLE001 - user-defined iterator callback boundary
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -387,7 +387,7 @@ def _mapping_entries(value: Mapping[Any, Any], path: str) -> tuple[tuple[str, An
     seen: set[str] = set()
     try:
         iterator = iter(value.items())
-    except Exception:  # noqa: BLE001 - user-defined mapping callback boundary
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             "invalid_metadata_mapping",
             path,
@@ -406,7 +406,7 @@ def _mapping_entries(value: Mapping[Any, Any], path: str) -> tuple[tuple[str, An
                 )
             try:
                 raw_key, child = entry
-            except Exception:  # noqa: BLE001 - user-defined entry callback boundary
+            except (TypeError, ValueError, OverflowError):
                 raise assessment_error(
                     "invalid_metadata_mapping",
                     f"{path}.entries[{index}]",
@@ -423,7 +423,7 @@ def _mapping_entries(value: Mapping[Any, Any], path: str) -> tuple[tuple[str, An
             entries.append((key, child))
     except AssessmentSpecError:
         raise
-    except Exception:  # noqa: BLE001 - user-defined mapping callback boundary
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             "invalid_metadata_mapping",
             path,
