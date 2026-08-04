@@ -216,17 +216,17 @@ def test_bundle_rejects_cross_criterion_rater_provenance_conflict() -> None:
 
 def test_all_terminal_states_do_not_satisfy_category_observation() -> None:
     """Abstained, failed, and excluded records provide no threshold evidence."""
-    terminal_by_index = {
-        0: ObservationStatus.ABSTAINED,
-        1: ObservationStatus.FAILED,
-        5: ObservationStatus.EXCLUDED,
+    terminal_by_position = {
+        ("claim_support", 0): ObservationStatus.ABSTAINED,
+        ("claim_support", 1): ObservationStatus.FAILED,
+        ("source_alignment", 0): ObservationStatus.EXCLUDED,
     }
     counters: dict[str, int] = {}
     records = []
     for record in _four_category_records((0, 1, 2)):
         index = counters.get(record.criterion_id, 0)
         counters[record.criterion_id] = index + 1
-        status = terminal_by_index.get(index)
+        status = terminal_by_position.get((record.criterion_id, index))
         if status is None:
             records.append(record)
         else:
@@ -252,6 +252,8 @@ def test_all_terminal_states_do_not_satisfy_category_observation() -> None:
     }
     assert all(record.score_category is None for record in terminal_records)
     for design in bundle.designs:
+        assert design.respondent_task_connected is True
+        assert design.task_rater_connected is True
         assert {
             record.score_category
             for record in design.rating_records
