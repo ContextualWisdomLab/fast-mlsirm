@@ -70,6 +70,32 @@ def test_same_response_id_with_changed_content_fails_closed() -> None:
     assert private_digest not in str(caught.value)
 
 
+def test_response_identity_conflicts_precede_content_revision_conflicts() -> None:
+    """Respondent or task rebinding retains the established response-ID path."""
+    records = list(connected_records())
+    target = records[0]
+    conflicting_index = next(
+        index
+        for index, record in enumerate(records[1:], start=1)
+        if record.response_id == target.response_id
+        and record.engine_fingerprint != target.engine_fingerprint
+    )
+    private_digest = "d" * 64
+    records[conflicting_index] = replace(
+        records[conflicting_index],
+        respondent_id="conflicting_respondent",
+        response_content_fingerprint=private_digest,
+        _rating_token=calibration._RATING_TOKEN,
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_calibration_bundle(records)
+
+    assert caught.value.code == "response_provenance_conflict"
+    assert caught.value.path.endswith(".response_id")
+    assert private_digest not in str(caught.value)
+
+
 def test_response_revision_changes_rating_design_and_bundle_identities() -> None:
     """A content revision propagates through every content-addressed artifact."""
     original_records = connected_records()
