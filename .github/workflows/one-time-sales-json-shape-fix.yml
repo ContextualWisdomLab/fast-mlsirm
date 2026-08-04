@@ -10,8 +10,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: one-time-sales-json-shape-fix-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: one-time-sales-json-shape-fix-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
 
 jobs:
   apply:
@@ -91,6 +91,8 @@ jobs:
           git diff --check
       - name: Commit compatibility fix
         run: |
+          git fetch origin sentinel-json-dos-scripts-17708564860587448239
+          git rebase origin/sentinel-json-dos-scripts-17708564860587448239
           git add -A
           git commit -m "fix(security): preserve JSON shape failure classification"
           git push origin "HEAD:sentinel-json-dos-scripts-17708564860587448239"
