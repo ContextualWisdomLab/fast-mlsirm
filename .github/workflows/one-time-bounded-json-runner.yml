@@ -99,9 +99,9 @@ jobs:
             scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
             scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
             scripts/build_release_evidence_index.py scripts/sales_readiness.py
-          pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
+          python -m pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
             --cov=scripts._bounded_json --cov-branch --cov-report=term-missing --cov-fail-under=100
-          pytest \
+          python -m pytest \
             tests/test_benchmark_report.py \
             tests/test_buyer_packet.py \
             tests/test_commercial_release.py \
