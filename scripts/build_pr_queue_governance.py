@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 RISK_COUNT_KEYS = [
     "changes_requested",
@@ -84,12 +89,8 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    """Read a JSON object from disk."""
-    with path.open(encoding="utf-8") as fh:
-        payload = json.load(fh)
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
@@ -308,14 +309,18 @@ def _issue_references(body: object) -> list[int]:
     """Return sorted issue numbers referenced by closing keywords."""
     if not isinstance(body, str):
         return []
-    return sorted({int(match.group("issue")) for match in _CLOSING_REFERENCE_RE.finditer(body)})
+    return sorted(
+        {int(match.group("issue")) for match in _CLOSING_REFERENCE_RE.finditer(body)}
+    )
 
 
 def _canonical_issue_references(body: object) -> list[int]:
     """Return sorted issue numbers explicitly designated by ``Canonical-For``."""
     if not isinstance(body, str):
         return []
-    return sorted({int(match.group("issue")) for match in _CANONICAL_REFERENCE_RE.finditer(body)})
+    return sorted(
+        {int(match.group("issue")) for match in _CANONICAL_REFERENCE_RE.finditer(body)}
+    )
 
 
 def _label_names(pr: dict[str, Any]) -> list[str]:
@@ -382,7 +387,9 @@ def classify_pr(
     duplicate_terms = sorted(term for term in DUPLICATE_TERMS if term in text)
     changes_requested = review_decision == "CHANGES_REQUESTED"
     stale = age_days is not None and age_days > max_stale_days
-    review_or_check_delay = review_decision == "REVIEW_REQUIRED" or merge_state == "QUEUED"
+    review_or_check_delay = (
+        review_decision == "REVIEW_REQUIRED" or merge_state == "QUEUED"
+    )
     release_scope_conflict = bool(release_scope_terms)
     duplicate_candidate = bool(duplicate_terms) and not release_scope_conflict
 
@@ -463,9 +470,7 @@ def _duplicate_issue_claims(
             key=lambda record: record["pr_number"],
         )
         designated = [
-            record["pr_number"]
-            for record in records
-            if record["canonical_for_issue"]
+            record["pr_number"] for record in records if record["canonical_for_issue"]
         ]
         canonical_pr = designated[0] if len(designated) == 1 else None
         conflicts[str(issue_number)] = {
@@ -644,14 +649,21 @@ def _render_report(manifest: dict[str, Any]) -> str:
         ("Base SHA", manifest.get("base_sha", "")),
         ("Duplicate conflicts", unresolved_count),
         ("Duplicate heads", len(manifest.get("duplicate_head_warnings", []))),
-        ("File-overlap warnings", len(manifest.get("changed_file_overlap_warnings", []))),
+        (
+            "File-overlap warnings",
+            len(manifest.get("changed_file_overlap_warnings", [])),
+        ),
         (
             "Changes requested",
-            risk_counts.get("changes_requested", "") if isinstance(risk_counts, dict) else "",
+            risk_counts.get("changes_requested", "")
+            if isinstance(risk_counts, dict)
+            else "",
         ),
         (
             "Review delay",
-            risk_counts.get("review_or_check_delay", "") if isinstance(risk_counts, dict) else "",
+            risk_counts.get("review_or_check_delay", "")
+            if isinstance(risk_counts, dict)
+            else "",
         ),
     ]
     card_markup = [
@@ -667,13 +679,13 @@ def _render_report(manifest: dict[str, Any]) -> str:
         pr_rows.append(
             "<tr>"
             f'<th scope="row"><a href="{escape(_safe_url(pr.get("url")), quote=True)}">'
-            f'#{escape(str(pr.get("number", "")))}</a></th>'
-            f'<td>{escape(str(pr.get("title", "")))}</td>'
-            f'<td><code>{escape(str(pr.get("headRefOid", "")))}</code></td>'
-            f'<td>{escape(", ".join(f"#{item}" for item in pr.get("closing_issue_references", [])))}</td>'
-            f'<td>{escape(str(pr.get("reviewDecision", "")))}</td>'
-            f'<td>{escape(str(pr.get("mergeStateStatus", "")))}</td>'
-            f'<td>{escape(", ".join(str(reason) for reason in pr.get("risk_reasons", [])))}</td>'
+            f"#{escape(str(pr.get('number', '')))}</a></th>"
+            f"<td>{escape(str(pr.get('title', '')))}</td>"
+            f"<td><code>{escape(str(pr.get('headRefOid', '')))}</code></td>"
+            f"<td>{escape(', '.join(f'#{item}' for item in pr.get('closing_issue_references', [])))}</td>"
+            f"<td>{escape(str(pr.get('reviewDecision', '')))}</td>"
+            f"<td>{escape(str(pr.get('mergeStateStatus', '')))}</td>"
+            f"<td>{escape(', '.join(str(reason) for reason in pr.get('risk_reasons', [])))}</td>"
             "</tr>"
         )
 
@@ -685,17 +697,17 @@ def _render_report(manifest: dict[str, Any]) -> str:
                 continue
             claimants = claim.get("claimant_prs", [])
             claimant_text = ", ".join(
-                f'#{record.get("pr_number")} ({record.get("head_sha", "")})'
+                f"#{record.get('pr_number')} ({record.get('head_sha', '')})"
                 for record in claimants
                 if isinstance(record, dict)
             )
             claim_rows.append(
                 "<tr>"
                 f'<th scope="row">#{escape(str(claim.get("issue_number", "")))}</th>'
-                f'<td>{escape(str(claim.get("status", "")))}</td>'
-                f'<td>{escape(str(claim.get("canonical_pr") or ""))}</td>'
-                f'<td>{escape(claimant_text)}</td>'
-                f'<td>{escape(str(claim.get("reason", "")))}</td>'
+                f"<td>{escape(str(claim.get('status', '')))}</td>"
+                f"<td>{escape(str(claim.get('canonical_pr') or ''))}</td>"
+                f"<td>{escape(claimant_text)}</td>"
+                f"<td>{escape(str(claim.get('reason', '')))}</td>"
                 "</tr>"
             )
 
@@ -706,9 +718,9 @@ def _render_report(manifest: dict[str, Any]) -> str:
         warning_rows.append(
             "<tr>"
             f'<th scope="row">{escape(", ".join(f"#{number}" for number in warning.get("pr_numbers", [])))}</th>'
-            f'<td>{escape(str(warning.get("identical", "")))}</td>'
-            f'<td>{escape(str(warning.get("jaccard", "")))}</td>'
-            f'<td>{escape(", ".join(str(path) for path in warning.get("intersection", [])))}</td>'
+            f"<td>{escape(str(warning.get('identical', '')))}</td>"
+            f"<td>{escape(str(warning.get('jaccard', '')))}</td>"
+            f"<td>{escape(', '.join(str(path) for path in warning.get('intersection', [])))}</td>"
             "</tr>"
         )
 
@@ -719,12 +731,12 @@ def _render_report(manifest: dict[str, Any]) -> str:
         history_rows.append(
             "<tr>"
             f'<th scope="row">#{escape(str(record.get("pr_number", "")))}</th>'
-            f'<td>{escape(str(record.get("state", "")))}</td>'
-            f'<td><code>{escape(str(record.get("head_sha", "")))}</code></td>'
-            f'<td>{escape(", ".join(f"#{item}" for item in record.get("issue_references", [])))}</td>'
-            f'<td>{escape(str(record.get("updated_at", "")))}</td>'
-            f'<td>{escape(str(record.get("closed_at", "")))}</td>'
-            f'<td>{escape(str(record.get("merged_at", "")))}</td>'
+            f"<td>{escape(str(record.get('state', '')))}</td>"
+            f"<td><code>{escape(str(record.get('head_sha', '')))}</code></td>"
+            f"<td>{escape(', '.join(f'#{item}' for item in record.get('issue_references', [])))}</td>"
+            f"<td>{escape(str(record.get('updated_at', '')))}</td>"
+            f"<td>{escape(str(record.get('closed_at', '')))}</td>"
+            f"<td>{escape(str(record.get('merged_at', '')))}</td>"
             "</tr>"
         )
 
@@ -735,9 +747,9 @@ def _render_report(manifest: dict[str, Any]) -> str:
         check_rows.append(
             "<tr>"
             f'<th scope="row">{escape(str(check.get("name", "")))}</th>'
-            f'<td>{escape(str(check.get("category", "")))}</td>'
-            f'<td>{escape("go" if check.get("ok") else "failed")}</td>'
-            f'<td>{escape(str(check.get("detail", "")))}</td>'
+            f"<td>{escape(str(check.get('category', '')))}</td>"
+            f"<td>{escape('go' if check.get('ok') else 'failed')}</td>"
+            f"<td>{escape(str(check.get('detail', '')))}</td>"
             "</tr>"
         )
 
@@ -756,9 +768,9 @@ def _render_report(manifest: dict[str, Any]) -> str:
             "</head>",
             "<body><main>",
             '<section class="hero"><p>fast-mlsirm buyer governance</p><h1>PR Queue Governance</h1>',
-            f'<span>Repository: {escape(str(manifest.get("repo", "")))} · '
-            f'Base: {escape(str(manifest.get("base_sha", "")))} · '
-            f'Generated: {escape(str(manifest.get("generated_at", "")))}</span></section>',
+            f"<span>Repository: {escape(str(manifest.get('repo', '')))} · "
+            f"Base: {escape(str(manifest.get('base_sha', '')))} · "
+            f"Generated: {escape(str(manifest.get('generated_at', '')))}</span></section>",
             '<section class="report-section"><h2>Queue Summary</h2><div class="metrics-grid">',
             *card_markup,
             "</div></section>",
@@ -766,7 +778,15 @@ def _render_report(manifest: dict[str, Any]) -> str:
             *_table(
                 label="PR queue governance table",
                 caption="PR queue governance table",
-                headings=["PR", "Title", "Head SHA", "Issue references", "Review", "Merge", "Risk reasons"],
+                headings=[
+                    "PR",
+                    "Title",
+                    "Head SHA",
+                    "Issue references",
+                    "Review",
+                    "Merge",
+                    "Risk reasons",
+                ],
                 rows=pr_rows,
             ),
             "</section>",
@@ -774,11 +794,17 @@ def _render_report(manifest: dict[str, Any]) -> str:
             *_table(
                 label="Duplicate issue claim table",
                 caption="Duplicate issue claim table",
-                headings=["Issue", "Status", "Canonical PR", "Active claimants", "Reason"],
+                headings=[
+                    "Issue",
+                    "Status",
+                    "Canonical PR",
+                    "Active claimants",
+                    "Reason",
+                ],
                 rows=claim_rows,
             ),
             '<p class="note">A duplicate issue claim is resolved only when exactly one active claimant includes '
-            '<code>Canonical-For: #issue</code> in its body.</p></section>',
+            "<code>Canonical-For: #issue</code> in its body.</p></section>",
             '<section class="report-section"><h2>Changed-file Overlap Warnings</h2>',
             *_table(
                 label="Changed-file overlap warning table",
@@ -787,13 +813,21 @@ def _render_report(manifest: dict[str, Any]) -> str:
                 rows=warning_rows,
             ),
             '<p class="note">One-file intersections are excluded to avoid treating '
-            'shared central files as duplicates.</p>',
+            "shared central files as duplicates.</p>",
             "</section>",
             '<section class="report-section"><h2>Issue Claim Audit History</h2>',
             *_table(
                 label="Issue claim audit history table",
                 caption="Issue claim audit history table",
-                headings=["PR", "State", "Head SHA", "Issue references", "Updated", "Closed", "Merged"],
+                headings=[
+                    "PR",
+                    "State",
+                    "Head SHA",
+                    "Issue references",
+                    "Updated",
+                    "Closed",
+                    "Merged",
+                ],
                 rows=history_rows,
             ),
             "</section>",
@@ -814,9 +848,8 @@ def build_pr_queue_governance(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = Path(args.repo_root).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    generated_at = (
-        getattr(args, "generated_at", None)
-        or datetime.now(UTC).isoformat(timespec="seconds")
+    generated_at = getattr(args, "generated_at", None) or datetime.now(UTC).isoformat(
+        timespec="seconds"
     )
     now = _parse_datetime(generated_at)
     snapshot = _snapshot_from_args(args, repo_root)
@@ -997,8 +1030,7 @@ def main(argv: list[str] | None = None) -> int:
                 "status": manifest["status"],
                 "out": str(Path(args.out).resolve()),
                 "manifest": str(
-                    Path(args.out).resolve()
-                    / "pr_queue_governance_manifest.json"
+                    Path(args.out).resolve() / "pr_queue_governance_manifest.json"
                 ),
                 "html": manifest["html_report_file"],
                 "open_pr_count": manifest["open_pr_count"],

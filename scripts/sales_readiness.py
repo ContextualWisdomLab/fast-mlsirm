@@ -16,6 +16,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 REQUIRED_POLICY_FILES = [
     "README.md",
@@ -241,13 +246,8 @@ def _read_text(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    # 🛡️ Sentinel: Enforce a 32MB read limit to prevent JSON DoS attacks
-    # (memory exhaustion or unbounded recursion) when loading untrusted files.
-    with path.open("rb") as fh:
-        content = fh.read(32 * 1024 * 1024 + 1)
-    if len(content) > 32 * 1024 * 1024:
-        raise ValueError(f"JSON file exceeds maximum allowed size: {path}")
-    return json.loads(content.decode("utf-8"))
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _sha256(path: Path) -> str:
@@ -289,7 +289,9 @@ def _validate_required_files(repo_root: Path) -> list[dict[str, object]]:
     for relative in REQUIRED_POLICY_FILES:
         path = repo_root / relative
         ok = path.exists() and path.is_file() and path.stat().st_size > 0
-        checks.append(_check(f"file:{relative}", ok, "required product evidence file exists"))
+        checks.append(
+            _check(f"file:{relative}", ok, "required product evidence file exists")
+        )
     return checks
 
 
@@ -313,17 +315,25 @@ def _validate_doc_tokens(repo_root: Path) -> list[dict[str, object]]:
     return checks
 
 
-def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) -> list[dict[str, object]]:
+def _validate_20b_product_evidence(
+    repo_root: Path, *, contract_value_krw: int
+) -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
     for relative in REQUIRED_20B_PRODUCT_FILES:
         path = repo_root / relative
         ok = path.exists() and path.is_file() and path.stat().st_size > 0
-        checks.append(_check(f"20b:file:{relative}", ok, "required 20B product evidence file exists"))
+        checks.append(
+            _check(
+                f"20b:file:{relative}", ok, "required 20B product evidence file exists"
+            )
+        )
 
     for relative, tokens in REQUIRED_20B_DOC_TOKENS.items():
         path = repo_root / relative
         if not path.exists():
-            checks.append(_check(f"20b:doc_tokens:{relative}", False, "document missing"))
+            checks.append(
+                _check(f"20b:doc_tokens:{relative}", False, "document missing")
+            )
             continue
         text = _read_text(path)
         missing = [token for token in tokens if token not in text]
@@ -344,7 +354,11 @@ def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) 
         try:
             payload = _read_json(path)
         except Exception as exc:
-            checks.append(_check(f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"))
+            checks.append(
+                _check(
+                    f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"
+                )
+            )
             continue
         if not isinstance(payload, dict):
             checks.append(
@@ -361,7 +375,12 @@ def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) 
             field
             for field in fields
             if field in payload
-            and (payload[field] is None or (isinstance(payload[field], (list, dict, str)) and not payload[field]))
+            and (
+                payload[field] is None
+                or (
+                    isinstance(payload[field], (list, dict, str)) and not payload[field]
+                )
+            )
         ]
         checks.append(
             _check(
@@ -397,7 +416,8 @@ def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) 
                 checks.append(
                     _check(
                         "20b:figma_artifact_url",
-                        isinstance(figma_url, str) and figma_url.startswith("https://www.figma.com/design/"),
+                        isinstance(figma_url, str)
+                        and figma_url.startswith("https://www.figma.com/design/"),
                         (
                             "optional Figma artifact URL must start with https://www.figma.com/design/; "
                             "FigJam /board/ URLs do not satisfy the design-file evidence contract"
@@ -448,10 +468,22 @@ def _validate_acceptance_summary(
 ) -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
     if not acceptance_path.exists():
-        return [_check("acceptance:summary", False, f"missing acceptance summary: {acceptance_path}")]
+        return [
+            _check(
+                "acceptance:summary",
+                False,
+                f"missing acceptance summary: {acceptance_path}",
+            )
+        ]
 
     summary = _read_json(acceptance_path)
-    checks.append(_check("acceptance:status", summary.get("status") == "ok", "acceptance summary status is ok"))
+    checks.append(
+        _check(
+            "acceptance:status",
+            summary.get("status") == "ok",
+            "acceptance summary status is ok",
+        )
+    )
 
     steps = summary.get("steps", [])
     commands = {step.get("command") for step in steps if isinstance(step, dict)}
@@ -465,11 +497,16 @@ def _validate_acceptance_summary(
         )
     )
 
-    fit_backends = [step.get("backend") for step in steps if isinstance(step, dict) and step.get("command") == "fit"]
+    fit_backends = [
+        step.get("backend")
+        for step in steps
+        if isinstance(step, dict) and step.get("command") == "fit"
+    ]
     checks.append(
         _check(
             "acceptance:fit_backend_record",
-            all(backend in {"numpy", "rust"} for backend in fit_backends) and bool(fit_backends),
+            all(backend in {"numpy", "rust"} for backend in fit_backends)
+            and bool(fit_backends),
             "fit steps record resolved backend",
             backends=fit_backends,
         )
@@ -535,12 +572,24 @@ def _validate_acceptance_summary(
 
 def _validate_dist(dist_dir: Path | None) -> list[dict[str, object]]:
     if dist_dir is None:
-        return [_check("dist:skipped", True, "distribution artifact check not requested")]
+        return [
+            _check("dist:skipped", True, "distribution artifact check not requested")
+        ]
     wheels = sorted(dist_dir.glob("*.whl"))
     sdists = sorted(dist_dir.glob("*.tar.gz"))
     return [
-        _check("dist:wheel", bool(wheels), "wheel artifact exists", files=[str(path) for path in wheels]),
-        _check("dist:sdist", bool(sdists), "source distribution artifact exists", files=[str(path) for path in sdists]),
+        _check(
+            "dist:wheel",
+            bool(wheels),
+            "wheel artifact exists",
+            files=[str(path) for path in wheels],
+        ),
+        _check(
+            "dist:sdist",
+            bool(sdists),
+            "source distribution artifact exists",
+            files=[str(path) for path in sdists],
+        ),
     ]
 
 
@@ -559,13 +608,31 @@ def _validate_buyer_packet(
             )
         ]
     if not manifest_path.exists():
-        return [_check("buyer_packet:manifest", False, f"missing buyer packet manifest: {manifest_path}")]
+        return [
+            _check(
+                "buyer_packet:manifest",
+                False,
+                f"missing buyer packet manifest: {manifest_path}",
+            )
+        ]
     try:
         payload = _read_json(manifest_path)
     except Exception as exc:
-        return [_check("buyer_packet:manifest", False, f"buyer packet manifest is not valid JSON: {exc}")]
+        return [
+            _check(
+                "buyer_packet:manifest",
+                False,
+                f"buyer packet manifest is not valid JSON: {exc}",
+            )
+        ]
     if not isinstance(payload, dict):
-        return [_check("buyer_packet:manifest_shape", False, "buyer packet manifest must be a JSON object")]
+        return [
+            _check(
+                "buyer_packet:manifest_shape",
+                False,
+                "buyer packet manifest must be a JSON object",
+            )
+        ]
 
     coverage = payload.get("coverage", {})
     coverage_missing = [
@@ -581,10 +648,14 @@ def _validate_buyer_packet(
     expected_zip_sha = payload.get("zip_sha256")
     actual_zip_sha = _sha256(zip_path) if zip_exists else None
     report_file = payload.get("report_file")
-    report_path = Path(str(report_file)) if isinstance(report_file, str) and report_file else None
+    report_path = (
+        Path(str(report_file)) if isinstance(report_file, str) and report_file else None
+    )
     if report_path is not None and not report_path.is_absolute():
         report_path = manifest_path.parent / report_path
-    report_exists = report_path is not None and report_path.exists() and report_path.is_file()
+    report_exists = (
+        report_path is not None and report_path.exists() and report_path.is_file()
+    )
     expected_report_sha = payload.get("report_sha256")
     actual_report_sha = _sha256(report_path) if report_exists else None
     return [
@@ -603,7 +674,8 @@ def _validate_buyer_packet(
         ),
         _check(
             "buyer_packet:artifact_count",
-            isinstance(payload.get("artifact_count"), int) and payload["artifact_count"] > 0,
+            isinstance(payload.get("artifact_count"), int)
+            and payload["artifact_count"] > 0,
             "buyer packet records included artifact count",
             actual=payload.get("artifact_count"),
         ),
@@ -621,7 +693,9 @@ def _validate_buyer_packet(
         ),
         _check(
             "buyer_packet:zip_sha256",
-            zip_exists and isinstance(expected_zip_sha, str) and expected_zip_sha == actual_zip_sha,
+            zip_exists
+            and isinstance(expected_zip_sha, str)
+            and expected_zip_sha == actual_zip_sha,
             "buyer packet zip SHA256 matches manifest",
             expected=expected_zip_sha,
             actual=actual_zip_sha,
@@ -634,7 +708,9 @@ def _validate_buyer_packet(
         ),
         _check(
             "buyer_packet:html_report_sha256",
-            report_exists and isinstance(expected_report_sha, str) and expected_report_sha == actual_report_sha,
+            report_exists
+            and isinstance(expected_report_sha, str)
+            and expected_report_sha == actual_report_sha,
             "buyer evidence HTML report SHA256 matches manifest",
             expected=expected_report_sha,
             actual=actual_report_sha,
@@ -656,21 +732,47 @@ def _validate_benchmark_report(
             )
         ]
     if not manifest_path.exists():
-        return [_check("benchmark_report:manifest", False, f"missing benchmark report: {manifest_path}")]
+        return [
+            _check(
+                "benchmark_report:manifest",
+                False,
+                f"missing benchmark report: {manifest_path}",
+            )
+        ]
     try:
         payload = _read_json(manifest_path)
     except Exception as exc:
-        return [_check("benchmark_report:manifest", False, f"benchmark report is not valid JSON: {exc}")]
+        return [
+            _check(
+                "benchmark_report:manifest",
+                False,
+                f"benchmark report is not valid JSON: {exc}",
+            )
+        ]
     if not isinstance(payload, dict):
-        return [_check("benchmark_report:manifest_shape", False, "benchmark report must be a JSON object")]
+        return [
+            _check(
+                "benchmark_report:manifest_shape",
+                False,
+                "benchmark report must be a JSON object",
+            )
+        ]
 
     scenario = payload.get("scenario_coverage", {})
-    missing_backends = scenario.get("missing_backends") if isinstance(scenario, dict) else None
+    missing_backends = (
+        scenario.get("missing_backends") if isinstance(scenario, dict) else None
+    )
     artifacts = payload.get("artifact_coverage", {})
-    missing_artifacts = artifacts.get("missing") if isinstance(artifacts, dict) else None
-    missing_paths = artifacts.get("missing_paths") if isinstance(artifacts, dict) else None
+    missing_artifacts = (
+        artifacts.get("missing") if isinstance(artifacts, dict) else None
+    )
+    missing_paths = (
+        artifacts.get("missing_paths") if isinstance(artifacts, dict) else None
+    )
     html_file = payload.get("html_report_file")
-    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    html_path = (
+        Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    )
     if html_path is not None and not html_path.is_absolute():
         html_path = manifest_path.parent / html_path
     html_exists = html_path is not None and html_path.exists() and html_path.is_file()
@@ -711,7 +813,9 @@ def _validate_benchmark_report(
         ),
         _check(
             "benchmark_report:html_report_sha256",
-            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            html_exists
+            and isinstance(expected_html_sha, str)
+            and expected_html_sha == actual_html_sha,
             "benchmark HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
@@ -734,13 +838,31 @@ def _validate_release_evidence_index(
             )
         ]
     if not manifest_path.exists():
-        return [_check("release_evidence_index:manifest", False, f"missing release evidence index: {manifest_path}")]
+        return [
+            _check(
+                "release_evidence_index:manifest",
+                False,
+                f"missing release evidence index: {manifest_path}",
+            )
+        ]
     try:
         payload = _read_json(manifest_path)
     except Exception as exc:
-        return [_check("release_evidence_index:manifest", False, f"release evidence index is not valid JSON: {exc}")]
+        return [
+            _check(
+                "release_evidence_index:manifest",
+                False,
+                f"release evidence index is not valid JSON: {exc}",
+            )
+        ]
     if not isinstance(payload, dict):
-        return [_check("release_evidence_index:manifest_shape", False, "release evidence index must be a JSON object")]
+        return [
+            _check(
+                "release_evidence_index:manifest_shape",
+                False,
+                "release evidence index must be a JSON object",
+            )
+        ]
 
     coverage = payload.get("coverage", {})
     coverage_missing = [
@@ -752,8 +874,14 @@ def _validate_release_evidence_index(
     artifacts = dist.get("artifacts") if isinstance(dist, dict) else None
     dist_artifacts_ok = (
         isinstance(artifacts, list)
-        and any(isinstance(entry, dict) and entry.get("kind") == "wheel" for entry in artifacts)
-        and any(isinstance(entry, dict) and entry.get("kind") == "sdist" for entry in artifacts)
+        and any(
+            isinstance(entry, dict) and entry.get("kind") == "wheel"
+            for entry in artifacts
+        )
+        and any(
+            isinstance(entry, dict) and entry.get("kind") == "sdist"
+            for entry in artifacts
+        )
         and all(
             isinstance(entry, dict)
             and isinstance(entry.get("sha256"), str)
@@ -764,7 +892,9 @@ def _validate_release_evidence_index(
         )
     )
     html_file = payload.get("html_report_file")
-    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    html_path = (
+        Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    )
     if html_path is not None and not html_path.is_absolute():
         html_path = manifest_path.parent / html_path
     html_exists = html_path is not None and html_path.exists() and html_path.is_file()
@@ -811,7 +941,9 @@ def _validate_release_evidence_index(
         ),
         _check(
             "release_evidence_index:html_report_sha256",
-            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            html_exists
+            and isinstance(expected_html_sha, str)
+            and expected_html_sha == actual_html_sha,
             "release evidence HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
@@ -864,11 +996,15 @@ def _validate_procurement_due_diligence(
     ok_categories = {
         check.get("category")
         for check in checks
-        if isinstance(check, dict) and check.get("ok") is True and isinstance(check.get("category"), str)
+        if isinstance(check, dict)
+        and check.get("ok") is True
+        and isinstance(check.get("category"), str)
     }
     failed_checks = payload.get("failed_checks")
     html_file = payload.get("html_report_file")
-    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    html_path = (
+        Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    )
     if html_path is not None and not html_path.is_absolute():
         html_path = manifest_path.parent / html_path
     html_exists = html_path is not None and html_path.exists() and html_path.is_file()
@@ -898,7 +1034,9 @@ def _validate_procurement_due_diligence(
             "procurement_due_diligence:category_coverage",
             REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES.issubset(ok_categories),
             "procurement due-diligence covers package, policy, commercial release, and GitHub evidence",
-            missing=sorted(REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES - ok_categories),
+            missing=sorted(
+                REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES - ok_categories
+            ),
         ),
         _check(
             "procurement_due_diligence:html_report",
@@ -908,7 +1046,9 @@ def _validate_procurement_due_diligence(
         ),
         _check(
             "procurement_due_diligence:html_report_sha256",
-            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            html_exists
+            and isinstance(expected_html_sha, str)
+            and expected_html_sha == actual_html_sha,
             "procurement due-diligence HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
@@ -961,13 +1101,22 @@ def _validate_pr_queue_governance(
     ok_categories = {
         check.get("category")
         for check in checks
-        if isinstance(check, dict) and check.get("ok") is True and isinstance(check.get("category"), str)
+        if isinstance(check, dict)
+        and check.get("ok") is True
+        and isinstance(check.get("category"), str)
     }
     failed_checks = payload.get("failed_checks")
     risk_counts = payload.get("risk_counts")
-    required_risk_keys = {"changes_requested", "stale", "release_scope_conflict", "review_or_check_delay"}
+    required_risk_keys = {
+        "changes_requested",
+        "stale",
+        "release_scope_conflict",
+        "review_or_check_delay",
+    }
     html_file = payload.get("html_report_file")
-    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    html_path = (
+        Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    )
     if html_path is not None and not html_path.is_absolute():
         html_path = manifest_path.parent / html_path
     html_exists = html_path is not None and html_path.exists() and html_path.is_file()
@@ -1001,7 +1150,8 @@ def _validate_pr_queue_governance(
         ),
         _check(
             "pr_queue_governance:open_pr_count",
-            isinstance(payload.get("open_pr_count"), int) and payload["open_pr_count"] >= 0,
+            isinstance(payload.get("open_pr_count"), int)
+            and payload["open_pr_count"] >= 0,
             "PR queue governance records open PR count",
             actual=payload.get("open_pr_count"),
         ),
@@ -1009,7 +1159,10 @@ def _validate_pr_queue_governance(
             "pr_queue_governance:risk_counts",
             isinstance(risk_counts, dict) and required_risk_keys.issubset(risk_counts),
             "PR queue governance records required risk count buckets",
-            missing=sorted(required_risk_keys - set(risk_counts if isinstance(risk_counts, dict) else [])),
+            missing=sorted(
+                required_risk_keys
+                - set(risk_counts if isinstance(risk_counts, dict) else [])
+            ),
         ),
         _check(
             "pr_queue_governance:html_report",
@@ -1019,7 +1172,9 @@ def _validate_pr_queue_governance(
         ),
         _check(
             "pr_queue_governance:html_report_sha256",
-            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            html_exists
+            and isinstance(expected_html_sha, str)
+            and expected_html_sha == actual_html_sha,
             "PR queue governance HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
@@ -1042,27 +1197,53 @@ def _validate_figma_evidence_sync(
             )
         ]
     if not manifest_path.exists():
-        return [_check("figma_evidence_sync:manifest", False, f"missing Figma evidence sync manifest: {manifest_path}")]
+        return [
+            _check(
+                "figma_evidence_sync:manifest",
+                False,
+                f"missing Figma evidence sync manifest: {manifest_path}",
+            )
+        ]
     try:
         payload = _read_json(manifest_path)
     except Exception as exc:
-        return [_check("figma_evidence_sync:manifest", False, f"Figma evidence sync manifest is not valid JSON: {exc}")]
+        return [
+            _check(
+                "figma_evidence_sync:manifest",
+                False,
+                f"Figma evidence sync manifest is not valid JSON: {exc}",
+            )
+        ]
     if not isinstance(payload, dict):
-        return [_check("figma_evidence_sync:manifest_shape", False, "Figma evidence sync manifest must be a JSON object")]
+        return [
+            _check(
+                "figma_evidence_sync:manifest_shape",
+                False,
+                "Figma evidence sync manifest must be a JSON object",
+            )
+        ]
 
     checks = payload.get("checks", [])
     ok_categories = {
         check.get("category")
         for check in checks
-        if isinstance(check, dict) and check.get("ok") is True and isinstance(check.get("category"), str)
+        if isinstance(check, dict)
+        and check.get("ok") is True
+        and isinstance(check.get("category"), str)
     }
     failed_checks = payload.get("failed_checks")
     frame_coverage = payload.get("frame_coverage", {})
-    frame_missing = frame_coverage.get("missing") if isinstance(frame_coverage, dict) else None
+    frame_missing = (
+        frame_coverage.get("missing") if isinstance(frame_coverage, dict) else None
+    )
     token_coverage = payload.get("required_token_coverage", {})
-    token_missing = token_coverage.get("missing") if isinstance(token_coverage, dict) else None
+    token_missing = (
+        token_coverage.get("missing") if isinstance(token_coverage, dict) else None
+    )
     html_file = payload.get("html_report_file")
-    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    html_path = (
+        Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    )
     if html_path is not None and not html_path.is_absolute():
         html_path = manifest_path.parent / html_path
     html_exists = html_path is not None and html_path.exists() and html_path.is_file()
@@ -1120,7 +1301,9 @@ def _validate_figma_evidence_sync(
         ),
         _check(
             "figma_evidence_sync:html_report_sha256",
-            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            html_exists
+            and isinstance(expected_html_sha, str)
+            and expected_html_sha == actual_html_sha,
             "Figma evidence sync HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
@@ -1128,13 +1311,19 @@ def _validate_figma_evidence_sync(
     ]
 
 
-def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
+def _validate_imports(
+    repo_root: Path, *, require_rust: bool
+) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
     try:
         package = importlib.import_module("fast_mlsirm")
-    except Exception as exc:  # pragma: no cover - exception detail is surfaced in manifest.
-        return [_check("import:fast_mlsirm", False, f"failed to import fast_mlsirm: {exc}")]
+    except (
+        Exception
+    ) as exc:  # pragma: no cover - exception detail is surfaced in manifest.
+        return [
+            _check("import:fast_mlsirm", False, f"failed to import fast_mlsirm: {exc}")
+        ]
 
     imported_version = getattr(package, "__version__", "")
     checks.append(
@@ -1150,8 +1339,16 @@ def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, 
     if require_rust:
         try:
             core = importlib.import_module("fast_mlsirm._core")
-        except Exception as exc:  # pragma: no cover - exception detail is surfaced in manifest.
-            checks.append(_check("import:rust_core", False, f"failed to import fast_mlsirm._core: {exc}"))
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - exception detail is surfaced in manifest.
+            checks.append(
+                _check(
+                    "import:rust_core",
+                    False,
+                    f"failed to import fast_mlsirm._core: {exc}",
+                )
+            )
         else:
             checks.append(
                 _check(
@@ -1170,9 +1367,13 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     benchmark_report = getattr(args, "benchmark_report", None)
     require_benchmark_report = getattr(args, "require_benchmark_report", False)
     release_evidence_index = getattr(args, "release_evidence_index", None)
-    require_release_evidence_index = getattr(args, "require_release_evidence_index", False)
+    require_release_evidence_index = getattr(
+        args, "require_release_evidence_index", False
+    )
     procurement_due_diligence = getattr(args, "procurement_due_diligence", None)
-    require_procurement_due_diligence = getattr(args, "require_procurement_due_diligence", False)
+    require_procurement_due_diligence = getattr(
+        args, "require_procurement_due_diligence", False
+    )
     pr_queue_governance = getattr(args, "pr_queue_governance", None)
     require_pr_queue_governance = getattr(args, "require_pr_queue_governance", False)
     figma_evidence_sync = getattr(args, "figma_evidence_sync", None)
@@ -1181,7 +1382,11 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
     if args.require_20b_product:
-        checks.extend(_validate_20b_product_evidence(repo_root, contract_value_krw=args.contract_value_krw))
+        checks.extend(
+            _validate_20b_product_evidence(
+                repo_root, contract_value_krw=args.contract_value_krw
+            )
+        )
     checks.extend(
         _validate_acceptance_summary(
             Path(args.acceptance).resolve(),
@@ -1193,7 +1398,9 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     if buyer_packet_manifest or require_buyer_packet:
         checks.extend(
             _validate_buyer_packet(
-                Path(buyer_packet_manifest).resolve() if buyer_packet_manifest else None,
+                Path(buyer_packet_manifest).resolve()
+                if buyer_packet_manifest
+                else None,
                 required=require_buyer_packet,
                 contract_value_krw=args.contract_value_krw,
             )
@@ -1208,7 +1415,9 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     if release_evidence_index or require_release_evidence_index:
         checks.extend(
             _validate_release_evidence_index(
-                Path(release_evidence_index).resolve() if release_evidence_index else None,
+                Path(release_evidence_index).resolve()
+                if release_evidence_index
+                else None,
                 required=require_release_evidence_index,
                 contract_value_krw=args.contract_value_krw,
             )
@@ -1216,7 +1425,9 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     if procurement_due_diligence or require_procurement_due_diligence:
         checks.extend(
             _validate_procurement_due_diligence(
-                Path(procurement_due_diligence).resolve() if procurement_due_diligence else None,
+                Path(procurement_due_diligence).resolve()
+                if procurement_due_diligence
+                else None,
                 required=require_procurement_due_diligence,
                 contract_value_krw=args.contract_value_krw,
             )
@@ -1260,60 +1471,105 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
 
     out_path = Path(args.out).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verify enterprise sales-readiness evidence.")
-    parser.add_argument("--repo-root", default=".", help="Repository root containing product evidence files.")
-    parser.add_argument("--acceptance", required=True, help="Path to release acceptance_summary.json.")
-    parser.add_argument("--out", default="sales_readiness_manifest.json", help="Manifest output path.")
-    parser.add_argument("--dist", help="Optional dist directory containing built wheel and sdist artifacts.")
-    parser.add_argument("--require-rust", action="store_true", help="Require explicit Rust backend evidence.")
+    parser = argparse.ArgumentParser(
+        description="Verify enterprise sales-readiness evidence."
+    )
+    parser.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root containing product evidence files.",
+    )
+    parser.add_argument(
+        "--acceptance", required=True, help="Path to release acceptance_summary.json."
+    )
+    parser.add_argument(
+        "--out", default="sales_readiness_manifest.json", help="Manifest output path."
+    )
+    parser.add_argument(
+        "--dist",
+        help="Optional dist directory containing built wheel and sdist artifacts.",
+    )
+    parser.add_argument(
+        "--require-rust",
+        action="store_true",
+        help="Require explicit Rust backend evidence.",
+    )
     parser.add_argument(
         "--require-20b-product",
         action="store_true",
         help="Require Product Design, Figma, ROI, benchmark, and demo evidence for KRW 2B review.",
     )
-    parser.add_argument("--check-import", action="store_true", help="Import installed package and optional Rust core.")
-    parser.add_argument("--buyer-packet-manifest", help="Optional buyer_evidence_manifest.json to validate.")
+    parser.add_argument(
+        "--check-import",
+        action="store_true",
+        help="Import installed package and optional Rust core.",
+    )
+    parser.add_argument(
+        "--buyer-packet-manifest",
+        help="Optional buyer_evidence_manifest.json to validate.",
+    )
     parser.add_argument(
         "--require-buyer-packet",
         action="store_true",
         help="Fail unless --buyer-packet-manifest points to a complete buyer evidence packet.",
     )
-    parser.add_argument("--benchmark-report", help="Optional benchmark_report.json to validate.")
+    parser.add_argument(
+        "--benchmark-report", help="Optional benchmark_report.json to validate."
+    )
     parser.add_argument(
         "--require-benchmark-report",
         action="store_true",
         help="Fail unless --benchmark-report points to a complete automated benchmark report.",
     )
-    parser.add_argument("--release-evidence-index", help="Optional release_evidence_index.json to validate.")
+    parser.add_argument(
+        "--release-evidence-index",
+        help="Optional release_evidence_index.json to validate.",
+    )
     parser.add_argument(
         "--require-release-evidence-index",
         action="store_true",
         help="Fail unless --release-evidence-index points to a complete release evidence index.",
     )
-    parser.add_argument("--procurement-due-diligence", help="Optional procurement_due_diligence_manifest.json to validate.")
+    parser.add_argument(
+        "--procurement-due-diligence",
+        help="Optional procurement_due_diligence_manifest.json to validate.",
+    )
     parser.add_argument(
         "--require-procurement-due-diligence",
         action="store_true",
         help="Fail unless --procurement-due-diligence points to complete procurement due-diligence evidence.",
     )
-    parser.add_argument("--pr-queue-governance", help="Optional pr_queue_governance_manifest.json to validate.")
+    parser.add_argument(
+        "--pr-queue-governance",
+        help="Optional pr_queue_governance_manifest.json to validate.",
+    )
     parser.add_argument(
         "--require-pr-queue-governance",
         action="store_true",
         help="Fail unless --pr-queue-governance points to complete PR queue governance evidence.",
     )
-    parser.add_argument("--figma-evidence-sync", help="Optional figma_evidence_sync_manifest.json to validate.")
+    parser.add_argument(
+        "--figma-evidence-sync",
+        help="Optional figma_evidence_sync_manifest.json to validate.",
+    )
     parser.add_argument(
         "--require-figma-evidence-sync",
         action="store_true",
         help="Fail unless --figma-evidence-sync points to complete Figma evidence sync evidence.",
     )
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value for this gate.",
+    )
     parser.add_argument(
         "--max-acceptance-seconds",
         type=float,
@@ -1331,7 +1587,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False))
         return 1
-    print(json.dumps({"status": manifest["status"], "out": str(Path(args.out).resolve())}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {"status": manifest["status"], "out": str(Path(args.out).resolve())},
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0 if manifest["status"] == "ok" else 1
 
 

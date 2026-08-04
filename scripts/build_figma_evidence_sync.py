@@ -12,6 +12,11 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 REQUIRED_FRAME_IDS = [
     "01-package-evidence",
@@ -47,16 +52,8 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    # 🛡️ Sentinel: Enforce a 32MB read limit to prevent JSON DoS attacks
-    # (memory exhaustion or unbounded recursion) when loading untrusted files.
-    with path.open("rb") as fh:
-        content = fh.read(32 * 1024 * 1024 + 1)
-    if len(content) > 32 * 1024 * 1024:
-        raise ValueError(f"JSON file exceeds maximum allowed size: {path}")
-    payload = json.loads(content.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
@@ -80,8 +77,15 @@ def _source_commit(repo_root: Path) -> str:
     return completed.stdout.strip() or "unknown"
 
 
-def _check(name: str, category: str, ok: bool, detail: str, **metadata: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {"name": name, "category": category, "ok": ok, "detail": detail}
+def _check(
+    name: str, category: str, ok: bool, detail: str, **metadata: Any
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": name,
+        "category": category,
+        "ok": ok,
+        "detail": detail,
+    }
     payload.update(metadata)
     return payload
 
@@ -103,7 +107,11 @@ def _frame_coverage(packet: dict[str, Any]) -> dict[str, Any]:
         for frame in frames
         if isinstance(frame, dict) and isinstance(frame.get("id"), str)
     }
-    return {"required": REQUIRED_FRAME_IDS, "present": sorted(ids), "missing": sorted(set(REQUIRED_FRAME_IDS) - ids)}
+    return {
+        "required": REQUIRED_FRAME_IDS,
+        "present": sorted(ids),
+        "missing": sorted(set(REQUIRED_FRAME_IDS) - ids),
+    }
 
 
 def _snapshot_text(snapshot: dict[str, Any]) -> str:
@@ -190,7 +198,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             continue
         rows.append(
             "<tr>"
-            f"<th scope=\"row\">{escape(str(check.get('name', '')))}</th>"
+            f'<th scope="row">{escape(str(check.get("name", "")))}</th>'
             f"<td>{escape(str(check.get('category', '')))}</td>"
             f"<td>{escape('go' if check.get('ok') else 'failed')}</td>"
             f"<td>{escape(str(check.get('detail', '')))}</td>"
@@ -198,13 +206,27 @@ def _render_report(manifest: dict[str, Any]) -> str:
         )
     cards = [
         ("Status", manifest.get("status", "")),
-        ("Code Connect", "disabled" if manifest.get("code_connect") is False else manifest.get("code_connect", "")),
+        (
+            "Code Connect",
+            "disabled"
+            if manifest.get("code_connect") is False
+            else manifest.get("code_connect", ""),
+        ),
         ("Frames", len(manifest.get("frame_coverage", {}).get("present", []))),
-        ("Missing Tokens", len(manifest.get("required_token_coverage", {}).get("missing", []))),
-        ("Metadata Snapshot", "checked" if manifest.get("metadata_snapshot", {}).get("checked") else "not required"),
+        (
+            "Missing Tokens",
+            len(manifest.get("required_token_coverage", {}).get("missing", [])),
+        ),
+        (
+            "Metadata Snapshot",
+            "checked"
+            if manifest.get("metadata_snapshot", {}).get("checked")
+            else "not required",
+        ),
     ]
     card_markup = [
-        "<article class=\"metric-card\">" f"<span>{escape(label)}</span><strong>{escape(str(value))}</strong></article>"
+        '<article class="metric-card">'
+        f"<span>{escape(label)}</span><strong>{escape(str(value))}</strong></article>"
         for label, value in cards
     ]
     return "\n".join(
@@ -229,7 +251,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<section class="report-section"><h2>Sync Checks</h2>',
             '<div class="table-wrap" role="region" aria-label="Figma evidence sync table" tabindex="0">',
             "<table><caption>Figma evidence sync table</caption>",
-            "<thead><tr><th scope=\"col\">Check</th><th scope=\"col\">Category</th><th scope=\"col\">Status</th><th scope=\"col\">Detail</th></tr></thead><tbody>",
+            '<thead><tr><th scope="col">Check</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Detail</th></tr></thead><tbody>',
             *rows,
             "</tbody></table></div>",
             '<p class="note">This report verifies repo-local Figma packet evidence. Live Figma metadata is optional and supplied as an exported snapshot.</p>',
@@ -250,18 +272,32 @@ def build_figma_evidence_sync(args: argparse.Namespace) -> dict[str, Any]:
     code_connect = packet.get("code_connect")
     figma_url = str(packet.get("figma_artifact_url") or args.figma_url)
     url_ok = figma_url.startswith("https://www.figma.com/design/")
-    snapshot_info: dict[str, Any] = {"checked": False, "path": None, "token_coverage": {"missing": []}}
+    snapshot_info: dict[str, Any] = {
+        "checked": False,
+        "path": None,
+        "token_coverage": {"missing": []},
+    }
     metadata_snapshot = getattr(args, "metadata_snapshot", None)
     metadata_check_ok = True
     if metadata_snapshot:
         snapshot_path = _resolve_path(metadata_snapshot, base=repo_root).resolve()
         snapshot = _read_json(snapshot_path)
         snapshot_coverage = _coverage(_snapshot_text(snapshot), REQUIRED_TOKENS)
-        snapshot_info = {"checked": True, "path": str(snapshot_path), "token_coverage": snapshot_coverage}
+        snapshot_info = {
+            "checked": True,
+            "path": str(snapshot_path),
+            "token_coverage": snapshot_coverage,
+        }
         metadata_check_ok = snapshot_coverage["missing"] == []
 
     checks = [
-        _check("figma:packet", "figma_packet", packet_path.exists(), "Figma design packet JSON exists", path=str(packet_path)),
+        _check(
+            "figma:packet",
+            "figma_packet",
+            packet_path.exists(),
+            "Figma design packet JSON exists",
+            path=str(packet_path),
+        ),
         _check(
             "figma:code_connect_disabled",
             "figma_policy",
@@ -304,7 +340,8 @@ def build_figma_evidence_sync(args: argparse.Namespace) -> dict[str, Any]:
         "command": "build_figma_evidence_sync",
         "status": "ok" if not failed else "failed",
         "contract_value_krw": args.contract_value_krw,
-        "generated_at": getattr(args, "generated_at", None) or datetime.now(UTC).isoformat(timespec="seconds"),
+        "generated_at": getattr(args, "generated_at", None)
+        or datetime.now(UTC).isoformat(timespec="seconds"),
         "source_commit": _source_commit(repo_root),
         "repo_root": str(repo_root),
         "packet": str(packet_path),
@@ -321,21 +358,35 @@ def build_figma_evidence_sync(args: argparse.Namespace) -> dict[str, Any]:
     html_path.write_text(_render_report(manifest), encoding="utf-8")
     manifest["html_report_file"] = str(html_path)
     manifest["html_report_sha256"] = _sha256(html_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build Figma evidence sync checks for fast-mlsirm.")
+    parser = argparse.ArgumentParser(
+        description="Build Figma evidence sync checks for fast-mlsirm."
+    )
     parser.add_argument("--repo-root", default=".", help="Repository root.")
     parser.add_argument(
         "--packet",
         default="examples/enterprise_demo/figma_design_packet.json",
         help="Path to figma_design_packet.json.",
     )
-    parser.add_argument("--metadata-snapshot", help="Optional exported live Figma metadata JSON snapshot.")
-    parser.add_argument("--out", default="figma-evidence-sync", help="Output directory.")
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
+    parser.add_argument(
+        "--metadata-snapshot",
+        help="Optional exported live Figma metadata JSON snapshot.",
+    )
+    parser.add_argument(
+        "--out", default="figma-evidence-sync", help="Output directory."
+    )
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value.",
+    )
     parser.add_argument(
         "--figma-url",
         default="https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem",
@@ -357,7 +408,9 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "status": manifest["status"],
                 "out": str(Path(args.out).resolve()),
-                "manifest": str(Path(args.out).resolve() / "figma_evidence_sync_manifest.json"),
+                "manifest": str(
+                    Path(args.out).resolve() / "figma_evidence_sync_manifest.json"
+                ),
                 "html": manifest["html_report_file"],
                 "failed_checks": len(manifest["failed_checks"]),
             },

@@ -12,18 +12,15 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 def _read_json(path: Path) -> dict[str, Any]:
-    # 🛡️ Sentinel: Enforce a 32MB read limit to prevent JSON DoS attacks
-    # (memory exhaustion or unbounded recursion) when loading untrusted files.
-    with path.open("rb") as fh:
-        content = fh.read(32 * 1024 * 1024 + 1)
-    if len(content) > 32 * 1024 * 1024:
-        raise ValueError(f"JSON file exceeds maximum allowed size: {path}")
-    payload = json.loads(content.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _sha256(path: Path) -> str:
@@ -94,7 +91,9 @@ def _required_backends(benchmark: dict[str, Any]) -> list[str]:
     return sorted(backends)
 
 
-def _artifact_coverage(benchmark: dict[str, Any], steps: list[dict[str, Any]]) -> dict[str, Any]:
+def _artifact_coverage(
+    benchmark: dict[str, Any], steps: list[dict[str, Any]]
+) -> dict[str, Any]:
     required = benchmark.get("required_artifacts", [])
     if not isinstance(required, list):
         required = []
@@ -130,14 +129,16 @@ def _command_durations(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _render_rows(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> list[str]:
+def _render_rows(
+    rows: list[dict[str, Any]], columns: list[tuple[str, str]]
+) -> list[str]:
     rendered = []
     for row in rows:
         cells = []
         for key, label in columns:
             value = escape(_format_value(row.get(key)))
             if not cells:
-                cells.append(f"<th scope=\"row\">{value}</th>")
+                cells.append(f'<th scope="row">{value}</th>')
             else:
                 cells.append(f"<td>{value}</td>")
         rendered.append("<tr>" + "".join(cells) + "</tr>")
@@ -157,7 +158,7 @@ def _render_report_html(report: dict[str, Any]) -> str:
     )
     artifact_rows = [
         "<tr>"
-        f"<th scope=\"row\">{escape(name)}</th>"
+        f'<th scope="row">{escape(name)}</th>'
         f"<td>{'go' if name in set(report.get('artifact_coverage', {}).get('present', [])) else 'missing'}</td>"
         "</tr>"
         for name in report.get("artifact_coverage", {}).get("required", [])
@@ -168,7 +169,12 @@ def _render_report_html(report: dict[str, Any]) -> str:
         ("Runtime Budget", f"{report.get('runtime_budget_seconds', '')}s"),
         ("Total Runtime", f"{report.get('total_duration_seconds', '')}s"),
         ("Budget Result", report.get("budget_ok")),
-        ("Observed Backends", ", ".join(scenario.get("observed_backends", [])) if isinstance(scenario, dict) else ""),
+        (
+            "Observed Backends",
+            ", ".join(scenario.get("observed_backends", []))
+            if isinstance(scenario, dict)
+            else "",
+        ),
         ("Source Commit", report.get("source_commit", "")),
     ]
     card_markup = [
@@ -217,7 +223,7 @@ def _render_report_html(report: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Command duration table" tabindex="0">',
             "<table>",
             "<caption>Command duration table</caption>",
-            "<thead><tr><th scope=\"col\">Step</th><th scope=\"col\">Command</th><th scope=\"col\">Backend</th><th scope=\"col\">Seconds</th><th scope=\"col\">Output</th></tr></thead>",
+            '<thead><tr><th scope="col">Step</th><th scope="col">Command</th><th scope="col">Backend</th><th scope="col">Seconds</th><th scope="col">Output</th></tr></thead>',
             "<tbody>",
             *command_rows,
             "</tbody>",
@@ -229,7 +235,7 @@ def _render_report_html(report: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Required artifact coverage table" tabindex="0">',
             "<table>",
             "<caption>Required artifact coverage table</caption>",
-            "<thead><tr><th scope=\"col\">Artifact</th><th scope=\"col\">Status</th></tr></thead>",
+            '<thead><tr><th scope="col">Artifact</th><th scope="col">Status</th></tr></thead>',
             "<tbody>",
             *artifact_rows,
             "</tbody>",
@@ -418,7 +424,9 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     )
     required_backends = _required_backends(benchmark)
     observed_backends = _observed_backends(steps)
-    missing_backends = [backend for backend in required_backends if backend not in observed_backends]
+    missing_backends = [
+        backend for backend in required_backends if backend not in observed_backends
+    ]
     artifact_coverage = _artifact_coverage(benchmark, steps)
     status_ok = (
         acceptance.get("status") == "ok"
@@ -450,20 +458,32 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     }
     html_path.write_text(_render_report_html(report), encoding="utf-8")
     report["html_report_sha256"] = _sha256(html_path)
-    report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return report
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build fast-mlsirm benchmark evidence from release acceptance output.")
-    parser.add_argument("--repo-root", default=".", help="Repository root used to record source commit.")
-    parser.add_argument("--acceptance", required=True, help="Path to release acceptance_summary.json.")
+    parser = argparse.ArgumentParser(
+        description="Build fast-mlsirm benchmark evidence from release acceptance output."
+    )
+    parser.add_argument(
+        "--repo-root", default=".", help="Repository root used to record source commit."
+    )
+    parser.add_argument(
+        "--acceptance", required=True, help="Path to release acceptance_summary.json."
+    )
     parser.add_argument(
         "--benchmark-manifest",
         default="examples/enterprise_demo/benchmark_manifest.json",
         help="Path to benchmark_manifest.json.",
     )
-    parser.add_argument("--out", default="benchmark-evidence", help="Output directory for benchmark report files.")
+    parser.add_argument(
+        "--out",
+        default="benchmark-evidence",
+        help="Output directory for benchmark report files.",
+    )
     return parser
 
 

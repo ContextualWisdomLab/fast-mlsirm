@@ -14,6 +14,11 @@ from html import escape
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
 
@@ -41,16 +46,8 @@ def _source_commit(repo_root: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    # 🛡️ Sentinel: Enforce a 32MB read limit to prevent JSON DoS attacks
-    # (memory exhaustion or unbounded recursion) when loading untrusted files.
-    with path.open("rb") as fh:
-        content = fh.read(32 * 1024 * 1024 + 1)
-    if len(content) > 32 * 1024 * 1024:
-        raise ValueError(f"JSON file exceeds maximum allowed size: {path}")
-    payload = json.loads(content.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
@@ -130,7 +127,7 @@ def _render_html(manifest: dict[str, Any]) -> str:
             continue
         rows.append(
             "<tr>"
-            f"<th scope=\"row\">{escape(str(stage.get('name', '')))}</th>"
+            f'<th scope="row">{escape(str(stage.get("name", "")))}</th>'
             f"<td>{escape(str(stage.get('status', '')))}</td>"
             f"<td>{escape(str(stage.get('duration_seconds', '')))}</td>"
             f"<td><code>{escape(' '.join(str(part) for part in stage.get('command', [])))}</code></td>"
@@ -144,7 +141,7 @@ def _render_html(manifest: dict[str, Any]) -> str:
                 continue
             artifact_rows.append(
                 "<tr>"
-                f"<th scope=\"row\">{escape(name.replace('_', ' ').title())}</th>"
+                f'<th scope="row">{escape(name.replace("_", " ").title())}</th>'
                 f"<td>{escape(str(artifact.get('exists', '')))}</td>"
                 f"<td>{escape(str(artifact.get('name', '')))}</td>"
                 f"<td><code>{escape(str(artifact.get('sha256', '')))}</code></td>"
@@ -152,9 +149,19 @@ def _render_html(manifest: dict[str, Any]) -> str:
             )
     cards = [
         ("Status", manifest.get("status", "")),
-        ("Contract Value", f"KRW {manifest.get('contract_value_krw', ''):,}" if isinstance(manifest.get("contract_value_krw"), int) else ""),
+        (
+            "Contract Value",
+            f"KRW {manifest.get('contract_value_krw', ''):,}"
+            if isinstance(manifest.get("contract_value_krw"), int)
+            else "",
+        ),
         ("Source Commit", manifest.get("source_commit", "")),
-        ("Stages", len(manifest.get("stages", [])) if isinstance(manifest.get("stages"), list) else ""),
+        (
+            "Stages",
+            len(manifest.get("stages", []))
+            if isinstance(manifest.get("stages"), list)
+            else "",
+        ),
         ("Failed Stage", manifest.get("failed_stage", "")),
     ]
     card_markup = [
@@ -199,7 +206,7 @@ def _render_html(manifest: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Commercial release stage table" tabindex="0">',
             "<table>",
             "<caption>Commercial release stage table</caption>",
-            "<thead><tr><th scope=\"col\">Stage</th><th scope=\"col\">Status</th><th scope=\"col\">Seconds</th><th scope=\"col\">Command</th></tr></thead>",
+            '<thead><tr><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Seconds</th><th scope="col">Command</th></tr></thead>',
             "<tbody>",
             *rows,
             "</tbody>",
@@ -211,7 +218,7 @@ def _render_html(manifest: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Commercial release artifact table" tabindex="0">',
             "<table>",
             "<caption>Commercial release artifact table</caption>",
-            "<thead><tr><th scope=\"col\">Artifact</th><th scope=\"col\">Exists</th><th scope=\"col\">File</th><th scope=\"col\">SHA256</th></tr></thead>",
+            '<thead><tr><th scope="col">Artifact</th><th scope="col">Exists</th><th scope="col">File</th><th scope="col">SHA256</th></tr></thead>',
             "<tbody>",
             *artifact_rows,
             "</tbody>",
@@ -379,7 +386,9 @@ code {
 """
 
 
-def _commands(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[tuple[str, list[str]]]:
+def _commands(
+    args: argparse.Namespace, repo_root: Path, out_dir: Path
+) -> list[tuple[str, list[str]]]:
     python = args.python
     scripts = repo_root / "scripts"
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
@@ -390,7 +399,9 @@ def _commands(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[
     final_sales = acceptance_dir / "final_sales_readiness_manifest.json"
     stages: list[tuple[str, list[str]]] = []
     if not args.skip_build:
-        stages.append(("build_dist", [python, "-m", "build", "--outdir", str(dist_dir)]))
+        stages.append(
+            ("build_dist", [python, "-m", "build", "--outdir", str(dist_dir)])
+        )
     acceptance = [
         python,
         str(scripts / "release_acceptance.py"),
@@ -504,7 +515,9 @@ def _commands(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[
     return stages
 
 
-def _procurement_command(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[str]:
+def _procurement_command(
+    args: argparse.Namespace, repo_root: Path, out_dir: Path
+) -> list[str]:
     command = [
         args.python,
         str(repo_root / "scripts" / "build_procurement_due_diligence.py"),
@@ -526,7 +539,9 @@ def _procurement_command(args: argparse.Namespace, repo_root: Path, out_dir: Pat
     return command
 
 
-def _pr_queue_command(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[str]:
+def _pr_queue_command(
+    args: argparse.Namespace, repo_root: Path, out_dir: Path
+) -> list[str]:
     command = [
         args.python,
         str(repo_root / "scripts" / "build_pr_queue_governance.py"),
@@ -543,11 +558,18 @@ def _pr_queue_command(args: argparse.Namespace, repo_root: Path, out_dir: Path) 
     ]
     offline_snapshot = getattr(args, "pr_queue_offline_snapshot", None)
     if offline_snapshot:
-        command.extend(["--offline-snapshot", str(_resolve_path(offline_snapshot, base=repo_root).resolve())])
+        command.extend(
+            [
+                "--offline-snapshot",
+                str(_resolve_path(offline_snapshot, base=repo_root).resolve()),
+            ]
+        )
     return command
 
 
-def _figma_sync_command(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[str]:
+def _figma_sync_command(
+    args: argparse.Namespace, repo_root: Path, out_dir: Path
+) -> list[str]:
     command = [
         args.python,
         str(repo_root / "scripts" / "build_figma_evidence_sync.py"),
@@ -560,11 +582,18 @@ def _figma_sync_command(args: argparse.Namespace, repo_root: Path, out_dir: Path
         "--contract-value-krw",
         str(args.contract_value_krw),
         "--figma-url",
-        getattr(args, "figma_url", "https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem"),
+        getattr(
+            args, "figma_url", "https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem"
+        ),
     ]
     metadata_snapshot = getattr(args, "figma_metadata_snapshot", None)
     if metadata_snapshot:
-        command.extend(["--metadata-snapshot", str(_resolve_path(metadata_snapshot, base=repo_root).resolve())])
+        command.extend(
+            [
+                "--metadata-snapshot",
+                str(_resolve_path(metadata_snapshot, base=repo_root).resolve()),
+            ]
+        )
     return command
 
 
@@ -574,33 +603,75 @@ def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, A
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
     return {
         "acceptance_summary": _artifact(acceptance_dir / "acceptance_summary.json"),
-        "benchmark_report": _artifact(acceptance_dir / "benchmark" / "benchmark_report.json"),
-        "benchmark_html": _artifact(acceptance_dir / "benchmark" / "benchmark_report.html"),
+        "benchmark_report": _artifact(
+            acceptance_dir / "benchmark" / "benchmark_report.json"
+        ),
+        "benchmark_html": _artifact(
+            acceptance_dir / "benchmark" / "benchmark_report.html"
+        ),
         "sales_readiness": _artifact(acceptance_dir / "sales_readiness_manifest.json"),
-        "buyer_packet_manifest": _artifact(out_dir / "buyer-evidence-packet" / "buyer_evidence_manifest.json"),
-        "buyer_packet_zip": _artifact(out_dir / "buyer-evidence-packet" / "fast_mlsirm_buyer_evidence_packet.zip"),
-        "buyer_packet_html": _artifact(out_dir / "buyer-evidence-packet" / "buyer_evidence_report.html"),
-        "release_evidence_index": _artifact(out_dir / "release-evidence-index" / "release_evidence_index.json"),
-        "release_evidence_html": _artifact(out_dir / "release-evidence-index" / "release_evidence_index.html"),
-        "final_sales_readiness": _artifact(acceptance_dir / "final_sales_readiness_manifest.json"),
-        "procurement_due_diligence": _artifact(out_dir / "procurement-due-diligence" / "procurement_due_diligence_manifest.json"),
-        "procurement_due_diligence_html": _artifact(out_dir / "procurement-due-diligence" / "procurement_due_diligence_report.html"),
-        "pr_queue_governance": _artifact(out_dir / "pr-queue-governance" / "pr_queue_governance_manifest.json"),
-        "pr_queue_governance_html": _artifact(out_dir / "pr-queue-governance" / "pr_queue_governance_report.html"),
-        "figma_evidence_sync": _artifact(out_dir / "figma-evidence-sync" / "figma_evidence_sync_manifest.json"),
-        "figma_evidence_sync_html": _artifact(out_dir / "figma-evidence-sync" / "figma_evidence_sync_report.html"),
-        "wheel": _artifact(next(iter(sorted(dist_dir.glob("*.whl"))), dist_dir / "missing.whl")),
-        "sdist": _artifact(next(iter(sorted(dist_dir.glob("*.tar.gz"))), dist_dir / "missing.tar.gz")),
+        "buyer_packet_manifest": _artifact(
+            out_dir / "buyer-evidence-packet" / "buyer_evidence_manifest.json"
+        ),
+        "buyer_packet_zip": _artifact(
+            out_dir / "buyer-evidence-packet" / "fast_mlsirm_buyer_evidence_packet.zip"
+        ),
+        "buyer_packet_html": _artifact(
+            out_dir / "buyer-evidence-packet" / "buyer_evidence_report.html"
+        ),
+        "release_evidence_index": _artifact(
+            out_dir / "release-evidence-index" / "release_evidence_index.json"
+        ),
+        "release_evidence_html": _artifact(
+            out_dir / "release-evidence-index" / "release_evidence_index.html"
+        ),
+        "final_sales_readiness": _artifact(
+            acceptance_dir / "final_sales_readiness_manifest.json"
+        ),
+        "procurement_due_diligence": _artifact(
+            out_dir
+            / "procurement-due-diligence"
+            / "procurement_due_diligence_manifest.json"
+        ),
+        "procurement_due_diligence_html": _artifact(
+            out_dir
+            / "procurement-due-diligence"
+            / "procurement_due_diligence_report.html"
+        ),
+        "pr_queue_governance": _artifact(
+            out_dir / "pr-queue-governance" / "pr_queue_governance_manifest.json"
+        ),
+        "pr_queue_governance_html": _artifact(
+            out_dir / "pr-queue-governance" / "pr_queue_governance_report.html"
+        ),
+        "figma_evidence_sync": _artifact(
+            out_dir / "figma-evidence-sync" / "figma_evidence_sync_manifest.json"
+        ),
+        "figma_evidence_sync_html": _artifact(
+            out_dir / "figma-evidence-sync" / "figma_evidence_sync_report.html"
+        ),
+        "wheel": _artifact(
+            next(iter(sorted(dist_dir.glob("*.whl"))), dist_dir / "missing.whl")
+        ),
+        "sdist": _artifact(
+            next(iter(sorted(dist_dir.glob("*.tar.gz"))), dist_dir / "missing.tar.gz")
+        ),
     }
 
 
-def _write_outputs(manifest: dict[str, Any], manifest_path: Path, html_path: Path) -> None:
+def _write_outputs(
+    manifest: dict[str, Any], manifest_path: Path, html_path: Path
+) -> None:
     html_path.write_text(_render_html(manifest), encoding="utf-8")
     manifest["html_report_sha256"] = _sha256(html_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
 
-def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_command) -> dict[str, Any]:
+def build_commercial_release(
+    args: argparse.Namespace, *, runner: Runner = _run_command
+) -> dict[str, Any]:
     repo_root = Path(args.repo_root).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
@@ -630,14 +701,22 @@ def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_
             break
     manifest["total_duration_seconds"] = round(time.perf_counter() - started, 6)
     manifest["artifacts"] = _artifacts(args, out_dir)
-    if manifest["failed_stage"] is None and all(stage.get("status") == "ok" for stage in manifest["stages"]):
-        final_path = out_dir / "release-acceptance" / "final_sales_readiness_manifest.json"
-        final_status = _read_json(final_path).get("status") if final_path.exists() else None
+    if manifest["failed_stage"] is None and all(
+        stage.get("status") == "ok" for stage in manifest["stages"]
+    ):
+        final_path = (
+            out_dir / "release-acceptance" / "final_sales_readiness_manifest.json"
+        )
+        final_status = (
+            _read_json(final_path).get("status") if final_path.exists() else None
+        )
         manifest["status"] = "ok" if final_status == "ok" else "failed"
         if final_status != "ok":
             manifest["failed_stage"] = "final_sales_readiness"
     _write_outputs(manifest, manifest_path, html_path)
-    if manifest["status"] == "ok" and not getattr(args, "skip_procurement_due_diligence", False):
+    if manifest["status"] == "ok" and not getattr(
+        args, "skip_procurement_due_diligence", False
+    ):
         stage = _stage(
             "procurement_due_diligence",
             _procurement_command(args, repo_root, out_dir),
@@ -651,7 +730,9 @@ def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_
         manifest["total_duration_seconds"] = round(time.perf_counter() - started, 6)
         manifest["artifacts"] = _artifacts(args, out_dir)
         _write_outputs(manifest, manifest_path, html_path)
-    if manifest["status"] == "ok" and not getattr(args, "skip_pr_queue_governance", False):
+    if manifest["status"] == "ok" and not getattr(
+        args, "skip_pr_queue_governance", False
+    ):
         stage = _stage(
             "pr_queue_governance",
             _pr_queue_command(args, repo_root, out_dir),
@@ -665,7 +746,9 @@ def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_
         manifest["total_duration_seconds"] = round(time.perf_counter() - started, 6)
         manifest["artifacts"] = _artifacts(args, out_dir)
         _write_outputs(manifest, manifest_path, html_path)
-    if manifest["status"] == "ok" and not getattr(args, "skip_figma_evidence_sync", False):
+    if manifest["status"] == "ok" and not getattr(
+        args, "skip_figma_evidence_sync", False
+    ):
         stage = _stage(
             "figma_evidence_sync",
             _figma_sync_command(args, repo_root, out_dir),
@@ -683,28 +766,90 @@ def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build the full fast-mlsirm commercial release evidence bundle.")
+    parser = argparse.ArgumentParser(
+        description="Build the full fast-mlsirm commercial release evidence bundle."
+    )
     parser.add_argument("--repo-root", default=".", help="Repository root.")
-    parser.add_argument("--out", default="commercial-release", help="Output directory for all commercial release evidence.")
-    parser.add_argument("--dist", default="dist", help="Directory containing or receiving built wheel and sdist artifacts.")
-    parser.add_argument("--python", default=sys.executable, help="Python executable used for subcommands.")
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
-    parser.add_argument("--require-rust", action="store_true", help="Require explicit Rust backend evidence.")
-    parser.add_argument("--check-import", action="store_true", help="Validate importability in sales readiness gates.")
-    parser.add_argument("--skip-build", action="store_true", help="Use existing dist artifacts instead of running python -m build.")
-    parser.add_argument("--skip-procurement-due-diligence", action="store_true", help="Skip the procurement due-diligence evidence stage.")
-    parser.add_argument("--skip-pr-queue-governance", action="store_true", help="Skip the PR queue governance evidence stage.")
-    parser.add_argument("--skip-figma-evidence-sync", action="store_true", help="Skip the Figma evidence sync stage.")
-    parser.add_argument("--offline-github", action="store_true", help="Use offline GitHub snapshot mode for due diligence.")
-    parser.add_argument("--pr-queue-offline-snapshot", help="Optional offline PR queue snapshot JSON for governance evidence.")
-    parser.add_argument("--pr-queue-max-stale-days", type=int, default=14, help="Age in days after which an open PR is stale.")
-    parser.add_argument("--figma-metadata-snapshot", help="Optional exported live Figma metadata snapshot JSON.")
+    parser.add_argument(
+        "--out",
+        default="commercial-release",
+        help="Output directory for all commercial release evidence.",
+    )
+    parser.add_argument(
+        "--dist",
+        default="dist",
+        help="Directory containing or receiving built wheel and sdist artifacts.",
+    )
+    parser.add_argument(
+        "--python",
+        default=sys.executable,
+        help="Python executable used for subcommands.",
+    )
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value.",
+    )
+    parser.add_argument(
+        "--require-rust",
+        action="store_true",
+        help="Require explicit Rust backend evidence.",
+    )
+    parser.add_argument(
+        "--check-import",
+        action="store_true",
+        help="Validate importability in sales readiness gates.",
+    )
+    parser.add_argument(
+        "--skip-build",
+        action="store_true",
+        help="Use existing dist artifacts instead of running python -m build.",
+    )
+    parser.add_argument(
+        "--skip-procurement-due-diligence",
+        action="store_true",
+        help="Skip the procurement due-diligence evidence stage.",
+    )
+    parser.add_argument(
+        "--skip-pr-queue-governance",
+        action="store_true",
+        help="Skip the PR queue governance evidence stage.",
+    )
+    parser.add_argument(
+        "--skip-figma-evidence-sync",
+        action="store_true",
+        help="Skip the Figma evidence sync stage.",
+    )
+    parser.add_argument(
+        "--offline-github",
+        action="store_true",
+        help="Use offline GitHub snapshot mode for due diligence.",
+    )
+    parser.add_argument(
+        "--pr-queue-offline-snapshot",
+        help="Optional offline PR queue snapshot JSON for governance evidence.",
+    )
+    parser.add_argument(
+        "--pr-queue-max-stale-days",
+        type=int,
+        default=14,
+        help="Age in days after which an open PR is stale.",
+    )
+    parser.add_argument(
+        "--figma-metadata-snapshot",
+        help="Optional exported live Figma metadata snapshot JSON.",
+    )
     parser.add_argument(
         "--figma-url",
         default="https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem",
         help="Fallback Figma design URL for the evidence sync stage.",
     )
-    parser.add_argument("--repo", default="ContextualWisdomLab/fast-mlsirm", help="GitHub repository for due-diligence snapshots.")
+    parser.add_argument(
+        "--repo",
+        default="ContextualWisdomLab/fast-mlsirm",
+        help="GitHub repository for due-diligence snapshots.",
+    )
     return parser
 
 
@@ -721,7 +866,9 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "status": manifest["status"],
                 "out": manifest["out"],
-                "manifest": str(Path(manifest["out"]) / "commercial_release_manifest.json"),
+                "manifest": str(
+                    Path(manifest["out"]) / "commercial_release_manifest.json"
+                ),
                 "html": manifest["html_report_file"],
                 "failed_stage": manifest["failed_stage"],
             },
