@@ -158,11 +158,18 @@ def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("title", ("", "   ", 3))
-def test_renderer_rejects_invalid_custom_title(tmp_path: Path, title: object) -> None:
+def test_renderer_rejects_invalid_custom_title(
+    tmp_path: Path,
+    title: object,
+) -> None:
     """Blank and non-string titles fail before any artifact is written."""
     output = tmp_path / "invalid-title.html"
     with pytest.raises(ValueError, match="title must be a non-empty string"):
-        render_essay_score_report_html(clean_report(), output, title=title)  # type: ignore[arg-type]
+        render_essay_score_report_html(
+            clean_report(),
+            output,
+            title=title,  # type: ignore[arg-type]
+        )
     assert not output.exists()
 
 
