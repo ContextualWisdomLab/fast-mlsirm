@@ -29,7 +29,7 @@ rubric = _FIXTURES["rubric"]
 
 
 def _unprojected_request(*, metadata):
-    """Return one structurally valid request built below the authorization layer."""
+    """Return one structurally valid request built below authorization."""
     return build_unprojected_request(
         request_id="scoring_request",
         assessment=assessment(),
@@ -38,6 +38,7 @@ def _unprojected_request(*, metadata):
         respondent_id="sample_respondent",
         response_id="sample_response",
         task_id="sample_task",
+        task_revision_fingerprint="d" * 64,
         task_family_id="evidence_review",
         occasion_id="initial_occasion",
         criterion_ids=("claim_support", "source_alignment"),
@@ -82,7 +83,7 @@ def _changed_assessment_version(original):
 
 
 def test_result_authorization_replays_the_authoritative_assessment() -> None:
-    """A caller-forged but well-typed policy projection cannot authorize an engine."""
+    """A caller-forged policy projection cannot authorize an engine."""
     selected_assessment = assessment()
     rogue_engine = automated_engine(engine_id="rogue_engine")
     forged_request = _unprojected_request(
@@ -93,7 +94,6 @@ def test_result_authorization_replays_the_authoritative_assessment() -> None:
             "permitted_engine_ids": ("rogue_engine",),
         }
     )
-
     with pytest.raises(AssessmentSpecError) as captured:
         build_scoring_result(
             result_id="scoring_result",
@@ -102,7 +102,6 @@ def test_result_authorization_replays_the_authoritative_assessment() -> None:
             engine=rogue_engine,
             observations=_complete_observations(forged_request, rogue_engine),
         )
-
     assert captured.value.code == "engine_policy_projection_mismatch"
     assert captured.value.path == "$.request.metadata"
     assert artifact_digest(selected_assessment.engine_policy) not in str(captured.value)
@@ -121,7 +120,6 @@ def test_result_factory_rejects_an_assessment_request_identity_mismatch() -> Non
     )
     engine = automated_engine()
     changed_assessment = _changed_assessment_version(first_assessment)
-
     with pytest.raises(AssessmentSpecError) as captured:
         build_scoring_result(
             result_id="scoring_result",
@@ -130,7 +128,6 @@ def test_result_factory_rejects_an_assessment_request_identity_mismatch() -> Non
             engine=engine,
             observations=_complete_observations(request, engine),
         )
-
     assert captured.value.code == "assessment_request_mismatch"
     assert captured.value.path == "$.request.assessment_fingerprint"
 
@@ -147,6 +144,7 @@ def test_result_factory_accepts_an_exact_authoritative_assessment_replay() -> No
         respondent_id="sample_respondent",
         response_id="sample_response",
         task_id="sample_task",
+        task_revision_fingerprint="d" * 64,
         task_family_id="evidence_review",
         occasion_id="initial_occasion",
         criterion_ids=("claim_support", "source_alignment"),
@@ -154,7 +152,6 @@ def test_result_factory_accepts_an_exact_authoritative_assessment_replay() -> No
         response_character_count=128,
         response_unit_count=8,
     )
-
     result = build_scoring_result(
         result_id="scoring_result",
         assessment=selected_assessment,
@@ -162,7 +159,6 @@ def test_result_factory_accepts_an_exact_authoritative_assessment_replay() -> No
         engine=engine,
         observations=_complete_observations(request, engine),
     )
-
     assert result.request_fingerprint == request.request_fingerprint
 
 
@@ -170,7 +166,6 @@ def test_result_factory_rejects_a_non_assessment_replay_value() -> None:
     """Only a typed AssessmentSpec may serve as the authoritative replay."""
     engine = automated_engine()
     request = _unprojected_request(metadata=None)
-
     with pytest.raises(AssessmentSpecError) as captured:
         build_scoring_result(
             result_id="scoring_result",
@@ -179,6 +174,5 @@ def test_result_factory_rejects_a_non_assessment_replay_value() -> None:
             engine=engine,
             observations=_complete_observations(request, engine),
         )
-
     assert captured.value.code == "invalid_assessment_spec"
     assert captured.value.path == "$.assessment"
