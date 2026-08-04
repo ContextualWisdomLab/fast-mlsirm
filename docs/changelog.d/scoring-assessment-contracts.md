@@ -8,6 +8,9 @@
   Assessments bind exact `fast_mlsirm.rubric` fingerprints to declared
   constructs and fail closed on undeclared rubric, engine, or subgroup
   references.
+- An independently owned `ASSESSMENT_SCHEMA_VERSION` for the assessment wire
+  format. Rubric artifacts remain linked by exact content fingerprints instead
+  of forcing assessment-schema releases to share the rubric schema lifecycle.
 - Deterministic canonical JSON, SHA-256 artifact identities, descriptive public
   handles, strict two-or-more-token identifiers, and recursively copied/frozen
   bounded JSON metadata. Non-finite numbers, unsafe object types, excessive
