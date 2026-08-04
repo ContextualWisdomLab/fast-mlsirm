@@ -35,8 +35,10 @@ def _validated_axis(
     value: object,
     field_name: str,
     validator: Callable[[object, str], _T],
+    *,
+    require_unique: bool,
 ) -> tuple[_T, ...]:
-    """Validate one non-empty, unique, order-preserving report axis."""
+    """Validate one non-empty, order-preserving report axis."""
     if not isinstance(value, tuple) or not value:
         raise assessment_error(
             f"invalid_{field_name}",
@@ -47,7 +49,7 @@ def _validated_axis(
         validator(item, f"{field_name}[{index}]")
         for index, item in enumerate(value)
     )
-    if len(set(normalized)) != len(normalized):
+    if require_unique and len(set(normalized)) != len(normalized):
         raise assessment_error(
             f"duplicate_{field_name}",
             f"$.report.{field_name}",
@@ -56,14 +58,29 @@ def _validated_axis(
     return normalized
 
 
-def _identifier_axis(value: object, field_name: str) -> tuple[str, ...]:
+def _identifier_axis(
+    value: object,
+    field_name: str,
+    *,
+    require_unique: bool,
+) -> tuple[str, ...]:
     """Return one verified descriptive-identifier axis."""
-    return _validated_axis(value, field_name, descriptive_identifier)
+    return _validated_axis(
+        value,
+        field_name,
+        descriptive_identifier,
+        require_unique=require_unique,
+    )
 
 
 def _fingerprint_axis(value: object, field_name: str) -> tuple[str, ...]:
-    """Return one verified SHA-256 fingerprint axis."""
-    return _validated_axis(value, field_name, fingerprint)
+    """Return one verified unique SHA-256 fingerprint axis."""
+    return _validated_axis(
+        value,
+        field_name,
+        fingerprint,
+        require_unique=True,
+    )
 
 
 def _validated_report(
@@ -77,17 +94,34 @@ def _validated_report(
             "report must be an EssayFacetsCalibrationReport",
         )
 
-    respondent_ids = _identifier_axis(report.respondent_ids, "respondent_ids")
+    respondent_ids = _identifier_axis(
+        report.respondent_ids,
+        "respondent_ids",
+        require_unique=True,
+    )
     task_revision_fingerprints = _fingerprint_axis(
         report.task_revision_fingerprints,
         "task_revision_fingerprints",
     )
-    task_ids = _identifier_axis(report.task_ids, "task_ids")
-    task_family_ids = _identifier_axis(report.task_family_ids, "task_family_ids")
-    rater_engine_ids = _identifier_axis(report.rater_engine_ids, "rater_engine_ids")
+    task_ids = _identifier_axis(
+        report.task_ids,
+        "task_ids",
+        require_unique=False,
+    )
+    task_family_ids = _identifier_axis(
+        report.task_family_ids,
+        "task_family_ids",
+        require_unique=False,
+    )
+    rater_engine_ids = _identifier_axis(
+        report.rater_engine_ids,
+        "rater_engine_ids",
+        require_unique=False,
+    )
     rater_engine_family_ids = _identifier_axis(
         report.rater_engine_family_ids,
         "rater_engine_family_ids",
+        require_unique=False,
     )
     rater_engine_fingerprints = _fingerprint_axis(
         report.rater_engine_fingerprints,
