@@ -28,6 +28,7 @@ from .._validation import (
     thaw_json_value,
 )
 from ..assessment import AssessmentSpec
+from ..authorization import build_scoring_request
 from ..execution import (
     EngineDescriptor,
     EvidenceReference,
@@ -35,7 +36,6 @@ from ..execution import (
     ScoringEngine,
     ScoringRequest,
     ScoringResult,
-    build_scoring_request,
 )
 
 MAX_ESSAY_RESPONSE_CHARACTERS = 10_000_000
