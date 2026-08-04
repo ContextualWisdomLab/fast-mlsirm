@@ -1,0 +1,33 @@
+name: Temporary Reviewed Source Export
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/tmp-reviewed-source-export.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-reviewed-source-export-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact reviewed base source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 912f67204f629d1b3d69229edfe91ed76420af01
+          persist-credentials: false
+      - name: Archive reviewed source
+        run: tar --exclude=.git -czf fast-mlsirm-source.tgz .
+      - name: Publish source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fast-mlsirm-reviewed-source-${{ github.run_id }}
+          path: fast-mlsirm-source.tgz
+          if-no-files-found: error
+          retention-days: 1
