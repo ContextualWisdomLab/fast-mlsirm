@@ -1,8 +1,5 @@
 """Essay-specific adapters for the shared provider-neutral scoring contracts."""
 
-from .calibration_report_html import (
-    render_essay_facets_calibration_report_html as render_essay_facets_calibration_report_html,
-)
 from .calibration_reporting import (
     MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS,
 )
@@ -14,6 +11,9 @@ from .calibration_reporting import (
 )
 from .calibration_reporting import (
     fit_essay_facets_calibration_report as fit_essay_facets_calibration_report,
+)
+from .calibration_report_html import (
+    render_essay_facets_calibration_report_html as render_essay_facets_calibration_report_html,
 )
 from .contracts import EssayEvidenceKind as EssayEvidenceKind
 from .contracts import EssayPrompt as EssayPrompt
