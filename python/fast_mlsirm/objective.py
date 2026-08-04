@@ -174,9 +174,7 @@ def neg_loglik_and_grad(
     loglik = -nll
 
     e = (pi - y) * observed
-    # Optimization: Use BLAS matrix multiplication instead of slow axis reduction loops for summing N dimension
-    ones_n = np.ones(e.shape[0], dtype=e.dtype)
-    grad_b = ones_n @ e
+    grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
         # Optimized gradient computation: avoid intermediate N x J array allocation in element-wise multiplication
@@ -199,8 +197,7 @@ def neg_loglik_and_grad(
         sum_e_over_d = e_over_d.sum(axis=1, keepdims=True)
         grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
 
-        # Optimization: Use BLAS matrix multiplication to avoid slow axis reduction overhead
-        sum_e_over_d_j = (ones_n @ e_over_d)[:, None]
+        sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
         grad_zeta = gamma * (
             np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j
         )
