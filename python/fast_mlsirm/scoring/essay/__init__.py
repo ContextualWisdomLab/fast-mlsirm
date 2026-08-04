@@ -21,20 +21,28 @@ from .contracts import (
 from .contracts import build_essay_scoring_request as build_essay_scoring_request
 from .contracts import build_essay_submission as build_essay_submission
 from .contracts import score_essay_request as score_essay_request
+from .reporting import EssayScoreReport as EssayScoreReport
+from .reporting import (
+    MAX_ESSAY_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_REPORT_REVIEW_TRIGGERS,
+)
+from .reporting import build_essay_score_report as build_essay_score_report
 
 __all__ = [
+    "MAX_ESSAY_EVIDENCE_REFERENCES",
+    "MAX_ESSAY_REPORT_REVIEW_TRIGGERS",
+    "MAX_ESSAY_RESPONSE_CHARACTERS",
+    "MAX_ESSAY_RESPONSE_UNITS",
+    "MAX_ESSAY_REVIEW_FLAGS",
     "EssayEvidenceKind",
     "EssayPrompt",
     "EssayResponseEvidence",
     "EssayReviewFlag",
+    "EssayScoreReport",
     "EssayScoringRequest",
     "EssaySubmission",
-    "MAX_ESSAY_EVIDENCE_REFERENCES",
-    "MAX_ESSAY_RESPONSE_CHARACTERS",
-    "MAX_ESSAY_RESPONSE_UNITS",
-    "MAX_ESSAY_REVIEW_FLAGS",
     "build_essay_prompt",
     "build_essay_response_evidence",
+    "build_essay_score_report",
     "build_essay_scoring_request",
     "build_essay_submission",
     "score_essay_request",
