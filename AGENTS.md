@@ -150,7 +150,7 @@ It is one component of the ContextualWisdomLab ecosystem, which is organized
 around **naruon** — the hub: an email/PIM system that DOM-decomposes emails and
 files into a persisted knowledge graph. Each component is a **standalone program
 that must ALSO work as a git submodule** (grown separately and together):
-**waf-ids-ai-soc** (WAF/IDS/AI SOC/LB/APIM), **clearfolio** (document viewer),
+**wardnet** (WAF/IDS/AI SOC/LB/APIM), **clearfolio** (document viewer),
 **pg-erd-cloud** (ERD tool), **contextual-orchestrator** (LLM cost/perf/upstream-LB
 gateway beyond LiteLLM), **codec-carver** (STT/omni-modal speech-video codec),
 **fast-mlsirm** (this repo — LLM-as-a-Judge calibration + evaluation-item quality
