@@ -11,8 +11,8 @@ import pytest
 
 import fast_mlsirm.scoring as scoring
 from fast_mlsirm.scoring import (
-    OBSERVATION_SCHEMA_VERSION,
     MAX_EVIDENCE_SPANS,
+    OBSERVATION_SCHEMA_VERSION,
     EngineDescriptor,
     EvidenceSourceKind,
     EvidenceSpan,
@@ -71,13 +71,15 @@ def _scored_observation(**overrides):
         "rubrics": (rubric,),
         "engine": _automated_engine(),
         "response_id": "essay_response",
+        "response_fingerprint": "b" * 64,
         "task_id": "essay_prompt",
+        "task_fingerprint": "a" * 64,
         "rater_id": "automated_rater",
         "occasion_id": "scoring_occasion",
         "construct_id": "argument_quality",
         "rubric_fingerprint": rubric.fingerprint,
         "status": ObservationStatus.SCORED,
-        "score_category": 2,
+        "score_category": 1,
         "confidence": 0.75,
         "reason_code": None,
         "evidence_spans": _spans(),
@@ -146,15 +148,17 @@ def test_evidence_span_validates_offsets_and_has_stable_content_identity():
 
 
 def test_scored_observation_binds_exact_graph_and_normalizes_evidence_order():
-    """A score is content-addressed to assessment, rubric, engine, and evidence."""
+    """A score binds exact assessment, rubric, engine, response, task, and evidence."""
     first = _scored_observation()
     second = _scored_observation(evidence_spans=tuple(reversed(_spans())))
 
     assert first == second
     assert first.schema_version == OBSERVATION_SCHEMA_VERSION
     assert first.status is ObservationStatus.SCORED
-    assert first.score_category == 2
+    assert first.score_category == 1
     assert first.reason_code is None
+    assert first.response_fingerprint == "b" * 64
+    assert first.task_fingerprint == "a" * 64
     assert first.assessment_fingerprint == assessment_spec().assessment_fingerprint
     assert first.engine_fingerprint == _automated_engine().engine_fingerprint
     assert first.evidence_spans == tuple(
@@ -168,6 +172,20 @@ def test_scored_observation_binds_exact_graph_and_normalizes_evidence_order():
     assert payload["observation_fingerprint"] == first.observation_fingerprint
     assert payload["assessment_fingerprint"] == first.assessment_fingerprint
     assert payload["engine"]["engine_fingerprint"] == first.engine_fingerprint
+    assert payload["response_fingerprint"] == first.response_fingerprint
+    assert payload["task_fingerprint"] == first.task_fingerprint
+
+
+def test_response_and_task_fingerprints_change_observation_identity():
+    """Reusing labels for changed artifacts cannot preserve an observation identity."""
+    baseline = _scored_observation()
+    changed_response = _scored_observation(response_fingerprint="c" * 64)
+    changed_task = _scored_observation(task_fingerprint="d" * 64)
+
+    assert changed_response.response_id == baseline.response_id
+    assert changed_task.task_id == baseline.task_id
+    assert changed_response.observation_fingerprint != baseline.observation_fingerprint
+    assert changed_task.observation_fingerprint != baseline.observation_fingerprint
 
 
 def test_non_scored_observation_states_preserve_reason_without_score():
@@ -197,7 +215,9 @@ def test_observation_direct_construction_is_factory_sealed():
             assessment_fingerprint=valid.assessment_fingerprint,
             engine=valid.engine,
             response_id=valid.response_id,
+            response_fingerprint=valid.response_fingerprint,
             task_id=valid.task_id,
+            task_fingerprint=valid.task_fingerprint,
             rater_id=valid.rater_id,
             occasion_id=valid.occasion_id,
             construct_id=valid.construct_id,
