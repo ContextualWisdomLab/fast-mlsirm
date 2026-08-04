@@ -353,20 +353,19 @@ def _validate_20b_product_evidence(
             continue
         try:
             payload = _read_json(path)
-        except Exception as exc:
-            checks.append(
-                _check(
-                    f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"
-                )
-            )
-            continue
-        if not isinstance(payload, dict):
+        except RuntimeError:
             checks.append(
                 _check(
                     f"20b:json_shape:{relative}",
                     False,
                     "manifest must be a JSON object",
-                    actual_type=type(payload).__name__,
+                )
+            )
+            continue
+        except Exception as exc:
+            checks.append(
+                _check(
+                    f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"
                 )
             )
             continue
