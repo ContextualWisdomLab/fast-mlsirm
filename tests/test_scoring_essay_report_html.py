@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import runpy
+from pathlib import Path
 
 import pytest
 
@@ -153,7 +153,8 @@ def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=r"must end with \.html"):
         render_essay_score_report_html(
-            clean_report(), tmp_path / "invalid.txt"
+            clean_report(),
+            tmp_path / "invalid.txt",
         )
 
 
