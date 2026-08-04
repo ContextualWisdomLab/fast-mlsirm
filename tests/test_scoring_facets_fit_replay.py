@@ -112,3 +112,29 @@ def test_bundle_fit_rejects_mutated_bundle_provenance_before_rust(monkeypatch) -
         "facets_bundle_replay_mismatch",
         lambda: fit_scoring_facets_bundle(bundle),
     )
+
+
+def test_bundle_fit_forwards_tuning_values_with_fresh_tensors(monkeypatch) -> None:
+    """Every criterion receives bundle tuning values and a distinct tensor."""
+    bundle = build_scoring_facets_calibration_bundle(connected_records())
+    calls = []
+
+    def fake_fit_facets(**kwargs):
+        calls.append(kwargs)
+        return kwargs["responses"].shape
+
+    monkeypatch.setattr("fast_mlsirm.facets.fit_facets", fake_fit_facets)
+    fitted = fit_scoring_facets_bundle(
+        bundle,
+        q_theta=15,
+        max_iter=66,
+        tol=1e-4,
+    )
+
+    assert set(fitted) == set(bundle.criterion_ids)
+    assert len(calls) == len(bundle.designs)
+    assert all(call["q_theta"] == 15 for call in calls)
+    assert all(call["max_iter"] == 66 for call in calls)
+    assert all(call["tol"] == 1e-4 for call in calls)
+    assert all(call["n_cat"] == 3 for call in calls)
+    assert len({id(call["responses"]) for call in calls}) == len(calls)
