@@ -11,7 +11,7 @@ quadrature, optimization, or uncertainty arithmetic.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -35,6 +35,10 @@ from .execution import (
 )
 
 MAX_SCORING_FACETS_RATINGS = 100_000
+# ``fit_facets`` currently consumes a dense persons-by-items-by-raters tensor.
+# Structurally missing response-task combinations therefore still occupy memory,
+# so this guard intentionally bounds the actual allocation rather than only the
+# number of cells that can contain observed ratings.
 MAX_SCORING_FACETS_CELLS = 1_000_000
 MAX_SCORING_SCORE_CATEGORIES = 64
 
@@ -114,6 +118,11 @@ class ScoringFacetsRatingRecord(CanonicalContract):
     score_category: int | None
     allowed_scores: tuple[int, ...]
     schema_version: str = ASSESSMENT_SCHEMA_VERSION
+    _cached_rating_fingerprint: str = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
     _rating_token: InitVar[object | None] = None
 
     def __post_init__(self, _rating_token: object | None) -> None:
@@ -177,6 +186,11 @@ class ScoringFacetsRatingRecord(CanonicalContract):
             "schema_version",
             assessment_schema_version(self.schema_version),
         )
+        object.__setattr__(
+            self,
+            "_cached_rating_fingerprint",
+            artifact_digest(self),
+        )
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical rating content without derived identities."""
@@ -203,8 +217,8 @@ class ScoringFacetsRatingRecord(CanonicalContract):
 
     @property
     def rating_fingerprint(self) -> str:
-        """Return SHA-256 over the exact normalized rating content."""
-        return artifact_digest(self)
+        """Return the cached SHA-256 identity of normalized rating content."""
+        return self._cached_rating_fingerprint
 
     @property
     def rating_handle(self) -> str:
@@ -365,6 +379,17 @@ class ScoringFacetsDesign(CanonicalContract):
 
     def to_fit_facets_kwargs(self) -> dict[str, Any]:
         """Return copied arguments accepted by Rust-backed ``fit_facets``."""
+        observed_categories = {
+            record.score_category
+            for record in self.rating_records
+            if record.status is ObservationStatus.SCORED
+        }
+        if observed_categories != set(self.category_values):
+            raise assessment_error(
+                "unobserved_facets_category",
+                "$.category_values",
+                "every declared score category must be observed before fitting",
+            )
         return {
             "responses": self.responses_array(),
             "n_cat": len(self.category_values),
@@ -498,6 +523,13 @@ def build_scoring_facets_rating_records(
             "$.result.engine_fingerprint",
             "result is not bound to the supplied engine descriptor",
         )
+    for index, observation in enumerate(result.observations):
+        if observation.criterion_id is None:
+            raise assessment_error(
+                "missing_observation_criterion",
+                f"$.result.observations[{index}].criterion_id",
+                "criterion-level observations require a criterion identifier",
+            )
 
     records = tuple(
         ScoringFacetsRatingRecord(
@@ -511,7 +543,7 @@ def build_scoring_facets_rating_records(
             response_id=request.response_id,
             task_id=request.task_id,
             occasion_id=request.occasion_id,
-            criterion_id=observation.criterion_id or "",
+            criterion_id=observation.criterion_id,
             engine_id=engine.engine_id,
             engine_family_id=engine.engine_family_id,
             engine_fingerprint=engine.engine_fingerprint,
@@ -531,6 +563,35 @@ def build_scoring_facets_rating_records(
             ),
         )
     )
+
+
+def _identity_provenance(
+    records: tuple[ScoringFacetsRatingRecord, ...],
+) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, str]]]:
+    """Validate response and rater identities across one record collection."""
+    response_contracts: dict[str, tuple[str, str]] = {}
+    rater_contracts: dict[str, tuple[str, str]] = {}
+    for index, record in enumerate(records):
+        response_contract = (record.respondent_id, record.task_id)
+        previous_response = response_contracts.get(record.response_id)
+        if previous_response is not None and previous_response != response_contract:
+            raise assessment_error(
+                "response_provenance_conflict",
+                f"$.records[{index}].response_id",
+                "one response identity has conflicting respondent or task provenance",
+            )
+        response_contracts[record.response_id] = response_contract
+
+        rater_contract = (record.engine_id, record.engine_family_id)
+        previous_rater = rater_contracts.get(record.engine_fingerprint)
+        if previous_rater is not None and previous_rater != rater_contract:
+            raise assessment_error(
+                "rater_provenance_conflict",
+                f"$.records[{index}].engine_fingerprint",
+                "one engine fingerprint has conflicting rater provenance",
+            )
+        rater_contracts[record.engine_fingerprint] = rater_contract
+    return response_contracts, rater_contracts
 
 
 def _design_connected(
@@ -568,8 +629,7 @@ def _build_criterion_design(
 ) -> ScoringFacetsDesign:
     """Build one bounded criterion-specific calibration design."""
     first = records[0]
-    response_contracts: dict[str, tuple[str, str]] = {}
-    rater_contracts: dict[str, tuple[str, str]] = {}
+    response_contracts, rater_contracts = _identity_provenance(records)
     cells: set[tuple[str, str, str]] = set()
     observed_responses: set[str] = set()
     observed_tasks: set[str] = set()
@@ -577,26 +637,6 @@ def _build_criterion_design(
     observed_categories: set[int] = set()
 
     for index, record in enumerate(records):
-        response_contract = (record.respondent_id, record.task_id)
-        previous_response = response_contracts.get(record.response_id)
-        if previous_response is not None and previous_response != response_contract:
-            raise assessment_error(
-                "response_provenance_conflict",
-                f"$.records[{index}].response_id",
-                "one response identity has conflicting respondent or task provenance",
-            )
-        response_contracts[record.response_id] = response_contract
-
-        rater_contract = (record.engine_id, record.engine_family_id)
-        previous_rater = rater_contracts.get(record.engine_fingerprint)
-        if previous_rater is not None and previous_rater != rater_contract:
-            raise assessment_error(
-                "rater_provenance_conflict",
-                f"$.records[{index}].engine_fingerprint",
-                "one engine fingerprint has conflicting rater provenance",
-            )
-        rater_contracts[record.engine_fingerprint] = rater_contract
-
         cell = (record.response_id, record.task_id, record.engine_fingerprint)
         if cell in cells:
             raise assessment_error(
@@ -645,13 +685,19 @@ def _build_criterion_design(
             "$.records",
             "each criterion must observe at least two score categories",
         )
+    if observed_categories != set(first.allowed_scores):
+        raise assessment_error(
+            "unobserved_facets_category",
+            "$.records",
+            "every declared score category must be observed for each criterion",
+        )
 
     dense_cell_count = len(response_ids) * len(task_ids) * len(rater_fingerprints)
     if dense_cell_count > MAX_SCORING_FACETS_CELLS:
         raise assessment_error(
             "facets_cell_budget_exceeded",
             "$.records",
-            "dense facets design exceeds the configured cell budget",
+            "dense response-task-rater allocation exceeds the configured cell budget",
         )
 
     connected = _design_connected(task_ids, rater_fingerprints, records)
@@ -717,16 +763,16 @@ def build_scoring_facets_calibration_bundle(
                 f"$.records[{index}]",
                 "records must contain ScoringFacetsRatingRecord values",
             )
-    ordered = tuple(
-        sorted(
-            raw,
-            key=lambda record: (
-                record.criterion_id,
-                record.rating_fingerprint,
-            ),
+    keyed = sorted(
+        (
+            record.criterion_id,
+            record.rating_fingerprint,
+            record,
         )
+        for record in raw
     )
-    if len({record.rating_fingerprint for record in ordered}) != len(ordered):
+    ordered = tuple(item[2] for item in keyed)
+    if len({item[1] for item in keyed}) != len(keyed):
         raise assessment_error(
             "duplicate_facets_rating_record",
             "$.records",
@@ -749,6 +795,7 @@ def build_scoring_facets_calibration_bundle(
             "$.records",
             "ratings must share assessment, rubric, construct, occasion, and scale",
         )
+    _identity_provenance(ordered)
 
     grouped: dict[str, list[ScoringFacetsRatingRecord]] = {}
     for record in ordered:
