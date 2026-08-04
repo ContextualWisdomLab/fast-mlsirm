@@ -2,14 +2,14 @@
 
 ## Purpose
 
-`fast_mlsirm.scoring.essay.reporting` produces one content-addressed,
-source-text-free `EssayScoreReport` from an exact governed essay request, scoring
-result, and engine descriptor. The adapter is a reporting and human-review
-routing boundary. It does not score essays, combine analytic criteria, estimate
-psychometric parameters, or establish validity.
+`fast_mlsirm.scoring.essay` exposes one content-addressed, source-text-free
+`EssayScoreReport` from an exact governed essay request, scoring result, and
+engine descriptor. The adapter is a reporting and human-review routing boundary.
+It does not score essays, combine analytic criteria, estimate psychometric
+parameters, or establish validity.
 
 ```python
-from fast_mlsirm.scoring.essay.reporting import build_essay_score_report
+from fast_mlsirm.scoring.essay import build_essay_score_report
 
 report = build_essay_score_report(
     report_id="essay_score_report",
