@@ -20,6 +20,19 @@ automated_engine = _BASE["automated_engine"]
 execution = _BASE["execution"]
 
 
+def replay_execution():
+    """Return one complete criterion-level execution for replay mutation tests."""
+    return execution(
+        request_id="projection_replay_request",
+        response_id="projection_replay_response",
+        respondent_id="projection_replay_respondent",
+        task_id="projection_replay_task",
+        engine=automated_engine(),
+        claim_score=1,
+        source_score=2,
+    )
+
+
 @pytest.mark.parametrize(
     ("field_name", "mutated_value", "expected_code"),
     (
@@ -66,15 +79,7 @@ def test_projection_rejects_mutated_observation_provenance(
     expected_code: str,
 ) -> None:
     """A result cannot silently discard observation-level provenance mutations."""
-    request, result, engine = execution(
-        request_id="projection_replay_request",
-        response_id="projection_replay_response",
-        respondent_id="projection_replay_respondent",
-        task_id="projection_replay_task",
-        engine=automated_engine(),
-        claim_score=1,
-        source_score=2,
-    )
+    request, result, engine = replay_execution()
     observation = result.observations[0]
     object.__setattr__(observation, field_name, mutated_value)
 
@@ -88,3 +93,35 @@ def test_projection_rejects_mutated_observation_provenance(
     assert caught.value.code == expected_code
     assert caught.value.path.endswith(f".{field_name}")
     assert str(mutated_value) not in str(caught.value)
+
+
+def test_projection_rejects_mutated_result_criterion_scope() -> None:
+    """Result-declared criterion scope must replay the supplied request exactly."""
+    request, result, engine = replay_execution()
+    object.__setattr__(result, "requested_criterion_ids", ("claim_support",))
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "calibration_result_criteria_mismatch"
+    assert caught.value.path.endswith(".requested_criterion_ids")
+
+
+def test_projection_rejects_mutated_result_observation_coverage() -> None:
+    """A result cannot drop one requested criterion after factory validation."""
+    request, result, engine = replay_execution()
+    object.__setattr__(result, "observations", result.observations[:1])
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "calibration_observation_coverage_mismatch"
+    assert caught.value.path.endswith(".observations")
