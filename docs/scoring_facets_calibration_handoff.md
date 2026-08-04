@@ -26,6 +26,16 @@ The governed axes are:
 - rater: one full `EngineDescriptor.engine_fingerprint`;
 - category: the ordered rubric score scale.
 
+In scoring wire schema 1.0, `task_id` is the estimator item identity. Callers must
+therefore issue a new descriptive task identifier when task content changes;
+they must not reuse one logical identifier across materially different prompt or
+task revisions. Issue #499 tracks an explicit provider-neutral
+`task_revision_fingerprint` for the next schema revision. Until that contract is
+merged, the automated-essay vertical is not release-ready for cross-revision
+calibration, even though each request still retains the exact prompt fingerprint
+for audit. Linking changed revisions requires governed anchors and invariance/DIF
+evidence rather than silent pooling.
+
 The full engine fingerprint is used as the rater identity. A changed model,
 prompt template, provider, version, or engine metadata therefore becomes a new
 rater rather than being silently pooled with an earlier implementation.
