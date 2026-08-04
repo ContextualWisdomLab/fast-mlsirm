@@ -11,7 +11,7 @@ quadrature, optimization, or uncertainty arithmetic.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, dataclass
 from typing import Any
 
 import numpy as np
@@ -118,11 +118,6 @@ class ScoringFacetsRatingRecord(CanonicalContract):
     score_category: int | None
     allowed_scores: tuple[int, ...]
     schema_version: str = ASSESSMENT_SCHEMA_VERSION
-    _cached_rating_fingerprint: str = field(
-        init=False,
-        repr=False,
-        compare=False,
-    )
     _rating_token: InitVar[object | None] = None
 
     def __post_init__(self, _rating_token: object | None) -> None:
@@ -186,11 +181,6 @@ class ScoringFacetsRatingRecord(CanonicalContract):
             "schema_version",
             assessment_schema_version(self.schema_version),
         )
-        object.__setattr__(
-            self,
-            "_cached_rating_fingerprint",
-            artifact_digest(self),
-        )
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical rating content without derived identities."""
@@ -217,8 +207,8 @@ class ScoringFacetsRatingRecord(CanonicalContract):
 
     @property
     def rating_fingerprint(self) -> str:
-        """Return the cached SHA-256 identity of normalized rating content."""
-        return self._cached_rating_fingerprint
+        """Return SHA-256 over the current normalized rating content."""
+        return artifact_digest(self)
 
     @property
     def rating_handle(self) -> str:
@@ -554,15 +544,16 @@ def build_scoring_facets_rating_records(
         )
         for observation in result.observations
     )
-    return tuple(
-        sorted(
-            records,
-            key=lambda record: (
-                record.criterion_id,
-                record.rating_fingerprint,
-            ),
+    keyed_records = [
+        (
+            record.criterion_id,
+            record.rating_fingerprint,
+            record,
         )
-    )
+        for record in records
+    ]
+    keyed_records.sort(key=lambda item: (item[0], item[1]))
+    return tuple(item[2] for item in keyed_records)
 
 
 def _identity_provenance(
