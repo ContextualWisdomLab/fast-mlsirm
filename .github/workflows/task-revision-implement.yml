@@ -1,0 +1,365 @@
+name: Task Revision Identity Implementer
+
+on:
+  push:
+    branches:
+      - feat/task-revision-calibration-identity
+
+permissions:
+  contents: write
+
+concurrency:
+  group: task-revision-identity-implementer
+  cancel-in-progress: true
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/task-revision-calibration-identity
+          fetch-depth: 0
+
+      - name: Apply reviewed task-revision contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path: str, content: str) -> None:
+              Path(path).write_text(content, encoding="utf-8")
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              content = read(path)
+              count = content.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement, found {count}: {old[:80]!r}")
+              write(path, content.replace(old, new, 1))
+
+          def replace_all(path: str, old: str, new: str, minimum: int = 1) -> None:
+              content = read(path)
+              count = content.count(old)
+              if count < minimum:
+                  raise SystemExit(f"{path}: expected at least {minimum} replacements, found {count}: {old[:80]!r}")
+              write(path, content.replace(old, new))
+
+          def replace_block(path: str, start: str, end: str, new: str) -> None:
+              content = read(path)
+              start_index = content.index(start)
+              end_index = content.index(end, start_index)
+              write(path, content[:start_index] + new + content[end_index:])
+
+          execution = "python/fast_mlsirm/scoring/execution.py"
+          replace_once(
+              execution,
+              "MAX_EXECUTION_ATTEMPT = 1_000_000\n\n_ENGINE_DESCRIPTOR_TOKEN",
+              "MAX_EXECUTION_ATTEMPT = 1_000_000\nLEGACY_SCORING_REQUEST_SCHEMA_VERSION = \"1.0\"\nSCORING_REQUEST_SCHEMA_VERSION = \"1.1\"\n\n_ENGINE_DESCRIPTOR_TOKEN",
+          )
+          replace_once(
+              execution,
+              '''def _nonnegative_integer(value: Any, name: str, maximum: int) -> int:\n''',
+              '''def _scoring_request_schema_version(value: Any) -> str:\n    \"\"\"Require the current independent scoring-request wire version.\"\"\"\n    if value != SCORING_REQUEST_SCHEMA_VERSION:\n        raise assessment_error(\n            \"invalid_schema_version\",\n            \"$.schema_version\",\n            f\"schema_version must be '{SCORING_REQUEST_SCHEMA_VERSION}'\",\n        )\n    return SCORING_REQUEST_SCHEMA_VERSION\n\n\ndef _nonnegative_integer(value: Any, name: str, maximum: int) -> int:\n''',
+          )
+          replace_once(
+              execution,
+              "    task_id: str\n    task_family_id: str\n",
+              "    task_id: str\n    task_revision_fingerprint: str\n    task_family_id: str\n",
+          )
+          replace_once(
+              execution,
+              '''        object.__setattr__(\n            self,\n            \"assessment_fingerprint\",\n''',
+              '''        object.__setattr__(\n            self,\n            \"task_revision_fingerprint\",\n            fingerprint(\n                self.task_revision_fingerprint,\n                \"task_revision_fingerprint\",\n            ),\n        )\n        object.__setattr__(\n            self,\n            \"assessment_fingerprint\",\n''',
+          )
+          request_start = execution and read(execution).index("@dataclass(frozen=True)\nclass ScoringRequest")
+          request_end = read(execution).index("@dataclass(frozen=True)\nclass ScoreObservation", request_start)
+          request_segment = read(execution)[request_start:request_end]
+          old_schema = '''            assessment_schema_version(self.schema_version),\n'''
+          if request_segment.count(old_schema) != 1:
+              raise SystemExit("ScoringRequest schema normalization target changed")
+          request_segment = request_segment.replace(
+              old_schema,
+              '''            _scoring_request_schema_version(self.schema_version),\n''',
+              1,
+          )
+          content = read(execution)
+          write(execution, content[:request_start] + request_segment + content[request_end:])
+          replace_once(
+              execution,
+              '''            \"task_id\": self.task_id,\n            \"task_family_id\": self.task_family_id,\n''',
+              '''            \"task_id\": self.task_id,\n            \"task_revision_fingerprint\": self.task_revision_fingerprint,\n            \"task_family_id\": self.task_family_id,\n''',
+          )
+          replace_once(
+              execution,
+              '''    task_id: str,\n    task_family_id: str,\n''',
+              '''    task_id: str,\n    task_revision_fingerprint: str,\n    task_family_id: str,\n''',
+          )
+          replace_once(
+              execution,
+              '''        task_id=task_id,\n        task_family_id=normalized_task_family,\n''',
+              '''        task_id=task_id,\n        task_revision_fingerprint=task_revision_fingerprint,\n        task_family_id=normalized_task_family,\n''',
+          )
+          replace_once(
+              execution,
+              '''    \"MAX_EXECUTION_ATTEMPT\",\n''',
+              '''    \"LEGACY_SCORING_REQUEST_SCHEMA_VERSION\",\n    \"MAX_EXECUTION_ATTEMPT\",\n''',
+          ) if '    "MAX_EXECUTION_ATTEMPT",\n' in read(execution) else None
+
+          authorization = "python/fast_mlsirm/scoring/authorization.py"
+          replace_once(
+              authorization,
+              '''    task_id: str,\n    task_family_id: str,\n''',
+              '''    task_id: str,\n    task_revision_fingerprint: str,\n    task_family_id: str,\n''',
+          )
+          replace_once(
+              authorization,
+              '''        task_id=task_id,\n        task_family_id=task_family_id,\n''',
+              '''        task_id=task_id,\n        task_revision_fingerprint=task_revision_fingerprint,\n        task_family_id=task_family_id,\n''',
+          )
+
+          essay = "python/fast_mlsirm/scoring/essay/contracts.py"
+          replace_once(
+              essay,
+              '''        task_id=prompt.prompt_id,\n        task_family_id=prompt.task_family_id,\n''',
+              '''        task_id=prompt.prompt_id,\n        task_revision_fingerprint=prompt.prompt_fingerprint,\n        task_family_id=prompt.task_family_id,\n''',
+          )
+
+          contracts = "python/fast_mlsirm/scoring/contracts.py"
+          replace_once(
+              contracts,
+              '''from .execution import EngineDescriptor as EngineDescriptor\n''',
+              '''from .execution import (\n    LEGACY_SCORING_REQUEST_SCHEMA_VERSION as LEGACY_SCORING_REQUEST_SCHEMA_VERSION,\n)\nfrom .execution import (\n    SCORING_REQUEST_SCHEMA_VERSION as SCORING_REQUEST_SCHEMA_VERSION,\n)\nfrom .execution import EngineDescriptor as EngineDescriptor\n''',
+          )
+          replace_once(
+              contracts,
+              '''from .policies import AdjudicationPolicy as AdjudicationPolicy\n''',
+              '''from .migrations import migrate_scoring_request_v1 as migrate_scoring_request_v1\nfrom .policies import AdjudicationPolicy as AdjudicationPolicy\n''',
+          )
+
+          package_init = "python/fast_mlsirm/scoring/__init__.py"
+          replace_once(
+              package_init,
+              '''from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION\n''',
+              '''from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION\nfrom .contracts import (\n    LEGACY_SCORING_REQUEST_SCHEMA_VERSION as LEGACY_SCORING_REQUEST_SCHEMA_VERSION,\n)\nfrom .contracts import (\n    SCORING_REQUEST_SCHEMA_VERSION as SCORING_REQUEST_SCHEMA_VERSION,\n)\n''',
+          )
+          replace_once(
+              package_init,
+              '''from .contracts import canonical_json as canonical_json\n''',
+              '''from .contracts import canonical_json as canonical_json\nfrom .contracts import migrate_scoring_request_v1 as migrate_scoring_request_v1\n''',
+          )
+
+          calibration_path = "python/fast_mlsirm/scoring/calibration.py"
+          calibration_text = read(calibration_path)
+          calibration_text = calibration_text.replace(
+              "``respondents x tasks x raters`` tensors",
+              "``respondents x task revisions x raters`` tensors",
+              1,
+          )
+          write(calibration_path, calibration_text)
+
+          rating_class = '''@dataclass(frozen=True)\nclass ScoringFacetsRatingRecord(CanonicalContract):\n    \"\"\"One criterion rating bound to exact request, task, result, and engine.\"\"\"\n\n    assessment_fingerprint: str\n    rubric_fingerprint: str\n    construct_id: str\n    request_fingerprint: str\n    result_fingerprint: str\n    observation_fingerprint: str\n    respondent_id: str\n    response_id: str\n    response_content_fingerprint: str\n    task_id: str\n    task_family_id: str\n    task_revision_fingerprint: str\n    occasion_id: str\n    criterion_id: str\n    engine_id: str\n    engine_family_id: str\n    engine_fingerprint: str\n    status: ObservationStatus\n    score_category: int | None\n    allowed_scores: tuple[int, ...]\n    schema_version: str = ASSESSMENT_SCHEMA_VERSION\n    _rating_token: InitVar[object | None] = None\n\n    def __post_init__(self, _rating_token: object | None) -> None:\n        \"\"\"Reject direct construction and normalize package-owned fields.\"\"\"\n        if _rating_token is not _RATING_TOKEN:\n            raise assessment_error(\n                \"unverified_facets_rating\",\n                \"$\",\n                \"use build_scoring_facets_rating_records\",\n            )\n        for field_name in (\n            \"assessment_fingerprint\",\n            \"rubric_fingerprint\",\n            \"request_fingerprint\",\n            \"result_fingerprint\",\n            \"observation_fingerprint\",\n            \"response_content_fingerprint\",\n            \"task_revision_fingerprint\",\n            \"engine_fingerprint\",\n        ):\n            object.__setattr__(\n                self,\n                field_name,\n                fingerprint(getattr(self, field_name), field_name),\n            )\n        for field_name in (\n            \"construct_id\",\n            \"respondent_id\",\n            \"response_id\",\n            \"task_id\",\n            \"task_family_id\",\n            \"occasion_id\",\n            \"criterion_id\",\n            \"engine_id\",\n            \"engine_family_id\",\n        ):\n            object.__setattr__(\n                self,\n                field_name,\n                descriptive_identifier(getattr(self, field_name), field_name),\n            )\n        normalized_status = enum_value(\n            self.status,\n            ObservationStatus,\n            \"observation_status\",\n            \"$.status\",\n        )\n        object.__setattr__(self, \"status\", normalized_status)\n        normalized_score = _score_for_status(self.score_category, normalized_status)\n        object.__setattr__(self, \"score_category\", normalized_score)\n        normalized_scale = _score_values(self.allowed_scores)\n        if (\n            normalized_status is ObservationStatus.SCORED\n            and normalized_score not in normalized_scale\n        ):\n            raise assessment_error(\n                \"rating_score_out_of_range\",\n                \"$.score_category\",\n                \"scored rating is outside the request score scale\",\n            )\n        object.__setattr__(self, \"allowed_scores\", normalized_scale)\n        object.__setattr__(\n            self,\n            \"schema_version\",\n            assessment_schema_version(self.schema_version),\n        )\n\n    def _content_dict(self) -> dict[str, Any]:\n        \"\"\"Return canonical rating content without derived identities.\"\"\"\n        return {\n            \"schema_version\": self.schema_version,\n            \"assessment_fingerprint\": self.assessment_fingerprint,\n            \"rubric_fingerprint\": self.rubric_fingerprint,\n            \"construct_id\": self.construct_id,\n            \"request_fingerprint\": self.request_fingerprint,\n            \"result_fingerprint\": self.result_fingerprint,\n            \"observation_fingerprint\": self.observation_fingerprint,\n            \"respondent_id\": self.respondent_id,\n            \"response_id\": self.response_id,\n            \"response_content_fingerprint\": self.response_content_fingerprint,\n            \"task_id\": self.task_id,\n            \"task_family_id\": self.task_family_id,\n            \"task_revision_fingerprint\": self.task_revision_fingerprint,\n            \"occasion_id\": self.occasion_id,\n            \"criterion_id\": self.criterion_id,\n            \"engine_id\": self.engine_id,\n            \"engine_family_id\": self.engine_family_id,\n            \"engine_fingerprint\": self.engine_fingerprint,\n            \"status\": self.status.value,\n            \"score_category\": self.score_category,\n            \"allowed_scores\": list(self.allowed_scores),\n        }\n\n    @property\n    def rating_fingerprint(self) -> str:\n        \"\"\"Return SHA-256 over the current normalized rating content.\"\"\"\n        return artifact_digest(self)\n\n    @property\n    def rating_handle(self) -> str:\n        \"\"\"Return a descriptive 128-bit public rating handle.\"\"\"\n        return f\"scoring_facets_rating_{self.rating_fingerprint[:32]}\"\n\n    def to_dict(self) -> dict[str, Any]:\n        \"\"\"Return canonical content and deterministic rating identities.\"\"\"\n        return {\n            **self._content_dict(),\n            \"rating_handle\": self.rating_handle,\n            \"rating_fingerprint\": self.rating_fingerprint,\n        }\n\n\n'''
+          replace_block(
+              calibration_path,
+              "@dataclass(frozen=True)\nclass ScoringFacetsRatingRecord",
+              "@dataclass(frozen=True)\nclass ScoringFacetsDesign",
+              rating_class,
+          )
+
+          design_class = '''@dataclass(frozen=True)\nclass ScoringFacetsDesign(CanonicalContract):\n    \"\"\"One criterion-specific respondent-indexed Rust facets design.\n\n    ``respondent_id`` forms the person axis, the exact task-revision fingerprint\n    forms the item axis, and the exact engine fingerprint forms the rater axis.\n    Logical task identifiers and response identifiers remain audit and display\n    provenance. Original rubric labels remain in ``category_values`` and are\n    mapped to zero-based categories only when an estimator tensor is requested.\n    \"\"\"\n\n    assessment_fingerprint: str\n    rubric_fingerprint: str\n    construct_id: str\n    occasion_id: str\n    criterion_id: str\n    category_values: tuple[int, ...]\n    respondent_ids: tuple[str, ...]\n    task_revision_fingerprints: tuple[str, ...]\n    task_ids: tuple[str, ...]\n    task_family_ids: tuple[str, ...]\n    response_ids: tuple[str, ...]\n    response_respondent_ids: tuple[str, ...]\n    response_task_ids: tuple[str, ...]\n    response_task_revision_fingerprints: tuple[str, ...]\n    response_content_fingerprints: tuple[str, ...]\n    rater_engine_ids: tuple[str, ...]\n    rater_engine_family_ids: tuple[str, ...]\n    rater_engine_fingerprints: tuple[str, ...]\n    rating_records: tuple[ScoringFacetsRatingRecord, ...]\n    respondent_task_connected: bool\n    task_rater_connected: bool\n    connected: bool\n    schema_version: str = ASSESSMENT_SCHEMA_VERSION\n    _design_token: InitVar[object | None] = None\n\n    def __post_init__(self, _design_token: object | None) -> None:\n        \"\"\"Reject direct construction outside the validated assembler.\"\"\"\n        if _design_token is not _DESIGN_TOKEN:\n            raise assessment_error(\n                \"unverified_facets_design\",\n                \"$\",\n                \"use build_scoring_facets_calibration_bundle\",\n            )\n        object.__setattr__(\n            self,\n            \"schema_version\",\n            assessment_schema_version(self.schema_version),\n        )\n\n    def _content_dict(self) -> dict[str, Any]:\n        \"\"\"Return canonical sparse design content without dense arrays.\"\"\"\n        task_revisions = [\n            {\n                \"task_revision_fingerprint\": task_revision_fingerprint,\n                \"task_id\": task_id,\n                \"task_family_id\": task_family_id,\n            }\n            for task_revision_fingerprint, task_id, task_family_id in zip(\n                self.task_revision_fingerprints,\n                self.task_ids,\n                self.task_family_ids,\n                strict=True,\n            )\n        ]\n        respondent_task_responses = [\n            {\n                \"respondent_id\": respondent_id,\n                \"task_id\": task_id,\n                \"task_revision_fingerprint\": task_revision_fingerprint,\n                \"response_id\": response_id,\n                \"response_content_fingerprint\": response_content_fingerprint,\n            }\n            for respondent_id, task_id, task_revision_fingerprint, response_id, response_content_fingerprint in zip(\n                self.response_respondent_ids,\n                self.response_task_ids,\n                self.response_task_revision_fingerprints,\n                self.response_ids,\n                self.response_content_fingerprints,\n                strict=True,\n            )\n        ]\n        return {\n            \"schema_version\": self.schema_version,\n            \"assessment_fingerprint\": self.assessment_fingerprint,\n            \"rubric_fingerprint\": self.rubric_fingerprint,\n            \"construct_id\": self.construct_id,\n            \"occasion_id\": self.occasion_id,\n            \"criterion_id\": self.criterion_id,\n            \"category_values\": list(self.category_values),\n            \"respondent_ids\": list(self.respondent_ids),\n            \"task_revision_fingerprints\": list(self.task_revision_fingerprints),\n            \"task_ids\": list(self.task_ids),\n            \"task_family_ids\": list(self.task_family_ids),\n            \"task_revisions\": task_revisions,\n            \"response_ids\": list(self.response_ids),\n            \"response_respondent_ids\": list(self.response_respondent_ids),\n            \"response_task_ids\": list(self.response_task_ids),\n            \"response_task_revision_fingerprints\": list(\n                self.response_task_revision_fingerprints\n            ),\n            \"response_content_fingerprints\": list(\n                self.response_content_fingerprints\n            ),\n            \"respondent_task_responses\": respondent_task_responses,\n            \"rater_engine_ids\": list(self.rater_engine_ids),\n            \"rater_engine_family_ids\": list(self.rater_engine_family_ids),\n            \"rater_engine_fingerprints\": list(self.rater_engine_fingerprints),\n            \"rating_fingerprints\": [\n                record.rating_fingerprint for record in self.rating_records\n            ],\n            \"respondent_task_connected\": self.respondent_task_connected,\n            \"task_rater_connected\": self.task_rater_connected,\n            \"connected\": self.connected,\n        }\n\n    @property\n    def design_fingerprint(self) -> str:\n        \"\"\"Return SHA-256 over the complete ordered sparse design.\"\"\"\n        return artifact_digest(self)\n\n    @property\n    def design_handle(self) -> str:\n        \"\"\"Return a descriptive 128-bit public design handle.\"\"\"\n        return f\"scoring_facets_design_{self.design_fingerprint[:32]}\"\n\n    def _indexes(self) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:\n        \"\"\"Return deterministic respondent, task-revision, and rater maps.\"\"\"\n        return (\n            {value: index for index, value in enumerate(self.respondent_ids)},\n            {\n                value: index\n                for index, value in enumerate(self.task_revision_fingerprints)\n            },\n            {\n                value: index\n                for index, value in enumerate(self.rater_engine_fingerprints)\n            },\n        )\n\n    def _dense_array(self, *, zero_based: bool) -> np.ndarray:\n        \"\"\"Materialize one fresh respondent-task-revision-rater tensor.\"\"\"\n        output = np.full(\n            (\n                len(self.respondent_ids),\n                len(self.task_revision_fingerprints),\n                len(self.rater_engine_fingerprints),\n            ),\n            np.nan,\n            dtype=np.float64,\n        )\n        respondent_index, task_index, rater_index = self._indexes()\n        category_index = {\n            value: index for index, value in enumerate(self.category_values)\n        }\n        for record in self.rating_records:\n            if record.status is not ObservationStatus.SCORED:\n                continue\n            score = record.score_category\n            if score is None:  # pragma: no cover - guaranteed by rating record\n                raise RuntimeError(\"scored rating category is unavailable\")\n            output[\n                respondent_index[record.respondent_id],\n                task_index[record.task_revision_fingerprint],\n                rater_index[record.engine_fingerprint],\n            ] = category_index[score] if zero_based else score\n        return output\n\n    def responses_array(self) -> np.ndarray:\n        \"\"\"Return a zero-based float tensor accepted by ``fit_facets``.\"\"\"\n        return self._dense_array(zero_based=True)\n\n    def original_scores_array(self) -> np.ndarray:\n        \"\"\"Return a float tensor preserving original rubric score labels.\"\"\"\n        return self._dense_array(zero_based=False)\n\n    def response_states(\n        self,\n    ) -> tuple[tuple[tuple[ObservationStatus | None, ...], ...], ...]:\n        \"\"\"Return exact assigned states and ``None`` for unassigned cells.\"\"\"\n        states: list[list[list[ObservationStatus | None]]] = [\n            [\n                [None for _rater in self.rater_engine_fingerprints]\n                for _task in self.task_revision_fingerprints\n            ]\n            for _respondent in self.respondent_ids\n        ]\n        respondent_index, task_index, rater_index = self._indexes()\n        for record in self.rating_records:\n            states[respondent_index[record.respondent_id]][\n                task_index[record.task_revision_fingerprint]\n            ][rater_index[record.engine_fingerprint]] = record.status\n        return tuple(\n            tuple(tuple(rater_states) for rater_states in task_states)\n            for task_states in states\n        )\n\n    def to_fit_facets_kwargs(self) -> dict[str, Any]:\n        \"\"\"Return copied arguments accepted by Rust-backed ``fit_facets``.\"\"\"\n        observed_categories = {\n            record.score_category\n            for record in self.rating_records\n            if record.status is ObservationStatus.SCORED\n        }\n        if observed_categories != set(self.category_values):\n            raise assessment_error(\n                \"unobserved_facets_category\",\n                \"$.category_values\",\n                \"every declared score category must be observed before fitting\",\n            )\n        return {\n            \"responses\": self.responses_array(),\n            \"n_cat\": len(self.category_values),\n        }\n\n    def to_dict(self) -> dict[str, Any]:\n        \"\"\"Return sparse design content and deterministic identities.\"\"\"\n        return {\n            **self._content_dict(),\n            \"design_handle\": self.design_handle,\n            \"design_fingerprint\": self.design_fingerprint,\n        }\n\n\n'''
+          replace_block(
+              calibration_path,
+              "@dataclass(frozen=True)\nclass ScoringFacetsDesign",
+              "@dataclass(frozen=True)\nclass ScoringFacetsCalibrationBundle",
+              design_class,
+          )
+
+          replace_once(
+              calibration_path,
+              '''            task_id=request.task_id,\n            occasion_id=request.occasion_id,\n''',
+              '''            task_id=request.task_id,\n            task_family_id=request.task_family_id,\n            task_revision_fingerprint=request.task_revision_fingerprint,\n            occasion_id=request.occasion_id,\n''',
+          )
+
+          identity_function = '''def _identity_provenance(\n    records: tuple[ScoringFacetsRatingRecord, ...],\n) -> tuple[\n    dict[str, tuple[str, str, str, str, str]],\n    dict[tuple[str, str], tuple[str, str]],\n    dict[str, tuple[str, str]],\n    dict[str, tuple[str, str]],\n]:\n    \"\"\"Validate response, task-revision, respondent-cell, and rater identities.\"\"\"\n    response_contracts: dict[str, tuple[str, str, str, str, str]] = {}\n    respondent_task_contracts: dict[tuple[str, str], tuple[str, str]] = {}\n    revision_contracts: dict[str, tuple[str, str]] = {}\n    rater_contracts: dict[str, tuple[str, str]] = {}\n    for index, record in enumerate(records):\n        revision_contract = (record.task_id, record.task_family_id)\n        previous_revision = revision_contracts.get(record.task_revision_fingerprint)\n        if previous_revision is not None and previous_revision != revision_contract:\n            conflict_field = (\n                \"task_id\"\n                if previous_revision[0] != revision_contract[0]\n                else \"task_family_id\"\n            )\n            raise assessment_error(\n                \"task_revision_provenance_conflict\",\n                f\"$.records[{index}].{conflict_field}\",\n                \"one task revision has conflicting logical task provenance\",\n            )\n        revision_contracts[record.task_revision_fingerprint] = revision_contract\n\n        response_contract = (\n            record.respondent_id,\n            record.task_id,\n            record.task_family_id,\n            record.task_revision_fingerprint,\n            record.response_content_fingerprint,\n        )\n        previous_response = response_contracts.get(record.response_id)\n        if previous_response is not None and previous_response != response_contract:\n            field_names = (\n                \"respondent_id\",\n                \"task_id\",\n                \"task_family_id\",\n                \"task_revision_fingerprint\",\n                \"response_content_fingerprint\",\n            )\n            conflict_field = next(\n                field_name\n                for field_name, previous_value, current_value in zip(\n                    field_names,\n                    previous_response,\n                    response_contract,\n                    strict=True,\n                )\n                if previous_value != current_value\n            )\n            raise assessment_error(\n                \"response_provenance_conflict\",\n                f\"$.records[{index}].{conflict_field}\",\n                \"one response identity has conflicting respondent, task, revision, or content provenance\",\n            )\n        response_contracts[record.response_id] = response_contract\n\n        respondent_task_key = (\n            record.respondent_id,\n            record.task_revision_fingerprint,\n        )\n        respondent_task_contract = (\n            record.response_id,\n            record.response_content_fingerprint,\n        )\n        previous_cell = respondent_task_contracts.get(respondent_task_key)\n        if previous_cell is not None and previous_cell != respondent_task_contract:\n            conflict_field = (\n                \"response_id\"\n                if previous_cell[0] != respondent_task_contract[0]\n                else \"response_content_fingerprint\"\n            )\n            raise assessment_error(\n                \"respondent_task_revision_response_conflict\",\n                f\"$.records[{index}].{conflict_field}\",\n                \"one respondent-task-revision cell has conflicting response provenance\",\n            )\n        respondent_task_contracts[respondent_task_key] = respondent_task_contract\n\n        rater_contract = (record.engine_id, record.engine_family_id)\n        previous_rater = rater_contracts.get(record.engine_fingerprint)\n        if previous_rater is not None and previous_rater != rater_contract:\n            raise assessment_error(\n                \"rater_provenance_conflict\",\n                f\"$.records[{index}].engine_fingerprint\",\n                \"one engine fingerprint has conflicting rater provenance\",\n            )\n        rater_contracts[record.engine_fingerprint] = rater_contract\n    return (\n        response_contracts,\n        respondent_task_contracts,\n        revision_contracts,\n        rater_contracts,\n    )\n\n\n'''
+          replace_block(
+              calibration_path,
+              "def _identity_provenance(",
+              "def _bipartite_connected(",
+              identity_function,
+          )
+
+          connected_function = '''def _design_connected(\n    *,\n    respondent_ids: tuple[str, ...],\n    task_revision_fingerprints: tuple[str, ...],\n    rater_fingerprints: tuple[str, ...],\n    records: tuple[ScoringFacetsRatingRecord, ...],\n) -> tuple[bool, bool]:\n    \"\"\"Return revision-indexed respondent-item and item-rater connectedness.\"\"\"\n    scored = tuple(\n        record for record in records if record.status is ObservationStatus.SCORED\n    )\n    respondent_task_edges = {\n        (record.respondent_id, record.task_revision_fingerprint)\n        for record in scored\n    }\n    task_rater_edges = {\n        (record.task_revision_fingerprint, record.engine_fingerprint)\n        for record in scored\n    }\n    respondent_task_connected = _bipartite_connected(\n        left_ids=respondent_ids,\n        right_ids=task_revision_fingerprints,\n        edges=respondent_task_edges,\n    )\n    task_rater_connected = _bipartite_connected(\n        left_ids=task_revision_fingerprints,\n        right_ids=rater_fingerprints,\n        edges=task_rater_edges,\n    )\n    return respondent_task_connected, task_rater_connected\n\n\n'''
+          replace_block(
+              calibration_path,
+              "def _design_connected(",
+              "def _build_criterion_design(",
+              connected_function,
+          )
+
+          build_design = '''def _build_criterion_design(\n    records: tuple[ScoringFacetsRatingRecord, ...],\n    *,\n    require_connected: bool,\n) -> ScoringFacetsDesign:\n    \"\"\"Build one bounded criterion-specific revision-indexed design.\"\"\"\n    first = records[0]\n    (\n        response_contracts,\n        _,\n        revision_contracts,\n        rater_contracts,\n    ) = _identity_provenance(records)\n    cells: set[tuple[str, str, str]] = set()\n    observed_respondents: set[str] = set()\n    observed_task_revisions: set[str] = set()\n    observed_raters: set[str] = set()\n    observed_categories: set[int] = set()\n\n    for index, record in enumerate(records):\n        cell = (\n            record.respondent_id,\n            record.task_revision_fingerprint,\n            record.engine_fingerprint,\n        )\n        if cell in cells:\n            raise assessment_error(\n                \"duplicate_facets_rating_cell\",\n                f\"$.records[{index}]\",\n                \"each respondent-task-revision-rater cell may occur once per criterion\",\n            )\n        cells.add(cell)\n        if record.status is ObservationStatus.SCORED:\n            score = record.score_category\n            if score is None:  # pragma: no cover - guaranteed by rating record\n                raise RuntimeError(\"scored rating category is unavailable\")\n            observed_respondents.add(record.respondent_id)\n            observed_task_revisions.add(record.task_revision_fingerprint)\n            observed_raters.add(record.engine_fingerprint)\n            observed_categories.add(score)\n\n    respondent_ids = tuple(sorted({record.respondent_id for record in records}))\n    task_revision_fingerprints = tuple(sorted(revision_contracts))\n    rater_fingerprints = tuple(sorted(rater_contracts))\n    if len(respondent_ids) < 2:\n        raise assessment_error(\n            \"insufficient_facets_respondents\",\n            \"$.records\",\n            \"facets calibration requires at least two respondents\",\n        )\n    if len(task_revision_fingerprints) < 2:\n        raise assessment_error(\n            \"insufficient_facets_task_revisions\",\n            \"$.records\",\n            \"facets calibration requires at least two exact task revisions\",\n        )\n    if len(rater_fingerprints) < 2:\n        raise assessment_error(\n            \"insufficient_facets_raters\",\n            \"$.records\",\n            \"facets calibration requires at least two raters\",\n        )\n    if (\n        observed_respondents != set(respondent_ids)\n        or observed_task_revisions != set(task_revision_fingerprints)\n        or observed_raters != set(rater_fingerprints)\n    ):\n        raise assessment_error(\n            \"unobserved_facets_level\",\n            \"$.records\",\n            \"every respondent, task revision, and rater must have a scored rating\",\n        )\n    if len(observed_categories) < 2:\n        raise assessment_error(\n            \"single_observed_category\",\n            \"$.records\",\n            \"each criterion must observe at least two score categories\",\n        )\n\n    dense_cell_count = (\n        len(respondent_ids)\n        * len(task_revision_fingerprints)\n        * len(rater_fingerprints)\n    )\n    if dense_cell_count > MAX_SCORING_FACETS_CELLS:\n        raise assessment_error(\n            \"facets_cell_budget_exceeded\",\n            \"$.records\",\n            \"dense respondent-task-revision-rater allocation exceeds the configured cell budget\",\n        )\n\n    respondent_task_connected, task_rater_connected = _design_connected(\n        respondent_ids=respondent_ids,\n        task_revision_fingerprints=task_revision_fingerprints,\n        rater_fingerprints=rater_fingerprints,\n        records=records,\n    )\n    if require_connected and not respondent_task_connected:\n        raise assessment_error(\n            \"unidentified_respondent_task_design\",\n            \"$.records\",\n            \"scored respondent-task-revision graph must be connected\",\n        )\n    if require_connected and not task_rater_connected:\n        raise assessment_error(\n            \"disconnected_task_rater_design\",\n            \"$.records\",\n            \"scored task-revision-rater graph must be connected\",\n        )\n\n    response_ids = tuple(sorted(response_contracts))\n    return ScoringFacetsDesign(\n        assessment_fingerprint=first.assessment_fingerprint,\n        rubric_fingerprint=first.rubric_fingerprint,\n        construct_id=first.construct_id,\n        occasion_id=first.occasion_id,\n        criterion_id=first.criterion_id,\n        category_values=first.allowed_scores,\n        respondent_ids=respondent_ids,\n        task_revision_fingerprints=task_revision_fingerprints,\n        task_ids=tuple(\n            revision_contracts[value][0]\n            for value in task_revision_fingerprints\n        ),\n        task_family_ids=tuple(\n            revision_contracts[value][1]\n            for value in task_revision_fingerprints\n        ),\n        response_ids=response_ids,\n        response_respondent_ids=tuple(\n            response_contracts[value][0] for value in response_ids\n        ),\n        response_task_ids=tuple(\n            response_contracts[value][1] for value in response_ids\n        ),\n        response_task_revision_fingerprints=tuple(\n            response_contracts[value][3] for value in response_ids\n        ),\n        response_content_fingerprints=tuple(\n            response_contracts[value][4] for value in response_ids\n        ),\n        rater_engine_ids=tuple(\n            rater_contracts[value][0] for value in rater_fingerprints\n        ),\n        rater_engine_family_ids=tuple(\n            rater_contracts[value][1] for value in rater_fingerprints\n        ),\n        rater_engine_fingerprints=rater_fingerprints,\n        rating_records=records,\n        respondent_task_connected=respondent_task_connected,\n        task_rater_connected=task_rater_connected,\n        connected=respondent_task_connected and task_rater_connected,\n        _design_token=_DESIGN_TOKEN,\n    )\n\n\n'''
+          replace_block(
+              calibration_path,
+              "def _build_criterion_design(",
+              "def build_scoring_facets_calibration_bundle(",
+              build_design,
+          )
+
+          validation = "python/fast_mlsirm/scoring/_calibration_validation.py"
+          replace_once(
+              validation,
+              '''        task_id=value.task_id,\n        occasion_id=value.occasion_id,\n''',
+              '''        task_id=value.task_id,\n        task_family_id=value.task_family_id,\n        task_revision_fingerprint=value.task_revision_fingerprint,\n        occasion_id=value.occasion_id,\n''',
+          )
+          replace_once(
+              validation,
+              '''        design.respondent_ids,\n        design.task_ids,\n        design.response_ids,\n''',
+              '''        design.respondent_ids,\n        design.task_revision_fingerprints,\n        design.task_ids,\n        design.task_family_ids,\n        design.response_ids,\n''',
+          )
+          replace_once(
+              validation,
+              '''        design.response_task_ids,\n        design.response_content_fingerprints,\n''',
+              '''        design.response_task_ids,\n        design.response_task_revision_fingerprints,\n        design.response_content_fingerprints,\n''',
+          )
+
+          fixtures = "tests/scoring_execution_fixtures.py"
+          replace_all(
+              fixtures,
+              '''        \"task_id\": \"sample_task\",\n        \"task_family_id\": \"evidence_review\",\n''',
+              '''        \"task_id\": \"sample_task\",\n        \"task_revision_fingerprint\": \"d\" * 64,\n        \"task_family_id\": \"evidence_review\",\n''',
+              minimum=2,
+          )
+
+          execution_tests = "tests/test_scoring_execution_contracts.py"
+          replace_once(
+              execution_tests,
+              '''            task_id=request.task_id,\n            task_family_id=request.task_family_id,\n''',
+              '''            task_id=request.task_id,\n            task_revision_fingerprint=request.task_revision_fingerprint,\n            task_family_id=request.task_family_id,\n''',
+          )
+
+          authorization_tests = "tests/test_scoring_execution_authorization.py"
+          replace_all(
+              authorization_tests,
+              '''        \"task_id\": \"sample_task\",\n        \"task_family_id\": \"evidence_review\",\n''',
+              '''        \"task_id\": \"sample_task\",\n        \"task_revision_fingerprint\": \"d\" * 64,\n        \"task_family_id\": \"evidence_review\",\n''',
+              minimum=1,
+          )
+          replace_all(
+              authorization_tests,
+              '''            task_id=\"sample_task\",\n            task_family_id=\"evidence_review\",\n''',
+              '''            task_id=\"sample_task\",\n            task_revision_fingerprint=\"d\" * 64,\n            task_family_id=\"evidence_review\",\n''',
+              minimum=1,
+          )
+
+          integrity_tests = "tests/test_scoring_execution_authorization_integrity.py"
+          replace_all(
+              integrity_tests,
+              '''        task_id=\"sample_task\",\n        task_family_id=\"evidence_review\",\n''',
+              '''        task_id=\"sample_task\",\n        task_revision_fingerprint=\"d\" * 64,\n        task_family_id=\"evidence_review\",\n''',
+              minimum=2,
+          )
+
+          essay_tests = "tests/test_scoring_essay_contracts.py"
+          replace_once(
+              essay_tests,
+              '''    assert shared.task_id == prompt_record.prompt_id\n    assert shared.task_family_id == prompt_record.task_family_id\n''',
+              '''    assert shared.task_id == prompt_record.prompt_id\n    assert shared.task_revision_fingerprint == prompt_record.prompt_fingerprint\n    assert shared.task_family_id == prompt_record.task_family_id\n''',
+          )
+
+          facets_tests = "tests/test_scoring_facets_calibration.py"
+          replace_once(
+              facets_tests,
+              '''from dataclasses import replace\n''',
+              '''from dataclasses import replace\nimport hashlib\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''    task_id: str,\n    engine,\n''',
+              '''    task_id: str,\n    engine,\n    task_revision_fingerprint: str | None = None,\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''        task_id=task_id,\n        occasion_id=occasion_id,\n''',
+              '''        task_id=task_id,\n        task_revision_fingerprint=(\n            task_revision_fingerprint\n            or hashlib.sha256(f\"{task_id}_revision\".encode(\"utf-8\")).hexdigest()\n        ),\n        occasion_id=occasion_id,\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''def connected_records(*, terminal: bool = False):\n    \"\"\"Return a sparse connected two-respondent, two-task, two-rater design.\"\"\"\n''',
+              '''def connected_records(*, terminal: bool = False, shared_task_id: bool = False):\n    \"\"\"Return a sparse connected two-respondent, two-revision, two-rater design.\"\"\"\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''                        task_id=f\"prompt_{task_name}\",\n                        engine=engine,\n''',
+              '''                        task_id=(\n                            \"shared_prompt\"\n                            if shared_task_id\n                            else f\"prompt_{task_name}\"\n                        ),\n                        task_revision_fingerprint=(\n                            (\"1\" if task_name == \"alpha\" else \"2\") * 64\n                        ),\n                        engine=engine,\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''        \"task_id\": source.task_id,\n        \"occasion_id\": source.occasion_id,\n''',
+              '''        \"task_id\": source.task_id,\n        \"task_family_id\": source.task_family_id,\n        \"task_revision_fingerprint\": source.task_revision_fingerprint,\n        \"occasion_id\": source.occasion_id,\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''        task_id=first.task_id,\n        response_content_fingerprint=first.response_content_fingerprint,\n''',
+              '''        task_id=first.task_id,\n        task_family_id=first.task_family_id,\n        task_revision_fingerprint=first.task_revision_fingerprint,\n        response_content_fingerprint=first.response_content_fingerprint,\n''',
+          )
+          replace_once(
+              facets_tests,
+              '''    one_task = tuple(record for record in group if record.task_id == group[0].task_id)\n    assert_error(\n        \"insufficient_facets_tasks\",\n''',
+              '''    one_task = tuple(\n        record\n        for record in group\n        if record.task_revision_fingerprint == group[0].task_revision_fingerprint\n    )\n    assert_error(\n        \"insufficient_facets_task_revisions\",\n''',
+          )
+
+          for path in Path("tests").glob("test_scoring_facets_*.py"):
+              content = path.read_text(encoding="utf-8")
+              content = content.replace(
+                  "respondent_task_response_conflict",
+                  "respondent_task_revision_response_conflict",
+              )
+              content = content.replace(
+                  "insufficient_facets_tasks",
+                  "insufficient_facets_task_revisions",
+              )
+              path.write_text(content, encoding="utf-8")
+
+          docs_execution = Path("docs/scoring_execution_contracts.md")
+          docs_execution.write_text(
+              docs_execution.read_text(encoding="utf-8")
+              + """\n\n## Exact task revisions\n\nSchema `1.1` scoring requests require `task_revision_fingerprint`, a complete SHA-256 identity for the exact normalized task content. `task_id` remains a logical display and administration identifier. Callers must never derive the revision from the logical ID. Legacy schema `1.0` artifacts require `migrate_scoring_request_v1` with an authoritative explicit revision; observations and results bound to the legacy request fingerprint must be produced again.\n""",
+              encoding="utf-8",
+          )
+          docs_facets = Path("docs/scoring_facets_calibration_handoff.md")
+          docs_facets.write_text(
+              docs_facets.read_text(encoding="utf-8")
+              + """\n\n## Task-revision item identity\n\nThe estimator item axis is the exact `task_revision_fingerprint`. Logical `task_id` and `task_family_id` values remain aligned report metadata and may repeat across revisions. No common-item linking is inferred: changed revisions remain separate items until a governed linking policy supplies anchor, drift, DIF/invariance, recovery, and comparability evidence.\n""",
+              encoding="utf-8",
+          )
+
+          python_files = [
+              execution,
+              authorization,
+              essay,
+              contracts,
+              package_init,
+              calibration_path,
+              validation,
+              "python/fast_mlsirm/scoring/migrations.py",
+          ]
+          compile(source := "\n".join(read(path) for path in python_files), "<task-revision-sources>", "exec")
+          PY
+
+          python3 -m compileall -q python/fast_mlsirm/scoring tests
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No implementation changes were required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add python tests docs
+          git commit -m "feat(scoring): bind calibration to exact task revisions"
+          git push origin HEAD:feat/task-revision-calibration-identity
