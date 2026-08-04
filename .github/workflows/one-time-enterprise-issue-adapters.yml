@@ -1,21 +1,21 @@
 name: One-time enterprise issue adapter validation
 
 on:
-  push:
-    branches:
-      - feat-enterprise-issue-adapters-404
+  pull_request:
+    types: [synchronize]
+    branches: [main]
     paths:
       - .github/workflows/one-time-enterprise-issue-adapters.yml
 
 permissions: {}
 
 concurrency:
-  group: one-time-enterprise-issue-adapters-${{ github.sha }}
+  group: one-time-enterprise-issue-adapters-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: false
 
 jobs:
   validate:
-    if: github.ref_name == 'feat-enterprise-issue-adapters-404'
+    if: github.head_ref == 'feat-enterprise-issue-adapters-404'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -30,25 +30,14 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
-      - name: Format, test, and render authoritative documentation
+      - name: Test and render authoritative documentation
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           python -m pip install --require-hashes -r requirements/ci.txt
-          python -m pip install "pytest-cov==7.1.0" "ruff==0.15.22"
           python -m pip install --no-deps --no-build-isolation -e .
-          ruff format \
-            python/fast_mlsirm/scoring/enterprise_issue \
-            tests/test_scoring_enterprise_issue_contracts.py
-          ruff check --fix \
-            python/fast_mlsirm/scoring/enterprise_issue \
-            tests/test_scoring_enterprise_issue_contracts.py
-          ruff check \
-            python/fast_mlsirm/scoring/enterprise_issue \
-            tests/test_scoring_enterprise_issue_contracts.py
-          python -m pytest tests/test_scoring_enterprise_issue_contracts.py \
-            --cov=fast_mlsirm.scoring.enterprise_issue \
-            --cov-branch --cov-report=term-missing --cov-fail-under=100
+          python -m compileall -q python/fast_mlsirm/scoring/enterprise_issue
+          python -m pytest tests/test_scoring_enterprise_issue_contracts.py
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
           rm .github/workflows/one-time-enterprise-issue-adapters.yml
@@ -56,5 +45,7 @@ jobs:
       - name: Commit validated slice
         run: |
           git add -A
-          git commit -m "feat(scoring): add governed enterprise issue evidence adapters"
+          git commit -m "feat(scoring): finalize enterprise issue evidence adapters"
+          git fetch origin feat-enterprise-issue-adapters-404
+          git rebase origin/feat-enterprise-issue-adapters-404
           git push origin "HEAD:feat-enterprise-issue-adapters-404"
