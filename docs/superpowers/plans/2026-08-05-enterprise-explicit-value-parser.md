@@ -89,6 +89,14 @@ and non-string frequency periods must fail through the structured
 `invalid_normalized_payload` boundary rather than leaking unhashable-container or
 membership-operation exceptions.
 
+Provider callbacks run only after exact source replay validation. Their output
+must be a bounded tuple of `ExplicitValueRecord` values and is rebound to the
+verified source identity, source revision, code-point offsets, and exact UTF-8
+span fingerprint. The stable boundary canonicalizes output ordering and rejects
+forged, duplicate, out-of-bounds, or overlapping records. Non-domain callback
+exceptions are redacted, and record metadata is restricted to the declared
+`python_unicode_code_point` offset unit.
+
 All public identifiers must remain descriptive, nonnumeric, and at least two
 snake-case tokens. Public docstrings and statement/branch coverage for added code
 must be complete.
