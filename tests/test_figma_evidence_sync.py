@@ -136,6 +136,7 @@ def test_figma_evidence_sync_fails_when_code_connect_enabled(tmp_path):
 
 
 def test_main_reports_repo_root_relative_output(tmp_path, monkeypatch, capsys):
+    """Report a relative output path from the repository root, not the process CWD."""
     module = _load_sync()
     repo_root = tmp_path / "repo"
     _write_packet(repo_root / "packet.json")
