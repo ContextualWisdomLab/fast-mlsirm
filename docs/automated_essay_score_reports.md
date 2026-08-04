@@ -6,7 +6,9 @@
 `EssayScoreReport` from an exact governed essay request, scoring result, and
 engine descriptor. The adapter is a reporting and human-review routing boundary.
 It does not score essays, combine analytic criteria, estimate psychometric
-parameters, or establish validity.
+parameters, or establish validity. Criterion-level many-facet estimator output
+uses the separate `EssayFacetsCalibrationReport` boundary and is not embedded in
+this operational score report.
 
 ```python
 from fast_mlsirm.scoring.essay import build_essay_score_report
