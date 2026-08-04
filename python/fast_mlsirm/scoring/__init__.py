@@ -1,9 +1,29 @@
 """Provider-neutral automated-scoring contracts and policy specifications."""
 
-from . import calibration as _calibration
-from ._calibration_validation import install as _install_calibration_validation
+from . import execution as _execution
+from ._task_revision_contract import install as _install_task_revision_contract
 
-_install_calibration_validation(_calibration)
+_install_task_revision_contract(_execution)
+
+from . import authorization as _authorization
+from ._task_revision_authorization import (
+    install as _install_task_revision_authorization,
+)
+
+_install_task_revision_authorization(_authorization)
+
+from . import calibration as _calibration
+from ._task_revision_calibration import (
+    install as _install_task_revision_calibration,
+)
+
+_install_task_revision_calibration(_calibration)
+
+from . import _calibration_validation as _calibration_validation
+from ._task_revision_replay import install as _install_task_revision_replay
+
+_install_task_revision_replay(_calibration_validation, _calibration)
+_calibration_validation.install(_calibration)
 
 from .calibration import MAX_SCORING_FACETS_CELLS as MAX_SCORING_FACETS_CELLS
 from .calibration import MAX_SCORING_FACETS_RATINGS as MAX_SCORING_FACETS_RATINGS
@@ -22,10 +42,16 @@ from .calibration import fit_scoring_facets_bundle as fit_scoring_facets_bundle
 from .calibration import fit_scoring_facets_design as fit_scoring_facets_design
 from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
 from .contracts import (
+    LEGACY_SCORING_REQUEST_SCHEMA_VERSION as LEGACY_SCORING_REQUEST_SCHEMA_VERSION,
+)
+from .contracts import (
     MAX_METADATA_COLLECTION_VALUES as MAX_METADATA_COLLECTION_VALUES,
 )
 from .contracts import MAX_METADATA_DEPTH as MAX_METADATA_DEPTH
 from .contracts import MAX_METADATA_NODES as MAX_METADATA_NODES
+from .contracts import (
+    SCORING_REQUEST_SCHEMA_VERSION as SCORING_REQUEST_SCHEMA_VERSION,
+)
 from .contracts import AdjudicationPolicy as AdjudicationPolicy
 from .contracts import AssessmentResponseType as AssessmentResponseType
 from .contracts import AssessmentSpec as AssessmentSpec
@@ -55,11 +81,12 @@ from .contracts import build_score_observation as build_score_observation
 from .contracts import build_scoring_request as build_scoring_request
 from .contracts import build_scoring_result as build_scoring_result
 from .contracts import canonical_json as canonical_json
+from .contracts import migrate_scoring_request_v1 as migrate_scoring_request_v1
 
-# Preserve the pinned star-import contract. Execution, authorization, and
-# calibration contracts remain explicit package attributes imported by their
-# documented names, but are not added to ``__all__`` until the next
-# public-surface version bump.
+# Preserve the pinned star-import contract. Execution, authorization,
+# migration, and calibration contracts remain explicit package attributes
+# imported by their documented names, but are not added to ``__all__`` until
+# the next public-surface version bump.
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",
