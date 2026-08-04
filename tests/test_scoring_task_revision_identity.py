@@ -48,9 +48,9 @@ def _assert_error(code: str, callback) -> AssessmentSpecError:
     return caught.value
 
 
-def _legacy_request_artifact():
+def _legacy_request_artifact(request=None):
     """Return a genuine schema-1.0 request artifact derived from shared content."""
-    request = criterion_request()
+    request = criterion_request() if request is None else request
     artifact = request.to_dict()
     artifact.pop("task_revision_fingerprint")
     artifact.pop("request_handle")
@@ -71,10 +71,18 @@ def test_shared_request_requires_one_exact_task_revision() -> None:
     assert request.schema_version == SCORING_REQUEST_SCHEMA_VERSION == "1.1"
     assert request.task_revision_fingerprint == "d" * 64
     assert request.to_dict()["task_revision_fingerprint"] == "d" * 64
-    _assert_error(
+    malformed = _assert_error(
         "invalid_task_revision_fingerprint",
         lambda: criterion_request(task_revision_fingerprint="not_a_digest"),
     )
+    assert malformed.path == "$.task_revision_fingerprint"
+    assert "not_a_digest" not in str(malformed)
+    missing = _assert_error(
+        "invalid_task_revision_fingerprint",
+        lambda: criterion_request(task_revision_fingerprint=None),
+    )
+    assert missing.path == "$.task_revision_fingerprint"
+    assert "None" not in str(missing)
 
 
 def test_task_revision_changes_request_identity_without_changing_logical_task() -> None:
@@ -175,10 +183,19 @@ def test_design_replay_rejects_a_mutated_revision_axis_before_rust(monkeypatch) 
 
 def test_legacy_request_migration_requires_an_explicit_revision() -> None:
     """A verified v1.0 artifact migrates only with caller-supplied task content."""
-    artifact = _legacy_request_artifact()
+    source_request = criterion_request(
+        metadata={
+            "caller_context": {
+                "source_system": "legacy_scoring_service",
+                "batch_labels": ["pilot_group", "review_group"],
+            }
+        }
+    )
+    artifact = _legacy_request_artifact(source_request)
+    authoritative_assessment = assessment()
     migrated = migrate_scoring_request_v1(
         artifact,
-        assessment=assessment(),
+        assessment=authoritative_assessment,
         rubric=rubric(),
         task_revision_fingerprint="e" * 64,
     )
@@ -187,11 +204,24 @@ def test_legacy_request_migration_requires_an_explicit_revision() -> None:
     assert migrated.task_revision_fingerprint == "e" * 64
     assert migrated.task_id == artifact["task_id"]
     assert migrated.request_fingerprint != artifact["request_fingerprint"]
+    migrated_metadata = migrated.to_dict()["metadata"]
+    assert migrated_metadata["caller_context"] == {
+        "source_system": "legacy_scoring_service",
+        "batch_labels": ["pilot_group", "review_group"],
+    }
+    assert migrated_metadata["engine_policy_fingerprint"] == hashlib.sha256(
+        canonical_json(authoritative_assessment.engine_policy._content_dict()).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert migrated_metadata["allow_human_raters"] is True
+    assert migrated_metadata["allow_automated_raters"] is True
+    assert migrated_metadata["permitted_engine_ids"] == ["automated_engine"]
     _assert_error(
         "invalid_task_revision_fingerprint",
         lambda: migrate_scoring_request_v1(
             artifact,
-            assessment=assessment(),
+            assessment=authoritative_assessment,
             rubric=rubric(),
             task_revision_fingerprint="missing_revision",
         ),
