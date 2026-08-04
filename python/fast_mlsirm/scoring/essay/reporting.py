@@ -29,13 +29,61 @@ from .._validation import (
 from ..execution import (
     EngineDescriptor,
     ObservationStatus,
+    ScoreObservation,
     ScoringResult,
+    build_score_observation,
+    build_scoring_result,
 )
 from .contracts import EssayScoringRequest
 
 MAX_ESSAY_REPORT_REVIEW_TRIGGERS = 64
 
 _ESSAY_REPORT_TOKEN = object()
+
+
+def _replay_scoring_result(
+    request: Any,
+    result: ScoringResult,
+    engine: EngineDescriptor,
+) -> None:
+    """Rebuild nested scoring contracts and reject post-construction mutation."""
+    replayed_observations = tuple(
+        build_score_observation(
+            observation_id=observation.observation_id,
+            request=request,
+            engine=engine,
+            criterion_id=observation.criterion_id,
+            status=observation.status,
+            score_category=observation.score_category,
+            reason_code=observation.reason_code,
+            evidence_references=observation.evidence_references,
+            confidence_metadata=observation.confidence_metadata,
+        )
+        for observation in result.observations
+    )
+    for index, (observation, replayed_observation) in enumerate(
+        zip(result.observations, replayed_observations, strict=True)
+    ):
+        if replayed_observation.observation_fingerprint != observation.observation_fingerprint:
+            raise assessment_error(
+                "essay_report_observation_replay_mismatch",
+                f"$.result.observations[{index}]",
+                "observation content does not match a freshly validated contract",
+            )
+    replayed_result = build_scoring_result(
+        result_id=result.result_id,
+        request=request,
+        engine=engine,
+        observations=replayed_observations,
+        execution_attempt=result.execution_attempt,
+        diagnostics=result.diagnostics,
+    )
+    if replayed_result.result_fingerprint != result.result_fingerprint:
+        raise assessment_error(
+            "essay_report_result_replay_mismatch",
+            "$.result",
+            "result content does not match a freshly validated scoring result",
+        )
 
 
 def _validate_report_binding(
@@ -69,8 +117,20 @@ def _validate_report_binding(
             "$.result.requested_criterion_ids",
             "result criteria do not match the essay request",
         )
+    if not isinstance(result.observations, tuple):
+        raise assessment_error(
+            "invalid_essay_report_observations",
+            "$.result.observations",
+            "result observations must remain an immutable tuple",
+        )
     for index, observation in enumerate(result.observations):
         path = f"$.result.observations[{index}]"
+        if not isinstance(observation, ScoreObservation):
+            raise assessment_error(
+                "invalid_essay_report_observation",
+                path,
+                "result observations must remain ScoreObservation values",
+            )
         if observation.request_fingerprint != shared_request.request_fingerprint:
             raise assessment_error(
                 "essay_report_observation_request_mismatch",
@@ -107,6 +167,7 @@ def _validate_report_binding(
                 f"{path}.granularity",
                 "observation granularity does not match the essay request",
             )
+    _replay_scoring_result(shared_request, result, engine)
 
 
 def _mandatory_review_triggers(
