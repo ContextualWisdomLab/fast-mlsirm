@@ -1,5 +1,20 @@
 """Provider-neutral automated-scoring contracts and policy specifications."""
 
+from .calibration import MAX_SCORING_FACETS_CELLS as MAX_SCORING_FACETS_CELLS
+from .calibration import MAX_SCORING_FACETS_RATINGS as MAX_SCORING_FACETS_RATINGS
+from .calibration import (
+    ScoringFacetsCalibrationBundle as ScoringFacetsCalibrationBundle,
+)
+from .calibration import ScoringFacetsDesign as ScoringFacetsDesign
+from .calibration import ScoringFacetsRatingRecord as ScoringFacetsRatingRecord
+from .calibration import (
+    build_scoring_facets_calibration_bundle as build_scoring_facets_calibration_bundle,
+)
+from .calibration import (
+    build_scoring_facets_rating_records as build_scoring_facets_rating_records,
+)
+from .calibration import fit_scoring_facets_bundle as fit_scoring_facets_bundle
+from .calibration import fit_scoring_facets_design as fit_scoring_facets_design
 from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
 from .contracts import (
     MAX_METADATA_COLLECTION_VALUES as MAX_METADATA_COLLECTION_VALUES,
@@ -36,10 +51,10 @@ from .contracts import build_scoring_request as build_scoring_request
 from .contracts import build_scoring_result as build_scoring_result
 from .contracts import canonical_json as canonical_json
 
-# Preserve the pinned star-import contract. Execution and authorization
-# contracts remain explicit package attributes imported by their documented
-# names, but are not added to ``__all__`` until the next public-surface
-# version bump.
+# Preserve the pinned star-import contract. Execution, authorization, and
+# calibration contracts remain explicit package attributes imported by their
+# documented names, but are not added to ``__all__`` until the next
+# public-surface version bump.
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",
