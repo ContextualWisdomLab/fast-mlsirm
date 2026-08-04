@@ -91,29 +91,34 @@ def project(execution_value) -> tuple[calibration.ScoringFacetsRatingRecord, ...
 
 
 def connected_records(*, terminal: bool = False):
-    """Return a connected four-response, two-task, two-rater design."""
+    """Return a sparse connected two-respondent, two-task, two-rater design."""
     records = []
     engines = (automated_engine(), human_engine())
-    rows = (
-        ("alpha_one", "prompt_alpha", 0),
-        ("alpha_two", "prompt_alpha", 1),
-        ("beta_one", "prompt_beta", 2),
-        ("beta_two", "prompt_beta", 0),
+    cells = (
+        ("alpha", "alpha", 0, (0, 1)),
+        ("alpha", "beta", 2, (0,)),
+        ("beta", "alpha", 1, (1,)),
+        ("beta", "beta", 0, (0, 1)),
     )
-    for row_index, (stem, task_id, base_score) in enumerate(rows):
-        for engine_index, engine in enumerate(engines):
+    for cell_index, (respondent_name, task_name, base_score, rater_indexes) in enumerate(
+        cells
+    ):
+        for engine_index in rater_indexes:
+            engine = engines[engine_index]
             claim_status = ObservationStatus.SCORED
             claim_score: int | None = (base_score + engine_index) % 3
-            if terminal and row_index == 0 and engine_index == 0:
+            if terminal and cell_index == 0 and engine_index == 0:
                 claim_status = ObservationStatus.ABSTAINED
                 claim_score = None
             records.extend(
                 project(
                     execution(
-                        request_id=f"request_{stem}_{engine_index}",
-                        response_id=f"response_{stem}",
-                        respondent_id=f"respondent_{stem}",
-                        task_id=task_id,
+                        request_id=(
+                            f"request_{respondent_name}_{task_name}_{engine_index}"
+                        ),
+                        response_id=f"response_{respondent_name}_{task_name}",
+                        respondent_id=f"respondent_{respondent_name}",
+                        task_id=f"prompt_{task_name}",
                         engine=engine,
                         claim_score=claim_score,
                         source_score=(2 - base_score + engine_index) % 3,
@@ -125,42 +130,29 @@ def connected_records(*, terminal: bool = False):
 
 
 def disconnected_records():
-    """Return two estimable task-rater components without a linking edge."""
-    return (
-        *project(
-            execution(
-                request_id="request_component_one",
-                response_id="response_component_one",
-                respondent_id="respondent_component_one",
-                task_id="prompt_component_one",
-                engine=automated_engine(),
-                claim_score=0,
-                source_score=0,
+    """Return an auditable but respondent-task-disconnected design."""
+    records = []
+    for respondent_name, task_name, base_score in (
+        ("component_one", "component_one", 0),
+        ("component_two", "component_two", 2),
+    ):
+        for engine_index, engine in enumerate((automated_engine(), human_engine())):
+            records.extend(
+                project(
+                    execution(
+                        request_id=(
+                            f"request_{respondent_name}_{task_name}_{engine_index}"
+                        ),
+                        response_id=f"response_{respondent_name}_{task_name}",
+                        respondent_id=f"respondent_{respondent_name}",
+                        task_id=f"prompt_{task_name}",
+                        engine=engine,
+                        claim_score=(base_score + engine_index) % 3,
+                        source_score=(2 - base_score + engine_index) % 3,
+                    )
+                )
             )
-        ),
-        *project(
-            execution(
-                request_id="request_component_one_b",
-                response_id="response_component_one_b",
-                respondent_id="respondent_component_one_b",
-                task_id="prompt_component_one",
-                engine=automated_engine(),
-                claim_score=1,
-                source_score=1,
-            )
-        ),
-        *project(
-            execution(
-                request_id="request_component_two",
-                response_id="response_component_two",
-                respondent_id="respondent_component_two",
-                task_id="prompt_component_two",
-                engine=human_engine(),
-                claim_score=2,
-                source_score=2,
-            )
-        ),
-    )
+    return tuple(records)
 
 
 def record_values(source=None) -> dict[str, Any]:
@@ -269,20 +261,20 @@ def test_bundle_is_deterministic_and_preserves_sparse_state() -> None:
     normalized = design.responses_array()
     original = design.original_scores_array()
     states = design.response_states()
-    assert normalized.shape == original.shape == (4, 2, 2)
-    assert np.isnan(normalized).sum() == 9
-    assert np.isnan(original).sum() == 9
+    assert normalized.shape == original.shape == (2, 2, 2)
+    assert np.isnan(normalized).sum() == 3
+    assert np.isnan(original).sum() == 3
     assert set(normalized[np.isfinite(normalized)]) <= {0.0, 1.0, 2.0}
     assert any(
         state is ObservationStatus.ABSTAINED
-        for response_states in states
-        for task_states in response_states
+        for respondent_states in states
+        for task_states in respondent_states
         for state in task_states
     )
     assert any(
         state is None
-        for response_states in states
-        for task_states in response_states
+        for respondent_states in states
+        for task_states in respondent_states
         for state in task_states
     )
     normalized[0, 0, 0] = 99
@@ -329,7 +321,7 @@ def test_fit_helpers_delegate_every_numeric_operation(monkeypatch) -> None:
     fitted = fit_scoring_facets_bundle(
         bundle, q_theta=15, max_iter=66, tol=1e-4
     )
-    assert one == {"shape": (4, 2, 2), "n_cat": 3}
+    assert one == {"shape": (2, 2, 2), "n_cat": 3}
     assert set(fitted) == set(bundle.criterion_ids)
     assert calls[0]["q_theta"] == 21
     assert calls[0]["max_iter"] == 77
@@ -337,8 +329,8 @@ def test_fit_helpers_delegate_every_numeric_operation(monkeypatch) -> None:
     assert all(call["n_cat"] == 3 for call in calls)
 
 
-def test_disconnected_design_requires_assembly_and_fit_opt_in(monkeypatch) -> None:
-    """Disconnected designs fail closed except in explicit diagnostics."""
+def test_disconnected_design_requires_assembly_and_rejects_fit() -> None:
+    """Disconnected designs may be audited but never enter the estimator."""
     records = disconnected_records()
     assert_error(
         "disconnected_facets_design",
@@ -349,17 +341,13 @@ def test_disconnected_design_requires_assembly_and_fit_opt_in(monkeypatch) -> No
         require_connected=False,
     )
     assert all(not design.connected for design in bundle.designs)
-    assert_error(
-        "disconnected_facets_design",
-        lambda: fit_scoring_facets_design(bundle.designs[0]),
-    )
-    monkeypatch.setattr(
-        "fast_mlsirm.facets.fit_facets",
-        lambda **kwargs: kwargs["responses"].shape,
-    )
-    assert fit_scoring_facets_design(
-        bundle.designs[0], allow_disconnected=True
-    ) == (3, 2, 2)
+    for allow_disconnected in (False, True):
+        assert_error(
+            "disconnected_facets_design",
+            lambda allow_disconnected=allow_disconnected: fit_scoring_facets_design(
+                bundle.designs[0], allow_disconnected=allow_disconnected
+            ),
+        )
     assert_error(
         "invalid_require_connected",
         lambda: build_scoring_facets_calibration_bundle(records, require_connected=1),
@@ -574,13 +562,21 @@ def test_design_rejects_insufficient_support_and_dense_amplification(monkeypatch
     """Every estimable axis needs observed support before bounded allocation."""
     group = criterion_group(connected_records())
 
-    one_response = tuple(
-        record for record in group if record.response_id == group[0].response_id
+    one_respondent = tuple(
+        record for record in group if record.respondent_id == group[0].respondent_id
     )
     assert_error(
-        "insufficient_facets_responses",
+        "insufficient_facets_respondents",
         lambda: calibration._build_criterion_design(
-            one_response, require_connected=False
+            one_respondent, require_connected=False
+        ),
+    )
+
+    one_task = tuple(record for record in group if record.task_id == group[0].task_id)
+    assert_error(
+        "insufficient_facets_tasks",
+        lambda: calibration._build_criterion_design(
+            one_task, require_connected=False
         ),
     )
 
@@ -596,7 +592,7 @@ def test_design_rejects_insufficient_support_and_dense_amplification(monkeypatch
         ),
     )
 
-    target_response = group[0].response_id
+    target_respondent = group[0].respondent_id
     terminal_group = tuple(
         replace(
             record,
@@ -604,7 +600,7 @@ def test_design_rejects_insufficient_support_and_dense_amplification(monkeypatch
             score_category=None,
             _rating_token=calibration._RATING_TOKEN,
         )
-        if record.response_id == target_response
+        if record.respondent_id == target_respondent
         else record
         for record in group
     )
