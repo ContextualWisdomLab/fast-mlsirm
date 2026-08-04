@@ -1,0 +1,28 @@
+name: Controller Source Snapshot
+
+on:
+  push:
+    branches:
+      - controller-source-snapshot
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out reviewed default-branch source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+      - name: Archive source without repository metadata
+        run: tar --exclude=.git -czf fast-mlsirm-source.tgz .
+      - name: Publish source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: controller-source-main
+          path: fast-mlsirm-source.tgz
+          if-no-files-found: error
+          retention-days: 1
