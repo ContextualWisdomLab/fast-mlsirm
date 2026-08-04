@@ -1,8 +1,8 @@
 """Compatibility composition for public scoring contracts.
 
-The implementation is split into bounded canonicalization, policy, and
-assessment-graph modules. This file preserves one stable internal import surface
-for the package namespace and future scoring components.
+The implementation is split into bounded canonicalization, assessment-policy,
+and execution-contract modules. This file preserves one stable internal import
+surface for the package namespace and future scoring components.
 """
 
 from ._contract_safety import artifact_digest as artifact_digest
@@ -18,6 +18,22 @@ from .assessment import AssessmentResponseType as AssessmentResponseType
 from .assessment import AssessmentSpec as AssessmentSpec
 from .assessment import ConstructSpec as ConstructSpec
 from .assessment import build_assessment_spec as build_assessment_spec
+from .execution import EngineDescriptor as EngineDescriptor
+from .execution import EngineKind as EngineKind
+from .execution import EvidenceReference as EvidenceReference
+from .execution import EvidenceRole as EvidenceRole
+from .execution import FixtureOutcome as FixtureOutcome
+from .execution import ObservationGranularity as ObservationGranularity
+from .execution import ObservationStatus as ObservationStatus
+from .execution import ScoreObservation as ScoreObservation
+from .execution import ScoringEngine as ScoringEngine
+from .execution import ScoringRequest as ScoringRequest
+from .execution import ScoringResult as ScoringResult
+from .execution import StaticFixtureEngine as StaticFixtureEngine
+from .execution import build_engine_descriptor as build_engine_descriptor
+from .execution import build_score_observation as build_score_observation
+from .execution import build_scoring_request as build_scoring_request
+from .execution import build_scoring_result as build_scoring_result
 from .policies import AdjudicationPolicy as AdjudicationPolicy
 from .policies import CalibrationPolicy as CalibrationPolicy
 from .policies import EnginePolicy as EnginePolicy
@@ -36,11 +52,27 @@ __all__ = [
     "AssessmentSpecError",
     "CalibrationPolicy",
     "ConstructSpec",
+    "EngineDescriptor",
+    "EngineKind",
     "EnginePolicy",
+    "EvidenceReference",
+    "EvidenceRole",
+    "FixtureOutcome",
     "MonitoringPolicy",
+    "ObservationGranularity",
+    "ObservationStatus",
     "ReportingPolicy",
+    "ScoreObservation",
+    "ScoringEngine",
+    "ScoringRequest",
+    "ScoringResult",
+    "StaticFixtureEngine",
     "ValidationPolicy",
     "artifact_digest",
     "build_assessment_spec",
+    "build_engine_descriptor",
+    "build_score_observation",
+    "build_scoring_request",
+    "build_scoring_result",
     "canonical_json",
 ]
