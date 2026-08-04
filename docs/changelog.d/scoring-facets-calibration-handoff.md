@@ -1,7 +1,0 @@
-# Governed criterion-level facets calibration handoff
-
-## Added
-
-- Added factory-sealed, content-addressed scoring-facets rating, design, and calibration-bundle contracts that project exact governed scoring requests, results, engines, respondents, tasks, criteria, terminal states, score scales, engine fingerprints, response IDs, and response-content revisions into criterion-specific respondent-by-task-by-rater designs.
-- Added fail-closed replay, duplicate, provenance, respondent-task response-revision, observed-support, category-identification, dense-allocation, respondent-task connectedness, and task-rater connectedness gates. Sparse pilot designs may be assembled and audited after at least two categories are observed among scored records, but every declared category must be observed and the design must be connected before it can reach the Rust estimator. Abstained, failed, excluded, and absent cells remain missing and never satisfy category coverage or become low scores.
-- Added `fit_scoring_facets_bundle`, which delegates likelihood, EM, quadrature, and parameter updates to the existing Rust-backed `fit_facets` implementation and calibrates analytic criteria separately instead of averaging them. The baseline models respondent or system-run proficiency, task difficulty, common thresholds, and rater severity; it makes no convergence, fit, reliability, fairness, scoreability, construct-validity, rater-interchangeability, causal-utility, or high-stakes automation claim.
