@@ -265,7 +265,11 @@ def test_submission_rejects_limits_duplicates_and_unverified_values() -> None:
     )
     assert_error(
         "response_unit_limit_exceeded",
-        lambda: submission(prompt_record, response_unit_count=11),
+        lambda: submission(
+            prompt_record,
+            response_character_count=80,
+            response_unit_count=11,
+        ),
     )
     assert_error(
         "duplicate_review_flag",
