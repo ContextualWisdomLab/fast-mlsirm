@@ -12,6 +12,7 @@ import fast_mlsirm.scoring.calibration as calibration
 from fast_mlsirm.scoring import (
     AssessmentSpecError,
     build_scoring_facets_calibration_bundle,
+    fit_scoring_facets_design,
 )
 
 _BASE = runpy.run_path(
@@ -27,9 +28,9 @@ def _project_rows(rows, *, rater_selector=None):
     """Project deterministic respondent-task rows through selected raters."""
     records = []
     engines = (automated_engine(), human_engine())
-    for row_index, (respondent_id, task_id, base_score) in enumerate(rows):
+    for respondent_id, task_id, base_score in rows:
         selected = engines if rater_selector is None else rater_selector(task_id, engines)
-        for engine_index, engine in enumerate(selected):
+        for engine in selected:
             rater_index = engines.index(engine)
             response_id = f"response_{respondent_id}_{task_id}"
             records.extend(
@@ -70,6 +71,8 @@ def test_person_axis_is_unique_respondent_not_response_identity() -> None:
         assert design.respondent_ids == ("respondent_alpha", "respondent_beta")
         assert design.task_ids == ("prompt_alpha", "prompt_beta")
         assert design.responses_array().shape == (2, 2, 2)
+        assert design.respondent_task_connected is True
+        assert design.task_rater_connected is True
         assert design.connected is True
         assert {
             (record.respondent_id, record.task_id, record.response_id)
@@ -96,6 +99,18 @@ def test_person_axis_is_unique_respondent_not_response_identity() -> None:
                 "response_respondent_beta_prompt_beta",
             ),
         }
+        serialized = design.to_dict()
+        assert len(serialized["respondent_task_responses"]) == 4
+        assert all(
+            set(entry)
+            == {
+                "respondent_id",
+                "task_id",
+                "response_id",
+                "response_content_fingerprint",
+            }
+            for entry in serialized["respondent_task_responses"]
+        )
 
 
 def test_one_respondent_across_tasks_is_not_an_identified_person_design() -> None:
@@ -142,8 +157,19 @@ def test_diagonal_respondent_task_design_fails_before_fitting() -> None:
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "disconnected_facets_design"
+    assert caught.value.code == "unidentified_respondent_task_design"
     assert caught.value.path == "$.records"
+
+    diagnostic = build_scoring_facets_calibration_bundle(
+        records,
+        require_connected=False,
+    )
+    assert all(not design.respondent_task_connected for design in diagnostic.designs)
+    assert all(design.task_rater_connected for design in diagnostic.designs)
+    for design in diagnostic.designs:
+        with pytest.raises(AssessmentSpecError) as fit_error:
+            fit_scoring_facets_design(design)
+        assert fit_error.value.code == "unidentified_respondent_task_design"
 
 
 def test_task_rater_graph_must_also_be_connected() -> None:
@@ -165,8 +191,19 @@ def test_task_rater_graph_must_also_be_connected() -> None:
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "disconnected_facets_design"
+    assert caught.value.code == "disconnected_task_rater_design"
     assert caught.value.path == "$.records"
+
+    diagnostic = build_scoring_facets_calibration_bundle(
+        records,
+        require_connected=False,
+    )
+    assert all(design.respondent_task_connected for design in diagnostic.designs)
+    assert all(not design.task_rater_connected for design in diagnostic.designs)
+    for design in diagnostic.designs:
+        with pytest.raises(AssessmentSpecError) as fit_error:
+            fit_scoring_facets_design(design)
+        assert fit_error.value.code == "disconnected_task_rater_design"
 
 
 def test_respondent_task_cell_binds_one_response_revision() -> None:
@@ -193,8 +230,35 @@ def test_respondent_task_cell_binds_one_response_revision() -> None:
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "respondent_task_provenance_conflict"
+    assert caught.value.code == "respondent_task_response_conflict"
     assert caught.value.path.endswith(".response_id")
+    assert private_digest not in str(caught.value)
+
+
+def test_respondent_task_cell_rejects_changed_content_with_same_response_id() -> None:
+    """One response identifier cannot hide multiple content revisions in one cell."""
+    records = list(respondent_connected_records())
+    target = records[0]
+    conflicting_index = next(
+        index
+        for index, record in enumerate(records)
+        if record.criterion_id == target.criterion_id
+        and record.respondent_id == target.respondent_id
+        and record.task_id == target.task_id
+        and record.engine_fingerprint != target.engine_fingerprint
+    )
+    private_digest = "f" * 64
+    records[conflicting_index] = replace(
+        records[conflicting_index],
+        response_content_fingerprint=private_digest,
+        _rating_token=calibration._RATING_TOKEN,
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_calibration_bundle(records)
+
+    assert caught.value.code == "respondent_task_response_conflict"
+    assert caught.value.path.endswith(".response_content_fingerprint")
     assert private_digest not in str(caught.value)
 
 
