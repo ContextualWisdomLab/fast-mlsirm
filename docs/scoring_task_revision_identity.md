@@ -1,76 +1,131 @@
 # Exact task-revision identity in governed scoring
 
-`fast_mlsirm.scoring` separates a task's stable operational name from the exact
-content administered in one scoring request. This prevents changed prompts,
-forms, or source-bound tasks from being silently pooled under one item-difficulty
-parameter.
+## Purpose
 
-## Contract
+A logical task identifier is an administrative label, not evidence that two task
+forms contain the same content or support interchangeable score interpretations.
+Scoring-request wire schema `1.1` therefore requires a complete lowercase
+SHA-256 `task_revision_fingerprint` for the exact normalized task content.
 
-Every schema-1.1 `ScoringRequest` contains:
+The shared contract separates:
 
-- `task_id`: a descriptive logical identity;
-- `task_family_id`: its operational family; and
-- `task_revision_fingerprint`: the complete SHA-256 fingerprint of the exact
-  normalized task revision.
+- `task_id`: stable logical label for display and administration;
+- `task_family_id`: declared family used by the rubric and assessment;
+- `task_revision_fingerprint`: exact content identity used by calibration.
 
-The revision is required explicitly. The package does not hash `task_id`, infer
-content equality from metadata, or accept an adapter-specific fallback. The
-essay adapter projects the complete `EssayPrompt.prompt_fingerprint` into this
-field.
+This separation applies to standalone scoring, domain adapters, serialized MSA
+events, and the criterion-level many-facet handoff. It prevents two changed
+prompts or tasks from being silently pooled under one item-difficulty parameter.
 
-Changing only `task_revision_fingerprint` changes `request_fingerprint`. The
-logical task and family remain available for reporting, but the revision is the
-many-facet estimator item axis.
+## Request schema 1.1
 
-## Calibration and audit representation
+Every current request factory requires the revision explicitly:
 
-`ScoringFacetsRatingRecord` preserves the logical task, task family, exact task
-revision, response revision, request, result, observation, and engine identities.
-`ScoringFacetsDesign` discloses aligned arrays:
+```python
+from fast_mlsirm.scoring import build_scoring_request
 
-```text
-revision axis: task_revision_fingerprints
-logical labels: task_ids
-family labels: task_family_ids
-response audit: response_task_revision_fingerprints
+request = build_scoring_request(
+    request_id="request_identity",
+    assessment=assessment_spec,
+    rubric=rubric_specification,
+    granularity="criterion_level",
+    respondent_id="respondent_identity",
+    response_id="response_identity",
+    task_id="logical_task_identity",
+    task_revision_fingerprint=task_sha256,
+    task_family_id="declared_task_family",
+    occasion_id="initial_occasion",
+    criterion_ids=("claim_support", "source_alignment"),
+    response_content_fingerprint=response_sha256,
+    response_character_count=128,
+    response_unit_count=8,
+)
 ```
 
-All tensor allocation, duplicate-cell checks, observed support, and
-connectedness use the exact revision. One revision cannot be rebound to another
-logical task or family. One respondent-revision cell cannot contain different
-response artifacts within the bundle occasion.
+The revision is canonical request content and therefore changes
+`request_fingerprint`. Callers must compute it from an authoritative normalized
+task representation. The package does not derive a revision from `task_id`, an
+adapter metadata key, a provider name, or a response.
 
-## Legacy migration
+The essay adapter uses the complete `EssayPrompt.prompt_fingerprint` as the
+shared task revision. Adapter metadata may repeat that identity for domain audit,
+but the shared request field is authoritative for calibration.
 
-`migrate_scoring_request_v1` accepts only a complete schema-1.0 `to_dict()`
-artifact. It:
+## Legacy schema 1.0 migration
 
-1. verifies the exact legacy field shape and schema version;
-2. replays the authoritative assessment, rubric, score scale, task family, and
-   engine authorization;
-3. verifies the legacy request fingerprint and public handle;
-4. requires an authoritative caller-supplied exact revision; and
-5. returns a new schema-1.1 request with a new fingerprint.
+A schema-`1.0` request did not contain exact task content identity. Migration is
+therefore explicit and requires an authoritative caller-supplied revision:
 
-Caller metadata is preserved after canonical normalization. Package-managed
-engine-policy metadata is validated against and regenerated from the supplied
-`AssessmentSpec`. Legacy observations and results are intentionally not migrated
-because their provenance remains bound to the old request fingerprint.
+```python
+from fast_mlsirm.scoring import migrate_scoring_request_v1
 
-## Scientific boundary
+current_request = migrate_scoring_request_v1(
+    legacy_request_artifact,
+    assessment=authoritative_assessment,
+    rubric=authoritative_rubric,
+    task_revision_fingerprint=task_sha256,
+)
+```
 
-A content fingerprint establishes identity, not comparability. Changed task
-content may alter difficulty, construct representation, response processes,
-subgroup functioning, or rater interpretation. Cross-revision reporting requires
-an explicit linking design supported by stable anchors, invariance and DIF
-analysis, recovery evidence, uncertainty, and an approved interpretation policy.
-When those conditions are absent, revisions remain separate estimator items.
+The migration boundary:
 
-This conservative boundary is consistent with testing standards that require
-rationale and evidence before scores from changed forms or procedures are treated
-as comparable, and with empirical evidence that prompt characteristics and
-anchor drift can affect performance and equating.
+1. requires the exact schema-`1.0` field set;
+2. verifies the authoritative assessment, rubric, task family, score scale, and
+   engine-policy projection through current contracts;
+3. preserves normalized caller metadata while replacing package-managed
+   authorization metadata from the authoritative assessment;
+4. reconstructs schema-`1.0` canonical content and verifies its fingerprint and
+   public handle; and
+5. emits a new schema-`1.1` request with a new request fingerprint.
+
+Observations and results are not migrated. They remain bound to the legacy
+request fingerprint and must be produced again under the current request.
+
+## Calibration identity
+
+The many-facet estimator receives a respondent-by-task-revision-by-rater tensor.
+Each `ScoringFacetsDesign` retains aligned logical labels:
+
+```text
+task_revision_fingerprints  -> estimator item axis
+task_ids                    -> aligned logical labels
+task_family_ids             -> aligned family labels
+```
+
+One revision may map to exactly one `(task_id, task_family_id)` pair. One logical
+task may have multiple revisions. Duplicate cells, observed-support checks,
+respondent–item connectedness, item–rater connectedness, dense-allocation
+bounds, response binding, design replay, and bundle replay all use the exact
+revision identity.
+
+## Comparability and linking boundary
+
+A content fingerprint establishes identity, not equivalence. Changed task
+content may change difficulty, construct representation, subgroup functioning,
+strategy use, or rater interpretation. Two task revisions remain separate
+calibration items unless an approved linking design supplies evidence such as:
+
+- common-item or common-person anchors with documented quality;
+- stable anchor parameters and drift monitoring;
+- measurement-invariance and differential-item-functioning analyses;
+- true-parameter and linking-error recovery studies; and
+- an explicit policy governing permitted score interpretations and uses.
+
+The package therefore fails closed on accidental pooling and makes no automatic
+cross-revision linking claim.
+
+## Operational guidance
+
+- Store the complete revision fingerprint in event envelopes, audit stores,
+  model registries, and scoring-result provenance.
+- Treat every task-content change as a new revision, including changes to
+  instructions, source context, response constraints, scoring-relevant media,
+  or prompt wording.
+- Preserve logical IDs for reporting, but never use them as estimator equality
+  keys.
+- Re-execute legacy observations after migration.
+- Quarantine a revision when anchor drift, DIF, or construct-representation
+  evidence invalidates the approved linking policy.
 
 ## References
 
@@ -79,19 +134,17 @@ American Educational Research Association, American Psychological Association,
 educational and psychological testing*. American Educational Research
 Association.
 
-Cooperman, A. W., Tai, M. H., DeWeese, J. N., & Weiss, D. J. (2025). Adaptive
-measurement of change in the context of item parameter drift. *Applied
-Psychological Measurement, 49*(3), 109–125.
-https://doi.org/10.1177/01466216241310599
+Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and linking:
+Methods and practices* (3rd ed.). Springer.
+https://doi.org/10.1007/978-1-4939-0317-7
 
-Li, X., & Pan, W. (2025). KAES: Multi-aspect shared knowledge finding and
-aligning for cross-prompt automated scoring of essay traits. *Proceedings of the
-AAAI Conference on Artificial Intelligence, 39*(23), 24476–24484.
-https://doi.org/10.1609/aaai.v39i23.34626
+Li, Y. (2012). Examining the impact of drifted polytomous anchor items on test
+characteristic curve linking and IRT true score equating (Research Report No.
+RR-12-09). *ETS Research Report Series, 2012*(1), i–21.
+https://doi.org/10.1002/j.2333-8504.2012.tb02291.x
 
-Liu, C., & Jurich, D. (2023). Outlier detection using *t*-test in Rasch IRT
-equating under NEAT design. *Applied Psychological Measurement, 47*(1), 34–47.
-https://doi.org/10.1177/01466216221124045
+Millsap, R. E. (2011). *Statistical approaches to measurement invariance*.
+Routledge. https://doi.org/10.4324/9780203821961
 
 Shi, B., Huang, L., & Lu, X. (2020). Effect of prompt type on test-takers’
 writing performance and strategy use. *Language Testing, 37*(3), 361–388.

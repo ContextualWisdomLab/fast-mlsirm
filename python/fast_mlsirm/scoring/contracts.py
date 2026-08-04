@@ -66,7 +66,6 @@ __all__ = [
     "EvidenceReference",
     "EvidenceRole",
     "FixtureOutcome",
-    "LEGACY_SCORING_REQUEST_SCHEMA_VERSION",
     "MonitoringPolicy",
     "ObservationGranularity",
     "ObservationStatus",
@@ -74,7 +73,6 @@ __all__ = [
     "ScoreObservation",
     "ScoringEngine",
     "ScoringRequest",
-    "SCORING_REQUEST_SCHEMA_VERSION",
     "ScoringResult",
     "StaticFixtureEngine",
     "ValidationPolicy",
@@ -85,5 +83,4 @@ __all__ = [
     "build_scoring_request",
     "build_scoring_result",
     "canonical_json",
-    "migrate_scoring_request_v1",
 ]

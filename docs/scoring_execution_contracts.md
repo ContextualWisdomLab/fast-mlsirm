@@ -49,6 +49,7 @@ request = build_scoring_request(
     respondent_id="sample_respondent",
     response_id="sample_response",
     task_id="sample_task",
+    task_revision_fingerprint=task_sha256,
     task_family_id="evidence_review",
     occasion_id="initial_occasion",
     criterion_ids=("claim_support", "source_alignment"),
@@ -121,3 +122,7 @@ A runtime-checkable `ScoringEngine` protocol allows optional integration package
 ## Modular deployment
 
 The same contracts can be used in-process by the standalone package or serialized across an MSA boundary. Assessment, request, engine, observation, evidence, and result fingerprints should be retained in event envelopes, audit stores, model registries, and later Rust-backed calibration handoffs.
+
+## Exact task revisions
+
+Schema `1.1` scoring requests require `task_revision_fingerprint`, a complete SHA-256 identity for the exact normalized task content. `task_id` remains a logical display and administration identifier. Callers must never derive the revision from the logical ID. Legacy schema `1.0` artifacts require `migrate_scoring_request_v1` with an authoritative explicit revision; observations and results bound to the legacy request fingerprint must be produced again.

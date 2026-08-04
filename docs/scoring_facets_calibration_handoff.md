@@ -7,7 +7,8 @@ observation schema or implementing psychometric arithmetic in Python.
 The handoff is shared infrastructure for domain adapters such as automated essay
 scoring and enterprise issue intelligence. Domain modules emit the ordinary
 `ScoringRequest`, `ScoringResult`, and `EngineDescriptor` contracts; the
-calibration layer projects those exact artifacts into criterion-specific designs.
+calibration layer replays those exact artifacts before projecting them into
+criterion-specific designs.
 
 ## Measurement mapping
 
@@ -22,22 +23,29 @@ many-facet model:
 The governed axes are:
 
 - person: one respondent or system run, identified by `respondent_id`;
-- item: one exact `task_id`, such as an essay prompt revision;
+- item: one exact task revision, identified by `task_revision_fingerprint`;
 - rater: one full `EngineDescriptor.engine_fingerprint`;
 - category: the ordered rubric score scale.
 
-Each respondent-task cell retains its exact `response_id` and
+`task_id` and `task_family_id` remain aligned logical labels for display,
+administration, grouping, and audit. They do not define equality for estimation.
+One task revision fingerprint may bind to exactly one logical task and task
+family, while one logical task may legitimately have multiple revisions. A
+revision-to-logical-task collision fails before tensor allocation.
+
+Each respondent–task-revision cell retains its exact `response_id` and
 `response_content_fingerprint`. Multiple raters may score one cell only when they
 consume the same governed response revision. Reusing a response identifier for
-changed content, or binding two response artifacts to one respondent-task cell,
-fails before tensor allocation. Response-revision changes therefore propagate
-through rating, design, and bundle identities.
+changed content, or binding two response artifacts to one
+respondent–task-revision cell, fails closed. Task- or response-revision changes
+therefore propagate through rating, design, and bundle identities.
 
-In scoring wire schema 1.0, `task_id` is the estimator item identity. Callers must
-issue a new descriptive task identifier when task content changes. Issue #499
-tracks an explicit provider-neutral `task_revision_fingerprint` for the next
-schema revision. Changed revisions require governed anchors and invariance/DIF
-evidence rather than silent pooling.
+Scoring-request wire schema `1.1` requires the complete SHA-256
+`task_revision_fingerprint`. Schema `1.0` request artifacts may be migrated only
+through `migrate_scoring_request_v1` with an authoritative caller-supplied task
+revision. Migration does not guess from a logical task ID, prompt metadata, or
+response content. Legacy observations and results remain bound to the old
+request fingerprint and must be produced again.
 
 The full engine fingerprint is the rater identity. A changed model, prompt
 template, provider, version, or engine metadata becomes a new rater rather than
@@ -73,24 +81,27 @@ validation and monitoring.
 
 Before dense allocation, the assembler:
 
-- requires at least two respondents, two tasks, two raters, and two observed
-  categories per criterion;
-- requires scored support for every respondent, task, and rater level;
-- rejects duplicate respondent-task-rater cells;
-- binds each logical response to one respondent, task, and exact content
-  revision across all criteria and raters;
-- binds each respondent-task cell to one exact response ID and content digest;
-- bounds the complete respondent-by-task-by-rater allocation;
+- requires at least two respondents, two task revisions, two raters, and two
+  observed categories per criterion;
+- requires scored support for every respondent, task-revision, and rater level;
+- rejects duplicate respondent–task-revision–rater cells;
+- binds each task revision to one logical task and task family;
+- binds each logical response to one respondent, task revision, and exact
+  content revision across all criteria and raters;
+- binds each respondent–task-revision cell to one exact response ID and content
+  digest;
+- bounds the complete respondent-by-task-revision-by-rater allocation;
 - verifies one assessment, rubric, construct, occasion, and score scale;
-- checks the scored respondent-task bipartite graph for connectedness; and
-- checks the scored task-rater bipartite graph for connectedness.
+- checks the scored respondent–task-revision bipartite graph for connectedness;
+  and
+- checks the scored task-revision–rater bipartite graph for connectedness.
 
-Both graphs are required. Common raters do not identify task difficulty when
-respondents are observed on disjoint tasks, and respondent overlap does not
-identify rater severity when raters are confounded with tasks. A disconnected
-design can be retained only as an audit artifact with `require_connected=False`;
-it cannot enter `fit_facets`, including through the legacy
-`allow_disconnected` argument.
+Both graphs are required. Common raters do not identify task-revision difficulty
+when respondents are observed on disjoint revisions, and respondent overlap does
+not identify rater severity when raters are confounded with revisions. A
+disconnected design can be retained only as an audit artifact with
+`require_connected=False`; it cannot enter `fit_facets`, including through the
+legacy `allow_disconnected` argument.
 
 ## Replay and provenance boundary
 
@@ -105,12 +116,25 @@ before emitting any rating record. It rejects:
 - mismatched request, assessment, rubric, construct, granularity, or engine
   provenance on any observation.
 
+Design and bundle fitting rebuild the artifact from its replayed rating records.
+A mutated task-revision axis, logical-label mapping, response provenance,
+connectedness flag, or rating collection therefore fails before Rust delegation.
 Validation errors use stable caller-independent codes and paths and do not echo
 rejected values.
 
+## Cross-revision comparability boundary
+
+Content-addressing prevents accidental pooling; it does not establish that two
+task revisions are interchangeable or lie on a common scale. A changed prompt
+or task may change difficulty, construct representation, subgroup functioning,
+or rater interpretation. Cross-revision score linking requires an approved
+linking design with common anchors, recovery evidence, drift monitoring, and
+measurement-invariance or DIF analyses. Logical task IDs alone are not linking
+evidence.
+
 ## Interpretation boundary
 
-This first baseline estimates respondent or system-run proficiency, task
+This baseline estimates respondent or system-run proficiency, task-revision
 difficulty, common category thresholds, and rater severity *within each
 criterion*. It deliberately does not average analytic criteria or assert a
 general writing-quality factor. It also does not estimate a response-level
@@ -153,6 +177,11 @@ the compiled Rust core through `fast_mlsirm.fit_facets`.
 
 ## References
 
+American Educational Research Association, American Psychological Association,
+& National Council on Measurement in Education. (2014). *Standards for
+educational and psychological testing*. American Educational Research
+Association.
+
 Andrich, D. (1978). A rating formulation for ordered response categories.
 *Psychometrika, 43*(4), 561–573. https://doi.org/10.1007/BF02293814
 
@@ -163,4 +192,11 @@ https://doi.org/10.1007/BF02293801
 Eckes, T. (2015). *Introduction to many-facet Rasch measurement* (2nd ed.).
 Peter Lang. https://doi.org/10.3726/978-3-653-04844-5
 
+Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and linking:
+Methods and practices* (3rd ed.). Springer.
+https://doi.org/10.1007/978-1-4939-0317-7
+
 Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.
+
+Millsap, R. E. (2011). *Statistical approaches to measurement invariance*.
+Routledge. https://doi.org/10.4324/9780203821961

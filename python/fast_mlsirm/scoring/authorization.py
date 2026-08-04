@@ -147,7 +147,7 @@ def build_scoring_request(
     response_unit_count: int,
     metadata: Mapping[str, Any] | None = None,
 ) -> ScoringRequest:
-    """Build a request carrying policy and exact task-revision provenance."""
+    """Build a request carrying the exact assessment engine-policy projection."""
     if not isinstance(assessment, AssessmentSpec):
         raise assessment_error(
             "invalid_assessment_spec",
