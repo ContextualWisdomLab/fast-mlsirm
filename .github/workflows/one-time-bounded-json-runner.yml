@@ -68,6 +68,20 @@ jobs:
           else:
               raise RuntimeError("bounded JSON string-escape fixture was not found")
           test_text = "".join(test_lines)
+          invalid_utf8_fixture = (
+              '    invalid_utf8 = _write(tmp_path / "invalid-utf8.json", '
+              'b\'{"value":"\\\\xff"}\')\n'
+          )
+          actual_invalid_utf8_fixture = (
+              '    invalid_utf8 = _write(tmp_path / "invalid-utf8.json", '
+              'b\'{"value":"\' + bytes([0xFF]) + b\'"}\')\n'
+          )
+          if test_text.count(invalid_utf8_fixture) != 1:
+              raise RuntimeError("invalid UTF-8 fixture anchor was not found")
+          test_text = test_text.replace(
+              invalid_utf8_fixture,
+              actual_invalid_utf8_fixture,
+          )
           module_anchor = '    "scripts.build_figma_evidence_sync",\n'
           module_entry = '    "scripts.build_pr_queue_governance",\n'
           if module_entry not in test_text:
