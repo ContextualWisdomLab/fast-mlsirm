@@ -49,6 +49,10 @@ high-stakes deployment readiness. Human review remains necessary wherever source
 meaning, organizational values, legal rights, or material consequences are in
 dispute.
 
+ISO/IEC 42001:2023 remains published as Edition 1. NIST reports that AI RMF 1.0
+is under revision as of August 2026, so this module cites the current published
+framework without assuming that its terminology or profiles are frozen.
+
 ## References
 
 Autio, C., Schwartz, R., Dunietz, J., Jain, S., Stanley, M., Tabassi, E., Hall,
