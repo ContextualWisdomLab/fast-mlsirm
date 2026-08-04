@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import runpy
 from types import MappingProxyType
@@ -16,7 +17,6 @@ from fast_mlsirm.scoring import (
     AssessmentResponseType,
     CalibrationPolicy,
     ConstructSpec,
-    EngineKind,
     EnginePolicy,
     MonitoringPolicy,
     ReportingPolicy,
@@ -165,14 +165,12 @@ def test_full_report_delegates_to_rust_and_omits_gate_decisions() -> None:
         subgroup=_SUBGROUP,
     )
     expected_values = {
-        "quadratic_weighted_kappa": expected.gates[0]["value"],
-        "pearson_correlation": expected.gates[1]["value"],
-        "standardized_mean_difference": expected.gates[2]["value"],
-        "human_machine_degradation": expected.gates[3]["value"],
-        "worst_subgroup_standardized_mean_difference": expected.gates[4]["value"],
-        "exact_agreement": expected.exact_agreement,
-        "adjacent_agreement": expected.adjacent_agreement,
+        validation_reporting._METRIC_NAME_MAP[gate["name"]]: gate["value"]
+        for gate in expected.gates
     }
+    expected_values["exact_agreement"] = expected.exact_agreement
+    expected_values["adjacent_agreement"] = expected.adjacent_agreement
+    assert set(expected_values) == set(_ALL_METRIC_IDS)
     assert report.metric_ids == _ALL_METRIC_IDS
     assert {metric.metric_id: metric.value for metric in report.metrics} == pytest.approx(
         expected_values
@@ -194,7 +192,15 @@ def test_full_report_delegates_to_rust_and_omits_gate_decisions() -> None:
     for metric_payload in payload["metrics"]:
         assert "threshold" not in metric_payload
         assert "pass" not in metric_payload
-    assert _AUTOMATED.tolist() not in payload.values()
+    serialized_payload = json.dumps(payload, sort_keys=True)
+    for label_vector in (
+        _AUTOMATED,
+        _REFERENCE,
+        _HUMAN_A,
+        _HUMAN_B,
+        _SUBGROUP,
+    ):
+        assert json.dumps(label_vector.tolist()) not in serialized_payload
 
 
 def test_report_without_optional_comparators_routes_missing_evidence() -> None:
