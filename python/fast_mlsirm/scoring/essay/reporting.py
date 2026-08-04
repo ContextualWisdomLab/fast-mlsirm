@@ -365,7 +365,7 @@ def build_essay_score_report(
 
 
 __all__ = [
-    "EssayScoreReport",
     "MAX_ESSAY_REPORT_REVIEW_TRIGGERS",
+    "EssayScoreReport",
     "build_essay_score_report",
 ]
