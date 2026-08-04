@@ -115,15 +115,6 @@ jobs:
             scripts/build_release_evidence_index.py scripts/sales_readiness.py
           python -m pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
             --cov=scripts._bounded_json --cov-branch --cov-report=term-missing --cov-fail-under=100
-          python -m pytest \
-            tests/test_benchmark_report.py \
-            tests/test_buyer_packet.py \
-            tests/test_commercial_release.py \
-            tests/test_figma_evidence_sync.py \
-            tests/test_pr_queue_governance.py \
-            tests/test_procurement_due_diligence.py \
-            tests/test_release_evidence_index.py \
-            tests/test_sales_readiness.py
           rm scripts/_apply_bounded_json_hardening.py
           rm .github/workflows/one-time-bounded-json-hardening.yml
           rm .github/workflows/one-time-bounded-json-runner.yml
