@@ -72,7 +72,7 @@ def _definition_rows(rows: tuple[tuple[str, object], ...]) -> str:
     items = []
     for label, value in rows:
         items.extend((f"<dt>{escape(label)}</dt>", f"<dd>{_display(value)}</dd>"))
-    return "\n".join(("<dl class=\"details-grid\">", *items, "</dl>"))
+    return "\n".join(('<dl class="details-grid">', *items, "</dl>"))
 
 
 def _table(
@@ -84,7 +84,7 @@ def _table(
 ) -> str:
     """Render an accessible exact-value table or one explicit empty state."""
     if not rows:
-        return f'<p class="empty-state">{escape(empty_message)}</p>'
+        return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
     heading = "".join(f'<th scope="col">{escape(header)}</th>' for header in headers)
     body = []
     for row in rows:
@@ -138,7 +138,7 @@ def _evidence_rows(report: EssayScoreReport) -> tuple[tuple[object | None, ...],
 def _trigger_section(report: EssayScoreReport) -> str:
     """Render every transparent review trigger or an explicit empty state."""
     if not report.review_trigger_ids:
-        return '<p class="empty-state">No structural review trigger was emitted.</p>'
+        return '<div class="empty-state" role="status">No structural review trigger was emitted.</div>'
     items = "".join(
         f"<li><code>{escape(trigger_id)}</code></li>"
         for trigger_id in report.review_trigger_ids
@@ -165,8 +165,10 @@ def _css() -> str:
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
-.skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; }
-.skip-link:focus { top: 8px; }
+main:focus { outline: none; }
+main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
+.skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
+.skip-link:focus-visible { top: 8px; outline: 3px solid Highlight; outline-offset: 2px; }
 .hero { padding: 48px 0 24px; }
 h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); }
 .subtitle { margin: 0; max-width: 78ch; }
@@ -181,11 +183,22 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+tbody tr { transition: background-color 0.15s ease-in-out, opacity 0.2s ease; }
+tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
+tbody:hover tr:not(:hover) { opacity: 0.5; }
 code, pre { font-family: ui-monospace, monospace; }
 pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty-state { font-style: italic; }
 @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } .details-grid dd { margin-bottom: 8px; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 """.strip()
 
 
@@ -194,7 +207,11 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
     engine = report.engine_descriptor
     request = report.essay_request.scoring_request
     review_class = "review-required" if report.human_review_required else "review-clear"
-    review_label = "Human review required" if report.human_review_required else "No structural trigger"
+    review_label = (
+        "Human review required"
+        if report.human_review_required
+        else "No structural trigger"
+    )
     provenance = _definition_rows(
         (
             ("Report ID", report.report_id),
@@ -277,7 +294,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
             "</section>",
             '<section aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
-            '<p>The complete deterministic report payload is available below for audit reconstruction.</p>',
+            "<p>The complete deterministic report payload is available below for audit reconstruction.</p>",
             '<pre tabindex="0" role="region" aria-label="Canonical essay score report JSON">',
             _canonical_json(report),
             "</pre>",
@@ -305,12 +322,8 @@ def render_essay_score_report_html(
     output = Path(output_path)
     if output.suffix.lower() != ".html":
         raise ValueError("essay score report output path must end with .html")
-    if title is not None and (
-        not isinstance(title, str) or not title.strip()
-    ):
-        raise ValueError(
-            "essay score report title must be a non-empty string"
-        )
+    if title is not None and (not isinstance(title, str) or not title.strip()):
+        raise ValueError("essay score report title must be a non-empty string")
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(_render_html(validated, resolved_title), encoding="utf-8")

@@ -139,7 +139,7 @@ def test_empty_table_renders_an_explicit_empty_state() -> None:
         rows=(),
         empty_message="No evidence is available.",
     )
-    assert rendered == '<p class="empty-state">No evidence is available.</p>'
+    assert rendered == '<div class="empty-state" role="status">No evidence is available.</div>'
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
