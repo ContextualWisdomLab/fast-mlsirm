@@ -71,7 +71,10 @@ probable, decision-relevant, or causally related to an outcome.
 The parser is deliberately not a semantic issue extractor. It performs no
 sentiment analysis, inference, scoring, calibration, ranking, utility arithmetic,
 causal estimation, or queue routing. Semantic assertions remain behind a separate
-provider-neutral, human-validated boundary.
+provider-neutral, human-validated boundary. Custom parser output is bounded,
+canonicalized, and rebound to the exact verified source revision and span bytes
+before it can cross the public API. Arbitrary provider exceptions are redacted.
+Explicit-value caller metadata is restricted to the declared offset unit.
 
 ## Replay and provenance
 

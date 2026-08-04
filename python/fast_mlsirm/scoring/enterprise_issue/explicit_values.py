@@ -26,6 +26,7 @@ from .._contract_safety import (
 )
 from .._validation import (
     ASSESSMENT_SCHEMA_VERSION,
+    AssessmentSpecError,
     CanonicalContract,
     assessment_error,
     assessment_schema_version,
@@ -219,7 +220,24 @@ class ExplicitValueRecord(CanonicalContract):
             "normalized_payload",
             self._normalized_payload(self.normalized_payload),
         )
-        object.__setattr__(self, "metadata", freeze_metadata(self.metadata))
+metadata = freeze_metadata(self.metadata)
+unexpected_metadata = set(metadata) - {"offset_unit"}
+if unexpected_metadata:
+    raise assessment_error(
+        "unexpected_explicit_value_metadata",
+        "$.metadata",
+        "explicit value metadata may contain only offset_unit",
+    )
+if (
+    "offset_unit" in metadata
+    and metadata["offset_unit"] != "python_unicode_code_point"
+):
+    raise assessment_error(
+        "invalid_offset_unit",
+        "$.metadata.offset_unit",
+        "offset_unit must be python_unicode_code_point",
+    )
+object.__setattr__(self, "metadata", metadata)
         object.__setattr__(
             self,
             "schema_version",
@@ -610,12 +628,13 @@ class DeterministicExplicitValueParser:
             )
 
 
+
 def _validated_parser_output(
     source_record: EnterpriseSourceRecord,
     source_text: str,
     values: Any,
 ) -> tuple[ExplicitValueRecord, ...]:
-    """Return exact, ordered, non-overlapping records from one provider."""
+    """Return exact canonical records from one provider callback."""
     if type(values) is not tuple:
         raise assessment_error(
             "invalid_explicit_value_parser_output",
@@ -628,8 +647,7 @@ def _validated_parser_output(
             "$.parser_output",
             "parser output exceeds the bounded explicit-value record limit",
         )
-    previous_key: tuple[int, int, str, str] | None = None
-    previous_end = 0
+    records: list[ExplicitValueRecord] = []
     for index, item in enumerate(values):
         path = f"$.parser_output[{index}]"
         if not isinstance(item, ExplicitValueRecord):
@@ -668,27 +686,35 @@ def _validated_parser_output(
                 path,
                 "parser output span fingerprint does not match verified source text",
             )
-        key = (
-            item.start_offset,
-            item.end_offset,
-            item.value_kind.value,
-            item.explicit_value_fingerprint,
+        records.append(item)
+    ordered = tuple(
+        sorted(
+            records,
+            key=lambda item: (
+                item.start_offset,
+                item.end_offset,
+                item.value_kind.value,
+                item.explicit_value_fingerprint,
+            ),
         )
-        if previous_key is not None and key < previous_key:
-            raise assessment_error(
-                "parser_output_order_mismatch",
-                path,
-                "parser output must use canonical deterministic ordering",
-            )
-        if previous_key is not None and item.start_offset < previous_end:
+    )
+    record_fingerprints = tuple(
+        item.explicit_value_fingerprint for item in ordered
+    )
+    if len(set(record_fingerprints)) != len(record_fingerprints):
+        raise assessment_error(
+            "duplicate_explicit_value_record",
+            "$.parser_output",
+            "parser output records must be unique",
+        )
+    for previous, current in zip(ordered, ordered[1:]):
+        if current.start_offset < previous.end_offset:
             raise assessment_error(
                 "overlapping_explicit_values",
-                path,
+                "$.parser_output",
                 "parser output records must not overlap",
             )
-        previous_key = key
-        previous_end = item.end_offset
-    return values
+    return ordered
 
 
 def parse_enterprise_explicit_values(
@@ -697,7 +723,7 @@ def parse_enterprise_explicit_values(
     *,
     parser: EnterpriseExplicitValueParser | None = None,
 ) -> tuple[ExplicitValueRecord, ...]:
-    """Parse verified text through the provider-neutral parser boundary."""
+    """Parse verified text and revalidate provider output before return."""
     resolved = DeterministicExplicitValueParser() if parser is None else parser
     if not isinstance(resolved, EnterpriseExplicitValueParser):
         raise assessment_error(
@@ -705,9 +731,18 @@ def parse_enterprise_explicit_values(
             "$.parser",
             "parser must implement EnterpriseExplicitValueParser",
         )
-    DeterministicExplicitValueParser._validate_source(source_record, source_text)
-    return _validated_parser_output(
+    DeterministicExplicitValueParser._validate_source(
         source_record,
         source_text,
-        resolved.parse(source_record, source_text),
     )
+    try:
+        values = resolved.parse(source_record, source_text)
+    except AssessmentSpecError:
+        raise
+    except Exception:
+        raise assessment_error(
+            "explicit_value_parser_failure",
+            "$.parser",
+            "parser failed before returning validated explicit values",
+        ) from None
+    return _validated_parser_output(source_record, source_text, values)

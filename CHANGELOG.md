@@ -16,6 +16,8 @@
   UTF-8 span fingerprints, deterministic deadline precedence, overlap rejection,
   bounded output, and hashed identifier payloads without retaining source text or
   clear-text customer identifiers.
+- Added fail-closed custom-parser output rebinding, callback redaction, exact span
+  verification, duplicate/overlap rejection, and strict explicit-value metadata.
 - Added immutable content-addressed records that compile exact occurrences into
   the existing directly stated `EvidenceSpanRecord` boundary without adding a
   parallel scoring, observation, result, or engine schema.
