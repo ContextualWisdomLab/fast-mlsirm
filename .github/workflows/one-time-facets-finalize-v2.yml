@@ -1,0 +1,208 @@
+# Temporary workflow; it removes itself after exact validation.
+name: One-time facets HTML finalization v2
+
+on:
+  push:
+    branches:
+      - feat/essay-facets-report-html
+    paths:
+      - .github/workflows/one-time-facets-finalize-v2.yml
+
+permissions: {}
+
+concurrency:
+  group: one-time-facets-html-finalization-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/essay-facets-report-html
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Apply reviewed contract corrections
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          module_path = Path("python/fast_mlsirm/scoring/essay/calibration_report_html.py")
+          content = module_path.read_text(encoding="utf-8")
+          replacements = (
+              (
+                  '''def _validated_axis(
+              value: object,
+              field_name: str,
+              validator: Callable[[object, str], _T],
+          ) -> tuple[_T, ...]:
+              """Validate one non-empty, unique, order-preserving report axis."""
+          ''',
+                  '''def _validated_axis(
+              value: object,
+              field_name: str,
+              validator: Callable[[object, str], _T],
+              *,
+              require_unique: bool,
+          ) -> tuple[_T, ...]:
+              """Validate one non-empty, order-preserving report axis."""
+          ''',
+              ),
+              (
+                  '''    if len(set(normalized)) != len(normalized):
+          ''',
+                  '''    if require_unique and len(set(normalized)) != len(normalized):
+          ''',
+              ),
+              (
+                  '''def _identifier_axis(value: object, field_name: str) -> tuple[str, ...]:
+              """Return one verified descriptive-identifier axis."""
+              return _validated_axis(value, field_name, descriptive_identifier)
+          ''',
+                  '''def _identifier_axis(
+              value: object,
+              field_name: str,
+              *,
+              require_unique: bool,
+          ) -> tuple[str, ...]:
+              """Return one verified descriptive-identifier axis."""
+              return _validated_axis(
+                  value,
+                  field_name,
+                  descriptive_identifier,
+                  require_unique=require_unique,
+              )
+          ''',
+              ),
+              (
+                  '''    return _validated_axis(value, field_name, fingerprint)
+          ''',
+                  '''    return _validated_axis(
+              value,
+              field_name,
+              fingerprint,
+              require_unique=True,
+          )
+          ''',
+              ),
+              (
+                  '''    respondent_ids = _identifier_axis(report.respondent_ids, "respondent_ids")
+          ''',
+                  '''    respondent_ids = _identifier_axis(
+              report.respondent_ids,
+              "respondent_ids",
+              require_unique=True,
+          )
+          ''',
+              ),
+              (
+                  '''    task_ids = _identifier_axis(report.task_ids, "task_ids")
+              task_family_ids = _identifier_axis(report.task_family_ids, "task_family_ids")
+              rater_engine_ids = _identifier_axis(report.rater_engine_ids, "rater_engine_ids")
+              rater_engine_family_ids = _identifier_axis(
+                  report.rater_engine_family_ids,
+                  "rater_engine_family_ids",
+              )
+          ''',
+                  '''    task_ids = _identifier_axis(
+              report.task_ids,
+              "task_ids",
+              require_unique=False,
+          )
+              task_family_ids = _identifier_axis(
+                  report.task_family_ids,
+                  "task_family_ids",
+                  require_unique=False,
+              )
+              rater_engine_ids = _identifier_axis(
+                  report.rater_engine_ids,
+                  "rater_engine_ids",
+                  require_unique=False,
+              )
+              rater_engine_family_ids = _identifier_axis(
+                  report.rater_engine_family_ids,
+                  "rater_engine_family_ids",
+                  require_unique=False,
+              )
+          ''',
+              ),
+          )
+          for old, new in replacements:
+              if old not in content:
+                  if new in content:
+                      continue
+                  raise RuntimeError(f"missing renderer replacement target: {old[:80]!r}")
+              if content.count(old) != 1:
+                  raise RuntimeError(f"ambiguous renderer replacement target: {old[:80]!r}")
+              content = content.replace(old, new)
+          module_path.write_text(content, encoding="utf-8")
+
+          test_path = Path("tests/test_scoring_essay_facets_report_html.py")
+          tests = test_path.read_text(encoding="utf-8")
+          anchor = '''def test_axis_element_and_alignment_failures_are_structured(tmp_path: Path) -> None:
+          '''
+          addition = '''def test_repeatable_aligned_audit_labels_are_accepted_by_axis_validator() -> None:
+              """Logical labels may repeat when exact fingerprint axes stay unique."""
+              repeated = ("shared_label", "shared_label")
+              assert report_html._identifier_axis(
+                  repeated,
+                  "task_ids",
+                  require_unique=False,
+              ) == repeated
+
+
+          '''
+          if addition not in tests:
+              if tests.count(anchor) != 1:
+                  raise RuntimeError("expected one test insertion anchor")
+              tests = tests.replace(anchor, addition + anchor)
+          test_path.write_text(tests, encoding="utf-8")
+
+          docs_path = Path("docs/automated_essay_facets_calibration_reports.md")
+          docs = docs_path.read_text(encoding="utf-8")
+          old_date = (
+              "World Wide Web Consortium. (2026, May 5). "
+              "*Content Security Policy Level 3*"
+          )
+          new_date = (
+              "World Wide Web Consortium. (2026, July 29). "
+              "*Content Security Policy Level 3*"
+          )
+          if old_date in docs:
+              docs = docs.replace(old_date, new_date)
+          elif new_date not in docs:
+              raise RuntimeError("CSP Level 3 publication reference is missing")
+          docs_path.write_text(docs, encoding="utf-8")
+          PY
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          rm .github/workflows/one-time-facets-finalize-v2.yml
+      - name: Install package and CI dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+      - name: Run focused validation
+        run: |
+          pytest \
+            tests/test_scoring_essay_facets_report_html.py \
+            tests/test_scoring_essay_facets_reporting.py \
+            tests/test_scoring_facets_calibration.py \
+            tests/test_changelog_fragment_contract.py \
+            tests/test_scoring_essay_contracts.py \
+            tests/test_scoring_essay_reporting_exports.py
+      - name: Commit final corrections
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(essay): finalize facets HTML audit contracts"
+          git push origin "HEAD:feat/essay-facets-report-html"
