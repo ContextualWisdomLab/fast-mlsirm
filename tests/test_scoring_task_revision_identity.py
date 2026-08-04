@@ -75,7 +75,7 @@ def _legacy_request_artifact(**request_overrides):
     return _sign_legacy_artifact(artifact)
 
 
-def _replace_response_records(records, response_id: str, **changes):
+def _replace_response_records(records, target_response_id: str, **changes):
     """Replace every criterion/rater record for one governed response."""
     return tuple(
         replace(
@@ -83,7 +83,7 @@ def _replace_response_records(records, response_id: str, **changes):
             **changes,
             _rating_token=calibration._RATING_TOKEN,
         )
-        if record.response_id == response_id
+        if record.response_id == target_response_id
         else record
         for record in records
     )
