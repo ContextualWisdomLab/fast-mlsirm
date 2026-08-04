@@ -12,6 +12,9 @@ from .calibration_reporting import (
 from .calibration_reporting import (
     fit_essay_facets_calibration_report as fit_essay_facets_calibration_report,
 )
+from .calibration_report_html import (
+    render_essay_facets_calibration_report_html as render_essay_facets_calibration_report_html,
+)
 from .contracts import EssayEvidenceKind as EssayEvidenceKind
 from .contracts import EssayPrompt as EssayPrompt
 from .contracts import EssayResponseEvidence as EssayResponseEvidence
@@ -81,6 +84,7 @@ __all__ = [
     "build_essay_submission",
     "build_essay_validation_evidence_report",
     "fit_essay_facets_calibration_report",
+    "render_essay_facets_calibration_report_html",
     "render_essay_score_report_html",
     "render_essay_validation_evidence_report_html",
     "score_essay_request",
