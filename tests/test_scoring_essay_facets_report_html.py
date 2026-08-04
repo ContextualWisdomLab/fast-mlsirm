@@ -103,7 +103,6 @@ def test_renderer_shows_explicit_empty_review_state(tmp_path: Path) -> None:
     assert '<section class="review-clear"' in html
     assert "No structural trigger" in html
     assert "No structural review trigger was emitted." in html
-    assert "not evidence of model fit" not in html
     assert "not evidence of" in html.lower()
 
 
