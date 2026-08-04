@@ -4,7 +4,7 @@
 
 ## Governed boundary
 
-Use `fit_essay_facets_calibration_report` when fitting and reporting in one operation. The helper captures `ScoringFacetsDesign.design_fingerprint` immediately before delegating to `fit_scoring_facets_design`, then copies the returned `FacetsFit` arrays into immutable tuples. `build_essay_facets_calibration_report` remains available when a fit was produced separately, but callers must provide the exact source design fingerprint because a bare `FacetsFit` does not embed provenance.
+Use `fit_essay_facets_calibration_report` when fitting and reporting in one operation. The helper captures `ScoringFacetsDesign.design_fingerprint` immediately before delegating to `fit_scoring_facets_design`, then copies the returned `FacetsFit` arrays into immutable tuples. `build_essay_facets_calibration_report` remains available when a fit was produced separately, but callers must provide the exact source design fingerprint because a bare `FacetsFit` does not embed provenance. Persisting or exchanging an unbound `FacetsFit` as audit evidence is therefore unsupported.
 
 The report retains:
 
