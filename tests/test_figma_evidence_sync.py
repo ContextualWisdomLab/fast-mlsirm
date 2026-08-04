@@ -133,3 +133,31 @@ def test_figma_evidence_sync_fails_when_code_connect_enabled(tmp_path):
     assert manifest["status"] == "failed"
     failed_names = {check["name"] for check in manifest["failed_checks"]}
     assert "figma:code_connect_disabled" in failed_names
+
+
+def test_main_reports_repo_root_relative_output(tmp_path, monkeypatch, capsys):
+    module = _load_sync()
+    repo_root = tmp_path / "repo"
+    _write_packet(repo_root / "packet.json")
+    working_directory = tmp_path / "working-directory"
+    working_directory.mkdir()
+    monkeypatch.chdir(working_directory)
+
+    exit_code = module.main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--packet",
+            "packet.json",
+            "--out",
+            "relative-output",
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    expected_out = (repo_root / "relative-output").resolve()
+    manifest_path = Path(output["manifest"])
+    assert exit_code == 0
+    assert output["out"] == str(expected_out)
+    assert manifest_path == expected_out / "figma_evidence_sync_manifest.json"
+    assert manifest_path.exists()
