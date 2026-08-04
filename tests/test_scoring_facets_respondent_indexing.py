@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 import runpy
 
+import numpy as np
 import pytest
 
 import fast_mlsirm.scoring.calibration as calibration
@@ -63,6 +64,18 @@ def respondent_connected_records():
     )
 
 
+def sparse_connected_records():
+    """Return a connected design with two absent respondent-task pairs."""
+    return _project_rows(
+        (
+            ("respondent_alpha", "prompt_alpha", 0),
+            ("respondent_alpha", "prompt_beta", 1),
+            ("respondent_beta", "prompt_alpha", 2),
+            ("respondent_gamma", "prompt_beta", 0),
+        )
+    )
+
+
 def test_person_axis_is_unique_respondent_not_response_identity() -> None:
     """Repeated task performances for one respondent share one person parameter."""
     bundle = build_scoring_facets_calibration_bundle(respondent_connected_records())
@@ -111,6 +124,55 @@ def test_person_axis_is_unique_respondent_not_response_identity() -> None:
             }
             for entry in serialized["respondent_task_responses"]
         )
+
+
+def test_sparse_connected_design_preserves_absent_pairs_and_delegates(
+    monkeypatch,
+) -> None:
+    """Structural missingness remains explicit in an identified Rust handoff."""
+    bundle = build_scoring_facets_calibration_bundle(sparse_connected_records())
+    design = bundle.design_by_criterion()["claim_support"]
+
+    assert design.respondent_ids == (
+        "respondent_alpha",
+        "respondent_beta",
+        "respondent_gamma",
+    )
+    assert design.task_ids == ("prompt_alpha", "prompt_beta")
+    assert design.respondent_task_connected is True
+    assert design.task_rater_connected is True
+    assert design.connected is True
+
+    responses = design.responses_array()
+    states = design.response_states()
+    assert responses.shape == (3, 2, 2)
+    assert np.isnan(responses[1, 1, :]).all()
+    assert np.isnan(responses[2, 0, :]).all()
+    assert states[1][1] == (None, None)
+    assert states[2][0] == (None, None)
+
+    audit_pairs = {
+        (entry["respondent_id"], entry["task_id"])
+        for entry in design.to_dict()["respondent_task_responses"]
+    }
+    assert audit_pairs == {
+        ("respondent_alpha", "prompt_alpha"),
+        ("respondent_alpha", "prompt_beta"),
+        ("respondent_beta", "prompt_alpha"),
+        ("respondent_gamma", "prompt_beta"),
+    }
+
+    calls = []
+
+    def fake_fit_facets(**kwargs):
+        calls.append(kwargs)
+        return kwargs["responses"].shape
+
+    monkeypatch.setattr("fast_mlsirm.facets.fit_facets", fake_fit_facets)
+    assert fit_scoring_facets_design(design) == (3, 2, 2)
+    assert len(calls) == 1
+    assert calls[0]["responses"].shape == (3, 2, 2)
+    assert calls[0]["n_cat"] == 3
 
 
 def test_one_respondent_across_tasks_is_not_an_identified_person_design() -> None:
