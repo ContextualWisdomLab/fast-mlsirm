@@ -41,11 +41,16 @@ def test_scoring_schema_is_independent_from_the_rubric_wire_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Scoring owns an exported wire version while rubrics remain fingerprint-bound."""
+    specification = assessment()
+    serialized = canonical_json(specification)
     assert ASSESSMENT_SCHEMA_VERSION == "1.0"
-    assert assessment().schema_version == ASSESSMENT_SCHEMA_VERSION
+    assert specification.schema_version == ASSESSMENT_SCHEMA_VERSION
+
     monkeypatch.setattr(rubric_models, "SCHEMA_VERSION", "9.9")
+
     assert ASSESSMENT_SCHEMA_VERSION == "1.0"
-    assert assessment().schema_version == ASSESSMENT_SCHEMA_VERSION
+    assert specification.schema_version == ASSESSMENT_SCHEMA_VERSION
+    assert canonical_json(specification) == serialized
 
 
 def test_negative_zero_has_one_canonical_identity() -> None:
