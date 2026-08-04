@@ -1,0 +1,210 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7a6927d..e024832 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -18,6 +18,11 @@
+ - Added fail-closed replay, duplicate, provenance, respondent-task response-revision, observed-support, category-identification, dense-allocation, respondent-task connectedness, and task-rater connectedness gates. Sparse pilot designs may be assembled and audited after at least two categories are observed among scored records, but every declared category must be observed and the design must be connected before it can reach the Rust estimator. Abstained, failed, excluded, and absent cells remain missing and never satisfy category coverage or become low scores.
+ - Added `fit_scoring_facets_bundle`, which delegates likelihood, EM, quadrature, and parameter updates to the existing Rust-backed `fit_facets` implementation and calibrates analytic criteria separately instead of averaging them. The baseline models respondent or system-run proficiency, task difficulty, common thresholds, and rater severity; it makes no convergence, fit, reliability, fairness, scoreability, construct-validity, rater-interchangeability, causal-utility, or high-stakes automation claim.
+ 
++#### Exact task-revision calibration identity
++
++- Advanced the governed scoring-request wire contract to schema 1.1 with a required provider-neutral `task_revision_fingerprint`; exact task content now participates in canonical request identity, essay prompts propagate their own content fingerprint, and schema-1.0 request artifacts migrate only through an explicit fail-closed helper that verifies the old fingerprint and requires an authoritative revision digest.
++- Changed the governed many-facet item axis from logical task IDs to exact task-revision fingerprints while retaining aligned task and task-family labels, response-revision provenance, deterministic audit output, connectedness checks, replay validation, and Rust-only psychometric arithmetic. One logical task may have multiple revisions, but one revision cannot be rebound to another logical task or silently linked without comparability evidence.
++
+ ### Changed
+ 
+ #### Release cut 0.6.0
+diff --git a/docs/automated_essay_scoring_adapters.md b/docs/automated_essay_scoring_adapters.md
+index cabc09f..0657a08 100644
+--- a/docs/automated_essay_scoring_adapters.md
++++ b/docs/automated_essay_scoring_adapters.md
+@@ -41,8 +41,11 @@ EssayPrompt
+ `build_essay_scoring_request` always creates a criterion-level shared request. It
+ binds the exact assessment and rubric revisions, prompt and submission
+ fingerprints, response-content fingerprint and counts, declared task family,
+-criterion identifiers, review signals, and evidence-adapter fingerprints. Score
+-categories still come only from the bound rubric.
++criterion identifiers, review signals, and evidence-adapter fingerprints. The
++shared request's required `task_revision_fingerprint` is exactly
++`EssayPrompt.prompt_fingerprint`; it is not derived from `prompt_id` or metadata.
++Two changed prompt revisions may retain one logical prompt ID but become distinct
++calibration items. Score categories still come only from the bound rubric.
+ 
+ `score_essay_request` calls the existing runtime-checkable `ScoringEngine`
+ protocol and rejects a result whose request or engine identity differs from the
+@@ -50,6 +53,10 @@ adapter and descriptor. Deterministic examples can use the existing
+ `StaticFixtureEngine`; human and automated fixtures therefore exercise the same
+ observation and result factories that later providers must use.
+ 
++For the shared wire schema, explicit schema-1.0 migration, and the prohibition on
++implicit cross-revision linking, see [Exact task-revision identity for governed
++scoring and calibration](scoring_task_revision_identity.md).
++
+ ## Review signals
+ 
+ `EssayReviewFlag` distinguishes pre-scoring review signals such as malformed or
+diff --git a/docs/scoring_execution_contracts.md b/docs/scoring_execution_contracts.md
+index 70e05fe..5b2fb59 100644
+--- a/docs/scoring_execution_contracts.md
++++ b/docs/scoring_execution_contracts.md
+@@ -49,6 +49,7 @@ request = build_scoring_request(
+     respondent_id="sample_respondent",
+     response_id="sample_response",
+     task_id="sample_task",
++    task_revision_fingerprint=task_sha256,
+     task_family_id="evidence_review",
+     occasion_id="initial_occasion",
+     criterion_ids=("claim_support", "source_alignment"),
+@@ -78,6 +79,16 @@ result = fixture.score(request)
+ 
+ The fixture engine exists only for deterministic tests, examples, and offline contract demonstrations. It is not a model and does not infer a score.
+ 
++## Exact task-revision identity
++
++`task_id` is a logical administrative label. Schema-1.1 requests also require
++`task_revision_fingerprint`, the complete SHA-256 digest of the exact normalized
++task content. The digest participates in `request_fingerprint`; it is never
++derived from the logical ID or metadata. Domain adapters must propagate the
++content-owning artifact's fingerprint explicitly. See
++[`scoring_task_revision_identity.md`](scoring_task_revision_identity.md) for the
++legacy migration and calibration-axis contract.
++
+ ## Status semantics
+ 
+ - `scored`: contains one score category declared by the exact bound rubric and no terminal reason.
+diff --git a/docs/scoring_facets_calibration_handoff.md b/docs/scoring_facets_calibration_handoff.md
+index 2324b38..c4b35d8 100644
+--- a/docs/scoring_facets_calibration_handoff.md
++++ b/docs/scoring_facets_calibration_handoff.md
+@@ -22,22 +22,24 @@ many-facet model:
+ The governed axes are:
+ 
+ - person: one respondent or system run, identified by `respondent_id`;
+-- item: one exact `task_id`, such as an essay prompt revision;
++- item: one exact `task_revision_fingerprint`;
+ - rater: one full `EngineDescriptor.engine_fingerprint`;
+ - category: the ordered rubric score scale.
+ 
+-Each respondent-task cell retains its exact `response_id` and
++Each respondent–revision cell retains its exact `response_id` and
+ `response_content_fingerprint`. Multiple raters may score one cell only when they
+ consume the same governed response revision. Reusing a response identifier for
+-changed content, or binding two response artifacts to one respondent-task cell,
+-fails before tensor allocation. Response-revision changes therefore propagate
+-through rating, design, and bundle identities.
+-
+-In scoring wire schema 1.0, `task_id` is the estimator item identity. Callers must
+-issue a new descriptive task identifier when task content changes. Issue #499
+-tracks an explicit provider-neutral `task_revision_fingerprint` for the next
+-schema revision. Changed revisions require governed anchors and invariance/DIF
+-evidence rather than silent pooling.
++changed content, or binding two response artifacts to one respondent-revision
++cell, fails before tensor allocation. Response-revision changes therefore
++propagate through rating, design, and bundle identities.
++
++Scoring-request schema 1.1 separates logical `task_id` and `task_family_id`
++labels from the exact `task_revision_fingerprint` used as the estimator item
++axis. One logical task may have multiple revisions, but one revision may map to
++only one logical task and family. The digest prevents silent pooling; it does not
++establish comparability. Cross-revision linking requires governed anchors,
++recovery, drift, and invariance/DIF evidence. See
++[`scoring_task_revision_identity.md`](scoring_task_revision_identity.md).
+ 
+ The full engine fingerprint is the rater identity. A changed model, prompt
+ template, provider, version, or engine metadata becomes a new rater rather than
+@@ -73,22 +75,25 @@ validation and monitoring.
+ 
+ Before dense allocation, the assembler:
+ 
+-- requires at least two respondents, two tasks, two raters, and two observed
+-  categories per criterion;
+-- requires scored support for every respondent, task, and rater level;
+-- rejects duplicate respondent-task-rater cells;
+-- binds each logical response to one respondent, task, and exact content
+-  revision across all criteria and raters;
+-- binds each respondent-task cell to one exact response ID and content digest;
+-- bounds the complete respondent-by-task-by-rater allocation;
++- requires at least two respondents, two exact task revisions, two raters,
++  and two observed categories per criterion;
++- requires scored support for every respondent, exact task revision, and
++  rater level;
++- rejects duplicate respondent-revision-rater cells;
++- binds each logical response to one respondent, logical task, exact task
++  revision, and exact response-content revision across all criteria and raters;
++- binds each respondent-revision cell to one exact response ID and response-
++  content digest;
++- bounds the complete respondent-by-revision-by-rater allocation;
+ - verifies one assessment, rubric, construct, occasion, and score scale;
+-- checks the scored respondent-task bipartite graph for connectedness; and
+-- checks the scored task-rater bipartite graph for connectedness.
+-
+-Both graphs are required. Common raters do not identify task difficulty when
+-respondents are observed on disjoint tasks, and respondent overlap does not
+-identify rater severity when raters are confounded with tasks. A disconnected
+-design can be retained only as an audit artifact with `require_connected=False`;
++- checks the scored respondent–revision bipartite graph for connectedness; and
++- checks the scored revision–rater bipartite graph for connectedness.
++
++Both graphs are required. Common raters do not identify revision difficulty
++when respondents are observed on disjoint revisions, and respondent overlap
++does not identify rater severity when raters are confounded with task
++revisions. A disconnected design can be retained only as an audit artifact
++with `require_connected=False`;
+ it cannot enter `fit_facets`, including through the legacy
+ `allow_disconnected` argument.
+ 
+@@ -110,9 +115,9 @@ rejected values.
+ 
+ ## Interpretation boundary
+ 
+-This first baseline estimates respondent or system-run proficiency, task
+-difficulty, common category thresholds, and rater severity *within each
+-criterion*. It deliberately does not average analytic criteria or assert a
++This first baseline estimates respondent or system-run proficiency, exact
++task-revision difficulty, common category thresholds, and rater severity
++*within each criterion*. It deliberately does not average analytic criteria or assert a
+ general writing-quality factor. It also does not estimate a response-level
+ random effect, criterion-specific rater discrimination, range restriction,
+ rater drift, subgroup DIF, correlated dimensions, bifactor structure, testlet
+diff --git a/docs/superpowers/specs/2026-08-04-task-revision-calibration-identity-design.md b/docs/superpowers/specs/2026-08-04-task-revision-calibration-identity-design.md
+index 66285bd..7f2111b 100644
+--- a/docs/superpowers/specs/2026-08-04-task-revision-calibration-identity-design.md
++++ b/docs/superpowers/specs/2026-08-04-task-revision-calibration-identity-design.md
+@@ -106,6 +106,9 @@ Tests cover:
+ 
+ ## Documentation and release
+ 
++The implementation also records standards, formula, and verification
++traceability in `docs/doctoring/task-revision-calibration-identity.md`.
++
+ Add a buyer-facing contract guide and an authoritative changelog fragment, then render tracked `CHANGELOG.md`. This closes issue #499 but does not by itself make the broader automated-essay vertical release-ready.
+ 
+ ## Evidence
+@@ -114,12 +117,25 @@ The design follows the requirement that changed testing procedures need evidence
+ 
+ ## References
+ 
+-American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
++American Educational Research Association, American Psychological Association,
++& National Council on Measurement in Education. (2014). *Standards for
++educational and psychological testing*. American Educational Research
++Association.
+ 
+-Li, Y. (2012). Examining the impact of drifted polytomous anchor items on test characteristic curve (TCC) linking and IRT true score equating (Research Report No. RR-12-09). Educational Testing Service. https://doi.org/10.1002/j.2333-8504.2012.tb02291.x
++Li, Y. (2012). *Examining the impact of drifted polytomous anchor items on test
++characteristic curve (TCC) linking and IRT true score equating* (Research Report
++No. RR-12-09). Educational Testing Service.
++https://doi.org/10.1002/j.2333-8504.2012.tb02291.x
+ 
+-Qu, Y., Wei, Y., & Morgan, R. (2016). *The impact of population shift on equating and differential item functioning of anchor items: An empirical study* (Research Memorandum No. RM-16-05). Educational Testing Service.
++Qu, Y., Wei, Y., & Morgan, R. (2016). *The impact of population shift on
++equating and differential item functioning of anchor items: An empirical study*
++(Research Memorandum No. RM-16-05). Educational Testing Service.
+ 
+-Shi, B., Huang, L., & Lu, X. (2020). Effect of prompt type on test-takers’ writing performance and strategy use. *Language Testing, 37*(3), 361–388. https://doi.org/10.1177/0265532220911626
++Shi, B., Huang, L., & Lu, X. (2020). Effect of prompt type on test-takers’
++writing performance and writing strategy use in the continuation task.
++*Language Testing, 37*(3), 361–388.
++https://doi.org/10.1177/0265532220911626
+ 
+-Zou, Y., Kannan, S., & Sidhu, G. K. (2024). Influence of task complexity on text features and writing scores. *SAGE Open, 14*(3). https://doi.org/10.1177/21582440241284186
