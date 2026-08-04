@@ -15,6 +15,12 @@ from .contracts import (
 )
 from .contracts import MAX_ENTERPRISE_STAKEHOLDERS as MAX_ENTERPRISE_STAKEHOLDERS
 from .contracts import StakeholderPerspective as StakeholderPerspective
+from .request import (
+    build_enterprise_issue_scoring_request as build_enterprise_issue_scoring_request,
+)
+from .request import (
+    enterprise_issue_evidence_references as enterprise_issue_evidence_references,
+)
 
 __all__ = [
     "MAX_ENTERPRISE_ISSUE_EVIDENCE",
@@ -28,4 +34,6 @@ __all__ = [
     "EnterpriseSourceRecord",
     "EvidenceSpanRecord",
     "StakeholderPerspective",
+    "build_enterprise_issue_scoring_request",
+    "enterprise_issue_evidence_references",
 ]
