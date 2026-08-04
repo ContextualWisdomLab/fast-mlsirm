@@ -364,7 +364,9 @@ class EssayResponseEvidence(CanonicalContract):
                 "$",
                 "use build_essay_response_evidence",
             )
-        if not isinstance(self.evidence_reference, EvidenceReference):
+        if not isinstance(
+            self.evidence_reference, EvidenceReference
+        ):  # pragma: no cover - guaranteed by build_essay_response_evidence
             raise assessment_error(
                 "invalid_evidence_reference",
                 "$.evidence_reference",
@@ -403,7 +405,9 @@ class EssayResponseEvidence(CanonicalContract):
                 MAX_ESSAY_RESPONSE_CHARACTERS,
             ),
         )
-        if self.end_offset <= self.start_offset:
+        if (
+            self.end_offset <= self.start_offset
+        ):  # pragma: no cover - guaranteed by build_essay_response_evidence
             raise assessment_error(
                 "invalid_evidence_offsets",
                 "$.end_offset",
@@ -467,7 +471,9 @@ class EssayScoringRequest(CanonicalContract):
                 "$",
                 "use build_essay_scoring_request",
             )
-        if not isinstance(self.scoring_request, ScoringRequest):
+        if not isinstance(
+            self.scoring_request, ScoringRequest
+        ):  # pragma: no cover - guaranteed by build_essay_scoring_request
             raise assessment_error(
                 "invalid_scoring_request",
                 "$.scoring_request",

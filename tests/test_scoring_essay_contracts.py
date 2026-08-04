@@ -588,3 +588,102 @@ def test_score_adapter_rejects_invalid_engine_request_and_result_contracts() -> 
         "invalid_engine_descriptor",
         lambda: score_essay_request(InvalidDescriptorEngine(), request),
     )
+
+
+def test_reachable_type_and_offset_guards_fail_closed() -> None:
+    """Every public builder rejects untyped inputs and impossible spans."""
+    bound_prompt = prompt()
+    bound_submission = submission(bound_prompt)
+
+    assert_error(
+        "invalid_response_character_count",
+        lambda: submission(bound_prompt, response_character_count="800"),
+    )
+    assert_error(
+        "invalid_evidence_offsets",
+        lambda: essay_evidence(
+            prompt_value=bound_prompt,
+            submission_value=bound_submission,
+            start_offset=10,
+            end_offset=10,
+        ),
+    )
+    assert_error(
+        "invalid_essay_prompt",
+        lambda: build_essay_submission(
+            submission_id="essay_submission",
+            prompt=object(),  # type: ignore[arg-type]
+            respondent_id="sample_respondent",
+            response_id="essay_response",
+            response_content_fingerprint="2" * 64,
+            response_character_count=800,
+            response_unit_count=120,
+        ),
+    )
+    assert_error(
+        "invalid_essay_prompt",
+        lambda: build_essay_response_evidence(
+            prompt=object(),  # type: ignore[arg-type]
+            submission=bound_submission,
+            evidence_reference=shared_evidence(),
+            evidence_kind=EssayEvidenceKind.RESPONSE_SPAN,
+            start_offset=0,
+            end_offset=10,
+        ),
+    )
+    assert_error(
+        "invalid_essay_submission",
+        lambda: build_essay_response_evidence(
+            prompt=bound_prompt,
+            submission=object(),  # type: ignore[arg-type]
+            evidence_reference=shared_evidence(),
+            evidence_kind=EssayEvidenceKind.RESPONSE_SPAN,
+            start_offset=0,
+            end_offset=10,
+        ),
+    )
+    assert_error(
+        "invalid_evidence_reference",
+        lambda: build_essay_response_evidence(
+            prompt=bound_prompt,
+            submission=bound_submission,
+            evidence_reference=object(),  # type: ignore[arg-type]
+            evidence_kind=EssayEvidenceKind.RESPONSE_SPAN,
+            start_offset=0,
+            end_offset=10,
+        ),
+    )
+
+
+def test_request_compile_guards_reject_untyped_and_unbound_provenance() -> None:
+    """Request compilation rejects untyped values and cross-prompt submissions."""
+    bound_prompt = prompt()
+    bound_submission = submission(bound_prompt)
+    other_prompt = prompt(prompt_id="alternate_prompt")
+
+    def compile_request(**overrides):
+        values: dict[str, Any] = {
+            "request_id": "essay_scoring_request",
+            "assessment": assessment(),
+            "rubric": rubric(),
+            "prompt": bound_prompt,
+            "submission": bound_submission,
+            "occasion_id": "initial_occasion",
+            "criterion_ids": ("claim_support", "source_alignment"),
+        }
+        values.update(overrides)
+        return build_essay_scoring_request(**values)
+
+    assert_error("invalid_essay_prompt", lambda: compile_request(prompt=object()))
+    assert_error(
+        "invalid_essay_submission", lambda: compile_request(submission=object())
+    )
+    assert_error(
+        "submission_prompt_mismatch",
+        lambda: compile_request(submission=submission(other_prompt)),
+    )
+    assert_error("invalid_rubric", lambda: compile_request(rubric=object()))
+    assert_error(
+        "invalid_essay_evidence",
+        lambda: compile_request(essay_evidence=(object(),)),
+    )
