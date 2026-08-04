@@ -55,6 +55,7 @@ from .contracts import build_score_observation as build_score_observation
 from .contracts import build_scoring_request as build_scoring_request
 from .contracts import build_scoring_result as build_scoring_result
 from .contracts import canonical_json as canonical_json
+from .execution import MAX_REQUEST_CRITERIA as MAX_REQUEST_CRITERIA
 
 # Preserve the pinned star-import contract. Execution, authorization, and
 # calibration contracts remain explicit package attributes imported by their
