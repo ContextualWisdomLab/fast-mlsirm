@@ -29,6 +29,40 @@ The report embeds the canonical serialized forms and fingerprints of:
 - the complete shared scoring result and criterion observations; and
 - transparent review triggers and audit metadata.
 
+## Standalone HTML audit artifact
+
+The same governed report can be rendered as a self-contained, source-text-free
+HTML artifact:
+
+```python
+from fast_mlsirm.scoring.essay import render_essay_score_report_html
+
+render_essay_score_report_html(
+    report,
+    "artifacts/essay_score_report.html",
+    title="Pilot Essay Score Audit",
+)
+```
+
+The renderer first rebuilds the report through the governed request, observation,
+result, and report factories and rejects canonical replay differences. The HTML
+contains exact report, assessment, rubric, task-revision, engine, request, result,
+observation, criterion, trigger, and evidence-reference identities. It does not
+contain prompt text, response text, or source text.
+
+The artifact uses semantic landmarks, a keyboard-accessible skip link, labelled
+exact-value tables, focusable overflow regions, and a focusable canonical JSON
+section. It has no script or external resource dependency. A restrictive
+meta-delivered Content Security Policy is included as defense in depth; output
+encoding and governed content validation remain required because CSP is not a
+replacement for either control.
+
+These implementation choices are informed by WCAG 2.2 and the current Content
+Security Policy Level 3 working draft. They support audit usability and reduce
+content-injection impact, but they do not constitute a blanket conformance or
+security certification. Accessibility conformance still requires full-page,
+assistive-technology, and human evaluation in the buyer's deployment context.
+
 ## Non-suppressible review triggers
 
 The builder derives structural triggers that callers cannot remove:
@@ -84,3 +118,9 @@ handbook of automated essay evaluation*. Routledge.
 Williamson, D. M., Xi, X., & Breyer, F. J. (2012). A framework for evaluation
 and use of automated scoring. *Educational Measurement: Issues and Practice,
 31*(1), 2–13. https://doi.org/10.1111/j.1745-3992.2011.00223.x
+
+World Wide Web Consortium. (2023, October 5). *Web Content Accessibility
+Guidelines (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
+
+World Wide Web Consortium. (2026, May 5). *Content Security Policy Level 3*
+(W3C Working Draft). https://www.w3.org/TR/CSP3/
