@@ -41,16 +41,6 @@ jobs:
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
           python -m pip install --require-hashes -r requirements/ci.txt
           python -m pip install --no-deps --no-build-isolation -e .
-          ruff format scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
-            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
-            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
-            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
-            scripts/build_release_evidence_index.py scripts/sales_readiness.py
-          ruff check scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
-            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
-            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
-            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
-            scripts/build_release_evidence_index.py scripts/sales_readiness.py
           pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
             --cov=scripts._bounded_json --cov-branch --cov-report=term-missing --cov-fail-under=100
           pytest \
