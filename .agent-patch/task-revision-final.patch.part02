@@ -1,0 +1,210 @@
++                "task_revision_fingerprint": revision,
++                "task_id": task_id,
++                "task_family_id": task_family_id,
++            }
++            for revision, task_id, task_family_id in zip(
++                self.task_revision_fingerprints,
++                self.task_ids,
++                self.task_family_ids,
++                strict=True,
++            )
++        ]
+         respondent_task_responses = [
+             {
+                 "respondent_id": respondent_id,
+                 "task_id": task_id,
++                "task_revision_fingerprint": revision,
+                 "response_id": response_id,
+                 "response_content_fingerprint": response_content_fingerprint,
+             }
+-            for respondent_id, task_id, response_id, response_content_fingerprint in zip(
++            for (
++                respondent_id,
++                task_id,
++                revision,
++                response_id,
++                response_content_fingerprint,
++            ) in zip(
+                 self.response_respondent_ids,
+                 self.response_task_ids,
++                self.response_task_revision_fingerprints,
+                 self.response_ids,
+                 self.response_content_fingerprints,
+                 strict=True,
+@@ -301,10 +364,16 @@ class ScoringFacetsDesign(CanonicalContract):
+             "criterion_id": self.criterion_id,
+             "category_values": list(self.category_values),
+             "respondent_ids": list(self.respondent_ids),
++            "task_revision_fingerprints": list(self.task_revision_fingerprints),
+             "task_ids": list(self.task_ids),
++            "task_family_ids": list(self.task_family_ids),
++            "task_revisions": task_revisions,
+             "response_ids": list(self.response_ids),
+             "response_respondent_ids": list(self.response_respondent_ids),
+             "response_task_ids": list(self.response_task_ids),
++            "response_task_revision_fingerprints": list(
++                self.response_task_revision_fingerprints
++            ),
+             "response_content_fingerprints": list(
+                 self.response_content_fingerprints
+             ),
+@@ -331,10 +400,13 @@ class ScoringFacetsDesign(CanonicalContract):
+         return f"scoring_facets_design_{self.design_fingerprint[:32]}"
+ 
+     def _indexes(self) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+-        """Return deterministic respondent, task, and rater index maps."""
++        """Return deterministic respondent, revision, and rater index maps."""
+         return (
+             {value: index for index, value in enumerate(self.respondent_ids)},
+-            {value: index for index, value in enumerate(self.task_ids)},
++            {
++                value: index
++                for index, value in enumerate(self.task_revision_fingerprints)
++            },
+             {
+                 value: index
+                 for index, value in enumerate(self.rater_engine_fingerprints)
+@@ -342,17 +414,17 @@ class ScoringFacetsDesign(CanonicalContract):
+         )
+ 
+     def _dense_array(self, *, zero_based: bool) -> np.ndarray:
+-        """Materialize one fresh respondent-task-rater tensor."""
++        """Materialize one fresh respondent-revision-rater tensor."""
+         output = np.full(
+             (
+                 len(self.respondent_ids),
+-                len(self.task_ids),
++                len(self.task_revision_fingerprints),
+                 len(self.rater_engine_fingerprints),
+             ),
+             np.nan,
+             dtype=np.float64,
+         )
+-        respondent_index, task_index, rater_index = self._indexes()
++        respondent_index, revision_index, rater_index = self._indexes()
+         category_index = {
+             value: index for index, value in enumerate(self.category_values)
+         }
+@@ -364,7 +436,7 @@ class ScoringFacetsDesign(CanonicalContract):
+                 raise RuntimeError("scored rating category is unavailable")
+             output[
+                 respondent_index[record.respondent_id],
+-                task_index[record.task_id],
++                revision_index[record.task_revision_fingerprint],
+                 rater_index[record.engine_fingerprint],
+             ] = category_index[score] if zero_based else score
+         return output
+@@ -384,18 +456,18 @@ class ScoringFacetsDesign(CanonicalContract):
+         states: list[list[list[ObservationStatus | None]]] = [
+             [
+                 [None for _rater in self.rater_engine_fingerprints]
+-                for _task in self.task_ids
++                for _revision in self.task_revision_fingerprints
+             ]
+             for _respondent in self.respondent_ids
+         ]
+-        respondent_index, task_index, rater_index = self._indexes()
++        respondent_index, revision_index, rater_index = self._indexes()
+         for record in self.rating_records:
+-            states[respondent_index[record.respondent_id]][task_index[record.task_id]][
+-                rater_index[record.engine_fingerprint]
+-            ] = record.status
++            states[respondent_index[record.respondent_id]][
++                revision_index[record.task_revision_fingerprint]
++            ][rater_index[record.engine_fingerprint]] = record.status
+         return tuple(
+-            tuple(tuple(rater_states) for rater_states in task_states)
+-            for task_states in states
++            tuple(tuple(rater_states) for rater_states in revision_states)
++            for revision_states in states
+         )
+ 
+     def to_fit_facets_kwargs(self) -> dict[str, Any]:
+@@ -654,6 +726,8 @@ def build_scoring_facets_rating_records(
+             response_id=request.response_id,
+             response_content_fingerprint=request.response_content_fingerprint,
+             task_id=request.task_id,
++            task_revision_fingerprint=request.task_revision_fingerprint,
++            task_family_id=request.task_family_id,
+             occasion_id=request.occasion_id,
+             criterion_id=observation.criterion_id,
+             engine_id=engine.engine_id,
+@@ -681,53 +755,115 @@ def build_scoring_facets_rating_records(
+ def _identity_provenance(
+     records: tuple[ScoringFacetsRatingRecord, ...],
+ ) -> tuple[
+-    dict[str, tuple[str, str, str]],
++    dict[str, tuple[str, str, str, str, str]],
+     dict[tuple[str, str], tuple[str, str]],
+     dict[str, tuple[str, str]],
++    dict[str, tuple[str, str]],
+ ]:
+-    """Validate response, respondent-task, and rater identities."""
+-    response_contracts: dict[str, tuple[str, str, str]] = {}
+-    respondent_task_contracts: dict[tuple[str, str], tuple[str, str]] = {}
++    """Validate response, respondent-revision, task-revision, and rater identity."""
++    response_contracts: dict[str, tuple[str, str, str, str, str]] = {}
++    response_core_contracts: dict[str, tuple[str, str, str, str]] = {}
++    response_revision_contracts: dict[str, str] = {}
++    respondent_revision_contracts: dict[tuple[str, str], tuple[str, str]] = {}
++    task_revision_contracts: dict[str, tuple[str, str]] = {}
+     rater_contracts: dict[str, tuple[str, str]] = {}
++
++    # Validate the logical response binding before the revision map. This keeps
++    # respondent, task, family, and content conflicts on the established
++    # response-provenance boundary while allowing a revision-to-task collision
++    # to report the more specific task-revision contract below.
+     for index, record in enumerate(records):
+-        response_contract = (
++        response_core = (
+             record.respondent_id,
+             record.task_id,
++            record.task_family_id,
+             record.response_content_fingerprint,
+         )
+-        previous_response = response_contracts.get(record.response_id)
+-        if previous_response is not None and previous_response != response_contract:
+-            if previous_response[0] != response_contract[0]:
+-                conflict_field = "respondent_id"
+-            elif previous_response[1] != response_contract[1]:
+-                conflict_field = "task_id"
+-            else:
+-                conflict_field = "response_content_fingerprint"
++        previous_core = response_core_contracts.get(record.response_id)
++        if previous_core is not None and previous_core != response_core:
++            fields = (
++                "respondent_id",
++                "task_id",
++                "task_family_id",
++                "response_content_fingerprint",
++            )
++            conflict_field = next(
++                field_name
++                for field_name, left, right in zip(
++                    fields, previous_core, response_core, strict=True
++                )
++                if left != right
++            )
+             raise assessment_error(
+                 "response_provenance_conflict",
+                 f"$.records[{index}].{conflict_field}",
+-                "one response identity has conflicting respondent, task, or content provenance",
++                "one response identity has conflicting governed provenance",
++            )
++        response_core_contracts[record.response_id] = response_core
++
++    for index, record in enumerate(records):
++        revision_contract = (record.task_id, record.task_family_id)
++        previous_revision = task_revision_contracts.get(
++            record.task_revision_fingerprint
++        )
++        if previous_revision is not None and previous_revision != revision_contract:
++            conflict_field = (
++                "task_id"
++                if previous_revision[0] != revision_contract[0]
++                else "task_family_id"
++            )
++            raise assessment_error(
++                "task_revision_provenance_conflict",
++                f"$.records[{index}].{conflict_field}",
++                "one task revision has conflicting logical task provenance",
