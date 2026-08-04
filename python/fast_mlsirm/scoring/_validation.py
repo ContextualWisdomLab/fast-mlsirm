@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from enum import Enum
 import hashlib
 import json
 import math
@@ -10,7 +11,6 @@ import operator
 import re
 from types import MappingProxyType
 from typing import Any, TypeVar
-from enum import Enum
 
 from fast_mlsirm.rubric.models import _identifier, _semantic_version, _text
 
@@ -89,17 +89,31 @@ class CanonicalContract:
         raise NotImplementedError
 
 
+def _require_utf8(value: str, path: str) -> str:
+    """Reject lone surrogates before serialization or digest encoding."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise assessment_error(
+            "invalid_utf8_text",
+            path,
+            "text must be valid UTF-8",
+        ) from None
+    return value
+
+
 def descriptive_identifier(value: Any, name: str, path: str | None = None) -> str:
     """Return one descriptive lower-snake identifier or a domain error."""
     resolved_path = path or f"$.{name}"
     try:
-        return _identifier(value, name)
+        normalized = _identifier(value, name)
     except (TypeError, ValueError, OverflowError) as exc:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must use two-or-more-token lower snake_case",
         ) from None
+    return _require_utf8(normalized, resolved_path)
 
 
 def bounded_text(
@@ -112,13 +126,14 @@ def bounded_text(
     """Return bounded non-empty text or a stable domain error."""
     resolved_path = path or f"$.{name}"
     try:
-        return _text(value, name, maximum=maximum)
+        normalized = _text(value, name, maximum=maximum)
     except (TypeError, ValueError, OverflowError) as exc:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be non-empty text containing at most {maximum} characters",
         ) from None
+    return _require_utf8(normalized, resolved_path)
 
 
 def semantic_version(value: Any, name: str, path: str | None = None) -> str:
@@ -197,7 +212,7 @@ def bounded_positive_integer(
             resolved_path,
             f"{name} must be an integer between 1 and {maximum}",
         ) from None
-    if not 1 <= normalized <= maximum:
+    if isinstance(normalized, bool) or not 1 <= normalized <= maximum:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -356,6 +371,7 @@ def _metadata_key(value: Any, path: str) -> str:
             path,
             "metadata keys must not contain control characters",
         )
+    _require_utf8(value, path)
     if value in _SENSITIVE_METADATA_FIELDS:
         raise assessment_error(
             "sensitive_metadata_field",
@@ -465,7 +481,7 @@ def freeze_json_value(
                     f"{MAX_METADATA_TEXT_LENGTH} characters"
                 ),
             )
-        return value
+        return _require_utf8(value, path)
     if isinstance(value, Mapping):
         entries = _mapping_entries(value, path)
         frozen_entries = [
@@ -560,13 +576,14 @@ def canonical_json(value: Any) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
-    if len(encoded) > MAX_CANONICAL_JSON_CHARACTERS:
+    encoded_bytes = encoded.encode("utf-8")
+    if len(encoded_bytes) > MAX_CANONICAL_JSON_CHARACTERS:
         raise assessment_error(
             "canonical_json_too_large",
             "$",
             (
                 "canonical JSON must contain at most "
-                f"{MAX_CANONICAL_JSON_CHARACTERS} characters"
+                f"{MAX_CANONICAL_JSON_CHARACTERS} UTF-8 bytes"
             ),
         )
     return encoded
