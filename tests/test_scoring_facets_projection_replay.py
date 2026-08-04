@@ -29,6 +29,7 @@ def replay_execution():
         response_id="projection_replay_response",
         respondent_id="projection_replay_respondent",
         task_id="projection_replay_task",
+        task_revision_fingerprint="d" * 64,
         engine=automated_engine(),
         claim_score=1,
         source_score=2,
