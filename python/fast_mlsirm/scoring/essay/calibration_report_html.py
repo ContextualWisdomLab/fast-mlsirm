@@ -34,7 +34,7 @@ _T = TypeVar("_T")
 def _validated_axis(
     value: object,
     field_name: str,
-    validator: Callable[[object, str], _T],
+    validator: Callable[[object, str, str | None], _T],
     *,
     require_unique: bool,
 ) -> tuple[_T, ...]:
@@ -46,7 +46,7 @@ def _validated_axis(
             f"{field_name} must be a non-empty tuple",
         )
     normalized = tuple(
-        validator(item, f"{field_name}[{index}]")
+        validator(item, field_name, f"$.report.{field_name}[{index}]")
         for index, item in enumerate(value)
     )
     if require_unique and len(set(normalized)) != len(normalized):
@@ -311,7 +311,7 @@ def _threshold_rows(
     return tuple(
         (lower, upper, threshold)
         for lower, upper, threshold in zip(
-            report.category_values,
+            report.category_values[:-1],
             report.category_values[1:],
             report.thresholds,
             strict=True,
