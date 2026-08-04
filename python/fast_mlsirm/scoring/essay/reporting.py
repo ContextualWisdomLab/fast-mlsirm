@@ -30,6 +30,7 @@ from ..execution import (
     EngineDescriptor,
     ObservationStatus,
     ScoreObservation,
+    ScoringRequest,
     ScoringResult,
     build_score_observation,
     build_scoring_result,
@@ -42,7 +43,7 @@ _ESSAY_REPORT_TOKEN = object()
 
 
 def _replay_scoring_result(
-    request: Any,
+    request: ScoringRequest,
     result: ScoringResult,
     engine: EngineDescriptor,
 ) -> None:
@@ -64,7 +65,10 @@ def _replay_scoring_result(
     for index, (observation, replayed_observation) in enumerate(
         zip(result.observations, replayed_observations, strict=True)
     ):
-        if replayed_observation.observation_fingerprint != observation.observation_fingerprint:
+        if (
+            replayed_observation.observation_fingerprint
+            != observation.observation_fingerprint
+        ):
             raise assessment_error(
                 "essay_report_observation_replay_mismatch",
                 f"$.result.observations[{index}]",
