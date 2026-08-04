@@ -15,6 +15,9 @@ The loader:
 6. decodes strict UTF-8, delegates syntax and value construction to `json.loads`,
    and requires an object root.
 
+Callers that distinguish syntactically invalid JSON from non-object roots must
+preserve those failure classes when translating loader errors into domain checks.
+
 These controls bound availability risk and reject symbolic-link leaves, FIFOs,
 directories, oversized inputs, excessive nesting, and detectable path
 replacement. They do not make arbitrary JSON semantically trustworthy, replace
