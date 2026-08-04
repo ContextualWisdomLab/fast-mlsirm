@@ -43,7 +43,8 @@ stakeholder identities but makes no claim that the action causes an outcome.
 `enterprise_issue_evidence_references()` returns the exact issue,
 counterevidence, and stakeholder-perspective spans as shared
 `EvidenceReference` values. It rejects duplicate references rather than silently
-multiplying the apparent evidence weight.
+multiplying the apparent evidence weight. Complete provenance improves replay
+and auditability but is not itself evidence that a claim is accurate or strong.
 
 ## Criterion-level scoring request
 
