@@ -21,14 +21,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out exact source
+      - name: Check out exact source and history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - name: Create permission-preserving archive
         run: tar --exclude=.git -cf fast-mlsirm-source.tar .
+      - name: Recover reviewed implementation source
+        run: git show 8c39e2db29a50f7c91e80b2975a0345c757b9ab5:.github/workflows/task-revision-implement.yml > task-revision-implement.yml
       - name: Upload source archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           path: fast-mlsirm-source.tar
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload reviewed implementation source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: task-revision-implement.yml
           archive: false
           if-no-files-found: error
           retention-days: 1
