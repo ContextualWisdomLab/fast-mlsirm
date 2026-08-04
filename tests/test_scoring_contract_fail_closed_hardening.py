@@ -7,7 +7,7 @@ import runpy
 
 import pytest
 
-from fast_mlsirm.rubric.models import SCHEMA_VERSION as RUBRIC_SCHEMA_VERSION
+import fast_mlsirm.rubric.models as rubric_models
 from fast_mlsirm.scoring import (
     ASSESSMENT_SCHEMA_VERSION,
     AssessmentSpecError,
@@ -37,11 +37,15 @@ class _LeakingKey:
         return "private_response_text"
 
 
-def test_scoring_schema_is_independent_from_the_rubric_wire_schema() -> None:
+def test_scoring_schema_is_independent_from_the_rubric_wire_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Scoring owns an exported wire version while rubrics remain fingerprint-bound."""
     assert ASSESSMENT_SCHEMA_VERSION == "1.0"
     assert assessment().schema_version == ASSESSMENT_SCHEMA_VERSION
-    assert RUBRIC_SCHEMA_VERSION != ASSESSMENT_SCHEMA_VERSION
+    monkeypatch.setattr(rubric_models, "SCHEMA_VERSION", "9.9")
+    assert ASSESSMENT_SCHEMA_VERSION == "1.0"
+    assert assessment().schema_version == ASSESSMENT_SCHEMA_VERSION
 
 
 def test_negative_zero_has_one_canonical_identity() -> None:
