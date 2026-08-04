@@ -8,7 +8,7 @@ from typing import Any
 from . import calibration as _base
 from ._contract_safety import bounded_values
 from ._observation_validation import validate_score_observation
-from ._validation import assessment_error, strict_boolean
+from ._validation import AssessmentSpecError, assessment_error, strict_boolean
 from .execution import (
     EngineDescriptor,
     MAX_REQUEST_CRITERIA,
@@ -35,19 +35,32 @@ def _same_value(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
-def _validate_result_observations(
+def _validated_result_observations(
     *,
     request: ScoringRequest,
     result: ScoringResult,
     engine: EngineDescriptor,
 ) -> tuple[ScoreObservation, ...]:
-    """Bound and replay exact criterion observations before digest access."""
-    observations = bounded_values(
-        result.observations,
-        "observations",
-        minimum=1,
-        maximum=MAX_REQUEST_CRITERIA,
-    )
+    """Replay one exact package tuple before any child digest access."""
+    if type(result.observations) is not tuple:
+        raise assessment_error(
+            "invalid_observations",
+            "$.observations",
+            "result observations must retain their factory tuple representation",
+        )
+    observations = result.observations
+    if len(observations) != len(request.criterion_ids):
+        raise assessment_error(
+            "calibration_observation_coverage_mismatch",
+            "$.result.observations",
+            "observations must cover every requested criterion exactly once",
+        )
+    if len(observations) > MAX_REQUEST_CRITERIA:
+        raise assessment_error(
+            "invalid_observations",
+            "$.observations",
+            "result observations exceed the governed criterion maximum",
+        )
     for index, observation in enumerate(observations):
         if type(observation) is not ScoreObservation:
             raise assessment_error(
@@ -243,7 +256,7 @@ def build_scoring_facets_rating_records(
             "$.result.engine_fingerprint",
             "result is not bound to the supplied engine descriptor",
         )
-    observations = _validate_result_observations(
+    observations = _validated_result_observations(
         request=request,
         result=result,
         engine=engine,
@@ -356,34 +369,49 @@ def _design_fields(
     )
 
 
-def _replay_design(value: Any) -> _base.ScoringFacetsDesign:
+def _replay_design(
+    value: Any,
+    *,
+    path: str = "$.design",
+) -> _base.ScoringFacetsDesign:
     """Rebuild one criterion design from replayed records with identification."""
     if type(value) is not _base.ScoringFacetsDesign:
         raise assessment_error(
             "invalid_facets_design",
-            "$.design",
+            path,
             "design must be an exact ScoringFacetsDesign",
         )
     if type(value.rating_records) is not tuple:
         raise assessment_error(
             "facets_design_replay_mismatch",
-            "$.design.rating_records",
+            f"{path}.rating_records",
             "design rating records must retain their factory tuple representation",
         )
-    raw = bounded_values(
-        value.rating_records,
-        "rating_records",
-        minimum=1,
-        maximum=_base.MAX_SCORING_FACETS_RATINGS,
+    records = value.rating_records
+    if not 1 <= len(records) <= _base.MAX_SCORING_FACETS_RATINGS:
+        raise assessment_error(
+            "invalid_rating_records",
+            f"{path}.rating_records",
+            "design rating record count is outside the configured bounds",
+        )
+    replayed_records = tuple(
+        _replay_rating_record(record, path=f"{path}.rating_records[{index}]")
+        for index, record in enumerate(records)
     )
-    records = tuple(
-        _replay_rating_record(record, path=f"$.design.rating_records[{index}]")
-        for index, record in enumerate(raw)
-    )
-    rebuilt = _base._build_criterion_design(records, require_connected=True)
+    try:
+        rebuilt = _base._build_criterion_design(
+            replayed_records,
+            require_connected=True,
+        )
+    except AssessmentSpecError as exc:
+        if path == "$.design":
+            raise
+        raise assessment_error(exc.code, path, exc.message) from None
     actual_fields = _design_fields(
         value,
-        rating_fingerprints=tuple(record.rating_fingerprint for record in records),
+        rating_fingerprints=tuple(
+            record.rating_fingerprint for record in replayed_records
+        ),
     )
     rebuilt_fields = _design_fields(
         rebuilt,
@@ -394,7 +422,7 @@ def _replay_design(value: Any) -> _base.ScoringFacetsDesign:
     if not _same_value(actual_fields, rebuilt_fields):
         raise assessment_error(
             "facets_design_replay_mismatch",
-            "$.design",
+            path,
             "design no longer matches its replayed rating collection",
         )
     return rebuilt
@@ -431,12 +459,13 @@ def _replay_bundle(value: Any) -> _base.ScoringFacetsCalibrationBundle:
             "$.bundle.designs",
             "bundle designs must retain their factory tuple representation",
         )
-    raw = bounded_values(
-        value.designs,
-        "designs",
-        minimum=1,
-        maximum=MAX_REQUEST_CRITERIA,
-    )
+    raw = value.designs
+    if not 1 <= len(raw) <= MAX_REQUEST_CRITERIA:
+        raise assessment_error(
+            "invalid_designs",
+            "$.bundle.designs",
+            "bundle design count is outside the governed criterion bounds",
+        )
     for index, design in enumerate(raw):
         if type(design) is not _base.ScoringFacetsDesign:
             raise assessment_error(
@@ -451,7 +480,10 @@ def _replay_bundle(value: Any) -> _base.ScoringFacetsCalibrationBundle:
             "$.bundle.designs",
             "each criterion may appear only once in a calibration bundle",
         )
-    designs = tuple(_replay_design(design) for design in raw)
+    designs = tuple(
+        _replay_design(design, path=f"$.bundle.designs[{index}]")
+        for index, design in enumerate(raw)
+    )
     all_records = _bounded_bundle_records(designs)
     rebuilt = _ORIGINAL_BUILD_BUNDLE(all_records, require_connected=True)
     actual_fields = (
