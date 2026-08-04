@@ -36,6 +36,10 @@ from .contracts import build_scoring_request as build_scoring_request
 from .contracts import build_scoring_result as build_scoring_result
 from .contracts import canonical_json as canonical_json
 
+# Preserve the pinned star-import contract. Execution and authorization
+# contracts remain explicit package attributes imported by their documented
+# names, but are not added to ``__all__`` until the next public-surface
+# version bump.
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",
@@ -47,27 +51,11 @@ __all__ = [
     "AssessmentSpecError",
     "CalibrationPolicy",
     "ConstructSpec",
-    "EngineDescriptor",
-    "EngineKind",
     "EnginePolicy",
-    "EvidenceReference",
-    "EvidenceRole",
-    "FixtureOutcome",
     "MonitoringPolicy",
-    "ObservationGranularity",
-    "ObservationStatus",
     "ReportingPolicy",
-    "ScoreObservation",
-    "ScoringEngine",
-    "ScoringRequest",
-    "ScoringResult",
-    "StaticFixtureEngine",
     "ValidationPolicy",
     "artifact_digest",
     "build_assessment_spec",
-    "build_engine_descriptor",
-    "build_score_observation",
-    "build_scoring_request",
-    "build_scoring_result",
     "canonical_json",
 ]

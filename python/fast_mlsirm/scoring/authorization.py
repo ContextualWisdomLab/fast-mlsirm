@@ -177,10 +177,17 @@ def build_scoring_result(
     request: ScoringRequest,
     engine: EngineDescriptor,
     observations: Iterable[ScoreObservation],
+    assessment: AssessmentSpec | None = None,
     execution_attempt: int = 1,
     diagnostics: Mapping[str, Any] | None = None,
 ) -> ScoringResult:
-    """Build a result only after enforcing the request's bound engine policy."""
+    """Build a result only after enforcing the request's bound engine policy.
+
+    When the authoritative ``assessment`` is supplied, the request must name
+    exactly that assessment and the request's engine-policy projection must
+    replay the assessment's own policy, so a caller-forged but well-typed
+    projection cannot authorize an engine.
+    """
     if not isinstance(request, ScoringRequest):
         raise assessment_error(
             "invalid_scoring_request",
@@ -193,6 +200,32 @@ def build_scoring_result(
             "$.engine",
             "engine must be an EngineDescriptor",
         )
+    if assessment is not None:
+        if not isinstance(assessment, AssessmentSpec):
+            raise assessment_error(
+                "invalid_assessment_spec",
+                "$.assessment",
+                "assessment must be an AssessmentSpec",
+            )
+        if request.assessment_fingerprint != assessment.assessment_fingerprint:
+            raise assessment_error(
+                "assessment_request_mismatch",
+                "$.request.assessment_fingerprint",
+                "request does not name the supplied authoritative assessment",
+            )
+        authoritative_projection = (
+            artifact_digest(assessment.engine_policy),
+            assessment.engine_policy.allow_human_raters,
+            assessment.engine_policy.allow_automated_raters,
+            tuple(assessment.engine_policy.engine_ids),
+        )
+        if _request_authorization(request) != authoritative_projection:
+            raise assessment_error(
+                "engine_policy_projection_mismatch",
+                "$.request.metadata",
+                "request engine-policy projection does not replay the "
+                "authoritative assessment engine policy",
+            )
     _authorize_engine(request, engine)
     return _base_build_scoring_result(
         result_id=result_id,

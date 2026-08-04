@@ -705,7 +705,10 @@ def test_public_exports_and_docstrings_are_complete() -> None:
         "build_scoring_request",
         "build_scoring_result",
     }
-    assert expected.issubset(set(scoring.__all__))
+    # Execution contracts are documented explicit attributes; ``__all__``
+    # stays pinned to the pre-execution surface until the next public-surface
+    # version bump (see the package-namespace governance comment).
+    assert not expected & set(scoring.__all__)
     for name in expected:
         value = getattr(scoring, name)
         assert value is globals()[name]
@@ -793,3 +796,31 @@ def test_execution_module_internal_seals_reject_wrong_tokens() -> None:
     assert execution_module._SCORING_REQUEST_TOKEN is not None
     assert execution_module._SCORE_OBSERVATION_TOKEN is not None
     assert execution_module._SCORING_RESULT_TOKEN is not None
+
+
+def test_result_rejects_a_reused_observation_identifier_across_criteria() -> None:
+    """A caller-reused observation identifier fails after criterion checks."""
+    request = criterion_request()
+    engine = automated_engine()
+    observations = tuple(
+        build_score_observation(
+            observation_id="reused_observation",
+            request=request,
+            engine=engine,
+            criterion_id=criterion_id,
+            status=ObservationStatus.SCORED,
+            score_category=1,
+        )
+        for criterion_id in ("claim_support", "source_alignment")
+    )
+
+    with pytest.raises(AssessmentSpecError) as captured:
+        build_scoring_result(
+            result_id="scoring_result",
+            request=request,
+            engine=engine,
+            observations=observations,
+        )
+
+    assert captured.value.code == "duplicate_observation_id"
+    assert captured.value.path == "$.observations"

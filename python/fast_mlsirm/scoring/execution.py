@@ -1070,19 +1070,19 @@ def build_scoring_result(
                 f"$.observations[{index}].engine_fingerprint",
                 "observation engine identity does not match the result engine",
             )
-    observation_ids = tuple(value.observation_id for value in raw)
-    if len(set(observation_ids)) != len(observation_ids):
-        raise assessment_error(
-            "duplicate_observation_id",
-            "$.observations",
-            "observation identifiers must be unique",
-        )
     criteria = tuple(value.criterion_id for value in raw)
     if len(set(criteria)) != len(criteria):
         raise assessment_error(
             "duplicate_observation_criterion",
             "$.observations",
             "each request criterion may appear only once",
+        )
+    observation_ids = tuple(value.observation_id for value in raw)
+    if len(set(observation_ids)) != len(observation_ids):
+        raise assessment_error(
+            "duplicate_observation_id",
+            "$.observations",
+            "observation identifiers must be unique",
         )
     if request.granularity is ObservationGranularity.CRITERION_LEVEL:
         if set(criteria) != set(request.criterion_ids):
