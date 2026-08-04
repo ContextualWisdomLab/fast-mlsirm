@@ -17,7 +17,7 @@ from fast_mlsirm.scoring import (
 
 
 def argument_rubric() -> RubricSpecification:
-    """Return one deterministic rubric with non-contiguous ordinal categories."""
+    """Return one deterministic ordinal rubric with contiguous score categories."""
     return RubricSpecification(
         rubric_id="argument_rubric",
         construct_id="argument_quality",
@@ -31,13 +31,13 @@ def argument_rubric() -> RubricSpecification:
                 observable_indicators=("Required evidence is absent.",),
             ),
             RubricLevel(
-                score=2,
+                score=1,
                 label="partially_demonstrated",
                 descriptor="The construct is partially demonstrated.",
                 observable_indicators=("Some required evidence is present.",),
             ),
             RubricLevel(
-                score=4,
+                score=2,
                 label="fully_demonstrated",
                 descriptor="The construct is fully demonstrated.",
                 observable_indicators=("All required evidence is present.",),
