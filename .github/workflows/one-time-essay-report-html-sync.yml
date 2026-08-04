@@ -1,3 +1,4 @@
+# This workflow removes itself after synchronizing generated repository artifacts.
 name: One-time essay report HTML synchronization
 
 on:
