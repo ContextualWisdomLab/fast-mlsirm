@@ -13,17 +13,16 @@ from types import MappingProxyType
 from typing import Any, NoReturn
 
 from fast_mlsirm.rubric.models import (
-    SCHEMA_VERSION,
     RubricSpecification,
     _bounded_values,
     _canonical_json,
     _identifier,
-    _schema_version,
     _semantic_version,
     _sha256_hex,
     _text,
 )
 
+ASSESSMENT_SCHEMA_VERSION = "1.0"
 MAX_ASSESSMENT_RUBRICS = 64
 MAX_ASSESSMENT_CONSTRUCTS = 64
 MAX_POLICY_VALUES = 64
@@ -99,15 +98,22 @@ def _semantic_version_value(value: Any, path: str) -> str:
 
 
 def _schema_version_value(value: Any) -> str:
-    """Normalize the implemented wire-schema version as a domain error."""
+    """Normalize the independently versioned assessment wire schema."""
     try:
-        return _schema_version(value)
+        normalized = _text(value, "schema_version", maximum=16)
     except ValueError as exc:
         raise InvalidAssessmentSpecError(
             "unsupported_schema_version",
             "schema_version",
-            "must match the schema version implemented by this package",
+            "must match the assessment schema version implemented by this package",
         ) from exc
+    if normalized != ASSESSMENT_SCHEMA_VERSION:
+        _invalid(
+            "unsupported_schema_version",
+            "schema_version",
+            "must match the assessment schema version implemented by this package",
+        )
+    return normalized
 
 
 def _text_value(value: Any, path: str, *, maximum: int) -> str:
@@ -877,7 +883,7 @@ class AssessmentSpec:
     adjudication_policy: AdjudicationPolicy
     monitoring_policy: MonitoringPolicy
     metadata: Mapping[str, Any] = field(default_factory=dict)
-    schema_version: str = SCHEMA_VERSION
+    schema_version: str = ASSESSMENT_SCHEMA_VERSION
     _rubric_registry: InitVar[tuple[RubricSpecification, ...] | None] = None
     _factory_token: InitVar[object | None] = None
 
@@ -1119,7 +1125,7 @@ def build_assessment_spec(
         adjudication_policy=adjudication_policy,
         monitoring_policy=monitoring_policy,
         metadata={} if metadata is None else metadata,
-        schema_version=SCHEMA_VERSION,
+        schema_version=ASSESSMENT_SCHEMA_VERSION,
         _rubric_registry=registry,
         _factory_token=_ASSESSMENT_SPEC_TOKEN,
     )
