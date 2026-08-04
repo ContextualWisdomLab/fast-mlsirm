@@ -100,74 +100,159 @@ def sorted_identifiers(
     return tuple(sorted(normalized))
 
 
-def _preflight_metadata(value: Any, path: str) -> Any:
-    """Copy mappings into built-ins while redacting callbacks and reserved keys."""
-    if isinstance(value, Mapping):
-        try:
-            iterator = iter(value.items())
-        except Exception:
-            raise base.assessment_error(
-                "invalid_metadata_mapping",
-                path,
-                "metadata mapping entries could not be inspected safely",
-            ) from None
-        output: dict[str, Any] = {}
-        try:
-            for index, entry in enumerate(iterator):
-                if index >= base.MAX_METADATA_COLLECTION_VALUES:
-                    raise base.assessment_error(
-                        "metadata_collection_too_large",
-                        path,
-                        (
-                            "metadata mappings must contain at most "
-                            f"{base.MAX_METADATA_COLLECTION_VALUES} values"
-                        ),
-                    )
-                try:
-                    raw_key, child = entry
-                except Exception:
-                    raise base.assessment_error(
-                        "invalid_metadata_mapping",
-                        f"{path}.entries[{index}]",
-                        "metadata mapping entries must contain one key and value",
-                    ) from None
-                key_path = f"{path}.keys[{index}]"
-                key = base._metadata_key(raw_key, key_path)
-                if key.casefold() in _SENSITIVE_METADATA_FIELDS:
-                    raise base.assessment_error(
-                        "sensitive_metadata_field",
-                        key_path,
-                        "metadata cannot contain response or source content fields",
-                    )
-                if key in output:
-                    raise base.assessment_error(
-                        "duplicate_metadata_key",
-                        key_path,
-                        "metadata keys must be unique",
-                    )
-                output[key] = _preflight_metadata(
-                    child,
-                    f"{path}.values[{index}]",
-                )
-        except base.AssessmentSpecError:
-            raise
-        except Exception:
-            raise base.assessment_error(
-                "invalid_metadata_mapping",
-                path,
-                "metadata mapping entries could not be materialized safely",
-            ) from None
-        return output
-    if isinstance(value, (list, tuple)):
-        return type(value)(
-            _preflight_metadata(child, f"{path}[{index}]")
-            for index, child in enumerate(value)
+def _preflight_metadata(
+    value: Any,
+    path: str,
+    *,
+    depth: int = 0,
+    node_count: list[int] | None = None,
+    active_containers: set[int] | None = None,
+) -> Any:
+    """Copy bounded acyclic metadata while redacting caller callback failures."""
+    counts = [0] if node_count is None else node_count
+    active = set() if active_containers is None else active_containers
+    if depth > base.MAX_METADATA_DEPTH:
+        raise base.assessment_error(
+            "metadata_depth_exceeded",
+            path,
+            f"metadata exceeds the maximum depth of {base.MAX_METADATA_DEPTH}",
         )
+    counts[0] += 1
+    if counts[0] > base.MAX_METADATA_NODES:
+        raise base.assessment_error(
+            "metadata_node_budget_exceeded",
+            path,
+            f"metadata exceeds the maximum node count of {base.MAX_METADATA_NODES}",
+        )
+
+    if isinstance(value, Mapping):
+        marker = id(value)
+        if marker in active:
+            raise base.assessment_error(
+                "cyclic_metadata_reference",
+                path,
+                "metadata cannot contain cyclic container references",
+            )
+        active.add(marker)
+        try:
+            try:
+                iterator = iter(value.items())
+            except Exception:
+                raise base.assessment_error(
+                    "invalid_metadata_mapping",
+                    path,
+                    "metadata mapping entries could not be inspected safely",
+                ) from None
+            output: dict[str, Any] = {}
+            try:
+                for index, entry in enumerate(iterator):
+                    if index >= base.MAX_METADATA_COLLECTION_VALUES:
+                        raise base.assessment_error(
+                            "metadata_collection_too_large",
+                            path,
+                            (
+                                "metadata mappings must contain at most "
+                                f"{base.MAX_METADATA_COLLECTION_VALUES} values"
+                            ),
+                        )
+                    try:
+                        raw_key, child = entry
+                    except Exception:
+                        raise base.assessment_error(
+                            "invalid_metadata_mapping",
+                            f"{path}.entries[{index}]",
+                            "metadata mapping entries must contain one key and value",
+                        ) from None
+                    key_path = f"{path}.keys[{index}]"
+                    key = base._metadata_key(raw_key, key_path)
+                    if key.casefold() in _SENSITIVE_METADATA_FIELDS:
+                        raise base.assessment_error(
+                            "sensitive_metadata_field",
+                            key_path,
+                            "metadata cannot contain response or source content fields",
+                        )
+                    if key in output:
+                        raise base.assessment_error(
+                            "duplicate_metadata_key",
+                            key_path,
+                            "metadata keys must be unique",
+                        )
+                    output[key] = _preflight_metadata(
+                        child,
+                        f"{path}.values[{index}]",
+                        depth=depth + 1,
+                        node_count=counts,
+                        active_containers=active,
+                    )
+            except base.AssessmentSpecError:
+                raise
+            except Exception:
+                raise base.assessment_error(
+                    "invalid_metadata_mapping",
+                    path,
+                    "metadata mapping entries could not be materialized safely",
+                ) from None
+            return output
+        finally:
+            active.remove(marker)
+
+    if isinstance(value, (list, tuple)):
+        marker = id(value)
+        if marker in active:
+            raise base.assessment_error(
+                "cyclic_metadata_reference",
+                path,
+                "metadata cannot contain cyclic container references",
+            )
+        active.add(marker)
+        try:
+            try:
+                size = len(value)
+            except Exception:
+                raise base.assessment_error(
+                    "invalid_metadata_collection",
+                    path,
+                    "metadata collection size could not be inspected safely",
+                ) from None
+            if size > base.MAX_METADATA_COLLECTION_VALUES:
+                raise base.assessment_error(
+                    "metadata_collection_too_large",
+                    path,
+                    (
+                        "metadata collections must contain at most "
+                        f"{base.MAX_METADATA_COLLECTION_VALUES} values"
+                    ),
+                )
+            output: list[Any] = []
+            try:
+                iterator = iter(value)
+                for index, child in enumerate(iterator):
+                    output.append(
+                        _preflight_metadata(
+                            child,
+                            f"{path}[{index}]",
+                            depth=depth + 1,
+                            node_count=counts,
+                            active_containers=active,
+                        )
+                    )
+            except base.AssessmentSpecError:
+                raise
+            except Exception:
+                raise base.assessment_error(
+                    "invalid_metadata_collection",
+                    path,
+                    "metadata collection could not be materialized safely",
+                ) from None
+            return tuple(output) if isinstance(value, tuple) else output
+        finally:
+            active.remove(marker)
+
     return value
 
 
 def freeze_metadata(value: Any) -> Any:
-    """Return immutable metadata after callback-safe reserved-field preflight."""
+    """Return immutable metadata after bounded callback-safe preflight."""
     return base.freeze_metadata(_preflight_metadata(value, "$.metadata"))
 
 
