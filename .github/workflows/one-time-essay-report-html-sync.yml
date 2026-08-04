@@ -1,0 +1,55 @@
+name: One-time essay report HTML synchronization
+
+on:
+  push:
+    branches:
+      - feat/essay-score-report-html
+    paths:
+      - .github/workflows/one-time-essay-report-html-sync.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-time-essay-report-html-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synchronize-contracts:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Synchronize the established public-surface contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_scoring_essay_contracts.py")
+          content = path.read_text(encoding="utf-8")
+          old = '''        "build_essay_submission",
+                  "score_essay_request",'''
+          new = '''        "build_essay_submission",
+                  "render_essay_score_report_html",
+                  "score_essay_request",'''
+          if content.count(old) != 1:
+              raise RuntimeError("expected exactly one essay public-surface block")
+          path.write_text(content.replace(old, new), encoding="utf-8")
+          PY
+      - name: Render and verify authoritative changelog
+        run: |
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Commit synchronization and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-essay-report-html-sync.yml
+          git add tests/test_scoring_essay_contracts.py CHANGELOG.md
+          git commit -m "test(essay): synchronize report HTML public surface"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
