@@ -241,8 +241,13 @@ def _read_text(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as fh:
-        return json.load(fh)
+    # 🛡️ Sentinel: Enforce a 32MB read limit to prevent JSON DoS attacks
+    # (memory exhaustion or unbounded recursion) when loading untrusted files.
+    with path.open("rb") as fh:
+        content = fh.read(32 * 1024 * 1024 + 1)
+    if len(content) > 32 * 1024 * 1024:
+        raise ValueError(f"JSON file exceeds maximum allowed size: {path}")
+    return json.loads(content.decode("utf-8"))
 
 
 def _sha256(path: Path) -> str:
