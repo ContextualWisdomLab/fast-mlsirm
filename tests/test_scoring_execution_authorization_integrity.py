@@ -11,6 +11,7 @@ from fast_mlsirm.scoring import (
     AssessmentSpecError,
     ObservationStatus,
     artifact_digest,
+    build_assessment_spec,
     build_score_observation,
     build_scoring_result,
 )
@@ -61,6 +62,24 @@ def _complete_observations(request, engine):
     )
 
 
+def _changed_assessment_version(original):
+    """Rebuild the fixture assessment under a distinct governed version."""
+    return build_assessment_spec(
+        assessment_id=original.assessment_id,
+        assessment_version="1.0.1",
+        constructs=original.constructs,
+        rubrics=(rubric(),),
+        response_type=original.response_type,
+        engine_policy=original.engine_policy,
+        calibration_policy=original.calibration_policy,
+        validation_policy=original.validation_policy,
+        adjudication_policy=original.adjudication_policy,
+        monitoring_policy=original.monitoring_policy,
+        reporting_policy=original.reporting_policy,
+        metadata=original.metadata,
+    )
+
+
 def test_result_authorization_replays_the_authoritative_assessment() -> None:
     """A caller-forged but well-typed policy projection cannot authorize an engine."""
     selected_assessment = assessment()
@@ -91,7 +110,6 @@ def test_result_authorization_replays_the_authoritative_assessment() -> None:
 def test_result_factory_rejects_an_assessment_request_identity_mismatch() -> None:
     """Result finalization requires the exact assessment named by the request."""
     first_assessment = assessment()
-    alternate_assessment = type(first_assessment)
     request = _unprojected_request(
         metadata={
             "engine_policy_fingerprint": artifact_digest(first_assessment.engine_policy),
@@ -101,8 +119,7 @@ def test_result_factory_rejects_an_assessment_request_identity_mismatch() -> Non
         }
     )
     engine = automated_engine()
-    changed_assessment = _FIXTURES["assessment"]()
-    object.__setattr__(changed_assessment, "assessment_version", "1.0.1")
+    changed_assessment = _changed_assessment_version(first_assessment)
 
     with pytest.raises(AssessmentSpecError) as captured:
         build_scoring_result(
