@@ -17,6 +17,6 @@
 ## 2026-08-03 - [HTML Table Numeric Typography]
 **Learning:** For standalone HTML reports that display large volumes of numeric data (like metrics and diagnostic data), the default proportional fonts can cause the decimals and numbers to snake horizontally, hindering scan-ability.
 **Action:** When adding or styling tables with metrics or numeric values in HTML reports, inject the 'font-variant-numeric: tabular-nums;' CSS property into table cells ('th', 'td') to align numbers beautifully and enhance readability.
-## 2025-03-02 - Focus Visible For Scrollable Code Blocks
+## 2026-08-04 - Focus Visible For Scrollable Code Blocks
 **Learning:** Code blocks (`<pre>`) that contain wide text (like JSON or CSV exports) require horizontal scrolling, but by default they cannot receive keyboard focus, locking keyboard-only users out of viewing the full content.
 **Action:** Always add `tabindex="0"`, `role="region"`, `aria-label`, and a `:focus-visible` outline to scrollable `<pre>` or code containers to ensure full keyboard navigability and clear visual focus feedback.
