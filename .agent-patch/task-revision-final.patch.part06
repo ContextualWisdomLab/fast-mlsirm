@@ -1,0 +1,210 @@
+-from dataclasses import replace
++from dataclasses import fields, replace
+ import hashlib
++import inspect
+ from pathlib import Path
+ import runpy
+ 
+ import pytest
+ 
++import fast_mlsirm.scoring as scoring
+ import fast_mlsirm.scoring.calibration as calibration
++import fast_mlsirm.scoring.execution as execution_contract
+ from fast_mlsirm.scoring import (
+     AssessmentSpecError,
+     LEGACY_SCORING_REQUEST_SCHEMA_VERSION,
+@@ -48,9 +51,9 @@ def _assert_error(code: str, callback) -> AssessmentSpecError:
+     return caught.value
+ 
+ 
+-def _legacy_request_artifact():
++def _legacy_request_artifact(**request_overrides):
+     """Return a genuine schema-1.0 request artifact derived from shared content."""
+-    request = criterion_request()
++    request = criterion_request(**request_overrides)
+     artifact = request.to_dict()
+     artifact.pop("task_revision_fingerprint")
+     artifact.pop("request_handle")
+@@ -64,6 +67,21 @@ def _legacy_request_artifact():
+     return artifact
+ 
+ 
++def test_task_revision_public_surface_is_explicit_and_documented() -> None:
++    """New revision contracts are explicit attrs outside the pinned star surface."""
++    names = {
++        "LEGACY_SCORING_REQUEST_SCHEMA_VERSION",
++        "SCORING_REQUEST_SCHEMA_VERSION",
++        "migrate_scoring_request_v1",
++    }
++
++    assert names.isdisjoint(scoring.__all__)
++    assert scoring.LEGACY_SCORING_REQUEST_SCHEMA_VERSION == "1.0"
++    assert scoring.SCORING_REQUEST_SCHEMA_VERSION == "1.1"
++    assert scoring.migrate_scoring_request_v1 is migrate_scoring_request_v1
++    assert inspect.getdoc(scoring.migrate_scoring_request_v1)
++
++
+ def test_shared_request_requires_one_exact_task_revision() -> None:
+     """The shared wire contract serializes a required schema-1.1 task digest."""
+     request = criterion_request()
+@@ -77,6 +95,32 @@ def test_shared_request_requires_one_exact_task_revision() -> None:
+     )
+ 
+ 
++def test_null_task_revision_fails_at_the_exact_non_reflective_path() -> None:
++    """An explicit null cannot bypass the required task-revision boundary."""
++    caught = _assert_error(
++        "invalid_task_revision_fingerprint",
++        lambda: criterion_request(task_revision_fingerprint=None),
++    )
++
++    assert caught.path == "$.task_revision_fingerprint"
++    assert "None" not in str(caught)
++
++
++def test_request_rejects_legacy_schema_at_the_current_factory_boundary() -> None:
++    """Only the explicit migration helper may cross the schema-1.0 boundary."""
++    request = criterion_request()
++    caught = _assert_error(
++        "invalid_schema_version",
++        lambda: replace(
++            request,
++            schema_version=LEGACY_SCORING_REQUEST_SCHEMA_VERSION,
++            _request_token=execution_contract._SCORING_REQUEST_TOKEN,
++        ),
++    )
++
++    assert caught.path == "$.schema_version"
++
++
+ def test_task_revision_changes_request_identity_without_changing_logical_task() -> None:
+     """Changed task content remains a distinct request under one display ID."""
+     first = criterion_request(task_revision_fingerprint="1" * 64)
+@@ -97,13 +141,22 @@ def test_essay_prompt_revision_is_the_authoritative_shared_task_revision() -> No
+     second = essay_request(prompt=second_prompt, submission=second_submission)
+ 
+     assert first.scoring_request.task_id == second.scoring_request.task_id
+-    assert first.scoring_request.task_revision_fingerprint == first_prompt.prompt_fingerprint
+-    assert second.scoring_request.task_revision_fingerprint == second_prompt.prompt_fingerprint
++    assert (
++        first.scoring_request.task_revision_fingerprint
++        == first_prompt.prompt_fingerprint
++    )
++    assert (
++        second.scoring_request.task_revision_fingerprint
++        == second_prompt.prompt_fingerprint
++    )
+     assert (
+         first.scoring_request.task_revision_fingerprint
+         != second.scoring_request.task_revision_fingerprint
+     )
+-    assert first.scoring_request.request_fingerprint != second.scoring_request.request_fingerprint
++    assert (
++        first.scoring_request.request_fingerprint
++        != second.scoring_request.request_fingerprint
++    )
+ 
+ 
+ def test_facets_axis_separates_revisions_of_one_logical_task() -> None:
+@@ -132,22 +185,77 @@ def test_one_revision_cannot_claim_two_logical_task_identities() -> None:
+     """A revision-to-logical collision fails closed before tensor allocation."""
+     records = list(connected_records())
+     first_revision = records[0].task_revision_fingerprint
++    conflicting_revision = next(
++        record.task_revision_fingerprint
++        for record in records
++        if record.task_revision_fingerprint != first_revision
++    )
++    records = [
++        replace(
++            record,
++            task_revision_fingerprint=first_revision,
++            _rating_token=calibration._RATING_TOKEN,
++        )
++        if record.task_revision_fingerprint == conflicting_revision
++        else record
++        for record in records
++    ]
++
++    caught = _assert_error(
++        "task_revision_provenance_conflict",
++        lambda: build_scoring_facets_calibration_bundle(records),
++    )
++    assert caught.path.endswith(".task_id")
++
++
++def test_design_constructor_rejects_misaligned_revision_axes() -> None:
++    """Revision, display, family, and response audit axes align exactly."""
++    design = build_scoring_facets_calibration_bundle(connected_records()).designs[0]
++    values = {field.name: getattr(design, field.name) for field in fields(design)}
++    values["_design_token"] = calibration._DESIGN_TOKEN
++
++    _assert_error(
++        "invalid_task_revision_axis",
++        lambda: calibration.ScoringFacetsDesign(
++            **{
++                **values,
++                "task_revision_fingerprints": design.task_revision_fingerprints[:-1],
++            }
++        ),
++    )
++    _assert_error(
++        "invalid_response_task_revision_axis",
++        lambda: calibration.ScoringFacetsDesign(
++            **{
++                **values,
++                "response_task_revision_fingerprints": (
++                    design.response_task_revision_fingerprints[:-1]
++                ),
++            }
++        ),
++    )
++
++
++def test_one_response_cannot_switch_task_revision_identity() -> None:
++    """A response ID remains bound to one exact task content revision."""
++    records = list(connected_records())
++    target = records[0]
+     conflicting_index = next(
+         index
+         for index, record in enumerate(records[1:], start=1)
+-        if record.task_revision_fingerprint != first_revision
++        if record.response_id == target.response_id
+     )
+     records[conflicting_index] = replace(
+         records[conflicting_index],
+-        task_revision_fingerprint=first_revision,
++        task_revision_fingerprint="f" * 64,
+         _rating_token=calibration._RATING_TOKEN,
+     )
+ 
+     caught = _assert_error(
+-        "task_revision_provenance_conflict",
++        "response_provenance_conflict",
+         lambda: build_scoring_facets_calibration_bundle(records),
+     )
+-    assert caught.path.endswith(".task_id")
++    assert caught.path.endswith(".task_revision_fingerprint")
+ 
+ 
+ def test_design_replay_rejects_a_mutated_revision_axis_before_rust(monkeypatch) -> None:
+@@ -176,9 +284,10 @@ def test_design_replay_rejects_a_mutated_revision_axis_before_rust(monkeypatch)
+ def test_legacy_request_migration_requires_an_explicit_revision() -> None:
+     """A verified v1.0 artifact migrates only with caller-supplied task content."""
+     artifact = _legacy_request_artifact()
++    authoritative_assessment = assessment()
+     migrated = migrate_scoring_request_v1(
+         artifact,
+-        assessment=assessment(),
++        assessment=authoritative_assessment,
+         rubric=rubric(),
+         task_revision_fingerprint="e" * 64,
+     )
+@@ -187,6 +296,17 @@ def test_legacy_request_migration_requires_an_explicit_revision() -> None:
+     assert migrated.task_revision_fingerprint == "e" * 64
+     assert migrated.task_id == artifact["task_id"]
+     assert migrated.request_fingerprint != artifact["request_fingerprint"]
++    migrated_metadata = migrated.to_dict()["metadata"]
++    assert migrated_metadata["language_code"] == "en"
++    assert migrated_metadata["engine_policy_fingerprint"] == hashlib.sha256(
++        canonical_json(authoritative_assessment.engine_policy).encode("utf-8")
