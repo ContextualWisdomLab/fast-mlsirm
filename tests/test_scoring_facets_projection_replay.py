@@ -145,7 +145,7 @@ def test_projection_rejects_duplicate_observation_criterion() -> None:
             engine=engine,
         )
 
-    assert caught.value.code == "calibration_observation_coverage_mismatch"
+    assert caught.value.code == "duplicate_observation_criterion"
     assert caught.value.path.endswith(".observations")
 
 
