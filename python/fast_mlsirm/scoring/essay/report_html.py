@@ -165,10 +165,10 @@ def _css() -> str:
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
-main:focus { outline: none; }
 main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 .skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
-.skip-link:focus-visible { top: 8px; outline: 3px solid Highlight; outline-offset: 2px; }
+.skip-link:focus { top: 8px; }
+.skip-link:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
 .hero { padding: 48px 0 24px; }
 h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); }
 .subtitle { margin: 0; max-width: 78ch; }
@@ -184,9 +184,8 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
 th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-tbody tr { transition: background-color 0.15s ease-in-out, opacity 0.2s ease; }
+tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
-tbody:hover tr:not(:hover) { opacity: 0.5; }
 code, pre { font-family: ui-monospace, monospace; }
 pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty-state { font-style: italic; }
