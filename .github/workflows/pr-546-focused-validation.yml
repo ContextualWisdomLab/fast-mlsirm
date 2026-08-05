@@ -111,7 +111,25 @@ jobs:
           python -m coverage report \
             --include='*/enterprise_issue/reporting.py,*/essay/calibration_reporting.py,*/essay/calibration_report_html.py' \
             --fail-under=100
-          python scripts/check_docstring_coverage.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          paths = (
+              Path("python/fast_mlsirm/scoring/enterprise_issue/reporting.py"),
+              Path("python/fast_mlsirm/scoring/essay/calibration_reporting.py"),
+              Path("python/fast_mlsirm/scoring/essay/calibration_report_html.py"),
+          )
+          missing = []
+          for path in paths:
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                      if not node.name.startswith("_") and ast.get_docstring(node) is None:
+                          missing.append(f"{path}:{node.lineno}:{node.name}")
+          if missing:
+              raise SystemExit("missing public docstrings: " + ", ".join(missing))
+          PY
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
           git diff --check
 
