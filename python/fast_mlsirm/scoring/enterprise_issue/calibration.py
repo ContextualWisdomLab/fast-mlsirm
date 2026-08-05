@@ -1,19 +1,24 @@
 """Replay enterprise issue provenance before shared many-facet calibration.
 
-The adapter verifies that one governed request/result/engine execution remains
-bound to the exact :class:`AtomicIssueRecord` and then delegates projection to
-the existing shared criterion-level calibration contracts. It performs no
-likelihood, gradient, Hessian, optimization, scoring, ranking, utility, fairness,
-validity, or causal arithmetic.
+The adapters verify that governed request/result/engine executions remain bound
+to exact :class:`AtomicIssueRecord` revisions and then delegate projection and
+bundle assembly to the existing shared criterion-level calibration contracts.
+They perform no likelihood, gradient, Hessian, optimization, scoring, ranking,
+utility, fairness, validity, or causal arithmetic.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, NoReturn
 
+from .._contract_safety import bounded_values
 from .._validation import assessment_error, thaw_json_value
 from ..calibration import (
+    MAX_SCORING_FACETS_RATINGS,
+    ScoringFacetsCalibrationBundle,
     ScoringFacetsRatingRecord,
+    build_scoring_facets_calibration_bundle,
     build_scoring_facets_rating_records,
 )
 from ..execution import (
@@ -26,6 +31,9 @@ from ..execution import (
 )
 from .contracts import AtomicIssueRecord
 from .observation import _enterprise_request_context, _evidence_counts
+
+MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS = MAX_SCORING_FACETS_RATINGS
+"""Maximum enterprise scoring executions accepted by one bundle assembly."""
 
 
 def _calibration_error(path: str, message: str) -> NoReturn:
@@ -231,4 +239,64 @@ def build_enterprise_issue_facets_rating_records(
     )
 
 
-__all__ = ["build_enterprise_issue_facets_rating_records"]
+def build_enterprise_issue_facets_calibration_bundle(
+    executions: Iterable[
+        tuple[AtomicIssueRecord, ScoringRequest, ScoringResult, EngineDescriptor]
+    ],
+    *,
+    require_connected: bool = True,
+) -> ScoringFacetsCalibrationBundle:
+    """Assemble exact enterprise scoring executions into one shared bundle.
+
+    Each execution must be an exact four-value tuple containing an
+    :class:`AtomicIssueRecord`, its governed :class:`ScoringRequest`, the bound
+    :class:`ScoringResult`, and the producing :class:`EngineDescriptor`. Every
+    execution first passes the enterprise provenance replay implemented by
+    :func:`build_enterprise_issue_facets_rating_records`; the resulting shared
+    records are then delegated unchanged to
+    :func:`~fast_mlsirm.scoring.build_scoring_facets_calibration_bundle`.
+
+    The returned object is the existing criterion-separated shared calibration
+    bundle. This adapter does not fit a model, combine criteria, infer issue
+    importance, establish validity or fairness, or justify causal or automated
+    high-stakes decisions. Those claims require downstream diagnostics,
+    recovery evidence, relation-safe validation, and human review.
+    """
+    values = bounded_values(
+        executions,
+        "executions",
+        minimum=1,
+        maximum=MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS,
+    )
+
+    def validated_records() -> Iterable[ScoringFacetsRatingRecord]:
+        """Yield replay-validated records for bounded shared consumption."""
+        for index, execution in enumerate(values):
+            if type(execution) is not tuple or len(execution) != 4:
+                raise assessment_error(
+                    "invalid_enterprise_calibration_execution",
+                    f"$.executions[{index}]",
+                    (
+                        "each execution must be an exact four-value tuple of issue, "
+                        "request, result, and engine"
+                    ),
+                )
+            issue, request, result, engine = execution
+            yield from build_enterprise_issue_facets_rating_records(
+                issue=issue,
+                request=request,
+                result=result,
+                engine=engine,
+            )
+
+    return build_scoring_facets_calibration_bundle(
+        validated_records(),
+        require_connected=require_connected,
+    )
+
+
+__all__ = [
+    "MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS",
+    "build_enterprise_issue_facets_calibration_bundle",
+    "build_enterprise_issue_facets_rating_records",
+]

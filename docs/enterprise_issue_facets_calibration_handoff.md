@@ -1,10 +1,12 @@
 # Governed enterprise issue many-facet handoff
 
-`build_enterprise_issue_facets_rating_records()` advances issue #404 by replaying
-one exact enterprise issue scoring execution before it enters the existing shared
-many-facet calibration contracts. The adapter returns only
-`ScoringFacetsRatingRecord` values and introduces no enterprise-specific rating,
-design, fit, report, or decision schema.
+`build_enterprise_issue_facets_rating_records()` and
+`build_enterprise_issue_facets_calibration_bundle()` advance issue #404 by
+replaying exact enterprise issue scoring executions before they enter the
+existing shared many-facet calibration contracts. The adapters return only the
+existing `ScoringFacetsRatingRecord` and `ScoringFacetsCalibrationBundle`
+contracts. They introduce no enterprise-specific rating, design, fit, report, or
+decision schema.
 
 ## Workflow position
 
@@ -18,11 +20,12 @@ The handoff sits after governed semantic extraction and criterion scoring:
    supporting, counter, and contextual evidence in shared `ScoreObservation`
    values.
 4. `build_scoring_result()` closes one exact request/engine execution.
-5. `build_enterprise_issue_facets_rating_records()` replays the enterprise
-   provenance and delegates projection to
-   `build_scoring_facets_rating_records()`.
-6. `build_scoring_facets_calibration_bundle()` assembles separate
-   criterion-specific respondent-by-task-revision-by-rater designs.
+5. `build_enterprise_issue_facets_rating_records()` replays one enterprise
+   execution and delegates projection to `build_scoring_facets_rating_records()`.
+6. `build_enterprise_issue_facets_calibration_bundle()` materializes a bounded
+   collection of exact four-value execution tuples, replays every execution, and
+   delegates the flattened shared records to
+   `build_scoring_facets_calibration_bundle()`.
 7. `fit_scoring_facets_bundle()` delegates all likelihood, quadrature, gradient,
    parameter-update, and optimization arithmetic to the existing Rust-backed
    estimator.
@@ -51,6 +54,11 @@ values. It then verifies:
 - package-managed observation fingerprints and evidence-role counts replay from
   the exact observation payload.
 
+The bundle adapter additionally requires a non-empty, bounded iterable whose
+entries are exact four-value tuples ordered as issue, request, result, and engine.
+It does not reinterpret or repair an execution. Each tuple must independently
+pass the record-level replay boundary before any shared bundle is assembled.
+
 A generic shared observation with omitted evidence or copied-looking metadata
 cannot cross this boundary unless all enterprise replay invariants are satisfied.
 Abstention remains a terminal missing rating and is never converted into a low
@@ -58,8 +66,9 @@ score.
 
 After these checks, the existing shared calibration builder remains authoritative
 for request/result/engine matching, criterion coverage, response and task-revision
-identity, duplicate-cell rejection, score-scale support, bounded dense allocation,
-and respondent-task and task-rater connectedness.
+identity, duplicate-cell rejection, score-scale support, bounded record and dense
+allocation, strict connectedness policy, and respondent-task and task-rater
+connectedness.
 
 ## Numerical and scientific boundary
 
@@ -67,43 +76,40 @@ Python validates, canonicalizes, marshals, and delegates. It does not implement 
 duplicate likelihood, gradient, Hessian, quadrature, optimization, scoring,
 ranking, aggregation, utility, fairness, or causal arithmetic.
 
-Passing provenance replay does not establish that an issue is true, complete,
-material, probable, construct-valid, fair, or suitable for intervention. A
-successful calibration handoff does not establish model adequacy, scoreability,
-reliability, global optimality, rater interchangeability, predictive validity, or
-high-stakes readiness. Connectedness is an identification gate, not evidence of
-validity. A candidate intervention remains a hypothesis until an identified
-design and human validation support a causal claim.
+Passing provenance replay or bundle connectedness does not establish that an
+issue is true, complete, material, probable, construct-valid, fair, or suitable
+for intervention. A successful calibration handoff does not establish model
+adequacy, scoreability, reliability, global optimality, rater interchangeability,
+predictive validity, or high-stakes readiness. Connectedness is an identification
+gate, not evidence of validity. A candidate intervention remains a hypothesis
+until an identified design and human validation support a causal claim.
 
 The delegated estimator equation and primary-source traceability are documented
-in `automated_essay_facets_calibration_reports.md`; this adapter does not alter the
+in `automated_essay_facets_calibration_reports.md`; these adapters do not alter the
 model or reimplement that equation.
 
 ## Example
 
 ```python
-from fast_mlsirm.scoring import (
-    build_scoring_facets_calibration_bundle,
-    fit_scoring_facets_bundle,
-)
+from fast_mlsirm.scoring import fit_scoring_facets_bundle
 from fast_mlsirm.scoring.enterprise_issue import (
-    build_enterprise_issue_facets_rating_records,
+    build_enterprise_issue_facets_calibration_bundle,
 )
 
-records = []
-for issue, request, result, engine in governed_executions:
-    records.extend(
-        build_enterprise_issue_facets_rating_records(
-            issue=issue,
-            request=request,
-            result=result,
-            engine=engine,
-        )
+bundle = build_enterprise_issue_facets_calibration_bundle(
+    tuple(
+        (issue, request, result, engine)
+        for issue, request, result, engine in governed_executions
     )
-
-bundle = build_scoring_facets_calibration_bundle(records)
+)
 fits_by_criterion = fit_scoring_facets_bundle(bundle)
 ```
+
+The convenience assembler is equivalent to calling
+`build_enterprise_issue_facets_rating_records()` for every execution and then
+passing the flattened records to `build_scoring_facets_calibration_bundle()`.
+Call the record-level API directly when an application needs to persist or audit
+individual rating records before bundle assembly.
 
 A production workflow must retain exact package versions, Rust/PyO3 backend
 identity, estimator settings, assessment and rubric revisions, human-review
