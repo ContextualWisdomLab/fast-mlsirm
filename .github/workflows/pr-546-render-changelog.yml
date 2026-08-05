@@ -1,0 +1,50 @@
+name: PR 546 render changelog once
+
+on:
+  push:
+    branches:
+      - feat/enterprise-facets-calibration-reports
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr-546-render-changelog-once
+  cancel-in-progress: false
+
+jobs:
+  render:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact feature head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-facets-calibration-reports
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Render and verify authoritative changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+          git diff --check
+
+      - name: Commit rendered changelog and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-546-render-changelog.yml
+          git add CHANGELOG.md
+          git diff --cached --check
+          git commit -m "docs(changelog): record bounded facets report publication"
+          git push origin HEAD:feat/enterprise-facets-calibration-reports
