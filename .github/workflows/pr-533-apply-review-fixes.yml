@@ -102,18 +102,21 @@ jobs:
             python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
             tests/test_scoring_enterprise_explicit_values.py
 
-      - name: Install focused validation dependencies
+      - name: Build isolated validation environment
         shell: bash
         run: |
           set -euo pipefail
+          python -m venv .venv
+          . .venv/bin/activate
           python -m pip install --require-hashes -r requirements/ci.txt
-          python -m pip install "ruff==0.16.1" "pytest-cov==6.2.1"
+          python -m pip install "ruff==0.16.1" "coverage==7.15.3"
           python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Validate accepted review findings
         shell: bash
         run: |
           set -euo pipefail
+          . .venv/bin/activate
           ruff check --fix \
             python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
             tests/test_scoring_enterprise_explicit_values.py \
@@ -131,7 +134,7 @@ jobs:
             tests/test_scoring_enterprise_explicit_values.py \
             scripts/pr533_review_fixes.py
           python -m coverage erase
-          python -m coverage run \
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m coverage run \
             --branch \
             --source=python/fast_mlsirm/scoring/enterprise_issue \
             -m pytest \
