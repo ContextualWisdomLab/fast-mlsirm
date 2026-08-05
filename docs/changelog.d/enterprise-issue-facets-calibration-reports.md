@@ -12,6 +12,9 @@
 - Added package-managed bundle, design, and criterion report provenance,
   deterministic execution-order invariance, one-time review-trigger
   normalization, source-free caller metadata, and reserved-key rejection.
+- Added fail-closed batch validation of every derived report identifier before any
+  Rust estimator delegation, preventing an overlong prefix-and-criterion
+  combination from producing a partially fitted report tuple.
 - Added a realistic connected two-issue, two-task-revision, two-rater-family,
   two-criterion Rust fit, complete orchestration and privacy tests, public
   documentation, and APA 7th scientific and governance traceability.
