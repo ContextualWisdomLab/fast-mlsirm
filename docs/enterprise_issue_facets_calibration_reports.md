@@ -10,6 +10,7 @@ many-facet reports.
 AtomicIssueRecord + ScoringRequest + ScoringResult + EngineDescriptor
     -> enterprise provenance replay
     -> ScoringFacetsCalibrationBundle
+    -> validate every derived report identifier
     -> one Rust-backed fit per criterion
     -> ScoringFacetsCalibrationReport tuple
 ```
@@ -29,9 +30,11 @@ existing canonical report type.
 ## Report identity and metadata
 
 Callers provide a descriptive lower `snake_case` report prefix. One report ID is
-created per criterion as `<prefix>_<criterion_id>`. The output order follows the
-canonical criterion order in the shared bundle and is independent of execution
-arrival order.
+created per criterion as `<prefix>_<criterion_id>`. The complete set of derived
+report IDs is validated before any estimator call, so an invalid or overlong
+prefix-and-criterion combination fails without returning or fitting a partial
+batch. The output order follows the canonical criterion order in the shared
+bundle and is independent of execution arrival order.
 
 Every report contains package-managed metadata:
 
