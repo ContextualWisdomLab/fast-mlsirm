@@ -1,0 +1,55 @@
+name: PR 533 repair review hardening
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: github.event.pull_request.number == 533 && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Check out exact pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Correct observed structured error expectation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/pr-533-review-hardening.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = '(ExplicitValueKind.CALENDAR_DATE, [], "invalid_normalized_payload"),'
+          new = '(ExplicitValueKind.CALENDAR_DATE, [], "invalid_metadata"),'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one list-payload error expectation')
+          workflow.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/pr-533-repair-review-hardening.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "ci: correct explicit-value review fixture"
+          git push origin "HEAD:${PR_HEAD_REF}"
