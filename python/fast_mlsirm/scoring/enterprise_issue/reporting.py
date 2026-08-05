@@ -75,17 +75,18 @@ def fit_enterprise_issue_facets_calibration_reports(
 
     The execution iterable is validated once by
     :func:`build_enterprise_issue_facets_calibration_bundle`. Every resulting
-    criterion design is then delegated exactly once to
-    :func:`~fast_mlsirm.scoring.fit_scoring_facets_calibration_report`, which
-    calls the existing Rust-backed many-facet estimator and binds the exact
-    design fingerprint immediately. The returned values are the canonical shared
-    reports; no enterprise-specific fit or report schema is introduced.
+    criterion design is then delegated exactly once to the canonical shared
+    scoring-facets report helper, which calls the existing Rust-backed many-facet
+    estimator and binds the exact design fingerprint immediately. The returned
+    values are the canonical shared reports; no enterprise-specific fit or report
+    schema is introduced.
 
-    Package-managed metadata binds each report to the exact enterprise bundle,
-    criterion design, and criterion identifier. Caller metadata must remain
-    source-text-free under the shared metadata contract and cannot replace those
-    fields. Review triggers are normalized once and forwarded unchanged to every
-    criterion report.
+    All derived report identifiers are validated as one batch before any
+    estimator delegation. Package-managed metadata binds each report to the exact
+    enterprise bundle, criterion design, and criterion identifier. Caller
+    metadata must remain source-text-free under the shared metadata contract and
+    cannot replace those fields. Review triggers are normalized once and
+    forwarded unchanged to every criterion report.
 
     A successful workflow proves provenance and contract consistency only. It
     does not establish model adequacy, convergence quality, construct validity,
@@ -108,9 +109,20 @@ def fit_enterprise_issue_facets_calibration_reports(
         executions,
         require_connected=require_connected,
     )
+    report_plans = tuple(
+        (
+            design,
+            descriptive_identifier(
+                f"{normalized_prefix}_{design.criterion_id}",
+                "report_id",
+                f"$.report_ids[{index}]",
+            ),
+        )
+        for index, design in enumerate(bundle.designs)
+    )
 
     reports: list[ScoringFacetsCalibrationReport] = []
-    for design in bundle.designs:
+    for design, report_id in report_plans:
         report_metadata = dict(normalized_metadata)
         report_metadata.update(
             {
@@ -125,7 +137,7 @@ def fit_enterprise_issue_facets_calibration_reports(
         )
         reports.append(
             fit_scoring_facets_calibration_report(
-                report_id=f"{normalized_prefix}_{design.criterion_id}",
+                report_id=report_id,
                 design=design,
                 q_theta=q_theta,
                 max_iter=max_iter,
