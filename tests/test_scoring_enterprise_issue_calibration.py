@@ -51,7 +51,11 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _issue(label: str, *, include_counterevidence: bool = False) -> AtomicIssueRecord:
+def _issue(
+    label: str,
+    *,
+    include_counterevidence: bool = False,
+) -> AtomicIssueRecord:
     """Return one source-text-free issue revision for calibration tests."""
     issue_content_fingerprint = _digest(f"issue-content:{label}")
     source = EnterpriseSourceRecord(
@@ -127,7 +131,7 @@ def _request(
         response_id=f"response_{issue.issue_id}_{task_label}",
         task_id=f"task_{task_label}",
         task_revision_fingerprint=_digest(f"task-revision:{task_label}"),
-        task_family_id="enterprise_review",
+        task_family_id="evidence_review",
         occasion_id="pilot_occasion",
         criterion_ids=CRITERION_IDS,
         response_character_count=160,
@@ -326,8 +330,14 @@ def test_public_surface_and_shared_bundle_preserve_exact_enterprise_identity() -
     assert "build_enterprise_issue_facets_rating_records" in enterprise.__all__
     assert build_enterprise_issue_facets_rating_records.__doc__
     assert bundle.criterion_ids == CRITERION_IDS
-    assert all(design.respondent_ids == ("issue_alpha", "issue_beta") for design in bundle.designs)
-    assert all(design.task_ids == ("task_alpha", "task_beta") for design in bundle.designs)
+    assert all(
+        design.respondent_ids == ("issue_alpha", "issue_beta")
+        for design in bundle.designs
+    )
+    assert all(
+        design.task_ids == ("task_alpha", "task_beta")
+        for design in bundle.designs
+    )
     assert all(design.connected for design in bundle.designs)
     assert {record.response_content_fingerprint for record in records} == {
         _digest("issue-content:alpha"),
@@ -425,7 +435,10 @@ def test_projection_delegates_to_the_shared_rating_builder(monkeypatch) -> None:
         ("engine", "invalid_engine_descriptor"),
     ),
 )
-def test_exact_public_contract_types_are_required(field_name: str, code: str) -> None:
+def test_exact_public_contract_types_are_required(
+    field_name: str,
+    code: str,
+) -> None:
     """Counterfeit top-level contract values fail before provenance access."""
     issue, request, result, engine = _execution(
         issue_label="alpha",
@@ -481,10 +494,14 @@ def test_request_issue_binding_replays_every_identity(mutation: str) -> None:
     metadata = request.to_dict()["metadata"]
     overrides: dict[str, Any] = {}
     if mutation == "atomic":
-        metadata["enterprise_atomic_issue_fingerprint"] = _digest("other-atomic")
+        metadata["enterprise_atomic_issue_fingerprint"] = _digest(
+            "other-atomic"
+        )
         overrides["metadata"] = metadata
     elif mutation == "content":
-        metadata["enterprise_issue_content_fingerprint"] = _digest("other-content")
+        metadata["enterprise_issue_content_fingerprint"] = _digest(
+            "other-content"
+        )
         overrides["metadata"] = metadata
     elif mutation == "respondent":
         overrides["respondent_id"] = "issue_other"
@@ -581,7 +598,7 @@ def test_non_abstained_observation_requires_supporting_evidence() -> None:
 
 
 def test_declared_counterevidence_must_survive_calibration_replay() -> None:
-    """Counterevidence cannot disappear between enterprise scoring and calibration."""
+    """Counterevidence cannot disappear before shared calibration."""
     issue = _issue("counter", include_counterevidence=True)
     engine = _engine("counter")
     request = _request(issue, task_label="counter", engine_label="counter")
@@ -667,7 +684,7 @@ def test_observation_managed_metadata_must_replay_exactly() -> None:
 
 
 def test_abstention_remains_a_terminal_missing_rating() -> None:
-    """Insufficient evidence remains abstention rather than a fabricated low score."""
+    """Insufficient evidence remains abstention rather than a fabricated score."""
     issue = _issue("abstention")
     engine = _engine("abstention")
     request = _request(
