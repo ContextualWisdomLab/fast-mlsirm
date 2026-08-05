@@ -26,7 +26,6 @@ from .._contract_safety import (
 )
 from .._validation import (
     ASSESSMENT_SCHEMA_VERSION,
-    AssessmentSpecError,
     CanonicalContract,
     assessment_error,
     assessment_schema_version,
@@ -437,12 +436,6 @@ class DeterministicExplicitValueParser:
         """Extract normalized values after exact source replay checks."""
         self._validate_source(source_record, source_text)
         candidates = self._candidates(source_text)
-        if len(candidates) > self.maximum_records:
-            raise assessment_error(
-                "explicit_value_record_limit",
-                "$.source_text",
-                "source text contains more explicit values than the configured limit",
-            )
         revision = self.parser_revision_fingerprint
         records = tuple(
             ExplicitValueRecord(
@@ -512,17 +505,39 @@ class DeterministicExplicitValueParser:
                 "source_text fingerprint does not match source_record",
             )
 
+    def _append_candidate(
+        self,
+        values: list[_Candidate],
+        item: _Candidate,
+    ) -> None:
+        """Append one candidate and stop after the configured limit plus one."""
+        values.append(item)
+        if len(values) > self.maximum_records:
+            raise assessment_error(
+                "explicit_value_record_limit",
+                "$.source_text",
+                "source text contains more explicit values than the configured limit",
+            )
+
     def _candidates(self, source_text: str) -> tuple[_Candidate, ...]:
-        """Return valid candidates under deterministic overlap rules."""
+        """Return valid candidates under bounded deterministic overlap rules."""
         for match in _DATE_PATTERN.finditer(source_text):
             _calendar_date(match.group("date"), "$.source_text")
-        deadlines = tuple(self._deadlines(source_text))
-        blocked = tuple((item.start_offset, item.end_offset) for item in deadlines)
-        values = [*deadlines]
-        values.extend(self._money(source_text))
-        values.extend(self._frequencies(source_text))
-        values.extend(self._identifiers(source_text))
-        values.extend(self._dates(source_text, blocked))
+
+        values: list[_Candidate] = []
+        blocked: list[tuple[int, int]] = []
+        for item in self._deadlines(source_text):
+            self._append_candidate(values, item)
+            blocked.append((item.start_offset, item.end_offset))
+        for producer in (
+            self._money(source_text),
+            self._frequencies(source_text),
+            self._identifiers(source_text),
+            self._dates(source_text, tuple(blocked)),
+        ):
+            for item in producer:
+                self._append_candidate(values, item)
+
         ordered = sorted(
             values,
             key=lambda item: (
@@ -629,12 +644,89 @@ class DeterministicExplicitValueParser:
 
 
 
+def _canonical_parser_record(
+    source_record: EnterpriseSourceRecord,
+    source_text: str,
+    item: Any,
+    path: str,
+) -> ExplicitValueRecord:
+    """Reconstruct one untrusted provider record through canonical validation."""
+    if type(item) is not ExplicitValueRecord:
+        raise assessment_error(
+            "invalid_explicit_value_parser_output",
+            path,
+            "parser output must contain only exact ExplicitValueRecord values",
+        )
+    if type(item.source_id) is not str or item.source_id != source_record.source_id:
+        raise assessment_error(
+            "parser_output_source_mismatch",
+            path,
+            "parser output source_id does not match source_record",
+        )
+    if (
+        type(item.source_record_fingerprint) is not str
+        or item.source_record_fingerprint
+        != source_record.source_record_fingerprint
+    ):
+        raise assessment_error(
+            "parser_output_source_mismatch",
+            path,
+            "parser output source fingerprint does not match source_record",
+        )
+    try:
+        start_offset = _offset(item.start_offset, "start_offset")
+        end_offset = _offset(item.end_offset, "end_offset")
+    except Exception:
+        raise assessment_error(
+            "invalid_explicit_value_parser_output",
+            path,
+            "parser output offsets are not canonical nonnegative integers",
+        ) from None
+    if end_offset <= start_offset or end_offset > len(source_text):
+        raise assessment_error(
+            "parser_output_span_out_of_bounds",
+            path,
+            "parser output span exceeds verified source text",
+        )
+    expected_span = hashlib.sha256(
+        source_text[start_offset:end_offset].encode("utf-8")
+    ).hexdigest()
+    if (
+        type(item.span_content_fingerprint) is not str
+        or item.span_content_fingerprint != expected_span
+    ):
+        raise assessment_error(
+            "parser_output_span_mismatch",
+            path,
+            "parser output span fingerprint does not match verified source text",
+        )
+    try:
+        return ExplicitValueRecord(
+            source_id=source_record.source_id,
+            source_record_fingerprint=source_record.source_record_fingerprint,
+            span_content_fingerprint=expected_span,
+            start_offset=start_offset,
+            end_offset=end_offset,
+            value_kind=item.value_kind,
+            normalized_payload=item.normalized_payload,
+            parser_revision_fingerprint=item.parser_revision_fingerprint,
+            metadata=item.metadata,
+            schema_version=source_record.schema_version,
+        )
+    except Exception:
+        raise assessment_error(
+            "invalid_explicit_value_parser_output",
+            path,
+            "parser output record is not canonical",
+        ) from None
+
+
 def _validated_parser_output(
     source_record: EnterpriseSourceRecord,
     source_text: str,
     values: Any,
 ) -> tuple[ExplicitValueRecord, ...]:
-    """Return exact canonical records from one provider callback."""
+    """Return fresh canonical records from one provider callback."""
     if type(values) is not tuple:
         raise assessment_error(
             "invalid_explicit_value_parser_output",
@@ -647,46 +739,15 @@ def _validated_parser_output(
             "$.parser_output",
             "parser output exceeds the bounded explicit-value record limit",
         )
-    records: list[ExplicitValueRecord] = []
-    for index, item in enumerate(values):
-        path = f"$.parser_output[{index}]"
-        if not isinstance(item, ExplicitValueRecord):
-            raise assessment_error(
-                "invalid_explicit_value_parser_output",
-                path,
-                "parser output must contain only ExplicitValueRecord values",
-            )
-        if item.source_id != source_record.source_id:
-            raise assessment_error(
-                "parser_output_source_mismatch",
-                path,
-                "parser output source_id does not match source_record",
-            )
-        if (
-            item.source_record_fingerprint
-            != source_record.source_record_fingerprint
-        ):
-            raise assessment_error(
-                "parser_output_source_mismatch",
-                path,
-                "parser output source fingerprint does not match source_record",
-            )
-        if item.end_offset > len(source_text):
-            raise assessment_error(
-                "parser_output_span_out_of_bounds",
-                path,
-                "parser output span exceeds verified source text",
-            )
-        expected_span = hashlib.sha256(
-            source_text[item.start_offset : item.end_offset].encode("utf-8")
-        ).hexdigest()
-        if item.span_content_fingerprint != expected_span:
-            raise assessment_error(
-                "parser_output_span_mismatch",
-                path,
-                "parser output span fingerprint does not match verified source text",
-            )
-        records.append(item)
+    records = [
+        _canonical_parser_record(
+            source_record,
+            source_text,
+            item,
+            f"$.parser_output[{index}]",
+        )
+        for index, item in enumerate(values)
+    ]
     ordered = tuple(
         sorted(
             records,
@@ -735,14 +796,15 @@ def parse_enterprise_explicit_values(
         source_record,
         source_text,
     )
-    try:
+    if parser is None:
         values = resolved.parse(source_record, source_text)
-    except AssessmentSpecError:
-        raise
-    except Exception:
-        raise assessment_error(
-            "explicit_value_parser_failure",
-            "$.parser",
-            "parser failed before returning validated explicit values",
-        ) from None
+    else:
+        try:
+            values = resolved.parse(source_record, source_text)
+        except Exception:
+            raise assessment_error(
+                "explicit_value_parser_failure",
+                "$.parser",
+                "parser failed before returning validated explicit values",
+            ) from None
     return _validated_parser_output(source_record, source_text, values)
