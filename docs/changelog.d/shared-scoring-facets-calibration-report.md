@@ -1,3 +1,5 @@
+# Shared scoring-facets calibration report names
+
 ## Added
 
 - Added `fast_mlsirm.scoring.calibration_reporting` as the domain-neutral import
