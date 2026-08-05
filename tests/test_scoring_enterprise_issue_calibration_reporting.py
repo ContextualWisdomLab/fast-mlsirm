@@ -182,6 +182,7 @@ def test_execution_order_does_not_change_report_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Execution arrival order cannot become a hidden report feature."""
+
     def fake_fit(**kwargs):
         design = kwargs["design"]
         return build_scoring_facets_calibration_report(
@@ -230,7 +231,7 @@ def test_actual_rust_fit_produces_one_canonical_report_per_criterion() -> None:
 def test_invalid_prefix_and_reserved_metadata_fail_before_fitting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Package-managed report identity cannot be omitted or overwritten."""
+    """All report identities and package-managed metadata fail before fitting."""
     calls: list[object] = []
     monkeypatch.setattr(
         reporting,
@@ -245,6 +246,14 @@ def test_invalid_prefix_and_reserved_metadata_fail_before_fitting(
             report_id_prefix="report",
         ),
         path="$.report_id_prefix",
+    )
+    _assert_error(
+        "invalid_report_id",
+        lambda: fit_enterprise_issue_facets_calibration_reports(
+            _connected_executions(),
+            report_id_prefix=f"enterprise_{'x' * 117}",
+        ),
+        path="$.report_ids[0]",
     )
     _assert_error(
         "reserved_enterprise_report_metadata",
@@ -262,6 +271,7 @@ def test_report_serialization_retains_no_source_or_issue_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Only content identities and governed metadata cross the report boundary."""
+
     def fake_fit(**kwargs):
         design = kwargs["design"]
         return build_scoring_facets_calibration_report(
