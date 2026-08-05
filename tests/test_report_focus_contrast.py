@@ -32,9 +32,12 @@ def _render_report(tmp_path: Path) -> str:
 def test_skip_link_is_revealed_for_every_actual_focus_state(tmp_path: Path) -> None:
     """A focused skip link must not depend only on user-agent focus heuristics."""
     html = _render_report(tmp_path)
+    selector = ".skip-link:focus,\n.skip-link:focus-visible {"
 
-    assert ".skip-link:focus,\n.skip-link:focus-visible {" in html
-    assert "outline: 3px solid var(--teal);" in html
+    assert html.count(selector) == 1
+    focus_rule = html.split(selector, maxsplit=1)[1].split("}", maxsplit=1)[0]
+    assert "top: 0;" in focus_rule
+    assert "outline: 3px solid var(--teal);" in focus_rule
 
 
 def test_hover_does_not_dim_unrelated_chart_or_table_content(tmp_path: Path) -> None:
