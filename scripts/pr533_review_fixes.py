@@ -217,6 +217,48 @@ def test_kind_specific_payloads_fail_closed(
         "offset validation cases",
     )
 
+    replace_once(
+        TESTS,
+        "\ndef test_private_normalizers_cover_nonpublic_exception_boundaries() -> None:\n",
+        '''
+def test_payload_defensive_guards_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defensive payload invariants fail closed if upstream helpers regress."""
+    with monkeypatch.context() as patch:
+        patch.setattr(parser_module, "freeze_metadata", lambda value: value)
+        patch.setattr(parser_module, "thaw_json_value", lambda value: value)
+        with pytest.raises(AssessmentSpecError) as captured:
+            _record(ExplicitValueKind.CALENDAR_DATE, payload=[])
+        assert captured.value.code == "invalid_normalized_payload"
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            parser_module,
+            "_calendar_date",
+            lambda _value, _path: "2026-09-30",
+        )
+        with pytest.raises(AssessmentSpecError) as captured:
+            _record(
+                ExplicitValueKind.CALENDAR_DATE,
+                payload={"calendar_date": "2026-09-29"},
+            )
+        assert captured.value.code == "invalid_normalized_payload"
+
+    for kind in (
+        ExplicitValueKind.MONEY_AMOUNT,
+        ExplicitValueKind.FREQUENCY_COUNT,
+    ):
+        with pytest.raises(AssessmentSpecError) as captured:
+            _record(kind, payload={})
+        assert captured.value.code == "invalid_normalized_payload"
+
+
+def test_private_normalizers_cover_nonpublic_exception_boundaries() -> None:
+''',
+        "defensive payload coverage tests",
+    )
+
 
 def patch_documentation() -> None:
     """Document the parser's whole-source rejection semantics and offset bound."""
