@@ -1,0 +1,293 @@
+name: PR 533 review hardening
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  harden:
+    if: github.event.pull_request.number == 533 && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Check out exact pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Apply verified review findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one {label} block in {path}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+          implementation = Path(
+              "python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py"
+          )
+          replace_once(
+              implementation,
+              "from enum import Enum\nimport hashlib\nimport json\nimport re\nfrom typing import Any, Protocol, runtime_checkable\n",
+              "from enum import Enum\nimport hashlib\nfrom itertools import pairwise\nimport json\nimport re\nfrom typing import Any, NoReturn, Protocol, runtime_checkable\n",
+              "typing and pairwise imports",
+          )
+          replace_once(
+              implementation,
+              "from .contracts import (\n    EnterpriseAssertionKind,\n    EnterpriseSourceRecord,\n    EvidenceSpanRecord,\n)\n",
+              "from .contracts import (\n    MAX_ENTERPRISE_SOURCE_CHARACTERS,\n    EnterpriseAssertionKind,\n    EnterpriseSourceRecord,\n    EvidenceSpanRecord,\n)\n",
+              "enterprise contract imports",
+          )
+          replace_once(
+              implementation,
+              "        object.__setattr__(self, \"start_offset\", _offset(self.start_offset, \"start_offset\"))\n        object.__setattr__(self, \"end_offset\", _offset(self.end_offset, \"end_offset\"))\n        if self.end_offset <= self.start_offset:\n",
+              "        object.__setattr__(self, \"start_offset\", _offset(self.start_offset, \"start_offset\"))\n        object.__setattr__(self, \"end_offset\", _offset(self.end_offset, \"end_offset\"))\n        if self.start_offset > MAX_ENTERPRISE_SOURCE_CHARACTERS:\n            raise assessment_error(\n                \"invalid_start_offset\",\n                \"$.start_offset\",\n                \"start_offset exceeds the enterprise source-character limit\",\n            )\n        if self.end_offset > MAX_ENTERPRISE_SOURCE_CHARACTERS:\n            raise assessment_error(\n                \"invalid_end_offset\",\n                \"$.end_offset\",\n                \"end_offset exceeds the enterprise source-character limit\",\n            )\n        if self.end_offset <= self.start_offset:\n",
+              "record offset bounds",
+          )
+          replace_once(
+              implementation,
+              "    def _payload_error(message: str) -> None:\n",
+              "    def _payload_error(message: str) -> NoReturn:\n",
+              "payload error annotation",
+          )
+          text = implementation.read_text(encoding="utf-8")
+          old_loop = "for previous, current in zip(ordered, ordered[1:]):"
+          if text.count(old_loop) != 2:
+              raise SystemExit("expected exactly two successive-pair loops")
+          implementation.write_text(
+              text.replace(old_loop, "for previous, current in pairwise(ordered):"),
+              encoding="utf-8",
+          )
+
+          tests = Path("tests/test_scoring_enterprise_explicit_values.py")
+          replace_once(
+              tests,
+              "def _normalized(records: tuple[ExplicitValueRecord, ...]) -> set[tuple[str, str]]:\n    \"\"\"Return kind/payload pairs independent of source offsets.\"\"\"\n    return {\n        (record.value_kind.value, repr(record.to_dict()[\"normalized_payload\"]))\n        for record in records\n    }\n",
+              "def _normalized(\n    records: tuple[ExplicitValueRecord, ...],\n) -> set[tuple[str, tuple[tuple[str, Any], ...]]]:\n    \"\"\"Return kind/payload pairs independent of source offsets and key order.\"\"\"\n    return {\n        (\n            record.value_kind.value,\n            tuple(sorted(record.to_dict()[\"normalized_payload\"].items())),\n        )\n        for record in records\n    }\n",
+              "normalized payload helper",
+          )
+          old_payload_test = '''@pytest.mark.parametrize(
+              ("kind", "payload"),
+              (
+                  (ExplicitValueKind.CALENDAR_DATE, []),
+                  (ExplicitValueKind.CALENDAR_DATE, {}),
+                  (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": 1}),
+                  (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": "2026-02-30"}),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "usd", "decimal_amount": "1"},
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": 1},
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": "abc"},
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": "-1"},
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": "1.00"},
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": True, "frequency_period": "month"},
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1_000_000_001, "frequency_period": "month"},
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": []},
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": "decade"},
+                  ),
+                  (ExplicitValueKind.CUSTOMER_IDENTIFIER, {}),
+                  (
+                      ExplicitValueKind.CUSTOMER_IDENTIFIER,
+                      {"identifier_fingerprint": "bad"},
+                  ),
+              ),
+          )
+          def test_kind_specific_payloads_fail_closed(
+              kind: ExplicitValueKind,
+              payload: Any,
+          ) -> None:
+              """Noncanonical and cross-kind payloads are rejected with stable errors."""
+              with pytest.raises(AssessmentSpecError):
+                  _record(kind, payload=payload)
+          '''
+          new_payload_test = '''@pytest.mark.parametrize(
+              ("kind", "payload", "error"),
+              (
+                  (ExplicitValueKind.CALENDAR_DATE, [], "invalid_normalized_payload"),
+                  (ExplicitValueKind.CALENDAR_DATE, {}, "invalid_normalized_payload"),
+                  (
+                      ExplicitValueKind.CALENDAR_DATE,
+                      {"calendar_date": 1},
+                      "invalid_calendar_date",
+                  ),
+                  (
+                      ExplicitValueKind.CALENDAR_DATE,
+                      {"calendar_date": "2026-02-30"},
+                      "invalid_calendar_date",
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "usd", "decimal_amount": "1"},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": 1},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": "abc"},
+                      "invalid_decimal_amount",
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": "-1"},
+                      "invalid_decimal_amount",
+                  ),
+                  (
+                      ExplicitValueKind.MONEY_AMOUNT,
+                      {"currency_code": "USD", "decimal_amount": "1.00"},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": True, "frequency_period": "month"},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1_000_000_001, "frequency_period": "month"},
+                      "invalid_frequency_count",
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": []},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": "decade"},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.CUSTOMER_IDENTIFIER,
+                      {},
+                      "invalid_normalized_payload",
+                  ),
+                  (
+                      ExplicitValueKind.CUSTOMER_IDENTIFIER,
+                      {"identifier_fingerprint": "bad"},
+                      "invalid_identifier_fingerprint",
+                  ),
+              ),
+          )
+          def test_kind_specific_payloads_fail_closed(
+              kind: ExplicitValueKind,
+              payload: Any,
+              error: str,
+          ) -> None:
+              """Noncanonical and cross-kind payloads expose stable error codes."""
+              with pytest.raises(AssessmentSpecError, match=error):
+                  _record(kind, payload=payload)
+          '''
+          replace_once(
+              tests,
+              old_payload_test,
+              new_payload_test,
+              "kind-specific payload cases",
+          )
+          replace_once(
+              tests,
+              "        ({\"start_offset\": -1}, \"invalid_start_offset\"),\n        ({\"end_offset\": True}, \"invalid_end_offset\"),\n",
+              "        ({\"start_offset\": -1}, \"invalid_start_offset\"),\n        (\n            {\"start_offset\": 100_000_001, \"end_offset\": 100_000_002},\n            \"invalid_start_offset\",\n        ),\n        ({\"end_offset\": True}, \"invalid_end_offset\"),\n        ({\"end_offset\": 100_000_001}, \"invalid_end_offset\"),\n",
+              "record offset boundary cases",
+          )
+
+          docs = Path("docs/enterprise_issue_evidence_contracts.md")
+          replace_once(
+              docs,
+              "Deadline matches supersede the calendar-date match embedded inside the same\nmarked deadline. Any other accepted overlap fails closed rather than multiplying\none occurrence into several evidence records. Output order and parser revision\nidentity are deterministic and independent of caller currency-code ordering.\n",
+              "Deadline matches supersede the calendar-date match embedded inside the same\nmarked deadline. Any other accepted overlap fails closed rather than multiplying\none occurrence into several evidence records. One impossible date-shaped value or\none empty, malformed, or oversized labeled identifier rejects the complete source;\nthe parser does not silently discard only the affected span. Output order and\nparser revision identity are deterministic and independent of caller currency-code\nordering.\n",
+              "whole-source rejection documentation",
+          )
+
+          fragment = Path("docs/changelog.d/enterprise-explicit-value-parser.md")
+          changelog = Path("CHANGELOG.md")
+          old_note = (
+              "  Provider-owned records are reconstructed as fresh canonical instances, and\n"
+              "  deterministic candidate producers stop at the configured limit plus one rather\n"
+              "  than exhausting unexpectedly prolific iterators.\n"
+          )
+          new_note = (
+              "  Provider-owned records are reconstructed as fresh canonical instances, manual\n"
+              "  offsets share the enterprise source-character bound, and deterministic candidate\n"
+              "  producers stop at the configured limit plus one rather than exhausting\n"
+              "  unexpectedly prolific iterators.\n"
+          )
+          replace_once(fragment, old_note, new_note, "fragment review-hardening note")
+          replace_once(changelog, old_note, new_note, "rendered review-hardening note")
+          PY
+          python -m py_compile \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py
+
+      - name: Install focused validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Verify reviewed boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest \
+            tests/test_scoring_enterprise_explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values_provider_boundary.py
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+
+      - name: Commit fixes and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/pr-533-review-hardening.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(enterprise): address explicit-value review findings"
+          git push origin "HEAD:${PR_HEAD_REF}"
