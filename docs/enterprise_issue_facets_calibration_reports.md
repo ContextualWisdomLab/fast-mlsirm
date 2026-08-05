@@ -13,6 +13,7 @@ enterprise source packet
   -> governed criterion observations
   -> enterprise provenance replay
   -> shared ScoringFacetsCalibrationBundle
+  -> batch report-identity validation
   -> Rust-backed criterion-specific fits
   -> shared ScoringFacetsCalibrationReport values
 ```
@@ -20,7 +21,9 @@ enterprise source packet
 The helper returns the established shared report objects. It does not create an
 enterprise-specific fit, report, estimator, serialization, ranking, utility, or
 decision schema. Report identifiers are derived deterministically from one
-validated descriptive prefix and each criterion identifier.
+validated descriptive prefix and each criterion identifier. Every derived report
+identifier is validated before the first fit, so a malformed later identifier
+cannot leave a partially fitted report batch.
 
 Each report metadata payload binds:
 
