@@ -184,7 +184,7 @@ def fit_mmle_2pl(
             break
 
     # ---- EAP ability for each person ----
-    theta = (posterior * nodes[None, :]).sum(axis=1)
+    theta = posterior @ nodes
 
     return {
         "a": a,
