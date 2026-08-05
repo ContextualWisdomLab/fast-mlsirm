@@ -17,6 +17,8 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
     steps:
       - name: Check out exact pull request head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -58,6 +60,38 @@ jobs:
           helper.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
           PY
           python .github/scripts/pr_533_harden.py
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          path = Path('python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py')
+          text = path.read_text(encoding='utf-8')
+          before = textwrap.dedent(
+              '''\
+              if parser is None:
+                  values = resolved.parse(source_record, source_text)
+              else:
+                  try:
+                      values = resolved.parse(source_record, source_text)
+                  except Exception:
+                      raise assessment_error(
+                          "explicit_value_parser_failure",
+                          "$.parser",
+                          "parser failed before returning validated explicit values",
+                      ) from None
+              return _validated_parser_output(source_record, source_text, values)
+              '''
+          )
+          if text.count(before) != 1:
+              raise SystemExit('expected exactly one unindented parser callback block')
+          path.write_text(
+              text.replace(before, textwrap.indent(before, '    '), 1),
+              encoding='utf-8',
+          )
+          PY
+          python -m py_compile \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values_provider_boundary.py
 
       - name: Install focused validation dependencies
         shell: bash
@@ -80,9 +114,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm -f .github/workflows/pr-533-provider-exception-hardening.yml
+          git rm -f .github/workflows/pr-533-prepare-hardening-runtime.yml
           git rm -f .github/pr-533-provider-exception-trigger.txt
           git rm -f .github/scripts/pr_533_harden.py
           git add -A
           git diff --cached --check
           git commit -m "fix(enterprise): seal provider trust boundary"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin "HEAD:${PR_HEAD_REF}"
