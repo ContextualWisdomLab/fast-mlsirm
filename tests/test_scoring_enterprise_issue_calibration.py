@@ -44,6 +44,14 @@ rubric = _FIXTURES["rubric"]
 automated_engine = _FIXTURES["automated_engine"]
 
 CRITERION_IDS = ("claim_support", "source_alignment")
+_AUTHORIZATION_METADATA_KEYS = frozenset(
+    {
+        "engine_policy_fingerprint",
+        "allow_human_raters",
+        "allow_automated_raters",
+        "permitted_engine_ids",
+    }
+)
 
 
 def _digest(value: str) -> str:
@@ -108,8 +116,9 @@ def _issue(
 
 def _engine(label: str) -> EngineDescriptor:
     """Return one deterministic automated judge identity."""
+    engine_id = "alternate_engine" if label == "beta" else "fixture_engine"
     return automated_engine(
-        engine_id=f"engine_{label}",
+        engine_id=engine_id,
         engine_family_id=f"engine_family_{label}",
         model_id=f"model_{label}",
         prompt_template_fingerprint=_digest(f"prompt:{label}"),
@@ -257,6 +266,10 @@ def _rebuild_request(
         "metadata": request.to_dict()["metadata"],
     }
     values.update(overrides)
+    metadata = dict(values["metadata"])
+    for key in _AUTHORIZATION_METADATA_KEYS:
+        metadata.pop(key, None)
+    values["metadata"] = metadata
     return build_scoring_request(**values)
 
 
