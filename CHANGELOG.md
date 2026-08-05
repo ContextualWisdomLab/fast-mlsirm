@@ -6,22 +6,6 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
-#### Enterprise criterion-level observation adapter
-
-- Added `build_enterprise_issue_score_observation`, which compiles exact
-  request-bound enterprise evidence into the existing shared criterion-level
-  `ScoreObservation` contract without introducing a parallel observation schema.
-- Added fail-closed request-provenance replay, evidence-subset validation,
-  deterministic evidence ordering, managed issue/evidence fingerprints, and
-  supporting, counter, and context evidence counts without retaining source text.
-- Required supporting evidence for every non-abstained enterprise observation and
-  explicit counterevidence representation whenever the issue declares
-  counterevidence; insufficient evidence remains an abstention rather than a low
-  score.
-- Added deterministic provenance, order-invariance, abstention, terminal-state,
-  adversarial metadata, evidence-binding, shared-contract delegation, and
-  statement/branch coverage tests for the next issue #404 vertical slice.
-
 #### Deterministic enterprise explicit-value parser
 
 - Added a provider-neutral deterministic parser for verified explicit calendar
@@ -70,23 +54,6 @@
   source, reserved metadata, sensitive-content, ordering-invariance, and shared
   contract delegation tests for issue #404.
 
-#### Enterprise semantic issue provider boundary
-
-- Added runtime-checkable `EnterpriseAtomicIssueExtractor` and
-  `extract_enterprise_atomic_issues` as a provider-neutral, provider-SDK-free trust
-  boundary that returns the existing canonical `AtomicIssueRecord` contract.
-- Added bounded exact source-packet replay, UTF-8 and Python code-point span
-  verification, fresh nested issue/evidence/counterevidence reconstruction,
-  deterministic ordering, duplicate and overlap rejection, and redacted provider
-  failures without retaining raw enterprise text.
-- Added `StaticEnterpriseIssueExtractor` as an offline fixture and integration
-  adapter that performs no NLP, sentiment analysis, issue discovery, scoring,
-  ranking, utility, or causal arithmetic.
-- Added deterministic order-invariance, all-assertion-kind preservation,
-  malicious provider, source mutation, span replay, subclass, privacy, prolific
-  collection, duplicate identity, overlap, and complete statement/branch coverage
-  tests for the next issue #404 workflow slice.
-
 #### Accessible standalone essay facets-calibration artifacts
 
 - Added `render_essay_facets_calibration_report_html`, which replay-verifies one governed `EssayFacetsCalibrationReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
@@ -123,18 +90,6 @@
 - Added factory-sealed, criterion-specific automated-essay validation evidence reports that bind exact shared assessment, construct, rubric, validation-policy, dataset, automated-engine, and human-reference identities.
 - Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
 - Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
-
-#### Supplemental exact-value report tooltips
-
-- Added native `title` tooltips to finite floating-point metric cards, decorative
-  bar labels, and diagnostic table cells so pointer users can inspect the
-  unrounded Python float representation when the visible report uses compact
-  significant-digit formatting.
-- Preserved the existing accessible exact-value disclosure and JSON/CSV exports as
-  the authoritative keyboard, touch, and assistive-technology paths; native title
-  tooltips are supplemental and are not treated as an accessibility substitute.
-- Added deterministic metric, chart, table, finite-value, non-finite-value, and
-  non-float tests for the report tooltip contract.
 
 ### Changed
 

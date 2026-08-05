@@ -34,7 +34,7 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     assert "Model Fit" in html
     assert '<dl class="metrics-grid">' in html
     assert "<dt>Loglik</dt>" in html
-    assert '<dd title="-3.2">-3.2</dd>' in html
+    assert "<dd>-3.2</dd>" in html
     assert "Item Fit" in html
     assert "Diagnostics Coverage" in html
     assert "No row data" in html
