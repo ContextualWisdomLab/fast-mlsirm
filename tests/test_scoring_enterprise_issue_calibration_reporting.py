@@ -236,7 +236,12 @@ def test_actual_rust_fit_produces_one_canonical_report_per_criterion(
     )
     for index, report in enumerate(reports):
         output = tmp_path / f"enterprise_calibration_{index}.html"
-        render_essay_facets_calibration_report_html(report, output)
+        returned = render_essay_facets_calibration_report_html(
+            report,
+            output.name,
+            output_root=tmp_path,
+        )
+        assert returned == output.resolve()
         assert output.is_file()
 
 
