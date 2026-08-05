@@ -1,0 +1,34 @@
+name: Render PR 545 changelog
+
+on:
+  push:
+    branches:
+      - feat/enterprise-calibration-reports
+
+permissions:
+  contents: write
+
+concurrency:
+  group: render-pr-545-changelog
+  cancel-in-progress: false
+
+jobs:
+  render:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-calibration-reports
+      - name: Render authoritative changelog fragments
+        run: python scripts/render_changelog_fragments.py --update CHANGELOG.md
+      - name: Commit rendered changelog
+        run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs(changelog): synchronize enterprise calibration reports"
+          git push origin HEAD:feat/enterprise-calibration-reports
