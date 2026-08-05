@@ -1,1 +1,1 @@
-Trigger the corrected self-removing provider exception hardening workflow.
+Trigger the self-removing provider boundary hardening workflow.
