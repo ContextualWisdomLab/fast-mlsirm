@@ -133,6 +133,27 @@ jobs:
 
 
           @pytest.mark.parametrize('''
+          addition = addition.replace("\n            class DomainFailingParser", "\n    class DomainFailingParser")
+          addition = addition.replace("\n                \"\"\"Raise a structured", "\n        \"\"\"Raise a structured")
+          addition = addition.replace("\n                def parse(", "\n        def parse(")
+          addition = addition.replace("\n                    self,", "\n            self,")
+          addition = addition.replace("\n                    source_record:", "\n            source_record:")
+          addition = addition.replace("\n                    source_text:", "\n            source_text:")
+          addition = addition.replace("\n                ) -> tuple", "\n        ) -> tuple")
+          addition = addition.replace("\n                    \"\"\"Raise one", "\n            \"\"\"Raise one")
+          addition = addition.replace("\n                    raise parser_module", "\n            raise parser_module")
+          addition = addition.replace("\n                        \"provider_private_error\"", "\n                \"provider_private_error\"")
+          addition = addition.replace("\n                        \"$.provider\"", "\n                \"$.provider\"")
+          addition = addition.replace("\n                        \"private structured provider detail\"", "\n                \"private structured provider detail\"")
+          addition = addition.replace("\n                    )\n\n            with pytest.raises", "\n            )\n\n    with pytest.raises")
+          addition = addition.replace("\n                AssessmentSpecError,", "\n        AssessmentSpecError,")
+          addition = addition.replace("\n                match=", "\n        match=")
+          addition = addition.replace("\n            ) as domain_captured:", "\n    ) as domain_captured:")
+          addition = addition.replace("\n                parse_enterprise", "\n        parse_enterprise")
+          addition = addition.replace("\n                    source,", "\n            source,")
+          addition = addition.replace("\n                    text,", "\n            text,")
+          addition = addition.replace("\n                    parser=", "\n            parser=")
+          addition = addition.replace("\n                )\n            assert", "\n        )\n    assert")
           if marker not in test_text:
               raise SystemExit("provider exception test insertion point not found")
           test_text = test_text.replace(marker, addition, 1)
