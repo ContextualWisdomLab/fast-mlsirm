@@ -1,4 +1,4 @@
-"""Tests for supplemental unrounded-float tooltips in HTML reports."""
+"""Tests for supplemental pointer tooltips and accessible exact-value disclosure."""
 
 from __future__ import annotations
 
