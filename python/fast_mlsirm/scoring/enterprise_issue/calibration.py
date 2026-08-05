@@ -9,7 +9,7 @@ validity, or causal arithmetic.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from .._validation import assessment_error, thaw_json_value
 from ..calibration import (
@@ -27,7 +27,7 @@ from .contracts import AtomicIssueRecord
 from .observation import _enterprise_request_context, _evidence_counts
 
 
-def _calibration_error(path: str, message: str) -> None:
+def _calibration_error(path: str, message: str) -> NoReturn:
     """Raise one stable enterprise calibration replay error."""
     raise assessment_error(
         "enterprise_calibration_provenance_mismatch",
@@ -138,6 +138,12 @@ def build_enterprise_issue_facets_rating_records(
 
     for index, observation in enumerate(result.observations):
         path = f"$.result.observations[{index}]"
+        if type(observation) is not ScoreObservation:
+            raise assessment_error(
+                "invalid_score_observation",
+                path,
+                "result observations must contain exact ScoreObservation values",
+            )
         evidence_fingerprints = tuple(
             value.evidence_fingerprint for value in observation.evidence_references
         )
