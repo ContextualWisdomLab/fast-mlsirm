@@ -36,8 +36,10 @@ def fit_enterprise_issue_facets_calibration_reports(
 
     The report prefix is validated before any bundle assembly or Rust fitting.
     Exact enterprise provenance is replayed by
-    :func:`build_enterprise_issue_facets_calibration_bundle`; each deterministic
-    criterion design is then passed unchanged to
+    :func:`build_enterprise_issue_facets_calibration_bundle`. Every derived
+    criterion report identifier is then validated before the first numerical fit,
+    preventing a later invalid identifier from leaving a partially fitted batch.
+    Each deterministic criterion design is passed unchanged to
     :func:`~fast_mlsirm.scoring.calibration_reporting.fit_scoring_facets_calibration_report`.
     Report metadata binds the exact shared bundle and design fingerprints while
     retaining criterion separation.
@@ -60,9 +62,19 @@ def fit_enterprise_issue_facets_calibration_reports(
     )
     bundle = build_enterprise_issue_facets_calibration_bundle(executions)
     bundle_fingerprint = bundle.bundle_fingerprint
+    report_designs = tuple(
+        (
+            descriptive_identifier(
+                f"{normalized_prefix}_{design.criterion_id}",
+                "report_id",
+            ),
+            design,
+        )
+        for design in bundle.designs
+    )
     return tuple(
         fit_scoring_facets_calibration_report(
-            report_id=f"{normalized_prefix}_{design.criterion_id}",
+            report_id=report_id,
             design=design,
             q_theta=q_theta,
             max_iter=max_iter,
@@ -74,7 +86,7 @@ def fit_enterprise_issue_facets_calibration_reports(
                 "enterprise_issue_criterion_separation": True,
             },
         )
-        for design in bundle.designs
+        for report_id, design in report_designs
     )
 
 
