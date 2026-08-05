@@ -114,6 +114,9 @@ Add deterministic tests for:
 - exact decimal normalization without binary-float conversion;
 - invalid date, source replay, source length, protocol, payload, overlap, and
   maximum-record failures;
+- custom-provider output canonicalization, exact-source and span rebinding,
+  duplicate and overlap rejection, callback-error redaction, bounded output, and
+  strict metadata allowlisting;
 - conversion to the accepted `EvidenceSpanRecord` and shared
   `EvidenceReference` role;
 - no sentiment wording effect on extracted explicit values when the explicit
