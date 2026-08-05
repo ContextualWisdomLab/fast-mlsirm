@@ -1,0 +1,69 @@
+name: PR 533 restore changelog history
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+    paths:
+      - .github/workflows/pr-533-restore-changelog.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr-533-restore-changelog
+  cancel-in-progress: false
+
+jobs:
+  restore-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+      - name: Restore immutable released history from main
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          path = Path("CHANGELOG.md")
+          current = path.read_text(encoding="utf-8")
+          main = subprocess.check_output(
+              ["git", "show", "origin/main:CHANGELOG.md"],
+              text=True,
+              encoding="utf-8",
+          )
+          release_heading = "## [0.7.0] - 2026-08-04"
+          if current.count(release_heading) != 1:
+              raise SystemExit("current changelog must contain exactly one 0.7.0 release heading")
+          if main.count(release_heading) != 1:
+              raise SystemExit("main changelog must contain exactly one 0.7.0 release heading")
+          unreleased = current[: current.index(release_heading)].rstrip() + "\n\n"
+          released = main[main.index(release_heading) :]
+          restored = unreleased + released
+          required = (
+              "## [0.2.0] - 2026-08-03",
+              "## [0.1.2]",
+              "#### Rubric blueprint compiler",
+              "SHA-256",
+              "JSON Schema 2020-12",
+          )
+          missing = [value for value in required if value not in restored]
+          if missing:
+              raise SystemExit(f"restored changelog is missing required history: {missing}")
+          path.write_text(restored, encoding="utf-8")
+          PY
+      - name: Verify authoritative fragment parity
+        run: python scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Remove one-shot workflow and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-restore-changelog.yml
+          git add CHANGELOG.md
+          git diff --cached --check
+          git commit -m "docs: restore complete changelog history"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
