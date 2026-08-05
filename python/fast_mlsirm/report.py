@@ -573,6 +573,7 @@ body {
   font-weight: bold;
 }
 
+.skip-link:focus,
 .skip-link:focus-visible {
   top: 0;
   outline: 3px solid var(--teal);
@@ -692,10 +693,6 @@ h3 {
   display: grid;
   gap: 8px;
   margin-bottom: 16px;
-}
-
-.bar-chart:hover .bar-row:not(:hover) {
-  opacity: 0.5;
 }
 
 .bar-row {
@@ -828,10 +825,6 @@ tbody tr {
 
 tbody tr:hover {
   background: var(--hover-bg);
-}
-
-tbody:hover tr:not(:hover) {
-  opacity: 0.5;
 }
 
 .empty-state {
