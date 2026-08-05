@@ -40,7 +40,10 @@ jobs:
           rendered = f"#### {title}\n\n{body}\n\n"
           if f"#### {title}\n" in changelog:
               raise SystemExit(0)
-          anchor = "### Added\n\n"
+          anchor = (
+              "<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->\n"
+              "### Added\n\n"
+          )
           if changelog.count(anchor) != 1:
               raise SystemExit("authoritative Added anchor must occur exactly once")
           changelog_path.write_text(
