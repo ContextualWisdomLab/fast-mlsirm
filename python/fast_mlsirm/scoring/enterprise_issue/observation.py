@@ -108,17 +108,25 @@ def _enterprise_request_context(
         minimum=0,
         maximum=MAX_EVIDENCE_REFERENCES,
     )
-    for index, value in enumerate(raw_counterevidence):
+    counterevidence_fingerprints = tuple(
         fingerprint(
             value,
             "enterprise_counterevidence_fingerprints",
             f"$.request.metadata.enterprise_counterevidence_fingerprints[{index}]",
         )
+        for index, value in enumerate(raw_counterevidence)
+    )
+    if len(set(counterevidence_fingerprints)) != len(counterevidence_fingerprints):
+        raise assessment_error(
+            "duplicate_enterprise_request_counterevidence",
+            "$.request.metadata.enterprise_counterevidence_fingerprints",
+            "enterprise request counterevidence fingerprints must be unique",
+        )
     return (
         atomic_issue_fingerprint,
         issue_content_fingerprint,
         frozenset(evidence_fingerprints),
-        bool(raw_counterevidence),
+        bool(counterevidence_fingerprints),
     )
 
 
