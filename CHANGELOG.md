@@ -121,6 +121,7 @@
   malformed JSON, non-object roots, oversized input, and excessive nesting with
   deterministic tests.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## [0.7.0] - 2026-08-04
 
 ### Added
