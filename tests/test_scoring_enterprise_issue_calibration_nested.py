@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import runpy
-
 import pytest
 
+from enterprise_issue_calibration_fixtures import (
+    _digest,
+    _engine,
+    _execution,
+    _issue,
+    _managed_observation_metadata,
+    _rebuild_request,
+    _request,
+    _result,
+    _result_with_replacement,
+)
 from fast_mlsirm.scoring import (
     AssessmentSpecError,
     EvidenceReference,
@@ -18,18 +26,6 @@ from fast_mlsirm.scoring.enterprise_issue import (
     build_enterprise_issue_facets_rating_records,
     enterprise_issue_evidence_references,
 )
-
-_FIXTURES = runpy.run_path(
-    str(Path(__file__).with_name("test_scoring_enterprise_issue_calibration.py"))
-)
-_digest = _FIXTURES["_digest"]
-_engine = _FIXTURES["_engine"]
-_execution = _FIXTURES["_execution"]
-_issue = _FIXTURES["_issue"]
-_rebuild_request = _FIXTURES["_rebuild_request"]
-_request = _FIXTURES["_request"]
-_result = _FIXTURES["_result"]
-_result_with_replacement = _FIXTURES["_result_with_replacement"]
 
 
 def _assert_provenance_error(callback) -> None:
@@ -60,25 +56,6 @@ def _request_with_extra_reference(issue, reference: EvidenceReference):
         ]
     )
     return _rebuild_request(request, metadata=metadata)
-
-
-def _managed_observation_metadata(issue, references) -> dict[str, object]:
-    """Return exact-looking package-managed metadata for adversarial observations."""
-    supporting = sum(
-        value.evidence_role is EvidenceRole.SUPPORTING for value in references
-    )
-    counter = sum(value.evidence_role is EvidenceRole.COUNTER for value in references)
-    context = sum(value.evidence_role is EvidenceRole.CONTEXT for value in references)
-    return {
-        "enterprise_atomic_issue_fingerprint": issue.atomic_issue_fingerprint,
-        "enterprise_issue_content_fingerprint": issue.issue_content_fingerprint,
-        "enterprise_observation_evidence_fingerprints": [
-            value.evidence_fingerprint for value in references
-        ],
-        "enterprise_supporting_evidence_count": supporting,
-        "enterprise_counter_evidence_count": counter,
-        "enterprise_context_evidence_count": context,
-    }
 
 
 def test_mutated_result_observation_fails_with_structured_error() -> None:
