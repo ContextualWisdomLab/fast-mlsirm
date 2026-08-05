@@ -1,0 +1,78 @@
+name: PR 533 apply review fixes
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'ci: run deterministic PR 533 review fixes'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+
+      - name: Apply accepted review findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pr533_review_fixes.py
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+          python -m py_compile \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py
+
+      - name: Install focused validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install "ruff==0.16.1"
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Validate accepted review findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff format --check \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py \
+            scripts/pr533_review_fixes.py
+          ruff check \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py \
+            scripts/pr533_review_fixes.py
+          pytest \
+            tests/test_scoring_enterprise_explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values_provider_boundary.py \
+            --cov=fast_mlsirm.scoring.enterprise_issue.explicit_values \
+            --cov-branch \
+            --cov-fail-under=100
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+
+      - name: Commit verified source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            CHANGELOG.md \
+            docs/changelog.d/enterprise-explicit-value-parser.md \
+            docs/enterprise_issue_evidence_contracts.md \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py
+          git diff --cached --check
+          git commit -m "fix(enterprise): address explicit-value review findings"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
