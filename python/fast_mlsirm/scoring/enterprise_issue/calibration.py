@@ -114,25 +114,29 @@ def build_enterprise_issue_facets_rating_records(
         available_evidence_fingerprints,
         counterevidence_declared,
     ) = _enterprise_request_context(request)
-    if (
-        atomic_issue_fingerprint != issue.atomic_issue_fingerprint
-        or issue_content_fingerprint != issue.issue_content_fingerprint
-        or request.respondent_id != issue.issue_id
-        or request.response_content_fingerprint != issue.issue_content_fingerprint
-    ):
+    if atomic_issue_fingerprint != issue.atomic_issue_fingerprint:
         _calibration_error(
-            "$.request",
-            "request enterprise provenance does not match the supplied issue",
+            "$.request.metadata.enterprise_atomic_issue_fingerprint",
+            "request atomic issue provenance does not match the supplied issue",
+        )
+    if issue_content_fingerprint != issue.issue_content_fingerprint:
+        _calibration_error(
+            "$.request.metadata.enterprise_issue_content_fingerprint",
+            "request issue content provenance does not match the supplied issue",
+        )
+    if request.respondent_id != issue.issue_id:
+        _calibration_error(
+            "$.request.respondent_id",
+            "request respondent identity does not match the supplied issue",
+        )
+    if request.response_content_fingerprint != issue.issue_content_fingerprint:
+        _calibration_error(
+            "$.request.response_content_fingerprint",
+            "request response revision does not match the supplied issue",
         )
 
     for index, observation in enumerate(result.observations):
         path = f"$.result.observations[{index}]"
-        if type(observation) is not ScoreObservation:
-            raise assessment_error(
-                "invalid_score_observation",
-                path,
-                "result observations must be exact ScoreObservation values",
-            )
         evidence_fingerprints = tuple(
             value.evidence_fingerprint for value in observation.evidence_references
         )
