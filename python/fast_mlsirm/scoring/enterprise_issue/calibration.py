@@ -75,9 +75,10 @@ def build_enterprise_issue_facets_rating_records(
 
     The function replays the package-managed issue, request, observation, and
     evidence identities before calling
-    :func:`~fast_mlsirm.scoring.build_scoring_facets_rating_records`. Returned
-    records are the existing shared calibration records; no enterprise-specific
-    rating, design, fit, or result schema is introduced.
+    :func:`~fast_mlsirm.scoring.build_scoring_facets_rating_records`. The shared
+    builder remains authoritative for request, result, and engine binding.
+    Returned records are the existing shared calibration records; no
+    enterprise-specific rating, design, fit, or result schema is introduced.
 
     Passing this boundary proves provenance consistency only. It does not prove
     that an issue is true or material, that a rating is valid or fair, that the
