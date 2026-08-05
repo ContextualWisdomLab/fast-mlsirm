@@ -38,8 +38,9 @@ def test_skip_link_is_revealed_for_every_actual_focus_state(tmp_path: Path) -> N
 
 
 def test_hover_does_not_dim_unrelated_chart_or_table_content(tmp_path: Path) -> None:
-    """Pointer hover must preserve the normal contrast of unrelated data rows."""
+    """Pointer hover must preserve peer contrast and retain the active-row cue."""
     html = _render_report(tmp_path)
 
     assert ".bar-chart:hover .bar-row:not(:hover)" not in html
     assert "tbody:hover tr:not(:hover)" not in html
+    assert "tbody tr:hover {\n  background: var(--hover-bg);\n}" in html
