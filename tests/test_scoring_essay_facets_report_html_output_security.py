@@ -27,6 +27,8 @@ def test_renderer_confines_nested_output_to_explicit_root(tmp_path: Path) -> Non
     )
 
     assert returned == expected.resolve()
+    assert returned.is_absolute()
+    assert returned.is_relative_to(output_root.resolve())
     assert expected.is_file()
 
 
