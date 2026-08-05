@@ -50,19 +50,34 @@ object, or a decision layer.
 Run on one unchanged head:
 
 ```bash
-pytest -q tests/test_scoring_enterprise_issue_calibration_reporting.py
 pytest -q \
   tests/test_scoring_enterprise_issue_calibration.py \
   tests/test_scoring_enterprise_issue_calibration_nested.py \
   tests/test_scoring_enterprise_issue_calibration_bundle.py \
-  tests/test_scoring_enterprise_issue_calibration_reporting.py
+  tests/test_scoring_enterprise_issue_calibration_reporting.py \
+  tests/test_scoring_essay_facets_reporting.py \
+  tests/test_scoring_essay_facets_report_html.py
 coverage run --branch \
-  --source=python/fast_mlsirm/scoring/enterprise_issue/reporting.py \
-  -m pytest -q tests/test_scoring_enterprise_issue_calibration_reporting.py
-coverage report --include='*/reporting.py' --fail-under=100
-python scripts/check_docstring_coverage.py
+  --include='python/fast_mlsirm/scoring/enterprise_issue/reporting.py,python/fast_mlsirm/scoring/essay/calibration_reporting.py,python/fast_mlsirm/scoring/essay/calibration_report_html.py' \
+  -m pytest -q \
+  tests/test_scoring_enterprise_issue_calibration_reporting.py \
+  tests/test_scoring_essay_facets_reporting.py \
+  tests/test_scoring_essay_facets_report_html.py
+coverage report \
+  --include='*/enterprise_issue/reporting.py,*/essay/calibration_reporting.py,*/essay/calibration_report_html.py' \
+  --fail-under=100
 python scripts/render_changelog_fragments.py --check CHANGELOG.md
 ```
+
+Verify public docstrings in the changed production modules by parsing their
+module-level public functions and classes, and fail when any public definition
+lacks a docstring. This keeps the evidence scoped to the reviewed slice instead
+of allowing unrelated pre-existing modules to mask or block the requirement.
+
+The Rust integration test must exercise the iteration-cap path and prove that a
+nonconverged fit preserves its terminal post-update likelihood as evidence while
+keeping `n_iter` equal to the number of optimization iterations. The same report
+must pass standalone HTML replay validation.
 
 Then require the complete Python, Rust/PyO3, package, GPU-no-skip, fuzz, Security
 Scan, SAST, current-head review, independent approval, unresolved-thread, and
