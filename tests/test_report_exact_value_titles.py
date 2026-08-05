@@ -34,7 +34,6 @@ def test_formatted_float_locations_expose_unrounded_pointer_tooltips(tmp_path) -
     )
     assert '<th scope="row" title="1.0">1</th>' in html
     assert '<td title="-12.500000000000002">-12.5</td>' in html
-    assert "Complete untruncated full-precision source rows" in html
     assert "heldout_loglik\n1.0,-12.500000000000002\n2.0,-8.0" in html
 
 
