@@ -20,6 +20,15 @@ fit_fixture = _FIXTURES["fit_fixture"]
 design_fixture = _FIXTURES["design_fixture"]
 
 
+@pytest.fixture(autouse=True)
+def _caller_owned_output_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Run every renderer case inside a caller-owned temporary directory."""
+    monkeypatch.chdir(tmp_path)
+
+
 def assert_error(code: str, callback) -> None:
     """Assert one stable facets HTML contract error code."""
     with pytest.raises(AssessmentSpecError) as caught:
