@@ -43,3 +43,7 @@
 ## 2024-07-10 - HTML Report Semantic Definition Lists
 **Learning:** Using `<span>` and `<p>` elements for displaying key-value metadata pairs (like "Source: file.json") in HTML reports misses an opportunity to provide semantic structure. Additionally, purely decorative text preceding main headings (like a small subtitle) can add noise for screen reader users when read out immediately before the main `<h1>`.
 **Action:** In HTML reports, prefer semantic `<dl>`, `<dt>`, `<dd>` elements for key-value data (explicitly resetting default `<dt>` font-weight for cross-browser visual consistency), and use `aria-hidden="true"` to hide purely visual, redundant components from screen readers.
+
+## 2025-02-12 - Exposing Exact Numeric Representation for Truncated Floats
+**Learning:** In data-heavy HTML reports, formatting floats to a specific number of significant digits (e.g., `4g`) can obscure the exact value. Users who need the full-precision number might find this frustrating.
+**Action:** Expose the full-precision, exact numeric string representation of truncated or formatted floats in the native HTML `title` attribute of the element containing the value. This improves UX by making the exact value accessible via hover.
