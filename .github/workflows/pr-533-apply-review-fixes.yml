@@ -47,6 +47,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ruff format \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py \
+            scripts/pr533_review_fixes.py
           ruff format --check \
             python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
             tests/test_scoring_enterprise_explicit_values.py \
