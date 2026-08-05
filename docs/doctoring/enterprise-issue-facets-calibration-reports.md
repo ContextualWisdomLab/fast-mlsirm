@@ -9,14 +9,16 @@ vertical and introduces no statistical equation or report schema.
 
 ## Architecture decision
 
-The enterprise module performs only four operations:
+The enterprise module performs only five operations:
 
 1. validate and assemble exact executions through
    `build_enterprise_issue_facets_calibration_bundle()`;
 2. normalize source-free caller metadata and review-trigger identifiers;
-3. bind each criterion report to the exact bundle, design, and criterion
+3. derive and validate every criterion report identifier before any estimator
+   delegation;
+4. bind each criterion report to the exact bundle, design, and criterion
    fingerprint or identifier; and
-4. delegate every design to `fit_scoring_facets_calibration_report()`.
+5. delegate every design to `fit_scoring_facets_calibration_report()`.
 
 All likelihood, quadrature, gradient, Hessian, parameter-update, optimization,
 and fit replay remain in the existing Rust-backed many-facet implementation. The
@@ -48,6 +50,7 @@ high-stakes readiness.
 A realistic connected fixture crosses the actual Rust-backed fitting path, while
 deterministic fixture fits verify exact orchestration and metadata behavior. The
 suite also proves execution-order invariance, one-time trigger normalization,
+batch rejection of invalid derived report identities before fitting,
 reserved-metadata rejection, and absence of raw source and issue text from report
 serialization.
 
@@ -86,6 +89,7 @@ Merge requires one unchanged head to pass:
 - exact enterprise bundle/design/criterion report provenance;
 - execution-order invariance;
 - tuning, trigger, and metadata delegation;
+- atomic derived-report-identifier validation before estimator delegation;
 - reserved metadata and invalid identifier failures;
 - source and issue text privacy assertions;
 - 100% new production statement and branch coverage;
