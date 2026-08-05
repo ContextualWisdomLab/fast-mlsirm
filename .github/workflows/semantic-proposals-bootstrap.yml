@@ -1,4 +1,4 @@
-# Existing workflow on the branch: this push intentionally starts the bootstrap.
+# Existing workflow on the branch: trigger composition after merged prerequisites.
 name: Bootstrap semantic proposal review branch
 
 on:
