@@ -693,3 +693,28 @@ def test_payload_validation_short_circuit_branches_fail_closed(
     with pytest.raises(AssessmentSpecError) as captured:
         _record(kind, payload=payload)
     assert captured.value.code == expected_code
+
+
+def test_noncanonical_compact_calendar_date_fails_closed() -> None:
+    """A parseable but noncanonical compact date is rejected."""
+    with pytest.raises(AssessmentSpecError) as captured:
+        _record(
+            ExplicitValueKind.CALENDAR_DATE,
+            payload={"calendar_date": "20260930"},
+        )
+    assert captured.value.code == "invalid_normalized_payload"
+
+
+def test_payload_validation_rejects_non_mapping_thaw_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The defensive post-thaw mapping guard remains explicitly covered."""
+    record = _record()
+    monkeypatch.setattr(
+        parser_module,
+        "thaw_json_value",
+        lambda value: [],
+    )
+    with pytest.raises(AssessmentSpecError) as captured:
+        record._normalized_payload({"calendar_date": "2026-09-30"})
+    assert captured.value.code == "invalid_normalized_payload"
