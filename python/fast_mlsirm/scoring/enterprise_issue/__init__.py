@@ -1,6 +1,12 @@
 """Enterprise-issue adapters for the shared governed scoring contracts."""
 
 from .calibration import (
+    MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS as MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS,
+)
+from .calibration import (
+    build_enterprise_issue_facets_calibration_bundle as build_enterprise_issue_facets_calibration_bundle,
+)
+from .calibration import (
     build_enterprise_issue_facets_rating_records as build_enterprise_issue_facets_rating_records,
 )
 from .contracts import AtomicIssueRecord as AtomicIssueRecord
@@ -62,6 +68,7 @@ __all__ = [
     "MAX_CURRENCY_CODES",
     "MAX_CUSTOMER_IDENTIFIER_CHARACTERS",
     "MAX_ENTERPRISE_ATOMIC_ISSUES",
+    "MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS",
     "MAX_ENTERPRISE_ISSUE_EVIDENCE",
     "MAX_ENTERPRISE_ISSUE_SOURCES",
     "MAX_ENTERPRISE_SOURCE_CHARACTERS",
@@ -80,6 +87,7 @@ __all__ = [
     "ExplicitValueRecord",
     "StakeholderPerspective",
     "StaticEnterpriseIssueExtractor",
+    "build_enterprise_issue_facets_calibration_bundle",
     "build_enterprise_issue_facets_rating_records",
     "build_enterprise_issue_score_observation",
     "build_enterprise_issue_scoring_request",
