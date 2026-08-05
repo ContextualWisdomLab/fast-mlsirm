@@ -1,1 +1,0 @@
-Retrigger exact-head validation after the self-removing hardening workflow.
