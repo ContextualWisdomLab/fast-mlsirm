@@ -22,3 +22,6 @@
 - Added realistic mixed-source, protocol, source-replay, Unicode-offset, privacy,
   ordering, metamorphic, resource-bound, hostile-provider, and fail-closed tests,
   plus APA 7th standards and research traceability.
+- Composed compiled proposals through the central semantic issue replay
+  boundary before release so provider proposal validation and canonical
+  atomic-issue validation cannot diverge.

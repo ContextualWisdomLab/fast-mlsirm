@@ -20,9 +20,17 @@ from .._contract_safety import (
     descriptive_identifier,
     enum_value,
     freeze_metadata,
+)
+from .._validation import (
+    AssessmentSpecError,
+    assessment_error,
+    fingerprint,
     thaw_json_value,
 )
-from .._validation import AssessmentSpecError, assessment_error, fingerprint
+from .semantic import (
+    StaticEnterpriseIssueExtractor,
+    extract_enterprise_atomic_issues,
+)
 from .contracts import (
     MAX_ENTERPRISE_ISSUE_EVIDENCE,
     MAX_ENTERPRISE_ISSUE_SOURCES,
@@ -752,9 +760,13 @@ def extract_enterprise_semantic_issues(
         content_fingerprints.add(issue.issue_content_fingerprint)
         compiled.append(issue)
         perspectives.extend(issue_perspectives)
-    compiled.sort(key=lambda value: value.atomic_issue_fingerprint)
+    validated_issues = extract_enterprise_atomic_issues(
+        tuple(record for record, _text in sources),
+        {record.source_id: text for record, text in sources},
+        extractor=StaticEnterpriseIssueExtractor(tuple(compiled)),
+    )
     perspectives.sort(key=lambda value: value.perspective_fingerprint)
-    return tuple(compiled), tuple(perspectives)
+    return validated_issues, tuple(perspectives)
 
 
 __all__ = [

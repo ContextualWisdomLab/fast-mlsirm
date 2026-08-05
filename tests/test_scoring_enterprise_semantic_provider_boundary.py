@@ -10,7 +10,9 @@ import pytest
 from fast_mlsirm.scoring import AssessmentSpecError
 from fast_mlsirm.scoring.enterprise_issue import (
     AtomicIssueRecord,
+    EnterpriseAssertionKind,
     EnterpriseSourceRecord,
+    EvidenceSpanRecord,
     MAX_SEMANTIC_ASSERTIONS_PER_ISSUE,
     MAX_SEMANTIC_ISSUE_PROPOSALS,
     OfflineSemanticIssueFixtureProvider,
@@ -409,12 +411,25 @@ def test_provider_output_is_bounded_before_unlimited_materialization() -> None:
 def test_package_records_are_not_accepted_as_provider_shortcuts() -> None:
     """Providers cannot bypass reconstruction by returning package-owned records."""
     source = _source()
+    start = SOURCE_TEXT.index("two deliveries were late")
+    span = EvidenceSpanRecord(
+        source_id=source.source_id,
+        source_record_fingerprint=source.source_record_fingerprint,
+        span_id="shortcut_evidence_span",
+        span_content_fingerprint=hashlib.sha256(
+            b"two deliveries were late"
+        ).hexdigest(),
+        assertion_kind=EnterpriseAssertionKind.DIRECT_FACT,
+        start_offset=start,
+        end_offset=start + len("two deliveries were late"),
+        metadata={},
+    )
     issue = AtomicIssueRecord(
         issue_id="shortcut_issue_record",
         issue_family_id="service_delivery_risk",
         issue_content_fingerprint=hashlib.sha256(b"shortcut").hexdigest(),
         source_record_fingerprints=(source.source_record_fingerprint,),
-        evidence_spans=(),
+        evidence_spans=(span,),
         counterevidence_records=(),
         metadata={},
     )
@@ -429,7 +444,7 @@ def test_errors_do_not_reflect_source_or_provider_values() -> None:
         "enterprise_source_content_mismatch",
         lambda: extract_enterprise_semantic_issues(
             (source,),
-            source_text_by_id={"operations_report": secret_source + " changed"},
+            source_text_by_id={"operations_report": secret_source[:-1] + "X"},
             provider=_provider((_proposal(),)),
         ),
     )

@@ -107,8 +107,10 @@ criterion-level multi-judge observations, Rust-backed measurement, recovery
 simulation, leave-domain/customer/period/judge-family validation, and explicit
 decision-policy evaluation.
 
-The next issue #404 slice should compile accepted atomic issues into connected
-criterion-level judge observations using the existing shared scoring contracts.
+Compiled proposals pass through the central atomic-issue replay boundary and
+connect to the existing criterion-level request and observation adapters.
+The next issue #404 slice should add human-anchored multi-judge calibration,
+held-out validation, and buyer-visible review workflow evidence.
 Live LLM testing, when introduced, must use `NVIDIA_NIM_API_KEY` through an
 optional adapter or `contextual-orchestrator` without modifying the independent
 review-agent credential chain.
