@@ -1,1 +1,1 @@
-Trigger deterministic application of accepted PR 533 review findings after workflow syntax repair.
+Retrigger deterministic application of accepted PR 533 review findings after formatter repair.
