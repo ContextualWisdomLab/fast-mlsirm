@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --require-hashes -r requirements/ci.txt
-          python -m pip install "ruff==0.16.1"
+          python -m pip install "ruff==0.16.1" "pytest-cov==6.2.1"
           python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Validate accepted review findings
