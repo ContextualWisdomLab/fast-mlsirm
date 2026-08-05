@@ -3,8 +3,8 @@
 `fast_mlsirm.scoring.enterprise_issue` provides the first provider-neutral domain
 boundary for issue #404. The module stores content identities, exact source-span
 offsets, epistemic roles, stakeholder perspectives, candidate-intervention
-provenance, deterministic explicit values, and criterion-level request provenance
-without retaining raw enterprise text.
+provenance, deterministic explicit values, criterion-level request provenance,
+and governed criterion observations without retaining raw enterprise text.
 
 ## Contract boundary
 
@@ -121,20 +121,43 @@ enterprise provenance fields.
 
 This compiler performs deterministic validation and marshaling only. Existing
 `ScoringEngine`, `ScoreObservation`, and `ScoringResult` contracts remain the only
-execution and output boundaries. Engines must cite the returned shared evidence
-references on non-abstained observations under the existing scoring policy.
+execution and output boundaries.
+
+## Criterion-level enterprise observations
+
+`build_enterprise_issue_score_observation()` compiles one engine outcome into the
+existing shared `ScoreObservation` contract. It accepts only a request produced by
+the enterprise request compiler and only evidence references already declared by
+that exact request revision. The adapter canonicalizes evidence ordering and
+writes exact issue and selected-evidence fingerprints plus role counts into
+package-managed confidence metadata.
+
+Every non-abstained enterprise observation must retain supporting evidence. When
+the issue declares counterevidence, the observation must also retain at least one
+counterevidence reference rather than silently omitting contradictory evidence.
+An engine that cannot satisfy those conditions must abstain with a stable reason
+code. Abstention may retain no evidence and is not converted into a low score.
+Caller confidence metadata cannot overwrite the managed enterprise provenance.
+
+The adapter does not calculate a rating or confidence value. Score categories,
+criterion coverage, terminal-state semantics, engine identity, assessment and
+rubric replay, and result completeness remain governed by the shared scoring
+contracts. Evidence presence is an auditability condition, not proof that a score
+is accurate, reliable, fair, valid, calibrated, or decision-ready.
 
 ## Interpretation limits
 
 These contracts improve traceability and replay resistance; they do not establish
 construct validity, evidence truth, causal identification, model fairness, or
-high-stakes deployment readiness. The request compiler performs no sentiment
-analysis, latent measurement, calibration, comparative ranking, expected utility,
-value-of-information, intervention-effect, or queue-routing arithmetic.
+high-stakes deployment readiness. The request and observation compilers perform
+no sentiment analysis, latent measurement, calibration, comparative ranking,
+expected utility, value-of-information, intervention-effect, or queue-routing
+arithmetic.
 
 Successful compilation confirms only schema and provenance consistency. It does
-not produce a score, determine evidence sufficiency, recommend an intervention,
-or complete human review.
+not determine evidence sufficiency, recommend an intervention, or complete human
+review. A persisted score remains one fallible judge observation that requires
+subsequent calibration and validation.
 
 Human review remains necessary wherever source meaning, organizational values,
 legal rights, or material consequences are in dispute. A candidate intervention
