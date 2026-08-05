@@ -13,12 +13,9 @@ def _tracked_paths(repository_root: Path) -> tuple[str, ...]:
         cwd=repository_root,
         check=True,
         capture_output=True,
+        timeout=60,
     )
-    return tuple(
-        path.decode("utf-8")
-        for path in completed.stdout.split(b"\0")
-        if path
-    )
+    return tuple(path.decode("utf-8") for path in completed.stdout.split(b"\0") if path)
 
 
 def test_merge_conflict_backup_artifacts_are_absent_and_ignored():

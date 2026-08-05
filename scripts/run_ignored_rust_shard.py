@@ -217,6 +217,7 @@ def inventory_ignored_tests(targets: Sequence[CargoTarget]) -> list[IgnoredTest]
             check=True,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         for test_name in parse_test_names(completed.stdout):
             identifier = f"{target.identity}::{test_name}"
@@ -295,6 +296,7 @@ def run_shard(shard: int, shard_count: int, skipped: Sequence[str]) -> int:
         check=True,
         capture_output=True,
         text=True,
+        timeout=60,
     )
     targets = parse_workspace_targets(metadata.stdout)
     inventory = inventory_ignored_tests(targets)
@@ -317,7 +319,7 @@ def run_shard(shard: int, shard_count: int, skipped: Sequence[str]) -> int:
         test = by_identifier[identifier]
         command = cargo_test_command(test.target, test.test_name)
         print("+ " + " ".join(command), flush=True)
-        completed = subprocess.run(command, check=False)
+        completed = subprocess.run(command, check=False, timeout=60)
         if completed.returncode != 0:
             return completed.returncode
     return 0

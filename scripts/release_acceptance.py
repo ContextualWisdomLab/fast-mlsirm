@@ -32,12 +32,16 @@ def _cli_env() -> dict[str, str]:
     return env
 
 
-def _run_cli(args: list[str], out_label: str, *, require_json: bool = True) -> dict[str, object]:
+def _run_cli(
+    args: list[str], out_label: str, *, require_json: bool = True
+) -> dict[str, object]:
     command = [sys.executable, "-m", "fast_mlsirm.cli", *args]
     if require_json and "--json" not in command:
         command.append("--json")
     started = time.perf_counter()
-    completed = subprocess.run(command, capture_output=True, text=True, env=_cli_env())
+    completed = subprocess.run(
+        command, capture_output=True, text=True, env=_cli_env(), timeout=60
+    )
     duration_seconds = round(time.perf_counter() - started, 6)
     if completed.returncode != 0:
         stderr = completed.stderr.strip()
@@ -47,13 +51,20 @@ def _run_cli(args: list[str], out_label: str, *, require_json: bool = True) -> d
     if not raw_output:
         raise RuntimeError(f"{out_label} succeeded without JSON output")
     if not require_json:
-        return {"status": "ok", "command": out_label, "stdout": raw_output[-1], "duration_seconds": duration_seconds}
+        return {
+            "status": "ok",
+            "command": out_label,
+            "stdout": raw_output[-1],
+            "duration_seconds": duration_seconds,
+        }
     try:
         payload = json.loads(raw_output[-1])
         payload["duration_seconds"] = duration_seconds
         return payload
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"{out_label} produced non-JSON output: {raw_output[-1]}") from exc
+        raise RuntimeError(
+            f"{out_label} produced non-JSON output: {raw_output[-1]}"
+        ) from exc
 
 
 def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
@@ -121,7 +132,9 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     )
     report["steps"].append(fit_auto_payload)
 
-    summary = json.loads((fit_auto_out / "fit_summary.json").read_text(encoding="utf-8"))
+    summary = json.loads(
+        (fit_auto_out / "fit_summary.json").read_text(encoding="utf-8")
+    )
     if summary.get("backend") not in {"numpy", "rust"}:
         raise RuntimeError("fit auto backend is not numpy or rust")
 
@@ -159,7 +172,9 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
             "fit_rust",
         )
         report["steps"].append(fit_rust_payload)
-        rust_summary = json.loads((fit_rust_out / "fit_summary.json").read_text(encoding="utf-8"))
+        rust_summary = json.loads(
+            (fit_rust_out / "fit_summary.json").read_text(encoding="utf-8")
+        )
         if rust_summary.get("backend") != "rust":
             raise RuntimeError("rust fit did not report rust backend")
 
@@ -257,22 +272,54 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
         "steps": report["steps"],
         "total_duration_seconds": round(time.perf_counter() - acceptance_started, 6),
     }
-    summary_path.write_text(json.dumps(summary_payload, indent=2, sort_keys=True), encoding="utf-8")
+    summary_path.write_text(
+        json.dumps(summary_payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return {"status": "ok", "out": str(out_dir), "report": str(summary_path)}
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a fast-mlsirm release acceptance smoke test.")
-    parser.add_argument("--out", default="acceptance_check", help="Output directory for generated artifacts.")
-    parser.add_argument("--persons", type=int, default=12, help="Number of persons to simulate.")
-    parser.add_argument("--dims", type=int, default=1, help="Simulated true item dimensions.")
-    parser.add_argument("--items-per-dim", type=int, default=2, help="Items per dimension for simulation.")
-    parser.add_argument("--latent-dim", type=int, default=1, help="Latent dimension for fitting.")
+    parser = argparse.ArgumentParser(
+        description="Run a fast-mlsirm release acceptance smoke test."
+    )
+    parser.add_argument(
+        "--out",
+        default="acceptance_check",
+        help="Output directory for generated artifacts.",
+    )
+    parser.add_argument(
+        "--persons", type=int, default=12, help="Number of persons to simulate."
+    )
+    parser.add_argument(
+        "--dims", type=int, default=1, help="Simulated true item dimensions."
+    )
+    parser.add_argument(
+        "--items-per-dim",
+        type=int,
+        default=2,
+        help="Items per dimension for simulation.",
+    )
+    parser.add_argument(
+        "--latent-dim", type=int, default=1, help="Latent dimension for fitting."
+    )
     parser.add_argument("--seed", type=int, default=1, help="Simulation seed.")
-    parser.add_argument("--max-iter", type=int, default=1, help="Max optimization iterations for fitting.")
-    parser.add_argument("--n-restarts", type=int, default=1, help="Optimization restarts.")
-    parser.add_argument("--latent-dims", default="1,2", help="Comma-separated latent dims for dimension diagnostics.")
-    parser.add_argument("--folds", type=int, default=2, help="CV folds for dimensionality diagnostics.")
+    parser.add_argument(
+        "--max-iter",
+        type=int,
+        default=1,
+        help="Max optimization iterations for fitting.",
+    )
+    parser.add_argument(
+        "--n-restarts", type=int, default=1, help="Optimization restarts."
+    )
+    parser.add_argument(
+        "--latent-dims",
+        default="1,2",
+        help="Comma-separated latent dims for dimension diagnostics.",
+    )
+    parser.add_argument(
+        "--folds", type=int, default=2, help="CV folds for dimensionality diagnostics."
+    )
     parser.add_argument(
         "--require-rust",
         action="store_true",
