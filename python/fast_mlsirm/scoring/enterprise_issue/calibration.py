@@ -18,6 +18,7 @@ from ..calibration import (
 )
 from ..execution import (
     EngineDescriptor,
+    EvidenceRole,
     ObservationStatus,
     ScoreObservation,
     ScoringRequest,
@@ -34,6 +35,56 @@ def _calibration_error(path: str, message: str) -> NoReturn:
         path,
         message,
     )
+
+
+def _request_issue_evidence(
+    *,
+    issue: AtomicIssueRecord,
+    request: ScoringRequest,
+    available_evidence_fingerprints: frozenset[str],
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Replay issue-owned request metadata and return exact evidence identities."""
+    metadata = thaw_json_value(request.metadata)
+    expected = {
+        "enterprise_source_record_fingerprints": list(
+            issue.source_record_fingerprints
+        ),
+        "enterprise_evidence_span_fingerprints": [
+            value.evidence_span_fingerprint for value in issue.evidence_spans
+        ],
+        "enterprise_counterevidence_fingerprints": [
+            value.counterevidence_fingerprint
+            for value in issue.counterevidence_records
+        ],
+    }
+    if any(metadata.get(key) != value for key, value in expected.items()):
+        _calibration_error(
+            "$.request.metadata",
+            "request enterprise issue provenance does not replay the supplied issue",
+        )
+
+    issue_evidence = issue.evidence_references()
+    issue_evidence_fingerprints = frozenset(
+        value.evidence_fingerprint for value in issue_evidence
+    )
+    if not issue_evidence_fingerprints.issubset(
+        available_evidence_fingerprints
+    ):
+        _calibration_error(
+            "$.request.metadata.enterprise_evidence_reference_fingerprints",
+            "request evidence does not retain every supplied issue evidence reference",
+        )
+    supporting = frozenset(
+        value.evidence_fingerprint
+        for value in issue_evidence
+        if value.evidence_role is EvidenceRole.SUPPORTING
+    )
+    counter = frozenset(
+        value.evidence_fingerprint
+        for value in issue_evidence
+        if value.evidence_role is EvidenceRole.COUNTER
+    )
+    return supporting, counter
 
 
 def _observation_metadata(
@@ -113,7 +164,7 @@ def build_enterprise_issue_facets_rating_records(
         atomic_issue_fingerprint,
         issue_content_fingerprint,
         available_evidence_fingerprints,
-        counterevidence_declared,
+        _,
     ) = _enterprise_request_context(request)
     if atomic_issue_fingerprint != issue.atomic_issue_fingerprint:
         _calibration_error(
@@ -135,6 +186,11 @@ def build_enterprise_issue_facets_rating_records(
             "$.request.response_content_fingerprint",
             "request response revision does not match the supplied issue",
         )
+    required_supporting, required_counter = _request_issue_evidence(
+        issue=issue,
+        request=request,
+        available_evidence_fingerprints=available_evidence_fingerprints,
+    )
 
     for index, observation in enumerate(result.observations):
         path = f"$.result.observations[{index}]"
@@ -147,7 +203,8 @@ def build_enterprise_issue_facets_rating_records(
         evidence_fingerprints = tuple(
             value.evidence_fingerprint for value in observation.evidence_references
         )
-        if not set(evidence_fingerprints).issubset(
+        observation_evidence = frozenset(evidence_fingerprints)
+        if not observation_evidence.issubset(
             available_evidence_fingerprints
         ):
             _calibration_error(
@@ -155,17 +212,18 @@ def build_enterprise_issue_facets_rating_records(
                 "observation evidence is not declared by the enterprise request",
             )
         evidence_counts = _evidence_counts(observation.evidence_references)
-        supporting, counter, _ = evidence_counts
         if observation.status is not ObservationStatus.ABSTAINED:
-            if supporting == 0:
+            if not observation_evidence.intersection(required_supporting):
                 _calibration_error(
                     f"{path}.evidence_references",
-                    "non-abstained enterprise observations require supporting evidence",
+                    "non-abstained observations require supporting evidence from the supplied issue",
                 )
-            if counterevidence_declared and counter == 0:
+            if required_counter and not observation_evidence.intersection(
+                required_counter
+            ):
                 _calibration_error(
                     f"{path}.evidence_references",
-                    "enterprise observations must represent declared counterevidence",
+                    "enterprise observations must retain supplied issue counterevidence",
                 )
         _observation_metadata(
             issue=issue,
