@@ -36,6 +36,9 @@ from .explicit_values import ExplicitValueRecord as ExplicitValueRecord
 from .explicit_values import (
     parse_enterprise_explicit_values as parse_enterprise_explicit_values,
 )
+from .observation import (
+    build_enterprise_issue_score_observation as build_enterprise_issue_score_observation,
+)
 from .request import (
     build_enterprise_issue_scoring_request as build_enterprise_issue_scoring_request,
 )
@@ -63,6 +66,7 @@ __all__ = [
     "ExplicitValueKind",
     "ExplicitValueRecord",
     "StakeholderPerspective",
+    "build_enterprise_issue_score_observation",
     "build_enterprise_issue_scoring_request",
     "enterprise_issue_evidence_references",
     "parse_enterprise_explicit_values",
