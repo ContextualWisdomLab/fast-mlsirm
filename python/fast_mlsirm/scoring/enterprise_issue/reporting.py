@@ -46,9 +46,7 @@ _MANAGED_REPORT_METADATA_KEYS = frozenset(
 
 def _caller_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
     """Return source-free caller metadata without package-managed report keys."""
-    primitive = thaw_json_value(
-        freeze_metadata({} if metadata is None else metadata)
-    )
+    primitive = thaw_json_value(freeze_metadata({} if metadata is None else metadata))
     if any(key in primitive for key in _MANAGED_REPORT_METADATA_KEYS):
         raise assessment_error(
             "reserved_enterprise_report_metadata",

@@ -136,7 +136,10 @@ def _validated_report(
             "task identifiers, families, and revision fingerprints must align",
         )
     rater_count = len(rater_engine_fingerprints)
-    if len(rater_engine_ids) != rater_count or len(rater_engine_family_ids) != rater_count:
+    if (
+        len(rater_engine_ids) != rater_count
+        or len(rater_engine_family_ids) != rater_count
+    ):
         raise assessment_error(
             "essay_facets_rater_axis_mismatch",
             "$.report.rater_engine_ids",
@@ -171,12 +174,13 @@ def _validated_report(
     calibration_reporting._validate_loglik_trace(loglik_trace)
 
     n_iter = calibration_reporting._exact_integer(report.n_iter, "n_iter", minimum=1)
-    if n_iter != len(loglik_trace):
-        raise assessment_error(
-            "facets_iteration_trace_mismatch",
-            "$.report.n_iter",
-            "n_iter must equal the number of log-likelihood iterations",
-        )
+    converged = calibration_reporting.strict_boolean(report.converged, "converged")
+    calibration_reporting._validate_iteration_trace_length(
+        n_iter,
+        len(loglik_trace),
+        converged,
+        path="$.report.n_iter",
+    )
     n_parameters = calibration_reporting._exact_integer(
         report.n_parameters,
         "n_parameters",
@@ -189,7 +193,6 @@ def _validated_report(
             "$.report.n_parameters",
             "n_parameters does not match the facets model contract",
         )
-    converged = calibration_reporting.strict_boolean(report.converged, "converged")
     design_connected = calibration_reporting.strict_boolean(
         report.design_connected,
         "design_connected",
@@ -450,7 +453,7 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
             "</section>",
             '<section aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
-            '<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>',
+            "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>",
             '<pre tabindex="0" role="region" aria-label="Canonical essay facets calibration JSON">',
             _canonical_json(report),
             "</pre>",

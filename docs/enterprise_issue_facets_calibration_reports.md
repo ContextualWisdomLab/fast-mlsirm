@@ -48,7 +48,9 @@ prompt, provider response, customer token, or credential.
 
 Review-trigger IDs are normalized once and forwarded unchanged to every criterion
 report. Shared mandatory triggers for nonconvergence or disconnectedness cannot be
-suppressed.
+suppressed. When the Rust estimator reaches its iteration cap, the report retains
+the terminal post-update likelihood as one additional trace value without
+misreporting it as another optimization iteration.
 
 ## Compatibility
 

@@ -3,23 +3,24 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 
+import fast_mlsirm.scoring.enterprise_issue as enterprise
 import numpy as np
 import pytest
-
-from enterprise_issue_calibration_fixtures import _digest, _execution
+from enterprise_issue_calibration_fixtures import _execution
 from fast_mlsirm.facets import FacetsFit
 from fast_mlsirm.scoring import AssessmentSpecError
 from fast_mlsirm.scoring.calibration_reporting import (
     ScoringFacetsCalibrationReport,
     build_scoring_facets_calibration_report,
 )
-import fast_mlsirm.scoring.enterprise_issue as enterprise
 from fast_mlsirm.scoring.enterprise_issue import (
     MAX_ENTERPRISE_ISSUE_CALIBRATION_REPORTS,
     fit_enterprise_issue_facets_calibration_reports,
+    reporting,
 )
-import fast_mlsirm.scoring.enterprise_issue.reporting as reporting
+from fast_mlsirm.scoring.essay import render_essay_facets_calibration_report_html
 
 
 def _connected_executions():
@@ -138,7 +139,7 @@ def test_public_workflow_delegates_each_design_and_binds_enterprise_provenance(
         metadata={"workflow_stage": "offline_pilot"},
     )
 
-    assert MAX_ENTERPRISE_ISSUE_CALIBRATION_REPORTS == 64
+    assert MAX_ENTERPRISE_ISSUE_CALIBRATION_REPORTS == 32
     assert "MAX_ENTERPRISE_ISSUE_CALIBRATION_REPORTS" in enterprise.__all__
     assert "fit_enterprise_issue_facets_calibration_reports" in enterprise.__all__
     assert fit_enterprise_issue_facets_calibration_reports.__doc__
@@ -209,13 +210,15 @@ def test_execution_order_does_not_change_report_identity(
     )
 
 
-def test_actual_rust_fit_produces_one_canonical_report_per_criterion() -> None:
-    """The realistic connected fixture crosses the actual Rust-backed fit path."""
+def test_actual_rust_fit_produces_one_canonical_report_per_criterion(
+    tmp_path: Path,
+) -> None:
+    """A capped Rust fit retains and renders its terminal likelihood evidence."""
     reports = fit_enterprise_issue_facets_calibration_reports(
         _connected_executions(),
         report_id_prefix="enterprise_calibration",
         q_theta=7,
-        max_iter=8,
+        max_iter=1,
         tol=1e-4,
     )
 
@@ -226,6 +229,15 @@ def test_actual_rust_fit_produces_one_canonical_report_per_criterion() -> None:
     assert all(len(report.rater_engine_fingerprints) == 2 for report in reports)
     assert all(report.design_connected for report in reports)
     assert all(report.fit_connected for report in reports)
+    assert all(report.converged is False for report in reports)
+    assert all(len(report.loglik_trace) == report.n_iter + 1 for report in reports)
+    assert all(
+        "calibration_not_converged" in report.review_trigger_ids for report in reports
+    )
+    for index, report in enumerate(reports):
+        output = tmp_path / f"enterprise_calibration_{index}.html"
+        render_essay_facets_calibration_report_html(report, output)
+        assert output.is_file()
 
 
 def test_invalid_prefix_and_reserved_metadata_fail_before_fitting(

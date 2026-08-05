@@ -18,3 +18,6 @@
 - Added a realistic connected two-issue, two-task-revision, two-rater-family,
   two-criterion Rust fit, complete orchestration and privacy tests, public
   documentation, and APA 7th scientific and governance traceability.
+- Aligned shared report and HTML replay validation with the Rust estimator's
+  nonconverged trace contract: `n_iter` optimization iterations may be followed
+  by one retained terminal post-update likelihood evaluation.

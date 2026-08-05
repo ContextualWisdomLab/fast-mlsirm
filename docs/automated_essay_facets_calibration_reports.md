@@ -26,11 +26,13 @@ Report construction rejects:
 - non-vector, empty, non-finite, or axis-misaligned estimator output;
 - a threshold count that differs from the ordered category scale;
 - a material decrease in the reported EM log-likelihood trace;
-- an iteration count that differs from the trace length;
+- a trace length other than `n_iter`, or `n_iter + 1` only when a
+  nonconverged Rust fit records its terminal post-update evaluation;
 - a parameter count that differs from the Rust model contract;
 - connectedness that differs between the source design and returned fit.
 
-The standalone HTML renderer repeats the numeric, axis, identity, parameter-count, iteration, monotonic-trace, and connectedness checks before serialization. This guards against post-construction mutation or malformed deserialization. These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
+The standalone HTML renderer repeats the numeric, axis, identity, parameter-count, iteration, monotonic-trace, and connectedness checks before serialization. A nonconverged Rust fit may retain one terminal post-update likelihood after its `n_iter` EM iterations; that extra value is evidence, not an additional optimization iteration. This guards against post-construction mutation or malformed deserialization.
+These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
 
 ## Human-review routing
 

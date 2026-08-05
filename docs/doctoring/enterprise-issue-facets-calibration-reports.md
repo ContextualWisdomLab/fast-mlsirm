@@ -48,11 +48,12 @@ fairness, rater interchangeability, predictive validity, model adequacy, or
 high-stakes readiness.
 
 A realistic connected fixture crosses the actual Rust-backed fitting path, while
-deterministic fixture fits verify exact orchestration and metadata behavior. The
-suite also proves execution-order invariance, one-time trigger normalization,
+deterministic fixture fits verify exact orchestration and metadata behavior.
+The suite also proves execution-order invariance, one-time trigger normalization,
 batch rejection of invalid derived report identities before fitting,
-reserved-metadata rejection, and absence of raw source and issue text from report
-serialization.
+reserved-metadata rejection, absence of raw source and issue text from report
+serialization, and faithful retention and HTML replay of the Rust estimator's
+nonconverged terminal post-update likelihood evaluation.
 
 ## AI governance boundary
 
