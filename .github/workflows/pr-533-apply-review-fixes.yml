@@ -32,6 +32,7 @@ jobs:
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           implementation = Path(
               "python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py"
@@ -72,49 +73,51 @@ jobs:
           marker = "def test_payload_validation_short_circuit_branches_fail_closed"
           if marker in test_text:
               raise SystemExit("targeted payload branch test already exists")
-          branch_test = r'''
+          branch_test = dedent(
+              '''
 
 
-@pytest.mark.parametrize(
-    ("kind", "payload", "expected_code"),
-    (
-        (
-            ExplicitValueKind.CALENDAR_DATE,
-            {"calendar_date": "2026-09-30", "unexpected_field": 1},
-            "invalid_normalized_payload",
-        ),
-        (
-            ExplicitValueKind.MONEY_AMOUNT,
-            {},
-            "invalid_normalized_payload",
-        ),
-        (
-            ExplicitValueKind.MONEY_AMOUNT,
-            {"currency_code": 1, "decimal_amount": "1"},
-            "invalid_normalized_payload",
-        ),
-        (
-            ExplicitValueKind.FREQUENCY_COUNT,
-            {},
-            "invalid_normalized_payload",
-        ),
-        (
-            ExplicitValueKind.FREQUENCY_COUNT,
-            {"frequency_count": "1", "frequency_period": "month"},
-            "invalid_normalized_payload",
-        ),
-    ),
-)
-def test_payload_validation_short_circuit_branches_fail_closed(
-    kind: ExplicitValueKind,
-    payload: dict[str, Any],
-    expected_code: str,
-) -> None:
-    """Every payload guard rejects malformed mappings through its stable code."""
-    with pytest.raises(AssessmentSpecError) as captured:
-        _record(kind, payload=payload)
-    assert captured.value.code == expected_code
-'''
+              @pytest.mark.parametrize(
+                  ("kind", "payload", "expected_code"),
+                  (
+                      (
+                          ExplicitValueKind.CALENDAR_DATE,
+                          {"calendar_date": "2026-09-30", "unexpected_field": 1},
+                          "invalid_normalized_payload",
+                      ),
+                      (
+                          ExplicitValueKind.MONEY_AMOUNT,
+                          {},
+                          "invalid_normalized_payload",
+                      ),
+                      (
+                          ExplicitValueKind.MONEY_AMOUNT,
+                          {"currency_code": 1, "decimal_amount": "1"},
+                          "invalid_normalized_payload",
+                      ),
+                      (
+                          ExplicitValueKind.FREQUENCY_COUNT,
+                          {},
+                          "invalid_normalized_payload",
+                      ),
+                      (
+                          ExplicitValueKind.FREQUENCY_COUNT,
+                          {"frequency_count": "1", "frequency_period": "month"},
+                          "invalid_normalized_payload",
+                      ),
+                  ),
+              )
+              def test_payload_validation_short_circuit_branches_fail_closed(
+                  kind: ExplicitValueKind,
+                  payload: dict[str, Any],
+                  expected_code: str,
+              ) -> None:
+                  """Every payload guard rejects malformed mappings through its stable code."""
+                  with pytest.raises(AssessmentSpecError) as captured:
+                      _record(kind, payload=payload)
+                  assert captured.value.code == expected_code
+              '''
+          )
           tests.write_text(test_text.rstrip() + branch_test + "\n", encoding="utf-8")
 
           changelog = Path("CHANGELOG.md")
