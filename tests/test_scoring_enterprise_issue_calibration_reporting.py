@@ -9,8 +9,8 @@ import pytest
 
 from enterprise_issue_calibration_fixtures import _digest, _execution
 from fast_mlsirm.facets import FacetsFit
-from fast_mlsirm.scoring import (
-    AssessmentSpecError,
+from fast_mlsirm.scoring import AssessmentSpecError
+from fast_mlsirm.scoring.calibration_reporting import (
     ScoringFacetsCalibrationReport,
     build_scoring_facets_calibration_report,
 )
