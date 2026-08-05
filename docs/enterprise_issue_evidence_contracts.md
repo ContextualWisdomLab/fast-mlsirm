@@ -3,17 +3,18 @@
 `fast_mlsirm.scoring.enterprise_issue` provides the first provider-neutral domain
 boundary for issue #404. The module stores content identities, exact source-span
 offsets, epistemic roles, stakeholder perspectives, candidate-intervention
-provenance, deterministic explicit values, criterion-level request provenance,
-and governed criterion observations without retaining raw enterprise text.
+provenance, deterministic explicit values, semantic issue proposals,
+criterion-level request provenance, and governed criterion observations without
+retaining raw enterprise text.
 
 ## Contract boundary
 
-The initial slice deliberately separates five assertion kinds:
+The domain deliberately separates five assertion kinds:
 
 - directly stated facts;
 - supported inferences;
 - counterevidence;
-- unresolved ambiguities;
+- unresolved ambiguities; and
 - stakeholder value judgments.
 
 `EvidenceSpanRecord.to_evidence_reference()` compiles each span into the existing
@@ -22,11 +23,11 @@ supporting evidence, counterevidence maps to counter evidence, and ambiguities o
 value judgments map to contextual evidence. This mapping does not convert an
 inference into a fact or a preference into a materiality estimate.
 
-The canonical records contain no source text, complaint text, lead notes,
-customer names, or proposed-action text. Callers retain those values in an
-authorized source system and pass SHA-256 content fingerprints plus offsets.
-Sensitive metadata fields already prohibited by the shared scoring contract are
-rejected here as well.
+Canonical records contain no source text, complaint text, lead notes, customer
+names, or proposed-action text. Callers retain those values in an authorized
+source system and pass SHA-256 content fingerprints plus offsets. Sensitive
+metadata fields already prohibited by the shared scoring contract are rejected
+here as well.
 
 ## Deterministic explicit-value parser
 
@@ -40,7 +41,7 @@ that are already explicit in authorized source text. Its first grammar recognize
 - positive recurrence counts per day, week, month, quarter, or year; and
 - customer or account identifiers introduced by an explicit identifier label.
 
-The parser verifies the transient text against the exact
+The parser verifies transient text against the exact
 `EnterpriseSourceRecord.source_content_fingerprint` and Python string character
 count before extraction. Match offsets are Python Unicode-code-point indices,
 which are appropriate for replaying slices of the same Python `str`; they are not
@@ -73,11 +74,44 @@ probable, decision-relevant, or causally related to an outcome.
 
 The parser is deliberately not a semantic issue extractor. It performs no
 sentiment analysis, inference, scoring, calibration, ranking, utility arithmetic,
-causal estimation, or queue routing. Semantic assertions remain behind a separate
-provider-neutral, human-validated boundary. Custom parser output is bounded,
+causal estimation, or queue routing. Custom parser output is bounded,
 canonicalized, and rebound to the exact verified source revision and span bytes
 before it can cross the public API. Arbitrary provider exceptions are redacted.
 Explicit-value caller metadata is restricted to the declared offset unit.
+
+## Semantic issue extraction boundary
+
+`extract_enterprise_atomic_issues()` is the provider-neutral trust boundary for
+semantic issue proposals. It accepts exact source records, transient source text,
+and an `EnterpriseAtomicIssueExtractor`, then returns only fresh canonical
+`AtomicIssueRecord` values. The package imports no provider SDK and provides no
+default production semantic model.
+
+Before a provider runs, the boundary consumes source records with a fixed cap,
+reconstructs exact source contracts, rejects duplicate source identities, requires
+an exact source-text dictionary, and replays every Python character count and
+SHA-256 fingerprint over valid UTF-8. Providers receive deterministic source
+record order and a read-only transient text mapping. Every provider exception,
+including package-domain exceptions, is replaced with a fixed redacted boundary
+error.
+
+Provider output must be an exact bounded tuple of exact `AtomicIssueRecord`
+values. Each issue, evidence span, and counterevidence record is reconstructed as
+a fresh canonical instance. Every source ID and source-record fingerprint must
+name the same verified packet revision, and every span must replay its exact
+code-point offsets and SHA-256 fingerprint over the corresponding UTF-8 slice.
+Nested subclasses, malformed or mutated records, overlapping spans, duplicate
+issues, duplicate logical issue IDs, and duplicate family/content revisions fail
+closed. Returned issues use deterministic content order and retain no raw text.
+
+`StaticEnterpriseIssueExtractor` is an offline fixture and integration adapter. It
+returns only caller-declared issue records and performs no NLP, sentiment
+analysis, inference, generation, ranking, or automatic issue discovery. Adding
+sentiment-only text cannot create an issue in this path. Acceptance proves only
+that a provider proposed one replayable canonical structure, not that the issue
+is true, complete, material, probable, fair, construct-valid, or operationally
+useful. Human validation and held-out provider evaluation remain prerequisites
+for product claims.
 
 ## Replay and provenance
 
@@ -116,7 +150,7 @@ and auditability but is not itself evidence that a claim is accurate or strong.
 
 Stakeholder perspectives and candidate interventions must name the exact issue
 content revision. Perspective evidence must also reference a source revision
-already declared by the issue. Caller metadata cannot overwrite the managed
+already declared by the issue. Caller metadata cannot overwrite managed
 enterprise provenance fields.
 
 This compiler performs deterministic validation and marshaling only. Existing
@@ -137,7 +171,7 @@ the issue declares counterevidence, the observation must also retain at least on
 counterevidence reference rather than silently omitting contradictory evidence.
 An engine that cannot satisfy those conditions must abstain with a stable reason
 code. Abstention may retain no evidence and is not converted into a low score.
-Caller confidence metadata cannot overwrite the managed enterprise provenance.
+Caller confidence metadata cannot overwrite managed enterprise provenance.
 
 The adapter does not calculate a rating or confidence value. Score categories,
 criterion coverage, terminal-state semantics, engine identity, assessment and
@@ -149,8 +183,8 @@ is accurate, reliable, fair, valid, calibrated, or decision-ready.
 
 These contracts improve traceability and replay resistance; they do not establish
 construct validity, evidence truth, causal identification, model fairness, or
-high-stakes deployment readiness. The request and observation compilers perform
-no sentiment analysis, latent measurement, calibration, comparative ranking,
+high-stakes deployment readiness. The extraction, request, and observation
+adapters perform no latent measurement, calibration, comparative ranking,
 expected utility, value-of-information, intervention-effect, or queue-routing
 arithmetic.
 
@@ -164,9 +198,9 @@ legal rights, or material consequences are in dispute. A candidate intervention
 is a caller-supplied hypothesis, not evidence of an identified causal effect.
 
 ISO/IEC 42001:2023 remains published as Edition 1. ISO 8601-1:2019 and ISO
-4217:2015 are the published standards used to describe the accepted date and
+4217:2015 are the published standards used to describe accepted date and
 currency-code forms; later amendments, maintenance updates, or replacement
-editions must be evaluated before changing the parser grammar or allowlists. NIST
+editions must be evaluated before changing parser grammar or allowlists. NIST
 reports that AI RMF 1.0 is under revision as of August 2026, so this module cites
 the current published framework without assuming that its terminology or
 profiles are frozen.
@@ -195,7 +229,7 @@ risk management framework (AI RMF 1.0)* (NIST AI 100-1).
 https://doi.org/10.6028/NIST.AI.100-1
 
 Python Software Foundation. (2025). *Python 3.13 standard library: `datetime`,
-`decimal`, `hashlib`, `re`, and `typing`*. https://docs.python.org/3.13/
+`hashlib`, `types`, and `typing`*. https://docs.python.org/3.13/
 
 The Unicode Consortium. (2025). *Unicode text segmentation* (Unicode Standard
 Annex No. 29, Revision 47). https://www.unicode.org/reports/tr29/
