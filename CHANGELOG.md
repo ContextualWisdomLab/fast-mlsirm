@@ -189,14 +189,6 @@
 - Criterion-level many-facet handoffs now use exact task revisions as the Rust estimator item axis while retaining aligned logical task and task-family labels for audit. Duplicate cells, support, resource bounds, respondent–item connectedness, item–rater connectedness, and response provenance are all revision-indexed; one revision cannot be rebound to a different logical task or family.
 - Added an explicit, fail-closed schema-`1.0` request migration that verifies canonical content, fingerprint, public handle, and the authoritative engine-policy projection; requires a caller-supplied task revision; preserves normalized caller metadata; and intentionally does not migrate legacy observations or results. Content identity prevents accidental pooling but does not establish cross-revision comparability, which still requires anchors, invariance/DIF, drift, and recovery evidence.
 
-### Fixed
-
-#### Diagnostics-report focus and contrast preservation
-
-- Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
-- Removed opacity-based dimming of non-hovered chart and table rows so unrelated active data retains its normal rendered foreground and background colors.
-- Added public-renderer regression coverage and APA 7th doctoring grounded in WCAG 2.2 and Selectors Level 4 without making a formal conformance claim.
-
 ### Security
 
 #### Descriptor-safe bounded JSON input for automation scripts
