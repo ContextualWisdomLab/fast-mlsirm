@@ -28,6 +28,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import textwrap
 
           implementation = Path("python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py")
           text = implementation.read_text(encoding="utf-8")
@@ -41,29 +42,33 @@ jobs:
           if before not in text:
               raise SystemExit("record type validation point not found")
           text = text.replace(before, after, 1)
-          before = '''    try:
-              values = resolved.parse(source_record, source_text)
-          except AssessmentSpecError:
-              raise
-          except Exception:
-              raise assessment_error(
-                  "explicit_value_parser_failure",
-                  "$.parser",
-                  "parser failed before returning validated explicit values",
-              ) from None
-          return _validated_parser_output(source_record, source_text, values)'''
-          after = '''    if parser is None:
-              values = resolved.parse(source_record, source_text)
-          else:
+          before = textwrap.dedent('''
               try:
                   values = resolved.parse(source_record, source_text)
+              except AssessmentSpecError:
+                  raise
               except Exception:
                   raise assessment_error(
                       "explicit_value_parser_failure",
                       "$.parser",
                       "parser failed before returning validated explicit values",
                   ) from None
-          return _validated_parser_output(source_record, source_text, values)'''
+              return _validated_parser_output(source_record, source_text, values)
+          ''').strip()
+          after = textwrap.dedent('''
+              if parser is None:
+                  values = resolved.parse(source_record, source_text)
+              else:
+                  try:
+                      values = resolved.parse(source_record, source_text)
+                  except Exception:
+                      raise assessment_error(
+                          "explicit_value_parser_failure",
+                          "$.parser",
+                          "parser failed before returning validated explicit values",
+                      ) from None
+              return _validated_parser_output(source_record, source_text, values)
+          ''').strip()
           if before not in text:
               raise SystemExit("provider exception boundary not found")
           text = text.replace(before, after, 1)
@@ -72,88 +77,75 @@ jobs:
 
           tests = Path("tests/test_scoring_enterprise_explicit_values.py")
           test_text = tests.read_text(encoding="utf-8")
-          marker = '''    invalid_outputs = (
-              (list(records), "invalid_explicit_value_parser_output"),
-              ((object(),), "invalid_explicit_value_parser_output"),'''
-          replacement = '''    class ExplicitValueSubclass(ExplicitValueRecord):
-              """Adversarial subclass rejected at the provider trust boundary."""
+          marker = textwrap.dedent('''
+                  invalid_outputs = (
+                      (list(records), "invalid_explicit_value_parser_output"),
+                      ((object(),), "invalid_explicit_value_parser_output"),
+          ''').strip("\n")
+          replacement = textwrap.dedent('''
+                  class ExplicitValueSubclass(ExplicitValueRecord):
+                      """Adversarial subclass rejected at the provider trust boundary."""
 
-          subclass_record = ExplicitValueSubclass(
-              source_id=records[0].source_id,
-              source_record_fingerprint=records[0].source_record_fingerprint,
-              span_content_fingerprint=records[0].span_content_fingerprint,
-              start_offset=records[0].start_offset,
-              end_offset=records[0].end_offset,
-              value_kind=records[0].value_kind,
-              normalized_payload=records[0].to_dict()["normalized_payload"],
-              parser_revision_fingerprint=records[0].parser_revision_fingerprint,
-              metadata=records[0].to_dict()["metadata"],
-              schema_version=records[0].schema_version,
-          )
+                  subclass_record = ExplicitValueSubclass(
+                      source_id=records[0].source_id,
+                      source_record_fingerprint=records[0].source_record_fingerprint,
+                      span_content_fingerprint=records[0].span_content_fingerprint,
+                      start_offset=records[0].start_offset,
+                      end_offset=records[0].end_offset,
+                      value_kind=records[0].value_kind,
+                      normalized_payload=records[0].to_dict()["normalized_payload"],
+                      parser_revision_fingerprint=records[0].parser_revision_fingerprint,
+                      metadata=records[0].to_dict()["metadata"],
+                      schema_version=records[0].schema_version,
+                  )
 
-          invalid_outputs = (
-              (list(records), "invalid_explicit_value_parser_output"),
-              ((object(),), "invalid_explicit_value_parser_output"),
-              ((subclass_record,), "invalid_explicit_value_parser_output"),'''
+                  invalid_outputs = (
+                      (list(records), "invalid_explicit_value_parser_output"),
+                      ((object(),), "invalid_explicit_value_parser_output"),
+                      ((subclass_record,), "invalid_explicit_value_parser_output"),
+          ''').strip("\n")
           if marker not in test_text:
               raise SystemExit("invalid output cases insertion point not found")
           test_text = test_text.replace(marker, replacement, 1)
 
-          marker = '''    assert "private provider detail" not in str(captured.value)
+          marker = textwrap.dedent('''
+                  assert "private provider detail" not in str(captured.value)
 
 
-          @pytest.mark.parametrize('''
-          addition = '''    assert "private provider detail" not in str(captured.value)
+              @pytest.mark.parametrize(
+          ''').strip("\n")
+          addition = textwrap.dedent('''
+                  assert "private provider detail" not in str(captured.value)
 
-              class DomainFailingParser:
-                  """Raise a structured domain exception containing private detail."""
+                  class DomainFailingParser:
+                      """Raise a structured domain exception containing private detail."""
 
-                  def parse(
-                      self,
-                      source_record: EnterpriseSourceRecord,
-                      source_text: str,
-                  ) -> tuple[ExplicitValueRecord, ...]:
-                      """Raise one untrusted structured provider failure."""
-                      raise parser_module.assessment_error(
-                          "provider_private_error",
-                          "$.provider",
-                          "private structured provider detail",
+                      def parse(
+                          self,
+                          source_record: EnterpriseSourceRecord,
+                          source_text: str,
+                      ) -> tuple[ExplicitValueRecord, ...]:
+                          """Raise one untrusted structured provider failure."""
+                          raise parser_module.assessment_error(
+                              "provider_private_error",
+                              "$.provider",
+                              "private structured provider detail",
+                          )
+
+                  with pytest.raises(
+                      AssessmentSpecError,
+                      match="explicit_value_parser_failure",
+                  ) as domain_captured:
+                      parse_enterprise_explicit_values(
+                          source,
+                          text,
+                          parser=DomainFailingParser(),
                       )
-
-              with pytest.raises(
-                  AssessmentSpecError,
-                  match="explicit_value_parser_failure",
-              ) as domain_captured:
-                  parse_enterprise_explicit_values(
-                      source,
-                      text,
-                      parser=DomainFailingParser(),
-                  )
-              assert "private structured provider detail" not in str(domain_captured.value)
+                  assert "private structured provider detail" not in str(domain_captured.value)
 
 
-          @pytest.mark.parametrize('''
-          addition = addition.replace("\n            class DomainFailingParser", "\n    class DomainFailingParser")
-          addition = addition.replace("\n                \"\"\"Raise a structured", "\n        \"\"\"Raise a structured")
-          addition = addition.replace("\n                def parse(", "\n        def parse(")
-          addition = addition.replace("\n                    self,", "\n            self,")
-          addition = addition.replace("\n                    source_record:", "\n            source_record:")
-          addition = addition.replace("\n                    source_text:", "\n            source_text:")
-          addition = addition.replace("\n                ) -> tuple", "\n        ) -> tuple")
-          addition = addition.replace("\n                    \"\"\"Raise one", "\n            \"\"\"Raise one")
-          addition = addition.replace("\n                    raise parser_module", "\n            raise parser_module")
-          addition = addition.replace("\n                        \"provider_private_error\"", "\n                \"provider_private_error\"")
-          addition = addition.replace("\n                        \"$.provider\"", "\n                \"$.provider\"")
-          addition = addition.replace("\n                        \"private structured provider detail\"", "\n                \"private structured provider detail\"")
-          addition = addition.replace("\n                    )\n\n            with pytest.raises", "\n            )\n\n    with pytest.raises")
-          addition = addition.replace("\n                AssessmentSpecError,", "\n        AssessmentSpecError,")
-          addition = addition.replace("\n                match=", "\n        match=")
-          addition = addition.replace("\n            ) as domain_captured:", "\n    ) as domain_captured:")
-          addition = addition.replace("\n                parse_enterprise", "\n        parse_enterprise")
-          addition = addition.replace("\n                    source,", "\n            source,")
-          addition = addition.replace("\n                    text,", "\n            text,")
-          addition = addition.replace("\n                    parser=", "\n            parser=")
-          addition = addition.replace("\n                )\n            assert", "\n        )\n    assert")
+              @pytest.mark.parametrize(
+          ''').strip("\n")
           if marker not in test_text:
               raise SystemExit("provider exception test insertion point not found")
           test_text = test_text.replace(marker, addition, 1)
