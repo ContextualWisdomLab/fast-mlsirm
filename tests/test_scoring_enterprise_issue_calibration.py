@@ -2,302 +2,50 @@
 
 from __future__ import annotations
 
-import hashlib
-from pathlib import Path
-import runpy
 from typing import Any
 
 import pytest
 
 import fast_mlsirm.scoring.enterprise_issue as enterprise
 import fast_mlsirm.scoring.enterprise_issue.calibration as calibration_module
+from enterprise_issue_calibration_fixtures import (
+    CRITERION_IDS,
+    _digest,
+    _engine,
+    _execution,
+    _issue,
+    _managed_observation_metadata,
+    _rebuild_request,
+    _request,
+    _result,
+    _result_with_replacement,
+)
 from fast_mlsirm.scoring import (
     AssessmentSpecError,
-    EngineDescriptor,
     EvidenceReference,
     EvidenceRole,
     ObservationStatus,
-    ScoringRequest,
-    ScoringResult,
     build_score_observation,
     build_scoring_facets_calibration_bundle,
-    build_scoring_request,
-    build_scoring_result,
 )
 from fast_mlsirm.scoring.enterprise_issue import (
-    AtomicIssueRecord,
-    CounterevidenceRecord,
-    EnterpriseAssertionKind,
-    EnterpriseSourceRecord,
-    EvidenceSpanRecord,
     build_enterprise_issue_facets_rating_records,
-    build_enterprise_issue_score_observation,
-    build_enterprise_issue_scoring_request,
     enterprise_issue_evidence_references,
 )
 
-_FIXTURES = runpy.run_path(
-    str(Path(__file__).with_name("scoring_execution_fixtures.py"))
-)
-assessment = _FIXTURES["assessment"]
-rubric = _FIXTURES["rubric"]
-automated_engine = _FIXTURES["automated_engine"]
 
-CRITERION_IDS = ("claim_support", "source_alignment")
-_AUTHORIZATION_METADATA_KEYS = frozenset(
-    {
-        "engine_policy_fingerprint",
-        "allow_human_raters",
-        "allow_automated_raters",
-        "permitted_engine_ids",
-    }
-)
-
-
-def _digest(value: str) -> str:
-    """Return one deterministic SHA-256 fixture fingerprint."""
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def _issue(
-    label: str,
+def _assert_error(
+    code: str,
+    callback,
     *,
-    include_counterevidence: bool = False,
-) -> AtomicIssueRecord:
-    """Return one source-text-free issue revision for calibration tests."""
-    issue_content_fingerprint = _digest(f"issue-content:{label}")
-    source = EnterpriseSourceRecord(
-        source_id=f"source_{label}",
-        source_family_id="enterprise_source",
-        source_content_fingerprint=_digest(f"source-content:{label}"),
-        source_character_count=240,
-        metadata={"source_channel": "offline_fixture"},
-    )
-    supporting = EvidenceSpanRecord(
-        source_id=source.source_id,
-        source_record_fingerprint=source.source_record_fingerprint,
-        span_id=f"supporting_{label}",
-        span_content_fingerprint=_digest(f"supporting-span:{label}"),
-        assertion_kind=EnterpriseAssertionKind.DIRECT_FACT,
-        start_offset=10,
-        end_offset=30,
-        metadata={"fixture_kind": "supporting_evidence"},
-    )
-    counterevidence_records: tuple[CounterevidenceRecord, ...] = ()
-    if include_counterevidence:
-        counter_span = EvidenceSpanRecord(
-            source_id=source.source_id,
-            source_record_fingerprint=source.source_record_fingerprint,
-            span_id=f"counter_{label}",
-            span_content_fingerprint=_digest(f"counter-span:{label}"),
-            assertion_kind=EnterpriseAssertionKind.COUNTEREVIDENCE,
-            start_offset=40,
-            end_offset=60,
-            metadata={"fixture_kind": "counter_evidence"},
-        )
-        counterevidence_records = (
-            CounterevidenceRecord(
-                counterevidence_id=f"counter_record_{label}",
-                issue_content_fingerprint=issue_content_fingerprint,
-                evidence_span=counter_span,
-                metadata={"verification_state": "source_verified"},
-            ),
-        )
-    return AtomicIssueRecord(
-        issue_id=f"issue_{label}",
-        issue_family_id="service_risk",
-        issue_content_fingerprint=issue_content_fingerprint,
-        source_record_fingerprints=(source.source_record_fingerprint,),
-        evidence_spans=(supporting,),
-        counterevidence_records=counterevidence_records,
-        metadata={"decision_scope": "offline_pilot"},
-    )
-
-
-def _engine(label: str) -> EngineDescriptor:
-    """Return one deterministic automated judge identity."""
-    engine_id = "alternate_engine" if label == "beta" else "fixture_engine"
-    return automated_engine(
-        engine_id=engine_id,
-        engine_family_id=f"engine_family_{label}",
-        model_id=f"model_{label}",
-        prompt_template_fingerprint=_digest(f"prompt:{label}"),
-    )
-
-
-def _request(
-    issue: AtomicIssueRecord,
-    *,
-    task_label: str,
-    engine_label: str,
-) -> ScoringRequest:
-    """Return one exact enterprise criterion-level request."""
-    return build_enterprise_issue_scoring_request(
-        request_id=f"request_{issue.issue_id}_{task_label}_{engine_label}",
-        assessment=assessment(),
-        rubric=rubric(),
-        issue=issue,
-        response_id=f"response_{issue.issue_id}_{task_label}",
-        task_id=f"task_{task_label}",
-        task_revision_fingerprint=_digest(f"task-revision:{task_label}"),
-        task_family_id="evidence_review",
-        occasion_id="pilot_occasion",
-        criterion_ids=CRITERION_IDS,
-        response_character_count=160,
-        response_unit_count=8,
-        metadata={"deployment_stage": "offline_fixture"},
-    )
-
-
-def _enterprise_observations(
-    *,
-    issue: AtomicIssueRecord,
-    request: ScoringRequest,
-    engine: EngineDescriptor,
-    scores: tuple[int, int],
-    abstain_first: bool = False,
-):
-    """Return complete enterprise observations for one request."""
-    references = enterprise_issue_evidence_references(issue)
-    observations = []
-    for index, (criterion_id, score) in enumerate(
-        zip(CRITERION_IDS, scores, strict=True)
-    ):
-        abstained = abstain_first and index == 0
-        observations.append(
-            build_enterprise_issue_score_observation(
-                observation_id=(
-                    f"observation_{issue.issue_id}_{request.task_id}_"
-                    f"{engine.engine_id}_{criterion_id}"
-                ),
-                request=request,
-                engine=engine,
-                criterion_id=criterion_id,
-                status=(
-                    ObservationStatus.ABSTAINED
-                    if abstained
-                    else ObservationStatus.SCORED
-                ),
-                score_category=None if abstained else score,
-                reason_code="insufficient_evidence" if abstained else None,
-                evidence_references=() if abstained else references,
-                confidence_metadata={"review_state": "fixture_complete"},
-            )
-        )
-    return tuple(observations)
-
-
-def _result(
-    *,
-    issue: AtomicIssueRecord,
-    request: ScoringRequest,
-    engine: EngineDescriptor,
-    scores: tuple[int, int],
-    abstain_first: bool = False,
-) -> ScoringResult:
-    """Return one complete governed enterprise result."""
-    return build_scoring_result(
-        result_id=f"result_{request.request_id}_{engine.engine_id}",
-        request=request,
-        engine=engine,
-        observations=_enterprise_observations(
-            issue=issue,
-            request=request,
-            engine=engine,
-            scores=scores,
-            abstain_first=abstain_first,
-        ),
-        execution_attempt=1,
-        diagnostics={"execution_mode": "offline_fixture"},
-    )
-
-
-def _execution(
-    *,
-    issue_label: str,
-    task_label: str,
-    engine_label: str,
-    scores: tuple[int, int],
-):
-    """Return one matched issue, request, result, and engine execution."""
-    issue = _issue(issue_label)
-    engine = _engine(engine_label)
-    request = _request(
-        issue,
-        task_label=task_label,
-        engine_label=engine_label,
-    )
-    result = _result(
-        issue=issue,
-        request=request,
-        engine=engine,
-        scores=scores,
-    )
-    return issue, request, result, engine
-
-
-def _assert_error(code: str, callback) -> None:
-    """Assert one stable governed scoring error code."""
+    path: str | None = None,
+) -> None:
+    """Assert one stable governed scoring error code and optional path."""
     with pytest.raises(AssessmentSpecError) as captured:
         callback()
     assert captured.value.code == code
-
-
-def _rebuild_request(
-    request: ScoringRequest,
-    **overrides: Any,
-) -> ScoringRequest:
-    """Rebuild one request through the shared factory for adversarial replay."""
-    values: dict[str, Any] = {
-        "request_id": request.request_id,
-        "assessment": assessment(),
-        "rubric": rubric(),
-        "granularity": request.granularity,
-        "respondent_id": request.respondent_id,
-        "response_id": request.response_id,
-        "task_id": request.task_id,
-        "task_revision_fingerprint": request.task_revision_fingerprint,
-        "task_family_id": request.task_family_id,
-        "occasion_id": request.occasion_id,
-        "criterion_ids": request.criterion_ids,
-        "response_content_fingerprint": request.response_content_fingerprint,
-        "response_character_count": request.response_character_count,
-        "response_unit_count": request.response_unit_count,
-        "metadata": request.to_dict()["metadata"],
-    }
-    values.update(overrides)
-    metadata = dict(values["metadata"])
-    for key in _AUTHORIZATION_METADATA_KEYS:
-        metadata.pop(key, None)
-    values["metadata"] = metadata
-    return build_scoring_request(**values)
-
-
-def _result_with_replacement(
-    *,
-    issue: AtomicIssueRecord,
-    request: ScoringRequest,
-    engine: EngineDescriptor,
-    replacement,
-) -> ScoringResult:
-    """Replace the claim observation while retaining complete result coverage."""
-    observations = list(
-        _enterprise_observations(
-            issue=issue,
-            request=request,
-            engine=engine,
-            scores=(1, 2),
-        )
-    )
-    observations[0] = replacement
-    return build_scoring_result(
-        result_id=f"result_replaced_{request.task_id}_{engine.engine_id}",
-        request=request,
-        engine=engine,
-        observations=observations,
-        execution_attempt=1,
-        diagnostics={},
-    )
+    if path is not None:
+        assert captured.value.path == path
 
 
 def test_public_surface_and_shared_bundle_preserve_exact_enterprise_identity() -> None:
@@ -356,7 +104,11 @@ def test_public_surface_and_shared_bundle_preserve_exact_enterprise_identity() -
         _digest("issue-content:alpha"),
         _digest("issue-content:beta"),
     }
-    assert "source text" not in repr(bundle.to_dict()).lower()
+    serialized = repr(bundle.to_dict())
+    for issue_label in ("alpha", "beta"):
+        assert _digest(f"source-content:{issue_label}") not in serialized
+        assert f"source_{issue_label}" not in serialized
+    assert "offline_fixture" not in serialized
 
 
 def test_execution_order_does_not_change_shared_bundle_identity() -> None:
@@ -541,6 +293,14 @@ def test_undeclared_observation_evidence_fails_replay() -> None:
         engine_label="alpha",
         scores=(0, 1),
     )
+    references = (
+        EvidenceReference(
+            source_id="unknown_source",
+            span_id="unknown_span",
+            content_fingerprint=_digest("unknown-evidence"),
+            evidence_role=EvidenceRole.SUPPORTING,
+        ),
+    )
     replacement = build_score_observation(
         observation_id="replacement_unknown_evidence",
         request=request,
@@ -548,15 +308,8 @@ def test_undeclared_observation_evidence_fails_replay() -> None:
         criterion_id="claim_support",
         status=ObservationStatus.SCORED,
         score_category=1,
-        evidence_references=(
-            EvidenceReference(
-                source_id="unknown_source",
-                span_id="unknown_span",
-                content_fingerprint=_digest("unknown-evidence"),
-                evidence_role=EvidenceRole.SUPPORTING,
-            ),
-        ),
-        confidence_metadata={},
+        evidence_references=references,
+        confidence_metadata=_managed_observation_metadata(issue, references),
     )
     changed_result = _result_with_replacement(
         issue=issue,
@@ -572,6 +325,7 @@ def test_undeclared_observation_evidence_fails_replay() -> None:
             result=changed_result,
             engine=engine,
         ),
+        path="$.result.observations[0].evidence_references",
     )
 
 
@@ -583,6 +337,7 @@ def test_non_abstained_observation_requires_supporting_evidence() -> None:
         engine_label="alpha",
         scores=(0, 1),
     )
+    references = ()
     replacement = build_score_observation(
         observation_id="replacement_missing_support",
         request=request,
@@ -590,8 +345,8 @@ def test_non_abstained_observation_requires_supporting_evidence() -> None:
         criterion_id="claim_support",
         status=ObservationStatus.SCORED,
         score_category=1,
-        evidence_references=(),
-        confidence_metadata={},
+        evidence_references=references,
+        confidence_metadata=_managed_observation_metadata(issue, references),
     )
     changed_result = _result_with_replacement(
         issue=issue,
@@ -607,6 +362,7 @@ def test_non_abstained_observation_requires_supporting_evidence() -> None:
             result=changed_result,
             engine=engine,
         ),
+        path="$.result.observations[0].evidence_references",
     )
 
 
@@ -642,7 +398,7 @@ def test_declared_counterevidence_must_survive_calibration_replay() -> None:
         status=ObservationStatus.SCORED,
         score_category=1,
         evidence_references=supporting,
-        confidence_metadata={},
+        confidence_metadata=_managed_observation_metadata(issue, supporting),
     )
     changed_result = _result_with_replacement(
         issue=issue,
@@ -658,6 +414,7 @@ def test_declared_counterevidence_must_survive_calibration_replay() -> None:
             result=changed_result,
             engine=engine,
         ),
+        path="$.result.observations[0].evidence_references",
     )
 
 
@@ -693,6 +450,7 @@ def test_observation_managed_metadata_must_replay_exactly() -> None:
             result=changed_result,
             engine=engine,
         ),
+        path="$.result.observations[0].confidence_metadata",
     )
 
 
