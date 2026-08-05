@@ -220,19 +220,27 @@ def estimate_ability_mle(
     fid, adm, resp = _validate_administration(bank, factor_id, administered, responses)
     n_dims = _bank_dims(bank)
     a = np.asarray(bank.a, dtype=np.float64)
-    theta = np.zeros(n_dims) if start is None else np.array(start, dtype=np.float64).reshape(n_dims)
+    theta = (
+        np.zeros(n_dims)
+        if start is None
+        else np.array(start, dtype=np.float64).reshape(n_dims)
+    )
     dims_present = np.unique(fid[adm]) if adm.size else np.array([], dtype=np.int64)
 
     for _ in range(max_iter):
-        prob = np.clip(predict_proba(_query_params(bank, theta[None, :]), fid, model=model)[0], _PROB_EPS, 1 - _PROB_EPS)
+        prob = np.clip(
+            predict_proba(_query_params(bank, theta[None, :]), fid, model=model)[0],
+            _PROB_EPS,
+            1 - _PROB_EPS,
+        )
         delta_max = 0.0
         for d in dims_present:
             on_d = fid[adm] == d
             sel = adm[on_d]
             a_d = a[sel]
             p_d = prob[sel]
-            score = float(np.sum(a_d * (resp[on_d] - p_d)))
-            info = float(np.sum(a_d * a_d * p_d * (1.0 - p_d)))
+            score = float(np.vdot(a_d, resp[on_d] - p_d))
+            info = float(np.vdot(a_d * a_d, p_d * (1.0 - p_d)))
             if info <= _PROB_EPS:
                 continue
             new = float(np.clip(theta[d] + score / info, -bound, bound))
@@ -243,13 +251,17 @@ def estimate_ability_mle(
 
     se = np.full(n_dims, np.inf)
     finite = np.ones(n_dims, dtype=bool)
-    prob = np.clip(predict_proba(_query_params(bank, theta[None, :]), fid, model=model)[0], _PROB_EPS, 1 - _PROB_EPS)
+    prob = np.clip(
+        predict_proba(_query_params(bank, theta[None, :]), fid, model=model)[0],
+        _PROB_EPS,
+        1 - _PROB_EPS,
+    )
     for d in dims_present:
         on_d = fid[adm] == d
         sel = adm[on_d]
         a_d = a[sel]
         p_d = prob[sel]
-        info = float(np.sum(a_d * a_d * p_d * (1.0 - p_d)))
+        info = float(np.vdot(a_d * a_d, p_d * (1.0 - p_d)))
         if info > _PROB_EPS:
             se[d] = 1.0 / np.sqrt(info)
         u_d = resp[on_d]
@@ -286,8 +298,12 @@ def estimate_ability_eap(
     if not (quad_range > 0):
         raise ValueError("quad_range must be positive")
     n_dims = _bank_dims(bank)
-    pm = np.broadcast_to(np.asarray(prior_mean, dtype=np.float64), (n_dims,)).astype(np.float64)
-    psd = np.broadcast_to(np.asarray(prior_sd, dtype=np.float64), (n_dims,)).astype(np.float64)
+    pm = np.broadcast_to(np.asarray(prior_mean, dtype=np.float64), (n_dims,)).astype(
+        np.float64
+    )
+    psd = np.broadcast_to(np.asarray(prior_sd, dtype=np.float64), (n_dims,)).astype(
+        np.float64
+    )
     if np.any(psd <= 0):
         raise ValueError("prior_sd must be positive")
 
@@ -298,11 +314,19 @@ def estimate_ability_eap(
         nodes = np.linspace(-quad_range, quad_range, int(n_quad)) + pm[d]
         theta_grid = np.repeat(theta[None, :], nodes.size, axis=0)
         theta_grid[:, d] = nodes
-        prob = np.clip(predict_proba(_query_params(bank, theta_grid), fid, model=model), _PROB_EPS, 1 - _PROB_EPS)
+        prob = np.clip(
+            predict_proba(_query_params(bank, theta_grid), fid, model=model),
+            _PROB_EPS,
+            1 - _PROB_EPS,
+        )
         on_d = fid[adm] == d
         sel = adm[on_d]
         u_d = resp[on_d]
-        loglik = np.sum(u_d[None, :] * np.log(prob[:, sel]) + (1.0 - u_d)[None, :] * np.log(1.0 - prob[:, sel]), axis=1)
+        loglik = np.sum(
+            u_d[None, :] * np.log(prob[:, sel])
+            + (1.0 - u_d)[None, :] * np.log(1.0 - prob[:, sel]),
+            axis=1,
+        )
         logprior = -0.5 * ((nodes - pm[d]) / psd[d]) ** 2
         log_post = loglik + logprior
         weights = np.exp(log_post - np.max(log_post))
@@ -310,11 +334,13 @@ def estimate_ability_eap(
         if total <= 0 or not np.isfinite(total):
             continue
         weights /= total
-        mean = float(np.sum(nodes * weights))
-        var = float(np.sum((nodes - mean) ** 2 * weights))
+        mean = float(np.vdot(nodes, weights))
+        var = float(np.vdot((nodes - mean) ** 2, weights))
         theta[d] = mean
         se[d] = float(np.sqrt(max(var, 0.0)))
-    return AbilityEstimate(theta=theta, se=se, method="eap", finite=np.ones(n_dims, dtype=bool))
+    return AbilityEstimate(
+        theta=theta, se=se, method="eap", finite=np.ones(n_dims, dtype=bool)
+    )
 
 
 def ability_standard_error(
@@ -334,7 +360,9 @@ def ability_standard_error(
     """
     n_dims = _bank_dims(bank)
     theta_vec = np.asarray(theta, dtype=np.float64).reshape(n_dims)
-    info = item_information(_query_params(bank, theta_vec[None, :]), factor_id, model=model)
+    info = item_information(
+        _query_params(bank, theta_vec[None, :]), factor_id, model=model
+    )
     fid = validate_factor_id(factor_id, info.size, n_dims)
     if administered is None:
         mask = np.ones(info.size, dtype=bool)
@@ -368,7 +396,9 @@ def select_max_information_item(
     Pashley, 2010).
     """
     theta_vec = np.asarray(theta, dtype=np.float64).reshape(_bank_dims(bank))
-    return select_cat_item(bank, factor_id, theta=theta_vec, administered=administered, model=model)
+    return select_cat_item(
+        bank, factor_id, theta=theta_vec, administered=administered, model=model
+    )
 
 
 def administer_adaptive_test(
@@ -418,8 +448,15 @@ def administer_adaptive_test(
         """Estimate the trait from the current partial administration."""
         if ability_method == "eap":
             return estimate_ability_eap(
-                bank, fid, adm, resp, model=model,
-                prior_mean=prior_mean, prior_sd=prior_sd, n_quad=n_quad, quad_range=quad_range,
+                bank,
+                fid,
+                adm,
+                resp,
+                model=model,
+                prior_mean=prior_mean,
+                prior_sd=prior_sd,
+                n_quad=n_quad,
+                quad_range=quad_range,
             )
         return estimate_ability_mle(bank, fid, adm, resp, model=model)
 
@@ -427,7 +464,9 @@ def administer_adaptive_test(
     responses: list[float] = []
     theta_trace: list[np.ndarray] = []
     se_trace: list[np.ndarray] = []
-    theta = np.broadcast_to(np.asarray(prior_mean, dtype=np.float64), (n_dims,)).astype(np.float64)
+    theta = np.broadcast_to(np.asarray(prior_mean, dtype=np.float64), (n_dims,)).astype(
+        np.float64
+    )
     se = np.full(n_dims, np.inf)
     stop_reason = "max_items"
 
@@ -444,8 +483,12 @@ def administer_adaptive_test(
             stop_reason = "se_threshold"
             break
         item = select_cat_item(
-            bank, fid, theta=theta,
-            administered=np.asarray(administered, dtype=np.int64) if administered else None,
+            bank,
+            fid,
+            theta=theta,
+            administered=np.asarray(administered, dtype=np.int64)
+            if administered
+            else None,
             model=model,
         )
         u = respond(int(item))
@@ -454,7 +497,10 @@ def administer_adaptive_test(
             raise ValueError("respond must return 0 or 1")
         administered.append(int(item))
         responses.append(u)
-        est = _estimate(np.asarray(administered, dtype=np.int64), np.asarray(responses, dtype=np.float64))
+        est = _estimate(
+            np.asarray(administered, dtype=np.int64),
+            np.asarray(responses, dtype=np.float64),
+        )
         theta = est.theta
         se = est.se
         theta_trace.append(theta.copy())
@@ -500,7 +546,11 @@ def simulate_adaptive_test(
     n_dims = _bank_dims(bank)
     true_vec = np.asarray(true_theta, dtype=np.float64).reshape(n_dims)
     fid = validate_factor_id(factor_id, int(np.asarray(bank.b).shape[0]), n_dims)
-    prob_true = np.clip(predict_proba(_query_params(bank, true_vec[None, :]), fid, model=model)[0], 0.0, 1.0)
+    prob_true = np.clip(
+        predict_proba(_query_params(bank, true_vec[None, :]), fid, model=model)[0],
+        0.0,
+        1.0,
+    )
     rng = np.random.default_rng(int(seed))
 
     def _respond(item_index: int) -> int:
@@ -508,7 +558,16 @@ def simulate_adaptive_test(
         return int(rng.random() < prob_true[item_index])
 
     return administer_adaptive_test(
-        bank, fid, _respond, model=model, ability_method=ability_method,
-        prior_mean=prior_mean, prior_sd=prior_sd, max_items=max_items,
-        se_threshold=se_threshold, min_items=min_items, n_quad=n_quad, quad_range=quad_range,
+        bank,
+        fid,
+        _respond,
+        model=model,
+        ability_method=ability_method,
+        prior_mean=prior_mean,
+        prior_sd=prior_sd,
+        max_items=max_items,
+        se_threshold=se_threshold,
+        min_items=min_items,
+        n_quad=n_quad,
+        quad_range=quad_range,
     )
