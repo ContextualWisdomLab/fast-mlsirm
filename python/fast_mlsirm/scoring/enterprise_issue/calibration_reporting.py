@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .._contract_safety import sorted_identifiers
-from .._validation import descriptive_identifier
+from .._contract_safety import descriptive_identifier, sorted_identifiers
 from ..calibration_reporting import (
     MAX_SCORING_FACETS_REPORT_REVIEW_TRIGGERS,
     ScoringFacetsCalibrationReport,
