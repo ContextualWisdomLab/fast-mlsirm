@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import fast_mlsirm.scoring.calibration as shared_calibration_module
 import fast_mlsirm.scoring.enterprise_issue as enterprise
 import fast_mlsirm.scoring.enterprise_issue.calibration as calibration_module
 from enterprise_issue_calibration_fixtures import _digest, _execution
@@ -112,9 +113,7 @@ def test_callback_safe_generator_is_consumed_once() -> None:
             visits.append(index)
             yield execution
 
-    bundle = build_enterprise_issue_facets_calibration_bundle(
-        generated_executions()
-    )
+    bundle = build_enterprise_issue_facets_calibration_bundle(generated_executions())
 
     assert visits == [0, 1, 2, 3]
     assert all(design.connected for design in bundle.designs)
@@ -196,3 +195,37 @@ def test_execution_collection_obeys_the_public_resource_bound(monkeypatch) -> No
 
     assert captured.value.code == "invalid_executions"
     assert captured.value.path == "$.executions"
+
+
+def test_shared_rating_bound_stops_before_later_execution_replay(monkeypatch) -> None:
+    """Shared rating limits stop lazy replay before later executions are visited."""
+    executions = _connected_executions()[:2]
+    visited_requests: list[str] = []
+    original_builder = calibration_module.build_enterprise_issue_facets_rating_records
+
+    def recording_builder(*, issue, request, result, engine):
+        visited_requests.append(request.request_id)
+        return original_builder(
+            issue=issue,
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    monkeypatch.setattr(
+        calibration_module,
+        "build_enterprise_issue_facets_rating_records",
+        recording_builder,
+    )
+    monkeypatch.setattr(
+        shared_calibration_module,
+        "MAX_SCORING_FACETS_RATINGS",
+        1,
+    )
+
+    with pytest.raises(AssessmentSpecError) as captured:
+        build_enterprise_issue_facets_calibration_bundle(executions)
+
+    assert captured.value.code == "invalid_ratings"
+    assert captured.value.path == "$.ratings"
+    assert visited_requests == [executions[0][1].request_id]
