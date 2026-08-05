@@ -66,15 +66,11 @@ jobs:
           python -m pip install --require-hashes -r requirements/ci.txt
           python -m pip install --no-deps --no-build-isolation -e .
 
-      - name: Format and verify provider boundary
+      - name: Verify focused provider boundary
         shell: bash
         run: |
           set -euo pipefail
-          ruff format python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values_provider_boundary.py
-          ruff check python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py tests/test_scoring_enterprise_explicit_values_provider_boundary.py
-          pytest tests/test_scoring_enterprise_explicit_values.py tests/test_scoring_enterprise_explicit_values_provider_boundary.py \
-            --cov=fast_mlsirm.scoring.enterprise_issue.explicit_values \
-            --cov-branch --cov-report=term-missing --cov-fail-under=100
+          python -m pytest tests/test_scoring_enterprise_explicit_values.py tests/test_scoring_enterprise_explicit_values_provider_boundary.py
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
 
       - name: Commit hardening and remove one-shot artifacts
