@@ -46,15 +46,12 @@ def _request_issue_evidence(
     """Replay issue-owned request metadata and return exact evidence identities."""
     metadata = thaw_json_value(request.metadata)
     expected = {
-        "enterprise_source_record_fingerprints": list(
-            issue.source_record_fingerprints
-        ),
+        "enterprise_source_record_fingerprints": list(issue.source_record_fingerprints),
         "enterprise_evidence_span_fingerprints": [
             value.evidence_span_fingerprint for value in issue.evidence_spans
         ],
         "enterprise_counterevidence_fingerprints": [
-            value.counterevidence_fingerprint
-            for value in issue.counterevidence_records
+            value.counterevidence_fingerprint for value in issue.counterevidence_records
         ],
     }
     if any(metadata.get(key) != value for key, value in expected.items()):
@@ -67,9 +64,7 @@ def _request_issue_evidence(
     issue_evidence_fingerprints = frozenset(
         value.evidence_fingerprint for value in issue_evidence
     )
-    if not issue_evidence_fingerprints.issubset(
-        available_evidence_fingerprints
-    ):
+    if not issue_evidence_fingerprints.issubset(available_evidence_fingerprints):
         _calibration_error(
             "$.request.metadata.enterprise_evidence_reference_fingerprints",
             "request evidence does not retain every supplied issue evidence reference",
@@ -100,9 +95,7 @@ def _observation_metadata(
     expected: dict[str, Any] = {
         "enterprise_atomic_issue_fingerprint": issue.atomic_issue_fingerprint,
         "enterprise_issue_content_fingerprint": issue.issue_content_fingerprint,
-        "enterprise_observation_evidence_fingerprints": list(
-            evidence_fingerprints
-        ),
+        "enterprise_observation_evidence_fingerprints": list(evidence_fingerprints),
         "enterprise_supporting_evidence_count": supporting,
         "enterprise_counter_evidence_count": counter,
         "enterprise_context_evidence_count": context,
@@ -204,9 +197,7 @@ def build_enterprise_issue_facets_rating_records(
             value.evidence_fingerprint for value in observation.evidence_references
         )
         observation_evidence = frozenset(evidence_fingerprints)
-        if not observation_evidence.issubset(
-            available_evidence_fingerprints
-        ):
+        if not observation_evidence.issubset(available_evidence_fingerprints):
             _calibration_error(
                 f"{path}.evidence_references",
                 "observation evidence is not declared by the enterprise request",
