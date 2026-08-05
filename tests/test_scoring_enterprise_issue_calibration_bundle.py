@@ -226,6 +226,6 @@ def test_shared_rating_bound_stops_before_later_execution_replay(monkeypatch) ->
     with pytest.raises(AssessmentSpecError) as captured:
         build_enterprise_issue_facets_calibration_bundle(executions)
 
-    assert captured.value.code == "invalid_ratings"
-    assert captured.value.path == "$.ratings"
+    assert captured.value.code == "invalid_records"
+    assert captured.value.path == "$.records"
     assert visited_requests == [executions[0][1].request_id]
