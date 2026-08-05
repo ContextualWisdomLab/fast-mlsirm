@@ -6,6 +6,7 @@ import inspect
 
 import pytest
 
+import fast_mlsirm.scoring._contract_safety as contract_safety
 import fast_mlsirm.scoring.enterprise_issue as enterprise
 import fast_mlsirm.scoring.enterprise_issue.calibration_reporting as reporting_module
 from enterprise_issue_calibration_fixtures import _execution
@@ -123,6 +124,37 @@ def test_invalid_prefix_fails_before_bundle_assembly(monkeypatch) -> None:
 
     assert captured.value.code == "invalid_report_id_prefix"
     assert captured.value.path == "$.report_id_prefix"
+    assert visited is False
+
+
+def test_prefix_validation_redacts_callback_failures(monkeypatch) -> None:
+    """Unexpected identifier callbacks cannot leak data or reach calibration."""
+    visited = False
+
+    def failing_identifier(*_args, **_kwargs):
+        raise RuntimeError("private_prefix_payload")
+
+    def unexpected_builder(_executions):
+        nonlocal visited
+        visited = True
+        raise AssertionError("bundle assembly must not run")
+
+    monkeypatch.setattr(contract_safety, "_identifier", failing_identifier)
+    monkeypatch.setattr(
+        reporting_module,
+        "build_enterprise_issue_facets_calibration_bundle",
+        unexpected_builder,
+    )
+
+    with pytest.raises(AssessmentSpecError) as captured:
+        fit_enterprise_issue_facets_calibration_reports(
+            (),
+            report_id_prefix="enterprise_report",
+        )
+
+    assert captured.value.code == "invalid_report_id_prefix"
+    assert captured.value.path == "$.report_id_prefix"
+    assert "private_prefix_payload" not in str(captured.value)
     assert visited is False
 
 
