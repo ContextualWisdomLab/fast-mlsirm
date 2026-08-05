@@ -158,6 +158,36 @@ def test_prefix_validation_redacts_callback_failures(monkeypatch) -> None:
     assert visited is False
 
 
+def test_all_generated_report_ids_fail_before_any_criterion_fit(monkeypatch) -> None:
+    """One invalid later report identity must prevent every Rust-backed fit."""
+    fitted_report_ids: list[str] = []
+
+    def validating_fit(**kwargs):
+        report_id = contract_safety.descriptive_identifier(
+            kwargs["report_id"],
+            "report_id",
+        )
+        fitted_report_ids.append(report_id)
+        return report_id
+
+    monkeypatch.setattr(
+        reporting_module,
+        "fit_scoring_facets_calibration_report",
+        validating_fit,
+    )
+    prefix = "enterprise_" + ("x" * 102)
+
+    with pytest.raises(AssessmentSpecError) as captured:
+        fit_enterprise_issue_facets_calibration_reports(
+            _connected_executions(),
+            report_id_prefix=prefix,
+        )
+
+    assert captured.value.code == "invalid_report_id"
+    assert captured.value.path == "$.report_id"
+    assert fitted_report_ids == []
+
+
 def test_review_trigger_generator_is_materialized_once(monkeypatch) -> None:
     """One callback-safe trigger collection is replayed for every criterion."""
     visits: list[str] = []
