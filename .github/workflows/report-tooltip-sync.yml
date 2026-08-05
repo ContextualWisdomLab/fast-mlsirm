@@ -1,0 +1,40 @@
+name: Sync report tooltip pull request
+
+on:
+  push:
+    branches:
+      - ux-add-exact-value-title-attr-954238696996115153
+    paths:
+      - .github/workflows/report-tooltip-sync.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: report-tooltip-sync
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ux-add-exact-value-title-attr-954238696996115153
+          fetch-depth: 0
+      - name: Merge current main and render changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Remove one-shot workflow and push
+        run: |
+          git rm .github/workflows/report-tooltip-sync.yml
+          git add CHANGELOG.md
+          git diff --cached --check
+          git commit -m "docs(changelog): render report tooltip fragment"
+          git push origin HEAD:ux-add-exact-value-title-attr-954238696996115153
