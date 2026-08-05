@@ -28,6 +28,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          helper = Path('.github/scripts/pr_533_harden.py')
+          text = helper.read_text(encoding='utf-8')
+          start = text.index(
+              '    text = _replace_exact(\n'
+              '        text,\n'
+              '        textwrap.dedent(\n'
+              "            '''\\\n"
+              '                    candidates = self._candidates(source_text)\n'
+          )
+          end = text.index('\n\n    candidates_start =', start)
+          replacement = (
+              '    parse_start = text.index(\n'
+              '        "        candidates = self._candidates(source_text)\\n"\n'
+              '    )\n'
+              '    revision_start = text.index(\n'
+              '        "        revision = self.parser_revision_fingerprint\\n",\n'
+              '        parse_start,\n'
+              '    )\n'
+              '    text = (\n'
+              '        text[:parse_start]\n'
+              '        + "        candidates = self._candidates(source_text)\\n"\n'
+              '        + text[revision_start:]\n'
+              '    )\n'
+          )
+          helper.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          PY
           python .github/scripts/pr_533_harden.py
 
       - name: Install focused validation dependencies
