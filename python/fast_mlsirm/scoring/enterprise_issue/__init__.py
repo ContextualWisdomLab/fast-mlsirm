@@ -9,6 +9,9 @@ from .calibration import (
 from .calibration import (
     build_enterprise_issue_facets_rating_records as build_enterprise_issue_facets_rating_records,
 )
+from .calibration_reporting import (
+    fit_enterprise_issue_facets_calibration_reports as fit_enterprise_issue_facets_calibration_reports,
+)
 from .contracts import AtomicIssueRecord as AtomicIssueRecord
 from .contracts import CandidateIntervention as CandidateIntervention
 from .contracts import CounterevidenceRecord as CounterevidenceRecord
@@ -93,5 +96,6 @@ __all__ = [
     "build_enterprise_issue_scoring_request",
     "enterprise_issue_evidence_references",
     "extract_enterprise_atomic_issues",
+    "fit_enterprise_issue_facets_calibration_reports",
     "parse_enterprise_explicit_values",
 ]
