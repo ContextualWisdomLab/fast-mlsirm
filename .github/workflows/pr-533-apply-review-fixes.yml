@@ -30,6 +30,73 @@ jobs:
           set -euo pipefail
           python scripts/pr533_review_fixes.py
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python - <<'PY'
+          from pathlib import Path
+
+          implementation = Path(
+              "python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py"
+          )
+          text = implementation.read_text(encoding="utf-8")
+          provider_boundary = (
+              "    except Exception:\n"
+              "        raise assessment_error(\n"
+              "            \"invalid_explicit_value_parser_output\","
+          )
+          provider_boundary_hardened = (
+              "    except Exception:  # noqa: BLE001 - untrusted provider boundary\n"
+              "        raise assessment_error(\n"
+              "            \"invalid_explicit_value_parser_output\","
+          )
+          if text.count(provider_boundary) != 2:
+              raise SystemExit("expected exactly two provider validation boundaries")
+          text = text.replace(provider_boundary, provider_boundary_hardened)
+          callback_boundary = (
+              "        except Exception:\n"
+              "            raise assessment_error(\n"
+              "                \"explicit_value_parser_failure\","
+          )
+          callback_boundary_hardened = (
+              "        except Exception:  # noqa: BLE001 - untrusted callback boundary\n"
+              "            raise assessment_error(\n"
+              "                \"explicit_value_parser_failure\","
+          )
+          if text.count(callback_boundary) != 1:
+              raise SystemExit("expected exactly one provider callback boundary")
+          implementation.write_text(
+              text.replace(callback_boundary, callback_boundary_hardened, 1),
+              encoding="utf-8",
+          )
+
+          changelog = Path("CHANGELOG.md")
+          changelog_text = changelog.read_text(encoding="utf-8")
+          historical = (
+              "#### Release cut 0.1.0\n\n"
+              "- Project version is bumped to 0.1.1 in `pyproject.toml`,\n"
+              "  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated\n"
+              "  `Unreleased` notes (bifactor analytics and public API compatibility) now form the\n"
+              "  `[0.1.1] - 2026-08-04` release section."
+          )
+          historical_fixed = (
+              "#### Release cut 0.1.0\n\n"
+              "- Project version is bumped to 0.1.0 in `pyproject.toml`,\n"
+              "  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated\n"
+              "  `Unreleased` notes (bifactor analytics and public API compatibility) now form the\n"
+              "  `[0.1.0] - 2026-08-04` release section."
+          )
+          if changelog_text.count(historical) != 1:
+              raise SystemExit("expected exactly one incorrect 0.1.0 release-cut block")
+          changelog_text = changelog_text.replace(historical, historical_fixed, 1)
+          unused_reference = (
+              "[Unreleased]: https://github.com/ContextualWisdomLab/"
+              "fast-mlsirm/compare/v0.7.0...HEAD\n"
+          )
+          if changelog_text.count(unused_reference) != 1:
+              raise SystemExit("expected exactly one unused Unreleased reference")
+          changelog.write_text(
+              changelog_text.replace(unused_reference, "", 1),
+              encoding="utf-8",
+          )
+          PY
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
           python -m py_compile \
             python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
@@ -47,6 +114,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ruff check --fix \
+            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
+            tests/test_scoring_enterprise_explicit_values.py \
+            scripts/pr533_review_fixes.py
           ruff format \
             python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
             tests/test_scoring_enterprise_explicit_values.py \
