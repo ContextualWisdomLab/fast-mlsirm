@@ -1,5 +1,11 @@
 # Enterprise explicit-value parser implementation plan
 
+## Implementation status
+
+The bounded implementation and focused review repairs are complete. Exact-head
+repository CI, security, SAST, and independent review remain the authority for
+merge; this status does not expand the parser scope or claim release readiness.
+
 ## Goal
 
 Advance issue #404 with the smallest reviewable parser slice after the governed
