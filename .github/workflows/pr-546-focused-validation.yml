@@ -41,8 +41,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cat > "${RUNNER_TEMP}/focused-requirements.txt" <<'EOF'
+          coverage==7.15.3 \
+              --hash=sha256:63a4ff67364afb2cac826b8bbd78a5c50ce656a7b7137436b44d7b96a9271088
+          ruff==0.16.1 \
+              --hash=sha256:39897739f112253ee4fdd2e8aa9a4f9ded99fb2be367d5f31dfa4ded6025584c
+          EOF
           python -m pip install --require-hashes -r requirements/ci.txt
-          python -m pip install "coverage==7.15.3" "ruff==0.16.1"
+          python -m pip install \
+            --require-hashes \
+            --only-binary=:all: \
+            -r "${RUNNER_TEMP}/focused-requirements.txt"
           python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Run focused statement and branch evidence
