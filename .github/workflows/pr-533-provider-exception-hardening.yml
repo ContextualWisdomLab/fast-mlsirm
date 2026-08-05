@@ -1,0 +1,168 @@
+name: PR 533 provider exception hardening
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+
+permissions:
+  contents: read
+
+jobs:
+  harden:
+    if: contains(github.event.head_commit.message, 'trigger provider exception hardening')
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+
+      - name: Harden provider exception and exact-record boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          implementation = Path("python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py")
+          text = implementation.read_text(encoding="utf-8")
+          text = text.replace(
+              "    AssessmentSpecError,\n    CanonicalContract,",
+              "    CanonicalContract,",
+              1,
+          )
+          before = "        if not isinstance(item, ExplicitValueRecord):"
+          after = "        if type(item) is not ExplicitValueRecord:"
+          if before not in text:
+              raise SystemExit("record type validation point not found")
+          text = text.replace(before, after, 1)
+          before = '''    try:
+              values = resolved.parse(source_record, source_text)
+          except AssessmentSpecError:
+              raise
+          except Exception:
+              raise assessment_error(
+                  "explicit_value_parser_failure",
+                  "$.parser",
+                  "parser failed before returning validated explicit values",
+              ) from None
+          return _validated_parser_output(source_record, source_text, values)'''
+          after = '''    if parser is None:
+              values = resolved.parse(source_record, source_text)
+          else:
+              try:
+                  values = resolved.parse(source_record, source_text)
+              except Exception:
+                  raise assessment_error(
+                      "explicit_value_parser_failure",
+                      "$.parser",
+                      "parser failed before returning validated explicit values",
+                  ) from None
+          return _validated_parser_output(source_record, source_text, values)'''
+          if before not in text:
+              raise SystemExit("provider exception boundary not found")
+          text = text.replace(before, after, 1)
+          text = text.replace("\n\n\ndef _validated_parser_output(", "\n\ndef _validated_parser_output(", 1)
+          implementation.write_text(text, encoding="utf-8")
+
+          tests = Path("tests/test_scoring_enterprise_explicit_values.py")
+          test_text = tests.read_text(encoding="utf-8")
+          marker = '''    invalid_outputs = (
+              (list(records), "invalid_explicit_value_parser_output"),
+              ((object(),), "invalid_explicit_value_parser_output"),'''
+          replacement = '''    class ExplicitValueSubclass(ExplicitValueRecord):
+              """Adversarial subclass rejected at the provider trust boundary."""
+
+          subclass_record = ExplicitValueSubclass(
+              source_id=records[0].source_id,
+              source_record_fingerprint=records[0].source_record_fingerprint,
+              span_content_fingerprint=records[0].span_content_fingerprint,
+              start_offset=records[0].start_offset,
+              end_offset=records[0].end_offset,
+              value_kind=records[0].value_kind,
+              normalized_payload=records[0].to_dict()["normalized_payload"],
+              parser_revision_fingerprint=records[0].parser_revision_fingerprint,
+              metadata=records[0].to_dict()["metadata"],
+              schema_version=records[0].schema_version,
+          )
+
+          invalid_outputs = (
+              (list(records), "invalid_explicit_value_parser_output"),
+              ((object(),), "invalid_explicit_value_parser_output"),
+              ((subclass_record,), "invalid_explicit_value_parser_output"),'''
+          if marker not in test_text:
+              raise SystemExit("invalid output cases insertion point not found")
+          test_text = test_text.replace(marker, replacement, 1)
+
+          marker = '''    assert "private provider detail" not in str(captured.value)
+
+
+          @pytest.mark.parametrize('''
+          addition = '''    assert "private provider detail" not in str(captured.value)
+
+              class DomainFailingParser:
+                  """Raise a structured domain exception containing private detail."""
+
+                  def parse(
+                      self,
+                      source_record: EnterpriseSourceRecord,
+                      source_text: str,
+                  ) -> tuple[ExplicitValueRecord, ...]:
+                      """Raise one untrusted structured provider failure."""
+                      raise parser_module.assessment_error(
+                          "provider_private_error",
+                          "$.provider",
+                          "private structured provider detail",
+                      )
+
+              with pytest.raises(
+                  AssessmentSpecError,
+                  match="explicit_value_parser_failure",
+              ) as domain_captured:
+                  parse_enterprise_explicit_values(
+                      source,
+                      text,
+                      parser=DomainFailingParser(),
+                  )
+              assert "private structured provider detail" not in str(domain_captured.value)
+
+
+          @pytest.mark.parametrize('''
+          if marker not in test_text:
+              raise SystemExit("provider exception test insertion point not found")
+          test_text = test_text.replace(marker, addition, 1)
+          tests.write_text(test_text, encoding="utf-8")
+          PY
+
+      - name: Install focused validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Format and verify focused boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff format python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          ruff check python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          pytest tests/test_scoring_enterprise_explicit_values.py
+
+      - name: Commit hardening and remove one-shot artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-provider-exception-hardening.yml
+          rm -f .github/pr-533-provider-exception-trigger.txt
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(enterprise): seal provider exception boundary"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
