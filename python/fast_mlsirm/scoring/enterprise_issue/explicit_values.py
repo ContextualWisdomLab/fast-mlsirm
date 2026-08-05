@@ -8,15 +8,16 @@ Raw source text and clear-text customer identifiers are never retained.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-import hashlib
-import json
-import re
-from typing import Any, Protocol, runtime_checkable
+from itertools import pairwise
+from typing import Any, NoReturn, Protocol, runtime_checkable
 
 from .._contract_safety import (
     artifact_digest,
@@ -34,6 +35,7 @@ from .._validation import (
     thaw_json_value,
 )
 from .contracts import (
+    MAX_ENTERPRISE_SOURCE_CHARACTERS,
     EnterpriseAssertionKind,
     EnterpriseSourceRecord,
     EvidenceSpanRecord,
@@ -206,8 +208,28 @@ class ExplicitValueRecord(CanonicalContract):
             "value_kind",
             enum_value(self.value_kind, ExplicitValueKind, "value_kind"),
         )
-        object.__setattr__(self, "start_offset", _offset(self.start_offset, "start_offset"))
+        object.__setattr__(
+            self, "start_offset", _offset(self.start_offset, "start_offset")
+        )
         object.__setattr__(self, "end_offset", _offset(self.end_offset, "end_offset"))
+        if self.start_offset > MAX_ENTERPRISE_SOURCE_CHARACTERS:
+            raise assessment_error(
+                "invalid_start_offset",
+                "$.start_offset",
+                (
+                    "start_offset must be between 0 and "
+                    f"{MAX_ENTERPRISE_SOURCE_CHARACTERS}"
+                ),
+            )
+        if self.end_offset > MAX_ENTERPRISE_SOURCE_CHARACTERS:
+            raise assessment_error(
+                "invalid_end_offset",
+                "$.end_offset",
+                (
+                    "end_offset must be between 0 and "
+                    f"{MAX_ENTERPRISE_SOURCE_CHARACTERS}"
+                ),
+            )
         if self.end_offset <= self.start_offset:
             raise assessment_error(
                 "invalid_explicit_value_offsets",
@@ -254,7 +276,9 @@ class ExplicitValueRecord(CanonicalContract):
         }:
             if set(payload) != {"calendar_date"}:
                 self._payload_error("date payload must contain only calendar_date")
-            normalized = _calendar_date(payload["calendar_date"], "$.normalized_payload")
+            normalized = _calendar_date(
+                payload["calendar_date"], "$.normalized_payload"
+            )
             if normalized != payload["calendar_date"]:
                 self._payload_error("calendar_date must already be canonical")
         elif self.value_kind is ExplicitValueKind.MONEY_AMOUNT:
@@ -266,9 +290,10 @@ class ExplicitValueRecord(CanonicalContract):
             if type(code) is not str or _CURRENCY_CODE_PATTERN.fullmatch(code) is None:
                 self._payload_error("currency_code must be uppercase alphabetic text")
             amount = payload["decimal_amount"]
-            if type(amount) is not str or _decimal_amount(
-                amount, "$.normalized_payload"
-            ) != amount:
+            if (
+                type(amount) is not str
+                or _decimal_amount(amount, "$.normalized_payload") != amount
+            ):
                 self._payload_error("decimal_amount must already be canonical text")
         elif self.value_kind is ExplicitValueKind.FREQUENCY_COUNT:
             if set(payload) != {"frequency_count", "frequency_period"}:
@@ -297,7 +322,7 @@ class ExplicitValueRecord(CanonicalContract):
         return freeze_metadata(payload)
 
     @staticmethod
-    def _payload_error(message: str) -> None:
+    def _payload_error(message: str) -> NoReturn:
         """Raise one stable redacted payload validation error."""
         raise assessment_error(
             "invalid_normalized_payload",
@@ -498,7 +523,10 @@ class DeterministicExplicitValueParser:
                 "$.source_text",
                 "source_text character count does not match source_record",
             )
-        if hashlib.sha256(encoded).hexdigest() != source_record.source_content_fingerprint:
+        if (
+            hashlib.sha256(encoded).hexdigest()
+            != source_record.source_content_fingerprint
+        ):
             raise assessment_error(
                 "source_content_fingerprint_mismatch",
                 "$.source_text",
@@ -547,7 +575,7 @@ class DeterministicExplicitValueParser:
                 json.dumps(item.normalized_payload, sort_keys=True),
             ),
         )
-        for previous, current in zip(ordered, ordered[1:]):
+        for previous, current in pairwise(ordered):
             if current.start_offset < previous.end_offset:
                 raise assessment_error(
                     "overlapping_explicit_values",
@@ -633,7 +661,9 @@ class DeterministicExplicitValueParser:
     ) -> Iterable[_Candidate]:
         """Yield dates not already contained by a deadline match."""
         for match in _DATE_PATTERN.finditer(source_text):
-            if any(start <= match.start() and match.end() <= end for start, end in blocked):
+            if any(
+                start <= match.start() and match.end() <= end for start, end in blocked
+            ):
                 continue
             yield _Candidate(
                 match.start(),
@@ -641,7 +671,6 @@ class DeterministicExplicitValueParser:
                 ExplicitValueKind.CALENDAR_DATE,
                 {"calendar_date": _calendar_date(match.group("date"), "$.source_text")},
             )
-
 
 
 def _canonical_parser_record(
@@ -665,8 +694,7 @@ def _canonical_parser_record(
         )
     if (
         type(item.source_record_fingerprint) is not str
-        or item.source_record_fingerprint
-        != source_record.source_record_fingerprint
+        or item.source_record_fingerprint != source_record.source_record_fingerprint
     ):
         raise assessment_error(
             "parser_output_source_mismatch",
@@ -676,7 +704,7 @@ def _canonical_parser_record(
     try:
         start_offset = _offset(item.start_offset, "start_offset")
         end_offset = _offset(item.end_offset, "end_offset")
-    except Exception:
+    except Exception:  # noqa: BLE001 - untrusted provider boundary
         raise assessment_error(
             "invalid_explicit_value_parser_output",
             path,
@@ -713,7 +741,7 @@ def _canonical_parser_record(
             metadata=item.metadata,
             schema_version=source_record.schema_version,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - untrusted provider boundary
         raise assessment_error(
             "invalid_explicit_value_parser_output",
             path,
@@ -759,16 +787,14 @@ def _validated_parser_output(
             ),
         )
     )
-    record_fingerprints = tuple(
-        item.explicit_value_fingerprint for item in ordered
-    )
+    record_fingerprints = tuple(item.explicit_value_fingerprint for item in ordered)
     if len(set(record_fingerprints)) != len(record_fingerprints):
         raise assessment_error(
             "duplicate_explicit_value_record",
             "$.parser_output",
             "parser output records must be unique",
         )
-    for previous, current in zip(ordered, ordered[1:]):
+    for previous, current in pairwise(ordered):
         if current.start_offset < previous.end_offset:
             raise assessment_error(
                 "overlapping_explicit_values",
@@ -801,7 +827,7 @@ def parse_enterprise_explicit_values(
     else:
         try:
             values = resolved.parse(source_record, source_text)
-        except Exception:
+        except Exception:  # noqa: BLE001 - untrusted callback boundary
             raise assessment_error(
                 "explicit_value_parser_failure",
                 "$.parser",

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, replace
 import hashlib
+from dataclasses import FrozenInstanceError, replace
 from typing import Any
 
 import pytest
-
 from fast_mlsirm.scoring import AssessmentSpecError, EvidenceRole
 from fast_mlsirm.scoring.enterprise_issue import (
     DEFAULT_CURRENCY_CODES,
@@ -26,7 +25,9 @@ FP_B = hashlib.sha256(b"source-span-b").hexdigest()
 FP_C = hashlib.sha256(b"parser-revision-c").hexdigest()
 
 
-def _source(text: str, *, fingerprint_text: str | None = None) -> EnterpriseSourceRecord:
+def _source(
+    text: str, *, fingerprint_text: str | None = None
+) -> EnterpriseSourceRecord:
     """Return a valid exact-replay source record."""
     fingerprint_source = text if fingerprint_text is None else fingerprint_text
     return EnterpriseSourceRecord(
@@ -79,10 +80,15 @@ def _record(
     )
 
 
-def _normalized(records: tuple[ExplicitValueRecord, ...]) -> set[tuple[str, str]]:
-    """Return kind/payload pairs independent of source offsets."""
+def _normalized(
+    records: tuple[ExplicitValueRecord, ...],
+) -> set[tuple[str, tuple[tuple[str, Any], ...]]]:
+    """Return kind/payload pairs independent of offsets and key order."""
     return {
-        (record.value_kind.value, repr(record.to_dict()["normalized_payload"]))
+        (
+            record.value_kind.value,
+            tuple(sorted(record.to_dict()["normalized_payload"].items())),
+        )
         for record in records
     }
 
@@ -121,9 +127,10 @@ def test_mixed_unicode_source_extracts_all_supported_kinds_without_raw_text() ->
 
     for record in records:
         source_slice = text[record.start_offset : record.end_offset]
-        assert record.span_content_fingerprint == hashlib.sha256(
-            source_slice.encode("utf-8")
-        ).hexdigest()
+        assert (
+            record.span_content_fingerprint
+            == hashlib.sha256(source_slice.encode("utf-8")).hexdigest()
+        )
         evidence = record.to_evidence_span()
         assert evidence.assertion_kind is EnterpriseAssertionKind.DIRECT_FACT
         assert evidence.evidence_role is EvidenceRole.SUPPORTING
@@ -166,7 +173,9 @@ def test_parser_configuration_and_metamorphic_outputs_are_deterministic() -> Non
     first = first_parser.parse(_source(first_text), first_text)
     second = second_parser.parse(_source(second_text), second_text)
     assert _normalized(first) == _normalized(second)
-    assert all(record.value_kind is not ExplicitValueKind.CALENDAR_DATE for record in first)
+    assert all(
+        record.value_kind is not ExplicitValueKind.CALENDAR_DATE for record in first
+    )
 
     ignored_text = "GBP 9 and USD 4"
     ignored = first_parser.parse(_source(ignored_text), ignored_text)
@@ -193,9 +202,10 @@ def test_empty_source_and_custom_protocol_parser_are_supported() -> None:
             assert source_text == text
             return ()
 
-    assert parse_enterprise_explicit_values(
-        _source(text), text, parser=EmptyParser()
-    ) == ()
+    assert (
+        parse_enterprise_explicit_values(_source(text), text, parser=EmptyParser())
+        == ()
+    )
     with pytest.raises(AssessmentSpecError, match="invalid_explicit_value_parser"):
         parse_enterprise_explicit_values(_source(text), text, parser=object())  # type: ignore[arg-type]
 
@@ -311,62 +321,86 @@ def test_manual_records_are_immutable_and_round_trip(kind: ExplicitValueKind) ->
 
 
 @pytest.mark.parametrize(
-    ("kind", "payload"),
+    ("kind", "payload", "expected_code"),
     (
-        (ExplicitValueKind.CALENDAR_DATE, []),
-        (ExplicitValueKind.CALENDAR_DATE, {}),
-        (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": 1}),
-        (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": "2026-02-30"}),
+        (ExplicitValueKind.CALENDAR_DATE, [], "invalid_metadata"),
+        (ExplicitValueKind.CALENDAR_DATE, {}, "invalid_normalized_payload"),
+        (
+            ExplicitValueKind.CALENDAR_DATE,
+            {"calendar_date": 1},
+            "invalid_calendar_date",
+        ),
+        (
+            ExplicitValueKind.CALENDAR_DATE,
+            {"calendar_date": "2026-02-30"},
+            "invalid_calendar_date",
+        ),
         (
             ExplicitValueKind.MONEY_AMOUNT,
             {"currency_code": "usd", "decimal_amount": "1"},
+            "invalid_normalized_payload",
         ),
         (
             ExplicitValueKind.MONEY_AMOUNT,
             {"currency_code": "USD", "decimal_amount": 1},
+            "invalid_normalized_payload",
         ),
         (
             ExplicitValueKind.MONEY_AMOUNT,
             {"currency_code": "USD", "decimal_amount": "abc"},
+            "invalid_decimal_amount",
         ),
         (
             ExplicitValueKind.MONEY_AMOUNT,
             {"currency_code": "USD", "decimal_amount": "-1"},
+            "invalid_decimal_amount",
         ),
         (
             ExplicitValueKind.MONEY_AMOUNT,
             {"currency_code": "USD", "decimal_amount": "1.00"},
+            "invalid_normalized_payload",
         ),
         (
             ExplicitValueKind.FREQUENCY_COUNT,
             {"frequency_count": True, "frequency_period": "month"},
+            "invalid_normalized_payload",
         ),
         (
             ExplicitValueKind.FREQUENCY_COUNT,
             {"frequency_count": 1_000_000_001, "frequency_period": "month"},
+            "invalid_frequency_count",
         ),
         (
             ExplicitValueKind.FREQUENCY_COUNT,
             {"frequency_count": 1, "frequency_period": []},
+            "invalid_normalized_payload",
         ),
         (
             ExplicitValueKind.FREQUENCY_COUNT,
             {"frequency_count": 1, "frequency_period": "decade"},
+            "invalid_normalized_payload",
         ),
-        (ExplicitValueKind.CUSTOMER_IDENTIFIER, {}),
+        (
+            ExplicitValueKind.CUSTOMER_IDENTIFIER,
+            {},
+            "invalid_normalized_payload",
+        ),
         (
             ExplicitValueKind.CUSTOMER_IDENTIFIER,
             {"identifier_fingerprint": "bad"},
+            "invalid_identifier_fingerprint",
         ),
     ),
 )
 def test_kind_specific_payloads_fail_closed(
     kind: ExplicitValueKind,
     payload: Any,
+    expected_code: str,
 ) -> None:
-    """Noncanonical and cross-kind payloads are rejected with stable errors."""
-    with pytest.raises(AssessmentSpecError):
+    """Noncanonical payloads fail with their stable structured code."""
+    with pytest.raises(AssessmentSpecError) as captured:
         _record(kind, payload=payload)
+    assert captured.value.code == expected_code
 
 
 @pytest.mark.parametrize(
@@ -378,7 +412,9 @@ def test_kind_specific_payloads_fail_closed(
         ({"parser_revision_fingerprint": "bad"}, "invalid_parser_revision_fingerprint"),
         ({"start_offset": True}, "invalid_start_offset"),
         ({"start_offset": -1}, "invalid_start_offset"),
+        ({"start_offset": 100_000_001}, "invalid_start_offset"),
         ({"end_offset": True}, "invalid_end_offset"),
+        ({"end_offset": 100_000_001}, "invalid_end_offset"),
         ({"end_offset": 2}, "invalid_explicit_value_offsets"),
         ({"metadata": {"source_text": "secret"}}, "sensitive_metadata_field"),
         ({"schema_version": "2.0"}, "invalid_schema_version"),
@@ -404,6 +440,39 @@ def test_record_identity_offsets_metadata_and_schema_fail_closed(
     kwargs.update(changes)
     with pytest.raises(AssessmentSpecError, match=error):
         ExplicitValueRecord(**kwargs)
+
+
+def test_payload_defensive_guards_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defensive payload invariants fail closed if upstream helpers regress."""
+    with monkeypatch.context() as patch:
+        patch.setattr(parser_module, "freeze_metadata", lambda value: value)
+        patch.setattr(parser_module, "thaw_json_value", lambda value: value)
+        with pytest.raises(AssessmentSpecError) as captured:
+            _record(ExplicitValueKind.CALENDAR_DATE, payload=[])
+        assert captured.value.code == "invalid_normalized_payload"
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            parser_module,
+            "_calendar_date",
+            lambda _value, _path: "2026-09-30",
+        )
+        with pytest.raises(AssessmentSpecError) as captured:
+            _record(
+                ExplicitValueKind.CALENDAR_DATE,
+                payload={"calendar_date": "2026-09-29"},
+            )
+        assert captured.value.code == "invalid_normalized_payload"
+
+    for kind in (
+        ExplicitValueKind.MONEY_AMOUNT,
+        ExplicitValueKind.FREQUENCY_COUNT,
+    ):
+        with pytest.raises(AssessmentSpecError) as captured:
+            _record(kind, payload={})
+        assert captured.value.code == "invalid_normalized_payload"
 
 
 def test_private_normalizers_cover_nonpublic_exception_boundaries() -> None:
@@ -439,11 +508,14 @@ def test_provider_output_is_revalidated_against_verified_source() -> None:
             assert source_text == text
             return self.output
 
-    assert parse_enterprise_explicit_values(
-        source,
-        text,
-        parser=StaticParser(tuple(reversed(records))),
-    ) == records
+    assert (
+        parse_enterprise_explicit_values(
+            source,
+            text,
+            parser=StaticParser(tuple(reversed(records))),
+        )
+        == records
+    )
 
     invalid_outputs = (
         (list(records), "invalid_explicit_value_parser_output"),
@@ -580,3 +652,44 @@ def test_explicit_value_metadata_is_strictly_allowlisted(
     """Metadata cannot carry arbitrary values or change offset semantics."""
     with pytest.raises(AssessmentSpecError, match=error):
         _record(metadata=metadata)
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload", "expected_code"),
+    (
+        (
+            ExplicitValueKind.CALENDAR_DATE,
+            {"calendar_date": "2026-09-30", "unexpected_field": 1},
+            "invalid_normalized_payload",
+        ),
+        (
+            ExplicitValueKind.MONEY_AMOUNT,
+            {},
+            "invalid_normalized_payload",
+        ),
+        (
+            ExplicitValueKind.MONEY_AMOUNT,
+            {"currency_code": 1, "decimal_amount": "1"},
+            "invalid_normalized_payload",
+        ),
+        (
+            ExplicitValueKind.FREQUENCY_COUNT,
+            {},
+            "invalid_normalized_payload",
+        ),
+        (
+            ExplicitValueKind.FREQUENCY_COUNT,
+            {"frequency_count": "1", "frequency_period": "month"},
+            "invalid_normalized_payload",
+        ),
+    ),
+)
+def test_payload_validation_short_circuit_branches_fail_closed(
+    kind: ExplicitValueKind,
+    payload: dict[str, Any],
+    expected_code: str,
+) -> None:
+    """Every payload guard rejects malformed mappings through its stable code."""
+    with pytest.raises(AssessmentSpecError) as captured:
+        _record(kind, payload=payload)
+    assert captured.value.code == expected_code

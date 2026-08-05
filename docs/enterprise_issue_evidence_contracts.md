@@ -49,8 +49,11 @@ span also carries SHA-256 over the exact UTF-8 bytes of the matched slice.
 
 Deadline matches supersede the calendar-date match embedded inside the same
 marked deadline. Any other accepted overlap fails closed rather than multiplying
-one occurrence into several evidence records. Output order and parser revision
-identity are deterministic and independent of caller currency-code ordering.
+one occurrence into several evidence records. Validation is whole-source rather
+than per-span: any date-shaped candidate that is not a real Gregorian date, or
+any labeled customer/account identifier that is empty, malformed, or oversized,
+rejects the complete parse. Output order and parser revision identity are
+deterministic and independent of caller currency-code ordering.
 
 Money normalization constructs `Decimal` directly from accepted text after
 removing validated grouping commas; it never passes through binary floating
