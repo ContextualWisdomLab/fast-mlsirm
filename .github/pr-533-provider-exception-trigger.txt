@@ -1,1 +1,1 @@
-Trigger the self-removing provider boundary hardening workflow now.
+Prepare the pinned provider hardening validation runtime before the next exact-head run.
