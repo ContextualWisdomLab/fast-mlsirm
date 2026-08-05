@@ -65,10 +65,7 @@ def test_public_fitter_delegates_each_shared_design(monkeypatch) -> None:
         q_theta=17,
         max_iter=91,
         tol=1e-5,
-        additional_review_trigger_ids=(
-            "human_validation_required",
-            "human_validation_required",
-        ),
+        additional_review_trigger_ids=("human_validation_required",),
     )
 
     assert reports == (
