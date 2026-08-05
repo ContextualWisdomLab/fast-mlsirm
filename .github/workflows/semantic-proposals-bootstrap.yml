@@ -1,0 +1,106 @@
+name: Bootstrap semantic proposal review branch
+
+on:
+  push:
+    branches:
+      - feat/enterprise-semantic-issue-proposals-reviewed
+    paths:
+      - .github/workflows/semantic-proposals-bootstrap.yml
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-semantic-issue-proposals-reviewed
+          fetch-depth: 0
+      - name: Compose and clean the branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          if ! git merge --no-edit origin/main; then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            if [[ "${#conflicts[@]}" -ne 1 || "${conflicts[0]}" != "python/fast_mlsirm/scoring/enterprise_issue/__init__.py" ]]; then
+              exit 1
+            fi
+            git checkout --ours python/fast_mlsirm/scoring/enterprise_issue/__init__.py
+            git add python/fast_mlsirm/scoring/enterprise_issue/__init__.py
+            git commit --no-edit
+          fi
+          python scripts/pr537_semantic_fixes.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("python/fast_mlsirm/scoring/enterprise_issue/semantic_proposals.py")
+          text = path.read_text(encoding="utf-8")
+          import_anchor = "from .contracts import (\n"
+          semantic_import = (
+              "from .semantic import (\n"
+              "    StaticEnterpriseIssueExtractor,\n"
+              "    extract_enterprise_atomic_issues,\n"
+              ")\n"
+          )
+          if semantic_import not in text:
+              text = text.replace(import_anchor, semantic_import + import_anchor, 1)
+          old = (
+              "    compiled.sort(key=lambda value: value.atomic_issue_fingerprint)\n"
+              "    perspectives.sort(key=lambda value: value.perspective_fingerprint)\n"
+              "    return tuple(compiled), tuple(perspectives)\n"
+          )
+          new = (
+              "    validated_issues = extract_enterprise_atomic_issues(\n"
+              "        tuple(record for record, _text in sources),\n"
+              "        {record.source_id: text for record, text in sources},\n"
+              "        extractor=StaticEnterpriseIssueExtractor(tuple(compiled)),\n"
+              "    )\n"
+              "    perspectives.sort(key=lambda value: value.perspective_fingerprint)\n"
+              "    return validated_issues, tuple(perspectives)\n"
+          )
+          if new not in text:
+              if text.count(old) != 1:
+                  raise SystemExit("semantic proposal return anchor missing")
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          fragment = Path("docs/changelog.d/enterprise-semantic-issue-proposals.md")
+          content = fragment.read_text(encoding="utf-8")
+          bullet = (
+              "- Composed compiled proposals through the central semantic issue replay\n"
+              "  boundary before release so provider proposal validation and canonical\n"
+              "  atomic-issue validation cannot diverge.\n"
+          )
+          if bullet not in content:
+              fragment.write_text(content.rstrip() + "\n" + bullet, encoding="utf-8")
+
+          doctoring = Path("docs/doctoring/enterprise-semantic-issue-proposals.md")
+          content = doctoring.read_text(encoding="utf-8")
+          content = content.replace(
+              "The next issue #404 slice should compile accepted atomic issues into connected\n"
+              "criterion-level judge observations using the existing shared scoring contracts.\n",
+              "Compiled proposals pass through the central atomic-issue replay boundary and\n"
+              "connect to the existing criterion-level request and observation adapters.\n"
+              "The next issue #404 slice should add human-anchored multi-judge calibration,\n"
+              "held-out validation, and buyer-visible review workflow evidence.\n",
+              1,
+          )
+          doctoring.write_text(content, encoding="utf-8")
+          PY
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+          git rm -f \
+            .github/pr-537-focused-trigger.txt \
+            .github/workflows/pr-537-focused-fixes.yml \
+            .github/workflows/semantic-proposals-bootstrap.yml \
+            .github/workflows/semantic-proposals-review-cleanup.yml \
+            scripts/pr537_semantic_fixes.py
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(enterprise): compose semantic proposal validation"
+          git push origin HEAD:feat/enterprise-semantic-issue-proposals-reviewed
