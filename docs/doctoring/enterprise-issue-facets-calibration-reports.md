@@ -17,11 +17,13 @@ reports without requiring callers to manually pair each criterion design with an
 unbound fit.
 
 `fit_enterprise_issue_facets_calibration_reports()` validates the descriptive
-report prefix and bounded review-trigger collection before bundle assembly. It
-then delegates each deterministic criterion design to the existing
-`fit_scoring_facets_calibration_report()` alias. Exact object reuse preserves the
-established report schema, fingerprints, error behavior, and compatibility
-surface.
+report prefix and bounded review-trigger collection before bundle assembly. After
+assembly it derives and validates every criterion report identifier before the
+first Rust-backed fit, preventing a later malformed identifier from leaving a
+partially fitted batch. It then delegates each deterministic criterion design to
+the existing `fit_scoring_facets_calibration_report()` alias. Exact object reuse
+preserves the established report schema, fingerprints, error behavior, and
+compatibility surface.
 
 ## Provenance and privacy invariants
 
@@ -64,6 +66,8 @@ certification, or release readiness.
 Tests require:
 
 - validation before bundle assembly;
+- callback-failure redaction at the report-prefix boundary;
+- full-batch report-identifier validation before any criterion fit;
 - one-time bounded materialization of review-trigger generators;
 - exact criterion-order delegation;
 - unchanged estimator settings;
