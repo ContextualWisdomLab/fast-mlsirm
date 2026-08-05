@@ -1,1 +1,1 @@
-Trigger the self-removing provider exception hardening workflow.
+Retry the self-removing provider exception hardening workflow after exact-head CI success.
