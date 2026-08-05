@@ -2,23 +2,26 @@
 
 ## Purpose
 
-This record documents the issue #404 boundary that replays one exact governed
-enterprise issue scoring execution before converting its criterion observations
-into the existing shared `ScoringFacetsRatingRecord` contract. The adapter adds no
+This record documents the issue #404 boundaries that replay exact governed
+enterprise issue scoring executions before converting their criterion
+observations into the existing shared `ScoringFacetsRatingRecord` and
+`ScoringFacetsCalibrationBundle` contracts. The adapters add no
 enterprise-specific rating, design, estimator, fit, report, or decision schema.
-It emits neither a calibrated parameter estimate nor a model-selection decision.
+They emit neither a calibrated parameter estimate nor a model-selection decision.
 
-Python verifies identities, evidence provenance, terminal states, and package-
-managed observation metadata, then delegates record construction to
-`build_scoring_facets_rating_records()`. All likelihood, quadrature, gradient,
-parameter-update, and optimization arithmetic remains in the existing Rust-backed
-many-facet implementation.
+Python verifies identities, evidence provenance, terminal states, package-managed
+observation metadata, bounded execution collection shape, and exact execution
+tuple arity. It then delegates record construction to
+`build_scoring_facets_rating_records()` and bundle assembly to
+`build_scoring_facets_calibration_bundle()`. All likelihood, quadrature,
+gradient, parameter-update, and optimization arithmetic remains in the existing
+Rust-backed many-facet implementation.
 
 ## Equation-to-source traceability
 
-The handoff does not add or modify a statistical equation. The delegated
-many-facet estimator, identification constraints, exact rating-scale semantics,
-and numerical implementation traceability remain authoritative in
+The handoff and bundle assembler do not add or modify a statistical equation. The
+delegated many-facet estimator, identification constraints, exact rating-scale
+semantics, and numerical implementation traceability remain authoritative in
 `automated_essay_facets_calibration_reports.md` and its doctoring record.
 
 Bock and Aitkin (1981) provide the primary marginal maximum-likelihood and EM
@@ -33,7 +36,7 @@ readiness for consequential use.
 
 ## Replay invariants
 
-Before delegation, the adapter requires exact package-owned
+Before record delegation, the adapter requires exact package-owned
 `AtomicIssueRecord`, `ScoringRequest`, `ScoringResult`, and `EngineDescriptor`
 values and verifies:
 
@@ -47,14 +50,18 @@ values and verifies:
   counter, and context counts; and
 - preservation of abstention as missingness rather than a low rating.
 
-The shared rating builder remains authoritative for request/result/engine replay,
-criterion coverage, score-category support, exact respondent, task-revision and
-rater axes, duplicate-cell rejection, bounded dense allocation, and design
-connectedness.
+The bundle assembler materializes executions through the existing callback-safe
+bounded collection validator. Every collection entry must be an exact four-value
+tuple in issue, request, result, engine order. Each entry passes the complete
+record-level replay boundary before its shared records are flattened. The shared
+bundle builder remains authoritative for strict boolean policy validation,
+criterion separation, score-category support, exact respondent, response,
+task-revision and rater axes, duplicate-cell rejection, bounded record and dense
+allocation, and design connectedness.
 
 ## Scientific and product limits
 
-Passing this boundary proves only that the supplied records are mutually
+Passing these boundaries proves only that the supplied records are mutually
 consistent under the declared package contracts. It does not establish that an
 issue is true, complete, material, probable, construct-valid, fair, or suitable
 for intervention. It does not establish model adequacy, global optimality, rater
@@ -73,10 +80,11 @@ Merge requires the same unchanged pull-request commit to pass every gate below:
 
 - exact issue/request/result/engine replay tests;
 - observation evidence, counterevidence, abstention, and managed-metadata tests;
-- shared-builder delegation and deterministic order-invariance tests;
+- shared record and bundle-builder delegation tests;
+- deterministic execution-order and task-revision relation invariance tests;
 - connected-design and separate-criterion integration tests;
-- adversarial type, identity, provenance, privacy, and rollback-safe failure
-  tests;
+- adversarial collection type, tuple arity, identity, provenance, privacy,
+  resource-bound, and rollback-safe failure tests;
 - complete public docstrings and 100% statement and branch coverage for added
   production code; and
 - Python, Rust/PyO3, package, release-acceptance, GPU-no-skip, fuzz, Security Scan,
