@@ -16,9 +16,7 @@ from .contracts import (
 from .contracts import MAX_ENTERPRISE_STAKEHOLDERS as MAX_ENTERPRISE_STAKEHOLDERS
 from .contracts import StakeholderPerspective as StakeholderPerspective
 from .explicit_values import DEFAULT_CURRENCY_CODES as DEFAULT_CURRENCY_CODES
-from .explicit_values import (
-    MAX_CURRENCY_CODES as MAX_CURRENCY_CODES,
-)
+from .explicit_values import MAX_CURRENCY_CODES as MAX_CURRENCY_CODES
 from .explicit_values import (
     MAX_CUSTOMER_IDENTIFIER_CHARACTERS as MAX_CUSTOMER_IDENTIFIER_CHARACTERS,
 )
@@ -42,6 +40,24 @@ from .request import (
 from .request import (
     enterprise_issue_evidence_references as enterprise_issue_evidence_references,
 )
+from .semantic_proposals import (
+    MAX_SEMANTIC_ASSERTIONS_PER_ISSUE as MAX_SEMANTIC_ASSERTIONS_PER_ISSUE,
+)
+from .semantic_proposals import (
+    MAX_SEMANTIC_ISSUE_PROPOSALS as MAX_SEMANTIC_ISSUE_PROPOSALS,
+)
+from .semantic_proposals import (
+    MAX_SEMANTIC_ISSUE_STATEMENT_CHARACTERS as MAX_SEMANTIC_ISSUE_STATEMENT_CHARACTERS,
+)
+from .semantic_proposals import (
+    EnterpriseSemanticIssueProvider as EnterpriseSemanticIssueProvider,
+)
+from .semantic_proposals import (
+    OfflineSemanticIssueFixtureProvider as OfflineSemanticIssueFixtureProvider,
+)
+from .semantic_proposals import (
+    extract_enterprise_semantic_issues as extract_enterprise_semantic_issues,
+)
 
 __all__ = [
     "DEFAULT_CURRENCY_CODES",
@@ -52,18 +68,24 @@ __all__ = [
     "MAX_ENTERPRISE_SOURCE_CHARACTERS",
     "MAX_ENTERPRISE_STAKEHOLDERS",
     "MAX_EXPLICIT_VALUE_RECORDS",
+    "MAX_SEMANTIC_ASSERTIONS_PER_ISSUE",
+    "MAX_SEMANTIC_ISSUE_PROPOSALS",
+    "MAX_SEMANTIC_ISSUE_STATEMENT_CHARACTERS",
     "AtomicIssueRecord",
     "CandidateIntervention",
     "CounterevidenceRecord",
     "DeterministicExplicitValueParser",
     "EnterpriseAssertionKind",
     "EnterpriseExplicitValueParser",
+    "EnterpriseSemanticIssueProvider",
     "EnterpriseSourceRecord",
     "EvidenceSpanRecord",
     "ExplicitValueKind",
     "ExplicitValueRecord",
+    "OfflineSemanticIssueFixtureProvider",
     "StakeholderPerspective",
     "build_enterprise_issue_scoring_request",
     "enterprise_issue_evidence_references",
+    "extract_enterprise_semantic_issues",
     "parse_enterprise_explicit_values",
 ]
