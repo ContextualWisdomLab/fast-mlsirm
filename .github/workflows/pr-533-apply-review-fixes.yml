@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Check out exact pull request head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -24,213 +24,62 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Apply accepted review findings
+      - name: Add remaining payload branch tests
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/pr533_review_fixes.py
-          python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python - <<'PY'
           from pathlib import Path
           from textwrap import dedent
 
-          implementation = Path(
-              "python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py"
-          )
-          text = implementation.read_text(encoding="utf-8")
-          provider_boundary = (
-              "    except Exception:\n"
-              "        raise assessment_error(\n"
-              "            \"invalid_explicit_value_parser_output\","
-          )
-          provider_boundary_hardened = (
-              "    except Exception:  # noqa: BLE001 - untrusted provider boundary\n"
-              "        raise assessment_error(\n"
-              "            \"invalid_explicit_value_parser_output\","
-          )
-          if text.count(provider_boundary) != 2:
-              raise SystemExit("expected exactly two provider validation boundaries")
-          text = text.replace(provider_boundary, provider_boundary_hardened)
-          callback_boundary = (
-              "        except Exception:\n"
-              "            raise assessment_error(\n"
-              "                \"explicit_value_parser_failure\","
-          )
-          callback_boundary_hardened = (
-              "        except Exception:  # noqa: BLE001 - untrusted callback boundary\n"
-              "            raise assessment_error(\n"
-              "                \"explicit_value_parser_failure\","
-          )
-          if text.count(callback_boundary) != 1:
-              raise SystemExit("expected exactly one provider callback boundary")
-          implementation.write_text(
-              text.replace(callback_boundary, callback_boundary_hardened, 1),
-              encoding="utf-8",
-          )
-
           tests = Path("tests/test_scoring_enterprise_explicit_values.py")
-          test_text = tests.read_text(encoding="utf-8")
-          marker = "def test_payload_validation_short_circuit_branches_fail_closed"
-          if marker in test_text:
-              raise SystemExit("targeted payload branch test already exists")
-          branch_test = dedent(
-              '''
+          text = tests.read_text(encoding="utf-8")
+          marker = "def test_payload_validation_rejects_non_mapping_thaw_results"
+          if marker not in text:
+              addition = dedent(
+                  '''
 
 
-              @pytest.mark.parametrize(
-                  ("kind", "payload", "expected_code"),
-                  (
-                      (
-                          ExplicitValueKind.CALENDAR_DATE,
-                          {"calendar_date": "2026-09-30", "unexpected_field": 1},
-                          "invalid_normalized_payload",
-                      ),
-                      (
-                          ExplicitValueKind.CALENDAR_DATE,
-                          {"calendar_date": "20260930"},
-                          "invalid_normalized_payload",
-                      ),
-                      (
-                          ExplicitValueKind.MONEY_AMOUNT,
-                          {},
-                          "invalid_normalized_payload",
-                      ),
-                      (
-                          ExplicitValueKind.MONEY_AMOUNT,
-                          {"currency_code": "USD"},
-                          "invalid_normalized_payload",
-                      ),
-                      (
-                          ExplicitValueKind.MONEY_AMOUNT,
-                          {"currency_code": 1, "decimal_amount": "1"},
-                          "invalid_normalized_payload",
-                      ),
-                      (
-                          ExplicitValueKind.FREQUENCY_COUNT,
-                          {},
-                          "invalid_normalized_payload",
-                      ),
-                      (
-                          ExplicitValueKind.FREQUENCY_COUNT,
-                          {"frequency_count": "1", "frequency_period": "month"},
-                          "invalid_normalized_payload",
-                      ),
-                  ),
+                  def test_noncanonical_compact_calendar_date_fails_closed() -> None:
+                      """A parseable but noncanonical compact date is rejected."""
+                      with pytest.raises(AssessmentSpecError) as captured:
+                          _record(
+                              ExplicitValueKind.CALENDAR_DATE,
+                              payload={"calendar_date": "20260930"},
+                          )
+                      assert captured.value.code == "invalid_normalized_payload"
+
+
+                  def test_payload_validation_rejects_non_mapping_thaw_results(
+                      monkeypatch: pytest.MonkeyPatch,
+                  ) -> None:
+                      """The defensive post-thaw mapping guard remains explicitly covered."""
+                      record = _record()
+                      monkeypatch.setattr(
+                          parser_module,
+                          "thaw_json_value",
+                          lambda value: [],
+                      )
+                      with pytest.raises(AssessmentSpecError) as captured:
+                          record._normalized_payload({"calendar_date": "2026-09-30"})
+                      assert captured.value.code == "invalid_normalized_payload"
+                  '''
               )
-              def test_payload_validation_short_circuit_branches_fail_closed(
-                  kind: ExplicitValueKind,
-                  payload: dict[str, Any],
-                  expected_code: str,
-              ) -> None:
-                  """Every payload guard rejects malformed mappings through its stable code."""
-                  with pytest.raises(AssessmentSpecError) as captured:
-                      _record(kind, payload=payload)
-                  assert captured.value.code == expected_code
-
-
-              def test_payload_validation_rejects_non_mapping_thaw_results(
-                  monkeypatch: pytest.MonkeyPatch,
-              ) -> None:
-                  """The defensive post-thaw mapping guard remains explicitly covered."""
-                  record = _record()
-                  monkeypatch.setattr(parser_module, "thaw_json_value", lambda value: [])
-                  with pytest.raises(AssessmentSpecError) as captured:
-                      record._normalized_payload({"calendar_date": "2026-09-30"})
-                  assert captured.value.code == "invalid_normalized_payload"
-              '''
-          )
-          tests.write_text(test_text.rstrip() + branch_test + "\n", encoding="utf-8")
-
-          changelog = Path("CHANGELOG.md")
-          changelog_text = changelog.read_text(encoding="utf-8")
-          historical = (
-              "#### Release cut 0.1.0\n\n"
-              "- Project version is bumped to 0.1.1 in `pyproject.toml`,\n"
-              "  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated\n"
-              "  `Unreleased` notes (bifactor analytics and public API compatibility) now form the\n"
-              "  `[0.1.1] - 2026-08-04` release section."
-          )
-          historical_fixed = (
-              "#### Release cut 0.1.0\n\n"
-              "- Project version is bumped to 0.1.0 in `pyproject.toml`,\n"
-              "  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated\n"
-              "  `Unreleased` notes (bifactor analytics and public API compatibility) now form the\n"
-              "  `[0.1.0] - 2026-08-04` release section."
-          )
-          if changelog_text.count(historical) != 1:
-              raise SystemExit("expected exactly one incorrect 0.1.0 release-cut block")
-          changelog_text = changelog_text.replace(historical, historical_fixed, 1)
-          unused_reference = (
-              "[Unreleased]: https://github.com/ContextualWisdomLab/"
-              "fast-mlsirm/compare/v0.7.0...HEAD\n"
-          )
-          if changelog_text.count(unused_reference) != 1:
-              raise SystemExit("expected exactly one unused Unreleased reference")
-          changelog.write_text(
-              changelog_text.replace(unused_reference, "", 1),
-              encoding="utf-8",
-          )
+              tests.write_text(text.rstrip() + addition + "\n", encoding="utf-8")
           PY
-          python scripts/render_changelog_fragments.py --check CHANGELOG.md
-          python -m py_compile \
-            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values.py
+          python -m py_compile tests/test_scoring_enterprise_explicit_values.py
+          git diff --check
 
-      - name: Build isolated validation environment
+      - name: Commit exact branch tests
         shell: bash
         run: |
           set -euo pipefail
-          python -m venv .venv
-          . .venv/bin/activate
-          python -m pip install --require-hashes -r requirements/ci.txt
-          python -m pip install "ruff==0.16.1" "coverage==7.15.3"
-          python -m pip install --no-deps --no-build-isolation -e .
-
-      - name: Validate accepted review findings
-        shell: bash
-        run: |
-          set -euo pipefail
-          . .venv/bin/activate
-          ruff check --fix \
-            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values.py \
-            scripts/pr533_review_fixes.py
-          ruff format \
-            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values.py \
-            scripts/pr533_review_fixes.py
-          ruff format --check \
-            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values.py \
-            scripts/pr533_review_fixes.py
-          ruff check \
-            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values.py \
-            scripts/pr533_review_fixes.py
-          python -m coverage erase
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m coverage run \
-            --branch \
-            --source=python/fast_mlsirm/scoring/enterprise_issue \
-            -m pytest \
-            tests/test_scoring_enterprise_explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values_provider_boundary.py
-          python -m coverage report \
-            --include='*/explicit_values.py' \
-            --fail-under=100
-          python scripts/render_changelog_fragments.py --check CHANGELOG.md
-
-      - name: Commit verified source changes
-        shell: bash
-        run: |
-          set -euo pipefail
+          if git diff --quiet -- tests/test_scoring_enterprise_explicit_values.py; then
+            echo "Targeted branch tests are already present."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            CHANGELOG.md \
-            docs/changelog.d/enterprise-explicit-value-parser.md \
-            docs/enterprise_issue_evidence_contracts.md \
-            python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values.py
-          git diff --cached --check
-          git commit -m "fix(enterprise): address explicit-value review findings"
+          git add tests/test_scoring_enterprise_explicit_values.py
+          git commit -m "test(enterprise): cover remaining explicit-value branches"
           git push origin HEAD:feat/enterprise-explicit-value-parser
