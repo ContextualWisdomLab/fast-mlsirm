@@ -6,6 +6,7 @@ This record documents the issue #404 boundary that replays one exact governed
 enterprise issue scoring execution before converting its criterion observations
 into the existing shared `ScoringFacetsRatingRecord` contract. The adapter adds no
 enterprise-specific rating, design, estimator, fit, report, or decision schema.
+It emits neither a calibrated parameter estimate nor a model-selection decision.
 
 Python verifies identities, evidence provenance, terminal states, and package-
 managed observation metadata, then delegates record construction to
