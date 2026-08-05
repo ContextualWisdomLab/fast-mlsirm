@@ -24,9 +24,9 @@
 **Learning:** Explicit status semantics can make conditionally rendered empty states easier to discover with assistive technology, while tabular numerals improve visual comparison of metric columns. Focus-reveal behavior must not depend only on `:focus-visible`, and hover styling must not reduce the contrast of unrelated rows.
 **Action:** Use `role="status"` for genuine conditionally rendered status messages, apply `font-variant-numeric: tabular-nums` to numeric report tables, reveal skip links on `:focus`, retain a visible `:focus-visible` indicator, and avoid opacity-based dimming of non-hovered content.
 ## 2026-08-05 - Avoid Dimming Non-Hovered Content
-**Learning:** Using CSS `opacity: 0.5` on non-hovered rows in data charts and tables violates WCAG contrast requirements and harms legibility for visually impaired users.
-**Action:** Avoid opacity-based dimming of non-hovered content to maintain sufficient contrast when users interact with components like charts or data tables.
+**Learning:** Applying `opacity: 0.5` to otherwise active chart and table rows can reduce the rendered text and control contrast below the intended accessible design target. The exact ratio depends on foreground, background, and compositing, so no formal WCAG conformance claim follows from the selector alone.
+**Action:** Preserve the normal foreground and background colors of unrelated data rows during pointer hover; use a non-destructive highlight on the active row instead of dimming every peer.
 
 ## 2026-08-05 - Ensure Hidden Elements Reveal on Any Focus
-**Learning:** Depending solely on `:focus-visible` to reveal hidden accessibility elements (like 'skip-to-content' links) can fail in some browsers or non-visual focus mechanisms, effectively hiding them from users who need them.
-**Action:** Ensure hidden accessibility elements are revealed on both `:focus` and `:focus-visible` states to support full keyboard accessibility.
+**Learning:** `:focus` matches the element that actually has input focus, while `:focus-visible` depends on user-agent heuristics for when a focus indicator should be presented. A visually hidden skip link should therefore use `:focus` for reveal and may retain `:focus-visible` for an explicit focus treatment.
+**Action:** Reveal hidden skip-navigation links on `:focus`, keep a strong visible outline, and cover the generated CSS with a regression test.
