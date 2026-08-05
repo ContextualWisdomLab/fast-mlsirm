@@ -61,6 +61,8 @@ def test_one_iteration_eap_matches_independent_weighted_sum_reference() -> None:
         seed=seed,
     )
 
+    assert result["status"] == "max_iter_reached"
+    assert result["n_iter"] == 1
     np.testing.assert_allclose(
         np.asarray(result["theta"], dtype=np.float64),
         expected_theta,
