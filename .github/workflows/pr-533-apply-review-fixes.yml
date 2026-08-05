@@ -65,7 +65,10 @@ jobs:
                       assert captured.value.code == "invalid_normalized_payload"
                   '''
               )
-              tests.write_text(text.rstrip() + addition + "\n", encoding="utf-8")
+              tests.write_text(
+                  text.rstrip() + addition.rstrip() + "\n",
+                  encoding="utf-8",
+              )
           PY
           python -m py_compile tests/test_scoring_enterprise_explicit_values.py
           git diff --check
