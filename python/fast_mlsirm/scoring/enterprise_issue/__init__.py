@@ -1,5 +1,8 @@
 """Enterprise-issue adapters for the shared governed scoring contracts."""
 
+from .calibration import (
+    build_enterprise_issue_facets_rating_records as build_enterprise_issue_facets_rating_records,
+)
 from .contracts import AtomicIssueRecord as AtomicIssueRecord
 from .contracts import CandidateIntervention as CandidateIntervention
 from .contracts import CounterevidenceRecord as CounterevidenceRecord
@@ -77,6 +80,7 @@ __all__ = [
     "ExplicitValueRecord",
     "StakeholderPerspective",
     "StaticEnterpriseIssueExtractor",
+    "build_enterprise_issue_facets_rating_records",
     "build_enterprise_issue_score_observation",
     "build_enterprise_issue_scoring_request",
     "enterprise_issue_evidence_references",
