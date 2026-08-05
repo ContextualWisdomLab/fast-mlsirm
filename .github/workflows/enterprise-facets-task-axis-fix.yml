@@ -1,0 +1,66 @@
+name: Fix enterprise facets task axis test
+
+on:
+  push:
+    branches:
+      - feat/enterprise-facets-handoff
+    paths:
+      - .github/workflows/enterprise-facets-task-axis-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-facets-handoff
+      - name: Assert exact task revision identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_scoring_enterprise_issue_calibration.py")
+          text = path.read_text(encoding="utf-8")
+          import_before = "    _result_with_replacement,\n)"
+          import_after = "    _result_with_replacement,\n    _task_revision,\n)"
+          if text.count(import_before) != 1:
+              raise SystemExit("task revision import anchor is missing")
+          text = text.replace(import_before, import_after, 1)
+          assertion_before = '''    assert all(
+        design.task_ids == ("task_alpha", "task_beta")
+        for design in bundle.designs
+    )
+'''
+          assertion_after = '''    expected_task_revisions = tuple(
+        sorted((_task_revision("alpha"), _task_revision("beta")))
+    )
+    assert all(
+        design.task_ids == expected_task_revisions for design in bundle.designs
+    )
+'''
+          if text.count(assertion_before) != 1:
+              raise SystemExit("task axis assertion anchor is missing")
+          path.write_text(
+              text.replace(assertion_before, assertion_after, 1),
+              encoding="utf-8",
+          )
+          PY
+          python -m pip install "ruff==0.16.1"
+          ruff format tests/test_scoring_enterprise_issue_calibration.py
+          ruff check tests/test_scoring_enterprise_issue_calibration.py
+      - name: Remove one-shot workflow and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/enterprise-facets-task-axis-fix.yml
+          git add tests/test_scoring_enterprise_issue_calibration.py
+          git diff --cached --check
+          git commit -m "test(enterprise): assert task revision axis"
+          git push origin HEAD:feat/enterprise-facets-handoff
