@@ -124,6 +124,18 @@
 - Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
 - Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
 
+#### Supplemental exact-value report tooltips
+
+- Added native `title` tooltips to finite floating-point metric cards, decorative
+  bar labels, and diagnostic table cells so pointer users can inspect the
+  unrounded Python float representation when the visible report uses compact
+  significant-digit formatting.
+- Preserved the existing accessible exact-value disclosure and JSON/CSV exports as
+  the authoritative keyboard, touch, and assistive-technology paths; native title
+  tooltips are supplemental and are not treated as an accessibility substitute.
+- Added deterministic metric, chart, table, finite-value, non-finite-value, and
+  non-float tests for the report tooltip contract.
+
 ### Changed
 
 #### Release cut 0.7.0
