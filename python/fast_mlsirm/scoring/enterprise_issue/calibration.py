@@ -268,28 +268,29 @@ def build_enterprise_issue_facets_calibration_bundle(
         minimum=1,
         maximum=MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS,
     )
-    records: list[ScoringFacetsRatingRecord] = []
-    for index, execution in enumerate(values):
-        if type(execution) is not tuple or len(execution) != 4:
-            raise assessment_error(
-                "invalid_enterprise_calibration_execution",
-                f"$.executions[{index}]",
-                (
-                    "each execution must be an exact four-value tuple of issue, "
-                    "request, result, and engine"
-                ),
-            )
-        issue, request, result, engine = execution
-        records.extend(
-            build_enterprise_issue_facets_rating_records(
+
+    def validated_records() -> Iterable[ScoringFacetsRatingRecord]:
+        """Yield replay-validated records for bounded shared consumption."""
+        for index, execution in enumerate(values):
+            if type(execution) is not tuple or len(execution) != 4:
+                raise assessment_error(
+                    "invalid_enterprise_calibration_execution",
+                    f"$.executions[{index}]",
+                    (
+                        "each execution must be an exact four-value tuple of issue, "
+                        "request, result, and engine"
+                    ),
+                )
+            issue, request, result, engine = execution
+            yield from build_enterprise_issue_facets_rating_records(
                 issue=issue,
                 request=request,
                 result=result,
                 engine=engine,
             )
-        )
+
     return build_scoring_facets_calibration_bundle(
-        records,
+        validated_records(),
         require_connected=require_connected,
     )
 
