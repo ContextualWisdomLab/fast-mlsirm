@@ -1,4 +1,0 @@
-coverage==7.15.2 \
-    --hash=sha256:68af907f595ab01a78f794932ff3bdf929c316d3000810d38dbc247129e26f8b
-ruff==0.15.22 \
-    --hash=sha256:365523eb91d9224e1bcb03b022fbf0facb8f9e23792a2c53d9d4b3924bdbdebb
