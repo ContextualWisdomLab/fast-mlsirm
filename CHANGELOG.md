@@ -164,6 +164,12 @@
 - Added deterministic metric, chart, table, finite-value, non-finite-value, and
   non-float tests for the report tooltip contract.
 
+#### Shared scoring-facets calibration report names
+
+- Added `fast_mlsirm.scoring.calibration_reporting` as the domain-neutral import
+  path for the canonical scoring-facets calibration report, preserving exact
+  object identity and existing essay ABI and wire contracts.
+
 ### Changed
 
 #### Release cut 0.7.0
