@@ -69,7 +69,7 @@ an identified causal design before intervention-effect claims.
 
 ## Verification contract
 
-Merge requires one unchanged pull-request head to pass:
+Merge requires the same unchanged pull-request commit to pass every gate below:
 
 - exact issue/request/result/engine replay tests;
 - observation evidence, counterevidence, abstention, and managed-metadata tests;
@@ -78,7 +78,7 @@ Merge requires one unchanged pull-request head to pass:
 - adversarial type, identity, provenance, privacy, and rollback-safe failure
   tests;
 - complete public docstrings and 100% statement and branch coverage for added
-  production code;
+  production code; and
 - Python, Rust/PyO3, package, release-acceptance, GPU-no-skip, fuzz, Security Scan,
   SAST, changelog parity, and final review gates.
 
