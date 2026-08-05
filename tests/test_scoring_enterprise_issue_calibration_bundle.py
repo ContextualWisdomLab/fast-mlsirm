@@ -102,6 +102,24 @@ def test_execution_order_does_not_change_bundle_identity() -> None:
     assert forward.bundle_fingerprint == reverse.bundle_fingerprint
 
 
+def test_callback_safe_generator_is_consumed_once() -> None:
+    """A bounded execution generator is materialized once before replay."""
+    executions = _connected_executions()
+    visits: list[int] = []
+
+    def generated_executions():
+        for index, execution in enumerate(executions):
+            visits.append(index)
+            yield execution
+
+    bundle = build_enterprise_issue_facets_calibration_bundle(
+        generated_executions()
+    )
+
+    assert visits == [0, 1, 2, 3]
+    assert all(design.connected for design in bundle.designs)
+
+
 def test_bundle_assembler_delegates_flattened_records_and_policy(monkeypatch) -> None:
     """Enterprise replay delegates bundle assembly without altering records."""
     executions = _connected_executions()
@@ -174,9 +192,7 @@ def test_execution_collection_obeys_the_public_resource_bound(monkeypatch) -> No
     execution = _connected_executions()[0]
 
     with pytest.raises(AssessmentSpecError) as captured:
-        build_enterprise_issue_facets_calibration_bundle(
-            (execution, execution)
-        )
+        build_enterprise_issue_facets_calibration_bundle((execution, execution))
 
     assert captured.value.code == "invalid_executions"
     assert captured.value.path == "$.executions"
