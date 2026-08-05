@@ -95,8 +95,13 @@ def test_public_surface_and_shared_bundle_preserve_exact_enterprise_identity() -
         design.respondent_ids == ("issue_alpha", "issue_beta")
         for design in bundle.designs
     )
+    expected_task_revisions = {
+        ("task_alpha", _digest("task-revision:alpha")),
+        ("task_beta", _digest("task-revision:beta")),
+    }
     assert all(
-        design.task_ids == ("task_alpha", "task_beta")
+        set(zip(design.task_ids, design.task_revision_fingerprints, strict=True))
+        == expected_task_revisions
         for design in bundle.designs
     )
     assert all(design.connected for design in bundle.designs)
