@@ -130,12 +130,16 @@ jobs:
             python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py \
             tests/test_scoring_enterprise_explicit_values.py \
             scripts/pr533_review_fixes.py
-          pytest \
+          python -m coverage erase
+          python -m coverage run \
+            --branch \
+            --source=python/fast_mlsirm/scoring/enterprise_issue \
+            -m pytest \
             tests/test_scoring_enterprise_explicit_values.py \
-            tests/test_scoring_enterprise_explicit_values_provider_boundary.py \
-            --cov=fast_mlsirm.scoring.enterprise_issue.explicit_values \
-            --cov-branch \
-            --cov-fail-under=100
+            tests/test_scoring_enterprise_explicit_values_provider_boundary.py
+          python -m coverage report \
+            --include='*/explicit_values.py' \
+            --fail-under=100
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
 
       - name: Commit verified source changes
