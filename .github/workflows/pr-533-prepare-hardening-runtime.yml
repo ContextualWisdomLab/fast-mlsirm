@@ -1,0 +1,56 @@
+name: PR 533 prepare hardening runtime
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: contains(github.event.head_commit.message, 'prepare provider hardening runtime')
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+
+      - name: Pin focused validation tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/pr-533-provider-exception-hardening.yml')
+          text = path.read_text(encoding='utf-8')
+          before = '''          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+          '''
+          after = '''          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install "ruff==0.15.22" "pytest-cov==6.2.1"
+          python -m pip install --no-deps --no-build-isolation -e .
+          '''
+          if before not in text:
+              raise SystemExit('focused dependency block not found')
+          path.write_text(text.replace(before, after, 1), encoding='utf-8')
+          PY
+
+      - name: Commit preparation and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-prepare-hardening-runtime.yml
+          git add .github/workflows/pr-533-provider-exception-hardening.yml
+          git diff --cached --check
+          git commit -m "ci: pin provider hardening validation tools"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
