@@ -1,1 +1,2 @@
-trigger=2026-08-05T14:22:00+09:00
+trigger=2026-08-05T14:55:00+09:00
+purpose=validate-reviewed-rust-terminal-trace-compatibility
