@@ -128,7 +128,8 @@ Add deterministic tests for:
 Extend `docs/enterprise_issue_evidence_contracts.md` with the transient-text,
 code-point-offset, privacy, normalization, and interpretation boundaries. Add an
 authoritative changelog fragment and keep the managed `CHANGELOG.md` block
-synchronized after every fragment change.
+synchronized after every fragment change; the repository parity contract remains
+a required merge gate.
 
 ISO 8601-1:2019 remains the current published basic-rules standard as of this
 plan; ISO has an Edition 2 committee draft under development. ISO 4217:2015 is
