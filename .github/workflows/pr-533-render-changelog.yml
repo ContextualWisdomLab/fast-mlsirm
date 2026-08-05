@@ -1,0 +1,37 @@
+name: PR 533 render changelog
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+    paths:
+      - .github/workflows/pr-533-render-changelog.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr-533-render-changelog
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+      - name: Render authoritative fragments
+        run: |
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Remove one-shot workflow and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-render-changelog.yml
+          git add CHANGELOG.md
+          git diff --cached --check
+          git commit -m "docs: synchronize explicit-value changelog fragment"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
