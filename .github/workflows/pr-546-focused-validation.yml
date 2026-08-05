@@ -103,7 +103,7 @@ jobs:
           python -m coverage erase
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m coverage run \
             --branch \
-            --source=fast_mlsirm.scoring.enterprise_issue.reporting,fast_mlsirm.scoring.essay.calibration_reporting,fast_mlsirm.scoring.essay.calibration_report_html \
+            --include='python/fast_mlsirm/scoring/enterprise_issue/reporting.py,python/fast_mlsirm/scoring/essay/calibration_reporting.py,python/fast_mlsirm/scoring/essay/calibration_report_html.py' \
             -m pytest -q \
             tests/test_scoring_enterprise_issue_calibration_reporting.py \
             tests/test_scoring_essay_facets_reporting.py \
