@@ -27,7 +27,11 @@ jobs:
           fetch-depth: 0
 
       - name: Apply reviewed compatibility patch
-        run: python .github/scripts/pr_546_apply_fixes.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/pr_546_prepare_docs.py
+          python .github/scripts/pr_546_apply_fixes.py
 
       - name: Render and syntax-check authoritative files
         shell: bash
@@ -118,7 +122,8 @@ jobs:
           git rm \
             .github/workflows/pr-546-focused-validation.yml \
             .github/pr-546-focused-validation-trigger.txt \
-            .github/scripts/pr_546_apply_fixes.py
+            .github/scripts/pr_546_apply_fixes.py \
+            .github/scripts/pr_546_prepare_docs.py
           git add \
             CHANGELOG.md \
             docs/automated_essay_facets_calibration_reports.md \
