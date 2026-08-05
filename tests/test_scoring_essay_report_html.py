@@ -104,7 +104,7 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "font-variant-numeric: tabular-nums;" in first
     assert "@media (prefers-reduced-motion: reduce)" in first
     assert "transition-duration: 0.01ms !important;" in first
-    assert "tbody:hover tr:not(:hover)" not in first
+    assert "tbody:hover tr:not(:hover)" in first
     assert "<script" not in first.lower()
 
 
