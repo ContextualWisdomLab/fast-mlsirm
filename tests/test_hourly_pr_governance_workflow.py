@@ -151,6 +151,7 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     assert 'manifest.get("status") == "failed"' in text
     assert 'manifest.get("failed_checks")' in text
     assert 'check.get("ok") is False' in text
+    assert 'type(error.get("returncode")) is int' in text
     assert 'error.get("returncode") != 0' in text
     assert '"github:snapshot"' in text
     assert '"github:base_sha"' in text
@@ -203,6 +204,13 @@ def test_hourly_governance_workflow_rejects_successful_error_command_evidence():
     """An error record with a zero return code is contradictory and non-retryable."""
     manifest = _manifest("github:snapshot")
     manifest["github"]["errors"][0]["returncode"] = 0
+    assert _classify_retryability(manifest) == "false"
+
+
+def test_hourly_governance_workflow_rejects_boolean_error_return_code():
+    """A Boolean is not a valid process exit status despite subclassing int."""
+    manifest = _manifest("github:snapshot")
+    manifest["github"]["errors"][0]["returncode"] = True
     assert _classify_retryability(manifest) == "false"
 
 
