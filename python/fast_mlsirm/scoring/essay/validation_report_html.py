@@ -160,7 +160,6 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
         headers=("Metric", "Exact value", "Interpretation boundary"),
         rows=_metric_rows(report),
         empty_message="No validation metrics are available.",
-        row_header=True,
     )
     triggers = _identifier_list(
         report.review_trigger_ids,
