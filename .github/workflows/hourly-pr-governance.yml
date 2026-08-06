@@ -69,6 +69,23 @@ jobs:
               print("false")
               raise SystemExit
 
+          failed_checks = manifest.get("failed_checks")
+          retryable_failed_check_names = {"github:snapshot", "github:base_sha"}
+          if (
+              not isinstance(failed_checks, list)
+              or not failed_checks
+              or not all(isinstance(check, dict) for check in failed_checks)
+          ):
+              print("false")
+              raise SystemExit
+          failed_check_names = {
+              str(check.get("name", "")) for check in failed_checks
+          }
+          only_transient_snapshot_checks_failed = (
+              bool(failed_check_names)
+              and failed_check_names.issubset(retryable_failed_check_names)
+          )
+
           github = manifest.get("github", {})
           errors = github.get("errors", []) if isinstance(github, dict) else []
           retry_markers = (
@@ -82,13 +99,17 @@ jobs:
               "temporary failure",
               "temporarily unavailable",
           )
-          retryable = bool(errors) and all(
-              isinstance(error, dict)
-              and any(
-                  marker.lower() in str(error.get("stderr", "")).lower()
-                  for marker in retry_markers
+          retryable = (
+              only_transient_snapshot_checks_failed
+              and bool(errors)
+              and all(
+                  isinstance(error, dict)
+                  and any(
+                      marker.lower() in str(error.get("stderr", "")).lower()
+                      for marker in retry_markers
+                  )
+                  for error in errors
               )
-              for error in errors
           )
           print("true" if retryable else "false")
           PY
