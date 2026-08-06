@@ -58,6 +58,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          import re
 
           path = Path("hourly-pr-queue-governance/pr_queue_governance_manifest.json")
           if not path.is_file():
@@ -96,11 +97,7 @@ jobs:
 
           github = manifest.get("github", {})
           errors = github.get("errors", []) if isinstance(github, dict) else []
-          retry_markers = (
-              "HTTP 502",
-              "HTTP 503",
-              "HTTP 504",
-          )
+          retry_status = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
           retryable = (
               only_transient_snapshot_checks_failed
               and bool(errors)
@@ -109,10 +106,7 @@ jobs:
                   and type(error.get("returncode")) is int
                   and error.get("returncode") != 0
                   and isinstance(error.get("stderr"), str)
-                  and any(
-                      marker.lower() in error.get("stderr", "").lower()
-                      for marker in retry_markers
-                  )
+                  and retry_status.search(error.get("stderr", "")) is not None
                   for error in errors
               )
           )
