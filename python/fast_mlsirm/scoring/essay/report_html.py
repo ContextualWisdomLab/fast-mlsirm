@@ -81,19 +81,35 @@ def _table(
     headers: tuple[str, ...],
     rows: tuple[tuple[object | None, ...], ...],
     empty_message: str,
-    row_header: bool = False,
+    row_header_column: int | None = None,
 ) -> str:
-    """Render an accessible exact-value table or one explicit empty state."""
+    """Render one exact-value table with an explicitly identified row-header column.
+
+    ``row_header_column`` is zero-based and must name a real header. Leaving it
+    as ``None`` emits only data cells in ``tbody``. Every non-empty row must
+    match the declared header width so semantic associations cannot drift from
+    the serialized values.
+    """
+    if row_header_column is not None and (
+        isinstance(row_header_column, bool)
+        or not isinstance(row_header_column, int)
+        or row_header_column < 0
+        or row_header_column >= len(headers)
+    ):
+        raise ValueError("row_header_column must identify an existing table header")
     if not rows:
         return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
-    if row_header and not headers:
-        raise ValueError("table headers must not be empty when using row headers")
+    if not headers:
+        raise ValueError("table headers must not be empty when rows are present")
+    if any(len(row) != len(headers) for row in rows):
+        raise ValueError("every table row must match the declared header width")
+
     heading = "".join(f'<th scope="col">{escape(header)}</th>' for header in headers)
     body = []
     for row in rows:
         cells = []
-        for i, value in enumerate(row):
-            if i == 0 and row_header:
+        for column_index, value in enumerate(row):
+            if column_index == row_header_column:
                 cells.append(f'<th scope="row">{_display(value)}</th>')
             else:
                 cells.append(f"<td>{_display(value)}</td>")
@@ -249,7 +265,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
         ),
         rows=_criterion_rows(report),
         empty_message="No criterion observations are available.",
-        row_header=True,
+        row_header_column=0,
     )
     evidence = _table(
         caption="Source-text-free evidence references",
