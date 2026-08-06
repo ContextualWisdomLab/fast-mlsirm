@@ -184,7 +184,9 @@ def fit_mmle_2pl(
             break
 
     # ---- EAP ability for each person ----
-    theta = (posterior * nodes[None, :]).sum(axis=1)
+    # Optimization: Replace element-wise multiply and axis reduction with dense matrix multiplication
+    # to avoid large intermediate array allocations (n_persons x n_nodes)
+    theta = posterior @ nodes
 
     return {
         "a": a,
