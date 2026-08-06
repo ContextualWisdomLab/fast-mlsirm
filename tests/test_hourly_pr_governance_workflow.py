@@ -63,8 +63,11 @@ def _classify_retryability(manifest: dict[str, Any]) -> str:
     return completed.stdout.strip()
 
 
-def _manifest(*failed_check_names: str) -> dict[str, Any]:
-    """Return a minimal failed manifest with one transient GraphQL error."""
+def _manifest(
+    *failed_check_names: str,
+    stderr: str = "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
+) -> dict[str, Any]:
+    """Return a minimal failed manifest with one caller-selected GitHub error."""
     return {
         "status": "failed",
         "failed_checks": [
@@ -74,10 +77,7 @@ def _manifest(*failed_check_names: str) -> dict[str, Any]:
             "errors": [
                 {
                     "command": ["pr", "list"],
-                    "stderr": (
-                        "HTTP 502: 502 Bad Gateway "
-                        "(https://api.github.com/graphql)"
-                    ),
+                    "stderr": stderr,
                     "returncode": 1,
                 }
             ]
@@ -134,18 +134,22 @@ def test_governance_workflow_fails_closed_when_no_tests_are_discovered():
     assert text.index(guard) < text.index("for name in test_names:")
 
 
-def test_hourly_governance_workflow_retries_transient_github_api_failures():
-    """Transient GitHub 5xx failures receive a small bounded backoff retry."""
+def test_hourly_governance_workflow_retries_only_approved_transient_statuses():
+    """Only HTTP 429, 502, 503, and 504 receive the bounded retry policy."""
+    classifier = _retry_classifier_script()
     text = _workflow_text()
     assert "max_attempts=3" in text
-    assert '"HTTP 502"' in text
-    assert '"HTTP 503"' in text
-    assert 'delay=$((attempt * 10))' in text
+    for status in ("HTTP 429", "HTTP 502", "HTTP 503", "HTTP 504"):
+        assert f'"{status}"' in classifier
+    assert '"HTTP 500"' not in classifier
+    assert '"timeout"' not in classifier
+    assert '"connection reset"' not in classifier
+    assert 'delay=$((10 * (2 ** (attempt - 1))))' in text
     assert 'attempt=$((attempt + 1))' in text
 
 
 def test_hourly_governance_workflow_does_not_retry_governance_failures():
-    """Only transient GitHub errors are retried; real gate failures stay failed."""
+    """Only approved GitHub statuses retry; real governance failures stay failed."""
     text = _workflow_text()
     assert 'manifest.get("github", {})' in text
     assert 'manifest.get("status") == "failed"' in text
@@ -162,15 +166,37 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     assert "continue-on-error: true" not in text
 
 
-def test_hourly_governance_workflow_classifies_snapshot_only_502_as_retryable():
-    """A transient snapshot-only failure is eligible for bounded retry."""
-    assert _classify_retryability(_manifest("github:snapshot")) == "true"
+def test_hourly_governance_workflow_classifies_approved_statuses_as_retryable():
+    """Each explicitly approved transient HTTP status is eligible for retry."""
+    messages = (
+        "HTTP 429: API rate limit exceeded (https://api.github.com/graphql)",
+        "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
+        "HTTP 503: Service Unavailable (https://api.github.com/graphql)",
+        "HTTP 504: Gateway Timeout (https://api.github.com/graphql)",
+    )
+    for stderr in messages:
+        manifest = _manifest("github:snapshot", stderr=stderr)
+        assert _classify_retryability(manifest) == "true"
 
 
 def test_hourly_governance_workflow_classifies_repo_502_as_retryable():
     """A repository 502 may fail both snapshot and base-SHA evidence."""
     manifest = _manifest("github:snapshot", "github:base_sha")
     assert _classify_retryability(manifest) == "true"
+
+
+def test_hourly_governance_workflow_rejects_unapproved_transient_markers():
+    """HTTP 500 and generic network messages do not authorize retries."""
+    messages = (
+        "HTTP 500: Internal Server Error",
+        "request timed out",
+        "connection reset by peer",
+        "temporary failure resolving api.github.com",
+        "temporarily unavailable",
+    )
+    for stderr in messages:
+        manifest = _manifest("github:snapshot", stderr=stderr)
+        assert _classify_retryability(manifest) == "false"
 
 
 def test_hourly_governance_workflow_rejects_mixed_governance_and_502_failures():
