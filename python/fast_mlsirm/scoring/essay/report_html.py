@@ -88,8 +88,13 @@ def _table(
     heading = "".join(f'<th scope="col">{escape(header)}</th>' for header in headers)
     body = []
     for row in rows:
-        cells = "".join(f"<td>{_display(value)}</td>" for value in row)
-        body.append(f"<tr>{cells}</tr>")
+        cells = []
+        for i, value in enumerate(row):
+            if i == 0:
+                cells.append(f'<th scope="row">{_display(value)}</th>')
+            else:
+                cells.append(f"<td>{_display(value)}</td>")
+        body.append(f"<tr>{''.join(cells)}</tr>")
     return "\n".join(
         (
             '<div class="table-scroll" tabindex="0" role="region" '
@@ -183,7 +188,8 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
