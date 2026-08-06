@@ -148,8 +148,10 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     """Only transient GitHub errors are retried; real gate failures stay failed."""
     text = _workflow_text()
     assert 'manifest.get("github", {})' in text
+    assert 'manifest.get("status") == "failed"' in text
     assert 'manifest.get("failed_checks")' in text
     assert 'check.get("ok") is False' in text
+    assert 'error.get("returncode") != 0' in text
     assert '"github:snapshot"' in text
     assert '"github:base_sha"' in text
     assert "issubset(retryable_failed_check_names)" in text
@@ -187,6 +189,20 @@ def test_hourly_governance_workflow_rejects_contradictory_passing_check_evidence
     """A failed-check record marked successful cannot authorize a retry."""
     manifest = _manifest("github:snapshot")
     manifest["failed_checks"][0]["ok"] = True
+    assert _classify_retryability(manifest) == "false"
+
+
+def test_hourly_governance_workflow_rejects_contradictory_success_status():
+    """A manifest marked successful cannot authorize retry after command failure."""
+    manifest = _manifest("github:snapshot")
+    manifest["status"] = "ok"
+    assert _classify_retryability(manifest) == "false"
+
+
+def test_hourly_governance_workflow_rejects_successful_error_command_evidence():
+    """An error record with a zero return code is contradictory and non-retryable."""
+    manifest = _manifest("github:snapshot")
+    manifest["github"]["errors"][0]["returncode"] = 0
     assert _classify_retryability(manifest) == "false"
 
 
