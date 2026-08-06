@@ -69,6 +69,11 @@ jobs:
               print("false")
               raise SystemExit
 
+          status_failed = manifest.get("status") == "failed"
+          if not status_failed:
+              print("false")
+              raise SystemExit
+
           failed_checks = manifest.get("failed_checks")
           retryable_failed_check_names = {"github:snapshot", "github:base_sha"}
           if (
@@ -107,8 +112,11 @@ jobs:
               and bool(errors)
               and all(
                   isinstance(error, dict)
+                  and isinstance(error.get("returncode"), int)
+                  and error.get("returncode") != 0
+                  and isinstance(error.get("stderr"), str)
                   and any(
-                      marker.lower() in str(error.get("stderr", "")).lower()
+                      marker.lower() in error.get("stderr", "").lower()
                       for marker in retry_markers
                   )
                   for error in errors
