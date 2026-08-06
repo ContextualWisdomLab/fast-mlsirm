@@ -135,12 +135,12 @@ def test_governance_workflow_fails_closed_when_no_tests_are_discovered():
 
 
 def test_hourly_governance_workflow_retries_only_safe_server_statuses():
-    """Only gateway/service 5xx statuses receive short bounded retries."""
+    """Only exact gateway and service-unavailable HTTP statuses receive retries."""
     classifier = _retry_classifier_script()
     text = _workflow_text()
     assert "max_attempts=3" in text
-    for status in ("HTTP 502", "HTTP 503", "HTTP 504"):
-        assert f'"{status}"' in classifier
+    assert "import re" in classifier
+    assert r"\bHTTP (?:502|503|504)\b" in classifier
     assert '"HTTP 429"' not in classifier
     assert '"HTTP 500"' not in classifier
     assert '"timeout"' not in classifier
@@ -173,6 +173,7 @@ def test_hourly_governance_workflow_classifies_safe_server_statuses_as_retryable
         "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
         "HTTP 503: Service Unavailable (https://api.github.com/graphql)",
         "HTTP 504: Gateway Timeout (https://api.github.com/graphql)",
+        "prefix http 502 suffix",
     )
     for stderr in messages:
         manifest = _manifest("github:snapshot", stderr=stderr)
@@ -186,12 +187,22 @@ def test_hourly_governance_workflow_classifies_repo_502_as_retryable():
 
 
 def test_hourly_governance_workflow_rejects_rate_limit_without_headers():
-    """A 429 cannot use a short retry without Retry-After/reset evidence."""
+    """A 429 cannot use a short retry without Retry-After or reset evidence."""
     manifest = _manifest(
         "github:snapshot",
         stderr="HTTP 429: API rate limit exceeded",
     )
     assert _classify_retryability(manifest) == "false"
+
+
+def test_hourly_governance_workflow_rejects_status_prefix_collisions():
+    """Longer numeric tokens cannot masquerade as approved HTTP statuses."""
+    for status in (4290, 5020, 5030, 5040):
+        manifest = _manifest(
+            "github:snapshot",
+            stderr=f"HTTP {status}: unexpected upstream error",
+        )
+        assert _classify_retryability(manifest) == "false"
 
 
 def test_hourly_governance_workflow_rejects_unapproved_transient_markers():
