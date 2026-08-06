@@ -52,10 +52,67 @@ jobs:
         id: governance
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/build_pr_queue_governance.py
-          --repo ContextualWisdomLab/fast-mlsirm
-          --out hourly-pr-queue-governance
+        run: |
+          set -euo pipefail
+          is_retryable_github_failure() {
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("hourly-pr-queue-governance/pr_queue_governance_manifest.json")
+          if not path.is_file():
+              print("false")
+              raise SystemExit
+          try:
+              manifest = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, UnicodeError, json.JSONDecodeError):
+              print("false")
+              raise SystemExit
+
+          github = manifest.get("github", {})
+          errors = github.get("errors", []) if isinstance(github, dict) else []
+          retry_markers = (
+              "HTTP 500",
+              "HTTP 502",
+              "HTTP 503",
+              "HTTP 504",
+              "timed out",
+              "timeout",
+              "connection reset",
+              "temporary failure",
+              "temporarily unavailable",
+          )
+          retryable = bool(errors) and all(
+              isinstance(error, dict)
+              and any(
+                  marker.lower() in str(error.get("stderr", "")).lower()
+                  for marker in retry_markers
+              )
+              for error in errors
+          )
+          print("true" if retryable else "false")
+          PY
+          }
+
+          max_attempts=3
+          attempt=1
+          while true; do
+            rm -rf hourly-pr-queue-governance
+            if python scripts/build_pr_queue_governance.py \
+              --repo ContextualWisdomLab/fast-mlsirm \
+              --out hourly-pr-queue-governance; then
+              break
+            fi
+
+            retryable="$(is_retryable_github_failure)"
+            if [[ "$retryable" != "true" || "$attempt" -ge "$max_attempts" ]]; then
+              exit 1
+            fi
+            delay=$((attempt * 10))
+            echo "::warning::Transient GitHub API failure on attempt ${attempt}; retrying in ${delay}s."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
       - name: Publish hourly governance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
