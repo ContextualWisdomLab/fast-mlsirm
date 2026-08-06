@@ -74,7 +74,10 @@ jobs:
           if (
               not isinstance(failed_checks, list)
               or not failed_checks
-              or not all(isinstance(check, dict) for check in failed_checks)
+              or not all(
+                  isinstance(check, dict) and check.get("ok") is False
+                  for check in failed_checks
+              )
           ):
               print("false")
               raise SystemExit
