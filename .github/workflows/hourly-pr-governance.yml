@@ -97,15 +97,10 @@ jobs:
           github = manifest.get("github", {})
           errors = github.get("errors", []) if isinstance(github, dict) else []
           retry_markers = (
-              "HTTP 500",
+              "HTTP 429",
               "HTTP 502",
               "HTTP 503",
               "HTTP 504",
-              "timed out",
-              "timeout",
-              "connection reset",
-              "temporary failure",
-              "temporarily unavailable",
           )
           retryable = (
               only_transient_snapshot_checks_failed
@@ -140,7 +135,7 @@ jobs:
             if [[ "$retryable" != "true" || "$attempt" -ge "$max_attempts" ]]; then
               exit 1
             fi
-            delay=$((attempt * 10))
+            delay=$((10 * (2 ** (attempt - 1))))
             echo "::warning::Transient GitHub API failure on attempt ${attempt}; retrying in ${delay}s."
             sleep "$delay"
             attempt=$((attempt + 1))
