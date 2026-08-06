@@ -97,7 +97,6 @@ jobs:
           github = manifest.get("github", {})
           errors = github.get("errors", []) if isinstance(github, dict) else []
           retry_markers = (
-              "HTTP 429",
               "HTTP 502",
               "HTTP 503",
               "HTTP 504",
