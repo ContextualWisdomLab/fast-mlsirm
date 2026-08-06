@@ -81,16 +81,19 @@ def _table(
     headers: tuple[str, ...],
     rows: tuple[tuple[object | None, ...], ...],
     empty_message: str,
+    row_header: bool = False,
 ) -> str:
     """Render an accessible exact-value table or one explicit empty state."""
     if not rows:
         return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
+    if row_header and not headers:
+        raise ValueError("table headers must not be empty when using row headers")
     heading = "".join(f'<th scope="col">{escape(header)}</th>' for header in headers)
     body = []
     for row in rows:
         cells = []
         for i, value in enumerate(row):
-            if i == 0:
+            if i == 0 and row_header:
                 cells.append(f'<th scope="row">{_display(value)}</th>')
             else:
                 cells.append(f"<td>{_display(value)}</td>")
@@ -246,6 +249,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
         ),
         rows=_criterion_rows(report),
         empty_message="No criterion observations are available.",
+        row_header=True,
     )
     evidence = _table(
         caption="Source-text-free evidence references",

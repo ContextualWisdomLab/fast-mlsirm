@@ -503,7 +503,7 @@ def _is_number(value: Any) -> bool:
 def _title_attr(value: Any) -> str:
     """Return an exact string title attribute for finite floats, else empty."""
     if isinstance(value, float) and math.isfinite(value):
-        return f' title="{escape(repr(value))}"'
+        return f' title="{escape(str(value))}"'
     return ""
 
 

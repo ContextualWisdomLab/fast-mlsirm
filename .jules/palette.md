@@ -47,15 +47,3 @@
 ## 2025-02-12 - Exposing Unrounded Numeric Representations for Formatted Floats
 **Learning:** In data-heavy HTML reports, formatting floats to a fixed number of significant digits can obscure the original Python float representation. A native `title` tooltip can help pointer users inspect that unrounded representation, but it is not a reliable keyboard, touch, or assistive-technology disclosure mechanism.
 **Action:** Add the unrounded Python float representation as a supplemental native `title` tooltip on formatted values. Preserve the report's accessible exact-value disclosure and JSON/CSV exports as the authoritative non-hover paths; never claim that `title` alone provides accessibility.
-
-## 2024-07-10 - HTML Report Semantic Definition Lists
-**Learning:** Using `<span>` and `<p>` elements for displaying key-value metadata pairs (like "Source: file.json") in HTML reports misses an opportunity to provide semantic structure. Additionally, purely decorative text preceding main headings (like a small subtitle) can add noise for screen reader users when read out immediately before the main `<h1>`.
-**Action:** In HTML reports, prefer semantic `<dl>`, `<dt>`, `<dd>` elements for key-value data (explicitly resetting default `<dt>` font-weight for cross-browser visual consistency), and use `aria-hidden="true"` to hide purely visual, redundant components from screen readers.
-
-## 2025-02-12 - Exposing Unrounded Numeric Representations for Formatted Floats
-**Learning:** In data-heavy HTML reports, formatting floats to a fixed number of significant digits can obscure the original Python float representation. A native `title` tooltip can help pointer users inspect that unrounded representation, but it is not a reliable keyboard, touch, or assistive-technology disclosure mechanism.
-**Action:** Add the unrounded Python float representation as a supplemental native `title` tooltip on formatted values. Preserve the report's accessible exact-value disclosure and JSON/CSV exports as the authoritative non-hover paths; never claim that `title` alone provides accessibility.
-
-## 2025-02-12 - Table Body `<th scope="row">` and Tabular Numbers
-**Learning:** Using `<td>` for the first column in data tables makes it difficult for screen reader users to associate row data with its identifying header. Additionally, numbers in data tables can jitter horizontally if proportional fonts are used.
-**Action:** When generating HTML data tables, always use `<th scope="row">` for the first identifying column to improve screen reader accessibility. Apply `font-variant-numeric: tabular-nums;` to base table cell styles to ensure numbers align properly, and explicitly update primary cell CSS selectors (e.g., from `th, td { ... }` to `thead th, tbody th, td { ... }`) and add `tbody th { font-weight: normal; }` to maintain consistent baseline styling.
