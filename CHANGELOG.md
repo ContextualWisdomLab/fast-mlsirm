@@ -152,6 +152,17 @@
 - Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
 - Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
 
+#### Hourly bounded review-repair caller
+
+- Added a schedule-only fast-mlsirm caller that runs at minute 37 every hour and
+  delegates to one immutable organization-owned review-repair workflow.
+- Bounded each run to one new repair dispatch, one-hour same-head retries,
+  protected `main`, product-level single-flight concurrency, and explicit
+  scheduler credentials without direct model secrets or inherited secrets.
+- Added permanent caller-contract tests and APA 7th doctoring for default-branch
+  activation, immutable reusable-workflow source, failure behavior, rollback,
+  and the NVIDIA NIM control-plane boundary.
+
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
