@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import textwrap
 from pathlib import Path
 
 
@@ -11,6 +13,15 @@ _WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "hourly-pr-gov
 def _workflow_text() -> str:
     """Return the scheduled workflow as UTF-8 text."""
     return _WORKFLOW.read_text(encoding="utf-8")
+
+
+def _build_step_script() -> str:
+    """Return the live governance shell block with YAML indentation removed."""
+    text = _workflow_text()
+    step = text.index("      - name: Build live PR queue governance evidence")
+    run = text.index("        run: |\n", step) + len("        run: |\n")
+    end = text.index("      - name:", run)
+    return textwrap.dedent(text[run:end])
 
 
 def test_hourly_governance_workflow_exists_and_runs_every_hour():
@@ -60,3 +71,36 @@ def test_governance_workflow_fails_closed_when_no_tests_are_discovered():
     assert guard in text
     assert text.index("if not test_names:") < text.index(guard)
     assert text.index(guard) < text.index("for name in test_names:")
+
+
+def test_hourly_governance_workflow_retries_transient_github_api_failures():
+    """Transient GitHub 5xx failures receive a small bounded backoff retry."""
+    text = _workflow_text()
+    assert "max_attempts=3" in text
+    assert '"HTTP 502"' in text
+    assert '"HTTP 503"' in text
+    assert 'delay=$((attempt * 10))' in text
+    assert 'attempt=$((attempt + 1))' in text
+
+
+def test_hourly_governance_workflow_does_not_retry_governance_failures():
+    """Only transient GitHub errors are retried; real gate failures stay failed."""
+    text = _workflow_text()
+    assert 'manifest.get("github", {})' in text
+    assert 'bool(errors) and all(' in text
+    guard = 'if [[ "$retryable" != "true" || "$attempt" -ge "$max_attempts" ]]; then'
+    assert guard in text
+    assert text.index(guard) < text.index("exit 1")
+    assert "continue-on-error: true" not in text
+
+
+def test_hourly_governance_retry_shell_is_syntactically_valid():
+    """The bounded retry block remains valid Bash after YAML de-indentation."""
+    completed = subprocess.run(
+        ["bash", "-n"],
+        input=_build_step_script(),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert completed.returncode == 0, completed.stderr
