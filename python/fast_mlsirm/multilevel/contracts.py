@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
 import math
 from typing import Any
@@ -42,12 +42,12 @@ class LongitudinalStateKind(str, Enum):
 
 
 def _state_kind(value: Any) -> LongitudinalStateKind:
-    """Return one supported longitudinal state kind without value reflection."""
+    """Return one supported state kind without reflecting callback failures."""
     if isinstance(value, LongitudinalStateKind):
         return value
     try:
         return LongitudinalStateKind(value)
-    except (TypeError, ValueError, OverflowError):
+    except Exception:
         raise contract_error(
             "invalid_state_kind",
             "$.state_kind",
@@ -55,16 +55,43 @@ def _state_kind(value: Any) -> LongitudinalStateKind:
         ) from None
 
 
+def _safe_values(
+    values: Any,
+    name: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> tuple[Any, ...]:
+    """Materialize a bounded collection while redacting ordinary callbacks."""
+    try:
+        return bounded_values(
+            values,
+            name,
+            minimum=minimum,
+            maximum=maximum,
+        )
+    except MultilevelContractError:
+        raise
+    except Exception:
+        raise contract_error(
+            f"invalid_{name}",
+            f"$.{name}",
+            f"{name} could not be materialized safely",
+        ) from None
+
+
 @dataclass(frozen=True)
 class ContextMembership:
-    """One weighted observation-to-context edge with exact revision provenance."""
+    """One weighted observation-to-context edge with revision provenance."""
 
     observation_id: str
+    context_dimension_id: str
     context_id: str
     membership_weight: float
     membership_revision_fingerprint: str
     schema_version: str = MULTILEVEL_SCHEMA_VERSION
     _membership_token: InitVar[object | None] = None
+    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _membership_token: object | None) -> None:
         """Reject direct construction and normalize one membership edge."""
@@ -78,6 +105,14 @@ class ContextMembership:
             self,
             "observation_id",
             descriptive_identifier(self.observation_id, "observation_id"),
+        )
+        object.__setattr__(
+            self,
+            "context_dimension_id",
+            descriptive_identifier(
+                self.context_dimension_id,
+                "context_dimension_id",
+            ),
         )
         object.__setattr__(
             self,
@@ -98,17 +133,21 @@ class ContextMembership:
             ),
         )
         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
+        object.__setattr__(
+            self,
+            "_sealed_fingerprint",
+            artifact_digest(self._content_dict()),
+        )
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical edge content without derived identities."""
         return {
             "schema_version": self.schema_version,
             "observation_id": self.observation_id,
+            "context_dimension_id": self.context_dimension_id,
             "context_id": self.context_id,
             "membership_weight": self.membership_weight,
-            "membership_revision_fingerprint": (
-                self.membership_revision_fingerprint
-            ),
+            "membership_revision_fingerprint": self.membership_revision_fingerprint,
         }
 
     @property
@@ -132,7 +171,7 @@ class ContextMembership:
 
 @dataclass(frozen=True)
 class ContextMembershipDesign:
-    """Factory-sealed sparse multiple-membership design."""
+    """Factory-sealed sparse cross-classified membership design."""
 
     memberships: tuple[ContextMembership, ...]
     schema_version: str = MULTILEVEL_SCHEMA_VERSION
@@ -150,36 +189,99 @@ class ContextMembershipDesign:
 
     @property
     def observation_ids(self) -> tuple[str, ...]:
-        """Return observation identifiers in deterministic design order."""
+        """Return observation identifiers in deterministic order."""
         return tuple(sorted({value.observation_id for value in self.memberships}))
 
     @property
+    def context_dimension_ids(self) -> tuple[str, ...]:
+        """Return contextual classification identifiers in deterministic order."""
+        return tuple(
+            sorted({value.context_dimension_id for value in self.memberships})
+        )
+
+    @property
+    def context_keys(self) -> tuple[tuple[str, str], ...]:
+        """Return dimension-scoped context identities."""
+        return tuple(
+            sorted(
+                {
+                    (value.context_dimension_id, value.context_id)
+                    for value in self.memberships
+                }
+            )
+        )
+
+    @property
     def context_ids(self) -> tuple[str, ...]:
-        """Return context identifiers in deterministic design order."""
+        """Return unique display context labels for compatibility reports."""
         return tuple(sorted({value.context_id for value in self.memberships}))
 
-    def _grouped_memberships(self) -> dict[str, tuple[ContextMembership, ...]]:
-        """Return deterministic observation-level membership groups."""
-        grouped: dict[str, list[ContextMembership]] = {}
+    def _grouped_memberships(
+        self,
+    ) -> dict[str, dict[str, tuple[ContextMembership, ...]]]:
+        """Return observation and dimension groups in deterministic order."""
+        grouped: dict[str, dict[str, list[ContextMembership]]] = {}
         for value in self.memberships:
-            grouped.setdefault(value.observation_id, []).append(value)
+            grouped.setdefault(value.observation_id, {}).setdefault(
+                value.context_dimension_id,
+                [],
+            ).append(value)
         return {
-            observation_id: tuple(grouped[observation_id])
+            observation_id: {
+                dimension_id: tuple(grouped[observation_id][dimension_id])
+                for dimension_id in self.context_dimension_ids
+            }
             for observation_id in self.observation_ids
         }
 
     @property
     def membership_counts(self) -> tuple[int, ...]:
-        """Return membership counts aligned with ``observation_ids``."""
+        """Return total edge counts aligned with observations."""
         grouped = self._grouped_memberships()
-        return tuple(len(grouped[value]) for value in self.observation_ids)
+        return tuple(
+            sum(len(grouped[observation_id][dimension_id]) for dimension_id in self.context_dimension_ids)
+            for observation_id in self.observation_ids
+        )
 
     @property
     def membership_weights(self) -> tuple[tuple[float, ...], ...]:
-        """Return exact weights aligned with observations and context order."""
+        """Return flattened exact weights aligned with canonical edge order."""
         grouped = self._grouped_memberships()
         return tuple(
-            tuple(edge.membership_weight for edge in grouped[observation_id])
+            tuple(
+                edge.membership_weight
+                for dimension_id in self.context_dimension_ids
+                for edge in grouped[observation_id][dimension_id]
+            )
+            for observation_id in self.observation_ids
+        )
+
+    @property
+    def membership_counts_by_dimension(self) -> tuple[tuple[int, ...], ...]:
+        """Return edge counts aligned with observations and dimensions."""
+        grouped = self._grouped_memberships()
+        return tuple(
+            tuple(
+                len(grouped[observation_id][dimension_id])
+                for dimension_id in self.context_dimension_ids
+            )
+            for observation_id in self.observation_ids
+        )
+
+    @property
+    def membership_weights_by_dimension(
+        self,
+    ) -> tuple[tuple[tuple[float, ...], ...], ...]:
+        """Return exact weights aligned with observations and dimensions."""
+        grouped = self._grouped_memberships()
+        return tuple(
+            tuple(
+                tuple(
+                    edge.membership_weight
+                    for edge in grouped[observation_id][dimension_id]
+                )
+                for dimension_id in self.context_dimension_ids
+            )
             for observation_id in self.observation_ids
         )
 
@@ -206,8 +308,13 @@ class ContextMembershipDesign:
             "schema_version": self.schema_version,
             "memberships": [value.to_dict() for value in self.memberships],
             "observation_ids": list(self.observation_ids),
+            "context_dimension_ids": list(self.context_dimension_ids),
+            "context_keys": [list(value) for value in self.context_keys],
             "context_ids": list(self.context_ids),
             "membership_counts": list(self.membership_counts),
+            "membership_counts_by_dimension": [
+                list(value) for value in self.membership_counts_by_dimension
+            ],
             "design_handle": self.design_handle,
             "design_fingerprint": self.design_fingerprint,
         }
@@ -224,6 +331,7 @@ class TemporalOccasion:
     occasion_revision_fingerprint: str
     schema_version: str = MULTILEVEL_SCHEMA_VERSION
     _occasion_token: InitVar[object | None] = None
+    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _occasion_token: object | None) -> None:
         """Reject direct construction and normalize one temporal occasion."""
@@ -246,11 +354,7 @@ class TemporalOccasion:
         object.__setattr__(
             self,
             "sequence_index",
-            exact_integer(
-                self.sequence_index,
-                "sequence_index",
-                minimum=0,
-            ),
+            exact_integer(self.sequence_index, "sequence_index", minimum=0),
         )
         object.__setattr__(
             self,
@@ -269,6 +373,11 @@ class TemporalOccasion:
             ),
         )
         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
+        object.__setattr__(
+            self,
+            "_sealed_fingerprint",
+            artifact_digest(self._content_dict()),
+        )
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical occasion content without derived identities."""
@@ -309,6 +418,7 @@ class LongitudinalStateSpec:
     include_lagged_response_dependence: bool
     schema_version: str = MULTILEVEL_SCHEMA_VERSION
     _state_spec_token: InitVar[object | None] = None
+    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _state_spec_token: object | None) -> None:
         """Reject direct construction and normalize the state specification."""
@@ -321,10 +431,13 @@ class LongitudinalStateSpec:
         normalized_kind = _state_kind(self.state_kind)
         object.__setattr__(self, "state_kind", normalized_kind)
         if normalized_kind is LongitudinalStateKind.STATIONARY_AUTOREGRESSIVE:
+            normalized_coefficient = autoregressive_coefficient(
+                self.autoregressive_coefficient
+            )
             object.__setattr__(
                 self,
                 "autoregressive_coefficient",
-                autoregressive_coefficient(self.autoregressive_coefficient),
+                0.0 if normalized_coefficient == 0.0 else normalized_coefficient,
             )
         elif self.autoregressive_coefficient is not None:
             raise contract_error(
@@ -341,6 +454,11 @@ class LongitudinalStateSpec:
             ),
         )
         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
+        object.__setattr__(
+            self,
+            "_sealed_fingerprint",
+            artifact_digest(self._content_dict()),
+        )
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical state content without derived identities."""
@@ -348,9 +466,7 @@ class LongitudinalStateSpec:
             "schema_version": self.schema_version,
             "state_kind": self.state_kind.value,
             "autoregressive_coefficient": self.autoregressive_coefficient,
-            "include_lagged_response_dependence": (
-                self.include_lagged_response_dependence
-            ),
+            "include_lagged_response_dependence": self.include_lagged_response_dependence,
         }
 
     @property
@@ -408,7 +524,7 @@ class LongitudinalDesign:
 
     @property
     def occasion_counts(self) -> tuple[int, ...]:
-        """Return occasion counts aligned with ``respondent_ids``."""
+        """Return occasion counts aligned with respondent identifiers."""
         grouped = self._grouped_occasions()
         return tuple(len(grouped[value]) for value in self.respondent_ids)
 
@@ -461,10 +577,12 @@ def build_context_membership(
     context_id: str,
     membership_weight: float,
     membership_revision_fingerprint: str,
+    context_dimension_id: str = "primary_context",
 ) -> ContextMembership:
     """Build one validated observation-to-context membership edge."""
     return ContextMembership(
         observation_id=observation_id,
+        context_dimension_id=context_dimension_id,
         context_id=context_id,
         membership_weight=membership_weight,
         membership_revision_fingerprint=membership_revision_fingerprint,
@@ -472,16 +590,47 @@ def build_context_membership(
     )
 
 
+def _replay_membership(value: ContextMembership, index: int) -> ContextMembership:
+    """Rebuild and verify one package-owned membership before aggregation."""
+    path = f"$.memberships[{index}]"
+    try:
+        replayed = build_context_membership(
+            observation_id=value.observation_id,
+            context_dimension_id=value.context_dimension_id,
+            context_id=value.context_id,
+            membership_weight=value.membership_weight,
+            membership_revision_fingerprint=value.membership_revision_fingerprint,
+        )
+    except Exception:
+        raise contract_error(
+            "context_membership_integrity_mismatch",
+            path,
+            "membership content no longer matches its package-owned seal",
+        ) from None
+    if (
+        value.schema_version != MULTILEVEL_SCHEMA_VERSION
+        or replayed.membership_fingerprint != value._sealed_fingerprint
+        or value.membership_fingerprint != value._sealed_fingerprint
+    ):
+        raise contract_error(
+            "context_membership_integrity_mismatch",
+            path,
+            "membership content no longer matches its package-owned seal",
+        )
+    return replayed
+
+
 def build_context_membership_design(
     memberships: Iterable[ContextMembership],
 ) -> ContextMembershipDesign:
-    """Build one bounded canonical multiple-membership design."""
-    raw = bounded_values(
+    """Build one bounded canonical cross-classified membership design."""
+    raw = _safe_values(
         memberships,
         "memberships",
         minimum=1,
         maximum=MAX_CONTEXT_MEMBERSHIPS,
     )
+    replayed_values: list[ContextMembership] = []
     for index, value in enumerate(raw):
         if not isinstance(value, ContextMembership):
             raise contract_error(
@@ -489,38 +638,55 @@ def build_context_membership_design(
                 f"$.memberships[{index}]",
                 "memberships must contain ContextMembership values",
             )
+        replayed_values.append(_replay_membership(value, index))
     ordered = tuple(
         sorted(
-            raw,
+            replayed_values,
             key=lambda value: (
                 value.observation_id,
+                value.context_dimension_id,
                 value.context_id,
                 value.membership_revision_fingerprint,
             ),
         )
     )
-    cells: set[tuple[str, str]] = set()
-    revisions: dict[str, tuple[str, str]] = {}
-    grouped_weights: dict[str, list[float]] = {}
+    cells: set[tuple[str, str, str]] = set()
+    revisions: dict[str, tuple[str, str, str, float]] = {}
+    grouped_weights: dict[tuple[str, str], list[float]] = {}
+    observation_dimensions: dict[str, set[str]] = {}
+    all_dimensions = {value.context_dimension_id for value in ordered}
     for index, value in enumerate(ordered):
-        cell = (value.observation_id, value.context_id)
+        cell = (
+            value.observation_id,
+            value.context_dimension_id,
+            value.context_id,
+        )
         if cell in cells:
             raise contract_error(
                 "duplicate_context_membership",
                 f"$.memberships[{index}]",
-                "each observation-context cell may occur only once",
+                "each observation-dimension-context cell may occur only once",
             )
         cells.add(cell)
+        revision_contract = (*cell, value.membership_weight)
         previous = revisions.get(value.membership_revision_fingerprint)
-        if previous is not None and previous != cell:
+        if previous is not None and previous != revision_contract:
             raise contract_error(
                 "membership_revision_conflict",
                 f"$.memberships[{index}].membership_revision_fingerprint",
                 "one membership revision cannot identify different assignments",
             )
-        revisions[value.membership_revision_fingerprint] = cell
-        grouped_weights.setdefault(value.observation_id, []).append(
-            value.membership_weight
+        revisions[value.membership_revision_fingerprint] = revision_contract
+        group = (value.observation_id, value.context_dimension_id)
+        grouped_weights.setdefault(group, []).append(value.membership_weight)
+        observation_dimensions.setdefault(value.observation_id, set()).add(
+            value.context_dimension_id
+        )
+    if any(dimensions != all_dimensions for dimensions in observation_dimensions.values()):
+        raise contract_error(
+            "missing_context_dimension_membership",
+            "$.memberships",
+            "every observation must contain every declared context dimension",
         )
     for weights in grouped_weights.values():
         if not math.isclose(
@@ -532,7 +698,7 @@ def build_context_membership_design(
             raise contract_error(
                 "membership_weight_total_mismatch",
                 "$.memberships",
-                "membership weights must sum to one for every observation",
+                "membership weights must sum to one within every context dimension",
             )
     return ContextMembershipDesign(
         memberships=ordered,
@@ -569,11 +735,68 @@ def build_longitudinal_state_spec(
     return LongitudinalStateSpec(
         state_kind=state_kind,  # type: ignore[arg-type]
         autoregressive_coefficient=autoregressive_coefficient,
-        include_lagged_response_dependence=(
-            include_lagged_response_dependence
-        ),
+        include_lagged_response_dependence=include_lagged_response_dependence,
         _state_spec_token=_STATE_SPEC_TOKEN,
     )
+
+
+def _replay_occasion(value: TemporalOccasion, index: int) -> TemporalOccasion:
+    """Rebuild and verify one package-owned occasion before aggregation."""
+    path = f"$.occasions[{index}]"
+    try:
+        replayed = build_temporal_occasion(
+            respondent_id=value.respondent_id,
+            occasion_id=value.occasion_id,
+            sequence_index=value.sequence_index,
+            time_offset_milliseconds=value.time_offset_milliseconds,
+            occasion_revision_fingerprint=value.occasion_revision_fingerprint,
+        )
+    except Exception:
+        raise contract_error(
+            "temporal_occasion_integrity_mismatch",
+            path,
+            "occasion content no longer matches its package-owned seal",
+        ) from None
+    if (
+        value.schema_version != MULTILEVEL_SCHEMA_VERSION
+        or replayed.occasion_fingerprint != value._sealed_fingerprint
+        or value.occasion_fingerprint != value._sealed_fingerprint
+    ):
+        raise contract_error(
+            "temporal_occasion_integrity_mismatch",
+            path,
+            "occasion content no longer matches its package-owned seal",
+        )
+    return replayed
+
+
+def _replay_state_spec(value: LongitudinalStateSpec) -> LongitudinalStateSpec:
+    """Rebuild and verify one package-owned state specification."""
+    try:
+        replayed = build_longitudinal_state_spec(
+            state_kind=value.state_kind,
+            autoregressive_coefficient=value.autoregressive_coefficient,
+            include_lagged_response_dependence=(
+                value.include_lagged_response_dependence
+            ),
+        )
+    except Exception:
+        raise contract_error(
+            "longitudinal_state_spec_integrity_mismatch",
+            "$.state_spec",
+            "state specification no longer matches its package-owned seal",
+        ) from None
+    if (
+        value.schema_version != MULTILEVEL_SCHEMA_VERSION
+        or replayed.state_spec_fingerprint != value._sealed_fingerprint
+        or value.state_spec_fingerprint != value._sealed_fingerprint
+    ):
+        raise contract_error(
+            "longitudinal_state_spec_integrity_mismatch",
+            "$.state_spec",
+            "state specification no longer matches its package-owned seal",
+        )
+    return replayed
 
 
 def build_longitudinal_design(
@@ -582,7 +805,7 @@ def build_longitudinal_design(
     state_spec: LongitudinalStateSpec,
 ) -> LongitudinalDesign:
     """Build one bounded canonical longitudinal measurement design."""
-    raw = bounded_values(
+    raw = _safe_values(
         occasions,
         "occasions",
         minimum=1,
@@ -594,6 +817,8 @@ def build_longitudinal_design(
             "$.state_spec",
             "state_spec must be a LongitudinalStateSpec",
         )
+    replayed_state = _replay_state_spec(state_spec)
+    replayed_occasions: list[TemporalOccasion] = []
     for index, value in enumerate(raw):
         if not isinstance(value, TemporalOccasion):
             raise contract_error(
@@ -601,9 +826,10 @@ def build_longitudinal_design(
                 f"$.occasions[{index}]",
                 "occasions must contain TemporalOccasion values",
             )
+        replayed_occasions.append(_replay_occasion(value, index))
     ordered = tuple(
         sorted(
-            raw,
+            replayed_occasions,
             key=lambda value: (
                 value.respondent_id,
                 value.sequence_index,
@@ -612,18 +838,23 @@ def build_longitudinal_design(
             ),
         )
     )
-    revisions: dict[str, tuple[str, str]] = {}
+    revisions: dict[str, tuple[str, str, int, int]] = {}
     grouped: dict[str, list[tuple[int, TemporalOccasion]]] = {}
     for index, value in enumerate(ordered):
-        identity = (value.respondent_id, value.occasion_id)
+        revision_contract = (
+            value.respondent_id,
+            value.occasion_id,
+            value.sequence_index,
+            value.time_offset_milliseconds,
+        )
         previous = revisions.get(value.occasion_revision_fingerprint)
-        if previous is not None and previous != identity:
+        if previous is not None and previous != revision_contract:
             raise contract_error(
                 "occasion_revision_conflict",
                 f"$.occasions[{index}].occasion_revision_fingerprint",
                 "one occasion revision cannot identify different occasions",
             )
-        revisions[value.occasion_revision_fingerprint] = identity
+        revisions[value.occasion_revision_fingerprint] = revision_contract
         grouped.setdefault(value.respondent_id, []).append((index, value))
     for values in grouped.values():
         occasion_ids: set[str] = set()
@@ -652,10 +883,7 @@ def build_longitudinal_design(
                     "time offsets must be unique within a respondent",
                 )
             time_offsets.add(value.time_offset_milliseconds)
-            if (
-                previous_time is not None
-                and value.time_offset_milliseconds <= previous_time
-            ):
+            if previous_time is not None and value.time_offset_milliseconds <= previous_time:
                 raise contract_error(
                     "nonincreasing_temporal_order",
                     "$.occasions",
@@ -664,7 +892,7 @@ def build_longitudinal_design(
             previous_time = value.time_offset_milliseconds
     return LongitudinalDesign(
         occasions=ordered,
-        state_spec=state_spec,
+        state_spec=replayed_state,
         _design_token=_LONGITUDINAL_DESIGN_TOKEN,
     )
 
