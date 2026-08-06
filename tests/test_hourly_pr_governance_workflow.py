@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
 
 
-_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "hourly-pr-governance.yml"
+_WORKFLOW = (
+    Path(__file__).parents[1]
+    / ".github"
+    / "workflows"
+    / "hourly-pr-governance.yml"
+)
 
 
 def _workflow_text() -> str:
@@ -22,6 +31,56 @@ def _build_step_script() -> str:
     run = text.index("        run: |\n", step) + len("        run: |\n")
     end = text.index("      - name:", run)
     return textwrap.dedent(text[run:end])
+
+
+def _retry_classifier_script() -> str:
+    """Extract the Python classifier used by the retry shell function."""
+    script = _build_step_script()
+    function = script.index("is_retryable_github_failure() {")
+    start = script.index("python - <<'PY'\n", function) + len("python - <<'PY'\n")
+    end = script.index("\nPY\n", start)
+    return script[start:end]
+
+
+def _classify_retryability(manifest: dict[str, Any]) -> str:
+    """Run the embedded classifier against one temporary governance manifest."""
+    with TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        output = root / "hourly-pr-queue-governance"
+        output.mkdir()
+        (output / "pr_queue_governance_manifest.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", _retry_classifier_script()],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout.strip()
+
+
+def _manifest(*failed_check_names: str) -> dict[str, Any]:
+    """Return a minimal failed manifest with one transient GraphQL error."""
+    return {
+        "status": "failed",
+        "failed_checks": [{"name": name} for name in failed_check_names],
+        "github": {
+            "errors": [
+                {
+                    "command": ["pr", "list"],
+                    "stderr": (
+                        "HTTP 502: 502 Bad Gateway "
+                        "(https://api.github.com/graphql)"
+                    ),
+                    "returncode": 1,
+                }
+            ]
+        },
+    }
 
 
 def test_hourly_governance_workflow_exists_and_runs_every_hour():
@@ -87,11 +146,38 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     """Only transient GitHub errors are retried; real gate failures stay failed."""
     text = _workflow_text()
     assert 'manifest.get("github", {})' in text
-    assert 'bool(errors) and all(' in text
+    assert 'manifest.get("failed_checks")' in text
+    assert '"github:snapshot"' in text
+    assert '"github:base_sha"' in text
+    assert "issubset(retryable_failed_check_names)" in text
     guard = 'if [[ "$retryable" != "true" || "$attempt" -ge "$max_attempts" ]]; then'
     assert guard in text
     assert text.index(guard) < text.index("exit 1")
     assert "continue-on-error: true" not in text
+
+
+def test_hourly_governance_workflow_classifies_snapshot_only_502_as_retryable():
+    """A transient snapshot-only failure is eligible for bounded retry."""
+    assert _classify_retryability(_manifest("github:snapshot")) == "true"
+
+
+def test_hourly_governance_workflow_classifies_repo_502_as_retryable():
+    """A repository 502 may fail both snapshot and base-SHA evidence."""
+    manifest = _manifest("github:snapshot", "github:base_sha")
+    assert _classify_retryability(manifest) == "true"
+
+
+def test_hourly_governance_workflow_rejects_mixed_governance_and_502_failures():
+    """A genuine queue failure is never retried alongside an API outage."""
+    manifest = _manifest("github:snapshot", "queue:duplicate_issue_claims")
+    assert _classify_retryability(manifest) == "false"
+
+
+def test_hourly_governance_workflow_rejects_malformed_failed_check_evidence():
+    """Malformed failed-check evidence remains fail-closed."""
+    manifest = _manifest("github:snapshot")
+    manifest["failed_checks"] = "github:snapshot"
+    assert _classify_retryability(manifest) == "false"
 
 
 def test_hourly_governance_workflow_retry_shell_is_syntactically_valid():
