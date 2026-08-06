@@ -1,0 +1,76 @@
+# Explicit row-header semantics for governed HTML reports
+
+## Decision
+
+The governed essay score renderer identifies a table-body header only when the
+caller supplies an explicit zero-based `row_header_column`. The helper does not
+infer that the first column is a row header from position alone.
+
+The criterion-outcomes table supplies `row_header_column=0` because each
+`criterion_id` identifies the observation row. The source-text-free evidence
+table does not declare a row-header column: its first value is repeated
+criterion provenance inside a many-row evidence relation rather than a unique
+row identity.
+
+Every non-empty row must have exactly the same width as the declared header
+axis. Invalid, Boolean, negative, or out-of-range row-header indices fail before
+HTML is emitted. This prevents a malformed row from silently shifting a
+`scope="row"` association onto the wrong exact value.
+
+## Accessibility contract
+
+The renderer emits:
+
+- `<th scope="col">` for every declared column header;
+- `<th scope="row">` only for the explicitly identified criterion field;
+- `<td>` for all other body values;
+- a semantic `<caption>` for each table;
+- a keyboard-focusable overflow region around each table; and
+- tabular numeric styling without using presentation as the semantic signal.
+
+This contract implements the programmatic header relationships required by
+WCAG 2.2 Success Criterion 1.3.1. W3C guidance recommends `<th>` plus `scope`
+when a data table has both row and column headers; it also warns that applying
+header semantics where a cell is not actually a header is itself a structural
+failure. Therefore row-header markup is a domain decision, not a blanket first-
+column transform.
+
+## Verification
+
+Focused tests parse a complete rendered report with Python's standard-library
+`HTMLParser` and verify that:
+
+1. every criterion outcome starts with `<th scope="row">`;
+2. the remaining criterion cells are `<td>`;
+3. every evidence-reference body cell remains `<td>`;
+4. the canonical JSON in the same artifact reconstructs the exact report; and
+5. invalid row-header indices and header/row width drift fail closed.
+
+The tests operate on the final standalone artifact rather than asserting only a
+helper substring, so they cover the production composition path and the exact
+criterion/evidence distinction.
+
+## Interpretation boundary
+
+Correct table markup improves programmatic navigation but does not by itself
+establish WCAG conformance for the full product, assistive-technology
+interoperability across every user agent, psychometric validity, fairness,
+reliability, or authorization for consequential scoring. Those claims require
+separate evidence.
+
+## References
+
+World Wide Web Consortium. (2023). *Web Content Accessibility Guidelines
+(WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
+
+World Wide Web Consortium, Web Accessibility Initiative. (2019, July 27).
+*Tables with two headers*. https://www.w3.org/WAI/tutorials/tables/two-headers/
+
+World Wide Web Consortium, Web Accessibility Initiative. (2026, January 26).
+*F91: Failure of Success Criterion 1.3.1 for not correctly marking up table
+headers*. https://www.w3.org/WAI/WCAG22/Techniques/failures/F91
+
+World Wide Web Consortium, Web Accessibility Initiative. (2026, January 26).
+*F46: Failure of Success Criterion 1.3.1 due to using th elements, caption
+elements, or non-empty summary attributes in layout tables*.
+https://www.w3.org/WAI/WCAG22/Techniques/failures/F46
