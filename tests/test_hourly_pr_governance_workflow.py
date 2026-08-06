@@ -134,13 +134,14 @@ def test_governance_workflow_fails_closed_when_no_tests_are_discovered():
     assert text.index(guard) < text.index("for name in test_names:")
 
 
-def test_hourly_governance_workflow_retries_only_approved_transient_statuses():
-    """Only HTTP 429, 502, 503, and 504 receive the bounded retry policy."""
+def test_hourly_governance_workflow_retries_only_safe_server_statuses():
+    """Only gateway/service 5xx statuses receive short bounded retries."""
     classifier = _retry_classifier_script()
     text = _workflow_text()
     assert "max_attempts=3" in text
-    for status in ("HTTP 429", "HTTP 502", "HTTP 503", "HTTP 504"):
+    for status in ("HTTP 502", "HTTP 503", "HTTP 504"):
         assert f'"{status}"' in classifier
+    assert '"HTTP 429"' not in classifier
     assert '"HTTP 500"' not in classifier
     assert '"timeout"' not in classifier
     assert '"connection reset"' not in classifier
@@ -166,10 +167,9 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     assert "continue-on-error: true" not in text
 
 
-def test_hourly_governance_workflow_classifies_approved_statuses_as_retryable():
-    """Each explicitly approved transient HTTP status is eligible for retry."""
+def test_hourly_governance_workflow_classifies_safe_server_statuses_as_retryable():
+    """Each explicitly approved GitHub server status is eligible for retry."""
     messages = (
-        "HTTP 429: API rate limit exceeded (https://api.github.com/graphql)",
         "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
         "HTTP 503: Service Unavailable (https://api.github.com/graphql)",
         "HTTP 504: Gateway Timeout (https://api.github.com/graphql)",
@@ -183,6 +183,15 @@ def test_hourly_governance_workflow_classifies_repo_502_as_retryable():
     """A repository 502 may fail both snapshot and base-SHA evidence."""
     manifest = _manifest("github:snapshot", "github:base_sha")
     assert _classify_retryability(manifest) == "true"
+
+
+def test_hourly_governance_workflow_rejects_rate_limit_without_headers():
+    """A 429 cannot use a short retry without Retry-After/reset evidence."""
+    manifest = _manifest(
+        "github:snapshot",
+        stderr="HTTP 429: API rate limit exceeded",
+    )
+    assert _classify_retryability(manifest) == "false"
 
 
 def test_hourly_governance_workflow_rejects_unapproved_transient_markers():
