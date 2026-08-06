@@ -184,9 +184,8 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
 th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-tbody tr { transition: background-color 0.15s ease-in-out, opacity 0.2s ease; }
+tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
-tbody:hover tr:not(:hover) { opacity: 0.5; }
 code, pre { font-family: ui-monospace, monospace; }
 pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty-state { font-style: italic; }
