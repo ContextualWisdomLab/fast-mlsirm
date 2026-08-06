@@ -112,7 +112,7 @@ jobs:
               and bool(errors)
               and all(
                   isinstance(error, dict)
-                  and isinstance(error.get("returncode"), int)
+                  and type(error.get("returncode")) is int
                   and error.get("returncode") != 0
                   and isinstance(error.get("stderr"), str)
                   and any(
