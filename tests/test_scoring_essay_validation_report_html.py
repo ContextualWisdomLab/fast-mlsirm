@@ -91,7 +91,7 @@ def test_empty_identifier_list_renders_explicit_state() -> None:
     assert validation_report_html._identifier_list(
         (),
         empty_message="No boundary is available.",
-    ) == '<p class="empty-state">No boundary is available.</p>'
+    ) == '<div class="empty-state" role="status">No boundary is available.</div>'
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
