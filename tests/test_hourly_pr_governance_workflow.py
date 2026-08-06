@@ -67,7 +67,9 @@ def _manifest(*failed_check_names: str) -> dict[str, Any]:
     """Return a minimal failed manifest with one transient GraphQL error."""
     return {
         "status": "failed",
-        "failed_checks": [{"name": name} for name in failed_check_names],
+        "failed_checks": [
+            {"name": name, "ok": False} for name in failed_check_names
+        ],
         "github": {
             "errors": [
                 {
@@ -147,6 +149,7 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     text = _workflow_text()
     assert 'manifest.get("github", {})' in text
     assert 'manifest.get("failed_checks")' in text
+    assert 'check.get("ok") is False' in text
     assert '"github:snapshot"' in text
     assert '"github:base_sha"' in text
     assert "issubset(retryable_failed_check_names)" in text
@@ -177,6 +180,13 @@ def test_hourly_governance_workflow_rejects_malformed_failed_check_evidence():
     """Malformed failed-check evidence remains fail-closed."""
     manifest = _manifest("github:snapshot")
     manifest["failed_checks"] = "github:snapshot"
+    assert _classify_retryability(manifest) == "false"
+
+
+def test_hourly_governance_workflow_rejects_contradictory_passing_check_evidence():
+    """A failed-check record marked successful cannot authorize a retry."""
+    manifest = _manifest("github:snapshot")
+    manifest["failed_checks"][0]["ok"] = True
     assert _classify_retryability(manifest) == "false"
 
 
