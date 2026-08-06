@@ -94,7 +94,7 @@ def test_hourly_governance_workflow_does_not_retry_governance_failures():
     assert "continue-on-error: true" not in text
 
 
-def test_hourly_governance_retry_shell_is_syntactically_valid():
+def test_hourly_governance_workflow_retry_shell_is_syntactically_valid():
     """The bounded retry block remains valid Bash after YAML de-indentation."""
     completed = subprocess.run(
         ["bash", "-n"],
