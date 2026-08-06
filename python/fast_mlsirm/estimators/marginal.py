@@ -768,7 +768,8 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        # Optimized Euclidean distance calculation: avoid intermediate 2D array allocation
+                        dist = np.sqrt(eps_distance + np.einsum('ij,ij->i', diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -869,7 +870,8 @@ def fit_marginal_numpy(
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
                 diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                # Optimized 3D Euclidean distance calculation: avoid massive 3D array allocation
+                distz = np.sqrt(eps_distance + np.einsum('ijk,ijk->ij', diffz, diffz))  # (I, Nx)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
