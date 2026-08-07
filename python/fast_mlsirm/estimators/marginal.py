@@ -18,6 +18,7 @@ MAX_GPCM_CATEGORIES = 256
 MAX_MARGINAL_WORKING_SET = 100_000_000
 MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024
 _FLOAT64_ITEMSIZE = np.dtype(np.float64).itemsize
+_BOOL_ITEMSIZE = np.dtype(np.bool_).itemsize
 
 # Priors of Jeon et al. (2021) / lsirm12pl, used as MAP penalties by the
 # marginal estimator (mirror of PenaltyConfig::lsirm_prior in Rust):
@@ -61,8 +62,19 @@ def _checked_marginal_workspace_bytes(
     return total
 
 
-def _validate_pairwise_distance_workspace(n_left: int, n_right: int) -> None:
-    """Preflight one pairwise output plus both live squared-norm vectors."""
+def _validate_pairwise_distance_workspace(
+    n_left: int,
+    n_right: int,
+    latent_dim: int,
+) -> None:
+    """Preflight the true peak memory of one pairwise distance calculation.
+
+    The post-BLAS peak keeps the float64 output and both squared-norm vectors
+    live while ``np.isfinite`` materializes its boolean result mask. Before
+    BLAS, direct helper calls also materialize one boolean finiteness mask for
+    the larger input matrix. The larger of those phases must fit the private
+    distance-workspace ceiling.
+    """
     limit = MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES
     output_bytes = _checked_marginal_workspace_bytes(
         "pairwise distance workspace",
@@ -83,9 +95,39 @@ def _validate_pairwise_distance_workspace(n_left: int, n_right: int) -> None:
         itemsize=_FLOAT64_ITEMSIZE,
         limit_bytes=limit,
     )
-    if output_bytes > limit - left_norm_bytes:
-        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
-    if output_bytes + left_norm_bytes > limit - right_norm_bytes:
+    output_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    left_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    right_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_right,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+
+    post_blas_peak = output_bytes
+    for component_bytes in (
+        left_norm_bytes,
+        right_norm_bytes,
+        output_mask_bytes,
+    ):
+        if post_blas_peak > limit - component_bytes:
+            raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+        post_blas_peak += component_bytes
+    input_mask_peak = max(left_input_mask_bytes, right_input_mask_bytes)
+    if max(post_blas_peak, input_mask_peak) > limit:
         raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
 
 
@@ -113,7 +155,7 @@ def _validate_marginal_distance_workspaces(
         itemsize=_FLOAT64_ITEMSIZE,
         limit_bytes=MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES,
     )
-    _validate_pairwise_distance_workspace(n_items, n_x)
+    _validate_pairwise_distance_workspace(n_items, n_x, latent_dim)
 
 
 def _pairwise_euclidean_distances(
@@ -126,6 +168,8 @@ def _pairwise_euclidean_distances(
 
     The implementation uses the squared-norm identity and mutates the matrix
     multiplication result in place, avoiding an ``L × R × D`` broadcast.
+    Exact C-contiguous NumPy arrays are required so BLAS cannot silently create
+    unbudgeted layout-conversion copies.
     """
     if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
         raise ValueError("distance inputs must be two-dimensional float64 arrays")
@@ -139,6 +183,14 @@ def _pairwise_euclidean_distances(
         raise ValueError("distance inputs must have a positive latent dimension")
     if left.dtype != np.float64 or right.dtype != np.float64:
         raise ValueError("distance inputs must use float64")
+    if not left.flags.c_contiguous or not right.flags.c_contiguous:
+        raise ValueError("distance inputs must be C-contiguous")
+
+    _validate_pairwise_distance_workspace(
+        left.shape[0],
+        right.shape[0],
+        left.shape[1],
+    )
     if not np.all(np.isfinite(left)) or not np.all(np.isfinite(right)):
         raise ValueError("distance inputs must be finite")
     if (
@@ -149,7 +201,6 @@ def _pairwise_euclidean_distances(
     ):
         raise ValueError("eps_distance must be a finite positive number")
 
-    _validate_pairwise_distance_workspace(left.shape[0], right.shape[0])
     distances = left @ right.T
     distances *= -2.0
     left_norms = np.einsum("ij,ij->i", left, left)
@@ -214,7 +265,7 @@ def _inv_normal_cdf(p: float) -> float:
     if p < p_low:
         q = np.sqrt(-2.0 * np.log(p))
         return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
-            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+            (((d[0] * q + d[1]) * q + d[2]) * q + 1.0
         )
     if p <= 1.0 - p_low:
         q = p - 0.5
@@ -622,9 +673,9 @@ def fit_marginal_numpy(
     if latent_dim < 1 or latent_dim > 3:
         raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
 
-    # Bound the dominant EM working array and the pairwise distance output before
-    # latent-node construction. The full derivative workspace is checked again
-    # after node creation and before any item-gradient allocation.
+    # Bound the dominant EM working array and every latent-distance allocation
+    # before latent-node construction. The same contract is rechecked against
+    # the materialized node count below.
     _rule = str(xi_rule).lower()
     _nx = (
         xi_points
@@ -640,8 +691,12 @@ def fit_marginal_numpy(
         itemsize=1,
         limit_bytes=MAX_MARGINAL_WORKING_SET,
     )
-    if uses_space:
-        _validate_pairwise_distance_workspace(n_items, _nx)
+    _validate_marginal_distance_workspaces(
+        n_items=n_items,
+        n_x=_nx,
+        latent_dim=latent_dim,
+        uses_space=uses_space,
+    )
     pop = pop or {"kind": "single"}
     pen = dict(LSIRM_PRIOR)
     if penalty:
