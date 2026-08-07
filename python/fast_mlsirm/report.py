@@ -703,6 +703,10 @@ h3 {
   transition: opacity 0.2s ease;
 }
 
+.bar-chart:hover .bar-row:not(:hover) {
+  opacity: 0.5;
+}
+
 .bar-label,
 .bar-value,
 .table-note,
@@ -825,6 +829,10 @@ tbody tr {
 
 tbody tr:hover {
   background: var(--hover-bg);
+}
+
+tbody:hover tr:not(:hover) {
+  opacity: 0.5;
 }
 
 .empty-state {
