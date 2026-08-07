@@ -797,7 +797,7 @@ def infit_outfit(
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)
-    resid2 = (y - p) ** 2 * observed
+    resid2 = np.subtract(y, p) ** 2 * observed
     n_obs = np.maximum(observed.sum(axis=0), 1)
 
     # Optimized distance computation: replace O(N*J) full-size intermediate arrays
