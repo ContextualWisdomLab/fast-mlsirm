@@ -800,13 +800,13 @@ def infit_outfit(
     resid2 = (y - p) ** 2 * observed
     n_obs = np.maximum(observed.sum(axis=0), 1)
 
-    # Optimization: avoiding intermediate N x J array allocations.
-    # resid2 incorporates the observed mask since resid2 = (y - p)**2 * observed
-    # We use einsum to calculate (v * observed).sum(axis=0) skipping intermediate array allocation
-    obs_f = observed.astype(v.dtype, copy=False)
-
-    outfit = (resid2 / v).sum(axis=0) / n_obs
-    infit = resid2.sum(axis=0) / np.maximum(np.einsum('ij,ij->j', v, obs_f), 1e-12)
+    # Optimized distance computation: replace O(N*J) full-size intermediate arrays
+    # in boolean mask reductions with exact memory-preserving equivalents.
+    resid2_sum = resid2.sum(axis=0)
+    np.divide(resid2, v, out=resid2)
+    outfit = resid2.sum(axis=0) / n_obs
+    infit_denominator = np.sum(v, axis=0, where=observed)
+    infit = resid2_sum / np.maximum(infit_denominator, 1e-12)
     return {"infit": infit, "outfit": outfit}
 
 

@@ -204,6 +204,11 @@
 - Added complete-artifact parsing tests that verify table semantics and exact
   canonical JSON reconstruction, plus APA 7th WCAG 2.2 doctoring.
 
+#### Improve Python fitstats matrix allocations
+
+- Replaced the large NumPy `(v * observed).sum(axis=0)` float allocation in Python `infit` fallback logic with a bounded mixed-dtype `np.sum(v, axis=0, where=observed)` reduction.
+- Switched the memory-intensive `(resid2 / v * observed)` `outfit` reduction to an in-place `np.divide` and unmasked sum, since `resid2` implicitly contains the missing-data masking limits.
+
 #### Release cut 0.7.0
 
 - Project version is bumped to 0.7.0 in `pyproject.toml`,

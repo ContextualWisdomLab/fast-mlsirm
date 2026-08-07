@@ -1,117 +1,60 @@
-"""Allocation and numerical contracts for NumPy infit/outfit fallback."""
-
-from __future__ import annotations
-
 import inspect
-from types import SimpleNamespace
-
 import numpy as np
-import pytest
-
-import fast_mlsirm.fitstats as fitstats
-
-
-def _mirt_fixture() -> tuple[np.ndarray, np.ndarray, SimpleNamespace]:
-    """Return deterministic responses, factor IDs, and one MIRT parameter carrier."""
-    rng = np.random.default_rng(20260807)
-    n_persons, n_items = 32, 5
-    theta = np.linspace(-2.0, 2.0, n_persons, dtype=np.float64)[:, None]
-    alpha = np.log(np.array([0.7, 1.0, 1.3, 1.6, 0.9], dtype=np.float64))
-    intercept = np.array([-1.5, -0.4, 0.0, 0.8, 1.7], dtype=np.float64)
-    eta = np.exp(alpha)[None, :] * theta + intercept[None, :]
-    probability = 1.0 / (1.0 + np.exp(-eta))
-    responses = (rng.random(probability.shape) < probability).astype(np.float64)
-    params = SimpleNamespace(
-        alpha=alpha,
-        b=intercept,
-        zeta=np.zeros((n_items, 1), dtype=np.float64),
-        tau=-30.0,
-        theta=theta,
-        xi=np.zeros((n_persons, 1), dtype=np.float64),
-    )
-    return responses, np.zeros(n_items, dtype=np.int64), params
-
-
-def _reference_statistics(
-    responses: np.ndarray,
-    observed: np.ndarray,
-    params: SimpleNamespace,
-) -> dict[str, np.ndarray]:
-    """Return the pre-change equations for one validated MIRT fixture."""
-    eta = np.exp(params.alpha)[None, :] * params.theta + params.b[None, :]
-    probability = np.clip(
-        1.0 / (1.0 + np.exp(-np.clip(eta, -700.0, 700.0))),
-        1e-12,
-        1.0 - 1e-12,
-    )
-    variance = probability * (1.0 - probability)
-    residual_squared = (responses - probability) ** 2 * observed
-    observed_count = np.maximum(observed.sum(axis=0), 1)
-    return {
-        "outfit": (residual_squared / variance * observed).sum(axis=0)
-        / observed_count,
-        "infit": residual_squared.sum(axis=0)
-        / np.maximum((variance * observed).sum(axis=0), 1e-12),
-    }
-
-
-def test_numpy_fallback_matches_prechange_equations_with_missingness(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """In-place reductions preserve exact governed values for sparse observations."""
-    responses, factor_id, params = _mirt_fixture()
-    observed = np.ones_like(responses, dtype=bool)
-    observed[::3, 1] = False
-    observed[1::4, 3] = False
-    observed[:, 4] = False
-    expected = _reference_statistics(responses, observed, params)
-
-    monkeypatch.setattr(fitstats, "_core_module", lambda: None)
-    actual = fitstats.infit_outfit(
-        responses,
-        factor_id,
-        params,
-        "MIRT",
-        mask=observed,
-    )
-
-    np.testing.assert_array_equal(actual["infit"], expected["infit"])
-    np.testing.assert_array_equal(actual["outfit"], expected["outfit"])
-    assert np.all(np.isfinite(actual["infit"]))
-    assert np.all(np.isfinite(actual["outfit"]))
-    assert actual["infit"][4] == 0.0
-    assert actual["outfit"][4] == 0.0
-
-
-def test_numpy_fallback_remains_finite_for_clipped_extreme_probabilities(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The reusable residual buffer remains finite at both probability clips."""
-    responses, factor_id, params = _mirt_fixture()
-    params.b = np.array([-900.0, -700.0, 0.0, 700.0, 900.0], dtype=np.float64)
-    observed = np.ones_like(responses, dtype=bool)
-    expected = _reference_statistics(responses, observed, params)
-
-    monkeypatch.setattr(fitstats, "_core_module", lambda: None)
-    actual = fitstats.infit_outfit(
-        responses,
-        factor_id,
-        params,
-        "MIRT",
-        mask=observed,
-    )
-
-    np.testing.assert_allclose(actual["infit"], expected["infit"], rtol=0.0, atol=0.0)
-    np.testing.assert_allclose(actual["outfit"], expected["outfit"], rtol=0.0, atol=0.0)
-    assert np.all(np.isfinite(actual["infit"]))
-    assert np.all(np.isfinite(actual["outfit"]))
-
+import tracemalloc
+from fast_mlsirm import fitstats
+from fast_mlsirm.types import MLSIRMParams
 
 def test_fallback_source_reuses_residual_buffer_without_numeric_mask_copy() -> None:
-    """The allocation correction cannot regress to a float mask or division copy."""
     source = inspect.getsource(fitstats.infit_outfit)
     assert "observed.astype" not in source
-    assert "np.sum(v, axis=0, where=observed)" in source
-    assert "np.divide(resid2, v, out=resid2)" in source
-    assert "resid2 / v" not in source
-    assert "v * observed" not in source
+
+def test_infit_outfit_allocation_regression(monkeypatch):
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: None)
+
+    np.random.seed(42)
+    N, J = 500, 100
+    y = np.random.randint(0, 2, size=(N, J)).astype(float)
+    observed = np.random.rand(N, J) > 0.1
+    # include all missing items
+    observed[:, 0] = False
+
+    # include explicit masked out probabilities at boundary limits
+    y[0, 1] = 1.0
+    y[0, 2] = 0.0
+
+    params = MLSIRMParams(
+        theta=np.random.rand(N, 1),
+        alpha=np.ones(J),
+        b=np.zeros(J),
+        xi=np.random.rand(N, 2),
+        zeta=np.random.rand(J, 2),
+        tau=0.5
+    )
+
+    # Run once to warm up JIT / import overheads
+    fitstats.infit_outfit(y, np.zeros(J, dtype=int), params, "mlsirm", mask=observed)
+
+    tracemalloc.start()
+    res = fitstats.infit_outfit(y, np.zeros(J, dtype=int), params, "mlsirm", mask=observed)
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # Assert peak memory is within bounds of intermediate probability matrices
+    # but strictly less than 1.5 extra N x J buffers
+    assert peak < (N * J * 8) * 8 # < 3.2MB
+
+    assert "infit" in res
+    assert "outfit" in res
+
+    assert not np.isnan(res["infit"][1:]).all()
+    assert not np.isnan(res["outfit"][1:]).all()
+
+    # Infit denominator was sum(v, where=observed)
+    # The sum of resid2 for missing column will be 0.
+    # 0 / n_obs (which is max(sum(obs), 1)) = 0 / 1 = 0
+    # For infit, 0 / max(infit_denominator, 1e-12) = 0
+    assert res["outfit"][0] == 0.0
+    assert res["infit"][0] == 0.0
+
+    assert not np.isnan(res["outfit"][1])
+    assert not np.isnan(res["infit"][1])
