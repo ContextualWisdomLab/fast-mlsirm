@@ -1,6 +1,13 @@
-# Improve Python fitstats matrix allocations
+# Bounded NumPy fallback infit and outfit reductions
 
 ## Changed
 
-- Replaced the large NumPy `(v * observed).sum(axis=0)` float allocation in Python `infit` fallback logic with a bounded mixed-dtype `np.sum(v, axis=0, where=observed)` reduction.
-- Switched the memory-intensive `(resid2 / v * observed)` `outfit` reduction to an in-place `np.divide` and unmasked sum, since `resid2` implicitly contains the missing-data masking limits.
+- Reused one masked squared-residual float64 work buffer for the NumPy fallback
+  outfit division and used a Boolean `where=` reduction for the infit variance
+  denominator, avoiding a full numeric-mask copy, compound residual temporaries,
+  and a separate full division result.
+- Preserved the compiled Rust primary path, statistical equations, probability
+  clipping, missing-response handling, public APIs, and model identities.
+- Added sparse-missingness, all-missing-item, extreme-probability, source-level
+  allocation, reproducible benchmark, and APA 7 doctoring evidence without a
+  universal performance claim.
