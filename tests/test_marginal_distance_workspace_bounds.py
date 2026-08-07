@@ -13,7 +13,7 @@ _FLOAT64_BYTES = np.dtype(np.float64).itemsize
 
 
 def test_pairwise_distance_matches_explicit_broadcast() -> None:
-    """The bounded identity must reproduce the former Euclidean equation."""
+    """The bounded helper must reproduce the direct Euclidean equation."""
     left = np.array([[0.0, 0.0], [1.5, -0.5], [-2.0, 3.0]], dtype=np.float64)
     right = np.array(
         [[0.25, -0.75], [1.0, 2.0], [-2.0, 3.0], [4.0, -1.0]],
@@ -32,6 +32,38 @@ def test_pairwise_distance_matches_explicit_broadcast() -> None:
     np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-13)
 
 
+@pytest.mark.parametrize("left_rows,right_rows", [(2, 5), (5, 2)])
+def test_pairwise_distance_is_translation_stable_for_large_common_offsets(
+    left_rows: int,
+    right_rows: int,
+) -> None:
+    """Large shared offsets must not erase close Euclidean separations."""
+    left_bank = np.array(
+        [[0.0, 0.0], [3.0, 4.0], [-5.0, 7.0], [11.0, -13.0], [17.0, 19.0]],
+        dtype=np.float64,
+    )
+    right_bank = np.array(
+        [[1.0, 2.0], [-2.0, 6.0], [8.0, -9.0], [14.0, 15.0], [-21.0, 5.0]],
+        dtype=np.float64,
+    )
+    left = np.ascontiguousarray(left_bank[:left_rows])
+    right = np.ascontiguousarray(right_bank[:right_rows])
+    expected = np.sqrt(
+        1e-12 + np.sum((left[:, None, :] - right[None, :, :]) ** 2, axis=2)
+    )
+    offset = np.float64(2**40)
+    translated_left = np.ascontiguousarray(left + offset)
+    translated_right = np.ascontiguousarray(right + offset)
+
+    actual = marginal._pairwise_euclidean_distances(
+        translated_left,
+        translated_right,
+        eps_distance=1e-12,
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-12)
+
+
 def test_pairwise_distance_handles_zero_and_roundoff() -> None:
     """Identical and nearly identical rows remain finite and non-negative."""
     left = np.array([[1.0, 2.0, 3.0], [1e8, 1e8, 1e8]], dtype=np.float64)
@@ -48,8 +80,8 @@ def test_pairwise_distance_handles_zero_and_roundoff() -> None:
     np.testing.assert_allclose(np.diag(actual), np.sqrt(1e-12), rtol=1e-12)
 
 
-def test_pairwise_distance_rejects_nonfinite_matrices_before_blas() -> None:
-    """NaN and infinity never enter the matrix multiplication boundary."""
+def test_pairwise_distance_rejects_nonfinite_matrices_before_kernel() -> None:
+    """NaN and infinity never enter the pairwise arithmetic boundary."""
     valid = np.zeros((2, 2), dtype=np.float64)
     for invalid_value in (float("nan"), float("inf"), -float("inf")):
         invalid = valid.copy()
@@ -89,7 +121,7 @@ def test_checked_workspace_bytes_uses_float64_byte_accounting() -> None:
 
 
 def test_distance_workspace_guard_fails_before_pairwise_allocation(monkeypatch) -> None:
-    """Oversized float64 output fails without asking NumPy for the matrix."""
+    """Oversized output-plus-scratch work fails before asking NumPy for matrices."""
     monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 1_000)
 
     with pytest.raises(ValueError, match="pairwise distance workspace"):
@@ -268,12 +300,15 @@ def test_distance_helpers_reject_invalid_shapes_dtype_and_epsilon() -> None:
             )
 
 
-def test_pairwise_helper_source_uses_one_in_place_output_matrix() -> None:
-    """The squared-norm path mutates its matmul result instead of stacking matrices."""
+def test_pairwise_helper_source_uses_coordinate_subtraction_and_one_scratch() -> None:
+    """The stable kernel must use direct coordinate subtraction without 3-D broadcast."""
     source = inspect.getsource(marginal._pairwise_euclidean_distances)
-    assert "left @ right.T" in source or "np.matmul(left, right.T)" in source
-    assert "np.maximum(" in source and "out=" in source
-    assert "np.sqrt(" in source and "out=" in source
+    assert "left @ right.T" not in source
+    assert "np.matmul(" not in source
+    assert "np.einsum(" not in source
+    assert "np.subtract(" in source and "out=scratch" in source
+    assert "np.square(" in source and "out=scratch" in source
+    assert "np.sqrt(" in source and "out=distances" in source
     assert "left[:, None, :]" not in source
     assert "right[None, :, :]" not in source
 
