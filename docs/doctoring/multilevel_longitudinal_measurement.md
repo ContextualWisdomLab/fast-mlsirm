@@ -160,4 +160,4 @@ multiple-classification models for social network and group dependencies.
 
 Uto, M. (2023). A Bayesian many-facet Rasch model with Markov modeling for
 rater severity drift. *Behavior Research Methods, 55*, 3910–3928.
-https://doi.org/10.3758/s13428-022-02032-1
+https://doi.org/10.3758/s13428-022-01997-z
