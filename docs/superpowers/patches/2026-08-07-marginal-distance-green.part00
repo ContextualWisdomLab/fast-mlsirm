@@ -1,0 +1,150 @@
+diff --git a/.github/workflows/dev-marginal-source-snapshot.yml b/.github/workflows/dev-marginal-source-snapshot.yml
+deleted file mode 100644
+index bccdaca..0000000
+--- a/.github/workflows/dev-marginal-source-snapshot.yml
++++ /dev/null
+@@ -1,49 +0,0 @@
+-name: Development Marginal Source Snapshot
+-
+-on:
+-  pull_request:
+-    branches: [main]
+-    paths:
+-      - ".github/workflows/dev-marginal-source-snapshot.yml"
+-  workflow_dispatch:
+-
+-concurrency:
+-  group: dev-marginal-source-snapshot-${{ github.event.pull_request.number || github.run_id }}
+-  cancel-in-progress: true
+-
+-permissions:
+-  contents: read
+-
+-jobs:
+-  snapshot:
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 5
+-    steps:
+-      - name: Harden runner
+-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.14.1
+-        with:
+-          egress-policy: audit
+-
+-      - name: Checkout exact pull request head
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.2
+-        with:
+-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+-          persist-credentials: false
+-          fetch-depth: 1
+-
+-      - name: Verify exact head and clean source
+-        env:
+-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+-        run: |
+-          set -euo pipefail
+-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+-          test -z "$(git status --short)"
+-
+-      - name: Upload exact source tree
+-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+-        with:
+-          name: fast-mlsirm-marginal-source-${{ github.event.pull_request.head.sha || github.sha }}
+-          path: .
+-          include-hidden-files: true
+-          if-no-files-found: error
+-          retention-days: 1
+diff --git a/.github/workflows/dev-source-snapshot.yml b/.github/workflows/dev-source-snapshot.yml
+deleted file mode 100644
+index f1f5405..0000000
+--- a/.github/workflows/dev-source-snapshot.yml
++++ /dev/null
+@@ -1,37 +0,0 @@
+-name: Development Source Snapshot
+-
+-on:
+-  pull_request:
+-    paths:
+-      - .github/workflows/dev-source-snapshot.yml
+-
+-permissions:
+-  contents: read
+-
+-concurrency:
+-  group: dev-source-snapshot-${{ github.event.pull_request.number }}
+-  cancel-in-progress: true
+-
+-jobs:
+-  snapshot:
+-    runs-on: ubuntu-24.04
+-    timeout-minutes: 10
+-    steps:
+-      - name: Check out exact pull-request head
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+-        with:
+-          ref: ${{ github.event.pull_request.head.sha }}
+-          fetch-depth: 1
+-      - name: Archive reviewed source
+-        run: |
+-          git rev-parse HEAD > /tmp/SOURCE_HEAD_SHA
+-          git archive --format=tar.gz --output=/tmp/source.tar.gz HEAD
+-      - name: Upload source archive
+-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+-        with:
+-          name: dev-source-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+-          path: |
+-            /tmp/source.tar.gz
+-            /tmp/SOURCE_HEAD_SHA
+-          if-no-files-found: error
+-          retention-days: 1
+diff --git a/docs/superpowers/plans/2026-08-07-marginal-distance-workspace-bounds.md b/docs/superpowers/plans/2026-08-07-marginal-distance-workspace-bounds.md
+index f7d71fe..75279ef 100644
+--- a/docs/superpowers/plans/2026-08-07-marginal-distance-workspace-bounds.md
++++ b/docs/superpowers/plans/2026-08-07-marginal-distance-workspace-bounds.md
+@@ -50,11 +50,11 @@ Expected before production implementation: RED because the required helpers and
+ - Modify: `python/fast_mlsirm/estimators/marginal.py`
+ - Test: `tests/test_marginal_distance_workspace_bounds.py`
+ 
+-- [ ] Add module-level `MAX_MARGINAL_WORKING_SET = 100_000_000` for the existing dominant element contract.
+-- [ ] Add `MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024` for float64 distance allocations.
+-- [ ] Implement `_checked_marginal_workspace_bytes(label, *dimensions, itemsize, limit_bytes=None)` using exact-integer validation and division-before-multiplication.
++- [x] Add module-level `MAX_MARGINAL_WORKING_SET = 100_000_000` for the existing dominant element contract.
++- [x] Add `MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024` for float64 distance allocations.
++- [x] Implement `_checked_marginal_workspace_bytes(label, *dimensions, itemsize, limit_bytes=None)` using exact-integer validation and division-before-multiplication.
+ - [ ] Rework the existing dominant EM gate through an equivalent checked element helper; do not change its accepted dimensions.
+-- [ ] Implement `_validate_marginal_distance_workspaces` with exact-Boolean behavior, pairwise output bytes, and intentional `n_x × latent_dim` derivative bytes.
++- [x] Implement `_validate_marginal_distance_workspaces` with exact-Boolean behavior, pairwise output bytes, and intentional `n_x × latent_dim` derivative bytes.
+ - [ ] Normalize model/rule/dimensions and invoke distance preflight before `_xi_nodes`.
+ 
+ Focused verification:
+@@ -75,7 +75,7 @@ pytest -q tests/test_marginal_distance_workspace_bounds.py -k 'workspace or publ
+ - [ ] Validate NumPy array type, rank, float64 dtype, shared positive latent width, finiteness, shapes, byte budget, and epsilon before BLAS.
+ - [ ] Compute one `left @ right.T` output.
+ - [ ] Mutate that output in place: multiply by `-2`, add row norms, clamp with `np.maximum(..., out=...)`, add epsilon, and apply `np.sqrt(..., out=...)`.
+-- [ ] Do not construct a second pairwise matrix or a 3-D difference.
++- [x] Do not construct a second pairwise matrix or a 3-D difference.
+ - [ ] Preserve deterministic C-order output and finite checks.
+ 
+ Focused verification:
+@@ -93,12 +93,12 @@ pytest -q tests/test_marginal_distance_workspace_bounds.py -k 'pairwise'
+ - Modify: `python/fast_mlsirm/estimators/marginal.py`
+ - Test: `tests/test_marginal_distance_workspace_bounds.py`
+ 
+-- [ ] Reuse the helper in `_build_tables`.
+-- [ ] Reuse it for candidate item predictors.
+-- [ ] Reuse it for the tau M-step.
+-- [ ] Replace only the covariate `x_grid[None, :, :] - zeta[:, None, :]` broadcast.
+-- [ ] Retain the guarded `diff = x_grid - zeta_i[None, :]` required by the zeta derivative.
+-- [ ] Preserve non-spatial paths without distance allocation.
++- [x] Reuse the helper in `_build_tables`.
++- [x] Reuse it for candidate item predictors.
++- [x] Reuse it for the tau M-step.
++- [x] Replace only the covariate `x_grid[None, :, :] - zeta[:, None, :]` broadcast.
++- [x] Retain the guarded `diff = x_grid - zeta_i[None, :]` required by the zeta derivative.
++- [x] Preserve non-spatial paths without distance allocation.
+ 
+ Focused verification:
+ 
+@@ -118,12 +118,12 @@ pytest -q \
+ - Modify: `tests/test_marginal_distance_workspace_bounds.py`
+ - Create: `benchmarks/benchmark_marginal_distance_workspaces.py`
+ 
