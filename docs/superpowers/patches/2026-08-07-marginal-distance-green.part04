@@ -1,0 +1,169 @@
+             np.zeros((2, 2), dtype=np.float64),
+             np.zeros((3, 1), dtype=np.float64),
+             eps_distance=1e-8,
+         )
+-    with pytest.raises(ValueError, match="float64"):
++    for left, right in (
++        (np.zeros((2, 2), dtype=np.float32), valid),
++        (np.zeros((2, 2), dtype=np.float64), valid.astype(np.float32)),
++    ):
++        with pytest.raises(ValueError, match="float64"):
++            marginal._pairwise_euclidean_distances(
++                left,
++                right,
++                eps_distance=1e-8,
++            )
++    non_contiguous = np.zeros((2, 4), dtype=np.float64)[:, ::2]
++    assert not non_contiguous.flags.c_contiguous
++    for left, right in (
++        (non_contiguous, valid),
++        (np.zeros((2, 2), dtype=np.float64), non_contiguous),
++    ):
++        with pytest.raises(ValueError, match="C-contiguous"):
++            marginal._pairwise_euclidean_distances(
++                left,
++                right,
++                eps_distance=1e-8,
++            )
++    with pytest.raises(ValueError, match="positive latent dimension"):
+         marginal._pairwise_euclidean_distances(
+-            np.zeros((2, 2), dtype=np.float32),
+-            np.zeros((3, 2), dtype=np.float64),
++            np.zeros((2, 0), dtype=np.float64),
++            np.zeros((3, 0), dtype=np.float64),
+             eps_distance=1e-8,
+         )
+-    for invalid_epsilon in (True, 0.0, -1.0, float("inf"), float("nan")):
++    for invalid_epsilon in (
++        True,
++        0.0,
++        -1.0,
++        float("inf"),
++        float("nan"),
++        "small",
++    ):
+         with pytest.raises(ValueError, match="eps_distance"):
+             marginal._pairwise_euclidean_distances(
+                 np.zeros((2, 2), dtype=np.float64),
+-                np.zeros((3, 2), dtype=np.float64),
+-                eps_distance=invalid_epsilon,
++                valid,
++                eps_distance=invalid_epsilon,  # type: ignore[arg-type]
+             )
+ 
+ 
+@@ -253,3 +332,114 @@ def test_covariate_path_has_no_three_dimensional_distance_broadcast() -> None:
+     """The removed item-by-node-by-dimension temporary cannot silently return."""
+     source = inspect.getsource(marginal.fit_marginal_numpy)
+     assert "x_grid[None, :, :] - zeta[:, None, :]" not in source
++
++
++def test_partially_observed_estimator_is_deterministic_with_bounded_distances() -> None:
++    """Repeated realistic fallback fits return identical finite governed evidence."""
++    rng = np.random.default_rng(20260807)
++    n_persons, n_items = 24, 6
++    y = (rng.random((n_persons, n_items)) < 0.45).astype(np.float64)
++    observed = rng.random(y.shape) > 0.25
++    observed[0] = True
++    observed[:, 0] = True
++    factor_id = np.arange(n_items, dtype=np.int64) % 2
++    kwargs = {
++        "model": "MLS2PLM",
++        "n_dims": 2,
++        "latent_dim": 2,
++        "q_theta": 7,
++        "q_xi": 7,
++        "max_iter": 2,
++        "m_steps": 1,
++    }
++
++    first = marginal.fit_marginal_numpy(y, observed, factor_id, **kwargs)
++    second = marginal.fit_marginal_numpy(y, observed, factor_id, **kwargs)
++
++    for key in (
++        "alpha",
++        "b",
++        "zeta",
++        "theta_eap",
++        "theta_sd",
++        "xi_eap",
++        "mu",
++        "sigma",
++        "u_eap",
++        "zero_responsibility",
++    ):
++        np.testing.assert_array_equal(first[key], second[key])
++        assert np.all(np.isfinite(first[key]))
++    np.testing.assert_array_equal(first["loglik_trace"], second["loglik_trace"])
++    assert np.all(np.isfinite(first["loglik_trace"]))
++    assert first["n_iter"] == second["n_iter"]
++    assert first["status"] == second["status"]
++    assert first["converged"] is second["converged"]
++    assert np.isfinite(first["tau"])
++    assert np.isfinite(first["delta"])
++    assert np.isfinite(first["pi_zero"])
++
++
++def test_covariate_fit_uses_pairwise_helper_without_changing_results(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """The valid covariate M-step delegates to the bounded distance helper."""
++    rng = np.random.default_rng(563)
++    y = (rng.random((12, 4)) < 0.5).astype(np.float64)
++    observed = np.ones_like(y, dtype=bool)
++    factor_id = np.array([0, 1, 0, 1], dtype=np.int64)
++    anchors = {
++        "fixed": np.ones(4, dtype=bool),
++        "alpha": np.zeros(4),
++        "b": np.array([-0.4, 0.2, 0.5, -0.1]),
++        "zeta": np.array([[-0.4], [0.1], [0.5], [0.8]], dtype=np.float64),
++        "tau": 0.0,
++    }
++    covariate = {"w": np.array([[-1.0, 0.5, 1.0, -0.5]])}
++    kwargs = {
++        "model": "MLS2PLM",
++        "n_dims": 2,
++        "latent_dim": 1,
++        "q_theta": 7,
++        "q_xi": 7,
++        "max_iter": 1,
++        "m_steps": 1,
++        "anchors": anchors,
++        "covariate": covariate,
++    }
++    expected = marginal.fit_marginal_numpy(
++        y,
++        observed,
++        factor_id,
++        **kwargs,
++    )
++
++    original = marginal._pairwise_euclidean_distances
++    calls: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
++
++    def spy(
++        left: np.ndarray,
++        right: np.ndarray,
++        *,
++        eps_distance: float,
++    ) -> np.ndarray:
++        calls.append((left.shape, right.shape))
++        return original(left, right, eps_distance=eps_distance)
++
++    monkeypatch.setattr(marginal, "_pairwise_euclidean_distances", spy)
++    actual = marginal.fit_marginal_numpy(
++        y,
++        observed,
++        factor_id,
++        **kwargs,
++    )
++
++    # Initial tables, the covariate interaction, and final tables each require
++    # the full item-by-node helper when all item and tau parameters are fixed.
++    assert calls.count(((4, 1), (7, 1))) == 3
++    for key in ("alpha", "b", "zeta", "theta_eap", "theta_sd", "xi_eap"):
++        np.testing.assert_array_equal(actual[key], expected[key])
++    np.testing.assert_array_equal(actual["loglik_trace"], expected["loglik_trace"])
++    assert actual["delta"] == expected["delta"]
++    assert actual["n_iter"] == expected["n_iter"]
++    assert actual["status"] == expected["status"]
