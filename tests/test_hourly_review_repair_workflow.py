@@ -49,17 +49,12 @@ def test_hourly_caller_is_bounded_to_fast_mlsirm_current_head_repairs() -> None:
 
 
 def test_hourly_caller_preserves_least_privilege_and_secret_boundaries() -> None:
-    """Only established scheduler credentials cross the reusable-workflow call."""
+    """The GitHub token stays read-only while explicit scheduler credentials cross."""
     workflow = _workflow_text()
     assert "permissions:\n  contents: read" in workflow
-    for permission in (
-        "actions: write",
-        "contents: read",
-        "issues: write",
-        "pull-requests: read",
-        "statuses: read",
-    ):
-        assert permission in workflow
+    assert "permissions:\n      contents: read" in workflow
+    assert workflow.count("contents: read") == 2
+    assert "write" not in workflow
     assert "secrets: inherit" not in workflow
     assert "COPILOT_GITHUB_TOKEN" not in workflow
     assert "NVIDIA_NIM_API_KEY" not in workflow
