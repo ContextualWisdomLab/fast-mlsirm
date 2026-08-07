@@ -105,12 +105,9 @@ def _identifier_list(
     *,
     empty_message: str,
 ) -> str:
-    """Render identifier evidence as a list or explicit atomic status region."""
+    """Render identifier evidence as a semantic list or explicit empty state."""
     if not identifiers:
-        return (
-            '<div class="empty-state" role="status" aria-atomic="true">'
-            f"{escape(empty_message)}</div>"
-        )
+        return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
     items = "".join(
         f"<li><code>{escape(identifier)}</code></li>" for identifier in identifiers
     )
