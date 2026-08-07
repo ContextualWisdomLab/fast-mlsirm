@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from fast_mlsirm.multilevel import (
@@ -35,6 +37,14 @@ def _assert_error(code: str, callback) -> MultilevelContractError:
         callback()
     assert caught.value.code == code
     return caught.value
+
+
+def test_context_dimension_is_an_explicit_required_factory_field() -> None:
+    """Schema 1.0 never invents a random-effect family for the caller."""
+    parameter = inspect.signature(build_context_membership).parameters[
+        "context_dimension_id"
+    ]
+    assert parameter.default is inspect.Parameter.empty
 
 
 def test_cross_classified_dimensions_each_normalize_independently() -> None:
@@ -75,8 +85,22 @@ def test_cross_classified_dimensions_each_normalize_independently() -> None:
     assert design.context_dimension_ids == ("school_context", "site_context")
     assert design.observation_ids == ("observation_alpha", "observation_beta")
     assert design.membership_counts_by_dimension == ((1, 1), (1, 1))
+    assert design.membership_weights_by_dimension == (
+        ((1.0,), (1.0,)),
+        ((1.0,), (1.0,)),
+    )
     serialized = design.to_dict()
     assert serialized["context_dimension_ids"] == ["school_context", "site_context"]
+    assert serialized["context_keys"] == [
+        ["school_context", "school_north"],
+        ["school_context", "school_south"],
+        ["site_context", "site_east"],
+    ]
+    assert serialized["membership_counts_by_dimension"] == [[1, 1], [1, 1]]
+    assert serialized["membership_weights_by_dimension"] == [
+        [[1.0], [1.0]],
+        [[1.0], [1.0]],
+    ]
     assert all("context_dimension_id" in row for row in serialized["memberships"])
 
 
@@ -110,6 +134,9 @@ def test_weighted_membership_normalizes_within_each_context_dimension() -> None:
 
     assert design.membership_counts_by_dimension == ((2, 1),)
     assert design.membership_weights_by_dimension == (((0.25, 0.75), (1.0,)),)
+    assert design.to_dict()["membership_weights_by_dimension"] == [
+        [[0.25, 0.75], [1.0]]
+    ]
 
 
 def test_context_identity_is_scoped_by_dimension() -> None:
