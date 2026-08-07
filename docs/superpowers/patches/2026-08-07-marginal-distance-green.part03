@@ -1,0 +1,146 @@
+                 a_c = np.exp(alpha_c) if free_alpha else 1.0
+                 e = a_c * theta_i[:, :, None] + b_c + off_i
+                 if kind_i == "distance":
+-                    # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+-                    x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+-                    z_sq = np.vdot(zeta_c, zeta_c)
+-                    dist_sq = x_sq + z_sq - 2 * np.dot(x_grid, zeta_c)
+-                    dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
++                    dist = _pairwise_euclidean_distances(
++                        np.ascontiguousarray(zeta_c[None, :], dtype=np.float64),
++                        x_grid,
++                        eps_distance=eps_distance,
++                    )[0]
+                     e = e - gamma * dist[None, None, :]
+                 elif kind_i == "inner":
+                     e = e + (x_grid @ zeta_c)[None, None, :]
+@@ -768,8 +979,13 @@ def fit_marginal_numpy(
+                         deta_z = x_grid  # (Nx, K)
+                     else:
+                         diff = x_grid - zeta_i[None, :]
+-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+-                        deta_z = gamma * diff / dist[:, None]  # (Nx, K)
++                        dist = np.einsum("ij,ij->i", diff, diff, optimize=True)
++                        np.maximum(dist, 0.0, out=dist)
++                        dist += eps_distance
++                        np.sqrt(dist, out=dist)
++                        diff *= gamma
++                        diff /= dist[:, None]
++                        deta_z = diff  # (Nx, K), reusing the guarded workspace
+                     g_zeta = (
+                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
+                         - pen["lambda_zeta"] * zeta_i
+@@ -809,11 +1025,11 @@ def fit_marginal_numpy(
+         # --- M-step: tau (distance kind only) ---
+         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
+             gamma = float(np.exp(tau))
+-            # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+-            x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+-            z_sq = np.einsum("ij,ij->i", zeta, zeta)
+-            dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
+-            dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
++            dist = _pairwise_euclidean_distances(
++                zeta,
++                x_grid,
++                eps_distance=eps_distance,
++            )
+             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
+             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
+             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
+@@ -868,8 +1084,11 @@ def fit_marginal_numpy(
+             n_all = nbar[:, factor_id] - mbar
+             kind_i = _interaction_kind(model)
+             if kind_i == "distance":
+-                diffz = x_grid[None, :, :] - zeta[:, None, :]
+-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
++                distz = _pairwise_euclidean_distances(
++                    zeta,
++                    x_grid,
++                    eps_distance=eps_distance,
++                )
+                 interaction_term = -gamma * distz[None, :, None, :]
+             elif kind_i == "inner":
+                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
+diff --git a/tests/test_marginal_distance_workspace_bounds.py b/tests/test_marginal_distance_workspace_bounds.py
+index 0d28a5c..32072be 100644
+--- a/tests/test_marginal_distance_workspace_bounds.py
++++ b/tests/test_marginal_distance_workspace_bounds.py
+@@ -68,6 +68,20 @@ def test_pairwise_distance_rejects_nonfinite_matrices_before_blas() -> None:
+             )
+ 
+ 
++
++
++def test_pairwise_distance_rejects_nonfinite_result() -> None:
++    """Finite coordinates whose squared norms overflow fail with a stable error."""
++    huge = np.full((1, 2), 1e308, dtype=np.float64)
++    with np.errstate(over="ignore", invalid="ignore"):
++        with pytest.raises(ValueError, match="result must be finite"):
++            marginal._pairwise_euclidean_distances(
++                huge,
++                np.zeros((1, 2), dtype=np.float64),
++                eps_distance=1e-8,
++            )
++
++
+ def test_checked_workspace_bytes_uses_float64_byte_accounting() -> None:
+     """Distance resource limits are byte contracts, not element-count aliases."""
+     assert marginal._checked_marginal_workspace_bytes(
+@@ -88,6 +102,31 @@ def test_checked_workspace_bytes_uses_float64_byte_accounting() -> None:
+         )
+ 
+ 
++
++
++def test_checked_workspace_bytes_uses_default_distance_ceiling() -> None:
++    """Omitting a limit uses the package-owned private distance byte ceiling."""
++    assert marginal._checked_marginal_workspace_bytes(
++        "default workspace",
++        2,
++        3,
++        itemsize=_FLOAT64_BYTES,
++    ) == 2 * 3 * _FLOAT64_BYTES
++
++
++def test_distance_workspace_guard_can_fail_only_the_gradient(monkeypatch) -> None:
++    """A narrow item matrix can fit while the node-by-dimension derivative cannot."""
++    monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 1_000)
++
++    with pytest.raises(ValueError, match="item distance gradient workspace"):
++        marginal._validate_marginal_distance_workspaces(
++            n_items=1,
++            n_x=61,
++            latent_dim=3,
++            uses_space=True,
++        )
++
++
+ def test_distance_workspace_guard_fails_before_pairwise_allocation(monkeypatch) -> None:
+     """Oversized float64 output fails without asking NumPy for the matrix."""
+     monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 1_000)
+@@ -212,30 +251,70 @@ def test_distance_workspace_contract_requires_a_real_boolean(invalid_flag) -> No
+ 
+ def test_distance_helpers_reject_invalid_shapes_dtype_and_epsilon() -> None:
+     """Direct helper use fails closed for malformed numerical contracts."""
+-    with pytest.raises(ValueError, match="two-dimensional"):
++    valid = np.zeros((3, 2), dtype=np.float64)
++    with pytest.raises(ValueError, match="float64 arrays"):
+         marginal._pairwise_euclidean_distances(
+-            np.zeros(2, dtype=np.float64),
+-            np.zeros((2, 1), dtype=np.float64),
++            [[0.0, 0.0]],  # type: ignore[arg-type]
++            valid,
+             eps_distance=1e-8,
+         )
++    for left, right in (
++        (np.zeros(2, dtype=np.float64), valid),
++        (valid, np.zeros(2, dtype=np.float64)),
++    ):
++        with pytest.raises(ValueError, match="two-dimensional"):
++            marginal._pairwise_euclidean_distances(
++                left,
++                right,
++                eps_distance=1e-8,
++            )
+     with pytest.raises(ValueError, match="share one latent dimension"):
+         marginal._pairwise_euclidean_distances(
