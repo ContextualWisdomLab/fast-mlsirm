@@ -114,9 +114,9 @@ def test_distance_workspace_guard_fails_before_gradient_allocation(monkeypatch) 
         )
 
 
-def test_public_estimator_rejects_distance_budget_before_node_allocation(monkeypatch) -> None:
-    """An otherwise-valid spatial request fails before `_xi_nodes` allocates nodes."""
-    monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 64)
+def test_public_estimator_rejects_pairwise_budget_before_node_allocation(monkeypatch) -> None:
+    """A pairwise-over-budget spatial request fails before `_xi_nodes` allocates nodes."""
+    monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 100)
 
     def forbidden_xi_nodes(*_args, **_kwargs):
         raise AssertionError("_xi_nodes must not run before distance preflight")
@@ -133,9 +133,38 @@ def test_public_estimator_rejects_distance_budget_before_node_allocation(monkeyp
             factor_id,
             model="MLSRM",
             n_dims=1,
-            latent_dim=2,
+            latent_dim=1,
             q_theta=1,
             q_xi=4,
+            max_iter=1,
+        )
+
+
+def test_public_estimator_rejects_gradient_budget_before_node_allocation(monkeypatch) -> None:
+    """A node-by-dimension-over-budget request fails before `_xi_nodes` allocation."""
+    monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 200)
+
+    def forbidden_xi_nodes(*_args, **_kwargs):
+        raise AssertionError("_xi_nodes must not run before gradient workspace preflight")
+
+    monkeypatch.setattr(marginal, "_xi_nodes", forbidden_xi_nodes)
+    y = np.array([[0.0], [1.0]], dtype=np.float64)
+    observed = np.ones_like(y, dtype=bool)
+    factor_id = np.zeros(1, dtype=np.int64)
+
+    # Pairwise peak for 1 item x 10 nodes fits within 200 bytes, while the
+    # intentional 10 x 3 float64 item-gradient workspace requires 240 bytes.
+    with pytest.raises(ValueError, match="item distance gradient workspace"):
+        marginal.fit_marginal_numpy(
+            y,
+            observed,
+            factor_id,
+            model="MLSRM",
+            n_dims=1,
+            latent_dim=3,
+            q_theta=1,
+            xi_rule="qmc",
+            xi_points=10,
             max_iter=1,
         )
 
