@@ -28,17 +28,9 @@
 **Learning:** Screen readers only treat `<section>` as a landmark region if it has an accessible name. Without an accessible name, the region is not easily navigable via screen reader rotor menus.
 **Action:** Always provide an accessible name to `<section>` using `aria-labelledby` pointing to its main heading's `id`.
 
-## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
-**Learning:** Dense bar charts or lists can be difficult to visually parse. Highlighting the currently hovered row by dimming the surrounding rows greatly improves visual focus and UX.
-**Action:** Use a CSS pattern like `.container:hover .item:not(:hover) { opacity: 0.5; }` (along with `transition` properties on the item) to isolate visual focus during interaction with dense data visualizations.
-
 ## 2024-08-01 - Focus Visible Styles for Skip-to-Content Targets
 **Learning:** While `outline: none;` on a `<main>` container properly removes the visual artifact when users click inside the content area, it completely breaks keyboard accessibility for users navigating via the "Skip to main content" link because no focus indicator is shown when the target is focused.
 **Action:** When overriding the focus outline on semantic containers like `<main>`, always provide a `.element:focus-visible` rule (e.g., `outline: 3px solid var(--primary-color)`) after the `:focus { outline: none; }` rule to ensure keyboard navigation remains visibly accessible without disrupting mouse interactions.
-
-## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
-**Learning:** Dense bar charts or lists can be difficult to visually parse. Highlighting the currently hovered row by dimming the surrounding rows greatly improves visual focus and UX.
-**Action:** Use a CSS pattern like `.container:hover .item:not(:hover) { opacity: 0.5; }` (along with `transition` properties on the item) to isolate visual focus during interaction with dense data visualizations.
 
 ## 2024-07-10 - HTML Report Semantic Definition Lists
 **Learning:** Using `<span>` and `<p>` elements for displaying key-value metadata pairs (like "Source: file.json") in HTML reports misses an opportunity to provide semantic structure. Additionally, purely decorative text preceding main headings (like a small subtitle) can add noise for screen reader users when read out immediately before the main `<h1>`.
@@ -47,3 +39,7 @@
 ## 2025-02-12 - Exposing Unrounded Numeric Representations for Formatted Floats
 **Learning:** In data-heavy HTML reports, formatting floats to a fixed number of significant digits can obscure the original Python float representation. A native `title` tooltip can help pointer users inspect that unrounded representation, but it is not a reliable keyboard, touch, or assistive-technology disclosure mechanism.
 **Action:** Add the unrounded Python float representation as a supplemental native `title` tooltip on formatted values. Preserve the report's accessible exact-value disclosure and JSON/CSV exports as the authoritative non-hover paths; never claim that `title` alone provides accessibility.
+
+## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
+**Learning:** Using peer-opacity selectors (like `.container:hover .item:not(:hover) { opacity: 0.5; }`) to dim non-hovered chart or table peers is an accessibility regression. It reduces readability of exact values and neighboring evidence during pointer inspection and lacks a keyboard equivalent.
+**Action:** Do not reintroduce peer-opacity selectors. Dense visualizations should retain full data legibility and use non-destructive active-row cues, persistent exact-value disclosure, semantic focus behavior, and keyboard-equivalent interaction.
