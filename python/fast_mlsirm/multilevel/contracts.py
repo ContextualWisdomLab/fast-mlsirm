@@ -80,6 +80,24 @@ def _safe_values(
         ) from None
 
 
+def _assert_leaf_integrity(
+    value: Any,
+    *,
+    code: str,
+    message: str,
+) -> None:
+    """Verify one package-built leaf against its immutable construction seal."""
+    try:
+        current = artifact_digest(value._content_dict())
+    except Exception:
+        current = ""
+    if (
+        getattr(value, "schema_version", None) != MULTILEVEL_SCHEMA_VERSION
+        or current != getattr(value, "_sealed_fingerprint", None)
+    ):
+        raise contract_error(code, "$", message)
+
+
 @dataclass(frozen=True)
 class ContextMembership:
     """One weighted observation-to-context edge with revision provenance."""
@@ -94,7 +112,7 @@ class ContextMembership:
     _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _membership_token: object | None) -> None:
-        """Reject direct construction and normalize one membership edge."""
+        """Reject direct construction, normalize content, and seal its identity."""
         if _membership_token is not _MEMBERSHIP_TOKEN:
             raise contract_error(
                 "unverified_context_membership",
@@ -150,10 +168,19 @@ class ContextMembership:
             "membership_revision_fingerprint": self.membership_revision_fingerprint,
         }
 
+    def _assert_integrity(self) -> None:
+        """Reject post-factory mutation before any public identity is exposed."""
+        _assert_leaf_integrity(
+            self,
+            code="context_membership_integrity_mismatch",
+            message="membership content no longer matches its package-owned seal",
+        )
+
     @property
     def membership_fingerprint(self) -> str:
-        """Return SHA-256 over the normalized membership edge."""
-        return artifact_digest(self._content_dict())
+        """Return the sealed SHA-256 identity after integrity verification."""
+        self._assert_integrity()
+        return self._sealed_fingerprint
 
     @property
     def membership_handle(self) -> str:
@@ -161,7 +188,8 @@ class ContextMembership:
         return f"context_membership_{self.membership_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return canonical edge content and deterministic identities."""
+        """Return canonical edge content only after integrity verification."""
+        self._assert_integrity()
         return {
             **self._content_dict(),
             "membership_handle": self.membership_handle,
@@ -176,9 +204,10 @@ class ContextMembershipDesign:
     memberships: tuple[ContextMembership, ...]
     schema_version: str = MULTILEVEL_SCHEMA_VERSION
     _design_token: InitVar[object | None] = None
+    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _design_token: object | None) -> None:
-        """Reject direct construction outside the validated design factory."""
+        """Reject direct construction and seal the complete aggregate content."""
         if _design_token is not _MEMBERSHIP_DESIGN_TOKEN:
             raise contract_error(
                 "unverified_context_membership_design",
@@ -186,6 +215,31 @@ class ContextMembershipDesign:
                 "use build_context_membership_design",
             )
         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
+        object.__setattr__(
+            self,
+            "_sealed_fingerprint",
+            artifact_digest(self._content_dict()),
+        )
+
+    def _assert_integrity(self) -> None:
+        """Verify the aggregate seal and every exact package-owned child."""
+        try:
+            if any(type(value) is not ContextMembership for value in self.memberships):
+                raise TypeError
+            for value in self.memberships:
+                value._assert_integrity()
+            current = artifact_digest(self._content_dict())
+        except Exception:
+            current = ""
+        if (
+            self.schema_version != MULTILEVEL_SCHEMA_VERSION
+            or current != self._sealed_fingerprint
+        ):
+            raise contract_error(
+                "context_membership_design_integrity_mismatch",
+                "$",
+                "membership design no longer matches its package-owned seal",
+            )
 
     @property
     def observation_ids(self) -> tuple[str, ...]:
@@ -201,7 +255,7 @@ class ContextMembershipDesign:
 
     @property
     def context_keys(self) -> tuple[tuple[str, str], ...]:
-        """Return dimension-scoped context identities."""
+        """Return dimension-qualified context identities."""
         return tuple(
             sorted(
                 {
@@ -210,11 +264,6 @@ class ContextMembershipDesign:
                 }
             )
         )
-
-    @property
-    def context_ids(self) -> tuple[str, ...]:
-        """Return unique display context labels for compatibility reports."""
-        return tuple(sorted({value.context_id for value in self.memberships}))
 
     def _grouped_memberships(
         self,
@@ -297,8 +346,9 @@ class ContextMembershipDesign:
 
     @property
     def design_fingerprint(self) -> str:
-        """Return SHA-256 over the complete ordered membership design."""
-        return artifact_digest(self._content_dict())
+        """Return the sealed SHA-256 design identity after replay verification."""
+        self._assert_integrity()
+        return self._sealed_fingerprint
 
     @property
     def design_handle(self) -> str:
@@ -306,18 +356,16 @@ class ContextMembershipDesign:
         return f"context_membership_design_{self.design_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return sparse design content and deterministic identities."""
+        """Return dimension-qualified aggregate content after integrity checks."""
+        self._assert_integrity()
         return {
             "schema_version": self.schema_version,
             "memberships": [value.to_dict() for value in self.memberships],
             "observation_ids": list(self.observation_ids),
             "context_dimension_ids": list(self.context_dimension_ids),
             "context_keys": [list(value) for value in self.context_keys],
-            "context_ids": list(self.context_ids),
             "membership_counts": list(self.membership_counts),
-            "membership_weights": [
-                list(value) for value in self.membership_weights
-            ],
+            "membership_weights": [list(value) for value in self.membership_weights],
             "membership_counts_by_dimension": [
                 list(value) for value in self.membership_counts_by_dimension
             ],
@@ -344,7 +392,7 @@ class TemporalOccasion:
     _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _occasion_token: object | None) -> None:
-        """Reject direct construction and normalize one temporal occasion."""
+        """Reject direct construction, normalize content, and seal its identity."""
         if _occasion_token is not _OCCASION_TOKEN:
             raise contract_error(
                 "unverified_temporal_occasion",
@@ -400,10 +448,19 @@ class TemporalOccasion:
             "occasion_revision_fingerprint": self.occasion_revision_fingerprint,
         }
 
+    def _assert_integrity(self) -> None:
+        """Reject post-factory mutation before any public identity is exposed."""
+        _assert_leaf_integrity(
+            self,
+            code="temporal_occasion_integrity_mismatch",
+            message="occasion content no longer matches its package-owned seal",
+        )
+
     @property
     def occasion_fingerprint(self) -> str:
-        """Return SHA-256 over the normalized temporal occasion."""
-        return artifact_digest(self._content_dict())
+        """Return the sealed SHA-256 identity after integrity verification."""
+        self._assert_integrity()
+        return self._sealed_fingerprint
 
     @property
     def occasion_handle(self) -> str:
@@ -411,7 +468,8 @@ class TemporalOccasion:
         return f"temporal_occasion_{self.occasion_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return canonical occasion content and deterministic identities."""
+        """Return canonical occasion content only after integrity verification."""
+        self._assert_integrity()
         return {
             **self._content_dict(),
             "occasion_handle": self.occasion_handle,
@@ -431,7 +489,7 @@ class LongitudinalStateSpec:
     _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _state_spec_token: object | None) -> None:
-        """Reject direct construction and normalize the state specification."""
+        """Reject direct construction, normalize content, and seal its identity."""
         if _state_spec_token is not _STATE_SPEC_TOKEN:
             raise contract_error(
                 "unverified_longitudinal_state_spec",
@@ -479,10 +537,19 @@ class LongitudinalStateSpec:
             "include_lagged_response_dependence": self.include_lagged_response_dependence,
         }
 
+    def _assert_integrity(self) -> None:
+        """Reject post-factory mutation before any public identity is exposed."""
+        _assert_leaf_integrity(
+            self,
+            code="longitudinal_state_spec_integrity_mismatch",
+            message="state specification no longer matches its package-owned seal",
+        )
+
     @property
     def state_spec_fingerprint(self) -> str:
-        """Return SHA-256 over the exact longitudinal state specification."""
-        return artifact_digest(self._content_dict())
+        """Return the sealed SHA-256 identity after integrity verification."""
+        self._assert_integrity()
+        return self._sealed_fingerprint
 
     @property
     def state_spec_handle(self) -> str:
@@ -490,7 +557,8 @@ class LongitudinalStateSpec:
         return f"longitudinal_state_spec_{self.state_spec_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return canonical state content and deterministic identities."""
+        """Return canonical state content only after integrity verification."""
+        self._assert_integrity()
         return {
             **self._content_dict(),
             "state_spec_handle": self.state_spec_handle,
@@ -506,9 +574,10 @@ class LongitudinalDesign:
     state_spec: LongitudinalStateSpec
     schema_version: str = MULTILEVEL_SCHEMA_VERSION
     _design_token: InitVar[object | None] = None
+    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self, _design_token: object | None) -> None:
-        """Reject direct construction outside the validated design factory."""
+        """Reject direct construction and seal the complete longitudinal content."""
         if _design_token is not _LONGITUDINAL_DESIGN_TOKEN:
             raise contract_error(
                 "unverified_longitudinal_design",
@@ -516,6 +585,34 @@ class LongitudinalDesign:
                 "use build_longitudinal_design",
             )
         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
+        object.__setattr__(
+            self,
+            "_sealed_fingerprint",
+            artifact_digest(self._content_dict()),
+        )
+
+    def _assert_integrity(self) -> None:
+        """Verify the aggregate seal and every exact package-owned child."""
+        try:
+            if type(self.state_spec) is not LongitudinalStateSpec:
+                raise TypeError
+            if any(type(value) is not TemporalOccasion for value in self.occasions):
+                raise TypeError
+            self.state_spec._assert_integrity()
+            for value in self.occasions:
+                value._assert_integrity()
+            current = artifact_digest(self._content_dict())
+        except Exception:
+            current = ""
+        if (
+            self.schema_version != MULTILEVEL_SCHEMA_VERSION
+            or current != self._sealed_fingerprint
+        ):
+            raise contract_error(
+                "longitudinal_design_integrity_mismatch",
+                "$",
+                "longitudinal design no longer matches its package-owned seal",
+            )
 
     @property
     def respondent_ids(self) -> tuple[str, ...]:
@@ -560,8 +657,9 @@ class LongitudinalDesign:
 
     @property
     def design_fingerprint(self) -> str:
-        """Return SHA-256 over the complete ordered longitudinal design."""
-        return artifact_digest(self._content_dict())
+        """Return the sealed SHA-256 design identity after replay verification."""
+        self._assert_integrity()
+        return self._sealed_fingerprint
 
     @property
     def design_handle(self) -> str:
@@ -569,7 +667,8 @@ class LongitudinalDesign:
         return f"longitudinal_design_{self.design_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return longitudinal design content and deterministic identities."""
+        """Return longitudinal design content after aggregate integrity checks."""
+        self._assert_integrity()
         return {
             "schema_version": self.schema_version,
             "occasions": [value.to_dict() for value in self.occasions],
@@ -601,9 +700,10 @@ def build_context_membership(
 
 
 def _replay_membership(value: ContextMembership, index: int) -> ContextMembership:
-    """Rebuild and verify one package-owned membership before aggregation."""
+    """Rebuild and verify one exact package-owned membership before aggregation."""
     path = f"$.memberships[{index}]"
     try:
+        value._assert_integrity()
         replayed = build_context_membership(
             observation_id=value.observation_id,
             context_dimension_id=value.context_dimension_id,
@@ -611,22 +711,15 @@ def _replay_membership(value: ContextMembership, index: int) -> ContextMembershi
             membership_weight=value.membership_weight,
             membership_revision_fingerprint=value.membership_revision_fingerprint,
         )
+        replayed._assert_integrity()
+        if replayed.membership_fingerprint != value._sealed_fingerprint:
+            raise ValueError
     except Exception:
         raise contract_error(
             "context_membership_integrity_mismatch",
             path,
             "membership content no longer matches its package-owned seal",
         ) from None
-    if (
-        value.schema_version != MULTILEVEL_SCHEMA_VERSION
-        or replayed.membership_fingerprint != value._sealed_fingerprint
-        or value.membership_fingerprint != value._sealed_fingerprint
-    ):
-        raise contract_error(
-            "context_membership_integrity_mismatch",
-            path,
-            "membership content no longer matches its package-owned seal",
-        )
     return replayed
 
 
@@ -642,11 +735,11 @@ def build_context_membership_design(
     )
     replayed_values: list[ContextMembership] = []
     for index, value in enumerate(raw):
-        if not isinstance(value, ContextMembership):
+        if type(value) is not ContextMembership:
             raise contract_error(
                 "invalid_context_membership",
                 f"$.memberships[{index}]",
-                "memberships must contain ContextMembership values",
+                "memberships must contain exact ContextMembership values",
             )
         replayed_values.append(_replay_membership(value, index))
     ordered = tuple(
@@ -751,9 +844,10 @@ def build_longitudinal_state_spec(
 
 
 def _replay_occasion(value: TemporalOccasion, index: int) -> TemporalOccasion:
-    """Rebuild and verify one package-owned occasion before aggregation."""
+    """Rebuild and verify one exact package-owned occasion before aggregation."""
     path = f"$.occasions[{index}]"
     try:
+        value._assert_integrity()
         replayed = build_temporal_occasion(
             respondent_id=value.respondent_id,
             occasion_id=value.occasion_id,
@@ -761,28 +855,22 @@ def _replay_occasion(value: TemporalOccasion, index: int) -> TemporalOccasion:
             time_offset_milliseconds=value.time_offset_milliseconds,
             occasion_revision_fingerprint=value.occasion_revision_fingerprint,
         )
+        replayed._assert_integrity()
+        if replayed.occasion_fingerprint != value._sealed_fingerprint:
+            raise ValueError
     except Exception:
         raise contract_error(
             "temporal_occasion_integrity_mismatch",
             path,
             "occasion content no longer matches its package-owned seal",
         ) from None
-    if (
-        value.schema_version != MULTILEVEL_SCHEMA_VERSION
-        or replayed.occasion_fingerprint != value._sealed_fingerprint
-        or value.occasion_fingerprint != value._sealed_fingerprint
-    ):
-        raise contract_error(
-            "temporal_occasion_integrity_mismatch",
-            path,
-            "occasion content no longer matches its package-owned seal",
-        )
     return replayed
 
 
 def _replay_state_spec(value: LongitudinalStateSpec) -> LongitudinalStateSpec:
-    """Rebuild and verify one package-owned state specification."""
+    """Rebuild and verify one exact package-owned state specification."""
     try:
+        value._assert_integrity()
         replayed = build_longitudinal_state_spec(
             state_kind=value.state_kind,
             autoregressive_coefficient=value.autoregressive_coefficient,
@@ -790,22 +878,15 @@ def _replay_state_spec(value: LongitudinalStateSpec) -> LongitudinalStateSpec:
                 value.include_lagged_response_dependence
             ),
         )
+        replayed._assert_integrity()
+        if replayed.state_spec_fingerprint != value._sealed_fingerprint:
+            raise ValueError
     except Exception:
         raise contract_error(
             "longitudinal_state_spec_integrity_mismatch",
             "$.state_spec",
             "state specification no longer matches its package-owned seal",
         ) from None
-    if (
-        value.schema_version != MULTILEVEL_SCHEMA_VERSION
-        or replayed.state_spec_fingerprint != value._sealed_fingerprint
-        or value.state_spec_fingerprint != value._sealed_fingerprint
-    ):
-        raise contract_error(
-            "longitudinal_state_spec_integrity_mismatch",
-            "$.state_spec",
-            "state specification no longer matches its package-owned seal",
-        )
     return replayed
 
 
@@ -821,20 +902,20 @@ def build_longitudinal_design(
         minimum=1,
         maximum=MAX_TEMPORAL_OCCASIONS,
     )
-    if not isinstance(state_spec, LongitudinalStateSpec):
+    if type(state_spec) is not LongitudinalStateSpec:
         raise contract_error(
             "invalid_longitudinal_state_spec",
             "$.state_spec",
-            "state_spec must be a LongitudinalStateSpec",
+            "state_spec must be an exact LongitudinalStateSpec",
         )
     replayed_state = _replay_state_spec(state_spec)
     replayed_occasions: list[TemporalOccasion] = []
     for index, value in enumerate(raw):
-        if not isinstance(value, TemporalOccasion):
+        if type(value) is not TemporalOccasion:
             raise contract_error(
                 "invalid_temporal_occasion",
                 f"$.occasions[{index}]",
-                "occasions must contain TemporalOccasion values",
+                "occasions must contain exact TemporalOccasion values",
             )
         replayed_occasions.append(_replay_occasion(value, index))
     ordered = tuple(
