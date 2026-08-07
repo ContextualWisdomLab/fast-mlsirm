@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Report environment-specific timing and memory for marginal distances.
 
-The benchmark compares the bounded squared-norm implementation with the former
-three-dimensional broadcast only when the requested broadcast tensor is below
-an intentionally conservative safety ceiling. Results characterize the current
-environment; they are not universal speed or capacity claims.
+The benchmark compares the bounded coordinate-subtraction implementation with
+the former three-dimensional broadcast only when the requested broadcast tensor
+is below an intentionally conservative safety ceiling. Results characterize the
+current environment; they are not universal speed or capacity claims.
 """
 
 from __future__ import annotations
@@ -129,9 +129,8 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         dtype=np.float64,
     )
     eps_distance = 1e-8
-    pairwise_live_bytes = (
-        args.n_left * args.n_right + args.n_left + args.n_right
-    ) * np.dtype(np.float64).itemsize
+    pairwise_output_bytes = args.n_left * args.n_right * np.dtype(np.float64).itemsize
+    pairwise_kernel_peak_bytes = 2 * pairwise_output_bytes
     broadcast_elements = args.n_left * args.n_right * args.latent_dim
 
     bounded = _measure(
@@ -147,6 +146,7 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         "scope": "environment_specific_marginal_distance_workspace_evidence",
         "claims": [
             "removes_the_named_three_dimensional_broadcast",
+            "eliminates_the_identified_high_offset_cancellation_mechanism",
             "enforces_the_private_float64_distance_byte_ceiling",
             "does_not_claim_universal_speedup_or_capacity",
         ],
@@ -169,11 +169,12 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
             "repetitions": args.repetitions,
             "seed": args.seed,
             "eps_distance": eps_distance,
-            "pairwise_live_bytes": pairwise_live_bytes,
+            "pairwise_output_bytes": pairwise_output_bytes,
+            "pairwise_kernel_peak_bytes": pairwise_kernel_peak_bytes,
             "private_ceiling_bytes": MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES,
             "broadcast_elements": broadcast_elements,
         },
-        "bounded_squared_norm": bounded,
+        "bounded_coordinate_subtraction": bounded,
         "legacy_broadcast": None,
     }
 
