@@ -73,6 +73,42 @@ def test_pairwise_helper_rejects_nonarrays_and_ndarray_subclasses() -> None:
         )
 
 
+def test_pairwise_helper_rejects_non_c_contiguous_inputs_before_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strided or Fortran input is rejected before any budgeted BLAS workspace."""
+
+    valid = np.arange(4, dtype=np.float64).reshape(2, 2)
+    strided = np.arange(8, dtype=np.float64).reshape(2, 4)[:, ::2]
+    fortran = np.asfortranarray(valid)
+    assert valid.flags.c_contiguous
+    assert not strided.flags.c_contiguous
+    assert not fortran.flags.c_contiguous
+
+    def forbidden_preflight(*_args: object, **_kwargs: object) -> None:
+        """Prove layout rejection precedes the pairwise workspace/BLAS boundary."""
+
+        raise AssertionError("workspace preflight must not run for rejected layout")
+
+    monkeypatch.setattr(
+        marginal,
+        "_validate_pairwise_distance_workspace",
+        forbidden_preflight,
+    )
+    with pytest.raises(ValueError, match="C-contiguous"):
+        marginal._pairwise_euclidean_distances(
+            strided,
+            valid,
+            eps_distance=1e-8,
+        )
+    with pytest.raises(ValueError, match="C-contiguous"):
+        marginal._pairwise_euclidean_distances(
+            valid,
+            fortran,
+            eps_distance=1e-8,
+        )
+
+
 def test_pairwise_helper_rejects_zero_latent_width() -> None:
     """A zero-width latent space cannot produce authoritative distances."""
 
@@ -115,12 +151,8 @@ def test_pairwise_helper_returns_owned_c_contiguous_float64() -> None:
     """The helper returns one deterministic owned matrix for downstream mutation."""
 
     result = marginal._pairwise_euclidean_distances(
-        np.asfortranarray(
-            np.array([[0.0, 1.0], [2.0, 3.0]], dtype=np.float64)
-        ),
-        np.asfortranarray(
-            np.array([[1.0, 0.0], [3.0, 2.0]], dtype=np.float64)
-        ),
+        np.array([[0.0, 1.0], [2.0, 3.0]], dtype=np.float64),
+        np.array([[1.0, 0.0], [3.0, 2.0]], dtype=np.float64),
         eps_distance=1e-8,
     )
 
