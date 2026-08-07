@@ -68,7 +68,7 @@ The implementation:
 - bounds all collections before aggregate allocation;
 - rejects Boolean-as-number coercion, non-finite values, duplicate cells, and
   revision rebinding;
-- replay-verifies package-owned child artifacts before aggregation; and
+- replay-verifies exact package-owned child artifacts before aggregation; and
 - stores no raw source, response, prompt, or provider output.
 
 ## Temporal interpretation boundary
@@ -144,8 +144,14 @@ Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT
 model using Gibbs sampling. *Psychometrika, 66*, 271–288.
 https://doi.org/10.1007/BF02294839
 
-Jeon, M., & Rabe-Hesketh, S. (2025). An autoregressive growth model for
-longitudinal item analysis. *Psychometrika*. Advance online publication.
+Huang, Z., & Cai, L. (2024). Estimation of the three-parameter logistic
+cross-classified item response theory model. *Journal of Educational and
+Behavioral Statistics, 49*(3), 525–558.
+https://doi.org/10.3102/10769986231193351
+
+Jeon, M., & Rabe-Hesketh, S. (2016). An autoregressive growth model for
+longitudinal item analysis. *Psychometrika, 81*(3), 830–850.
+https://doi.org/10.1007/s11336-015-9489-2
 
 Tranmer, M., Steel, D., & Browne, W. J. (2014). Multiple-membership
 multiple-classification models for social network and group dependencies.
