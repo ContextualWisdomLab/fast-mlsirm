@@ -797,16 +797,12 @@ def infit_outfit(
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)
-    resid2 = np.subtract(y, p) ** 2 * observed
+    resid2 = np.subtract(y, p)
+    np.square(resid2, out=resid2)
+    np.multiply(resid2, observed, out=resid2)
     n_obs = np.maximum(observed.sum(axis=0), 1)
-
-    # Optimized distance computation: replace O(N*J) full-size intermediate arrays
-    # in boolean mask reductions with exact memory-preserving equivalents.
-    resid2_sum = resid2.sum(axis=0)
-    np.divide(resid2, v, out=resid2)
-    outfit = resid2.sum(axis=0) / n_obs
-    infit_denominator = np.sum(v, axis=0, where=observed)
-    infit = resid2_sum / np.maximum(infit_denominator, 1e-12)
+    outfit = (resid2 / v * observed).sum(axis=0) / n_obs
+    infit = resid2.sum(axis=0) / np.maximum((v * observed).sum(axis=0), 1e-12)
     return {"infit": infit, "outfit": outfit}
 
 
