@@ -90,13 +90,16 @@ def test_custom_title_and_identifiers_are_escaped(tmp_path: Path) -> None:
 
 
 def test_empty_identifier_list_renders_explicit_state() -> None:
-    """An empty evidence list remains understandable without hidden state."""
+    """An empty evidence list exposes an explicit atomic status region."""
     assert (
         validation_report_html._identifier_list(
             (),
             empty_message="No boundary is available.",
         )
-        == '<div class="empty-state" role="status">No boundary is available.</div>'
+        == (
+            '<div class="empty-state" role="status" aria-atomic="true">'
+            "No boundary is available.</div>"
+        )
     )
 
 
