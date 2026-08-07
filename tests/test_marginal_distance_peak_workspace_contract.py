@@ -8,17 +8,16 @@ import pytest
 import fast_mlsirm.estimators.marginal as marginal
 
 _FLOAT64_BYTES = np.dtype(np.float64).itemsize
-_BOOL_BYTES = np.dtype(np.bool_).itemsize
 
 
-def test_distance_preflight_counts_output_norms_and_result_finiteness_mask(
+def test_distance_preflight_counts_output_and_reusable_scratch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An output that fits alone still fails when all simultaneous temporaries peak."""
+    """An output that fits alone fails when the same-sized scratch is also live."""
 
-    # Output: 12 * 10 * 8 = 960 bytes. Live row norms add
-    # (12 + 10) * 8 = 176 bytes and the post-result finiteness mask adds
-    # 12 * 10 = 120 bytes, so the true post-BLAS peak is 1,256 bytes.
+    # Output: 12 * 10 * 8 = 960 bytes. The translation-stable kernel keeps one
+    # same-shaped float64 scratch live while accumulating coordinate squares, so
+    # its arithmetic phase peaks at 1,920 bytes.
     monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 1_000)
 
     with pytest.raises(ValueError, match="pairwise distance workspace"):
@@ -30,16 +29,16 @@ def test_distance_preflight_counts_output_norms_and_result_finiteness_mask(
         )
 
 
-def test_post_result_finiteness_mask_is_part_of_the_peak_budget(
+def test_output_only_boundary_is_rejected_when_scratch_is_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The old output-plus-norm boundary is rejected once the live bool mask is counted."""
+    """The stable kernel cannot authorize an output without its live scratch."""
 
-    old_peak_without_mask = (12 * 10 + 12 + 10) * _FLOAT64_BYTES
+    output_bytes = 12 * 10 * _FLOAT64_BYTES
     monkeypatch.setattr(
         marginal,
         "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES",
-        old_peak_without_mask,
+        output_bytes,
     )
 
     with pytest.raises(ValueError, match="pairwise distance workspace"):
@@ -94,13 +93,10 @@ def test_pairwise_helper_applies_the_same_peak_budget(
 def test_pairwise_peak_equal_to_limit_is_accepted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The byte ceiling is inclusive and deterministic at the exact boundary."""
+    """The output-plus-scratch byte ceiling is inclusive at the exact boundary."""
 
     output_bytes = 12 * 10 * _FLOAT64_BYTES
-    norm_bytes = (12 + 10) * _FLOAT64_BYTES
-    output_mask_bytes = 12 * 10 * _BOOL_BYTES
-    input_mask_peak = max(12 * 2, 10 * 2) * _BOOL_BYTES
-    peak_bytes = max(output_bytes + norm_bytes + output_mask_bytes, input_mask_peak)
+    peak_bytes = 2 * output_bytes
     monkeypatch.setattr(
         marginal,
         "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES",
