@@ -31,6 +31,7 @@ def _assert_error(code: str, callback) -> MultilevelContractError:
 def _membership(
     *,
     observation_id: str = "observation_alpha",
+    context_dimension_id: str = "school_context",
     context_id: str = "context_alpha",
     membership_weight: float = 1.0,
     revision: str = "a" * 64,
@@ -38,6 +39,7 @@ def _membership(
     """Build one deterministic membership edge for focused contracts."""
     return build_context_membership(
         observation_id=observation_id,
+        context_dimension_id=context_dimension_id,
         context_id=context_id,
         membership_weight=membership_weight,
         membership_revision_fingerprint=revision,
