@@ -204,10 +204,10 @@
 - Added complete-artifact parsing tests that verify table semantics and exact
   canonical JSON reconstruction, plus APA 7th WCAG 2.2 doctoring.
 
-#### Improve Python fitstats matrix allocations
+#### Bounded fit-statistics fallback buffers
 
-- Replaced the large NumPy `(v * observed).sum(axis=0)` float allocation in Python `infit` fallback logic with a bounded mixed-dtype `np.sum(v, axis=0, where=observed)` reduction.
-- Switched the memory-intensive `(resid2 / v * observed)` `outfit` reduction to an in-place `np.divide` and unmasked sum, since `resid2` implicitly contains the missing-data masking limits.
+- Reused one owned NumPy squared-residual buffer for fallback infit/outfit calculations, retained the infit numerator before in-place division, and used a Boolean `where=` reduction for the variance denominator without a full numeric mask copy.
+- Added deterministic sparse-missingness and clipped-probability parity contracts plus an environment-specific benchmark while retaining Rust as the production fit-statistics backend.
 
 #### Release cut 0.7.0
 
