@@ -204,6 +204,11 @@
 - Added complete-artifact parsing tests that verify table semantics and exact
   canonical JSON reconstruction, plus APA 7th WCAG 2.2 doctoring.
 
+#### Bounded fit-statistics fallback buffers
+
+- Reused one owned NumPy squared-residual buffer for fallback infit/outfit calculations, retained the infit numerator before in-place division, and used a Boolean `where=` reduction for the variance denominator without a full numeric mask copy.
+- Added deterministic sparse-missingness and clipped-probability parity contracts plus an environment-specific benchmark while retaining Rust as the production fit-statistics backend.
+
 #### Release cut 0.7.0
 
 - Project version is bumped to 0.7.0 in `pyproject.toml`,
