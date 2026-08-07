@@ -3,11 +3,13 @@
 ## Fixed
 
 - Replaced the NumPy fallback's item-by-node-by-dimension covariate distance
-  broadcast with one bounded squared-norm/matrix-product output that is mutated
-  in place.
-- Added a private 128 MiB float64 distance-workspace ceiling, checked byte
-  products, and pre-allocation gates for pairwise output, live row norms, and
-  the intentional item-gradient workspace before latent nodes are built.
+  broadcast and cancellation-prone squared-norm identity with a
+  coordinate-subtraction-first kernel that reuses one bounded two-dimensional
+  float64 scratch buffer.
+- Added a private 128 MiB distance-workspace ceiling, checked byte products,
+  and pre-allocation gates for the pairwise output-plus-scratch peak, finite
+  masks, and the intentional item-gradient workspace before latent nodes are
+  built.
 - Reused the governed helper in table construction, candidate predictors, the
   tau update, and the covariate update while preserving the Rust production
   backend and public model contracts.
@@ -17,5 +19,6 @@
 - Rejected malformed dimensions, Boolean coercion, non-finite or non-float64
   matrices, hidden layout conversions, invalid epsilon, and oversized distance
   workloads with bounded non-reflective diagnostics.
-- Added deterministic missing-data and covariate parity tests, a safe
-  environment-reporting benchmark, and APA 7 operational doctoring.
+- Added deterministic high-offset translation-stability, missing-data, and
+  covariate parity tests plus a safe environment-reporting benchmark and APA 7
+  operational doctoring.
