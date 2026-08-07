@@ -15,6 +15,10 @@ import numpy as np
 SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
+MAX_MARGINAL_WORKING_SET = 100_000_000
+MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024
+_FLOAT64_ITEMSIZE = np.dtype(np.float64).itemsize
+_BOOL_ITEMSIZE = np.dtype(np.bool_).itemsize
 
 # Priors of Jeon et al. (2021) / lsirm12pl, used as MAP penalties by the
 # marginal estimator (mirror of PenaltyConfig::lsirm_prior in Rust):
@@ -27,6 +31,188 @@ LSIRM_PRIOR = {
     "lambda_tau": 1.0,
     "mu_tau": 0.5,
 }
+
+
+def _checked_marginal_workspace_bytes(
+    name: str,
+    *dimensions: int,
+    itemsize: int,
+    limit_bytes: int,
+) -> int:
+    """Return a bounded byte product without first forming an unbounded product.
+
+    Dimensions must be exact non-negative integers. ``itemsize`` and the byte
+    ceiling must be exact positive integers. Each multiplication is checked by
+    division against the ceiling before it is performed.
+    """
+    if type(name) is not str or not name.strip():
+        raise ValueError("workspace name must be a non-empty string")
+    if any(type(value) is not int or value < 0 for value in dimensions):
+        raise ValueError(f"{name} dimensions must be non-negative integers")
+    if type(itemsize) is not int or itemsize <= 0:
+        raise ValueError("itemsize must be a positive integer")
+    if type(limit_bytes) is not int or limit_bytes <= 0:
+        raise ValueError("workspace byte limit must be a positive integer")
+
+    total = itemsize
+    for dimension in dimensions:
+        if dimension != 0 and total > limit_bytes // dimension:
+            raise ValueError(f"{name} exceeds the {limit_bytes}-byte limit")
+        total *= dimension
+    return total
+
+
+def _validate_pairwise_distance_workspace(
+    n_left: int,
+    n_right: int,
+    latent_dim: int,
+) -> None:
+    """Preflight the true peak memory of one pairwise distance calculation.
+
+    The post-BLAS peak keeps the float64 output and both squared-norm vectors
+    live while ``np.isfinite`` materializes its boolean result mask. Before
+    BLAS, direct helper calls also materialize one boolean finiteness mask for
+    the larger input matrix. The larger of those phases must fit the private
+    distance-workspace ceiling.
+    """
+    limit = MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES
+    output_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    left_norm_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    right_norm_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_right,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    output_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    left_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    right_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_right,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+
+    post_blas_peak = output_bytes
+    for component_bytes in (
+        left_norm_bytes,
+        right_norm_bytes,
+        output_mask_bytes,
+    ):
+        if post_blas_peak > limit - component_bytes:
+            raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+        post_blas_peak += component_bytes
+    input_mask_peak = max(left_input_mask_bytes, right_input_mask_bytes)
+    if max(post_blas_peak, input_mask_peak) > limit:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+
+
+def _validate_marginal_distance_workspaces(
+    *,
+    n_items: int,
+    n_x: int,
+    latent_dim: int,
+    uses_space: bool,
+) -> None:
+    """Fail before allocating bounded latent-distance workspaces.
+
+    The intentional ``n_x × latent_dim`` item-gradient buffer is checked before
+    the pairwise output because both can be equal-sized for small item banks.
+    Non-spatial models deliberately skip all latent-distance byte contracts.
+    """
+    if type(uses_space) is not bool:
+        raise ValueError("uses_space must be a boolean")
+    if not uses_space:
+        return
+    _checked_marginal_workspace_bytes(
+        "item distance gradient workspace",
+        n_x,
+        latent_dim,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES,
+    )
+    _validate_pairwise_distance_workspace(n_items, n_x, latent_dim)
+
+
+def _pairwise_euclidean_distances(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    eps_distance: float,
+) -> np.ndarray:
+    """Return bounded pairwise Euclidean distances for two float64 matrices.
+
+    The implementation uses the squared-norm identity and mutates the matrix
+    multiplication result in place, avoiding an ``L × R × D`` broadcast.
+    Exact C-contiguous NumPy arrays are required so BLAS cannot silently create
+    unbudgeted layout-conversion copies.
+    """
+    if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
+        raise ValueError("distance inputs must be two-dimensional float64 arrays")
+    if type(left) is not np.ndarray or type(right) is not np.ndarray:
+        raise ValueError("distance inputs must be exact NumPy arrays")
+    if left.ndim != 2 or right.ndim != 2:
+        raise ValueError("distance inputs must be two-dimensional")
+    if left.shape[1] != right.shape[1]:
+        raise ValueError("distance inputs must share one latent dimension")
+    if left.shape[1] == 0:
+        raise ValueError("distance inputs must have a positive latent dimension")
+    if left.dtype != np.float64 or right.dtype != np.float64:
+        raise ValueError("distance inputs must use float64")
+    if not left.flags.c_contiguous or not right.flags.c_contiguous:
+        raise ValueError("distance inputs must be C-contiguous")
+
+    _validate_pairwise_distance_workspace(
+        left.shape[0],
+        right.shape[0],
+        left.shape[1],
+    )
+    if not np.all(np.isfinite(left)) or not np.all(np.isfinite(right)):
+        raise ValueError("distance inputs must be finite")
+    if (
+        isinstance(eps_distance, (bool, np.bool_))
+        or not isinstance(eps_distance, (int, float, np.integer, np.floating))
+        or not np.isfinite(eps_distance)
+        or float(eps_distance) <= 0.0
+    ):
+        raise ValueError("eps_distance must be a finite positive number")
+
+    distances = left @ right.T
+    distances *= -2.0
+    left_norms = np.einsum("ij,ij->i", left, left)
+    right_norms = np.einsum("ij,ij->i", right, right)
+    distances += left_norms[:, None]
+    distances += right_norms[None, :]
+    np.maximum(distances, 0.0, out=distances)
+    distances += float(eps_distance)
+    np.sqrt(distances, out=distances)
+    if not np.all(np.isfinite(distances)):
+        raise ValueError("computed pairwise distances must be finite")
+    return distances
 
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
@@ -241,11 +427,11 @@ def _build_tables(
         eta = eta + offsets[:, :, None, None]
     kind = _interaction_kind(model)
     if kind == "distance":
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-        z_sq = np.einsum("ij,ij->i", zeta, zeta)
-        dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
-        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
+        dist = _pairwise_euclidean_distances(
+            zeta,
+            x_grid,
+            eps_distance=eps_distance,
+        )  # (I, Nx)
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
@@ -482,18 +668,35 @@ def fit_marginal_numpy(
     n_persons, n_items = y.shape
     if n_dims is None:
         n_dims = int(factor_id.max()) + 1
-    # Bound the dominant EM working array (persons x max(items,dims) x q_theta x
-    # n_xi_nodes) so oversized quadrature/data cannot exhaust memory (DoS).
-    MAX_MARGINAL_WORKING_SET = 100_000_000
-    _rule = str(xi_rule).lower()
-    _nx = xi_points if _rule in {'qmc', 'halton', 'mc', 'montecarlo', 'monte-carlo'} else min(int(q_xi) ** int(latent_dim), 1_000_001)
-    if n_persons * max(n_items, n_dims) * int(q_theta) * _nx > MAX_MARGINAL_WORKING_SET:
-        raise ValueError(
-            'marginal working set (persons x max(items,dims) x q_theta x n_xi) '
-            f'exceeds the {MAX_MARGINAL_WORKING_SET}-element limit'
-        )
     model = model.upper()
     free_alpha, uses_space = _model_flags(model)
+    if latent_dim < 1 or latent_dim > 3:
+        raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
+
+    # Bound the dominant EM working array and every latent-distance allocation
+    # before latent-node construction. The same contract is rechecked against
+    # the materialized node count below.
+    _rule = str(xi_rule).lower()
+    _nx = (
+        xi_points
+        if _rule in {"qmc", "halton", "mc", "montecarlo", "monte-carlo"}
+        else min(int(q_xi) ** int(latent_dim), 1_000_001)
+    )
+    _checked_marginal_workspace_bytes(
+        "marginal working set",
+        n_persons,
+        max(n_items, n_dims),
+        int(q_theta),
+        _nx,
+        itemsize=1,
+        limit_bytes=MAX_MARGINAL_WORKING_SET,
+    )
+    _validate_marginal_distance_workspaces(
+        n_items=n_items,
+        n_x=_nx,
+        latent_dim=latent_dim,
+        uses_space=uses_space,
+    )
     pop = pop or {"kind": "single"}
     pen = dict(LSIRM_PRIOR)
     if penalty:
@@ -503,8 +706,6 @@ def fit_marginal_numpy(
         raise ValueError("unidimensional models require n_dims == 1")
     if factor_id.min() < 0 or factor_id.max() >= n_dims:
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    if latent_dim < 1 or latent_dim > 3:
-        raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
     obs_vals = y[observed]
     if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
         raise ValueError("observed responses must be 0 or 1")
@@ -516,6 +717,12 @@ def fit_marginal_numpy(
     else:
         x_grid, x_logw = np.zeros((1, latent_dim)), np.zeros(1)
     n_x = len(x_logw)
+    _validate_marginal_distance_workspaces(
+        n_items=n_items,
+        n_x=n_x,
+        latent_dim=latent_dim,
+        uses_space=uses_space,
+    )
 
     # --- deterministic init (mirror of the Rust code) ---
     counts = observed.sum(axis=0)
@@ -733,11 +940,11 @@ def fit_marginal_numpy(
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
-                    # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-                    x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-                    z_sq = np.vdot(zeta_c, zeta_c)
-                    dist_sq = x_sq + z_sq - 2 * np.dot(x_grid, zeta_c)
-                    dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
+                    dist = _pairwise_euclidean_distances(
+                        zeta_c[None, :],
+                        x_grid,
+                        eps_distance=eps_distance,
+                    )[0]
                     e = e - gamma * dist[None, None, :]
                 elif kind_i == "inner":
                     e = e + (x_grid @ zeta_c)[None, None, :]
@@ -809,11 +1016,11 @@ def fit_marginal_numpy(
         # --- M-step: tau (distance kind only) ---
         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
-            # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-            x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-            z_sq = np.einsum("ij,ij->i", zeta, zeta)
-            dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
-            dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
+            dist = _pairwise_euclidean_distances(
+                zeta,
+                x_grid,
+                eps_distance=eps_distance,
+            )  # (I, Nx)
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
@@ -868,8 +1075,11 @@ def fit_marginal_numpy(
             n_all = nbar[:, factor_id] - mbar
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
-                diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                distz = _pairwise_euclidean_distances(
+                    zeta,
+                    x_grid,
+                    eps_distance=eps_distance,
+                )  # (I, Nx)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
