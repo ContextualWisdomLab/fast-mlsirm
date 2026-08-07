@@ -239,7 +239,10 @@ class ContextMembershipDesign:
         """Return total edge counts aligned with observations."""
         grouped = self._grouped_memberships()
         return tuple(
-            sum(len(grouped[observation_id][dimension_id]) for dimension_id in self.context_dimension_ids)
+            sum(
+                len(grouped[observation_id][dimension_id])
+                for dimension_id in self.context_dimension_ids
+            )
             for observation_id in self.observation_ids
         )
 
@@ -312,8 +315,15 @@ class ContextMembershipDesign:
             "context_keys": [list(value) for value in self.context_keys],
             "context_ids": list(self.context_ids),
             "membership_counts": list(self.membership_counts),
+            "membership_weights": [
+                list(value) for value in self.membership_weights
+            ],
             "membership_counts_by_dimension": [
                 list(value) for value in self.membership_counts_by_dimension
+            ],
+            "membership_weights_by_dimension": [
+                [list(weights) for weights in observation]
+                for observation in self.membership_weights_by_dimension
             ],
             "design_handle": self.design_handle,
             "design_fingerprint": self.design_fingerprint,
@@ -574,10 +584,10 @@ class LongitudinalDesign:
 def build_context_membership(
     *,
     observation_id: str,
+    context_dimension_id: str,
     context_id: str,
     membership_weight: float,
     membership_revision_fingerprint: str,
-    context_dimension_id: str = "primary_context",
 ) -> ContextMembership:
     """Build one validated observation-to-context membership edge."""
     return ContextMembership(
@@ -883,7 +893,10 @@ def build_longitudinal_design(
                     "time offsets must be unique within a respondent",
                 )
             time_offsets.add(value.time_offset_milliseconds)
-            if previous_time is not None and value.time_offset_milliseconds <= previous_time:
+            if (
+                previous_time is not None
+                and value.time_offset_milliseconds <= previous_time
+            ):
                 raise contract_error(
                     "nonincreasing_temporal_order",
                     "$.occasions",
