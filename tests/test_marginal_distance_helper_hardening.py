@@ -76,7 +76,7 @@ def test_pairwise_helper_rejects_nonarrays_and_ndarray_subclasses() -> None:
 def test_pairwise_helper_rejects_non_c_contiguous_inputs_before_preflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Strided or Fortran input is rejected before any budgeted BLAS workspace."""
+    """Strided or Fortran input is rejected before any budgeted numeric workspace."""
 
     valid = np.arange(4, dtype=np.float64).reshape(2, 2)
     strided = np.arange(8, dtype=np.float64).reshape(2, 4)[:, ::2]
@@ -86,7 +86,7 @@ def test_pairwise_helper_rejects_non_c_contiguous_inputs_before_preflight(
     assert not fortran.flags.c_contiguous
 
     def forbidden_preflight(*_args: object, **_kwargs: object) -> None:
-        """Prove layout rejection precedes the pairwise workspace/BLAS boundary."""
+        """Prove layout rejection precedes the pairwise workspace boundary."""
 
         raise AssertionError("workspace preflight must not run for rejected layout")
 
@@ -123,7 +123,7 @@ def test_pairwise_helper_rejects_zero_latent_width() -> None:
 def test_pairwise_helper_rejects_nonfinite_computed_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-finite post-BLAS result fails before estimator use."""
+    """A non-finite post-accumulation result fails before estimator use."""
 
     real_sqrt = np.sqrt
 
@@ -159,3 +159,45 @@ def test_pairwise_helper_returns_owned_c_contiguous_float64() -> None:
     assert result.dtype == np.float64
     assert result.flags.c_contiguous
     assert result.flags.owndata
+
+
+@pytest.mark.parametrize("n_left,n_right", [(2, 3), (3, 2)])
+def test_pairwise_helper_is_stable_under_large_common_translation(
+    n_left: int,
+    n_right: int,
+) -> None:
+    """Large exact common offsets must not erase small Euclidean separations."""
+
+    left_bank = np.array(
+        [[1.0, 2.0], [3.0, -4.0], [-5.0, 6.0]],
+        dtype=np.float64,
+    )[:n_left]
+    right_bank = np.array(
+        [[-2.0, 5.0], [6.0, 1.0], [3.0, 7.0]],
+        dtype=np.float64,
+    )[:n_right]
+    offset = float(2**50)
+    translated_left = np.ascontiguousarray(left_bank + offset)
+    translated_right = np.ascontiguousarray(right_bank + offset)
+    eps_distance = 1e-8
+
+    direct = np.sqrt(
+        eps_distance
+        + np.sum(
+            (left_bank[:, None, :] - right_bank[None, :, :]) ** 2,
+            axis=2,
+        )
+    )
+    translated = marginal._pairwise_euclidean_distances(
+        translated_left,
+        translated_right,
+        eps_distance=eps_distance,
+    )
+    baseline = marginal._pairwise_euclidean_distances(
+        left_bank,
+        right_bank,
+        eps_distance=eps_distance,
+    )
+
+    np.testing.assert_array_equal(translated, direct)
+    np.testing.assert_array_equal(translated, baseline)
