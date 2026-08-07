@@ -35,8 +35,15 @@ The caller passes only the established optional scheduler credentials:
 - `PR_REVIEW_MERGE_TOKEN`; and
 - `OPENCODE_APPROVE_TOKEN`.
 
-It never uses `secrets: inherit`, `COPILOT_GITHUB_TOKEN`, GitHub Models, or a
-GitHub token as model authentication. The central workflow owns NVIDIA NIM
+The workflow-generated `GITHUB_TOKEN` is explicitly limited to `contents: read`
+at both workflow and reusable-workflow-call job scope. It receives no Actions,
+issue, pull-request, status, or repository write permission. The central
+scheduler performs any authorized cross-repository mutation only through one of
+the two explicitly forwarded established credentials and fails closed when both
+are absent.
+
+The caller never uses `secrets: inherit`, `COPILOT_GITHUB_TOKEN`, GitHub Models,
+or a GitHub token as model authentication. The central workflow owns NVIDIA NIM
 model execution and binds `NVIDIA_NIM_API_KEY` only inside the protected repair
 worker. The product caller has no model secret and cannot approve, merge,
 release, modify branch protection, or broaden the repair worker's file scope.
@@ -64,7 +71,7 @@ Permanent contract tests assert:
 3. exact target repository and base branch;
 4. one repair dispatch and one-hour same-head retry bounds;
 5. product-level single-flight concurrency;
-6. least-privilege permissions;
+6. read-only workflow-generated token permissions;
 7. explicit scheduler-secret forwarding only; and
 8. absence of `secrets: inherit`, `COPILOT_GITHUB_TOKEN`, and direct model
    credentials.
