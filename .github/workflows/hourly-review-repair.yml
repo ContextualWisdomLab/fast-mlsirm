@@ -15,11 +15,7 @@ permissions:
 jobs:
   dispatch-review-repair:
     permissions:
-      actions: write
       contents: read
-      issues: write
-      pull-requests: read
-      statuses: read
     uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@2f16cca4aae2d11ccc928f8e03fdcbd97a96d5a2
     with:
       target_repository: ContextualWisdomLab/fast-mlsirm
