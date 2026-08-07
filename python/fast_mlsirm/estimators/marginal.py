@@ -15,6 +15,10 @@ import numpy as np
 SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
+MAX_MARGINAL_WORKING_SET = 100_000_000
+MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024
+_FLOAT64_ITEMSIZE = np.dtype(np.float64).itemsize
+_BOOL_ITEMSIZE = np.dtype(np.bool_).itemsize
 
 # Priors of Jeon et al. (2021) / lsirm12pl, used as MAP penalties by the
 # marginal estimator (mirror of PenaltyConfig::lsirm_prior in Rust):
@@ -27,6 +31,180 @@ LSIRM_PRIOR = {
     "lambda_tau": 1.0,
     "mu_tau": 0.5,
 }
+
+
+def _checked_marginal_workspace_bytes(
+    name: str,
+    *dimensions: int,
+    itemsize: int,
+    limit_bytes: int,
+) -> int:
+    """Return a bounded byte product without first forming an unbounded product.
+
+    Dimensions must be exact non-negative integers. ``itemsize`` and the byte
+    ceiling must be exact positive integers. Each multiplication is checked by
+    division against the ceiling before it is performed.
+    """
+    if type(name) is not str or not name.strip():
+        raise ValueError("workspace name must be a non-empty string")
+    if any(type(value) is not int or value < 0 for value in dimensions):
+        raise ValueError(f"{name} dimensions must be non-negative integers")
+    if type(itemsize) is not int or itemsize <= 0:
+        raise ValueError("itemsize must be a positive integer")
+    if type(limit_bytes) is not int or limit_bytes <= 0:
+        raise ValueError("workspace byte limit must be a positive integer")
+
+    total = itemsize
+    for dimension in dimensions:
+        if dimension != 0 and total > limit_bytes // dimension:
+            raise ValueError(f"{name} exceeds the {limit_bytes}-byte limit")
+        total *= dimension
+    return total
+
+
+def _validate_pairwise_distance_workspace(
+    n_left: int,
+    n_right: int,
+    latent_dim: int,
+) -> None:
+    """Preflight the peak memory of one stable pairwise distance calculation.
+
+    The coordinate-subtraction kernel keeps exactly one float64 output matrix
+    and one same-shaped float64 scratch matrix live while accumulating squared
+    coordinate differences. The scratch is released before the final
+    ``np.isfinite`` output mask is materialized. Direct helper calls can also
+    materialize one boolean finiteness mask for the larger input matrix before
+    the numerical kernel starts. The largest phase must fit the private
+    distance-workspace ceiling.
+    """
+    limit = MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES
+    output_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    output_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    left_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    right_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_right,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+
+    if output_bytes > limit - output_bytes:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+    kernel_peak = output_bytes + output_bytes
+    if output_bytes > limit - output_mask_bytes:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+    output_validation_peak = output_bytes + output_mask_bytes
+    input_mask_peak = max(left_input_mask_bytes, right_input_mask_bytes)
+    if max(kernel_peak, output_validation_peak, input_mask_peak) > limit:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+
+
+def _validate_marginal_distance_workspaces(
+    *,
+    n_items: int,
+    n_x: int,
+    latent_dim: int,
+    uses_space: bool,
+) -> None:
+    """Fail before allocating bounded latent-distance workspaces.
+
+    The intentional ``n_x × latent_dim`` item-gradient buffer is checked before
+    the pairwise output because both can be equal-sized for small item banks.
+    Non-spatial models deliberately skip all latent-distance byte contracts.
+    """
+    if type(uses_space) is not bool:
+        raise ValueError("uses_space must be a boolean")
+    if not uses_space:
+        return
+    _checked_marginal_workspace_bytes(
+        "item distance gradient workspace",
+        n_x,
+        latent_dim,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES,
+    )
+    _validate_pairwise_distance_workspace(n_items, n_x, latent_dim)
+
+
+def _pairwise_euclidean_distances(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    eps_distance: float,
+) -> np.ndarray:
+    """Return bounded, translation-stable pairwise Euclidean distances.
+
+    The implementation subtracts coordinates before squaring and reuses one
+    ``L × R`` scratch matrix, avoiding both the catastrophic cancellation of
+    ``||x||² + ||y||² - 2x·y`` at large common offsets and an
+    ``L × R × D`` broadcast. Exact C-contiguous NumPy arrays are required so
+    hidden layout-conversion copies cannot escape the byte accounting.
+    """
+    if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
+        raise ValueError("distance inputs must be two-dimensional float64 arrays")
+    if type(left) is not np.ndarray or type(right) is not np.ndarray:
+        raise ValueError("distance inputs must be exact NumPy arrays")
+    if left.ndim != 2 or right.ndim != 2:
+        raise ValueError("distance inputs must be two-dimensional")
+    if left.shape[1] != right.shape[1]:
+        raise ValueError("distance inputs must share one latent dimension")
+    if left.shape[1] == 0:
+        raise ValueError("distance inputs must have a positive latent dimension")
+    if left.dtype != np.float64 or right.dtype != np.float64:
+        raise ValueError("distance inputs must use float64")
+    if not left.flags.c_contiguous or not right.flags.c_contiguous:
+        raise ValueError("distance inputs must be C-contiguous")
+
+    _validate_pairwise_distance_workspace(
+        left.shape[0],
+        right.shape[0],
+        left.shape[1],
+    )
+    if not np.all(np.isfinite(left)) or not np.all(np.isfinite(right)):
+        raise ValueError("distance inputs must be finite")
+    if (
+        isinstance(eps_distance, (bool, np.bool_))
+        or not isinstance(eps_distance, (int, float, np.integer, np.floating))
+        or not np.isfinite(eps_distance)
+        or float(eps_distance) <= 0.0
+    ):
+        raise ValueError("eps_distance must be a finite positive number")
+
+    distances = np.zeros((left.shape[0], right.shape[0]), dtype=np.float64)
+    scratch = np.empty_like(distances)
+    for coordinate in range(left.shape[1]):
+        np.subtract(
+            left[:, coordinate, None],
+            right[None, :, coordinate],
+            out=scratch,
+        )
+        np.square(scratch, out=scratch)
+        distances += scratch
+    del scratch
+    distances += float(eps_distance)
+    np.sqrt(distances, out=distances)
+    if not np.all(np.isfinite(distances)):
+        raise ValueError("computed pairwise distances must be finite")
+    return distances
 
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
@@ -241,11 +419,11 @@ def _build_tables(
         eta = eta + offsets[:, :, None, None]
     kind = _interaction_kind(model)
     if kind == "distance":
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-        z_sq = np.einsum("ij,ij->i", zeta, zeta)
-        dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
-        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
+        dist = _pairwise_euclidean_distances(
+            zeta,
+            x_grid,
+            eps_distance=eps_distance,
+        )  # (I, Nx)
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
@@ -284,7 +462,7 @@ def _person_logliks(
         # (P, I_d) @ (S,I_d,Qt,Nx) gathered per person context
         pos_d = pos[:, items]  # (P, I_d)
         miss_d = (~observed[:, items]).astype(np.float64)  # (P, I_d)
-        delta_d = delta[:, items]  # (S, I_d, Qt, Nx)
+        delta_d = delta[:, items]  # (S, I_d, Qt,Nx)
         logp0_d = logp0[:, items]
         # einsum over the item axis with per-person context gather
         l[:, d] += np.einsum(
@@ -294,12 +472,12 @@ def _person_logliks(
             l[:, d] -= np.einsum(
                 "pi,piqx->pqx", miss_d, logp0_d[s_of_person], optimize=True
             )
-    lw = t_logw[None, None, :, None] + l  # (P, D, Qt, Nx)
+    lw = t_logw[None, None, :, None] + l  # (P,D,Qt,Nx)
     m = lw.max(axis=2, keepdims=True)
     log_zdx = np.squeeze(m, axis=2) + np.log(
         np.exp(lw - m).sum(axis=2)
-    )  # (P, D, Nx)
-    ax = x_logw[None, :] + log_zdx.sum(axis=1)  # (P, Nx)
+    )  # (P,D,Nx)
+    ax = x_logw[None, :] + log_zdx.sum(axis=1)  # (P,Nx)
     mx = ax.max(axis=1, keepdims=True)
     log_lp = np.squeeze(mx, axis=1) + np.log(np.exp(ax - mx).sum(axis=1))
     return l, log_zdx, log_lp
@@ -312,8 +490,8 @@ def _posteriors(
     t_logw: np.ndarray,
     x_logw: np.ndarray,
 ) -> np.ndarray:
-    """Joint per-person posterior over (d, t, x): shape (P, D, Qt, Nx)."""
-    px = np.exp(x_logw[None, :] + log_zdx.sum(axis=1) - log_lp[:, None])  # (P, Nx)
+    """Joint per-person posterior over (d,t,x): shape (P,D,Qt,Nx)."""
+    px = np.exp(x_logw[None, :] + log_zdx.sum(axis=1) - log_lp[:, None])  # (P,Nx)
     pt = np.exp(t_logw[None, None, :, None] + l - log_zdx[:, :, None, :])
     return px[:, None, None, :] * pt
 
@@ -388,15 +566,15 @@ def _accumulate(
     outer (context) weight and adds the expected node counts, expected correct
     responses, and expected missing counts for the person's context in place.
     """
-    wpost = post * w_outer[:, None, None, None]  # (P, D, Qt, Nx)
+    wpost = post * w_outer[:, None, None, None]  # (P,D,Qt,Nx)
     for s in range(n_ctx):
         sel = s_of_person == s
         if not sel.any():
             continue
         nbar[s] += wpost[sel].sum(axis=0)
-        pos = np.where(observed[sel], y[sel], 0.0)  # (Ps, I)
+        pos = np.where(observed[sel], y[sel], 0.0)  # (Ps,I)
         miss = (~observed[sel]).astype(np.float64)
-        dsel = wpost[sel][:, factor_id]  # (Ps, I, Qt, Nx)
+        dsel = wpost[sel][:, factor_id]  # (Ps,I,Qt,Nx)
         rbar[s] += np.einsum("pi,piqx->iqx", pos, dsel, optimize=True)
         if miss.any():
             mbar[s] += np.einsum("pi,piqx->iqx", miss, dsel, optimize=True)
@@ -482,18 +660,35 @@ def fit_marginal_numpy(
     n_persons, n_items = y.shape
     if n_dims is None:
         n_dims = int(factor_id.max()) + 1
-    # Bound the dominant EM working array (persons x max(items,dims) x q_theta x
-    # n_xi_nodes) so oversized quadrature/data cannot exhaust memory (DoS).
-    MAX_MARGINAL_WORKING_SET = 100_000_000
-    _rule = str(xi_rule).lower()
-    _nx = xi_points if _rule in {'qmc', 'halton', 'mc', 'montecarlo', 'monte-carlo'} else min(int(q_xi) ** int(latent_dim), 1_000_001)
-    if n_persons * max(n_items, n_dims) * int(q_theta) * _nx > MAX_MARGINAL_WORKING_SET:
-        raise ValueError(
-            'marginal working set (persons x max(items,dims) x q_theta x n_xi) '
-            f'exceeds the {MAX_MARGINAL_WORKING_SET}-element limit'
-        )
     model = model.upper()
     free_alpha, uses_space = _model_flags(model)
+    if latent_dim < 1 or latent_dim > 3:
+        raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
+
+    # Bound the dominant EM working array and every latent-distance allocation
+    # before latent-node construction. The same contract is rechecked against
+    # the materialized node count below.
+    _rule = str(xi_rule).lower()
+    _nx = (
+        xi_points
+        if _rule in {"qmc", "halton", "mc", "montecarlo", "monte-carlo"}
+        else min(int(q_xi) ** int(latent_dim), 1_000_001)
+    )
+    _checked_marginal_workspace_bytes(
+        "marginal working set",
+        n_persons,
+        max(n_items, n_dims),
+        int(q_theta),
+        _nx,
+        itemsize=1,
+        limit_bytes=MAX_MARGINAL_WORKING_SET,
+    )
+    _validate_marginal_distance_workspaces(
+        n_items=n_items,
+        n_x=_nx,
+        latent_dim=latent_dim,
+        uses_space=uses_space,
+    )
     pop = pop or {"kind": "single"}
     pen = dict(LSIRM_PRIOR)
     if penalty:
@@ -503,8 +698,6 @@ def fit_marginal_numpy(
         raise ValueError("unidimensional models require n_dims == 1")
     if factor_id.min() < 0 or factor_id.max() >= n_dims:
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    if latent_dim < 1 or latent_dim > 3:
-        raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
     obs_vals = y[observed]
     if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
         raise ValueError("observed responses must be 0 or 1")
@@ -516,6 +709,12 @@ def fit_marginal_numpy(
     else:
         x_grid, x_logw = np.zeros((1, latent_dim)), np.zeros(1)
     n_x = len(x_logw)
+    _validate_marginal_distance_workspaces(
+        n_items=n_items,
+        n_x=n_x,
+        latent_dim=latent_dim,
+        uses_space=uses_space,
+    )
 
     # --- deterministic init (mirror of the Rust code) ---
     counts = observed.sum(axis=0)
@@ -680,7 +879,7 @@ def fit_marginal_numpy(
             mc = log_cluster.max(axis=1, keepdims=True)
             lse = np.squeeze(mc, axis=1) + np.log(np.exp(log_cluster - mc).sum(axis=1))
             loglik = float(lse.sum())
-            cluster_post = np.exp(log_cluster - lse[:, None])  # (C, V)
+            cluster_post = np.exp(log_cluster - lse[:, None])  # (C,V)
             sum_e_v2 = float((cluster_post * ctx["u_nodes"][None, :] ** 2).sum())
             if zero_inflation:
                 zero_resp = (cluster_post[cluster_id] * (1.0 - w_irt_v)).sum(axis=1)
@@ -718,14 +917,11 @@ def fit_marginal_numpy(
                 continue
             d = int(factor_id[i])
             zeta_i = zeta[i].copy()
-            n_i = nbar[:, d] - mbar[:, i]  # (S, Qt, Nx)
+            n_i = nbar[:, d] - mbar[:, i]  # (S,Qt,Nx)
             r_i = rbar[:, i]
-            theta_i = theta_sx[:, d]  # (S, Qt)
+            theta_i = theta_sx[:, d]  # (S,Qt)
 
-            off_i = (
-                offsets[:, i][:, None, None] if offsets is not None else 0.0
-            )
-
+            off_i = offsets[:, i][:, None, None] if offsets is not None else 0.0
             kind_i = _interaction_kind(model)
 
             def eta_of(alpha_c: float, b_c: float, zeta_c: np.ndarray) -> np.ndarray:
@@ -733,11 +929,9 @@ def fit_marginal_numpy(
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
-                    # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-                    x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-                    z_sq = np.vdot(zeta_c, zeta_c)
-                    dist_sq = x_sq + z_sq - 2 * np.dot(x_grid, zeta_c)
-                    dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
+                    dist = _pairwise_euclidean_distances(
+                        zeta_c[None, :], x_grid, eps_distance=eps_distance
+                    )[0]
                     e = e - gamma * dist[None, None, :]
                 elif kind_i == "inner":
                     e = e + (x_grid @ zeta_c)[None, None, :]
@@ -765,11 +959,11 @@ def fit_marginal_numpy(
                     g_alpha, i_alpha = 0.0, 0.0
                 if uses_space:
                     if kind_i == "inner":
-                        deta_z = x_grid  # (Nx, K)
+                        deta_z = x_grid  # (Nx,K)
                     else:
                         diff = x_grid - zeta_i[None, :]
                         dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
-                        deta_z = gamma * diff / dist[:, None]  # (Nx, K)
+                        deta_z = gamma * diff / dist[:, None]  # (Nx,K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
                         - pen["lambda_zeta"] * zeta_i
@@ -809,14 +1003,12 @@ def fit_marginal_numpy(
         # --- M-step: tau (distance kind only) ---
         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
-            # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-            x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-            z_sq = np.einsum("ij,ij->i", zeta, zeta)
-            dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
-            dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
+            dist = _pairwise_euclidean_distances(
+                zeta, x_grid, eps_distance=eps_distance
+            )  # (I,Nx)
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
-            theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
-            n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
+            theta_it = theta_sx[:, factor_id]  # (S,I,Qt)
+            n_all = nbar[:, factor_id] - mbar  # (S,I,Qt,Nx)
             off_all = offsets[:, :, None, None] if offsets is not None else 0.0
             eta = (
                 a_all[None, :, None, None] * theta_it[:, :, :, None]
@@ -864,12 +1056,13 @@ def fit_marginal_numpy(
         if w_cov is not None:
             gamma = float(np.exp(tau))
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
-            theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
+            theta_it = theta_sx[:, factor_id]  # (S,I,Qt)
             n_all = nbar[:, factor_id] - mbar
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
-                diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                distz = _pairwise_euclidean_distances(
+                    zeta, x_grid, eps_distance=eps_distance
+                )  # (I,Nx)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
@@ -916,7 +1109,7 @@ def fit_marginal_numpy(
             for g in range(g_start, n_groups):
                 for d in range(n_dims):
                     theta_g = mu[g, d] + sigma[g, d] * t_nodes  # (Qt,)
-                    w = nbar[g, d]  # (Qt, Nx)
+                    w = nbar[g, d]  # (Qt,Nx)
                     w_sum = float(w.sum())
                     if w_sum > 1e-10:
                         m1 = float((w * theta_g[:, None]).sum())
@@ -943,16 +1136,8 @@ def fit_marginal_numpy(
                 group_id if kind == "multigroup" else np.zeros(n_persons, dtype=np.int64)
             )
             _, _, final_log_lp = _person_logliks(
-                y,
-                observed,
-                factor_id,
-                logp1,
-                logp0,
-                c0,
-                t_logw,
-                x_logw,
-                s_of_person,
-                n_dims,
+                y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw,
+                s_of_person, n_dims,
             )
             if zero_inflation:
                 all_zero_bcast = all_zero
@@ -966,24 +1151,14 @@ def fit_marginal_numpy(
             for v in range(ctx["n_ctx"]):
                 s_all = np.full(n_persons, v, dtype=np.int64)
                 _, _, final_lp = _person_logliks(
-                    y,
-                    observed,
-                    factor_id,
-                    logp1,
-                    logp0,
-                    c0,
-                    t_logw,
-                    x_logw,
-                    s_all,
-                    n_dims,
+                    y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw,
+                    s_all, n_dims,
                 )
                 final_lp_v[:, v] = final_lp
             if zero_inflation:
                 all_zero_bcast = all_zero[:, None]
                 final_lp_v, final_w_irt_v = _zi_mix(final_lp_v)
-            final_log_cluster = (
-                np.zeros((n_clusters, ctx["n_ctx"])) + ctx["u_logw"][None, :]
-            )
+            final_log_cluster = np.zeros((n_clusters, ctx["n_ctx"])) + ctx["u_logw"][None, :]
             np.add.at(final_log_cluster, cluster_id, final_lp_v)
             final_mc = final_log_cluster.max(axis=1, keepdims=True)
             final_lse = np.squeeze(final_mc, axis=1) + np.log(
@@ -992,9 +1167,7 @@ def fit_marginal_numpy(
             final_loglik = float(final_lse.sum())
             if zero_inflation:
                 final_cluster_post = np.exp(final_log_cluster - final_lse[:, None])
-                zero_resp = (
-                    final_cluster_post[cluster_id] * (1.0 - final_w_irt_v)
-                ).sum(axis=1)
+                zero_resp = (final_cluster_post[cluster_id] * (1.0 - final_w_irt_v)).sum(axis=1)
         loglik_trace.append(final_loglik)
         if len(loglik_trace) > 1 and abs(loglik_trace[-1] - loglik_trace[-2]) < tol:
             converged = True
@@ -1011,7 +1184,7 @@ def fit_marginal_numpy(
         )
         post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
         wpost = post * w_outer[:, None, None, None]
-        px = wpost.sum(axis=(1, 2)) / n_dims  # (P, Nx) — same for every d
+        px = wpost.sum(axis=(1, 2)) / n_dims  # (P,Nx) — same for every d
         xi_eap[:] += px @ x_grid
         theta_s = ctx["shift"][s_all][:, :, None] + ctx["scale"][s_all][:, :, None] * t_nodes
         theta_eap[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s, optimize=True)
@@ -1050,9 +1223,7 @@ def fit_marginal_numpy(
     # free parameters: items (respecting anchors) + tau + population
     per_item = 1 + int(free_alpha) + (latent_dim if uses_space else 0)
     n_free_items = int((~fixed_mask).sum())
-    tau_free = (
-        uses_space and anchor_tau is None and _interaction_kind(model) == "distance"
-    )
+    tau_free = uses_space and anchor_tau is None and _interaction_kind(model) == "distance"
     pop_params = {
         "single": 0,
         "singlefree": 2 * n_dims,
@@ -1169,9 +1340,7 @@ def score_eap(
         raise ValueError("factor_id must contain finite non-negative integers")
     max_factor = int(factor_numeric.max())
     if max_factor >= MAX_FACTOR_DIMENSIONS:
-        raise ValueError(
-            f"factor_id values must be below {MAX_FACTOR_DIMENSIONS}"
-        )
+        raise ValueError(f"factor_id values must be below {MAX_FACTOR_DIMENSIONS}")
     if n_dims is None:
         n_dims = max_factor + 1
     elif (
@@ -1180,8 +1349,7 @@ def score_eap(
         or not (max_factor < int(n_dims) <= MAX_FACTOR_DIMENSIONS)
     ):
         raise ValueError(
-            f"n_dims must be an integer in {max_factor + 1}.."
-            f"{MAX_FACTOR_DIMENSIONS}"
+            f"n_dims must be an integer in {max_factor + 1}..{MAX_FACTOR_DIMENSIONS}"
         )
     n_dims = int(n_dims)
     factor_id = factor_numeric.astype(np.int64)
@@ -1211,7 +1379,7 @@ def score_eap(
         y_filled, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
     )
     post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
-    px = post.sum(axis=(1, 2)) / n_dims  # (P, Nx)
+    px = post.sum(axis=(1, 2)) / n_dims  # (P,Nx)
     xi_eap = px @ x_grid
     theta_eap = np.einsum("pdtx,t->pd", post, t_nodes, optimize=True)
     theta_m2 = np.einsum("pdtx,t->pd", post, t_nodes**2, optimize=True)
@@ -1294,14 +1462,14 @@ def _gpcm_item_negll_grad(params, theta_nodes, r_counts):
     intercepts = np.concatenate([[0.0], params[1:]])
     a = np.exp(params[0])
     base = a * np.asarray(theta_nodes, dtype=np.float64)
-    lp = category_logprobs(base, scores, intercepts)  # (n_node, K)
+    lp = category_logprobs(base, scores, intercepts)  # (n_node,K)
     ll = float(np.sum(r_counts * lp))
     p = np.exp(lp)
     n = r_counts.sum(axis=1)
     resid = r_counts - n[:, None] * p
     grad = np.zeros_like(params)
     grad[1:] = resid[:, 1:].sum(axis=0)
-    grad[0] = float(np.sum((resid @ scores) * base))  # d base / d log_a = a*theta = base
+    grad[0] = float(np.sum((resid @ scores) * base))
     return -ll, -grad
 
 
@@ -1391,8 +1559,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     k_cat = int(n_cat)
     if k_cat > MAX_GPCM_CATEGORIES:
         raise ValueError(
-            f"n_cat must be at most {MAX_GPCM_CATEGORIES} to bound the "
-            "per-item Hessian allocation"
+            f"n_cat must be at most {MAX_GPCM_CATEGORIES} to bound the per-item Hessian allocation"
         )
     if (
         not np.all(np.isfinite(yf))
@@ -1407,7 +1574,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     log_prior = np.log(wts)
     scores = np.arange(k_cat, dtype=np.float64)
 
-    params = np.zeros((n_items, k_cat))  # column 0 = log_a, columns 1.. = intercepts
+    params = np.zeros((n_items, k_cat))
     for i in range(n_items):
         freq = np.array([(y[:, i] == k).mean() for k in range(k_cat)]) + 1e-3
         params[i, 1:] = np.log(freq[1:] / freq[0])
@@ -1455,7 +1622,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
 
     a = np.exp(params[:, 0])
     intercepts = np.concatenate([np.zeros((n_items, 1)), params[:, 1:]], axis=1)
-    thresholds = intercepts[:, :-1] - intercepts[:, 1:]  # Muraki b_{i,k}
+    thresholds = intercepts[:, :-1] - intercepts[:, 1:]
     return {
         "a": a,
         "alpha": params[:, 0],
@@ -1493,12 +1660,12 @@ def grm_category_logprobs(base, thresholds):
     if thresholds.ndim != 1 or thresholds.size < 1:
         raise ValueError("thresholds must be a 1-D array of length K-1 >= 1")
     kb = thresholds.shape[0]
-    eta = base[..., None] + thresholds                 # (..., K-1)
-    ls = -np.logaddexp(0.0, -eta)                       # log sigmoid(eta) = log P(Y>=k)
-    ls_neg = -np.logaddexp(0.0, eta)                    # log(1 - P(Y>=k))
+    eta = base[..., None] + thresholds
+    ls = -np.logaddexp(0.0, -eta)
+    ls_neg = -np.logaddexp(0.0, eta)
     out = np.empty(base.shape + (kb + 1,), dtype=np.float64)
-    out[..., 0] = ls_neg[..., 0]                        # P(Y=0)
-    for k in range(1, kb):                              # P(Y=k) = e^{ls[k-1]} - e^{ls[k]}
+    out[..., 0] = ls_neg[..., 0]
+    for k in range(1, kb):
         upper = eta[..., k - 1]
         lower = eta[..., k]
         out[..., k] = (
@@ -1506,5 +1673,5 @@ def grm_category_logprobs(base, thresholds):
             - np.logaddexp(0.0, lower)
             + np.log(-np.expm1(lower - upper))
         )
-    out[..., kb] = ls[..., kb - 1]                      # P(Y=K-1)
+    out[..., kb] = ls[..., kb - 1]
     return out
