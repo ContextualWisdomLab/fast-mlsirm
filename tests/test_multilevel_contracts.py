@@ -81,7 +81,11 @@ def test_one_hot_nesting_is_a_canonical_multiple_membership_design() -> None:
         "observation_alpha",
         "observation_beta",
     )
-    assert design.context_ids == ("context_alpha", "context_beta")
+    assert design.context_keys == (
+        ("school_context", "context_alpha"),
+        ("school_context", "context_beta"),
+    )
+    assert not hasattr(design, "context_ids")
     assert design.membership_counts == (1, 1)
     assert design.membership_weights == ((1.0,), (1.0,))
     assert design.to_dict()["schema_version"] == "1.0"
