@@ -78,7 +78,7 @@ fallback.
 - This change adds no provider, credential, network, database, public API,
   dependency, model identity, or release-version boundary.
 
-## APA 7 references
+## References
 
 Harris, C. R., Millman, K. J., van der Walt, S. J., Gommers, R., Virtanen, P.,
 Cournapeau, D., Wieser, E., Taylor, J., Berg, S., Smith, N. J., Kern, R., Picus,
