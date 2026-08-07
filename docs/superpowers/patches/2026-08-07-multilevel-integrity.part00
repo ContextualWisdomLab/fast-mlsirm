@@ -1,0 +1,161 @@
+diff --git a/python/fast_mlsirm/multilevel/contracts.py b/python/fast_mlsirm/multilevel/contracts.py
+index 55f9b4f..08ef50a 100644
+--- a/python/fast_mlsirm/multilevel/contracts.py
++++ b/python/fast_mlsirm/multilevel/contracts.py
+@@ -176,6 +176,7 @@ class ContextMembershipDesign:
+     memberships: tuple[ContextMembership, ...]
+     schema_version: str = MULTILEVEL_SCHEMA_VERSION
+     _design_token: InitVar[object | None] = None
++    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
+ 
+     def __post_init__(self, _design_token: object | None) -> None:
+         """Reject direct construction outside the validated design factory."""
+@@ -186,6 +187,31 @@ class ContextMembershipDesign:
+                 "use build_context_membership_design",
+             )
+         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
++        object.__setattr__(
++            self,
++            "_sealed_fingerprint",
++            artifact_digest(self._content_dict()),
++        )
++
++    def _verify_integrity(self) -> None:
++        """Reject aggregate content that differs from its factory-owned seal."""
++        try:
++            current_fingerprint = artifact_digest(self._content_dict())
++        except Exception:
++            raise contract_error(
++                "context_membership_design_integrity_mismatch",
++                "$",
++                "membership design content no longer matches its package-owned seal",
++            ) from None
++        if (
++            self.schema_version != MULTILEVEL_SCHEMA_VERSION
++            or current_fingerprint != self._sealed_fingerprint
++        ):
++            raise contract_error(
++                "context_membership_design_integrity_mismatch",
++                "$",
++                "membership design content no longer matches its package-owned seal",
++            )
+ 
+     @property
+     def observation_ids(self) -> tuple[str, ...]:
+@@ -211,11 +237,6 @@ class ContextMembershipDesign:
+             )
+         )
+ 
+-    @property
+-    def context_ids(self) -> tuple[str, ...]:
+-        """Return unique display context labels for compatibility reports."""
+-        return tuple(sorted({value.context_id for value in self.memberships}))
+-
+     def _grouped_memberships(
+         self,
+     ) -> dict[str, dict[str, tuple[ContextMembership, ...]]]:
+@@ -298,22 +319,24 @@ class ContextMembershipDesign:
+     @property
+     def design_fingerprint(self) -> str:
+         """Return SHA-256 over the complete ordered membership design."""
+-        return artifact_digest(self._content_dict())
++        self._verify_integrity()
++        return self._sealed_fingerprint
+ 
+     @property
+     def design_handle(self) -> str:
+         """Return a descriptive 128-bit public design handle."""
+-        return f"context_membership_design_{self.design_fingerprint[:32]}"
++        self._verify_integrity()
++        return f"context_membership_design_{self._sealed_fingerprint[:32]}"
+ 
+     def to_dict(self) -> dict[str, Any]:
+         """Return sparse design content and deterministic identities."""
++        self._verify_integrity()
+         return {
+             "schema_version": self.schema_version,
+             "memberships": [value.to_dict() for value in self.memberships],
+             "observation_ids": list(self.observation_ids),
+             "context_dimension_ids": list(self.context_dimension_ids),
+             "context_keys": [list(value) for value in self.context_keys],
+-            "context_ids": list(self.context_ids),
+             "membership_counts": list(self.membership_counts),
+             "membership_weights": [
+                 list(value) for value in self.membership_weights
+@@ -325,8 +348,10 @@ class ContextMembershipDesign:
+                 [list(weights) for weights in observation]
+                 for observation in self.membership_weights_by_dimension
+             ],
+-            "design_handle": self.design_handle,
+-            "design_fingerprint": self.design_fingerprint,
++            "design_handle": (
++                f"context_membership_design_{self._sealed_fingerprint[:32]}"
++            ),
++            "design_fingerprint": self._sealed_fingerprint,
+         }
+ 
+ 
+@@ -506,6 +531,7 @@ class LongitudinalDesign:
+     state_spec: LongitudinalStateSpec
+     schema_version: str = MULTILEVEL_SCHEMA_VERSION
+     _design_token: InitVar[object | None] = None
++    _sealed_fingerprint: str = field(init=False, repr=False, compare=False)
+ 
+     def __post_init__(self, _design_token: object | None) -> None:
+         """Reject direct construction outside the validated design factory."""
+@@ -516,6 +542,31 @@ class LongitudinalDesign:
+                 "use build_longitudinal_design",
+             )
+         object.__setattr__(self, "schema_version", schema_version(self.schema_version))
++        object.__setattr__(
++            self,
++            "_sealed_fingerprint",
++            artifact_digest(self._content_dict()),
++        )
++
++    def _verify_integrity(self) -> None:
++        """Reject aggregate content that differs from its factory-owned seal."""
++        try:
++            current_fingerprint = artifact_digest(self._content_dict())
++        except Exception:
++            raise contract_error(
++                "longitudinal_design_integrity_mismatch",
++                "$",
++                "longitudinal design content no longer matches its package-owned seal",
++            ) from None
++        if (
++            self.schema_version != MULTILEVEL_SCHEMA_VERSION
++            or current_fingerprint != self._sealed_fingerprint
++        ):
++            raise contract_error(
++                "longitudinal_design_integrity_mismatch",
++                "$",
++                "longitudinal design content no longer matches its package-owned seal",
++            )
+ 
+     @property
+     def respondent_ids(self) -> tuple[str, ...]:
+@@ -561,23 +612,26 @@ class LongitudinalDesign:
+     @property
+     def design_fingerprint(self) -> str:
+         """Return SHA-256 over the complete ordered longitudinal design."""
+-        return artifact_digest(self._content_dict())
++        self._verify_integrity()
++        return self._sealed_fingerprint
+ 
+     @property
+     def design_handle(self) -> str:
+         """Return a descriptive 128-bit public design handle."""
+-        return f"longitudinal_design_{self.design_fingerprint[:32]}"
++        self._verify_integrity()
++        return f"longitudinal_design_{self._sealed_fingerprint[:32]}"
+ 
+     def to_dict(self) -> dict[str, Any]:
+         """Return longitudinal design content and deterministic identities."""
++        self._verify_integrity()
+         return {
+             "schema_version": self.schema_version,
+             "occasions": [value.to_dict() for value in self.occasions],
+             "state_spec": self.state_spec.to_dict(),
+             "respondent_ids": list(self.respondent_ids),
+             "occasion_counts": list(self.occasion_counts),
