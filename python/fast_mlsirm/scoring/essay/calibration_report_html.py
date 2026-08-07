@@ -136,7 +136,10 @@ def _validated_report(
             "task identifiers, families, and revision fingerprints must align",
         )
     rater_count = len(rater_engine_fingerprints)
-    if len(rater_engine_ids) != rater_count or len(rater_engine_family_ids) != rater_count:
+    if (
+        len(rater_engine_ids) != rater_count
+        or len(rater_engine_family_ids) != rater_count
+    ):
         raise assessment_error(
             "essay_facets_rater_axis_mismatch",
             "$.report.rater_engine_ids",
@@ -171,12 +174,13 @@ def _validated_report(
     calibration_reporting._validate_loglik_trace(loglik_trace)
 
     n_iter = calibration_reporting._exact_integer(report.n_iter, "n_iter", minimum=1)
-    if n_iter != len(loglik_trace):
-        raise assessment_error(
-            "facets_iteration_trace_mismatch",
-            "$.report.n_iter",
-            "n_iter must equal the number of log-likelihood iterations",
-        )
+    converged = calibration_reporting.strict_boolean(report.converged, "converged")
+    calibration_reporting._validate_iteration_trace_length(
+        n_iter,
+        len(loglik_trace),
+        converged,
+        path="$.report.n_iter",
+    )
     n_parameters = calibration_reporting._exact_integer(
         report.n_parameters,
         "n_parameters",
@@ -189,7 +193,6 @@ def _validated_report(
             "$.report.n_parameters",
             "n_parameters does not match the facets model contract",
         )
-    converged = calibration_reporting.strict_boolean(report.converged, "converged")
     design_connected = calibration_reporting.strict_boolean(
         report.design_connected,
         "design_connected",
@@ -450,7 +453,7 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
             "</section>",
             '<section aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
-            '<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>',
+            "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>",
             '<pre tabindex="0" role="region" aria-label="Canonical essay facets calibration JSON">',
             _canonical_json(report),
             "</pre>",
@@ -462,10 +465,52 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
     )
 
 
+def _bounded_output_path(
+    output_path: str | Path,
+    output_root: str | Path | None,
+) -> tuple[Path, Path]:
+    """Return a canonical HTML path confined to one approved directory.
+
+    Relative paths are interpreted beneath ``output_root``. When no root is
+    supplied, the current working directory is the approval boundary. Resolution
+    collapses ``..`` components and follows existing symlink parents before the
+    containment decision.
+    """
+    root = Path.cwd() if output_root is None else Path(output_root)
+    if root.exists() and not root.is_dir():
+        raise ValueError("essay facets calibration output root must be a directory")
+    resolved_root = root.resolve(strict=False)
+    candidate = Path(output_path)
+    if not candidate.is_absolute():
+        candidate = resolved_root / candidate
+    resolved_output = candidate.resolve(strict=False)
+    try:
+        resolved_output.relative_to(resolved_root)
+    except ValueError:
+        raise ValueError(
+            "essay facets calibration output path must remain within the approved "
+            "output directory"
+        ) from None
+    return resolved_output, resolved_root
+
+
+def _verify_output_parent(output: Path, output_root: Path) -> None:
+    """Recheck the created parent against its canonical approved root."""
+    resolved_parent = output.parent.resolve(strict=True)
+    try:
+        resolved_parent.relative_to(output_root)
+    except ValueError:
+        raise ValueError(
+            "essay facets calibration output path must remain within the approved "
+            "output directory"
+        ) from None
+
+
 def render_essay_facets_calibration_report_html(
     report: EssayFacetsCalibrationReport,
     output_path: str | Path,
     *,
+    output_root: str | Path | None = None,
     title: str | None = None,
 ) -> Path:
     """Write one verified standalone HTML facets-calibration audit artifact.
@@ -476,15 +521,23 @@ def render_essay_facets_calibration_report_html(
     no source text and makes no model-fit, validity, fairness, scoreability,
     global-optimum, or deployment claim. It does not invent an unsealed backend
     implementation identity.
+
+    ``output_root`` is the caller-approved publication directory. Relative output
+    paths are resolved beneath that root; absolute or traversal paths that resolve
+    outside it fail before any report write. The current working directory is the
+    default boundary. Callers must keep the approved directory under their own
+    filesystem authority while publication is in progress.
     """
     validated = _validated_report(report)
-    output = Path(output_path)
-    if output.suffix.lower() != ".html":
+    requested_output = Path(output_path)
+    if requested_output.suffix.lower() != ".html":
         raise ValueError("essay facets calibration output path must end with .html")
     if title is not None and (not isinstance(title, str) or not title.strip()):
         raise ValueError("essay facets calibration title must be a non-empty string")
+    output, approved_root = _bounded_output_path(requested_output, output_root)
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)
+    _verify_output_parent(output, approved_root)
     output.write_text(_render_html(validated, resolved_title), encoding="utf-8")
     return output
 

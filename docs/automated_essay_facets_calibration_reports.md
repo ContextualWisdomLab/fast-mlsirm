@@ -26,11 +26,13 @@ Report construction rejects:
 - non-vector, empty, non-finite, or axis-misaligned estimator output;
 - a threshold count that differs from the ordered category scale;
 - a material decrease in the reported EM log-likelihood trace;
-- an iteration count that differs from the trace length;
+- a trace length other than `n_iter`, or `n_iter + 1` only when a
+  nonconverged Rust fit records its terminal post-update evaluation;
 - a parameter count that differs from the Rust model contract;
 - connectedness that differs between the source design and returned fit.
 
-The standalone HTML renderer repeats the numeric, axis, identity, parameter-count, iteration, monotonic-trace, and connectedness checks before serialization. This guards against post-construction mutation or malformed deserialization. These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
+The standalone HTML renderer repeats the numeric, axis, identity, parameter-count, iteration, monotonic-trace, and connectedness checks before serialization. A nonconverged Rust fit may retain one terminal post-update likelihood after its `n_iter` EM iterations; that extra value is evidence, not an additional optimization iteration. This guards against post-construction mutation or malformed deserialization.
+These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
 
 ## Human-review routing
 
@@ -54,6 +56,10 @@ The artifact is designed for audit review rather than interactive decision autom
 - canonical deterministic JSON is embedded for reconstruction without hover interactions.
 
 A meta-delivered policy is defense in depth, not a substitute for output encoding or safe hosting controls. When the artifact is served over HTTP, operators should also set an equivalent or stricter `Content-Security-Policy` response header.
+
+Report publication is confined to one caller-approved directory. Relative output paths are interpreted below `output_root`; when it is omitted, the current working directory is the boundary. The renderer canonicalizes both the root and requested path, collapses `..`, follows existing symlink parents, rejects absolute or relative paths that resolve outside the root, creates the selected parent, and rechecks its canonical containment before writing. An existing regular file cannot be used as an output root. The caller remains responsible for controlling the approved directory during publication because path canonicalization is not an operating-system sandbox and cannot eliminate every concurrent filesystem replacement race.
+
+This boundary follows CWE-22 guidance to canonicalize path input and restrict it to a known directory. It deliberately does not claim complete filesystem isolation or formal CWE conformance.
 
 ## Interpretation boundary
 
@@ -83,7 +89,8 @@ assert payload["criterion_id"] == criterion_design.criterion_id
 
 render_essay_facets_calibration_report_html(
     report,
-    "artifacts/claim_support_calibration_report.html",
+    "claim_support_calibration_report.html",
+    output_root="artifacts",
 )
 ```
 
@@ -109,6 +116,10 @@ Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of item
 Eckes, T. (2015). *Introduction to many-facet Rasch measurement* (2nd ed.). Peter Lang. https://doi.org/10.3726/978-3-653-04844-5
 
 Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.
+
+MITRE. (2026). *CWE-22: Improper limitation of a pathname to a restricted directory ('path traversal')*. Common Weakness Enumeration. https://cwe.mitre.org/data/definitions/22.html
+
+Python Software Foundation. (2026). *pathlib—Object-oriented filesystem paths*. Python 3.14.6 documentation. https://docs.python.org/3/library/pathlib.html
 
 World Wide Web Consortium. (2024, December 12). *Web Content Accessibility Guidelines (WCAG) 2.2* (W3C Recommendation). https://www.w3.org/TR/WCAG22/
 
