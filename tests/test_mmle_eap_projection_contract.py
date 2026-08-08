@@ -15,6 +15,7 @@ from fast_mlsirm.estimators import mmle as mmle_module
 
 ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG_FRAGMENT = ROOT / "docs" / "changelog.d" / "bolt-mmle-theta-optimization.md"
+DOCTORING = ROOT / "docs" / "doctoring" / "mmle-eap-matvec-projection.md"
 
 
 def _initial_posterior(
@@ -127,3 +128,17 @@ def test_changelog_avoids_universal_eap_speedup_claims() -> None:
     assert "runtime performance" in lowered
     assert "hardware" in lowered
     assert "blas" in lowered
+
+
+def test_eap_projection_doctoring_records_semantics_and_architecture_boundary() -> None:
+    """Doctoring must record current NumPy semantics and the Rust-primary boundary."""
+    doctoring = DOCTORING.read_text(encoding="utf-8")
+    lowered = doctoring.casefold()
+
+    assert "numpy.matmul" in lowered
+    assert "posterior @ nodes" in doctoring
+    assert "rust" in lowered
+    assert "reference/fallback" in lowered
+    assert "https://numpy.org/doc/stable/reference/generated/numpy.matmul.html" in doctoring
+    assert "runtime" in lowered
+    assert "hardware" in lowered
