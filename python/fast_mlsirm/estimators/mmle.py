@@ -27,9 +27,76 @@ import numpy as np
 from numpy.polynomial.hermite_e import hermegauss
 
 
+MAX_GAUSS_HERMITE_NODES = 100
+MAX_MMLE_FALLBACK_WORKSPACE_BYTES = 512 * 1024 * 1024
+
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     """Logistic sigmoid with the exponent clipped to ``[-35, 35]`` for stability."""
     return 1.0 / (1.0 + np.exp(-np.clip(x, -35.0, 35.0)))
+
+
+def _validate_quadrature_node_count(n_nodes: int) -> int:
+    """Return a node count within NumPy's documented tested quadrature range."""
+    if isinstance(n_nodes, (bool, np.bool_)) or not isinstance(
+        n_nodes, (int, np.integer)
+    ):
+        raise ValueError(
+            f"n_nodes must be an integer in [1, {MAX_GAUSS_HERMITE_NODES}]"
+        )
+    validated = int(n_nodes)
+    if validated < 1 or validated > MAX_GAUSS_HERMITE_NODES:
+        raise ValueError(f"n_nodes must be in [1, {MAX_GAUSS_HERMITE_NODES}]")
+    return validated
+
+
+def _estimate_mmle_workspace_bytes(
+    n_persons: int,
+    n_items: int,
+    n_nodes: int,
+) -> int:
+    """Conservatively estimate owned NumPy fallback workspace in bytes.
+
+    The estimate covers response-sized conversion and masking arrays,
+    person-by-node posterior arrays, item-by-node Newton arrays, and small
+    one-dimensional state. It deliberately overestimates repository-owned
+    arrays but does not claim to include caller-owned inputs or hidden BLAS
+    workspace.
+    """
+    response_cells = n_persons * n_items
+    person_node_cells = n_persons * n_nodes
+    item_node_cells = n_items * n_nodes
+    float64_cells = (
+        5 * response_cells
+        + 6 * person_node_cells
+        + 14 * item_node_cells
+        + 12 * (n_persons + n_items + n_nodes)
+    )
+    boolean_cells = response_cells + 2 * n_items
+    return (
+        float64_cells * np.dtype(np.float64).itemsize
+        + boolean_cells * np.dtype(np.bool_).itemsize
+    )
+
+
+def _validate_mmle_workspace(
+    n_persons: int,
+    n_items: int,
+    n_nodes: int,
+) -> None:
+    """Reject fallback problems whose estimated workspace exceeds the safe cap."""
+    estimated_bytes = _estimate_mmle_workspace_bytes(
+        n_persons,
+        n_items,
+        n_nodes,
+    )
+    if estimated_bytes > MAX_MMLE_FALLBACK_WORKSPACE_BYTES:
+        raise ValueError(
+            "NumPy MMLE fallback workspace estimate "
+            f"{estimated_bytes} bytes exceeds the "
+            f"{MAX_MMLE_FALLBACK_WORKSPACE_BYTES}-byte safe limit; "
+            "use the Rust backend or reduce the response matrix or quadrature nodes"
+        )
 
 
 def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
@@ -38,7 +105,8 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     ``hermegauss`` gives the probabilists' Hermite rule (weight exp(-x^2/2));
     normalizing the weights to sum to 1 turns them into N(0,1) quadrature.
     """
-    nodes, raw_weights = hermegauss(n_nodes)
+    validated_nodes = _validate_quadrature_node_count(n_nodes)
+    nodes, raw_weights = hermegauss(validated_nodes)
     weights = raw_weights / raw_weights.sum()
     return nodes, weights
 
@@ -68,19 +136,25 @@ def fit_mmle_2pl(
     logit = a*theta + b), ``theta`` (EAP ability), ``loglik_trace``, ``n_iter``,
     ``status``.
     """
-    y = np.asarray(y, dtype=np.float64)
-    observed = np.asarray(observed, dtype=bool)
-    if y.shape != observed.shape or y.ndim != 2:
+    y_array = np.asarray(y)
+    observed_array = np.asarray(observed)
+    if y_array.shape != observed_array.shape or y_array.ndim != 2:
         raise ValueError("y and observed must be 2D and identically shaped")
+
+    validated_nodes = _validate_quadrature_node_count(n_nodes)
+    n_persons, n_items = y_array.shape
+    _validate_mmle_workspace(n_persons, n_items, validated_nodes)
+
+    y = np.asarray(y_array, dtype=np.float64)
+    observed = np.asarray(observed_array, dtype=bool)
     if not observed.any():
         raise ValueError("no observed responses")
 
-    n_persons, n_items = y.shape
     # Zero-fill missing so array math is finite; the observed mask nullifies them.
     y_filled = np.where(observed, y, 0.0)
     obs_f = observed.astype(np.float64)
 
-    nodes, weights = gauss_hermite_nodes(n_nodes)  # (Q,), (Q,)
+    nodes, weights = gauss_hermite_nodes(validated_nodes)  # (Q,), (Q,)
     log_weights = np.log(weights)
 
     rng = np.random.default_rng(seed)
@@ -102,9 +176,9 @@ def fit_mmle_2pl(
         log_p0 = -np.logaddexp(0.0, logit)  # log(1 - sigmoid)
         # Per person, per node: sum over OBSERVED items of log P(y_pi | node_q)
         # log_lik[p, q] = sum_i obs_pi * (y_pi*log_p1_qi + (1-y_pi)*log_p0_qi)
-        # Compute via matrix products: (n_persons, Q)
-        pos = (y_filled * obs_f) @ log_p1.T  # (n_persons, Q)
-        neg = ((1.0 - y_filled) * obs_f) @ log_p0.T  # (n_persons, Q)
+        # Compute without forming n_persons * n_items * Q arrays via explicit broadcast products
+        pos = (y_filled * obs_f) @ log_p1.T
+        neg = ((1.0 - y_filled) * obs_f) @ log_p0.T
         log_joint = pos + neg + log_weights[None, :]  # + log prior weight
         # Normalize across nodes (log-sum-exp)
         max_lj = log_joint.max(axis=1, keepdims=True)
@@ -118,8 +192,9 @@ def fit_mmle_2pl(
         # ---- M-step: update a, b by weighted logistic regression per item ----
         # Expected counts at each node: n_iq = sum_p obs_pi * posterior_pq  (Q per item)
         # r_iq = sum_p obs_pi * y_pi * posterior_pq
-        n_iq = obs_f.T @ posterior  # (n_items, Q)
-        r_iq = (obs_f * y_filled).T @ posterior  # (n_items, Q)
+        # Compute without forming n_items * Q arrays via explicit broadcast products
+        n_iq = obs_f.T @ posterior
+        r_iq = (obs_f * y_filled).T @ posterior
 
         a_new = a.copy()
         b_new = b.copy()
@@ -184,7 +259,9 @@ def fit_mmle_2pl(
             break
 
     # ---- EAP ability for each person ----
-    theta = (posterior * nodes[None, :]).sum(axis=1)
+    # Optimization: Replace element-wise multiply and axis reduction with dense matrix multiplication
+    # to avoid intermediate array allocation
+    theta = posterior @ nodes
 
     return {
         "a": a,
