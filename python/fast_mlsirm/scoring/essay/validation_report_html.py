@@ -74,8 +74,7 @@ def _validated_report(
         category_count=report.category_count,
         paired_observation_count=report.paired_observation_count,
         metrics=tuple(
-            _replay_metric(metric, index)
-            for index, metric in enumerate(report.metrics)
+            _replay_metric(metric, index) for index, metric in enumerate(report.metrics)
         ),
         review_trigger_ids=report.review_trigger_ids,
         metadata=report.metadata,
@@ -106,9 +105,12 @@ def _identifier_list(
     *,
     empty_message: str,
 ) -> str:
-    """Render identifier evidence as a semantic list or explicit empty state."""
+    """Render identifier evidence as a list or explicit atomic status region."""
     if not identifiers:
-        return f'<p class="empty-state">{escape(empty_message)}</p>'
+        return (
+            '<p class="empty-state" role="status" aria-atomic="true">'
+            f"{escape(empty_message)}</p>"
+        )
     items = "".join(
         f"<li><code>{escape(identifier)}</code></li>" for identifier in identifiers
     )
@@ -191,9 +193,9 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
             '<section class="review-required" aria-labelledby="review-heading">',
             '<h2 id="review-heading">Human interpretation required</h2>',
             f'<p class="notice">{escape(_VALIDITY_NOTICE)}</p>',
-            '<h3>Review triggers</h3>',
+            "<h3>Review triggers</h3>",
             triggers,
-            '<h3>Interpretation boundaries</h3>',
+            "<h3>Interpretation boundaries</h3>",
             boundaries,
             "</section>",
             '<section aria-labelledby="provenance-heading">',
@@ -206,7 +208,7 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
             "</section>",
             '<section aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
-            '<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>',
+            "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>",
             '<pre tabindex="0" role="region" aria-label="Canonical essay validation evidence JSON">',
             _canonical_json(report),
             "</pre>",
@@ -236,9 +238,7 @@ def render_essay_validation_evidence_report_html(
     if output.suffix.lower() != ".html":
         raise ValueError("essay validation evidence output path must end with .html")
     if title is not None and (not isinstance(title, str) or not title.strip()):
-        raise ValueError(
-            "essay validation evidence title must be a non-empty string"
-        )
+        raise ValueError("essay validation evidence title must be a non-empty string")
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(_render_html(validated, resolved_title), encoding="utf-8")
