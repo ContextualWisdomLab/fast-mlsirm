@@ -80,18 +80,24 @@ def test_custom_title_and_identifiers_are_escaped(tmp_path: Path) -> None:
 
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
     assert "<img src=x" not in html
-    assert validation_report_html._identifier_list(
-        ("review_<unsafe>",),
-        empty_message="No review trigger.",
-    ) == '<ul class="trigger-list"><li><code>review_&lt;unsafe&gt;</code></li></ul>'
+    assert (
+        validation_report_html._identifier_list(
+            ("review_<unsafe>",),
+            empty_message="No review trigger.",
+        )
+        == '<ul class="trigger-list"><li><code>review_&lt;unsafe&gt;</code></li></ul>'
+    )
 
 
 def test_empty_identifier_list_renders_explicit_state() -> None:
     """An empty evidence list remains understandable without hidden state."""
-    assert validation_report_html._identifier_list(
-        (),
-        empty_message="No boundary is available.",
-    ) == '<p class="empty-state">No boundary is available.</p>'
+    assert (
+        validation_report_html._identifier_list(
+            (),
+            empty_message="No boundary is available.",
+        )
+        == '<div class="empty-state" role="status">No boundary is available.</div>'
+    )
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:

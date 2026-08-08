@@ -47,3 +47,7 @@
 ## 2025-02-12 - Exposing Unrounded Numeric Representations for Formatted Floats
 **Learning:** In data-heavy HTML reports, formatting floats to a fixed number of significant digits can obscure the original Python float representation. A native `title` tooltip can help pointer users inspect that unrounded representation, but it is not a reliable keyboard, touch, or assistive-technology disclosure mechanism.
 **Action:** Add the unrounded Python float representation as a supplemental native `title` tooltip on formatted values. Preserve the report's accessible exact-value disclosure and JSON/CSV exports as the authoritative non-hover paths; never claim that `title` alone provides accessibility.
+
+## 2025-02-13 - Empty States ARIA Live Regions
+**Learning:** In HTML reports, simply using generic tags like `<p>` for empty states (such as an empty list of triggers) fails to proactively announce the absence of data to screen reader users navigating dynamically.
+**Action:** Always use `<div class="empty-state" role="status">` for empty states to ensure they act as ARIA live regions and are reliably announced by assistive technologies when content is evaluated or loaded.
