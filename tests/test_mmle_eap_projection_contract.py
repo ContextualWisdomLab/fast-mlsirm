@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 from numpy.polynomial.hermite_e import hermegauss
 
+import fast_mlsirm.fit as fit_module
+from fast_mlsirm.config import FitConfig
 from fast_mlsirm.estimators import mmle as mmle_module
 
 
@@ -190,6 +192,54 @@ def test_workspace_cap_precedes_response_grid_allocation(monkeypatch: pytest.Mon
             n_nodes=9,
             max_iter=1,
         )
+
+
+def test_public_mmle_fallback_defers_response_grid_to_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public MMLE route must not allocate a second response grid before fallback."""
+    responses = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    observed = np.array([[True, True], [True, True]], dtype=bool)
+    captured: dict[str, np.ndarray] = {}
+
+    try:
+        from fast_mlsirm import _core
+    except ImportError:
+        pass
+    else:
+        monkeypatch.setattr(_core, "fit_mmle_2pl", None)
+
+    def fake_fallback(
+        fallback_responses: np.ndarray,
+        fallback_observed: np.ndarray,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        captured["responses"] = fallback_responses
+        captured["observed"] = fallback_observed
+        return {
+            "a": np.ones(2, dtype=np.float64),
+            "b": np.zeros(2, dtype=np.float64),
+            "theta": np.zeros(2, dtype=np.float64),
+            "loglik_trace": [-1.0],
+            "status": "converged",
+        }
+
+    def unexpected_where(*_args: object, **_kwargs: object) -> np.ndarray:
+        pytest.fail("public fallback routing must defer numpy.where to guarded fallback")
+
+    monkeypatch.setattr(mmle_module, "fit_mmle_2pl", fake_fallback)
+    monkeypatch.setattr(fit_module.np, "where", unexpected_where)
+
+    result = fit_module._fit_mmle(
+        responses,
+        observed,
+        "ULS2PLM",
+        FitConfig(estimator="mmle", max_iter=1, n_restarts=1),
+    )
+
+    assert captured["responses"] is responses
+    assert captured["observed"] is observed
+    assert result.optimizer == "mmle_em/numpy"
 
 
 def test_changelog_avoids_universal_eap_speedup_claims() -> None:
