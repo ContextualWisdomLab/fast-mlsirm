@@ -136,15 +136,17 @@ def fit_mmle_2pl(
     logit = a*theta + b), ``theta`` (EAP ability), ``loglik_trace``, ``n_iter``,
     ``status``.
     """
-    y = np.asarray(y, dtype=np.float64)
-    observed = np.asarray(observed, dtype=bool)
-    if y.shape != observed.shape or y.ndim != 2:
+    y_array = np.asarray(y)
+    observed_array = np.asarray(observed)
+    if y_array.shape != observed_array.shape or y_array.ndim != 2:
         raise ValueError("y and observed must be 2D and identically shaped")
 
     validated_nodes = _validate_quadrature_node_count(n_nodes)
-    n_persons, n_items = y.shape
+    n_persons, n_items = y_array.shape
     _validate_mmle_workspace(n_persons, n_items, validated_nodes)
 
+    y = np.asarray(y_array, dtype=np.float64)
+    observed = np.asarray(observed_array, dtype=bool)
     if not observed.any():
         raise ValueError("no observed responses")
 
