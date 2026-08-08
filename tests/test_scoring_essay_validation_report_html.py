@@ -16,6 +16,12 @@ from fast_mlsirm.scoring.essay import (
 _FIXTURES = runpy.run_path(
     str(Path(__file__).with_name("test_scoring_essay_validation_reporting.py"))
 )
+_DOCTORING = (
+    Path(__file__).parents[1]
+    / "docs"
+    / "doctoring"
+    / "essay_validation_empty_state_accessibility.md"
+)
 build_report = _FIXTURES["build_report"]
 
 
@@ -101,6 +107,22 @@ def test_empty_identifier_list_renders_explicit_state() -> None:
             "No boundary is available.</p>"
         )
     )
+
+
+def test_accessibility_doctoring_cites_current_wcag_recommendation() -> None:
+    """Doctoring must cite the current published WCAG 2.2 Recommendation."""
+    doctoring = _DOCTORING.read_text(encoding="utf-8")
+    current_citation = (
+        "World Wide Web Consortium. (2024, December 12). "
+        "*Web Content Accessibility Guidelines (WCAG) 2.2*"
+    )
+    stale_citation = (
+        "World Wide Web Consortium. (2023, October 5). "
+        "*Web Content Accessibility Guidelines (WCAG) 2.2*"
+    )
+
+    assert current_citation in doctoring
+    assert stale_citation not in doctoring
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
