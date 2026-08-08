@@ -27,9 +27,76 @@ import numpy as np
 from numpy.polynomial.hermite_e import hermegauss
 
 
+MAX_GAUSS_HERMITE_NODES = 100
+MAX_MMLE_FALLBACK_WORKSPACE_BYTES = 512 * 1024 * 1024
+
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     """Logistic sigmoid with the exponent clipped to ``[-35, 35]`` for stability."""
     return 1.0 / (1.0 + np.exp(-np.clip(x, -35.0, 35.0)))
+
+
+def _validate_quadrature_node_count(n_nodes: int) -> int:
+    """Return a node count within NumPy's documented tested quadrature range."""
+    if isinstance(n_nodes, (bool, np.bool_)) or not isinstance(
+        n_nodes, (int, np.integer)
+    ):
+        raise ValueError(
+            f"n_nodes must be an integer in [1, {MAX_GAUSS_HERMITE_NODES}]"
+        )
+    validated = int(n_nodes)
+    if validated < 1 or validated > MAX_GAUSS_HERMITE_NODES:
+        raise ValueError(f"n_nodes must be in [1, {MAX_GAUSS_HERMITE_NODES}]")
+    return validated
+
+
+def _estimate_mmle_workspace_bytes(
+    n_persons: int,
+    n_items: int,
+    n_nodes: int,
+) -> int:
+    """Conservatively estimate owned NumPy fallback workspace in bytes.
+
+    The estimate covers response-sized conversion and masking arrays,
+    person-by-node posterior arrays, item-by-node Newton arrays, and small
+    one-dimensional state. It deliberately overestimates repository-owned
+    arrays but does not claim to include caller-owned inputs or hidden BLAS
+    workspace.
+    """
+    response_cells = n_persons * n_items
+    person_node_cells = n_persons * n_nodes
+    item_node_cells = n_items * n_nodes
+    float64_cells = (
+        4 * response_cells
+        + 6 * person_node_cells
+        + 12 * item_node_cells
+        + 12 * (n_persons + n_items + n_nodes)
+    )
+    boolean_cells = response_cells + 2 * n_items
+    return (
+        float64_cells * np.dtype(np.float64).itemsize
+        + boolean_cells * np.dtype(np.bool_).itemsize
+    )
+
+
+def _validate_mmle_workspace(
+    n_persons: int,
+    n_items: int,
+    n_nodes: int,
+) -> None:
+    """Reject fallback problems whose estimated workspace exceeds the safe cap."""
+    estimated_bytes = _estimate_mmle_workspace_bytes(
+        n_persons,
+        n_items,
+        n_nodes,
+    )
+    if estimated_bytes > MAX_MMLE_FALLBACK_WORKSPACE_BYTES:
+        raise ValueError(
+            "NumPy MMLE fallback workspace estimate "
+            f"{estimated_bytes} bytes exceeds the "
+            f"{MAX_MMLE_FALLBACK_WORKSPACE_BYTES}-byte safe limit; "
+            "use the Rust backend or reduce the response matrix or quadrature nodes"
+        )
 
 
 def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
@@ -38,7 +105,8 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     ``hermegauss`` gives the probabilists' Hermite rule (weight exp(-x^2/2));
     normalizing the weights to sum to 1 turns them into N(0,1) quadrature.
     """
-    nodes, raw_weights = hermegauss(n_nodes)
+    validated_nodes = _validate_quadrature_node_count(n_nodes)
+    nodes, raw_weights = hermegauss(validated_nodes)
     weights = raw_weights / raw_weights.sum()
     return nodes, weights
 
@@ -72,15 +140,19 @@ def fit_mmle_2pl(
     observed = np.asarray(observed, dtype=bool)
     if y.shape != observed.shape or y.ndim != 2:
         raise ValueError("y and observed must be 2D and identically shaped")
+
+    validated_nodes = _validate_quadrature_node_count(n_nodes)
+    n_persons, n_items = y.shape
+    _validate_mmle_workspace(n_persons, n_items, validated_nodes)
+
     if not observed.any():
         raise ValueError("no observed responses")
 
-    n_persons, n_items = y.shape
     # Zero-fill missing so array math is finite; the observed mask nullifies them.
     y_filled = np.where(observed, y, 0.0)
     obs_f = observed.astype(np.float64)
 
-    nodes, weights = gauss_hermite_nodes(n_nodes)  # (Q,), (Q,)
+    nodes, weights = gauss_hermite_nodes(validated_nodes)  # (Q,), (Q,)
     log_weights = np.log(weights)
 
     rng = np.random.default_rng(seed)
