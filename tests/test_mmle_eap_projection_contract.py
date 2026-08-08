@@ -8,6 +8,7 @@ import textwrap
 from pathlib import Path
 
 import numpy as np
+import pytest
 from numpy.polynomial.hermite_e import hermegauss
 
 from fast_mlsirm.estimators import mmle as mmle_module
@@ -119,6 +120,50 @@ def test_eap_projection_source_uses_matrix_multiplication_without_broadcast_prod
     assert theta_expression.right.id == "nodes"
 
 
+@pytest.mark.parametrize("n_nodes", [0, 101, True, 3.5])
+def test_quadrature_node_count_fails_closed_outside_supported_range(n_nodes: object) -> None:
+    """Reject invalid or untested quadrature counts before constructing nodes."""
+    with pytest.raises(ValueError, match=r"n_nodes must be"):
+        mmle_module.gauss_hermite_nodes(n_nodes)  # type: ignore[arg-type]
+
+
+def test_mmle_rejects_oversized_virtual_problem_before_owned_allocations() -> None:
+    """A huge zero-stride input view must fail before the fallback materializes grids."""
+    responses = np.broadcast_to(np.array(0.0), (100_000, 100_000))
+    observed = np.broadcast_to(np.array(True), responses.shape)
+
+    with pytest.raises(
+        ValueError,
+        match=r"workspace estimate .* exceeds .* safe limit; use the Rust backend",
+    ):
+        mmle_module.fit_mmle_2pl(
+            responses,
+            observed,
+            n_nodes=41,
+            max_iter=1,
+        )
+
+
+def test_workspace_cap_precedes_response_grid_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fallback must reject its budget before calling ``numpy.where``."""
+    monkeypatch.setattr(mmle_module, "MAX_MMLE_FALLBACK_WORKSPACE_BYTES", 1)
+
+    def unexpected_where(*_args: object, **_kwargs: object) -> np.ndarray:
+        pytest.fail("workspace validation must run before numpy.where")
+
+    monkeypatch.setattr(mmle_module.np, "where", unexpected_where)
+
+    responses = np.array([[1.0, 0.0]], dtype=np.float64)
+    observed = np.array([[True, True]], dtype=bool)
+    with pytest.raises(ValueError, match=r"workspace estimate .* exceeds"):
+        mmle_module.fit_mmle_2pl(
+            responses,
+            observed,
+            n_nodes=9,
+            max_iter=1,
+        )
+
+
 def test_changelog_avoids_universal_eap_speedup_claims() -> None:
     """Release notes must describe the optimization without a fixed speedup promise."""
     fragment = CHANGELOG_FRAGMENT.read_text(encoding="utf-8")
@@ -131,7 +176,7 @@ def test_changelog_avoids_universal_eap_speedup_claims() -> None:
 
 
 def test_eap_projection_doctoring_records_semantics_and_architecture_boundary() -> None:
-    """Doctoring must record current NumPy semantics and the Rust-primary boundary."""
+    """Doctoring must record semantics, resource caps, and the Rust boundary."""
     doctoring = DOCTORING.read_text(encoding="utf-8")
     lowered = doctoring.casefold()
 
@@ -142,3 +187,9 @@ def test_eap_projection_doctoring_records_semantics_and_architecture_boundary() 
     assert "https://numpy.org/doc/stable/reference/generated/numpy.matmul.html" in doctoring
     assert "runtime" in lowered
     assert "hardware" in lowered
+    assert "512 mib" in lowered
+    assert "1 through 100" in lowered
+    assert (
+        "https://numpy.org/doc/stable/reference/generated/"
+        "numpy.polynomial.hermite_e.hermegauss.html"
+    ) in doctoring
