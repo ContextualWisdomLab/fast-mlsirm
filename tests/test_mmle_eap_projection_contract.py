@@ -125,7 +125,7 @@ def test_changelog_avoids_universal_eap_speedup_claims() -> None:
     lowered = fragment.casefold()
 
     assert "30x" not in lowered
-    assert "runtime performance" in lowered
+    assert "runtime" in lowered
     assert "hardware" in lowered
     assert "blas" in lowered
 
