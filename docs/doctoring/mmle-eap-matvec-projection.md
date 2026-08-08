@@ -22,9 +22,24 @@ The previous spelling explicitly formed an element-wise posterior-shaped broadca
 
 No fixed or universal speedup is claimed. Runtime performance remains dependent on dimensions, memory layout, dtype, hardware, thread configuration, and the linked numerical library. `matmul` still produces the required output array and may use implementation-specific workspaces. The contract is therefore **absence of the explicit posterior-shaped broadcast product**, not a zero-allocation claim or a universal latency ratio.
 
+### Fail-closed NumPy fallback limits
+
+The retained Python fallback is not the unbounded large-scale production backend. Before it calls `numpy.where`, constructs quadrature nodes, or creates person-by-node and item-by-node iteration grids, it now enforces two deterministic limits:
+
+1. `n_nodes` must be an integer from **1 through 100**. NumPy documents `hermegauss` as requiring a positive degree and states that results have only been tested through degree 100; higher degrees may be problematic. This is an implementation-support boundary, not a claim that 100 nodes are universally necessary or optimal.
+2. The fallback's conservative owned-workspace estimate must not exceed **512 MiB**. For persons `P`, items `I`, and nodes `Q`, the estimate is:
+
+   ```text
+   8 × [4PI + 6PQ + 12IQ + 12(P + I + Q)] + [PI + 2I] bytes
+   ```
+
+   The first term budgets float64 response/mask conversions, posterior grids, Newton grids, and one-dimensional state; the second budgets Boolean state. The estimate intentionally overstates repository-owned NumPy arrays to preserve headroom. It does not claim to equal process RSS and does not include caller-owned input storage or hidden BLAS workspace.
+
+Problems above the cap fail with a deterministic `ValueError` directing the caller to the Rust backend or a smaller response matrix or quadrature rule. The check runs before the fallback materializes its large owned arrays. This closes the resource-exhaustion path without truncating data, silently reducing quadrature, or changing the numerical result for accepted problems.
+
 ## Statistical interpretation boundary
 
-This refactor changes only the spelling of the final posterior expectation in the NumPy reference/fallback path. It does not change quadrature nodes or weights, missing-data masking, posterior normalization, M-step updates, convergence criteria, or returned transport. Numerical parity of this projection does not by itself establish parameter recovery, model fit, predictive validity, fairness, scoreability, causal interpretation, or high-stakes deployment readiness.
+This refactor changes only the spelling of the final posterior expectation and adds fail-closed resource limits to the NumPy reference/fallback path. It does not change accepted-problem quadrature nodes or weights, missing-data masking, posterior normalization, M-step updates, convergence criteria, or returned transport. Numerical parity of this projection does not by itself establish parameter recovery, model fit, predictive validity, fairness, scoreability, causal interpretation, or high-stakes deployment readiness.
 
 ## Verification contract
 
@@ -32,15 +47,20 @@ This refactor changes only the spelling of the final posterior expectation in th
 
 - a one-iteration posterior reconstruction under partial missingness and parity against the previous weighted-sum equation;
 - an AST-level source contract requiring the final `theta` assignment to be `posterior @ nodes`, so the explicit broadcast-product expression cannot silently return;
+- rejection of invalid and untested quadrature counts before node construction;
+- rejection of an enormous zero-stride response view without materializing response-, person-node-, or item-node-sized fallback grids;
+- ordering evidence that the workspace cap runs before `numpy.where` allocates a response-sized grid;
 - release-note language that avoids fixed speedup promises and records hardware/BLAS variability; and
-- this doctoring record's NumPy semantics and Rust-primary architecture boundary.
+- this doctoring record's NumPy semantics, 512 MiB fallback cap, documented quadrature support range, and Rust-primary architecture boundary.
 
-Repository-wide CI, security, packaging, coverage, and independent-review gates remain authoritative. This bounded optimization does not justify weakening any gate.
+Repository-wide CI, security, packaging, coverage, and independent-review gates remain authoritative. This bounded optimization and hardening do not justify weakening any gate.
 
 ## Rollback
 
-If a supported NumPy backend demonstrates a correctness defect in the matrix-vector path, revert the single EAP projection to the algebraically equivalent weighted-sum expression and retain the parity regression while the backend-specific issue is isolated. A performance-only regression is not a reason to change statistical semantics; benchmark evidence should identify the affected shapes, layout, hardware, and numerical-library build before any follow-up optimization.
+If a supported NumPy backend demonstrates a correctness defect in the matrix-vector path, revert the single EAP projection to the algebraically equivalent weighted-sum expression and retain the parity regression while the backend-specific issue is isolated. Do not remove the fallback resource limits as part of that rollback. A performance-only regression is not a reason to change statistical semantics; benchmark evidence should identify the affected shapes, layout, hardware, and numerical-library build before any follow-up optimization.
 
 ## References
 
 NumPy Developers. (n.d.). *numpy.matmul*. NumPy documentation. Retrieved August 8, 2026, from https://numpy.org/doc/stable/reference/generated/numpy.matmul.html
+
+NumPy Developers. (n.d.). *numpy.polynomial.hermite_e.hermegauss*. NumPy documentation. Retrieved August 8, 2026, from https://numpy.org/doc/stable/reference/generated/numpy.polynomial.hermite_e.hermegauss.html
