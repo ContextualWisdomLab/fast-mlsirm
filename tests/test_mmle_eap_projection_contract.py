@@ -144,6 +144,34 @@ def test_mmle_rejects_oversized_virtual_problem_before_owned_allocations() -> No
         )
 
 
+def test_workspace_cap_precedes_dtype_conversion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fallback must reject its budget before allocating dtype-conversion copies."""
+    monkeypatch.setattr(mmle_module, "MAX_MMLE_FALLBACK_WORKSPACE_BYTES", 1)
+    original_asarray = np.asarray
+
+    def reject_typed_asarray(
+        value: object,
+        *args: object,
+        dtype: object = None,
+        **kwargs: object,
+    ) -> np.ndarray:
+        if dtype is not None:
+            pytest.fail("workspace validation must run before dtype conversion")
+        return original_asarray(value, *args, **kwargs)
+
+    monkeypatch.setattr(mmle_module.np, "asarray", reject_typed_asarray)
+
+    responses = np.array([[1.0, 0.0]], dtype=np.float32)
+    observed = np.array([[1, 1]], dtype=np.int8)
+    with pytest.raises(ValueError, match=r"workspace estimate .* exceeds"):
+        mmle_module.fit_mmle_2pl(
+            responses,
+            observed,
+            n_nodes=9,
+            max_iter=1,
+        )
+
+
 def test_workspace_cap_precedes_response_grid_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
     """The fallback must reject its budget before calling ``numpy.where``."""
     monkeypatch.setattr(mmle_module, "MAX_MMLE_FALLBACK_WORKSPACE_BYTES", 1)
