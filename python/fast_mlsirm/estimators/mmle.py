@@ -67,9 +67,9 @@ def _estimate_mmle_workspace_bytes(
     person_node_cells = n_persons * n_nodes
     item_node_cells = n_items * n_nodes
     float64_cells = (
-        4 * response_cells
+        5 * response_cells
         + 6 * person_node_cells
-        + 12 * item_node_cells
+        + 14 * item_node_cells
         + 12 * (n_persons + n_items + n_nodes)
     )
     boolean_cells = response_cells + 2 * n_items
