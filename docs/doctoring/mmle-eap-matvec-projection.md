@@ -24,7 +24,7 @@ No fixed or universal speedup is claimed. Runtime performance remains dependent 
 
 ### Fail-closed NumPy fallback limits
 
-The retained Python fallback is not the unbounded large-scale production backend. Before it calls `numpy.where`, constructs quadrature nodes, or creates person-by-node and item-by-node iteration grids, it now enforces two deterministic limits:
+The retained Python fallback is not the unbounded large-scale production backend. Before it allocates dtype-conversion copies, calls `numpy.where`, constructs quadrature nodes, or creates person-by-node and item-by-node iteration grids, it now enforces two deterministic limits:
 
 1. `n_nodes` must be an integer from **1 through 100**. NumPy documents `hermegauss` as requiring a positive degree and states that results have only been tested through degree 100; higher degrees may be problematic. This is an implementation-support boundary, not a claim that 100 nodes are universally necessary or optimal.
 2. The fallback's conservative owned-workspace estimate must not exceed **512 MiB**. For persons `P`, items `I`, and nodes `Q`, the estimate is:
@@ -35,7 +35,7 @@ The retained Python fallback is not the unbounded large-scale production backend
 
    The first term budgets float64 response/mask conversions, posterior grids, Newton grids, and one-dimensional state; the second budgets Boolean state. The estimate intentionally overstates repository-owned NumPy arrays to preserve headroom. It does not claim to equal process RSS and does not include caller-owned input storage or hidden BLAS workspace.
 
-Problems above the cap fail with a deterministic `ValueError` directing the caller to the Rust backend or a smaller response matrix or quadrature rule. The check runs before the fallback materializes its large owned arrays. This closes the resource-exhaustion path without truncating data, silently reducing quadrature, or changing the numerical result for accepted problems.
+Problems above the cap fail with a deterministic `ValueError` directing the caller to the Rust backend or a smaller response matrix or quadrature rule. The check runs after shape-only array normalization but before typed conversion and the fallback's large owned arrays. This closes the resource-exhaustion path without truncating data, silently reducing quadrature, or changing the numerical result for accepted problems.
 
 ## Statistical interpretation boundary
 
@@ -49,7 +49,7 @@ This refactor changes only the spelling of the final posterior expectation and a
 - an AST-level source contract requiring the final `theta` assignment to be `posterior @ nodes`, so the explicit broadcast-product expression cannot silently return;
 - rejection of invalid and untested quadrature counts before node construction;
 - rejection of an enormous zero-stride response view without materializing response-, person-node-, or item-node-sized fallback grids;
-- ordering evidence that the workspace cap runs before `numpy.where` allocates a response-sized grid;
+- ordering evidence that the workspace cap runs before typed array conversion and `numpy.where` response-grid allocation;
 - release-note language that avoids fixed speedup promises and records hardware/BLAS variability; and
 - this doctoring record's NumPy semantics, 512 MiB fallback cap, documented quadrature support range, and Rust-primary architecture boundary.
 
