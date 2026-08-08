@@ -30,10 +30,10 @@ The retained Python fallback is not the unbounded large-scale production backend
 2. The fallback's conservative owned-workspace estimate must not exceed **512 MiB**. For persons `P`, items `I`, and nodes `Q`, the estimate is:
 
    ```text
-   8 × [4PI + 6PQ + 12IQ + 12(P + I + Q)] + [PI + 2I] bytes
+   8 × [5PI + 6PQ + 14IQ + 12(P + I + Q)] + [PI + 2I] bytes
    ```
 
-   The first term budgets float64 response/mask conversions, posterior grids, Newton grids, and one-dimensional state; the second budgets Boolean state. The estimate intentionally overstates repository-owned NumPy arrays to preserve headroom. It does not claim to equal process RSS and does not include caller-owned input storage or hidden BLAS workspace.
+   The first term budgets float64 response/mask conversions, temporary response arithmetic, posterior grids, Newton grids, Newton arithmetic temporaries, and one-dimensional state; the second budgets Boolean state. The estimate intentionally overstates repository-owned NumPy arrays to preserve headroom. It does not claim to equal process RSS and does not include caller-owned input storage or hidden BLAS workspace.
 
 Problems above the cap fail with a deterministic `ValueError` directing the caller to the Rust backend or a smaller response matrix or quadrature rule. The check runs after shape-only array normalization but before typed conversion and the fallback's large owned arrays. This closes the resource-exhaustion path without truncating data, silently reducing quadrature, or changing the numerical result for accepted problems.
 
