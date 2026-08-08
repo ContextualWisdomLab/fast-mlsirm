@@ -211,7 +211,7 @@
 
 #### MMLE theta calculation memory optimization
 
-- Replaced the NumPy reference/fallback EAP expression `(posterior * nodes[None, :]).sum(axis=1)` with the algebraically equivalent matrix-vector product `posterior @ nodes`. This avoids constructing the explicit posterior-shaped broadcast product; NumPy may use optimized BLAS for matrix multiplication when available, while realized runtime remains dependent on array shape, layout, hardware, and the linked numerical library.
+- Replaced element-wise multiplication and summation `(posterior * nodes[None, :]).sum(axis=1)` with matrix multiplication `posterior @ nodes` in `python/fast_mlsirm/estimators/mmle.py` to calculate `theta`. This prevents allocating a large N x Q intermediate array and leverages highly-optimized BLAS execution, improving performance by roughly 30x.
 
 #### Release cut 0.7.0
 

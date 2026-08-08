@@ -176,9 +176,9 @@ def fit_mmle_2pl(
         log_p0 = -np.logaddexp(0.0, logit)  # log(1 - sigmoid)
         # Per person, per node: sum over OBSERVED items of log P(y_pi | node_q)
         # log_lik[p, q] = sum_i obs_pi * (y_pi*log_p1_qi + (1-y_pi)*log_p0_qi)
-        # Compute via matrix products: (n_persons, Q)
-        pos = (y_filled * obs_f) @ log_p1.T  # (n_persons, Q)
-        neg = ((1.0 - y_filled) * obs_f) @ log_p0.T  # (n_persons, Q)
+        # Compute without forming n_persons * n_items * Q arrays via explicit broadcast products
+        pos = (y_filled * obs_f) @ log_p1.T
+        neg = ((1.0 - y_filled) * obs_f) @ log_p0.T
         log_joint = pos + neg + log_weights[None, :]  # + log prior weight
         # Normalize across nodes (log-sum-exp)
         max_lj = log_joint.max(axis=1, keepdims=True)
@@ -192,8 +192,9 @@ def fit_mmle_2pl(
         # ---- M-step: update a, b by weighted logistic regression per item ----
         # Expected counts at each node: n_iq = sum_p obs_pi * posterior_pq  (Q per item)
         # r_iq = sum_p obs_pi * y_pi * posterior_pq
-        n_iq = obs_f.T @ posterior  # (n_items, Q)
-        r_iq = (obs_f * y_filled).T @ posterior  # (n_items, Q)
+        # Compute without forming n_items * Q arrays via explicit broadcast products
+        n_iq = obs_f.T @ posterior
+        r_iq = (obs_f * y_filled).T @ posterior
 
         a_new = a.copy()
         b_new = b.copy()
