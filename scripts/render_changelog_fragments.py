@@ -93,9 +93,7 @@ def _managed_block(rendered: str) -> str:
     """Return the marker-delimited fragment body embedded under Unreleased."""
     heading, separator, body = rendered.partition("\n\n")
     if heading != "## Unreleased" or not separator or not body.strip():
-        raise ValueError(
-            "rendered changelog must contain one non-empty Unreleased block"
-        )
+        raise ValueError("rendered changelog must contain one non-empty Unreleased block")
     return f"{BEGIN_MARKER}\n{body.rstrip()}\n{END_MARKER}\n"
 
 
@@ -117,9 +115,7 @@ def synchronize_text(changelog: str, rendered: str) -> str:
     begin_count = section.count(BEGIN_MARKER)
     end_count = section.count(END_MARKER)
     if begin_count != end_count or begin_count > 1:
-        raise ValueError(
-            "Unreleased must contain zero or one complete fragment marker pair"
-        )
+        raise ValueError("Unreleased must contain zero or one complete fragment marker pair")
     if changelog[: heading.end()].count(BEGIN_MARKER) or changelog[section_end:].count(
         BEGIN_MARKER
     ):
