@@ -82,20 +82,24 @@ def govern_factor_retention(
     Two or more distinct methods that return the same candidate count produce a
     ``consensus`` result. Two or more distinct methods that disagree produce a
     ``disagreement`` result whose range spans the observed supported candidates.
-    Zero or one method is ``insufficient_evidence``. No branch selects bifactor,
-    higher-order, testlet, faceted, or latent-space structure.
+    Zero or one method is ``insufficient_evidence``. Evidence is consumed only
+    until a duplicate or the finite supported-method set makes further input
+    invalid, so caller-controlled iterables are not exhausted unnecessarily. No
+    branch selects bifactor, higher-order, testlet, faceted, or latent-space
+    structure.
     """
 
-    records = tuple(evidence)
-    for record in records:
+    records: list[FactorRetentionEvidence] = []
+    seen_methods: set[FactorRetentionMethod] = set()
+    for record in evidence:
         if not isinstance(record, FactorRetentionEvidence):
             raise TypeError("evidence entries must be FactorRetentionEvidence")
-
-    seen_methods: set[FactorRetentionMethod] = set()
-    for record in records:
         if record.method in seen_methods:
             raise ValueError("duplicate factor-retention method evidence")
         seen_methods.add(record.method)
+        records.append(record)
+        if len(records) > len(FactorRetentionMethod):
+            raise ValueError("factor-retention evidence exceeds supported method count")
 
     ordered = tuple(sorted(records, key=lambda record: record.method.value))
     if not ordered:
