@@ -1,0 +1,3 @@
+@startuml
+!include item-lifecycle.puml
+@enduml
