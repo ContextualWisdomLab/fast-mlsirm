@@ -207,3 +207,26 @@ def test_query_revision_metadata_replays_shared_task_revision_identity() -> None
     assert request.task_revision_fingerprint == (
         request.to_dict()["metadata"]["rag_query_revision_fingerprint"]
     )
+
+
+def test_rag_identity_separates_configuration_run_and_generated_response() -> None:
+    """A system run is the measured respondent while each generated answer is a response."""
+    request = _request(response_id="generated_response_001")
+
+    assert request.respondent_id == "retrieval_stack_a_run_001"
+    assert request.response_id == "generated_response_001"
+    assert request.to_dict()["metadata"]["rag_system_configuration_id"] == (
+        "retrieval_stack_a"
+    )
+
+
+@pytest.mark.parametrize(
+    "metadata_key",
+    ("audit_note", "query_text", "context_text", "answer_text", "source_text"),
+)
+def test_rag_metadata_rejects_non_allowlisted_content_keys(metadata_key: str) -> None:
+    """Caller metadata cannot smuggle source or response content into artifacts."""
+    _assert_error(
+        "unsupported_rag_metadata",
+        lambda: _request(metadata={metadata_key: "sensitive_content"}),
+    )
