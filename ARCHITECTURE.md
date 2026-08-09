@@ -1,6 +1,6 @@
 # fast-mlsirm Architecture
 
-Status: authoritative architecture baseline for the reusable `fast-mlsirm` repository.
+Status: candidate authoritative architecture baseline for the reusable `fast-mlsirm` repository; becomes normative when merged to protected `main`. This document mixes implemented architecture with accepted target constraints, so `docs/architecture/capability_maturity.md` is the required companion for distinguishing shipped, partial, planned, downstream-owned and not-applicable capabilities.
 
 ## Purpose and repository boundary
 
@@ -116,27 +116,27 @@ flowchart LR
     Monitor --> Rubric
 ```
 
-Operational rubric/item versions are immutable. New wording, evidence, score boundaries, or semantic meaning creates a new version and requires linking/anchor evidence where cross-version comparisons are claimed.
+This diagram is the accepted target lifecycle, not a statement that every lifecycle transition is already implemented. Operational rubric/item versions are immutable. New wording, evidence, score boundaries, or semantic meaning creates a new version and requires linking/anchor evidence where cross-version comparisons are claimed.
 
 ## Automated scoring and essay evaluation
 
-All human, AI, and external scoring engines emit the same observation/provenance contracts. Humans and AI are modeled as fallible raters rather than treating either as ground truth. Automated essay validation is designed around criterion-level evidence, rater/prompt provenance, agreement, severity/fit, fairness/DIF, drift, and human-review routing. Correlation with one human raw score is descriptive evidence only.
+All human, AI, and external scoring engines emit compatible observation/provenance contracts where the relevant adapter is implemented. Humans and AI are modeled as fallible raters rather than treating either as ground truth. Automated essay validation is designed around criterion-level evidence, rater/prompt provenance, agreement, severity/fit, fairness/DIF, drift, and human-review routing. Correlation with one human raw score is descriptive evidence only. Capability maturity for specific range/drift/fairness analyses is governed by the protected-main implementation and feature doctoring, not this architectural target alone.
 
 ## Reference-free RAG and enterprise issue measurement
 
-Reference-free evaluation treats LLM judges as noisy measuring instruments. Groundedness, correctness, completeness, retrieval relevance, evaluator severity, query/testlet dependence, and model-family effects remain distinct.
+Reference-free evaluation treats LLM judges as noisy measuring instruments. Groundedness, correctness, completeness, retrieval relevance, evaluator severity, query/testlet dependence, and model-family effects remain distinct. The canonical public RAG observation schema remains a design requirement until accepted into the package; this architecture does not promote it to shipped status.
 
 Enterprise issue measurement separates evidence/measurement from intervention decisions. Latent severity or importance is not itself the final priority. Any consequential priority layer must represent action alternatives, uncertainty, cost, expected net intervention value, urgency from delay, and value of information; causal or high-stakes claims require an identified design and human validation.
 
 ## Multilevel, multiple-membership, and time
 
-To avoid atomistic fallacy, measurement contracts must support nested, cross-classified, and weighted multiple-membership contexts where relevant. Longitudinal designs preserve explicit respondent/occasion identity, revision provenance, ordering, and temporal semantics. Discrete occasion-step AR parameters must not be silently reinterpreted as continuous-time effects. Continuous-time behavior requires a separately identified transition model and recovery evidence.
+To avoid atomistic fallacy, measurement contracts must support nested, cross-classified, and weighted multiple-membership contexts where relevant. Longitudinal designs preserve explicit respondent/occasion identity, revision provenance, ordering, and temporal semantics. Discrete occasion-step AR parameters must not be silently reinterpreted as continuous-time effects. Continuous-time behavior requires a separately identified transition model and recovery evidence. A general production multilevel/multiple-membership/continuous-time estimator is not implied by this design requirement; its shipped status is tracked in the capability maturity map.
 
 ## Data and privacy boundary
 
-`fast-mlsirm` is persistence-neutral. It does not require an ORM or application database. Durable hosts may persist the logical entities described in `docs/ERD.md` while retaining their own tenant, consent, authorization, retention, and migration responsibilities.
+`fast-mlsirm` is persistence-neutral. It does not require an ORM or application database. `docs/ERD.md` is therefore a logical/persistence-neutral model, **not** a physical database schema owned by this repository. Durable hosts may map relevant logical entities to their own persistence while retaining tenant, consent, authorization, retention, migration and data-rights responsibilities.
 
-PII protection must not default to blanket masking that destroys measurement, longitudinal, multiple-membership, audit, or adjudication utility. Preferred controls are purpose-bound authorization, least privilege, tenant isolation, pseudonymous/opaque identifiers, selective disclosure, field/envelope encryption, isolated identity/token vaults, bounded retention/export, data-residency controls, and tamper-evident audit evidence.
+PII protection must not default to blanket masking that destroys measurement, longitudinal, multiple-membership, audit, or adjudication utility. Preferred controls are purpose-bound authorization, least privilege, tenant isolation in the host, pseudonymous/opaque identifiers, selective disclosure, field/envelope encryption, isolated identity/token vaults, bounded retention/export, data-residency controls, and tamper-evident audit evidence.
 
 ## Quality and release gates
 
@@ -154,7 +154,7 @@ Release candidates require, on one exact integrated protected head where applica
 
 ## Standards and research governance
 
-Current governing references include ISO/IEC 25010:2023 for software product quality, ISO/IEC 42001:2023 for AI management-system governance, NIST AI RMF 1.0 and its Generative AI Profile for risk-management/TEVV practices, the Standards for Educational and Psychological Testing for validity/fairness/use arguments, and primary psychometric literature cited in method-specific doctoring. Standards and papers constrain claims; they do not substitute for empirical recovery or operational evidence.
+The current governance baseline includes ISO/IEC 25010:2023 for product quality, ISO/IEC 42001:2023 for AI management systems, ISO/IEC 23894:2023 for AI risk management, ISO/IEC 42005:2025 for AI system impact assessment, ISO/IEC 40500:2025/WCAG 2.2 for accessible web content, NIST AI RMF 1.0 and NIST AI 600-1 for voluntary AI risk/Generative-AI TEVV guidance, the *Standards for Educational and Psychological Testing* for validity/fairness/use arguments, and primary psychometric literature cited in method-specific doctoring. NIST states that AI RMF 1.0 is being revised; this repository must recheck the reference when the revised framework is published. Standards and papers constrain claims; they do not substitute for empirical recovery or operational evidence and do not imply certification.
 
 ## Related documents
 
@@ -162,7 +162,9 @@ Current governing references include ISO/IEC 25010:2023 for software product qua
 - `docs/TRD.md`
 - `docs/UML.md`
 - `docs/ERD.md`
+- `docs/architecture/capability_maturity.md`
 - `docs/documentation_coverage_matrix.md`
+- `docs/adr/README.md`
 - `docs/adr/ADR-0001-product-boundaries-and-scientific-governance.md`
 - `AGENTS.md`
 - `CLAUDE.md`
