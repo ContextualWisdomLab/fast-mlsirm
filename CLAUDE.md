@@ -19,9 +19,12 @@ fully before making changes. In particular it defines:
   dependency-review, trivy-fs). A failing `trivy-fs` is a real finding —
   remediate by bumping the crate (`cargo update -p <crate>`) or Python
   dependency; never weaken the gate.
-- **Ecosystem role**: fast-mlsirm calibrates LLM-as-a-Judge outputs and manages
-  evaluation-item quality (aFIPC fixed-item calibration + kaefa item-fit) within
-  the ContextualWisdomLab ecosystem.
+- **Ecosystem role**: fast-mlsirm is the reusable, domain-neutral measurement
+  and psychometric computation layer. `ContextualWisdomLab/psychometrics-commons`
+  is the hosted product and downstream consumer; fast-mlsirm does not depend on
+  Psychometrics Commons or own its HTTP, session, consent, database, UI, or
+  deployment concerns. The hosted runtime must not be recreated under
+  `services/assessment_runtime` in this repository.
 
 ## Common Commands
 
@@ -105,20 +108,31 @@ the hash-locked `requirements/*.txt` files are generated from the
 
 ## Architecture
 
-fast-mlsirm is a toolkit for **Multidimensional Latent Space Item Response
-Models** (MLS2PLM and related constraints: `MIRT`, `MLSRM`, `MLS2PLM`, `ULSRM`,
-`ULS2PLM`): binary response simulation, regularized JML/MAP-style point
+fast-mlsirm is a reusable toolkit for **Multidimensional Latent Space Item
+Response Models** and adjacent psychometric measurement contracts. It provides
+MLS2PLM and related constraints (`MIRT`, `MLSRM`, `MLS2PLM`, `ULSRM`,
+`ULS2PLM`), binary response simulation, regularized JML/MAP-style point
 estimation (Adam + small L-BFGS, no SciPy), recovery/fit/dimensionality
-diagnostics, aFIPC-style fixed-item calibration diagnostics, and standalone HTML
-reports. It is intentionally *not* a Bayesian sampler.
+diagnostics, fixed-item calibration and linking diagnostics, reusable
+Assessment/Rubric/Scoring contracts, and standalone reports. It is intentionally
+*not* a Bayesian sampler and intentionally *not* the hosted Psychometrics Commons
+application.
+
+`ContextualWisdomLab/psychometrics-commons` consumes versioned fast-mlsirm
+contracts and numerical results as a downstream product. Product-specific HTTP
+routes, participant/session state, identity mappings, consent, research-release
+orchestration, UI, product persistence, and deployment belong to that repository
+or the owning CWL service. This repository must remain independently installable
+and must not acquire a reverse dependency on Psychometrics Commons. The hosted
+runtime must not be recreated under `services/assessment_runtime` here.
 
 ### Layout and how the pieces connect
 
 ```text
-python/fast_mlsirm/       Python public API, CLI, and NumPy reference backend
-crates/mlsirm-core/       Rust likelihood/gradient core (+ optional wgpu GPU path)
+python/fast_mlsirm/       Python public API, CLI, contracts, NumPy reference paths
+crates/mlsirm-core/       Rust likelihood/gradient/psychometric numeric core
 crates/fast-mlsirm-py/    PyO3 cdylib binding, built by maturin as fast_mlsirm._core
-tests/                    Python suite, incl. the Rust<->NumPy parity gate
+tests/                    Python suite, incl. Rust<->NumPy delegation/parity gates
 fuzz/                     Atheris harnesses, cargo-fuzz target, corpora
 scripts/                  Release-acceptance / sales-readiness evidence builders
 docs/                     PRD/TRD summary, design docs, papers, readiness gates

@@ -72,6 +72,8 @@ class TestletPilotDesign:
     fairness, or validity.
     """
 
+    __test__ = False
+
     binary_design: MirtPilotDesign
     schema_version: str = SCHEMA_VERSION
     _design_token: InitVar[object | None] = None
