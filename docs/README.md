@@ -15,6 +15,7 @@ Use this page to find the **canonical** product, architecture, technical, decisi
 - [`requirements_traceability.md`](requirements_traceability.md) — PRD → TRD/ADR → implementation/evidence maturity map.
 - [`documentation_coverage.md`](documentation_coverage.md) — completeness audit and remaining documentation debt.
 - [`doctoring/architecture_governance_baseline.md`](doctoring/architecture_governance_baseline.md) — standards/source review, APA 7 references, enterprise-assurance positioning, and falsification criteria for this baseline.
+- [`doctoring/llm_orchestration_test_time_compute.md`](doctoring/llm_orchestration_test_time_compute.md) — Conductor/TRINITY/Fugu/test-time-compute evidence, equal-budget cautions, role/depth/access/budget requirements, and orchestration ablations.
 
 ## Core contract documentation
 
