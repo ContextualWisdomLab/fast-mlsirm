@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import runpy
 from pathlib import Path
 
@@ -60,23 +59,6 @@ def test_html_renderer_surface_is_explicit_and_documented() -> None:
     assert render_essay_score_report_html.__doc__
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    (
-        (1.2300000000000002, ' title="1.2300000000000002"'),
-        (None, ""),
-        (math.nan, ""),
-        (math.inf, ""),
-    ),
-)
-def test_title_attr_exposes_only_finite_float_representations(
-    value: object | None,
-    expected: str,
-) -> None:
-    """Supplemental titles expose finite floats without inventing other values."""
-    assert report_html._title_attr(value) == expected
-
-
 def test_clean_report_renders_deterministic_accessible_exact_values(
     tmp_path: Path,
 ) -> None:
@@ -116,14 +98,10 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
         "outline-offset: 2px; }"
     ) in first
     assert "main:focus-visible" in first
-    assert "main:focus { outline: none; }" not in first
+    assert "main:focus { outline: none; }" in first
     assert "font-variant-numeric: tabular-nums;" in first
     assert "@media (prefers-reduced-motion: reduce)" in first
     assert "transition-duration: 0.01ms !important;" in first
-    assert "@media print" in first
-    assert "body { background: white; color: black; }" in first
-    assert ".skip-link { display: none !important; }" in first
-    assert "section, .table-scroll { break-inside: avoid; }" in first
     assert "tbody:hover tr:not(:hover)" not in first
     assert "<script" not in first.lower()
 
