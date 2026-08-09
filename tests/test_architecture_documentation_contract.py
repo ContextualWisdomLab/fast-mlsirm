@@ -143,6 +143,9 @@ def test_standards_watch_separates_published_sources_from_watch_items() -> None:
         "WCAG 2.2",
     ):
         assert reference in standards
+    assert "ISO/IEC/IEEE DIS 29148" in standards
+    assert "2026-07-10" in standards
+    assert "being revised" in standards
     assert "watch item" in standards.lower()
     assert "does not claim certification" in standards.lower()
 
@@ -224,11 +227,16 @@ def test_research_basis_and_llm_credential_adr_keep_primary_boundaries() -> None
     assert "COPILOT_GITHUB_TOKEN" in llm
 
 
-def test_documentation_contract_does_not_promote_proposed_work_to_main() -> None:
-    """Active multilevel/rotation/item-bank work must remain visibly non-released."""
+def test_documentation_contract_distinguishes_implemented_rotation_from_active_work() -> None:
+    """Protected-main rotation must be Accepted without promoting unrelated active work."""
     trace = _read("docs/traceability/requirements-matrix.md")
     coverage = _read("docs/documentation_coverage.md")
+    rotation_adr = _read("docs/adr/0009-adaptive-rotation-selection.md")
+
+    assert "Accepted CPU baseline / planned GPU and broader recovery extensions" in trace
     assert "Proposed/partial / active PR" in trace
-    assert "Proposed / active work" in trace
+    assert "IMPLEMENTED / PLANNED extensions" in coverage
     assert "ACTIVE PR" in coverage
     assert "PLANNED/partial" in coverage
+    assert "Status: **Accepted**" in rotation_adr
+    assert "GPU/additional-criterion/recovery expansion remains planned" in rotation_adr
