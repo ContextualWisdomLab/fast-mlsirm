@@ -11,6 +11,11 @@ def _guidance(name: str) -> str:
     return (ROOT / name).read_text(encoding="utf-8")
 
 
+def _normalized_guidance(name: str) -> str:
+    """Return guidance with insignificant Markdown wrapping collapsed."""
+    return " ".join(_guidance(name).split())
+
+
 def test_agents_declares_psychometrics_commons_as_downstream_product() -> None:
     """AGENTS must not direct agents to rebuild the hosted product in this repo."""
     agents = _guidance("AGENTS.md")
@@ -30,7 +35,7 @@ def test_guidance_excludes_legacy_r_packages_from_product_dependencies() -> None
 
 def test_claude_summary_uses_the_same_repository_boundary() -> None:
     """Claude guidance must preserve the canonical upstream/downstream direction."""
-    claude = _guidance("CLAUDE.md")
+    claude = _normalized_guidance("CLAUDE.md")
     assert "ContextualWisdomLab/psychometrics-commons" in claude
     assert "hosted product" in claude
     assert "does not depend on Psychometrics Commons" in claude
