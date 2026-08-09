@@ -7,7 +7,10 @@ on:
 
 concurrency:
   group: fast-mlsirm-hourly-review-repair
-  cancel-in-progress: true
+  # Do not discard an in-flight bounded repair scan merely because a delayed
+  # hourly heartbeat overlaps it. The central worker enforces its own exact-head
+  # retry floor and single-writer lease.
+  cancel-in-progress: false
 
 permissions:
   contents: read
