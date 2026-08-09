@@ -12,7 +12,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 use pyo3::wrap_pyfunction;
 
-fn result_dict(py: Python<'_>, result: CoreBifactorIndicesResult) -> PyResult<Py<PyDict>> {
+fn result_dict(
+    py: Python<'_>,
+    result: CoreBifactorIndicesResult,
+) -> PyResult<Py<PyDict>> {
     let out = PyDict::new(py);
     out.set_item("factor_item_counts", result.factor_item_counts)?;
     out.set_item("is_strict_bifactor", result.is_strict_bifactor)?;

@@ -8425,199 +8425,189 @@ fn empirical_reliability(
     .map_err(PyValueError::new_err)
 }
 
-macro_rules! register_functions {
-    ($m:ident, [ $($func:ident),* $(,)? ]) => {
-        $(
-            $m.add_function(wrap_pyfunction!($func, $m)?)?;
-        )*
-    };
-}
-
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    register_functions!(m, [
-        neg_loglik_and_grad,
-        fit_mmle_2pl,
-        fit_cdm,
-        fit_gdina,
-        validate_q_matrix,
-        gdina_wald_selection,
-        fit_ho_cdm,
-        fit_ho_gdina,
-        fit_seq_gdina,
-        fit_seq_gdina_qr,
-        fit_2pl,
-        fit_mhrm,
-        fit_nominal_model,
-        fit_grm,
-        fit_gpcm,
-        fit_crm,
-        fit_rsm,
-        fit_facets,
-        mokken_coef_h,
-        mokken_aisp,
-        ksirt_occ,
-        subscore_analysis,
-        detect_analysis,
-        py_dimtest,
-        py_wollack_omega,
-        py_k_index,
-        py_gbt,
-        py_k_variants,
-        py_hofstee,
-        py_person_fit_np,
-        py_delta_plot,
-        py_eb_mh_dif,
-        py_mantel_smd_dif,
-        py_gmh_dif,
-        py_breslow_day_dif,
-        rudner_classification,
-        lee_classification,
-        livingston_lewis,
-        hanson_brennan,
-        hanson_brennan_from_params,
-        subkoviak_agreement,
-        livingston_k2,
-        livingston_correlation,
-        woodruff_sawyer_sb,
-        woodruff_sawyer_normal,
-        gtheory_pi,
-        phi_lambda,
-        gtheory_pio,
-        minres_fa,
-        minres_fa_from_data,
-        omega_total_1f,
-        omega_total_1f_from_data,
-        glb_fa,
-        glb_fa_from_data,
-        velicer_map,
-        velicer_map_from_data,
-        selection_utility,
-        taylor_russell,
-        parallel_analysis,
-        py_sympson_hetter,
-        py_a_stratified,
-        py_kl_information,
-        py_kl_select,
-        py_owen_update,
-        py_owen_cat,
-        py_ccat_select,
-        py_epv_select,
-        py_sprt_classify,
-        py_ci_classify,
-        py_flexilevel_administer,
-        py_flexilevel_score_distribution,
-        py_stradaptive_administer,
-        py_pyramidal_administer,
-        py_two_stage_route,
-        py_two_stage_score,
-        guttman_lambdas,
-        tenberge_mu,
-        cronbach_alpha,
-        feldt_alpha_ci,
-        icc,
-        kripp_alpha,
-        finn_coefficient,
-        maxwell_re,
-        robinson_a,
-        mean_pairwise_cor,
-        mean_pairwise_rho,
-        stuart_maxwell_mh,
-        bhapkar_mh,
-        rater_bias,
-        n_cohen_kappa,
-        separation_reliability,
-        fit_mixture,
-        fit_lltm,
-        fit_testlet,
-        fit_marginal,
-        score_bank_eap,
-        score_bank_map,
-        eapsum_tables,
-        score_eapsum,
-        s_x2_stat,
-        leniency_residuals_stat,
-        m2_stat,
-        poly_m2,
-        poly_local_dependence,
-        poly_dif,
-        mantel_haenszel_dif,
-        sibtest,
-        raju_area,
-        logistic_dif,
-        mantel_haenszel_dif_purified,
-        logistic_dif_purified,
-        score_wle,
-        fit_rasch_cml,
-        andersen_lr_test,
-        u3_person_fit,
-        u3_bootstrap_cutoff,
-        irt_link,
-        equate_observed_scores,
-        equate_neat,
-        equate_neat_linear,
-        bootstrap_see,
-        analytic_see,
-        equate_observed_scores_ext,
-        circle_arc_equate,
-        nominal_weights_mean_equate,
-        composite_linking,
-        thurstone_case_v,
-        bradley_terry_mm,
-        lsr_pairwise,
-        ilsr_pairwise,
-        rank_centrality,
-        lsr_rankings,
-        ilsr_rankings,
-        lsr_top1,
-        ilsr_top1,
-        circular_triads,
-        kendall_u,
-        elo_rating,
-        glicko_rating,
-        glicko2_rating,
-        stephenson_rating,
-        elom_rating,
-        metrics_rating,
-        fide_rating,
-        predict_rating_two,
-        predict_rating_multi,
-        bratt_mm,
-        fleiss_kappa,
-        light_kappa,
-        circle_arc_middle_anchor,
-        loglinear_smooth,
-        person_fit_stat,
-        infit_outfit_stat,
-        validate_scoring,
-        vuong_nonnested,
-        dimensionality_residuals,
-        oakes_standard_errors,
-        bank_information,
-        cat_next_item,
-        plausible_values,
-        residual_item_fit,
-        adjusted_chi2_pairs,
-        person_fit_resampling,
-        tcc_drift,
-        empirical_reliability,
-        gpcm_cell_logprobs,
-        grm_cell_logprobs,
-        fit_poly_unidim,
-        fit_nominal,
-        poly_person_fit,
-        poly_cat_simulate,
-        score_poly_eap,
-        score_wle_poly,
-        poly_information_curves,
-        poly_item_fit_sx2,
-        fit_poly_lsirm,
-        fit_mixed_items,
-        fit_rt_lognormal,
-        fit_speed_accuracy_covariance,
-        rt_person_fit,
-    ]);
+    m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_q_matrix, m)?)?;
+    m.add_function(wrap_pyfunction!(gdina_wald_selection, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_ho_cdm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_ho_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_seq_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_seq_gdina_qr, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_2pl, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mhrm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_facets, m)?)?;
+    m.add_function(wrap_pyfunction!(mokken_coef_h, m)?)?;
+    m.add_function(wrap_pyfunction!(mokken_aisp, m)?)?;
+    m.add_function(wrap_pyfunction!(ksirt_occ, m)?)?;
+    m.add_function(wrap_pyfunction!(subscore_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_dimtest, m)?)?;
+    m.add_function(wrap_pyfunction!(py_wollack_omega, m)?)?;
+    m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
+    m.add_function(wrap_pyfunction!(py_gbt, m)?)?;
+    m.add_function(wrap_pyfunction!(py_k_variants, m)?)?;
+    m.add_function(wrap_pyfunction!(py_hofstee, m)?)?;
+    m.add_function(wrap_pyfunction!(py_person_fit_np, m)?)?;
+    m.add_function(wrap_pyfunction!(py_delta_plot, m)?)?;
+    m.add_function(wrap_pyfunction!(py_eb_mh_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(py_mantel_smd_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(py_gmh_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(py_breslow_day_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
+    m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
+    m.add_function(wrap_pyfunction!(hanson_brennan, m)?)?;
+    m.add_function(wrap_pyfunction!(hanson_brennan_from_params, m)?)?;
+    m.add_function(wrap_pyfunction!(subkoviak_agreement, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_k2, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_correlation, m)?)?;
+    m.add_function(wrap_pyfunction!(woodruff_sawyer_sb, m)?)?;
+    m.add_function(wrap_pyfunction!(woodruff_sawyer_normal, m)?)?;
+    m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
+    m.add_function(wrap_pyfunction!(phi_lambda, m)?)?;
+    m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
+    m.add_function(wrap_pyfunction!(minres_fa, m)?)?;
+    m.add_function(wrap_pyfunction!(minres_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(omega_total_1f, m)?)?;
+    m.add_function(wrap_pyfunction!(omega_total_1f_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(glb_fa, m)?)?;
+    m.add_function(wrap_pyfunction!(glb_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(velicer_map, m)?)?;
+    m.add_function(wrap_pyfunction!(velicer_map_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(selection_utility, m)?)?;
+    m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
+    m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sympson_hetter, m)?)?;
+    m.add_function(wrap_pyfunction!(py_a_stratified, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kl_information, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kl_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_owen_update, m)?)?;
+    m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ccat_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_epv_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sprt_classify, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ci_classify, m)?)?;
+    m.add_function(wrap_pyfunction!(py_flexilevel_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_flexilevel_score_distribution, m)?)?;
+    m.add_function(wrap_pyfunction!(py_stradaptive_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_pyramidal_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_two_stage_route, m)?)?;
+    m.add_function(wrap_pyfunction!(py_two_stage_score, m)?)?;
+    m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
+    m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
+    m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
+    m.add_function(wrap_pyfunction!(icc, m)?)?;
+    m.add_function(wrap_pyfunction!(kripp_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(finn_coefficient, m)?)?;
+    m.add_function(wrap_pyfunction!(maxwell_re, m)?)?;
+    m.add_function(wrap_pyfunction!(robinson_a, m)?)?;
+    m.add_function(wrap_pyfunction!(mean_pairwise_cor, m)?)?;
+    m.add_function(wrap_pyfunction!(mean_pairwise_rho, m)?)?;
+    m.add_function(wrap_pyfunction!(stuart_maxwell_mh, m)?)?;
+    m.add_function(wrap_pyfunction!(bhapkar_mh, m)?)?;
+    m.add_function(wrap_pyfunction!(rater_bias, m)?)?;
+    m.add_function(wrap_pyfunction!(n_cohen_kappa, m)?)?;
+    m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_marginal, m)?)?;
+    m.add_function(wrap_pyfunction!(score_bank_eap, m)?)?;
+    m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;
+    m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
+    m.add_function(wrap_pyfunction!(score_eapsum, m)?)?;
+    m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(leniency_residuals_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(sibtest, m)?)?;
+    m.add_function(wrap_pyfunction!(raju_area, m)?)?;
+    m.add_function(wrap_pyfunction!(logistic_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(mantel_haenszel_dif_purified, m)?)?;
+    m.add_function(wrap_pyfunction!(logistic_dif_purified, m)?)?;
+    m.add_function(wrap_pyfunction!(score_wle, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_rasch_cml, m)?)?;
+    m.add_function(wrap_pyfunction!(andersen_lr_test, m)?)?;
+    m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
+    m.add_function(wrap_pyfunction!(irt_link, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_neat_linear, m)?)?;
+    m.add_function(wrap_pyfunction!(bootstrap_see, m)?)?;
+    m.add_function(wrap_pyfunction!(analytic_see, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
+    m.add_function(wrap_pyfunction!(circle_arc_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(nominal_weights_mean_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(composite_linking, m)?)?;
+    m.add_function(wrap_pyfunction!(thurstone_case_v, m)?)?;
+    m.add_function(wrap_pyfunction!(bradley_terry_mm, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_pairwise, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_pairwise, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_centrality, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_rankings, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_rankings, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_top1, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_top1, m)?)?;
+    m.add_function(wrap_pyfunction!(circular_triads, m)?)?;
+    m.add_function(wrap_pyfunction!(kendall_u, m)?)?;
+    m.add_function(wrap_pyfunction!(elo_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(glicko_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(glicko2_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(stephenson_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(elom_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(metrics_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(fide_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(predict_rating_two, m)?)?;
+    m.add_function(wrap_pyfunction!(predict_rating_multi, m)?)?;
+    m.add_function(wrap_pyfunction!(bratt_mm, m)?)?;
+    m.add_function(wrap_pyfunction!(fleiss_kappa, m)?)?;
+    m.add_function(wrap_pyfunction!(light_kappa, m)?)?;
+    m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
+    m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
+    m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;
+    m.add_function(wrap_pyfunction!(vuong_nonnested, m)?)?;
+    m.add_function(wrap_pyfunction!(dimensionality_residuals, m)?)?;
+    m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
+    m.add_function(wrap_pyfunction!(bank_information, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
+    m.add_function(wrap_pyfunction!(plausible_values, m)?)?;
+    m.add_function(wrap_pyfunction!(residual_item_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(adjusted_chi2_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(person_fit_resampling, m)?)?;
+    m.add_function(wrap_pyfunction!(tcc_drift, m)?)?;
+    m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
+    m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_cat_simulate, m)?)?;
+    m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
+    m.add_function(wrap_pyfunction!(score_wle_poly, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mixed_items, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_rt_lognormal, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_speed_accuracy_covariance, m)?)?;
+    m.add_function(wrap_pyfunction!(rt_person_fit, m)?)?;
     Ok(())
 }
 
