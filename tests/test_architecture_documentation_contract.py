@@ -106,6 +106,8 @@ def test_documentation_index_and_completeness_matrix_cover_security_and_gaps() -
         "PRD.md",
         "TRD.md",
         "adr/README.md",
+        "standards_watch.md",
+        "verification_validation_plan.md",
         "security/threat-model.md",
         "documentation_coverage.md",
         "traceability/requirements-matrix.md",
