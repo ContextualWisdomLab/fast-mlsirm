@@ -137,6 +137,13 @@ def fit_mmle_2pl(
     ``status``.
     """
     validated_nodes = _validate_quadrature_node_count(n_nodes)
+    if isinstance(max_iter, (bool, np.bool_)) or not isinstance(
+        max_iter, (int, np.integer)
+    ):
+        raise ValueError("max_iter must be an integer >= 1")
+    validated_max_iter = int(max_iter)
+    if validated_max_iter < 1:
+        raise ValueError("max_iter must be an integer >= 1")
 
     y_array = np.asarray(y)
     observed_array = np.asarray(observed)
@@ -169,7 +176,7 @@ def fit_mmle_2pl(
     loglik_trace: list[float] = []
     status = "max_iter_reached"
 
-    for iteration in range(max_iter):
+    for iteration in range(validated_max_iter):
         # ---- E-step: posterior over quadrature nodes per person ----
         # logit_{q,i} = a_i * node_q + b_i  ->  (Q, n_items)
         logit = nodes[:, None] * a[None, :] + b[None, :]
