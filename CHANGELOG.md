@@ -6,6 +6,11 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Exact-value tooltips and print optimization for essay HTML reports
+
+- Supplemental native `title` tooltips exposing unrounded exact float representations on formatted cells in essay score HTML reports.
+- CSS `@media print` rules enforcing black-on-white text, hiding interactive skip links, and avoiding awkward page breaks for print and PDF exports.
+
 #### Enterprise criterion-level observation adapter
 
 - Added `build_enterprise_issue_score_observation`, which compiles exact
@@ -213,6 +218,10 @@
 
 - Marked empty identifier evidence in standalone essay-validation HTML reports as a WAI-ARIA `status` region with explicit `aria-atomic="true"`, while preserving visible text and avoiding focus movement.
 - Added a deterministic regression for the exact status markup and documented the interoperability boundary: live-region semantics improve assistive-technology exposure for status updates, but a pre-populated static report is not claimed to trigger an initial announcement.
+
+#### Exact-value tooltips and print optimization for essay HTML reports
+
+- Removed the CSS `main:focus { outline: none; }` suppression to ensure fallback focus visibility for browsers lacking `:focus-visible` support, relying exclusively on `main:focus-visible` for the skip-link target.
 
 #### Release cut 0.7.0
 
