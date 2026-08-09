@@ -95,6 +95,6 @@ Repository tests should fail when required canonical files, maturity vocabulary,
 
 ## References
 
-International Organization for Standardization, International Electrotechnical Commission, & Institute of Electrical and Electronics Engineers. (2011). *ISO/IEC/IEEE 42010:2011 Systems and software engineering—Architecture description*.
+International Organization for Standardization, International Electrotechnical Commission, & Institute of Electrical and Electronics Engineers. (2022). *ISO/IEC/IEEE 42010:2022 Software, systems and enterprise—Architecture description*.
 
 International Organization for Standardization, International Electrotechnical Commission, & Institute of Electrical and Electronics Engineers. (2018). *ISO/IEC/IEEE 29148:2018 Systems and software engineering—Life cycle processes—Requirements engineering*.
