@@ -157,4 +157,4 @@ Jiao, H., Song, D., & Lee, W.-C. (2026). Evaluating rater effects of large langu
 
 Uto, M., & Ueno, M. (2020). A generalized many-facet Rasch model and its Bayesian estimation using Hamiltonian Monte Carlo. *Behaviormetrika, 47*, 469–496. https://doi.org/10.1007/s41237-020-00115-7
 
-Zhang, Y., et al. (2026). Comparing GPT and human raters in essay assessment: Variability, bias, and the potential of LLM-based scoring. *Computers and Education Open, 10*, 100341. https://doi.org/10.1016/j.caeo.2026.100341
+Wu, H.-N., Chu, M.-N., & Hsu, J.-L. (2026). Comparing GPT and human raters in essay assessment: Variability, bias, and the potential of LLM-based scoring. *Computers and Education Open, 10*, 100341. https://doi.org/10.1016/j.caeo.2026.100341
