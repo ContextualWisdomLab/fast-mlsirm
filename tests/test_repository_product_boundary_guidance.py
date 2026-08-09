@@ -39,3 +39,15 @@ def test_claude_summary_uses_the_same_repository_boundary() -> None:
     assert "ContextualWisdomLab/psychometrics-commons" in claude
     assert "hosted product" in claude
     assert "does not depend on Psychometrics Commons" in claude
+
+
+def test_guidance_forbids_recreating_hosted_runtime_in_fast_mlsirm() -> None:
+    """Both agent guides must keep the hosted runtime out of this repository."""
+    agents = _normalized_guidance("AGENTS.md")
+    claude = _normalized_guidance("CLAUDE.md")
+    runtime_path = "`services/assessment_runtime`"
+
+    assert runtime_path in agents
+    assert "must not be recreated" in agents
+    assert runtime_path in claude
+    assert "must not be recreated" in claude
