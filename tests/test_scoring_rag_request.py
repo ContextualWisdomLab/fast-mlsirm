@@ -39,7 +39,7 @@ def _request(**overrides: Any) -> ScoringRequest:
         "rubric": rubric(),
         "query_id": "refund_policy_query",
         "query_revision_fingerprint": QUERY_FP,
-        "query_testlet_id": "customer_policy_queries",
+        "query_testlet_id": "evidence_review",
         "evidence_regime": RAGEvidenceRegime.RETRIEVED_CONTEXT,
         "candidate_visibility": RAGCandidateVisibility.CANDIDATE_BLIND,
         "system_configuration_id": "retrieval_stack_a",
@@ -90,7 +90,7 @@ def test_rag_request_reuses_shared_scoring_axes_without_parallel_schema() -> Non
     assert request.response_id == "retrieval_stack_a_run_001"
     assert request.task_id == "refund_policy_query"
     assert request.task_revision_fingerprint == QUERY_FP
-    assert request.task_family_id == "customer_policy_queries"
+    assert request.task_family_id == "evidence_review"
     assert request.response_content_fingerprint == RESPONSE_FP
     assert request.occasion_id == "evaluation_wave_001"
     assert request.criterion_ids == ("answer_relevance", "grounded_generation")
