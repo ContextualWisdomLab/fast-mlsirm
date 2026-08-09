@@ -219,10 +219,6 @@
 - Marked empty identifier evidence in standalone essay-validation HTML reports as a WAI-ARIA `status` region with explicit `aria-atomic="true"`, while preserving visible text and avoiding focus movement.
 - Added a deterministic regression for the exact status markup and documented the interoperability boundary: live-region semantics improve assistive-technology exposure for status updates, but a pre-populated static report is not claimed to trigger an initial announcement.
 
-#### Exact-value tooltips and print optimization for essay HTML reports
-
-- Removed the CSS `main:focus { outline: none; }` suppression to ensure fallback focus visibility for browsers lacking `:focus-visible` support, relying exclusively on `main:focus-visible` for the skip-link target.
-
 #### Diagnostics-report numeric alignment and motion cleanup
 
 - Applied tabular numeral styling to standalone diagnostics-report body text so numeric values can align more consistently when the selected font supports equal-width figures.
