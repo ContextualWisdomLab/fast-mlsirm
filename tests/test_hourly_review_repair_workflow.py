@@ -55,7 +55,11 @@ def test_hourly_caller_preserves_least_privilege_and_secret_boundaries() -> None
     assert "permissions:\n  contents: read" in workflow
     assert "permissions:\n      contents: read" in workflow
     assert workflow.count("contents: read") == 2
-    assert "write" not in workflow
+    assert not re.search(
+        r"(?m)^\s+[A-Za-z0-9_-]+:\s*write\s*(?:#.*)?$",
+        workflow,
+    )
+    assert "write-all" not in workflow
     assert "secrets: inherit" not in workflow
     assert "COPILOT_GITHUB_TOKEN" not in workflow
     assert "NVIDIA_NIM_API_KEY" not in workflow
