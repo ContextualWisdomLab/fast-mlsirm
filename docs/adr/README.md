@@ -25,6 +25,8 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0008](0008-true-parameter-recovery-ci.md) | Accepted | True-parameter recovery/coverage, not correlation alone, is the core scientific CI evidence for numerical estimators. |
 | [0009](0009-adaptive-rotation-selection.md) | Proposed | Rotation uses an extensible criterion registry, deterministic multi-start and criterion-neutral empirical selection; no universal best criterion. |
 | [0010](0010-llm-orchestration-and-credentials.md) | Accepted | Model-backed automation uses provider-neutral boundaries, NVIDIA NIM credentials where needed, and never uses Copilot credentials for development scheduling. |
+| [0011](0011-canonical-pyo3-public-export-registry.md) | Proposed | Future Rust-backed features converge on one reviewed PyO3/public-export registry instead of competing extension initializers/import rewrites. |
+| [0012](0012-purpose-limited-sensitive-data.md) | Accepted | Preserve valid measurement linkage through purpose-limited sensitive-data handling rather than blanket masking or raw-data proliferation. |
 
 ## ADR completeness rule
 
@@ -34,7 +36,8 @@ A material decision should have an ADR when it changes one or more of:
 - public serialized contract or versioning rule;
 - psychometric model parameterization/identification/interpretation;
 - numerical backend ownership or precision policy;
-- security/privacy/trust boundary;
+- PyO3/native binding/public-export authority;
+- security/privacy/trust/credential boundary;
 - model-selection or scientific acceptance rule;
 - lifecycle/release governance;
 - cross-repository dependency direction.
@@ -53,3 +56,7 @@ Each ADR should include:
 6. Alternatives considered.
 7. Reversal/supersession conditions.
 8. References where research/standards materially govern the decision.
+
+## Consistency rule
+
+Accepted ADRs, protected-main code/tests, `docs/PRD.md`, `docs/TRD.md`, root architecture, UML/ERD, the reusable-core threat model, requirements traceability and release evidence must not contradict one another. A changed accepted decision is superseded through a new ADR rather than silently rewriting history.
