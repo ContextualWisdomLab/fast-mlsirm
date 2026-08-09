@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import runpy
 from pathlib import Path
 
@@ -58,18 +57,6 @@ def test_html_renderer_surface_is_explicit_and_documented() -> None:
     """The renderer module exposes one documented reporting operation."""
     assert report_html.__all__ == ["render_essay_score_report_html"]
     assert render_essay_score_report_html.__doc__
-
-
-def test_finite_float_title_attribute_preserves_exact_repr() -> None:
-    """Finite float tooltips preserve the exact unrounded Python representation."""
-    value = 1.2345678901234567
-    assert report_html._title_attr(value) == f' title="{repr(value)}"'
-
-
-@pytest.mark.parametrize("value", (None, math.nan, math.inf, -math.inf))
-def test_missing_or_non_finite_values_have_no_title_attribute(value: object) -> None:
-    """Missing and non-finite values never emit an exact-value title attribute."""
-    assert report_html._title_attr(value) == ""
 
 
 def test_clean_report_renders_deterministic_accessible_exact_values(

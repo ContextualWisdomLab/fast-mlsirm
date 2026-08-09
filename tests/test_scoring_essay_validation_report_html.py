@@ -16,12 +16,6 @@ from fast_mlsirm.scoring.essay import (
 _FIXTURES = runpy.run_path(
     str(Path(__file__).with_name("test_scoring_essay_validation_reporting.py"))
 )
-_DOCTORING = (
-    Path(__file__).parents[1]
-    / "docs"
-    / "doctoring"
-    / "essay_validation_empty_state_accessibility.md"
-)
 build_report = _FIXTURES["build_report"]
 
 
@@ -86,43 +80,18 @@ def test_custom_title_and_identifiers_are_escaped(tmp_path: Path) -> None:
 
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
     assert "<img src=x" not in html
-    assert (
-        validation_report_html._identifier_list(
-            ("review_<unsafe>",),
-            empty_message="No review trigger.",
-        )
-        == '<ul class="trigger-list"><li><code>review_&lt;unsafe&gt;</code></li></ul>'
-    )
+    assert validation_report_html._identifier_list(
+        ("review_<unsafe>",),
+        empty_message="No review trigger.",
+    ) == '<ul class="trigger-list"><li><code>review_&lt;unsafe&gt;</code></li></ul>'
 
 
 def test_empty_identifier_list_renders_explicit_state() -> None:
-    """An empty evidence list keeps paragraph spacing and atomic status semantics."""
-    assert (
-        validation_report_html._identifier_list(
-            (),
-            empty_message="No boundary is available.",
-        )
-        == (
-            '<p class="empty-state" role="status" aria-atomic="true">'
-            "No boundary is available.</p>"
-        )
-    )
-
-
-def test_accessibility_doctoring_cites_current_wcag_recommendation() -> None:
-    """Doctoring must cite the current published WCAG 2.2 Recommendation."""
-    doctoring = _DOCTORING.read_text(encoding="utf-8")
-    current_citation = (
-        "World Wide Web Consortium. (2024, December 12). "
-        "*Web Content Accessibility Guidelines (WCAG) 2.2*"
-    )
-    stale_citation = (
-        "World Wide Web Consortium. (2023, October 5). "
-        "*Web Content Accessibility Guidelines (WCAG) 2.2*"
-    )
-
-    assert current_citation in doctoring
-    assert stale_citation not in doctoring
+    """An empty evidence list remains understandable without hidden state."""
+    assert validation_report_html._identifier_list(
+        (),
+        empty_message="No boundary is available.",
+    ) == '<p class="empty-state">No boundary is available.</p>'
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:

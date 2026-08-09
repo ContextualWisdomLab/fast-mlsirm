@@ -142,38 +142,22 @@ Guidance for ANY agent (Claude, Codex, Cursor, opencode, ...) working in this re
 
 ### This repo's role in the ecosystem
 
-**fast-mlsirm** is the reusable, domain-neutral measurement and psychometric
-computation layer. It owns versioned AssessmentSpec/RubricSpecification/Scoring
-contracts, item/rater observations, calibration, model diagnostics, linking,
-DIF/invariance/fairness, factor/model selection, recovery/simulation, and the
-Rust-first numerical kernels that implement those contracts.
+**fast-mlsirm** calibrates LLM-as-a-Judge outputs and manages the quality of the
+measurement/evaluation items used in LLM-as-a-Judge; it incorporates aFIPC
+Fixed-Item Parameter Calibration and kaefa item-fit-based optimal-model search.
 
-`ContextualWisdomLab/psychometrics-commons` is a **downstream consumer** and the
-canonical hosted product repository. It owns product HTTP/admin APIs,
-participant/session/consent/result lifecycle, product persistence/migrations,
-resource authorization, reference clients, research-release orchestration, and
-deployment composition. fast-mlsirm must remain independently installable and
-must never depend on Psychometrics Commons product code, ORM/database models,
-HTTP types, UI code, or deployment configuration.
-
-Cross-repository integration uses explicit versioned contracts or immutable
-artifacts; no product-specific field belongs in fast-mlsirm unless it is
-reusable across independent assessment domains. The hosted product must not be
-recreated under `services/assessment_runtime` in this repository.
-
-`kaefa`, `aFIPC`, and `nonnest2` are not runtime, build, CI-oracle, or release dependencies
-for fast-mlsirm or Psychometrics Commons. Methods needed from the literature are
-implemented in fast-mlsirm from primary methodological sources and independent
-numerical/recovery evidence rather than by embedding those legacy R packages or
-using them as the sole validation oracle.
-
-fast-mlsirm remains one independently usable component of the broader
-ContextualWisdomLab ecosystem. Other repositories own their own bounded
-contexts, including Keyverse for identity/federation, TEPP for temporal/event
-analysis, Gyeot for EMA/ESM collection, semantic-data-portal for research
-catalog/release provenance, contextual-orchestrator for bounded LLM
-orchestration, and EgressWeave for controlled external egress. Treat those as
-integrations, not hidden implementation dependencies.
+It is one component of the ContextualWisdomLab ecosystem, which is organized
+around **naruon** — the hub: an email/PIM system that DOM-decomposes emails and
+files into a persisted knowledge graph. Each component is a **standalone program
+that must ALSO work as a git submodule** (grown separately and together):
+**wardnet** (WAF/IDS/AI SOC/LB/APIM), **clearfolio** (document viewer),
+**pg-erd-cloud** (ERD tool), **contextual-orchestrator** (LLM cost/perf/upstream-LB
+gateway beyond LiteLLM), **codec-carver** (STT/omni-modal speech-video codec),
+**fast-mlsirm** (this repo — LLM-as-a-Judge calibration + evaluation-item quality
+via aFIPC FIPC + kaefa item-fit), **keyverse** (passwordless SSO —
+OIDC/SCIM/ADFS/LDAP/FIDO2/OAuth2.1, eliminate passwords), **newsdom-api**
+(PDF→DOM sidecar), and **semantic-data-portal** (upper-ontology/catalog/governance
+plane with its own graph engine).
 
 ### Research grounding (attach paper PDFs)
 
@@ -181,10 +165,9 @@ Substantive feature/process PRs should find the relevant academic papers and
 **commit their PDFs into the PR** (e.g. a `docs/papers/` or `references/`
 directory) with full citations, respecting copyright: attach the PDF only when
 redistribution is permissible; otherwise cite + link + summarize. For this repo,
-that means the primary IRT/psychometrics and LLM-as-a-Judge measurement
-literature governing the specific method being implemented (see **Key Articles**
-above for the existing MLSIRM/MLS2PLM reference set to build on). Do not treat a
-legacy package implementation as a substitute for primary-source validation.
+that means IRT/psychometrics literature for aFIPC/kaefa item-fit calibration and
+LLM-as-a-Judge evaluation methodology (see **Key Articles** above for the
+existing MLSIRM/MLS2PLM reference set to build on).
 <!-- END cwl-agent-guidance -->
 
 ## Code-owner review gates — disabled (on hold)
