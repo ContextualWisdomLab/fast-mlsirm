@@ -59,6 +59,17 @@ def test_html_renderer_surface_is_explicit_and_documented() -> None:
     assert render_essay_score_report_html.__doc__
 
 
+def test_title_attr_is_only_emitted_for_finite_python_floats() -> None:
+    """Supplemental exact-value titles must not label missing or non-finite data."""
+    assert report_html._title_attr(1.25) == ' title="1.25"'
+    assert report_html._title_attr(-0.0) == ' title="-0.0"'
+    assert report_html._title_attr(None) == ""
+    assert report_html._title_attr(3) == ""
+    assert report_html._title_attr(float("nan")) == ""
+    assert report_html._title_attr(float("inf")) == ""
+    assert report_html._title_attr(float("-inf")) == ""
+
+
 def test_clean_report_renders_deterministic_accessible_exact_values(
     tmp_path: Path,
 ) -> None:
@@ -98,10 +109,14 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
         "outline-offset: 2px; }"
     ) in first
     assert "main:focus-visible" in first
-    assert "main:focus { outline: none; }" in first
+    assert "main:focus { outline: none; }" not in first
     assert "font-variant-numeric: tabular-nums;" in first
     assert "@media (prefers-reduced-motion: reduce)" in first
     assert "transition-duration: 0.01ms !important;" in first
+    assert "@media print" in first
+    assert "body { background: white; color: black; }" in first
+    assert ".skip-link { display: none !important; }" in first
+    assert "section, .table-scroll { break-inside: avoid; }" in first
     assert "tbody:hover tr:not(:hover)" not in first
     assert "<script" not in first.lower()
 
