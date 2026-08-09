@@ -82,6 +82,8 @@ def test_adr_index_contains_material_decisions_and_template() -> None:
         "0006-multilevel-temporal-measurement.md",
         "0007-factor-rotation-selection.md",
         "0008-scientific-ci-release-evidence.md",
+        "0009-purpose-limited-sensitive-data.md",
+        "0010-llm-orchestration-credential-boundary.md",
         "0000-template.md",
     ):
         assert adr in index
@@ -123,6 +125,19 @@ def test_prd_and_trd_preserve_scientific_nonclaims_and_evidence_policy() -> None
     assert "bias and MAE/RMSE" in trd
     assert "relation=unknown" in trd
     assert "No hosted database" in trd
+
+
+def test_privacy_and_llm_credential_authority_remain_explicit() -> None:
+    """Sensitive-data utility and model credentials must not regress to unsafe defaults."""
+
+    privacy = _text("docs/adr/0009-purpose-limited-sensitive-data.md")
+    llm = _text("docs/adr/0010-llm-orchestration-credential-boundary.md")
+    assert "does not adopt blanket PII masking" in privacy
+    assert "purpose limitation" in privacy
+    assert "NVIDIA_NIM_API_KEY" in llm
+    assert "COPILOT_GITHUB_TOKEN" in llm
+    assert "not used as a development model credential" in llm
+    assert "independent review-agent identities" in llm
 
 
 def test_doctoring_records_primary_method_and_standards_baseline() -> None:
