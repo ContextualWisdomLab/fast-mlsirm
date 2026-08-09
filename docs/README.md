@@ -1,6 +1,6 @@
 # fast-mlsirm Documentation Index
 
-Use this page to find the **canonical** product, architecture, technical, decision, scientific, and release documentation. Feature-specific design notes remain useful, but they must not contradict the canonical documents below.
+Use this page to find the **canonical** product, architecture, technical, decision, scientific, security, verification, and release documentation. Feature-specific design notes remain useful, but they must not contradict the canonical documents below.
 
 ## Canonical product and architecture spine
 
@@ -9,9 +9,12 @@ Use this page to find the **canonical** product, architecture, technical, decisi
 - [`TRD.md`](TRD.md) — technical, numerical, psychometric, security, quality, packaging, and verification requirements.
 - [`architecture/UML.md`](architecture/UML.md) — component, contract-class, sequence, activity, state-machine, multilevel/temporal, and deployment views.
 - [`architecture/ERD.md`](architecture/ERD.md) — logical contract/provenance ERD and downstream persistence ownership boundary.
+- [`architecture/THREAT_MODEL.md`](architecture/THREAT_MODEL.md) — core/integration assets, trust boundaries, threat classes, controls, misuse cases, and assurance boundary.
+- [`verification_validation_plan.md`](verification_validation_plan.md) — software, numerical, scientific, AI-evaluator, recovery, generalization, security, performance, and release V&V evidence plan.
 - [`adr/README.md`](adr/README.md) — Architecture Decision Record index and governance.
 - [`requirements_traceability.md`](requirements_traceability.md) — PRD → TRD/ADR → implementation/evidence maturity map.
 - [`documentation_coverage.md`](documentation_coverage.md) — completeness audit and remaining documentation debt.
+- [`doctoring/architecture_governance_baseline.md`](doctoring/architecture_governance_baseline.md) — standards/source review, APA 7 references, enterprise-assurance positioning, and falsification criteria for this baseline.
 
 ## Core contract documentation
 
@@ -38,10 +41,12 @@ These are evidence and go-to-market artifacts. They must bind to an exact releas
 
 1. **PRD** states what the product must do and what it deliberately does not own.
 2. **TRD** states enforceable technical/scientific constraints.
-3. **ARCHITECTURE/UML/ERD** state how responsibilities, components, information, and flows are structured.
+3. **ARCHITECTURE/UML/ERD/THREAT MODEL** state how responsibilities, components, information, trust boundaries, and flows are structured.
 4. **ADRs** explain durable choices and rejected alternatives.
-5. **Feature/method docs** explain a particular implementation or research method.
-6. **Traceability** identifies implementation/evidence maturity.
-7. **Release evidence** proves the exact artifact that was actually tested.
+5. **V&V plan** states what evidence is required to verify implementation and validate scientific/product claims.
+6. **Feature/method docs** explain a particular implementation or research method.
+7. **Traceability** identifies implementation/evidence maturity.
+8. **Doctoring** records source/equation/standards audit and interpretation boundaries.
+9. **Release evidence** proves the exact artifact that was actually tested.
 
 If two documents disagree, fix or explicitly supersede the stale document rather than allowing multiple authoritative interpretations to persist.
