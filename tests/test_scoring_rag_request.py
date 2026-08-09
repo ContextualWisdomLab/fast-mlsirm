@@ -45,6 +45,7 @@ def _request(**overrides: Any) -> ScoringRequest:
         "system_configuration_id": "retrieval_stack_a",
         "system_configuration_fingerprint": SYSTEM_FP,
         "system_run_id": "retrieval_stack_a_run_001",
+        "response_id": "generated_response_001",
         "retrieval_run_fingerprint": RETRIEVAL_FP,
         "response_content_fingerprint": RESPONSE_FP,
         "occasion_id": "evaluation_wave_001",
@@ -81,19 +82,22 @@ def test_public_rag_contract_uses_explicit_evidence_and_visibility_enums() -> No
 
 
 def test_rag_request_reuses_shared_scoring_axes_without_parallel_schema() -> None:
-    """System configuration, stochastic run, and query revision map to shared axes."""
+    """System run, generated response, and query revision map to shared axes."""
     request = _request()
 
     assert isinstance(request, ScoringRequest)
     assert request.granularity is ObservationGranularity.CRITERION_LEVEL
-    assert request.respondent_id == "retrieval_stack_a"
-    assert request.response_id == "retrieval_stack_a_run_001"
+    assert request.respondent_id == "retrieval_stack_a_run_001"
+    assert request.response_id == "generated_response_001"
     assert request.task_id == "refund_policy_query"
     assert request.task_revision_fingerprint == QUERY_FP
     assert request.task_family_id == "evidence_review"
     assert request.response_content_fingerprint == RESPONSE_FP
     assert request.occasion_id == "evaluation_wave_001"
     assert request.criterion_ids == ("answer_relevance", "grounded_generation")
+    assert request.to_dict()["metadata"]["rag_system_configuration_id"] == (
+        "retrieval_stack_a"
+    )
 
 
 def test_rag_request_preserves_reference_free_provenance_without_raw_text() -> None:
@@ -105,6 +109,7 @@ def test_rag_request_preserves_reference_free_provenance_without_raw_text() -> N
     assert metadata["evaluation_split"] == "offline_holdout"
     assert metadata["rag_evidence_regime"] == "retrieved_context"
     assert metadata["rag_candidate_visibility"] == "candidate_blind"
+    assert metadata["rag_system_configuration_id"] == "retrieval_stack_a"
     assert metadata["rag_system_configuration_fingerprint"] == SYSTEM_FP
     assert metadata["rag_retrieval_run_fingerprint"] == RETRIEVAL_FP
     assert metadata["rag_query_revision_fingerprint"] == QUERY_FP
@@ -137,18 +142,22 @@ def test_rag_request_preserves_reference_free_provenance_without_raw_text() -> N
 
 
 def test_stochastic_runs_do_not_collapse_into_one_system_identity() -> None:
-    """One configuration can produce distinct governed run observations."""
+    """One configuration can produce distinct governed run respondents."""
     first = _request()
     second = _request(
         system_run_id="retrieval_stack_a_run_002",
+        response_id="generated_response_002",
         retrieval_run_fingerprint=SECOND_RETRIEVAL_FP,
         response_content_fingerprint=SECOND_RESPONSE_FP,
     )
 
-    assert first.respondent_id == second.respondent_id == "retrieval_stack_a"
+    assert first.respondent_id != second.respondent_id
     assert first.response_id != second.response_id
     assert first.response_content_fingerprint != second.response_content_fingerprint
     assert first.request_fingerprint != second.request_fingerprint
+    assert first.to_dict()["metadata"]["rag_system_configuration_id"] == (
+        second.to_dict()["metadata"]["rag_system_configuration_id"]
+    )
     assert first.to_dict()["metadata"]["rag_system_configuration_fingerprint"] == (
         second.to_dict()["metadata"]["rag_system_configuration_fingerprint"]
     )
@@ -171,6 +180,7 @@ def test_rag_managed_metadata_cannot_be_spoofed_by_callers() -> None:
     for key, value in (
         ("rag_evidence_regime", "human_anchor"),
         ("rag_candidate_visibility", "candidate_visible_crossfit"),
+        ("rag_system_configuration_id", "spoofed_configuration"),
         ("rag_system_configuration_fingerprint", SYSTEM_FP),
         ("rag_retrieval_run_fingerprint", RETRIEVAL_FP),
         ("rag_query_revision_fingerprint", QUERY_FP),
