@@ -40,11 +40,13 @@ _MANAGED_METADATA_KEYS = frozenset(
     {
         "rag_evidence_regime",
         "rag_candidate_visibility",
+        "rag_system_configuration_id",
         "rag_system_configuration_fingerprint",
         "rag_retrieval_run_fingerprint",
         "rag_query_revision_fingerprint",
     }
 )
+_ALLOWED_CALLER_METADATA_KEYS = frozenset({"evaluation_split"})
 
 
 def _rag_metadata(
@@ -52,17 +54,30 @@ def _rag_metadata(
     metadata: Mapping[str, Any] | None,
     evidence_regime: RAGEvidenceRegime,
     candidate_visibility: RAGCandidateVisibility,
+    system_configuration_id: str,
     system_configuration_fingerprint: str,
     retrieval_run_fingerprint: str,
     query_revision_fingerprint: str,
 ) -> dict[str, Any]:
-    """Return bounded caller metadata plus package-managed RAG provenance."""
+    """Return allowlisted caller metadata plus package-managed RAG provenance."""
     raw_metadata: Mapping[str, Any] = {} if metadata is None else metadata
     if not isinstance(raw_metadata, Mapping):
         raise assessment_error(
             "invalid_rag_metadata",
             "$.metadata",
             "metadata must be a mapping",
+        )
+    if any(key in raw_metadata for key in _MANAGED_METADATA_KEYS):
+        raise assessment_error(
+            "reserved_rag_metadata",
+            "$.metadata",
+            "RAG provenance metadata is package-managed",
+        )
+    if any(key not in _ALLOWED_CALLER_METADATA_KEYS for key in raw_metadata):
+        raise assessment_error(
+            "unsupported_rag_metadata",
+            "$.metadata",
+            "metadata key is not allowed for RAG scoring requests",
         )
     frozen = freeze_metadata(raw_metadata)
     if not isinstance(frozen, Mapping):
@@ -78,16 +93,11 @@ def _rag_metadata(
             "$.metadata",
             "metadata must be a mapping",
         )
-    if any(key in output for key in _MANAGED_METADATA_KEYS):
-        raise assessment_error(
-            "reserved_rag_metadata",
-            "$.metadata",
-            "RAG provenance metadata is package-managed",
-        )
     output.update(
         {
             "rag_evidence_regime": evidence_regime.value,
             "rag_candidate_visibility": candidate_visibility.value,
+            "rag_system_configuration_id": system_configuration_id,
             "rag_system_configuration_fingerprint": system_configuration_fingerprint,
             "rag_retrieval_run_fingerprint": retrieval_run_fingerprint,
             "rag_query_revision_fingerprint": query_revision_fingerprint,
@@ -109,6 +119,7 @@ def build_rag_scoring_request(
     system_configuration_id: str,
     system_configuration_fingerprint: str,
     system_run_id: str,
+    response_id: str,
     retrieval_run_fingerprint: str,
     response_content_fingerprint: str,
     occasion_id: str,
@@ -120,16 +131,18 @@ def build_rag_scoring_request(
     """Build one provenance-bound criterion-level RAG scoring request.
 
     The RAG-specific identities are projected onto the shared scoring axes:
-    system configuration -> respondent, stochastic system run -> response,
-    query -> task, exact query revision -> task revision, and query testlet ->
-    task family. Evidence regime, candidate visibility, retrieval-run identity,
-    and system-configuration identity are package-managed metadata and therefore
-    participate in the canonical request fingerprint.
+    stochastic system run -> respondent, generated answer -> response, query ->
+    task, exact query revision -> task revision, and query testlet -> task
+    family. System configuration identity, evidence regime, candidate visibility,
+    retrieval-run identity, and exact configuration/revision fingerprints are
+    package-managed metadata and therefore participate in the canonical request
+    fingerprint.
 
     Raw query, context, answer, and source text are intentionally absent from
-    this interface. A reference-free request records its evidence regime; it
-    does not imply world correctness, absolute retrieval recall, or deployment
-    validity.
+    this interface. Caller metadata is intentionally allowlisted to prevent raw
+    content from being smuggled into the canonical artifact. A reference-free
+    request records its evidence regime; it does not imply world correctness,
+    absolute retrieval recall, or deployment validity.
     """
     normalized_regime = enum_value(
         evidence_regime,
@@ -163,6 +176,7 @@ def build_rag_scoring_request(
         metadata=metadata,
         evidence_regime=normalized_regime,
         candidate_visibility=normalized_visibility,
+        system_configuration_id=system_configuration_id,
         system_configuration_fingerprint=normalized_system_fingerprint,
         retrieval_run_fingerprint=normalized_retrieval_fingerprint,
         query_revision_fingerprint=normalized_query_revision,
@@ -173,8 +187,8 @@ def build_rag_scoring_request(
         assessment=assessment,
         rubric=rubric,
         granularity=ObservationGranularity.CRITERION_LEVEL,
-        respondent_id=system_configuration_id,
-        response_id=system_run_id,
+        respondent_id=system_run_id,
+        response_id=response_id,
         task_id=query_id,
         task_revision_fingerprint=normalized_query_revision,
         task_family_id=query_testlet_id,
