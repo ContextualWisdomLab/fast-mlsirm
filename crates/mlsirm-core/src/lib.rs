@@ -31,6 +31,7 @@ pub mod poly;
 pub mod poly_marginal;
 pub(crate) mod quadrature;
 pub mod rasch_cml;
+pub mod rating_range;
 pub mod reliability;
 pub mod rsm;
 pub mod rt;
