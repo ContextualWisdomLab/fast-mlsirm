@@ -15,6 +15,8 @@ logical data/artifact model.
   ownership rules.
 - [`../requirements-traceability.md`](../requirements-traceability.md) —
   conversation/research-to-code/evidence coverage matrix.
+- [`../security/threat-model.md`](../security/threat-model.md) — reusable package,
+  numerical, provider/agent, privacy and supply-chain threat model.
 
 ## Interpretation rule
 
