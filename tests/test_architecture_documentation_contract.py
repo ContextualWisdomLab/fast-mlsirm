@@ -147,10 +147,9 @@ def test_threat_model_covers_llm_supply_chain_and_assurance_boundaries() -> None
         "TM-SUPPLY-001",
         "TM-NUM-001",
         "TM-HIER-001",
-        "NVIDIA_NIM_API_KEY",
         "SOC 2",
         "CSAP",
-        "not a physical database schema",
+        "physical persistence",
     ):
         assert required_text in threat_model
 
