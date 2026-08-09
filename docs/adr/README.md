@@ -24,6 +24,8 @@ A code path cannot be declared `Accepted` merely because a Draft PR exists. If a
 | [0006](0006-multilevel-temporal-measurement.md) | Proposed | Reusable measurement must preserve multilevel, multiple-membership, cross-classified, testlet, and temporal structure |
 | [0007](0007-factor-rotation-selection.md) | Accepted | No universal rotation criterion/global optimum claim; registry + multi-start + stability/recovery/theory evidence |
 | [0008](0008-scientific-ci-release-evidence.md) | Accepted | True-parameter recovery, bounded PR smoke, scheduled heavy studies, and exact-head release provenance govern scientific releases |
+| [0009](0009-purpose-limited-sensitive-data.md) | Accepted | Preserve legitimate sensitive-data utility through minimization, separated identity/evidence domains, authorization and purpose limitation rather than blanket masking |
+| [0010](0010-llm-orchestration-credential-boundary.md) | Accepted | LLM orchestration is optional; NVIDIA NIM model credentials remain separate from independent reviewer and merge authority |
 
 ## ADR creation rule
 
