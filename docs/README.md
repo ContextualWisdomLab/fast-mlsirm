@@ -10,6 +10,8 @@ This index distinguishes governing product/architecture documents from implement
 | [`PRD.md`](PRD.md) | Product requirements, users, workflows, non-goals, acceptance boundaries |
 | [`TRD.md`](TRD.md) | Technical realization, numerical/runtime/security/resource/release requirements |
 | [`adr/README.md`](adr/README.md) | Durable architecture/scientific decision log and status history |
+| [`standards_watch.md`](standards_watch.md) | Published governing standards versus draft/revision watch items; no certification shortcut |
+| [`verification_validation_plan.md`](verification_validation_plan.md) | Software, numerical, scientific, scoring/RAG, recovery, security, packaging and exact-artifact V&V evidence |
 | [`uml/README.md`](uml/README.md) | PlantUML component, sequence, lifecycle, model-selection and deployment views |
 | [`erd/domain-model.puml`](erd/domain-model.puml) | Logical reusable-domain artifact relationships; **not** a hosted ORM schema |
 | [`traceability/requirements-matrix.md`](traceability/requirements-matrix.md) | PRD/TRD/ADR -> protected-main implementation/evidence maturity |
@@ -28,8 +30,10 @@ This index distinguishes governing product/architecture documents from implement
 2. Accepted ADRs define governing architecture/scientific decisions.
 3. PRD/TRD define product/technical requirements and non-claims.
 4. `ARCHITECTURE.md`, UML/ERD and the threat model define coherent system views.
-5. Method-specific doctoring and primary literature justify local scientific/interoperability details.
-6. Proposed ADRs, open PRs/issues and plans describe future/active work and are not released capability merely because they exist.
+5. The standards watch defines which published editions may govern claims and which drafts/revisions are only monitored.
+6. The V&V plan defines what evidence is needed to verify software behavior and validate scientific/product interpretations.
+7. Method-specific doctoring and primary literature justify local scientific/interoperability details.
+8. Proposed ADRs, open PRs/issues and plans describe future/active work and are not released capability merely because they exist.
 
 A conversation or PR body is discovery evidence until the durable decision is captured in the documents above.
 
@@ -39,7 +43,7 @@ A conversation or PR body is discovery evidence until the durable decision is ca
 
 ## Completeness gate
 
-A material change is incomplete if it creates a contradiction among code, accepted ADRs, PRD/TRD, architecture diagrams, security/threat model, traceability, doctoring or release evidence. The documentation-contract test and `documentation_coverage.md` make these gaps visible; a missing or stale canonical artifact is release-maintenance debt rather than harmless prose drift.
+A material change is incomplete if it creates a contradiction among code, accepted ADRs, PRD/TRD, architecture diagrams, security/threat model, standards status, V&V evidence, traceability, doctoring or release evidence. The documentation-contract test and `documentation_coverage.md` make these gaps visible; a missing or stale canonical artifact is release-maintenance debt rather than harmless prose drift.
 
 ## Cross-repository boundary
 
