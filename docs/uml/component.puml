@@ -1,0 +1,62 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+title fast-mlsirm component architecture
+
+actor "Independent Python/Rust Consumer" as Consumer
+component "Psychometrics Commons\n(downstream hosted product)" as Commons <<external>>
+
+package "fast-mlsirm" {
+  component "Python Public API / CLI" as PyAPI
+  component "Assessment + Rubric Contracts" as Contracts
+  component "Scoring + Domain Adapters" as Scoring
+  component "Validation + Model Selection" as Validation
+  component "Reports + Audit Evidence" as Reports
+  component "PyO3 Binding Registry" as PyO3
+  component "Rust Psychometric Core" as RustCore
+  component "CPU Parallel Runtime" as CPU
+  component "GPU Kernels" as GPU
+  component "Release / Recovery / Governance Evidence" as Evidence
+}
+
+component "contextual-orchestrator" as Orchestrator <<external>>
+component "TEPP" as TEPP <<external>>
+component "Gyeot" as Gyeot <<external>>
+component "semantic-data-portal" as Portal <<external>>
+component "EgressWeave" as Egress <<external>>
+
+Consumer --> PyAPI : package API
+Commons --> PyAPI : versioned contracts/results
+PyAPI --> Contracts
+PyAPI --> Scoring
+PyAPI --> Validation
+Scoring --> Contracts
+Validation --> Contracts
+Scoring --> PyO3 : numeric handoff
+Validation --> PyO3 : numeric handoff
+PyO3 --> RustCore
+RustCore --> CPU
+RustCore --> GPU : optional device path
+PyAPI --> Reports
+Reports --> Contracts
+Evidence --> PyAPI : acceptance / provenance
+
+Scoring ..> Orchestrator : optional LLM orchestration
+PyAPI ..> TEPP : explicit integration only
+PyAPI ..> Gyeot : explicit integration only
+PyAPI ..> Portal : immutable research artifact handoff
+PyAPI ..> Egress : host-controlled external egress
+
+note right of RustCore
+  Production psychometric arithmetic owner.
+  Python does not duplicate released numerical kernels.
+end note
+
+note bottom of Commons
+  Owns HTTP/session/consent/result DB/UI/deployment.
+  fast-mlsirm never depends on Commons product code.
+end note
+
+@enduml
