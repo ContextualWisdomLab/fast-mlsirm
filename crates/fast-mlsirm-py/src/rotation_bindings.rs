@@ -5,7 +5,8 @@ use mlsirm_core::rotation::{
     rotation_criterion_from_name as core_rotation_criterion_from_name,
     select_rotation_criterion as core_select_rotation_criterion,
     RotationConfig as CoreRotationConfig, RotationMode as CoreRotationMode,
-    RotationSelectionPolicy as CoreRotationSelectionPolicy, RotationSolution as CoreRotationSolution,
+    RotationSelectionPolicy as CoreRotationSelectionPolicy,
+    RotationSolution as CoreRotationSolution,
 };
 use numpy::{PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -13,18 +14,13 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyModule};
 use pyo3::wrap_pyfunction;
 
-fn optional_matrix_values(
-    value: Option<PyReadonlyArray2<'_, f64>>,
-) -> PyResult<Option<Vec<f64>>> {
+fn optional_matrix_values(value: Option<PyReadonlyArray2<'_, f64>>) -> PyResult<Option<Vec<f64>>> {
     Ok(value
         .map(|array| array.as_slice().map(|slice| slice.to_vec()))
         .transpose()?)
 }
 
-fn rotation_solution_dict(
-    py: Python<'_>,
-    solution: &CoreRotationSolution,
-) -> PyResult<Py<PyDict>> {
+fn rotation_solution_dict(py: Python<'_>, solution: &CoreRotationSolution) -> PyResult<Py<PyDict>> {
     let out = PyDict::new(py);
     out.set_item("pattern_matrix", solution.pattern_matrix.clone())?;
     out.set_item("structure_matrix", solution.structure_matrix.clone())?;
@@ -256,10 +252,7 @@ fn py_select_rotation_criterion(
         candidate_dict.set_item("solution", rotation_solution_dict(py, &candidate.solution)?)?;
         candidate_dict.set_item("row_complexity", candidate.row_complexity)?;
         candidate_dict.set_item("factor_balance", candidate.factor_balance)?;
-        candidate_dict.set_item(
-            "max_factor_correlation",
-            candidate.max_factor_correlation,
-        )?;
+        candidate_dict.set_item("max_factor_correlation", candidate.max_factor_correlation)?;
         candidate_dict.set_item("convergence_rate", candidate.convergence_rate)?;
         candidate_dict.set_item("basin_support_rate", candidate.basin_support_rate)?;
         candidate_dict.set_item("bootstrap_congruence", candidate.bootstrap_congruence)?;
