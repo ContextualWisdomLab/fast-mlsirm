@@ -9,6 +9,7 @@ authorization.
 from __future__ import annotations
 
 import json
+import math
 from html import escape
 from pathlib import Path
 
@@ -62,6 +63,13 @@ def _content_security_policy() -> str:
     )
 
 
+def _title_attr(value: object | None) -> str:
+    """Return an exact string title attribute for finite floats, else empty."""
+    if isinstance(value, float) and math.isfinite(value):
+        return f' title="{escape(repr(value))}"'
+    return ""
+
+
 def _display(value: object | None) -> str:
     """Return one escaped exact display value with an explicit missing marker."""
     return "Not applicable" if value is None else escape(str(value))
@@ -71,7 +79,12 @@ def _definition_rows(rows: tuple[tuple[str, object], ...]) -> str:
     """Render exact key-value provenance as a semantic definition list."""
     items = []
     for label, value in rows:
-        items.extend((f"<dt>{escape(label)}</dt>", f"<dd>{_display(value)}</dd>"))
+        items.extend(
+            (
+                f"<dt>{escape(label)}</dt>",
+                f"<dd{_title_attr(value)}>{_display(value)}</dd>",
+            )
+        )
     return "\n".join(('<dl class="details-grid">', *items, "</dl>"))
 
 
@@ -110,9 +123,11 @@ def _table(
         cells = []
         for column_index, value in enumerate(row):
             if column_index == row_header_column:
-                cells.append(f'<th scope="row">{_display(value)}</th>')
+                cells.append(
+                    f'<th scope="row"{_title_attr(value)}>{_display(value)}</th>'
+                )
             else:
-                cells.append(f"<td>{_display(value)}</td>")
+                cells.append(f"<td{_title_attr(value)}>{_display(value)}</td>")
         body.append(f"<tr>{''.join(cells)}</tr>")
     return "\n".join(
         (
@@ -222,6 +237,11 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+@media print {
+  body { background: white; color: black; }
+  .skip-link { display: none !important; }
+  section, .table-scroll { break-inside: avoid; }
 }
 """.strip()
 
