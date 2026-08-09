@@ -1,6 +1,6 @@
 # Product Requirements Document — fast-mlsirm
 
-Status: authoritative product requirements baseline.
+Status: candidate authoritative product requirements baseline; becomes normative when merged to protected `main`. Requirements describe intended product behavior and are **not** evidence that every capability is already shipped. Current implementation maturity and requirement-to-evidence traceability live in `docs/architecture/capability_maturity.md` and `docs/requirements_traceability.md`.
 
 ## 1. Product definition
 
@@ -123,7 +123,9 @@ Those concerns belong to downstream hosted products or bounded service repositor
 
 A vertical slice is product-ready only when:
 
-- the end-to-end public contract is implemented, not merely an internal kernel;
+- the end-to-end public contract is implemented, not merely an internal kernel or design document;
+- `docs/architecture/capability_maturity.md` can truthfully promote the capability based on protected-main evidence;
+- `docs/requirements_traceability.md` identifies the owner, governing ADR/architecture and verification evidence;
 - the exact current head passes required tests/security/package/provenance gates;
 - documentation and APA 7 equation-to-source traceability match the implementation;
 - realistic recovery/agreement/fairness/compatibility evidence exists as applicable;
