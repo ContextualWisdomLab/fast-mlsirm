@@ -558,6 +558,7 @@ body {
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .skip-link {
@@ -700,7 +701,6 @@ h3 {
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
-  transition: opacity 0.2s ease;
 }
 
 .bar-label,
@@ -820,7 +820,7 @@ tr:last-child td {
 }
 
 tbody tr {
-  transition: background-color 0.15s ease-in-out, opacity 0.2s ease;
+  transition: background-color 0.15s ease-in-out;
 }
 
 tbody tr:hover {
