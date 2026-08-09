@@ -45,7 +45,8 @@ def test_hourly_caller_is_bounded_to_fast_mlsirm_current_head_repairs() -> None:
     assert 'max_prs: "50"' in workflow
     assert 'max_dispatches: "1"' in workflow
     assert 'retry_hours: "1"' in workflow
-    assert "cancel-in-progress: true" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "cancel-in-progress: true" not in workflow
 
 
 def test_hourly_caller_preserves_least_privilege_and_secret_boundaries() -> None:
