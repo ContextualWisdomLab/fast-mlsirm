@@ -9,6 +9,7 @@ authorization.
 from __future__ import annotations
 
 import json
+import math
 from html import escape
 from pathlib import Path
 
@@ -62,6 +63,13 @@ def _content_security_policy() -> str:
     )
 
 
+def _title_attr(value: object | None) -> str:
+    """Return an exact string title attribute for finite floats, else empty."""
+    if isinstance(value, float) and math.isfinite(value):
+        return f' title="{escape(repr(value))}"'
+    return ""
+
+
 def _display(value: object | None) -> str:
     """Return one escaped exact display value with an explicit missing marker."""
     return "Not applicable" if value is None else escape(str(value))
@@ -71,7 +79,12 @@ def _definition_rows(rows: tuple[tuple[str, object], ...]) -> str:
     """Render exact key-value provenance as a semantic definition list."""
     items = []
     for label, value in rows:
-        items.extend((f"<dt>{escape(label)}</dt>", f"<dd>{_display(value)}</dd>"))
+        items.extend(
+            (
+                f"<dt>{escape(label)}</dt>",
+                f"<dd{_title_attr(value)}>{_display(value)}</dd>",
+            )
+        )
     return "\n".join(('<dl class="details-grid">', *items, "</dl>"))
 
 
@@ -81,15 +94,41 @@ def _table(
     headers: tuple[str, ...],
     rows: tuple[tuple[object | None, ...], ...],
     empty_message: str,
+    row_header_column: int | None = None,
 ) -> str:
-    """Render an accessible exact-value table or one explicit empty state."""
+    """Render one exact-value table with an explicitly identified row-header column.
+
+    ``row_header_column`` is zero-based and must name a real header. Leaving it
+    as ``None`` emits only data cells in ``tbody``. Every non-empty row must
+    match the declared header width so semantic associations cannot drift from
+    the serialized values.
+    """
+    if row_header_column is not None and (
+        isinstance(row_header_column, bool)
+        or not isinstance(row_header_column, int)
+        or row_header_column < 0
+        or row_header_column >= len(headers)
+    ):
+        raise ValueError("row_header_column must identify an existing table header")
     if not rows:
         return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
+    if not headers:
+        raise ValueError("table headers must not be empty when rows are present")
+    if any(len(row) != len(headers) for row in rows):
+        raise ValueError("every table row must match the declared header width")
+
     heading = "".join(f'<th scope="col">{escape(header)}</th>' for header in headers)
     body = []
     for row in rows:
-        cells = "".join(f"<td>{_display(value)}</td>" for value in row)
-        body.append(f"<tr>{cells}</tr>")
+        cells = []
+        for column_index, value in enumerate(row):
+            if column_index == row_header_column:
+                cells.append(
+                    f'<th scope="row"{_title_attr(value)}>{_display(value)}</th>'
+                )
+            else:
+                cells.append(f"<td{_title_attr(value)}>{_display(value)}</td>")
+        body.append(f"<tr>{''.join(cells)}</tr>")
     return "\n".join(
         (
             '<div class="table-scroll" tabindex="0" role="region" '
@@ -183,7 +222,8 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
@@ -197,6 +237,11 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+@media print {
+  body { background: white; color: black; }
+  .skip-link { display: none !important; }
+  section, .table-scroll { break-inside: avoid; }
 }
 """.strip()
 
@@ -240,6 +285,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
         ),
         rows=_criterion_rows(report),
         empty_message="No criterion observations are available.",
+        row_header_column=0,
     )
     evidence = _table(
         caption="Source-text-free evidence references",

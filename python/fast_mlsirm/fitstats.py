@@ -797,10 +797,18 @@ def infit_outfit(
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)
-    resid2 = (y - p) ** 2 * observed
+    resid2 = np.subtract(y, p)
+    np.square(resid2, out=resid2)
+    np.multiply(resid2, observed, out=resid2)
     n_obs = np.maximum(observed.sum(axis=0), 1)
-    outfit = (resid2 / v * observed).sum(axis=0) / n_obs
-    infit = resid2.sum(axis=0) / np.maximum((v * observed).sum(axis=0), 1e-12)
+
+    # Preserve the masked squared-residual numerator, then reuse its owned
+    # float64 buffer for the outfit division without a numeric mask copy.
+    resid2_sum = resid2.sum(axis=0)
+    infit_denominator = np.sum(v, axis=0, where=observed)
+    np.divide(resid2, v, out=resid2)
+    outfit = resid2.sum(axis=0) / n_obs
+    infit = resid2_sum / np.maximum(infit_denominator, 1e-12)
     return {"infit": infit, "outfit": outfit}
 
 

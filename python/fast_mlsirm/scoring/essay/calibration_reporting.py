@@ -96,6 +96,26 @@ def _validate_loglik_trace(values: tuple[float, ...]) -> None:
             )
 
 
+def _validate_iteration_trace_length(
+    n_iter: int,
+    trace_length: int,
+    converged: bool,
+    *,
+    path: str,
+) -> None:
+    """Require exact Rust trace cardinality without dropping terminal evidence."""
+    valid_lengths = {n_iter}
+    if not converged:
+        valid_lengths.add(n_iter + 1)
+    if trace_length not in valid_lengths:
+        raise assessment_error(
+            "facets_iteration_trace_mismatch",
+            path,
+            "trace length must equal n_iter, or n_iter + 1 for a "
+            "nonconverged terminal evaluation",
+        )
+
+
 def _category_values(values: Iterable[int]) -> tuple[int, ...]:
     """Return one sorted unique estimator category scale of exact integers."""
     output = tuple(values)
@@ -317,12 +337,13 @@ def build_essay_facets_calibration_report(
     _validate_loglik_trace(loglik_trace)
 
     n_iter = _exact_integer(fit.n_iter, "n_iter", minimum=1)
-    if n_iter != len(loglik_trace):
-        raise assessment_error(
-            "facets_iteration_trace_mismatch",
-            "$.n_iter",
-            "n_iter must equal the number of recorded log-likelihood iterations",
-        )
+    converged = strict_boolean(fit.converged, "converged")
+    _validate_iteration_trace_length(
+        n_iter,
+        len(loglik_trace),
+        converged,
+        path="$.n_iter",
+    )
     n_parameters = _exact_integer(fit.n_parameters, "n_parameters", minimum=1)
     expected_parameters = (
         len(design.task_revision_fingerprints)
@@ -337,7 +358,6 @@ def build_essay_facets_calibration_report(
             "$.n_parameters",
             "n_parameters does not match the Rust facets model contract",
         )
-    converged = strict_boolean(fit.converged, "converged")
     design_connected = strict_boolean(design.connected, "design_connected")
     fit_connected = strict_boolean(fit.connected, "fit_connected")
     if fit_connected is not design_connected:

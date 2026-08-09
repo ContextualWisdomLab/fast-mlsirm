@@ -558,6 +558,7 @@ body {
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .skip-link {
@@ -573,6 +574,7 @@ body {
   font-weight: bold;
 }
 
+.skip-link:focus,
 .skip-link:focus-visible {
   top: 0;
   outline: 3px solid var(--teal);
@@ -694,16 +696,11 @@ h3 {
   margin-bottom: 16px;
 }
 
-.bar-chart:hover .bar-row:not(:hover) {
-  opacity: 0.5;
-}
-
 .bar-row {
   display: grid;
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
-  transition: opacity 0.2s ease;
 }
 
 .bar-label,
@@ -823,15 +820,11 @@ tr:last-child td {
 }
 
 tbody tr {
-  transition: background-color 0.15s ease-in-out, opacity 0.2s ease;
+  transition: background-color 0.15s ease-in-out;
 }
 
 tbody tr:hover {
   background: var(--hover-bg);
-}
-
-tbody:hover tr:not(:hover) {
-  opacity: 0.5;
 }
 
 .empty-state {

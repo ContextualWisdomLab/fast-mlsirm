@@ -6,6 +6,11 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Exact-value tooltips and print optimization for essay HTML reports
+
+- Supplemental native `title` tooltips exposing unrounded exact float representations on formatted cells in essay score HTML reports.
+- CSS `@media print` rules enforcing black-on-white text, hiding interactive skip links, and avoiding awkward page breaks for print and PDF exports.
+
 #### Enterprise criterion-level observation adapter
 
 - Added `build_enterprise_issue_score_observation`, which compiles exact
@@ -69,6 +74,28 @@
 - Added fail-closed provenance, source-revision, sensitive-metadata, and ordering
   tests for the first issue #404 domain-adapter slice.
 
+#### Governed enterprise issue facets calibration reports
+
+- Added `fit_enterprise_issue_facets_calibration_reports()` as a bounded governed
+  workflow from exact enterprise issue scoring executions to one existing shared
+  `ScoringFacetsCalibrationReport` per criterion.
+- Reused the enterprise provenance replay and shared calibration bundle assembler,
+  then delegated every criterion design to the existing Rust-backed shared report
+  helper without adding an enterprise-specific fit, report schema, or statistical
+  arithmetic.
+- Added package-managed bundle, design, and criterion report provenance,
+  deterministic execution-order invariance, one-time review-trigger
+  normalization, source-free caller metadata, and reserved-key rejection.
+- Added fail-closed batch validation of every derived report identifier before any
+  Rust estimator delegation, preventing an overlong prefix-and-criterion
+  combination from producing a partially fitted report tuple.
+- Added a realistic connected two-issue, two-task-revision, two-rater-family,
+  two-criterion Rust fit, complete orchestration and privacy tests, public
+  documentation, and APA 7th scientific and governance traceability.
+- Aligned shared report and HTML replay validation with the Rust estimator's
+  nonconverged trace contract: `n_iter` optimization iterations may be followed
+  by one retained terminal post-update likelihood evaluation.
+
 #### Governed enterprise issue many-facet handoff
 
 - Added `build_enterprise_issue_facets_rating_records()` as a fail-closed replay
@@ -120,6 +147,7 @@
 - Added `render_essay_facets_calibration_report_html`, which replay-verifies one governed `EssayFacetsCalibrationReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
 - The artifact exposes exact report, design, assessment, rubric, construct, occasion, criterion, respondent, task-revision, rater-engine, category, estimate, convergence, connectedness, iteration, and review-trigger evidence through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
 - A restrictive meta-delivered Content Security Policy and output encoding reduce injection impact; convergence and connectedness remain integrity prerequisites and do not establish model fit, reliability, fairness, scorer interchangeability, construct validity, global optimality, or deployment authorization.
+- Confined report publication to a canonical caller-approved output directory, with current-working-directory defaults, traversal and absolute-escape rejection, existing symlink-parent resolution, post-creation parent revalidation, and fail-closed non-directory roots.
 
 #### Governed essay many-facet calibration reports
 
@@ -152,17 +180,6 @@
 - Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
 - Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
 
-#### Hourly bounded review-repair caller
-
-- Added a schedule-only fast-mlsirm caller that runs at minute 37 every hour and
-  delegates to one immutable organization-owned review-repair workflow.
-- Bounded each run to one new repair dispatch, one-hour same-head retries,
-  protected `main`, product-level single-flight concurrency, and explicit
-  scheduler credentials without direct model secrets or inherited secrets.
-- Added permanent caller-contract tests and APA 7th doctoring for default-branch
-  activation, immutable reusable-workflow source, failure behavior, rollback,
-  and the NVIDIA NIM control-plane boundary.
-
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
@@ -183,6 +200,31 @@
 
 ### Changed
 
+#### Explicit criterion row headers in governed HTML reports
+
+- Replaced positional first-column row-header inference with an explicit
+  zero-based `row_header_column` contract in the governed essay score renderer.
+- Emit `<th scope="row">` only for criterion identifiers; evidence-reference
+  values remain data cells, and malformed header/row widths fail closed.
+- Added complete-artifact parsing tests that verify table semantics and exact
+  canonical JSON reconstruction, plus APA 7th WCAG 2.2 doctoring.
+
+#### Bounded fit-statistics fallback buffers
+
+- Reused one owned NumPy squared-residual buffer for fallback infit/outfit calculations, retained the infit numerator before in-place division, and used a Boolean `where=` reduction for the variance denominator without a full numeric mask copy.
+- Added deterministic sparse-missingness and clipped-probability parity contracts plus an environment-specific benchmark while retaining Rust as the production fit-statistics backend.
+
+#### Essay-validation empty-state status semantics
+
+- Marked empty identifier evidence in standalone essay-validation HTML reports as a WAI-ARIA `status` region with explicit `aria-atomic="true"`, while preserving visible text and avoiding focus movement.
+- Added a deterministic regression for the exact status markup and documented the interoperability boundary: live-region semantics improve assistive-technology exposure for status updates, but a pre-populated static report is not claimed to trigger an initial announcement.
+
+#### Diagnostics-report numeric alignment and motion cleanup
+
+- Applied tabular numeral styling to standalone diagnostics-report body text so numeric values can align more consistently when the selected font supports equal-width figures.
+- Removed obsolete opacity transitions from bar rows and table rows while preserving the active table-row background hover cue and the existing reduced-motion override.
+- Added a rendered-report regression that pins the numeric-style declaration, transition cleanup, hover cue, and reduced-motion contract without changing report data, score semantics, or exported exact values.
+
 #### Release cut 0.7.0
 
 - Project version is bumped to 0.7.0 in `pyproject.toml`,
@@ -199,6 +241,14 @@
 - Scoring-request wire schema `1.1` now requires an exact provider-neutral `task_revision_fingerprint` in addition to the logical task identifier. The fingerprint participates in request identity, is propagated by the essay adapter from the complete prompt fingerprint, and prevents changed task content from being silently pooled under one request or calibration item.
 - Criterion-level many-facet handoffs now use exact task revisions as the Rust estimator item axis while retaining aligned logical task and task-family labels for audit. Duplicate cells, support, resource bounds, respondent–item connectedness, item–rater connectedness, and response provenance are all revision-indexed; one revision cannot be rebound to a different logical task or family.
 - Added an explicit, fail-closed schema-`1.0` request migration that verifies canonical content, fingerprint, public handle, and the authoritative engine-policy projection; requires a caller-supplied task revision; preserves normalized caller metadata; and intentionally does not migrate legacy observations or results. Content identity prevents accidental pooling but does not establish cross-revision comparability, which still requires anchors, invariance/DIF, drift, and recovery evidence.
+
+### Fixed
+
+#### Diagnostics-report focus and contrast preservation
+
+- Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
+- Removed opacity-based dimming of non-hovered chart and table rows so unrelated active data retains its normal rendered foreground and background colors.
+- Added public-renderer regression coverage and APA 7th doctoring grounded in WCAG 2.2 and Selectors Level 4 without making a formal conformance claim.
 
 ### Security
 

@@ -52,10 +52,87 @@ jobs:
         id: governance
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/build_pr_queue_governance.py
-          --repo ContextualWisdomLab/fast-mlsirm
-          --out hourly-pr-queue-governance
+        run: |
+          set -euo pipefail
+          is_retryable_github_failure() {
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import re
+
+          path = Path("hourly-pr-queue-governance/pr_queue_governance_manifest.json")
+          if not path.is_file():
+              print("false")
+              raise SystemExit
+          try:
+              manifest = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, UnicodeError, json.JSONDecodeError):
+              print("false")
+              raise SystemExit
+
+          status_failed = manifest.get("status") == "failed"
+          if not status_failed:
+              print("false")
+              raise SystemExit
+
+          failed_checks = manifest.get("failed_checks")
+          retryable_failed_check_names = {"github:snapshot", "github:base_sha"}
+          if (
+              not isinstance(failed_checks, list)
+              or not failed_checks
+              or not all(
+                  isinstance(check, dict) and check.get("ok") is False
+                  for check in failed_checks
+              )
+          ):
+              print("false")
+              raise SystemExit
+          failed_check_names = {
+              str(check.get("name", "")) for check in failed_checks
+          }
+          only_transient_snapshot_checks_failed = (
+              bool(failed_check_names)
+              and failed_check_names.issubset(retryable_failed_check_names)
+          )
+
+          github = manifest.get("github", {})
+          errors = github.get("errors", []) if isinstance(github, dict) else []
+          retry_status = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
+          retryable = (
+              only_transient_snapshot_checks_failed
+              and bool(errors)
+              and all(
+                  isinstance(error, dict)
+                  and type(error.get("returncode")) is int
+                  and error.get("returncode") != 0
+                  and isinstance(error.get("stderr"), str)
+                  and retry_status.search(error.get("stderr", "")) is not None
+                  for error in errors
+              )
+          )
+          print("true" if retryable else "false")
+          PY
+          }
+
+          max_attempts=3
+          attempt=1
+          while true; do
+            rm -rf hourly-pr-queue-governance
+            if python scripts/build_pr_queue_governance.py \
+              --repo ContextualWisdomLab/fast-mlsirm \
+              --out hourly-pr-queue-governance; then
+              break
+            fi
+
+            retryable="$(is_retryable_github_failure)"
+            if [[ "$retryable" != "true" || "$attempt" -ge "$max_attempts" ]]; then
+              exit 1
+            fi
+            delay=$((10 * (2 ** (attempt - 1))))
+            echo "::warning::Transient GitHub API failure on attempt ${attempt}; retrying in ${delay}s."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
       - name: Publish hourly governance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
