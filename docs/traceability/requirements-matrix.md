@@ -12,16 +12,16 @@ This matrix makes the major product requirements discoverable without reconstruc
 | Canonical PyO3/public exports | TRD-API / numerical integration | ADR-0011 | current package exports exist; future Rust feature modules must converge on one registry instead of independent initializer/import rewrites | Proposed hardening |
 | Assessment/scoring contracts | PRD-FR-001..004, TRD-API/P-ROV/SCR | ADR-0003, ADR-0005 | `python/fast_mlsirm/scoring/contracts.py` and bounded submodules | Accepted |
 | Rubric/blueprint/generation | PRD-FR-010..014, TRD-RUB-001..006 | ADR-0003, ADR-0004 | `python/fast_mlsirm/rubric/`: models/compiler/contracts/generation/candidates/audit/pilot modules | Partial / evolving |
-| Governed item bank lifecycle | PRD-FR-010, FR-080 | ADR-0004 | Pilot/admission/lifecycle primitives exist; complete approved-bank linking/exposure/monitoring/retirement workflow remains evolving | Proposed/partial |
+| Governed item bank lifecycle | PRD-FR-010, FR-080 | ADR-0004 | Pilot/admission/lifecycle primitives exist; complete approved-bank linking/exposure/monitoring/retirement workflow remains evolving; issue #609 tracks the planned canonical closed loop | Proposed/partial |
 | Automated essay scoring | PRD-FR-020..023, TRD-SCR | ADR-0005 | governed essay score, calibration, validation and HTML report modules/tests from v0.7.0-era work | Accepted baseline / evolving diagnostics |
 | Enterprise issue evaluation | PRD-FR-020..023 | ADR-0005 | `fast_mlsirm.scoring.enterprise_issue` adapters, governed observations/calibration/reporting | Accepted reusable adapter; causal action/utility policy is downstream |
-| Reference-free RAG measurement | PRD-FR-030..033, TRD-RAG | ADR-0005, ADR-0006 | research/design direction and shared measurement primitives exist; canonical full RAG observation pipeline is not yet an accepted protected-main end-to-end feature | Proposed |
+| Reference-free RAG measurement | PRD-FR-030..033, TRD-RAG | ADR-0005, ADR-0006 | shared measurement primitives exist, but no canonical end-to-end RAG observation/calibration pipeline is accepted on protected main; issue #607 tracks the governed adapter/evidence-regime contract | Proposed |
 | Fallible human/LLM raters | PRD-FR-020..033, TRD-SCR/RAG | ADR-0005 | common observation/scoring contracts, facets/agreement/validation primitives | Accepted principle; generalized discrimination/range/drift extensions require separate recovery |
 | Model relation/comparison | PRD-FR-040..043, TRD-MOD | ADR-0006 | relation-safe comparison primitives and diagnostics where merged; formal family-wide distinguishability remains work in progress | Partial |
-| Bifactor scoreability | PRD-FR-044, TRD-BIF | ADR-0006 | Rust/Python feature work exists in repository history/open work; exact released capability must be checked against current public exports before use | Evolving |
-| Factor retention | PRD-FR-040/050, TRD-MOD-001 | ADR-0006 | dimensionality diagnostics exist; unified factor-retention evidence API remains a product gap | Partial |
+| Bifactor scoreability | PRD-FR-044, TRD-BIF | ADR-0006 | protected-main package exposes bifactor scoreability surfaces; interpretation still depends on the evidence contract and model relation | Accepted bounded capability / evolving evidence |
+| Factor retention | PRD-FR-040/050, TRD-MOD-001 | ADR-0006 | dimensionality diagnostics exist; unified retention + structural-selection evidence workflow remains a product gap tracked by issue #608 | Partial / planned integration |
 | Latent-space residual interaction | PRD-FR-040..052, TRD-MOD | ADR-0006 | MLSIRM family on protected main | Accepted only after substantive dimension/testlet/facet diagnosis; not a substitute for omitted structure |
-| Adaptive rotation | PRD-FR-051/052, TRD-ROT | ADR-0009 | substantial implementation exists on Draft/open work, not an Accepted protected-main architecture yet | Proposed / active work |
+| Adaptive rotation | PRD-FR-051/052, TRD-ROT | ADR-0009 | protected main contains `crates/mlsirm-core/src/rotation/`, PyO3 bindings, `python/fast_mlsirm/rotation.py`, `rotation_selection.py`, package-root exports, criterion-neutral selection and rotation regression/doctoring evidence | Accepted CPU baseline / planned GPU and broader recovery extensions |
 | True-parameter recovery | PRD-PRN-003, TRD-TEST-003..006 | ADR-0008 | simulation/recovery reports, Rust/NumPy parity, scheduled statistical studies/recovery contracts | Accepted |
 | Correlation vs recovery/agreement | PRD-PRN-003, scoring validity requirements | ADR-0008, ADR-0005 | recovery/simulation, agreement/QWK/facets evidence | Accepted: correlation is supplementary association evidence, never sole proof of parameter recovery or interchangeability |
 | Multilevel/multiple-membership/temporal | PRD-FR-060..062, TRD-MLT | ADR-0007 | contextual summaries exist; full reusable contract PR remains open and Rust estimator recovery is future work | Proposed/partial / active PR |
@@ -43,8 +43,8 @@ This matrix makes the major product requirements discoverable without reconstruc
 
 ### Numerical source of truth
 
-- `crates/mlsirm-core/src/`
-- `crates/fast-mlsirm-py/src/`
+- `crates/mlsirm-core/`
+- `crates/fast-mlsirm-py/`
 
 ### Scientific and product evidence
 
