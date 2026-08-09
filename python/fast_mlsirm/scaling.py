@@ -111,7 +111,9 @@ def thurstone_case_v(choice) -> ThurstoneResult:
         try:
             arr = arr.astype(np.float64)
         except (TypeError, ValueError) as exc:
-            raise ValueError("thurstone_case_v: choice must be numeric") from exc
+            raise ValueError(
+                "thurstone_case_v: choice must be numeric"
+            ) from exc
     arr = np.ascontiguousarray(arr, dtype=np.float64)
     if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
         raise ValueError("thurstone_case_v: choice must be a square 2-D matrix")
@@ -170,7 +172,9 @@ def bradley_terry_mm(wins, alpha=0.0, max_iter=10000, tol=1e-8):
         raise ValueError("bradley_terry_mm: wins must be a square 2-D matrix")
     n = arr.shape[0]
     core = _core_module()
-    res = core.bradley_terry_mm(arr.ravel(), n, float(alpha), int(max_iter), float(tol))
+    res = core.bradley_terry_mm(
+        arr.ravel(), n, float(alpha), int(max_iter), float(tol)
+    )
     return BradleyTerryResult(
         params=np.asarray(res["params"], dtype=np.float64),
         weights=np.asarray(res["weights"], dtype=np.float64),
@@ -343,7 +347,6 @@ def ilsr_pairwise(wins, alpha=0.0, max_iter=100, tol=1e-8):
         iterations=int(res["iterations"]),
     )
 
-
 def rank_centrality(wins, alpha=0.0):
     """Rank Centrality: spectral ranking from the *ratios* of pairwise wins.
 
@@ -376,7 +379,6 @@ def rank_centrality(wins, alpha=0.0):
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
     )
-
 
 def _rankings_to_csr(name, rankings, n):
     """Validate a list of rankings (best first) and CSR-flatten to u64.
@@ -478,7 +480,6 @@ def ilsr_rankings(rankings, n, alpha=0.0, max_iter=100, tol=1e-8):
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
     )
-
 
 def _top1_to_csr(name, data, n):
     """Validate top-1 choice data and CSR-flatten to u64 arrays.
@@ -697,7 +698,6 @@ def kendall_u(mat, correct=True):
         df=float(res["df"]),
         p_value=float(res["p_value"]),
     )
-
 
 @dataclass
 class EloResult:
@@ -1049,9 +1049,7 @@ def glicko2_rating(
     try:
         n = int(n_players)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(
-            f"glicko2_rating: n_players is not an integer: {exc}"
-        ) from None
+        raise ValueError(f"glicko2_rating: n_players is not an integer: {exc}") from None
     if n != n_players:
         raise ValueError("glicko2_rating: n_players must be an integer")
     g = arr.shape[0]
@@ -1301,7 +1299,9 @@ def stephenson_rating(
                 f"stephenson_rating: {name} must be a length-{n} array, got {v.shape}"
             )
         if not np.all(np.isfinite(v)) or np.any(v < 0) or np.any(v != np.floor(v)):
-            raise ValueError(f"stephenson_rating: {name} must be nonnegative integers")
+            raise ValueError(
+                f"stephenson_rating: {name} must be nonnegative integers"
+            )
         if np.any(v >= 2.0**53):
             raise ValueError(
                 f"stephenson_rating: {name} values at or above 2**53 are not "
@@ -1427,17 +1427,13 @@ def elom_rating(
     if g == 0:
         raise ValueError("elom_rating: at least one event is required")
     if np.any(~np.isfinite(players_f)) or np.any(players_f != np.floor(players_f)):
-        raise ValueError(
-            "elom_rating: players must be integral (use -1 for empty seats)"
-        )
+        raise ValueError("elom_rating: players must be integral (use -1 for empty seats)")
     if np.any(players_f < -1):
         raise ValueError("elom_rating: player ids must be >= -1")
     if raw_players.dtype.kind in "iu":
-        if (
-            raw_players.dtype.kind == "u"
-            and raw_players.size
-            and int(raw_players.max()) > np.iinfo(np.int64).max
-        ):
+        if raw_players.dtype.kind == "u" and raw_players.size and int(
+            raw_players.max()
+        ) > np.iinfo(np.int64).max:
             # An unsigned id above i64::MAX would wrap to a negative value
             # (uint64::MAX -> -1) and silently become the empty-seat
             # sentinel instead of being rejected.
@@ -1558,9 +1554,7 @@ def elom_rating(
             kfac_gv = float(kfac[1])
             kfac_kv = float(kfac[2])
         except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(
-                f"elom_rating: kriichi gv/kv is not numeric: {exc}"
-            ) from None
+            raise ValueError(f"elom_rating: kriichi gv/kv is not numeric: {exc}") from None
         mode, kfac_k = "kriichi", 0.0
     else:
         try:
@@ -1631,7 +1625,9 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
             try:
                 arr = arr.astype(np.float64)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"metrics_rating: {name} must be numeric") from exc
+                raise ValueError(
+                    f"metrics_rating: {name} must be numeric"
+                ) from exc
         if arr.dtype.kind not in "fiu":
             raise ValueError(
                 f"metrics_rating: {name} must be numeric, got dtype {arr.dtype}"
@@ -1652,7 +1648,8 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
     nr, n_pred = pred_arr.shape
     if act_arr.shape[0] != nr:
         raise ValueError(
-            f"metrics_rating: act has length {act_arr.shape[0]} but pred has {nr} rows"
+            f"metrics_rating: act has length {act_arr.shape[0]} "
+            f"but pred has {nr} rows"
         )
     cap_arr = _as_float("cap", cap, 1)
     if cap_arr.shape[0] != 2:
@@ -1719,7 +1716,9 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
     if raw.dtype != object and raw.dtype.kind not in "fiu":
         # Rejects bool, datetime64, timedelta64, and other non-numeric
         # ndarray dtypes that np.asarray(..., dtype=float) would coerce.
-        raise ValueError(f"fide_rating: games must be numeric, got dtype {raw.dtype}")
+        raise ValueError(
+            f"fide_rating: games must be numeric, got dtype {raw.dtype}"
+        )
     # Nested Python lists coerce bools/datetimes into legal-looking numbers
     # before the dtype check can see them; scan the original elements.
     probe = raw if raw.dtype == object else None
@@ -1727,7 +1726,9 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
         probe = np.asarray(games, dtype=object)
     if probe is not None and any(
         v is None
-        or isinstance(v, (str, bytes, bool, np.bool_, np.datetime64, np.timedelta64))
+        or isinstance(
+            v, (str, bytes, bool, np.bool_, np.datetime64, np.timedelta64)
+        )
         for v in probe.flat
     ):
         raise ValueError("fide_rating: games must be numeric")
@@ -1881,12 +1882,9 @@ def _predict_float_array(x, name, fname, allow_nan):
         raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
     if raw.dtype == object:
         for v in np.ravel(raw):
-            if (
-                isinstance(
-                    v, (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)
-                )
-                or v is None
-            ):
+            if isinstance(
+                v, (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)
+            ) or v is None:
                 raise ValueError(f"{fname}: {name} contains a non-numeric value")
     try:
         arr = np.asarray(x, dtype=float)
@@ -1904,16 +1902,13 @@ def _predict_float_array(x, name, fname, allow_nan):
 def _predict_scalar(x, name, fname):
     """Validate a finite real scalar parameter."""
     import math
-
     if isinstance(x, (bool, np.bool_)):
         raise ValueError(f"{fname}: {name} must be real numeric, not bool")
     raw = np.asarray(x)
     if np.iscomplexobj(raw) or raw.dtype.kind == "b":
         raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
-    if (
-        raw.dtype == object
-        and raw.ndim == 0
-        and isinstance(raw.item(), (bool, np.bool_))
+    if raw.dtype == object and raw.ndim == 0 and isinstance(
+        raw.item(), (bool, np.bool_)
     ):
         raise ValueError(f"{fname}: {name} must be real numeric, not bool")
     try:
@@ -1989,7 +1984,11 @@ def _predict_tng_u64(tng, fname):
         if t > 2**64 - 1:
             raise ValueError(f"{fname}: tng must fit in an unsigned 64-bit integer")
         return t
-    if isinstance(tng, np.ndarray) and tng.ndim == 0 and tng.dtype.kind in "iu":
+    if (
+        isinstance(tng, np.ndarray)
+        and tng.ndim == 0
+        and tng.dtype.kind in "iu"
+    ):
         return _predict_tng_u64(int(tng), fname)
     v = _predict_scalar(tng, "tng", fname)
     if v < 0 or v != math.floor(v):
@@ -2129,11 +2128,7 @@ def predict_rating_multi(
         )
     if isinstance(players, np.ma.MaskedArray):
         raise ValueError(f"{fname}: masked arrays are not supported for players")
-    p_raw = (
-        players
-        if isinstance(players, np.ndarray)
-        else np.asarray(players, dtype=object)
-    )
+    p_raw = players if isinstance(players, np.ndarray) else np.asarray(players, dtype=object)
     if p_raw.ndim != 2:
         raise ValueError(f"{fname}: players must be a 2-D (events, seats) matrix")
     nr, np_seats = p_raw.shape
