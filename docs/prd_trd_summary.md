@@ -1,96 +1,41 @@
 # fast-mlsirm PRD/TRD Summary
 
-## Product Goal
+> **Compatibility note:** this path is retained because historical links point to it. The previous MLS2PLM-only MVP summary is no longer authoritative and had become materially stale relative to protected-main scoring, rubric, model-comparison, bifactor, rotation, reporting, and enterprise/essay validation capabilities.
 
-`fast-mlsirm` provides fast simulation, fitting, and recovery diagnostics for
-Multidimensional Latent Space Item Response Models, especially MLS2PLM:
+The authoritative documentation set is now:
 
-```text
-logit P(Y_pi = 1) = a_i * theta_p,d(i) + b_i - gamma * distance(xi_p, zeta_i)
-```
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — architecture, bounded contexts, scientific/model hierarchy, security and quality gates.
+- [`PRD.md`](PRD.md) — current product requirements and buyer outcomes.
+- [`TRD.md`](TRD.md) — technical contracts, numerical authority, validation, security, runtime, model-selection, and interoperability requirements.
+- [`adr/README.md`](adr/README.md) — architecture decision records.
+- [`UML.md`](UML.md) — component, class, sequence, state, and deployment views.
+- [`ERD.md`](ERD.md) — persistence-agnostic logical domain/contract model.
+- [`traceability.md`](traceability.md) — research/conversation requirement to code/status traceability.
 
-The package is aimed at psychometrics, educational measurement, mental-health
-assessment, item diagnostics, adaptive testing research, and production-scale
-binary response scoring pipelines.
+## Current one-paragraph product definition
 
-For sale and support purposes, the current product is a commercial beta for
-technical users. It can be packaged, verified, and supported for the documented
-local API/CLI workflows, but it is not a regulated decision product, hosted
-platform, or full ordinal/Bayesian estimation system.
+`fast-mlsirm` is an independently installable, Rust-first psychometric and measurement toolkit. It owns reusable Assessment/Rubric/Scoring contracts, observations, calibration and model diagnostics, linking/equating, DIF/invariance/fairness, factor/model selection, recovery/simulation, rater/judge calibration, automated-scoring validation, rubric/item-generation governance primitives, and related numerical kernels. It does **not** own the hosted Psychometrics Commons HTTP/session/consent/product-database/UI/deployment runtime.
 
-## MVP Scope
-
-Must have:
-
-- Canonical MLS2PLM simulation.
-- `gamma=0` no-CD simulation.
-- `MIRT`, `MLSRM`, and `MLS2PLM` model constraints.
-- Missing response exclusion.
-- Likelihood and analytic gradient.
-- Adam and L-BFGS-style optimizers.
-- Procrustes alignment and recovery reports.
-- Python API and CLI.
-- Rust core formulas for likelihood and gradient.
-- Optional PyO3/maturin binding for using the Rust likelihood and gradient from
-  Python fitting.
-
-Explicitly out of MVP:
-
-- Full HMC/NUTS Bayesian sampling.
-- Ordinal graded response models.
-- Real-time adaptive testing.
-- GUI dashboards.
-- Automatic psychological construct naming.
-
-## Architecture
-
-The intended architecture is Python API first, Rust numerical core second:
+## Current architecture shorthand
 
 ```text
-python/fast_mlsirm/
-  config, simulation, objective, fit, diagnostics, cli
-
-crates/mlsirm-core/
-  model structs, stable likelihood, analytic gradients, Rust tests
-
-crates/fast-mlsirm-py/
-  PyO3 module exposed as fast_mlsirm._core
+Reusable assessment/rubric/scoring contracts
+        ↓
+Bounded Python validation/orchestration
+        ↓
+PyO3
+        ↓
+Rust numerical source of truth
+        ↓
+CPU parallel / parity-proven GPU execution
+        ↓
+Diagnostics, model selection, calibration and deterministic evidence
+        ↓
+Versioned downstream contracts / governed measurement artifacts
 ```
 
-The default Python backend is vectorized NumPy. The optional Rust backend uses
-the same core formula through a PyO3/maturin extension and can be selected with
-`FitConfig(backend="rust")`, `FitConfig(backend="auto")`, or
-`fast-mlsirm fit --backend`. Source and editable installs build that extension
-with maturin and therefore require a Rust toolchain; NumPy remains the default
-runtime backend after installation. The PyO3 crate is built through maturin and
-validated through Python backend parity tests, while `cargo test --workspace`
-covers the standalone Rust core.
+The retained NumPy code is a bounded reference/fallback and parity surface; it is not the architectural authority for new production numerical work.
 
-## Formula Contract
+## Update rule
 
-For item `i` assigned to factor `d_i`:
-
-```text
-eta_pi = exp(alpha_i) * theta_p,d_i + b_i - exp(tau) * r_pi
-r_pi = sqrt(sum_k (xi_pk - zeta_ik)^2 + eps)
-loss = softplus(eta_pi) - y_pi * eta_pi
-```
-
-The NLL gradient uses:
-
-```text
-e_pi = sigmoid(eta_pi) - y_pi
-```
-
-and applies L2 regularization to `theta`, `xi`, `zeta`, `b`, `alpha`, and
-`tau` where those parameters are active for the selected model.
-
-## Roadmap
-
-1. Stabilize Python reference formulas and tests.
-2. Maintain NumPy/Rust objective parity through PyO3/maturin tests.
-3. Add block-mode likelihood/gradient execution.
-4. Add benchmark harness and repeated recovery-grid runner.
-5. Add sparse/missing optimized kernels.
-6. Explore JAX/GPU and ordinal response extensions as separate model/runtime
-   design work.
+Do not expand this compatibility summary into a second PRD/TRD. Material requirements belong in the authoritative files above so product scope does not fragment again.
