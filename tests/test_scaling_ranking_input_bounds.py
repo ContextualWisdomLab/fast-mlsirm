@@ -18,17 +18,18 @@ def scaling_module():
 class _InnerOverreadProbe:
     """Raise if a ranking consumer requests more than the allowed probe count."""
 
-    def __init__(self, *, maximum_requests: int) -> None:
+    def __init__(self, *, item_count: int, maximum_requests: int) -> None:
+        self.item_count = item_count
         self.maximum_requests = maximum_requests
         self.requests = 0
 
     def __iter__(self):
-        """Yield bounded values and fail loudly on an unbounded materializer."""
+        """Yield in-range values and fail on an unbounded materializer."""
         while True:
             self.requests += 1
             if self.requests > self.maximum_requests:
                 raise AssertionError("inner ranking was consumed without a bound")
-            yield (self.requests - 1) % max(1, self.maximum_requests)
+            yield (self.requests - 1) % self.item_count
 
 
 class _OuterOverreadProbe:
@@ -72,7 +73,7 @@ def test_inner_ranking_is_consumed_at_most_n_plus_one_entries(
     scaling_module,
 ) -> None:
     """An impossible overlong ranking is rejected before unbounded iteration."""
-    probe = _InnerOverreadProbe(maximum_requests=4)
+    probe = _InnerOverreadProbe(item_count=3, maximum_requests=4)
 
     with pytest.raises(ValueError, match="ranking 0"):
         scaling_module._rankings_to_csr("lsr_rankings", (probe,), 3)
