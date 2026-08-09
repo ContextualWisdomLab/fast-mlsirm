@@ -209,6 +209,11 @@
 - Reused one owned NumPy squared-residual buffer for fallback infit/outfit calculations, retained the infit numerator before in-place division, and used a Boolean `where=` reduction for the variance denominator without a full numeric mask copy.
 - Added deterministic sparse-missingness and clipped-probability parity contracts plus an environment-specific benchmark while retaining Rust as the production fit-statistics backend.
 
+#### Essay-validation empty-state status semantics
+
+- Marked empty identifier evidence in standalone essay-validation HTML reports as a WAI-ARIA `status` region with explicit `aria-atomic="true"`, while preserving visible text and avoiding focus movement.
+- Added a deterministic regression for the exact status markup and documented the interoperability boundary: live-region semantics improve assistive-technology exposure for status updates, but a pre-populated static report is not claimed to trigger an initial announcement.
+
 #### Release cut 0.7.0
 
 - Project version is bumped to 0.7.0 in `pyproject.toml`,
