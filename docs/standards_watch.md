@@ -29,14 +29,24 @@ This registry is part of the proposed canonical architecture baseline. It separa
 4. A citation does not establish implementation, certification, legal compliance, or suitability for a regulated decision.
 5. Scientific method claims use primary peer-reviewed papers where available. Package documentation or legacy software can be a numerical comparison source but does not replace primary methodological validation.
 
+## Active revision projects verified for this baseline
+
+These entries make known revision activity explicit so a release does not mistake a still-current published edition for an abandoned line of work. They remain **non-normative watch evidence** until a replacement is published and adopted through the repository decision process.
+
+| Published baseline retained | Current revision/watch evidence | Repository treatment |
+|---|---|---|
+| ISO/IEC/IEEE 29148:2018 | ISO project `ISO/IEC/IEEE DIS 29148` (`standard/94091`) reached stage **30.99** on **2026-07-10**, recorded by ISO as CD approved for registration as DIS | Keep 29148:2018 as the current published requirements-engineering baseline. Recheck the ISO project before release; do not treat the DIS as a published replacement. If a new edition publishes, perform a requirement/traceability delta assessment and adopt it only through an ADR or equivalent reviewed change. |
+| NIST AI RMF 1.0 (NIST AI 100-1) | NIST's AI RMF program states in 2026 that AI RMF 1.0 is being revised | Keep AI RMF 1.0 as the published framework baseline and NIST AI 600-1 as the published Generative AI Profile. Track the revision, but do not freeze an unpublished successor into normative repository behavior. |
+
 ## Active watch items
 
 The following topics are monitored because revisions or new evidence may change future requirements. Their exact project identifiers and publication state must be checked against official sources at review time.
 
-- revisions to requirements-engineering and architecture-description standards;
+- the ISO/IEC/IEEE DIS 29148 revision project and any later publication replacing ISO/IEC/IEEE 29148:2018;
+- revisions to architecture-description standards, including any successor work to ISO/IEC/IEEE 42010:2022;
 - updates to the ISO/IEC 25000 SQuaRE family affecting measurement or quality models;
 - implementation guidance and conformity-assessment practice for ISO/IEC 42001 and ISO/IEC 42005;
-- NIST AI RMF and Generative AI Profile revisions, implementation resources, and evaluation guidance;
+- the announced NIST AI RMF 1.0 revision, Generative AI Profile updates, implementation resources, and evaluation guidance;
 - revision of the *Standards for Educational and Psychological Testing*;
 - later W3C accessibility recommendations and techniques beyond WCAG 2.2;
 - current primary evidence on LLM-as-a-Judge calibration, dynamic rubrics, automatic item generation, test-time scaling, multi-agent verification, and correlated evaluator error;
@@ -47,6 +57,7 @@ The following topics are monitored because revisions or new evidence may change 
 Before a release or buyer evidence packet uses a standards claim:
 
 - verify official publication status, edition, title, and issuing body;
+- recheck explicit revision projects above and record whether their publication state changed;
 - identify the exact requirement or concern affected;
 - link the requirement to an ADR, implementation, test, and evidence artifact;
 - distinguish core-library obligations from Psychometrics Commons or another downstream host;
@@ -74,4 +85,4 @@ National Institute of Standards and Technology. (2023). *Artificial intelligence
 
 National Institute of Standards and Technology. (2024). *Artificial intelligence risk management framework: Generative artificial intelligence profile* (NIST AI 600-1). https://doi.org/10.6028/NIST.AI.600-1
 
-World Wide Web Consortium. (2023). *Web content accessibility guidelines (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
+World Wide Web Consortium. (2024, December 12). *Web content accessibility guidelines (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
