@@ -16,7 +16,7 @@ def _read(relative_path: str) -> str:
 
 
 def test_authoritative_architecture_document_set_exists() -> None:
-    """PRD/TRD/ADR/UML/ERD/traceability authorities remain repository-local."""
+    """PRD/TRD/ADR/UML/ERD/threat/traceability authorities stay repository-local."""
     required = (
         "ARCHITECTURE.md",
         "docs/PRD.md",
@@ -25,6 +25,7 @@ def test_authoritative_architecture_document_set_exists() -> None:
         "docs/architecture/README.md",
         "docs/architecture/uml.md",
         "docs/architecture/logical-data-model.md",
+        "docs/security/threat-model.md",
         "docs/requirements-traceability.md",
     )
 
@@ -106,6 +107,21 @@ def test_diagrams_cover_component_sequence_state_and_logical_erd() -> None:
     assert "fast-mlsirm" in uml
     assert "psychometrics-commons" in uml
     assert "This is **not** a hosted-product database schema" in data_model
+
+
+def test_threat_model_pins_native_provider_scientific_and_ci_boundaries() -> None:
+    """Security authority includes measurement integrity, not only network threats."""
+    threat_model = _read("docs/security/threat-model.md")
+
+    for phrase in (
+        "Untrusted JSON ambiguity",
+        "Native boundary abuse",
+        "Scientific model misuse",
+        "Supply-chain compromise",
+        "Reviewer/model credential conflation",
+        "Scientific integrity threats",
+    ):
+        assert phrase in threat_model
 
 
 def test_traceability_distinguishes_implemented_active_planned_and_downstream() -> None:
