@@ -38,7 +38,7 @@ def _read(relative_path: str) -> str:
 
 
 def test_canonical_architecture_documents_exist_without_placeholders() -> None:
-    """Keep the architecture spine present and free from unfinished placeholders."""
+    """Keep the architecture spine present and free of unfinished placeholders."""
     for relative_path in (*CANONICAL_DOCUMENTS, *ADR_FILES):
         path = ROOT / relative_path
         assert path.is_file(), relative_path
@@ -49,7 +49,7 @@ def test_canonical_architecture_documents_exist_without_placeholders() -> None:
 
 
 def test_prd_covers_all_governing_product_requirements() -> None:
-    """Pin the cross-feature requirements derived from the product research program."""
+    """Pin cross-feature requirements derived from the product research program."""
     prd = _read("docs/PRD.md")
     required_ids = (
         "PRD-CONTRACT-001",
@@ -74,7 +74,7 @@ def test_prd_covers_all_governing_product_requirements() -> None:
 
 
 def test_trd_preserves_numerical_scientific_and_security_boundaries() -> None:
-    """Prevent future documentation from erasing critical implementation invariants."""
+    """Prevent future docs from erasing critical implementation invariants."""
     trd = _read("docs/TRD.md")
     required_contracts = (
         "TRD-NUM-001",
@@ -89,20 +89,23 @@ def test_trd_preserves_numerical_scientific_and_security_boundaries() -> None:
         "TRD-QUAL-001",
         "NVIDIA_NIM_API_KEY",
         "COPILOT_GITHUB_TOKEN",
-        "bias and RMSE",
+        "MAE/RMSE",
     )
     for contract in required_contracts:
         assert contract in trd
 
 
 def test_architecture_keeps_hosted_product_outside_the_core() -> None:
-    """Keep standalone/MSA ownership explicit instead of drifting toward a monolith."""
+    """Keep standalone/MSA ownership explicit instead of drifting to a monolith."""
     architecture = _read("ARCHITECTURE.md")
     assert "domain-neutral measurement and psychometric computation layer" in architecture
     assert "fast-mlsirm **does not own**" in architecture
     assert "Psychometrics Commons" in architecture
     assert "no mandatory server deployment topology" in architecture
-    assert "Production mathematical/statistical/psychometric arithmetic is **Rust-first**" in architecture
+    assert (
+        "Production mathematical/statistical/psychometric arithmetic is **Rust-first**"
+        in architecture
+    )
 
 
 def test_uml_suite_covers_structure_behavior_state_and_deployment() -> None:
@@ -146,7 +149,7 @@ def test_adr_index_and_traceability_cover_every_accepted_baseline_decision() -> 
 
 
 def test_documentation_audit_distinguishes_baseline_from_feature_completion() -> None:
-    """Prevent the architecture baseline from overstating roadmap implementation state."""
+    """Prevent the architecture baseline from overstating roadmap implementation."""
     coverage = _read("docs/documentation_coverage.md")
     assert "not sufficient as a canonical architecture package" in coverage
     assert "does **not** claim that every roadmap feature is implemented" in coverage
