@@ -2,6 +2,8 @@
 
 This directory is the authoritative decision log for architecture, scientific interpretation, trust boundaries, and cross-repository ownership decisions that materially affect `fast-mlsirm`.
 
+Use [`0000-template.md`](0000-template.md) for new material decisions.
+
 ## Status vocabulary
 
 - **Accepted** — implemented or governing current protected-main behavior/policy.
@@ -54,8 +56,10 @@ Each ADR should include:
 4. Invariants/acceptance evidence.
 5. Consequences and trade-offs.
 6. Alternatives considered.
-7. Reversal/supersession conditions.
-8. References where research/standards materially govern the decision.
+7. Failure/degraded/recovery behavior where applicable.
+8. Security/privacy implications where applicable.
+9. Compatibility/migration/rollback and reversal/supersession conditions.
+10. Verification/release evidence and references where research/standards materially govern the decision.
 
 ## Consistency rule
 
