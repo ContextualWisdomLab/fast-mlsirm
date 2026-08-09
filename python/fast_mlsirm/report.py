@@ -425,12 +425,12 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
 
 def _columns(rows: list[dict[str, Any]]) -> list[str]:
     """Return the union of row keys in first-seen order for table columns."""
-    ordered = []
+    # Leverage O(1) dictionary key lookups to avoid O(N) list membership checks
+    ordered = {}
     for row in rows:
         for key in row:
-            if key not in ordered:
-                ordered.append(key)
-    return ordered
+            ordered[key] = None
+    return list(ordered)
 
 
 def _value_length(value: Any) -> int:

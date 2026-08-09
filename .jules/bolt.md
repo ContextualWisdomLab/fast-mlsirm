@@ -44,3 +44,7 @@
 ## 2026-08-04 - Matrix-vector reductions for MMLE quadrature nodes
 **Learning:** In the NumPy MMLE reference fallback, expressions such as `(resid * nodes[None, :]).sum(axis=1)` materialize an item-by-node intermediate array. The mathematically equivalent matrix-vector product `resid @ nodes` avoids that broadcast temporary and can use the configured NumPy linear-algebra backend. Runtime gains depend on matrix shape, memory layout, BLAS implementation, and threading, so no universal percentage improvement should be claimed without a reproducible benchmark.
 **Action:** Prefer a matrix-vector product for equivalent quadrature-node reductions when dtype, shape, and numerical parity are preserved. Keep Rust as the primary production path, retain the NumPy implementation as a tested reference fallback, and benchmark representative workloads before making quantitative performance claims.
+
+## 2024-08-09 - Avoid O(N) list membership checks
+**Learning:** When building an ordered collection of unique items (e.g. from row keys), checking `key not in list` inside a nested loop causes O(N) list membership checks, which becomes a bottleneck.
+**Action:** Leverage modern Python's insertion-ordered dictionaries. Replace `list` with `dict` and assignment `ordered[key] = None`, then `return list(ordered)` for O(1) membership lookups while preserving insertion order.
