@@ -578,7 +578,7 @@ def _run_single_fit(
         model=model,
         optimizer=config.optimizer,
         backend=backend,
-        rust_device=config.rust_device,
+        rust_device=device,
         objective=final_obj,
         loglik_trace=loglik_trace,
         objective_trace=obj_trace,
