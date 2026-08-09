@@ -1,0 +1,138 @@
+@startuml
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+
+title fast-mlsirm logical reusable-domain model
+
+entity assessment_specification {
+  * assessment_id : opaque string
+  * assessment_version : semantic version
+  * assessment_fingerprint : sha256
+  --
+  construct_id : string
+  rubric_fingerprint : sha256
+}
+
+entity rubric_specification {
+  * rubric_id : opaque string
+  * rubric_version : semantic version
+  * rubric_fingerprint : sha256
+  --
+  construct_id : string
+  response_format : enum
+}
+
+entity rubric_level {
+  * rubric_level_id : opaque string
+  --
+  rubric_fingerprint : sha256
+  score_value : ordinal value
+  label_text : string
+}
+
+entity item_blueprint {
+  * blueprint_id : opaque string
+  * blueprint_fingerprint : sha256
+  --
+  rubric_fingerprint : sha256
+  task_family : string
+  evidence_mode : enum
+  difficulty_band : enum
+}
+
+entity item_candidate {
+  * candidate_id : opaque string
+  * candidate_fingerprint : sha256
+  --
+  blueprint_fingerprint : sha256
+  contract_fingerprint : sha256
+  lifecycle_state : enum
+}
+
+entity engine_descriptor {
+  * engine_id : opaque string
+  * engine_fingerprint : sha256
+  --
+  engine_kind : enum
+  model_version : string
+}
+
+entity scoring_request {
+  * request_id : opaque string
+  * request_fingerprint : sha256
+  --
+  assessment_fingerprint : sha256
+  rubric_fingerprint : sha256
+  task_id : opaque string
+  task_revision_fingerprint : sha256
+  respondent_id : opaque string
+  response_id : opaque string
+  response_content_fingerprint : sha256
+}
+
+entity score_observation {
+  * observation_id : opaque string
+  * observation_fingerprint : sha256
+  --
+  request_fingerprint : sha256
+  engine_fingerprint : sha256
+  criterion_id : opaque string
+  observation_state : enum
+  score_value : optional ordinal value
+}
+
+entity calibration_design {
+  * design_id : opaque string
+  * design_fingerprint : sha256
+  --
+  criterion_id : opaque string
+  assessment_fingerprint : sha256
+  connected_state : enum
+}
+
+entity calibration_report {
+  * report_id : opaque string
+  * report_fingerprint : sha256
+  --
+  design_fingerprint : sha256
+  model_family : string
+  convergence_state : enum
+}
+
+entity item_bank_entry {
+  * bank_entry_id : opaque string
+  * bank_revision_fingerprint : sha256
+  --
+  candidate_fingerprint : sha256
+  lifecycle_state : enum
+  calibration_report_fingerprint : sha256
+}
+
+entity model_comparison_evidence {
+  * comparison_id : opaque string
+  * comparison_fingerprint : sha256
+  --
+  model_relation : enum
+  selection_state : enum
+}
+
+rubric_specification ||--|{ rubric_level : defines
+rubric_specification ||--o{ assessment_specification : referenced_by
+rubric_specification ||--o{ item_blueprint : compiles
+item_blueprint ||--o{ item_candidate : generates
+assessment_specification ||--o{ scoring_request : governs
+engine_descriptor ||--o{ score_observation : produces
+scoring_request ||--o{ score_observation : binds
+score_observation }o--|| calibration_design : assembled_into
+calibration_design ||--o{ calibration_report : fitted_as
+item_candidate ||--o{ item_bank_entry : versioned_as
+calibration_report ||--o{ item_bank_entry : supports
+calibration_report }o--o{ model_comparison_evidence : compared_by
+
+note bottom
+This is a logical domain ERD, not a hosted database schema.
+Persistence, tenant tables, participant identity, sessions and consent are owned downstream.
+end note
+
+@enduml
