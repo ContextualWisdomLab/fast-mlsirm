@@ -12,7 +12,12 @@ from enum import Enum
 from typing import Any
 
 from ._contract_safety import enum_value, freeze_metadata
-from ._validation import assessment_error, fingerprint, thaw_json_value
+from ._validation import (
+    assessment_error,
+    descriptive_identifier,
+    fingerprint,
+    thaw_json_value,
+)
 from .assessment import AssessmentSpec
 from .authorization import build_scoring_request
 from .execution import ObservationGranularity, ScoringRequest
@@ -92,6 +97,12 @@ def _rag_metadata(
             "invalid_rag_metadata",
             "$.metadata",
             "metadata must be a mapping",
+        )
+    if "evaluation_split" in output:
+        output["evaluation_split"] = descriptive_identifier(
+            output["evaluation_split"],
+            "evaluation_split",
+            "$.metadata.evaluation_split",
         )
     output.update(
         {
