@@ -193,7 +193,6 @@ def _fit_mmle(
     from .estimators.mmle import fit_mmle_2pl as _py_mmle
 
     n_persons, n_items = y.shape
-    y_filled = np.where(observed, y, 0.0).astype(np.float64)
 
     rust = None
     try:  # pragma: no cover - depends on the compiled extension being built
@@ -204,9 +203,11 @@ def _fit_mmle(
         rust = None
 
     if rust is not None:  # pragma: no cover - exercised only when the ext is built
+        y_filled = np.where(observed, y, 0.0).astype(np.float64)
+        observed_bool = observed.astype(bool)
         a, b, theta, loglik_trace, converged = rust(
             y_filled.ravel(),
-            observed.astype(bool).ravel(),
+            observed_bool.ravel(),
             int(n_persons),
             int(n_items),
             int(config.max_iter),
@@ -218,8 +219,8 @@ def _fit_mmle(
         loglik_trace = list(loglik_trace)
     else:
         res = _py_mmle(
-            y_filled,
-            observed.astype(bool),
+            y,
+            observed,
             max_iter=config.max_iter,
             tol=config.tolerance,
         )
@@ -577,7 +578,7 @@ def _run_single_fit(
         model=model,
         optimizer=config.optimizer,
         backend=backend,
-        rust_device=device,
+        rust_device=config.rust_device,
         objective=final_obj,
         loglik_trace=loglik_trace,
         objective_trace=obj_trace,
