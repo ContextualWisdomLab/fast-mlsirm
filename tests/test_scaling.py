@@ -76,6 +76,12 @@ def test_lsr_rankings_permutation_invariance_and_repeated():
         res_base.params, res_repeated.params, rtol=1e-12, atol=1e-12
     )
 
+    # Non-uniform repeated rankings compared to the independent oracle
+    non_uniform_rankings = rankings + [[0, 2]] * 5
+    oracle_nu_params, _ = lsr_oracle(non_uniform_rankings, n, alpha=0.0)
+    res_nu = lsr_rankings(non_uniform_rankings, n, alpha=0.0)
+    np.testing.assert_allclose(res_nu.params, oracle_nu_params, rtol=1e-10, atol=1e-10)
+
 
 def test_lsr_rankings_invalid_cases():
     """Verifies that invalid bounds, duplicates, structural types, and broken graphs raise ValueError."""
@@ -117,9 +123,30 @@ def test_lsr_rankings_invalid_cases():
     with pytest.raises(ValueError, match="alpha"):
         lsr_rankings([[0, 1], [1, 2], [2, 0]], n, alpha=np.nan)
 
-    # Non-integral items
-    with pytest.raises(ValueError):
+    # Negative item indices
+    with pytest.raises(ValueError, match="negative"):
+        lsr_rankings([[-1, 1]], n)
+
+    # Non-integral items (float, string, bool)
+    with pytest.raises(ValueError, match="non-integer"):
         lsr_rankings([[0.5, 1.5]], n)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="non-integer"):
         lsr_rankings([["a", "b"]], n)
+
+    with pytest.raises(ValueError, match="non-integer"):
+        lsr_rankings([[True, False]], n)
+
+    with pytest.raises(ValueError, match="non-integer"):
+        lsr_rankings([[np.bool_(True), np.bool_(False)]], n)
+
+    # Invalid n type
+    with pytest.raises(ValueError, match="n must be an integer"):
+        lsr_rankings([[0, 1]], True)
+
+    with pytest.raises(ValueError, match="n must be an integer"):
+        lsr_rankings([[0, 1]], 2.5)
+
+    # Non-finite alpha (inf)
+    with pytest.raises(ValueError, match="finite"):
+        lsr_rankings([[0, 1], [1, 2], [2, 0]], n, alpha=np.inf)
