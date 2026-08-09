@@ -14,16 +14,18 @@ erDiagram
     generation_contract ||--o{ generated_item_version : produces
     generated_item_version ||--o{ item_evidence : cites
     generated_item_version ||--o{ score_observation : receives
+    rubric_criterion ||--o{ score_observation : scores
     rater_profile ||--o{ score_observation : emits
     scoring_engine_version ||--o{ score_observation : emits
     measurement_occasion ||--o{ score_observation : contextualizes
-    contextual_membership ||--o{ score_observation : contextualizes
+    score_observation ||--o{ contextual_membership : has_context
     calibration_run ||--o{ score_observation : consumes
     calibration_run ||--o{ calibration_parameter : estimates
     calibration_run ||--o{ model_comparison_evidence : produces
     calibration_run ||--o{ scoreability_evidence : produces
-    generated_item_version ||--o{ item_bank_version : promoted_to
     item_bank_version ||--o{ item_bank_entry : contains
+    generated_item_version ||--o{ item_bank_entry : versions
+    calibration_run ||--o{ item_bank_entry : qualifies
     item_bank_entry ||--o{ item_lifecycle_event : transitions
     validation_run ||--o{ score_observation : evaluates
     validation_run ||--o{ fairness_evidence : produces
@@ -137,7 +139,7 @@ erDiagram
 
     contextual_membership {
       string membership_id PK
-      string observation_id
+      string observation_id FK
       string context_dimension_id
       string context_id
       decimal membership_weight
@@ -151,7 +153,7 @@ erDiagram
       string scoring_engine_version_id FK
       string occasion_id FK
       string subject_id
-      string criterion_id
+      string criterion_id FK
       string observation_status
       decimal score_value
       string observation_fingerprint
