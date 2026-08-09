@@ -13,9 +13,12 @@ CANONICAL_DOCUMENTS = (
     "docs/TRD.md",
     "docs/architecture/UML.md",
     "docs/architecture/ERD.md",
+    "docs/architecture/THREAT_MODEL.md",
+    "docs/verification_validation_plan.md",
     "docs/adr/README.md",
     "docs/requirements_traceability.md",
     "docs/documentation_coverage.md",
+    "docs/doctoring/architecture_governance_baseline.md",
 )
 ADR_FILES = tuple(
     f"docs/adr/ADR-{index:03d}-{slug}.md"
@@ -134,6 +137,43 @@ def test_erd_is_logical_and_does_not_claim_core_database_ownership() -> None:
     assert "longitudinal_state_spec" in erd
 
 
+def test_threat_model_covers_llm_supply_chain_and_assurance_boundaries() -> None:
+    """Keep AI/provider and release trust boundaries in the canonical threat model."""
+    threat_model = _read("docs/architecture/THREAT_MODEL.md")
+    for required_text in (
+        "TM-INPUT-001",
+        "TM-PROV-001",
+        "TM-LLM-001",
+        "TM-SUPPLY-001",
+        "TM-NUM-001",
+        "TM-HIER-001",
+        "NVIDIA_NIM_API_KEY",
+        "SOC 2",
+        "CSAP",
+        "not a physical database schema",
+    ):
+        assert required_text in threat_model
+
+
+def test_verification_plan_requires_recovery_not_correlation_only() -> None:
+    """Preserve the scientific V&V hierarchy and anti-overclaiming requirements."""
+    validation = _read("docs/verification_validation_plan.md")
+    for required_text in (
+        "VV-SCI-001",
+        "VV-SCI-003",
+        "VV-SCI-007",
+        "VV-SCI-008",
+        "VV-AI-001",
+        "VV-AI-004",
+        "Bias",
+        "RMSE",
+        "coverage",
+        "A high Pearson/Spearman correlation is supplementary",
+        "Queued, pending, cancelled",
+    ):
+        assert required_text in validation
+
+
 def test_adr_index_and_traceability_cover_every_accepted_baseline_decision() -> None:
     """Keep accepted ADRs discoverable and linked to the traceability model."""
     adr_index = _read("docs/adr/README.md")
@@ -156,3 +196,19 @@ def test_documentation_audit_distinguishes_baseline_from_feature_completion() ->
     for priority in ("P0", "P1", "P2"):
         assert priority in coverage
     assert "protected-main functionality" in coverage
+
+
+def test_architecture_doctoring_captures_current_standards_and_falsification() -> None:
+    """Require the architecture baseline to retain standards and revision criteria."""
+    doctoring = _read("docs/doctoring/architecture_governance_baseline.md")
+    for required_text in (
+        "ISO/IEC/IEEE 42010:2022",
+        "ISO/IEC/IEEE 12207:2026",
+        "ISO/IEC 25010:2023",
+        "ISO/IEC 5338:2023",
+        "ISO/IEC 42001:2023",
+        "CSAP",
+        "SOC 2",
+        "Documentation falsification criteria",
+    ):
+        assert required_text in doctoring
