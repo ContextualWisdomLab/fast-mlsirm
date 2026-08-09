@@ -136,13 +136,20 @@ def test_successful_run_uses_isolated_process_group_and_returns_completed_proces
 
 
 def test_posix_timeout_terminates_process_group_and_omits_child_output(monkeypatch) -> None:
-    """A timed-out scientific test terminates its process group before failing closed."""
+    """A terminated group is probed after the full grace period before reaping."""
     fake = _FakeProcess(timeout_once=True)
-    signals: list[tuple[int, signal.Signals]] = []
+    signals: list[tuple[int, int]] = []
+    sleeps: list[float] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        signals.append((pgid, sig))
+        if sig == 0:
+            raise ProcessLookupError
 
     monkeypatch.setattr(deadlines.os, "name", "posix", raising=False)
     monkeypatch.setattr(deadlines.subprocess, "Popen", lambda *_args, **_kwargs: fake)
-    monkeypatch.setattr(deadlines.os, "killpg", lambda pgid, sig: signals.append((pgid, sig)))
+    monkeypatch.setattr(deadlines.os, "killpg", fake_killpg)
+    monkeypatch.setattr(deadlines.time, "sleep", sleeps.append)
 
     with pytest.raises(deadlines.BoundedSubprocessTimeout) as caught:
         deadlines.run_bounded(
@@ -152,20 +159,27 @@ def test_posix_timeout_terminates_process_group_and_omits_child_output(monkeypat
             text=True,
         )
 
-    assert signals == [(fake.pid, signal.SIGTERM)]
-    assert fake.communicate_calls == [1800.0, deadlines.PROCESS_GROUP_GRACE_SECONDS]
+    assert signals == [(fake.pid, signal.SIGTERM), (fake.pid, 0)]
+    assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
+    assert fake.communicate_calls == [1800.0, None]
     assert "do-not-echo" not in str(caught.value)
     assert "opaque-stdout" not in str(caught.value)
 
 
 def test_posix_timeout_escalates_to_sigkill_when_group_ignores_sigterm(monkeypatch) -> None:
-    """A process group that ignores SIGTERM receives SIGKILL after a bounded grace period."""
-    fake = _FakeProcess(timeout_twice=True)
-    signals: list[tuple[int, signal.Signals]] = []
+    """A group that survives the grace period receives SIGKILL before leader reap."""
+    fake = _FakeProcess(timeout_once=True)
+    signals: list[tuple[int, int]] = []
+    sleeps: list[float] = []
 
     monkeypatch.setattr(deadlines.os, "name", "posix", raising=False)
     monkeypatch.setattr(deadlines.subprocess, "Popen", lambda *_args, **_kwargs: fake)
-    monkeypatch.setattr(deadlines.os, "killpg", lambda pgid, sig: signals.append((pgid, sig)))
+    monkeypatch.setattr(
+        deadlines.os,
+        "killpg",
+        lambda pgid, sig: signals.append((pgid, sig)),
+    )
+    monkeypatch.setattr(deadlines.time, "sleep", sleeps.append)
 
     with pytest.raises(deadlines.BoundedSubprocessTimeout):
         deadlines.run_bounded(
@@ -175,13 +189,21 @@ def test_posix_timeout_escalates_to_sigkill_when_group_ignores_sigterm(monkeypat
 
     assert signals == [
         (fake.pid, signal.SIGTERM),
+        (fake.pid, 0),
         (fake.pid, signal.SIGKILL),
     ]
-    assert fake.communicate_calls == [
-        1800.0,
-        deadlines.PROCESS_GROUP_GRACE_SECONDS,
-        None,
-    ]
+    assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
+    assert fake.communicate_calls == [1800.0, None]
+
+
+def test_process_group_probe_treats_permission_denial_as_still_alive(monkeypatch) -> None:
+    """EPERM must fail closed rather than being mistaken for group disappearance."""
+    monkeypatch.setattr(
+        deadlines.os,
+        "killpg",
+        lambda *_args: (_ for _ in ()).throw(PermissionError()),
+    )
+    assert deadlines._posix_process_group_exists(4242) is True
 
 
 def test_nonzero_exit_preserves_check_semantics(monkeypatch) -> None:
