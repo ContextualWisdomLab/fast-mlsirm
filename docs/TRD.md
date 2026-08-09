@@ -1,6 +1,6 @@
 # Technical Requirements Document — fast-mlsirm
 
-Status: authoritative technical baseline for implementation and integration.
+Status: candidate authoritative technical baseline for implementation and integration; becomes normative when this documentation baseline reaches protected `main`. Capability maturity is tracked separately in `docs/architecture/capability_maturity.md` so requirements are not confused with already-shipped features.
 
 ## 1. Technology architecture
 
@@ -205,10 +205,32 @@ A release is permitted only from one exact integrated protected head with:
 
 ## 13. Standards baseline
 
-- ISO/IEC 25010:2023 — product quality model.
+The standards below are governance/quality inputs, not certification or validity claims. Current official status was rechecked on 2026-08-09.
+
+- ISO/IEC 25010:2023 — software/ICT product quality model and quality characteristics for requirements and evaluation.
 - ISO/IEC 42001:2023 — AI management-system requirements.
-- NIST AI RMF 1.0 and NIST AI 600-1 Generative AI Profile — risk-management and TEVV guidance; note that AI RMF 1.0 is under revision as of 2026.
-- WCAG 2.2 / WAI-ARIA for human-readable HTML evidence surfaces.
-- Standards for Educational and Psychological Testing and method-specific primary psychometric papers for validity, fairness and score-use claims.
+- ISO/IEC 23894:2023 — AI-specific risk-management guidance.
+- ISO/IEC 42005:2025 — AI system impact-assessment guidance across the lifecycle.
+- ISO/IEC 40500:2025 / WCAG 2.2 — current internationally standardized web-content accessibility baseline for human-readable HTML surfaces; W3C encourages use of the latest WCAG 2 version.
+- NIST AI RMF 1.0 (NIST AI 100-1) and NIST AI 600-1 Generative AI Profile — voluntary risk-management and generative-AI TEVV guidance. NIST states that AI RMF 1.0 is being revised; until a revised framework is published, 1.0 remains the current core framework and documentation must recheck this claim when the revision lands.
+- *Standards for Educational and Psychological Testing* (2014) and method-specific primary psychometric papers — validity, fairness, score-use and evidence boundaries.
 
 Method-specific doctoring must contain APA 7 references and enough equation-to-source traceability for an independent reviewer to reconstruct the intended implementation.
+
+### Standards references
+
+American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+
+Autio, C., Schwartz, R., Dunietz, J., Jain, S., Stanley, M., Tabassi, E., Hall, P., & Roberts, K. (2024). *Artificial intelligence risk management framework: Generative artificial intelligence profile* (NIST AI 600-1). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.AI.600-1
+
+International Organization for Standardization & International Electrotechnical Commission. (2023). *ISO/IEC 23894:2023 Information technology — Artificial intelligence — Guidance on risk management*.
+
+International Organization for Standardization & International Electrotechnical Commission. (2023). *ISO/IEC 25010:2023 Systems and software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Product quality model*.
+
+International Organization for Standardization & International Electrotechnical Commission. (2023). *ISO/IEC 42001:2023 Information technology — Artificial intelligence — Management system*.
+
+International Organization for Standardization & International Electrotechnical Commission. (2025). *ISO/IEC 40500:2025 Information technology — W3C Web Content Accessibility Guidelines (WCAG) 2.2*.
+
+International Organization for Standardization & International Electrotechnical Commission. (2025). *ISO/IEC 42005:2025 Information technology — Artificial intelligence (AI) — AI system impact assessment*.
+
+Tabassi, E. (2023). *Artificial intelligence risk management framework (AI RMF 1.0)* (NIST AI 100-1). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.AI.100-1
