@@ -1,9 +1,9 @@
 # ADR 0013: Continuous execution and canonical documentation governance
 
-- **Status:** Proposed
-- **Date:** 2026-08-09
-- **Decision owners:** fast-mlsirm maintainers
-- **Scope:** Repository development loop, architecture documentation, and release evidence
+Status: **Proposed**  
+Date: 2026-08-09  
+Decision owners: fast-mlsirm maintainers  
+Scope: Repository development loop, architecture documentation, and release evidence
 
 ## Context
 
