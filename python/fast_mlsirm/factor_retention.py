@@ -83,10 +83,11 @@ def govern_factor_retention(
     ``consensus`` result. Two or more distinct methods that disagree produce a
     ``disagreement`` result whose range spans the observed supported candidates.
     Zero or one method is ``insufficient_evidence``. Evidence is consumed only
-    until a duplicate or the finite supported-method set makes further input
-    invalid, so caller-controlled iterables are not exhausted unnecessarily. No
-    branch selects bifactor, higher-order, testlet, faceted, or latent-space
-    structure.
+    until a duplicate makes further input invalid, so caller-controlled iterables
+    are not exhausted unnecessarily. Because method identity is a closed enum and
+    duplicates fail immediately, accepted evidence cardinality is intrinsically
+    bounded by the supported method set. No branch selects bifactor, higher-order,
+    testlet, faceted, or latent-space structure.
     """
 
     records: list[FactorRetentionEvidence] = []
@@ -98,8 +99,6 @@ def govern_factor_retention(
             raise ValueError("duplicate factor-retention method evidence")
         seen_methods.add(record.method)
         records.append(record)
-        if len(records) > len(FactorRetentionMethod):
-            raise ValueError("factor-retention evidence exceeds supported method count")
 
     ordered = tuple(sorted(records, key=lambda record: record.method.value))
     if not ordered:
