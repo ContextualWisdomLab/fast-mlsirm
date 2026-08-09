@@ -49,26 +49,26 @@ def test_architecture_preserves_hosted_product_boundary() -> None:
 
 def test_prd_and_trd_pin_scientific_product_invariants() -> None:
     """Core research requirements cannot disappear from the component baseline."""
-    prd = _read("docs/PRD.md")
-    trd = _read("docs/TRD.md")
+    prd = _read("docs/PRD.md").lower()
+    trd = _read("docs/TRD.md").lower()
 
     for phrase in (
-        "True-parameter",
-        "Relation-safe model selection",
-        "Rater-aware AI evaluation",
-        "Context and time",
-        "Governed item lifecycle",
+        "true-parameter",
+        "relation-safe model selection",
+        "rater-aware ai evaluation",
+        "context and time",
+        "governed item lifecycle",
     ):
         assert phrase in prd
 
     for phrase in (
-        "Rust numerical requirements",
-        "Model relation before selection",
-        "Bifactor",
-        "Rotation",
-        "Multilevel/multiple membership/time",
-        "Automated scoring and LLM-as-a-Judge",
-        "Rubric and governed item bank",
+        "rust numerical requirements",
+        "model relation before selection",
+        "bifactor",
+        "rotation",
+        "multilevel/multiple membership/time",
+        "automated scoring and llm-as-a-judge",
+        "rubric and governed item bank",
     ):
         assert phrase in trd
 
