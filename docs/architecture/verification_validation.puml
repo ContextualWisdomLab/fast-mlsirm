@@ -1,0 +1,68 @@
+@startuml
+skinparam shadowing false
+skinparam componentStyle rectangle
+title fast-mlsirm verification and validation evidence flow
+
+package "Requirements and design" {
+  [PRD / TRD requirement] as req
+  [ADR / scientific claim] as adr
+  [Threat / control] as threat
+}
+
+package "Implementation verification" {
+  [Contract and schema tests] as contract
+  [Rust numerical tests] as rust
+  [Reference and CPU/GPU parity] as parity
+  [Security / resource tests] as security
+  [Package / reinstall / SBOM] as package
+  [Documentation contract] as docs
+}
+
+package "Scientific validation" {
+  [True-parameter recovery\nBias MAE RMSE Coverage] as recovery
+  [Relation-safe model selection\nLR / Bootstrap / Vuong / CV] as selection
+  [Fit / LD / DIF / invariance / drift] as diagnostics
+  [Scoreability and reliability] as scoreability
+  [Held-out generalization] as generalization
+  [Human audit / decision evidence] as audit
+}
+
+package "Release claim" {
+  [Supported interpretation] as interpretation
+  [Bounded release evidence] as release
+}
+
+req --> contract
+adr --> rust
+adr --> parity
+threat --> security
+contract --> recovery
+rust --> recovery
+parity --> recovery
+security --> diagnostics
+package --> release
+docs --> release
+recovery --> selection
+selection --> diagnostics
+diagnostics --> scoreability
+scoreability --> generalization
+generalization --> audit
+audit --> interpretation
+interpretation --> release
+
+note right of recovery
+  Align scale, sign, permutation,
+  rotation, Procrustes or links
+  before error metrics.
+end note
+
+note right of selection
+  Unknown relation or absent
+  distinguishability => no winner.
+end note
+
+note bottom of release
+  Evidence binds one exact protected
+  commit and offered artifact set.
+end note
+@enduml
