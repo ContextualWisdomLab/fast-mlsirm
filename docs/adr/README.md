@@ -17,6 +17,7 @@ This directory is the authoritative decision log for `fast-mlsirm`. ADRs record 
 | [0002](0002-rust-first-numerical-authority.md) | accepted | Rust is the production numerical authority; Python orchestrates/validates/reports and retained NumPy paths are bounded reference/fallback paths. |
 | [0003](0003-governed-assessment-rubric-scoring-lifecycle.md) | accepted | Use canonical Assessment/Rubric/Scoring contracts and a governed rubric/item/calibration lifecycle; human and AI judges are fallible raters. |
 | [0004](0004-structural-model-selection-and-context.md) | accepted | Choose structural models relation-safely and preserve testlet, multilevel, multiple-membership, and temporal structure before residual latent-space complexity. |
+| [0005](0005-privacy-purpose-limitation-and-audit.md) | accepted | Preserve measurement utility through purpose limitation, minimization, identity separation, and auditable access rather than blanket PII masking; do not equate engineering controls with certification. |
 
 ## Required ADR content
 
