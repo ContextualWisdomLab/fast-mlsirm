@@ -19,6 +19,10 @@ from .bifactor_scoreability import (
     bifactor_scoreability as bifactor_scoreability,
     bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
 )
+from .rating_range import (
+    RatingRangeEvidence as RatingRangeEvidence,
+    paired_rating_range_evidence as paired_rating_range_evidence,
+)
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
     RotationSolution as RotationSolution,
@@ -26,6 +30,13 @@ from .rotation import (
     rotate_factor_loadings as rotate_factor_loadings,
     rotation_criterion_value_gradient as rotation_criterion_value_gradient,
 )
+
+# The historical validation module remains a supported public namespace. Bind
+# the new typed API there without duplicating its implementation or arithmetic.
+from . import validation as _validation
+
+_validation.RatingRangeEvidence = RatingRangeEvidence
+_validation.paired_rating_range_evidence = paired_rating_range_evidence
 
 # Resolve distribution metadata at the package boundary on every reload. The
 # compatibility module may remain cached, so its copied value is not sufficient
@@ -39,6 +50,8 @@ __all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
+    "RatingRangeEvidence",
+    "paired_rating_range_evidence",
     "RotationCriterionInfo",
     "RotationSolution",
     "available_rotation_criteria",
@@ -46,4 +59,4 @@ __all__ = list(_legacy_init.__all__) + [
     "rotation_criterion_value_gradient",
 ]
 
-del _PackageNotFoundError, _distribution_version, _public_name
+del _PackageNotFoundError, _distribution_version, _public_name, _validation
