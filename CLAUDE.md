@@ -23,7 +23,8 @@ fully before making changes. In particular it defines:
   and psychometric computation layer. `ContextualWisdomLab/psychometrics-commons`
   is the hosted product and downstream consumer; fast-mlsirm does not depend on
   Psychometrics Commons or own its HTTP, session, consent, database, UI, or
-  deployment concerns.
+  deployment concerns. The hosted runtime must not be recreated under
+  `services/assessment_runtime` in this repository.
 
 ## Common Commands
 
@@ -122,7 +123,8 @@ contracts and numerical results as a downstream product. Product-specific HTTP
 routes, participant/session state, identity mappings, consent, research-release
 orchestration, UI, product persistence, and deployment belong to that repository
 or the owning CWL service. This repository must remain independently installable
-and must not acquire a reverse dependency on Psychometrics Commons.
+and must not acquire a reverse dependency on Psychometrics Commons. The hosted
+runtime must not be recreated under `services/assessment_runtime` here.
 
 ### Layout and how the pieces connect
 
