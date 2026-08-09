@@ -61,13 +61,12 @@ def test_architecture_pins_product_boundary_and_rust_authority() -> None:
 
 
 def test_adr_index_pins_privacy_and_governance_boundary() -> None:
-    """The ADR index must keep the purpose-limited privacy decision discoverable."""
+    """The ADR set must keep purpose-limited privacy decisions discoverable."""
     adr_index = _read("docs/adr/README.md")
     assert "0005-privacy-purpose-limitation-and-audit.md" in adr_index
     privacy_adr = _read("docs/adr/0005-privacy-purpose-limitation-and-audit.md")
     assert "blanket PII masking" in privacy_adr
-    assert "does not claim certification" not in privacy_adr  # keep wording factual
-    assert "do not claim certification" in privacy_adr or "does not claim certification" in privacy_adr or "falsely claiming certification" in privacy_adr
+    assert "falsely claiming certification" in privacy_adr
 
 
 def test_traceability_uses_explicit_status_taxonomy() -> None:
