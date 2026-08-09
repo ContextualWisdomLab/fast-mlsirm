@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import inspect
 import textwrap
 from pathlib import Path
@@ -11,7 +12,7 @@ import numpy as np
 import pytest
 from numpy.polynomial.hermite_e import hermegauss
 
-import fast_mlsirm.fit as fit_module
+fit_module = importlib.import_module("fast_mlsirm.fit")
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.estimators import mmle as mmle_module
 
