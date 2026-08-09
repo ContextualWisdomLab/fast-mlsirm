@@ -2,14 +2,15 @@
 
 - **Status:** Accepted baseline
 - **Date:** 2026-08-09
-- **Decision owners:** fast-mlsirm maintainers
+- **Decision owner:** `fast-mlsirm`
+- **Implementation status:** mixed; this umbrella records both active protected-main constraints and accepted future gates. Shipped status is controlled by `docs/architecture/capability_maturity.md`.
 - **Scope:** repository ownership, numerical authority, model claims, evidence, privacy, MSA composition, and release governance
 
 ## Context
 
 `fast-mlsirm` has evolved beyond its original narrow MLS2PLM prototype. The repository now includes or supports broader psychometric diagnostics, rubric/item-generation contracts, automated scoring/essay validation, enterprise measurement, release evidence, and cross-repository integration. The old combined PRD/TRD described a NumPy-first MVP and no longer represented the product or its scientific constraints.
 
-At the same time, the ContextualWisdomLab ecosystem now has a canonical hosted product boundary: `psychometrics-commons` owns hosted application concerns, while `fast-mlsirm` must remain reusable and independently installable.
+At the same time, the ContextualWisdomLab ecosystem has a canonical hosted product boundary: `psychometrics-commons` owns hosted application concerns, while `fast-mlsirm` must remain reusable and independently installable.
 
 The project also has unusually strict scientific obligations. Flexible models can overfit; human or LLM raters can be biased; latent spaces are non-identifiable up to transformations; finite multi-start does not prove a global optimum; multilevel/temporal structure can be lost through flattened schemas; and high raw agreement/correlation can coexist with serious bias or invalid score interpretation.
 
@@ -33,6 +34,8 @@ Production psychometric mathematics is implemented in Rust. Python may validate,
 
 A feature is not product-complete merely because a Rust kernel exists; it also requires a stable PyO3/Python product path when Python is the supported public interface. Conversely, Python must not duplicate a second independent production likelihood, optimizer, score, rank, or utility engine.
 
+Detailed decision: [ADR-0002](ADR-0002-rust-numerical-source-of-truth.md).
+
 ## Decision 3 — CPU/GPU performance claims require parity
 
 CPU implementations favor deterministic, low-contention multithreading with minimal unnecessary synchronization/context switching. GPU acceleration is used only for computationally material kernels and requires explicit CPU/GPU objective/result parity.
@@ -40,6 +43,8 @@ CPU implementations favor deterministic, low-contention multithreading with mini
 ### Consequence
 
 No feature may advertise a GPU backend that silently skips to CPU or produces unverified estimates.
+
+Detailed decision: [ADR-0002](ADR-0002-rust-numerical-source-of-truth.md).
 
 ## Decision 4 — Factor retention and structural model choice are separate
 
@@ -53,6 +58,8 @@ The software treats correlated MIRT, bifactor, higher-order, testlet, two-tier, 
 - held-out/cluster-aware prediction, residual dependence, DIF/invariance, scoreability, and recovery supplement in-sample fit;
 - unknown relation fails closed rather than defaulting to a winner.
 
+Detailed decision: [ADR-0004](ADR-0004-relation-safe-model-selection.md).
+
 ## Decision 5 — Bifactor fit does not authorize score interpretation
 
 Bifactor general/specific scores require scoreability evidence such as applicable ECV/PUC, omega-H/omega-HS, factor determinacy and construct replicability, with the exact interpretation matched to the latent-response or observed-score scale used by the implementation.
@@ -60,6 +67,8 @@ Bifactor general/specific scores require scoreability evidence such as applicabl
 ### Consequence
 
 The API and docs must distinguish model fit from score interpretation. A flexible bifactor model cannot win merely because it has a higher in-sample fit index.
+
+Detailed decision: [ADR-0004](ADR-0004-relation-safe-model-selection.md).
 
 ## Decision 6 — No universal rotation criterion or global-optimum claim
 
@@ -69,6 +78,8 @@ Rotation criteria have condition-dependent behavior. Finite deterministic multi-
 
 Rotation selection uses criterion-neutral stability/recovery/interpretability evidence rather than comparing raw objective values from different criteria.
 
+Detailed decision: [ADR-0007](ADR-0007-adaptive-rotation-selection.md).
+
 ## Decision 7 — True-parameter recovery outranks correlation-only validation
 
 Parameter recovery requires scale/rotation/sign alignment before error calculation and reports bias, MAE, RMSE, uncertainty/coverage, convergence and classified failures. Correlation may be reported as supplementary rank/association evidence but never as proof of accurate recovery or agreement.
@@ -76,6 +87,8 @@ Parameter recovery requires scale/rotation/sign alignment before error calculati
 ### Consequence
 
 Simulation/recovery tests must include realistic designs and known truth. Automated scoring validation must also distinguish agreement, calibration, fairness, DIF and generalization from correlation.
+
+Detailed release/evidence decision: [ADR-0008](ADR-0008-statistical-evidence-and-release-gates.md).
 
 ## Decision 8 — Human and AI judges are fallible raters
 
@@ -85,13 +98,17 @@ Human, LLM, rules-based and external scoring engines emit comparable rater obser
 
 Many-facet calibration, rater severity/fit/range behavior, criterion-specific effects, drift and human adjudication are first-class concerns where relevant.
 
+Detailed decision: [ADR-0005](ADR-0005-rater-aware-ai-evaluation.md).
+
 ## Decision 9 — Rubrics and item banks are governed measurement artifacts
 
 Rubrics, blueprints, generation contracts, candidates, calibrations and item-bank versions are versioned, bounded, provenance-bound artifacts. Operational versions are immutable; changes create new versions and require linking/anchor evidence when scores are compared across versions.
 
 ### Consequence
 
-The product lifecycle is not `prompt → score`; it is `rubric → blueprint → generation → validation/screening → pilot observations → Rust calibration → governed item bank → monitoring/revision`.
+The target lifecycle is not `prompt → score`; it is `rubric → blueprint → generation → validation/screening → pilot observations → Rust calibration → governed item bank → monitoring/revision`. This does not imply that every lifecycle transition is already implemented on protected main.
+
+Detailed decisions: [ADR-0003](ADR-0003-canonical-contracts-and-provenance.md) and [ADR-0009](ADR-0009-governed-rubric-item-bank-lifecycle.md).
 
 ## Decision 10 — Multilevel, multiple-membership and temporal context are explicit
 
@@ -101,7 +118,10 @@ Where data are contextual or repeated, the software preserves contextual dimensi
 
 - atomistic interpretations are rejected when required contextual structure is absent;
 - a discrete occasion-step autoregressive parameter is not silently reinterpreted as continuous time;
-- future estimators must detect disconnected/confounded/under-linked designs.
+- future estimators must detect disconnected/confounded/under-linked designs;
+- an accepted representation requirement does not itself claim a general multilevel or continuous-time estimator is shipped.
+
+Detailed decision: [ADR-0006](ADR-0006-multilevel-membership-and-time.md).
 
 ## Decision 11 — Evidence measurement and consequential decisions are separate
 
@@ -117,7 +137,7 @@ Blanket PII masking can destroy longitudinal linkage, multiple-membership struct
 
 ### Consequence
 
-Raw source content and direct identity data are retained only where an authorized host needs them. Core artifacts prefer references and fingerprints. Privacy tests must include cross-tenant/re-identification/replay/retention scenarios where applicable.
+Raw source content and direct identity data are retained only where an authorized host needs them. Core artifacts prefer references and fingerprints. Privacy tests must include cross-tenant/re-identification/replay/retention scenarios where applicable to the owning host/service.
 
 ## Decision 13 — LLM development and test orchestration
 
@@ -131,23 +151,30 @@ PRD, TRD, architecture, ADR, UML/ERD, method-specific doctoring, changelog and r
 
 ### Consequence
 
-The repository maintains an explicit documentation coverage matrix and updates architecture documents when governing contracts change.
+The repository maintains an explicit documentation coverage matrix, capability maturity map and ADR index/template. Architecture documents are updated when governing contracts change.
 
 ## Standards and research basis
 
-The baseline is informed by:
+Official source status was rechecked on 2026-08-09. The baseline is informed by:
 
-- ISO/IEC. (2023). *ISO/IEC 25010:2023 Systems and software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Product quality model*.
-- ISO/IEC. (2023). *ISO/IEC 42001:2023 Information technology — Artificial intelligence — Management system*.
-- Tabassi, E. (2023). *Artificial Intelligence Risk Management Framework (AI RMF 1.0)* (NIST AI 100-1). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.AI.100-1
-- Autio, C., Schwartz, R., Dunietz, J., Jain, S., Stanley, M., Tabassi, E., Hall, P., & Roberts, K. (2024). *Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile* (NIST AI 600-1). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.AI.600-1
+- International Organization for Standardization & International Electrotechnical Commission. (2023). *ISO/IEC 25010:2023 Systems and software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Product quality model*.
+- International Organization for Standardization & International Electrotechnical Commission. (2023). *ISO/IEC 42001:2023 Information technology — Artificial intelligence — Management system*.
+- International Organization for Standardization & International Electrotechnical Commission. (2023). *ISO/IEC 23894:2023 Information technology — Artificial intelligence — Guidance on risk management*.
+- International Organization for Standardization & International Electrotechnical Commission. (2025). *ISO/IEC 42005:2025 Information technology — Artificial intelligence (AI) — AI system impact assessment*.
+- International Organization for Standardization & International Electrotechnical Commission. (2025). *ISO/IEC 40500:2025 Information technology — W3C Web Content Accessibility Guidelines (WCAG) 2.2*.
+- Tabassi, E. (2023). *Artificial intelligence risk management framework (AI RMF 1.0)* (NIST AI 100-1). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.AI.100-1
+- Autio, C., Schwartz, R., Dunietz, J., Jain, S., Stanley, M., Tabassi, E., Hall, P., & Roberts, K. (2024). *Artificial intelligence risk management framework: Generative artificial intelligence profile* (NIST AI 600-1). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.AI.600-1
 - American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 - Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika, 86*(2), 378–403. https://doi.org/10.1007/s11336-021-09762-5
 - Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826. https://doi.org/10.1017/psy.2025.5
 - Schneider, L., Chalmers, R. P., Debelak, R., & Merkle, E. C. (2020). Model selection of nested and non-nested item response models using Vuong tests. *Multivariate Behavioral Research, 55*, 664–684.
 - Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016). Evaluating bifactor models: Calculating and interpreting statistical indices. *Psychological Methods, 21*, 137–150.
 
-Method-specific documents may add newer primary papers. A citation is not a substitute for implementation/recovery evidence.
+NIST currently states that AI RMF 1.0 is being revised. Until a revised core framework is published, 1.0 remains the referenced core framework; this ADR must be revisited when the revision lands. Standards and citations do not substitute for implementation/recovery evidence and do not create ISO, NIST, CSAP, SOC 2, accessibility, psychometric-validity or regulatory certification claims.
+
+## Detailed ADR set
+
+See `docs/adr/README.md` for the index and `docs/adr/0000-template.md` for the mandatory structure of future durable decisions. ADR-0001 is the umbrella baseline; ADR-0002 through ADR-0009 decompose major decisions so future changes can supersede one architectural concern without rewriting unrelated history.
 
 ## Rejected alternatives
 
@@ -170,3 +197,7 @@ Rejected because model and rotation adequacy are data-generating-structure and u
 ### Blanket-mask PII
 
 Rejected because it can make valid measurement and audit workflows unusable; purpose-bound isolation and disclosure controls are more appropriate.
+
+## Supersession criteria
+
+Supersede this umbrella ADR when repository boundaries, numerical authority, or the governing scientific/release philosophy changes materially. Narrower changes should supersede the relevant detailed ADR instead of rewriting this historical baseline.
