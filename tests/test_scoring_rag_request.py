@@ -240,3 +240,13 @@ def test_rag_metadata_rejects_non_allowlisted_content_keys(metadata_key: str) ->
         "unsupported_rag_metadata",
         lambda: _request(metadata={metadata_key: "sensitive_content"}),
     )
+
+
+def test_rag_evaluation_split_rejects_raw_content_value() -> None:
+    """The sole allowlisted metadata value is an identifier, never a content channel."""
+    raw_query = "What is the refund policy for enterprise customers?"
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(metadata={"evaluation_split": raw_query})
+
+    assert caught.value.code == "invalid_evaluation_split"
+    assert raw_query not in str(caught.value)
