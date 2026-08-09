@@ -97,6 +97,15 @@ def test_root_architecture_links_to_canonical_views() -> None:
         assert (ROOT / target).is_file(), target
 
 
+def test_item_bank_state_alias_does_not_nest_plantuml_documents() -> None:
+    """The compatibility alias must include one complete diagram without nested start/end markers."""
+    alias = _read("docs/uml/item-bank-state.puml")
+    assert alias == "!include item-lifecycle.puml\n"
+    lifecycle = _read("docs/uml/item-lifecycle.puml")
+    assert lifecycle.count("@startuml") == 1
+    assert lifecycle.count("@enduml") == 1
+
+
 def test_documentation_index_and_completeness_matrix_cover_security_and_gaps() -> None:
     """Canonical navigation must expose threat, completeness, and current-vs-planned state."""
     index = _read("docs/README.md")
