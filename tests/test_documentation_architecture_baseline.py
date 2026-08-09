@@ -89,6 +89,11 @@ def test_uml_and_erd_contain_machine_renderable_mermaid_contracts() -> None:
     assert "score_observation" in erd
     assert "calibration_run" in erd
     assert "release_bundle" in erd
+    assert "score_observation ||--o{ contextual_membership" in erd
+    assert "contextual_membership ||--o{ score_observation" not in erd
+    assert "generated_item_version ||--o{ item_bank_entry" in erd
+    assert "generated_item_version ||--o{ item_bank_version" not in erd
+    assert "calibration_run ||--o{ item_bank_entry" in erd
 
 
 def test_adr_records_current_standards_and_scientific_boundaries() -> None:
