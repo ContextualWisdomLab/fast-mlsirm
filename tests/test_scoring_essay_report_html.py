@@ -37,9 +37,7 @@ def clean_report():
 
 def review_report():
     """Return one deterministic report with mandatory and added triggers."""
-    request = essay_request(
-        review_flags=(EssayReviewFlag.OFF_TOPIC_RESPONSE,)
-    )
+    request = essay_request(review_flags=(EssayReviewFlag.OFF_TOPIC_RESPONSE,))
     _engine, descriptor, result = result_bundle(
         request,
         claim_evidence=(),
@@ -59,6 +57,17 @@ def test_html_renderer_surface_is_explicit_and_documented() -> None:
     """The renderer module exposes one documented reporting operation."""
     assert report_html.__all__ == ["render_essay_score_report_html"]
     assert render_essay_score_report_html.__doc__
+
+
+def test_title_attr_is_only_emitted_for_finite_python_floats() -> None:
+    """Supplemental exact-value titles must not label missing or non-finite data."""
+    assert report_html._title_attr(1.25) == ' title="1.25"'
+    assert report_html._title_attr(-0.0) == ' title="-0.0"'
+    assert report_html._title_attr(None) == ""
+    assert report_html._title_attr(3) == ""
+    assert report_html._title_attr(float("nan")) == ""
+    assert report_html._title_attr(float("inf")) == ""
+    assert report_html._title_attr(float("-inf")) == ""
 
 
 def test_clean_report_renders_deterministic_accessible_exact_values(
@@ -104,6 +113,10 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "font-variant-numeric: tabular-nums;" in first
     assert "@media (prefers-reduced-motion: reduce)" in first
     assert "transition-duration: 0.01ms !important;" in first
+    assert "@media print" in first
+    assert "body { background: white; color: black; }" in first
+    assert ".skip-link { display: none !important; }" in first
+    assert "section, .table-scroll { break-inside: avoid; }" in first
     assert "tbody:hover tr:not(:hover)" not in first
     assert "<script" not in first.lower()
 
@@ -151,7 +164,10 @@ def test_empty_table_renders_an_explicit_empty_state() -> None:
         rows=(),
         empty_message="No evidence is available.",
     )
-    assert rendered == '<div class="empty-state" role="status">No evidence is available.</div>'
+    assert (
+        rendered
+        == '<div class="empty-state" role="status">No evidence is available.</div>'
+    )
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
