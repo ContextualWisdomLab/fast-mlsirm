@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -16,7 +17,11 @@ def link_fixed_item_parameters(
     if anchors_raw.ndim != 1 or anchors_raw.size == 0:
         raise ValueError("anchor_items must be a non-empty 1D array")
     a_fl = anchors_raw.astype(np.float64)
-    if not np.all(np.isfinite(a_fl)) or np.any(a_fl < 0) or np.any(a_fl != np.floor(a_fl)):
+    if (
+        not np.all(np.isfinite(a_fl))
+        or np.any(a_fl < 0)
+        or np.any(a_fl != np.floor(a_fl))
+    ):
         raise ValueError("anchor_items must be finite non-negative integers")
     # Range-check on the float BEFORE narrowing: uint64 max casts to -1 and
     # would slip past an upper-bound-only int64 check as a valid last-item index.
@@ -54,7 +59,9 @@ def link_fixed_item_parameters(
             or np.any(f_fl != np.floor(f_fl))
             or np.any(f_fl >= n_items)
         ):
-            raise ValueError("factor_id must be a 1-D array of finite non-negative integers")
+            raise ValueError(
+                "factor_id must be a 1-D array of finite non-negative integers"
+            )
         factors = f_fl.astype(np.int64)
     if factors.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
@@ -76,12 +83,18 @@ def link_fixed_item_parameters(
             # be constructed with a non-positive anchor slope directly.
             raise ValueError("target anchor slopes must be positive")
         scale[dim] = float(np.exp(np.mean(np.log(source.a[dim_anchors] / target_a))))
-        shift[dim] = float(np.mean((source.b[dim_anchors] - target.b[dim_anchors]) / target_a))
-        if not (np.isfinite(scale[dim]) and scale[dim] > 0.0 and np.isfinite(shift[dim])):
+        shift[dim] = float(
+            np.mean((source.b[dim_anchors] - target.b[dim_anchors]) / target_a)
+        )
+        if not (
+            np.isfinite(scale[dim]) and scale[dim] > 0.0 and np.isfinite(shift[dim])
+        ):
             # Reachable: a source anchor slope that underflows to 0 makes
             # log(source.a / target_a) = -inf, so scale underflows to 0.0 even
             # when every target slope is strictly positive.
-            raise ValueError("non-finite or non-positive linking coefficients (check anchor parameters)")
+            raise ValueError(
+                "non-finite or non-positive linking coefficients (check anchor parameters)"
+            )
 
         items = factors == dim
         linked.theta[:, dim] = scale[dim] * source.theta[:, dim] + shift[dim]
@@ -97,17 +110,15 @@ def link_fixed_item_parameters(
 # 1983). Rust core is the compute path.
 # --------------------------------------------------------------------------
 
-from dataclasses import dataclass
-
 
 @dataclass
 class IrtLinkResult:
     """IRT linking coefficients (theta_old = slope*theta_new + intercept) with
     the characteristic-curve criterion and explicit termination evidence."""
 
-    slope: float       # theta_old = slope * theta_new + intercept
+    slope: float  # theta_old = slope * theta_new + intercept
     intercept: float
-    criterion: float   # characteristic-curve loss (0 for moment methods)
+    criterion: float  # characteristic-curve loss (0 for moment methods)
     n_iter: int
     method: str
     converged: bool = True
@@ -163,15 +174,17 @@ def irt_link(
     bo = np.asarray(b_old, dtype=np.float64)
     an = np.asarray(a_new, dtype=np.float64)
     bn = np.asarray(b_new, dtype=np.float64)
-    for _arr, _nm in ((ao, 'a_old'), (bo, 'b_old'), (an, 'a_new'), (bn, 'b_new')):
+    for _arr, _nm in ((ao, "a_old"), (bo, "b_old"), (an, "a_new"), (bn, "b_new")):
         if _arr.ndim != 1 or not np.all(np.isfinite(_arr)):
-            raise ValueError(f'{_nm} must be a 1-D array of finite numbers')
+            raise ValueError(f"{_nm} must be a 1-D array of finite numbers")
     if ao.shape != bo.shape or an.shape != bn.shape or ao.shape != an.shape:
-        raise ValueError('slope/intercept arrays must have matching lengths')
+        raise ValueError("slope/intercept arrays must have matching lengths")
     if np.any(ao <= 0) or np.any(an <= 0):
-        raise ValueError('slopes (a_old/a_new) must be positive')
-    if isinstance(q_theta, (bool, np.bool_)) or not isinstance(q_theta, (int, np.integer)):
-        raise ValueError('q_theta must be an integer quadrature size')
+        raise ValueError("slopes (a_old/a_new) must be positive")
+    if isinstance(q_theta, (bool, np.bool_)) or not isinstance(
+        q_theta, (int, np.integer)
+    ):
+        raise ValueError("q_theta must be an integer quadrature size")
     nodes, weights = _gh(int(q_theta))
     res = core.irt_link(
         ao,
@@ -183,8 +196,10 @@ def irt_link(
         method=str(method),
     )
     return IrtLinkResult(
-        slope=float(res["slope"]), intercept=float(res["intercept"]),
-        criterion=float(res["criterion"]), n_iter=int(res["n_iter"]),
+        slope=float(res["slope"]),
+        intercept=float(res["intercept"]),
+        criterion=float(res["criterion"]),
+        n_iter=int(res["n_iter"]),
         method=str(method),
         converged=bool(res["converged"]),
         termination_reason=str(res["termination_reason"]),
