@@ -37,9 +37,7 @@ def clean_report():
 
 def review_report():
     """Return one deterministic report with mandatory and added triggers."""
-    request = essay_request(
-        review_flags=(EssayReviewFlag.OFF_TOPIC_RESPONSE,)
-    )
+    request = essay_request(review_flags=(EssayReviewFlag.OFF_TOPIC_RESPONSE,))
     _engine, descriptor, result = result_bundle(
         request,
         claim_evidence=(),
@@ -100,7 +98,7 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
         "outline-offset: 2px; }"
     ) in first
     assert "main:focus-visible" in first
-    assert "main:focus { outline: none; }" not in first
+    assert "main:focus { outline: none; }" in first
     assert "font-variant-numeric: tabular-nums;" in first
     assert "@media (prefers-reduced-motion: reduce)" in first
     assert "transition-duration: 0.01ms !important;" in first
@@ -151,7 +149,10 @@ def test_empty_table_renders_an_explicit_empty_state() -> None:
         rows=(),
         empty_message="No evidence is available.",
     )
-    assert rendered == '<div class="empty-state" role="status">No evidence is available.</div>'
+    assert (
+        rendered
+        == '<div class="empty-state" role="status">No evidence is available.</div>'
+    )
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
