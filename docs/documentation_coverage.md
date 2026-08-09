@@ -15,6 +15,8 @@ The repository already contained strong feature/method documentation — notably
 - ADR index and durable architecture decisions;
 - UML component/class/sequence/state views;
 - logical ERD and persistence-ownership boundary;
+- core/integration threat model;
+- verification and scientific-validation plan;
 - requirements-to-design-to-evidence traceability;
 - a completeness audit telling maintainers what is authoritative versus still missing.
 
@@ -35,6 +37,8 @@ This branch adds that baseline. It does **not** claim that every roadmap feature
 | ADRs | Missing canonical index | Durable decisions were encoded as prose and repeated instructions |
 | UML | Missing coherent suite | Individual ASCII/Mermaid flows existed, not a maintained architecture view set |
 | ERD | Missing | No explicit statement that the core owns logical contracts but not physical DB schema |
+| Threat model | Fragmented | Security boundaries appeared in implementation/review docs without a canonical asset/trust-boundary model |
+| Verification/validation plan | Fragmented | Coverage/recovery/release gates existed, but software vs scientific vs product validity evidence was not normalized |
 | Requirements traceability | Missing | Difficult to prove feature→design→test/evidence coverage across the product |
 | Documentation completeness policy | Missing | No mechanism to detect architecture documentation drift |
 
@@ -44,7 +48,7 @@ The baseline explicitly incorporates the durable conclusions from the project's 
 
 ### Reference-free RAG measurement
 
-Covered in PRD/ADR/architecture:
+Covered in PRD/ADR/architecture/V&V:
 
 - groundedness, correctness, completeness/coverage, relevance, robustness, and abstention remain distinguishable constructs;
 - LLM judges are fallible raters, not truth;
@@ -53,18 +57,18 @@ Covered in PRD/ADR/architecture:
 
 ### Dynamic rubric and item generation
 
-Covered in PRD/ADR/UML/ERD:
+Covered in PRD/ADR/UML/ERD/threat model/V&V:
 
 ```text
 Rubric → Blueprint → Generation Contract → Candidate Validation
 → Screening → Pilot → Rust Calibration → Governed Item Bank → Monitoring
 ```
 
-The architecture distinguishes schema conformance from psychometric validity and preserves immutable rubric/item provenance.
+The architecture distinguishes schema conformance from psychometric validity, preserves immutable rubric/item provenance, and treats provider output as untrusted.
 
 ### Automated scoring and essay evaluation
 
-Covered in PRD/TRD/ADR/UML:
+Covered in PRD/TRD/ADR/UML/V&V:
 
 - one AssessmentSpec/rubric source of truth;
 - human and automated raters under a shared observation contract;
@@ -74,7 +78,7 @@ Covered in PRD/TRD/ADR/UML:
 
 ### Factor retention and structural models
 
-Covered in PRD/TRD/ADR:
+Covered in PRD/TRD/ADR/V&V:
 
 - factor count is separate from model form;
 - correlated MIRT, bifactor, higher-order, testlet, two-tier, many-facet, and latent-space structures answer different questions;
@@ -83,7 +87,7 @@ Covered in PRD/TRD/ADR:
 
 ### Adaptive factor rotation
 
-Covered in PRD/TRD/ADR-002/005:
+Covered in PRD/TRD/ADR-002/005/V&V:
 
 - no universal best criterion;
 - Rust criterion registry and multi-start optimization;
@@ -94,7 +98,7 @@ Covered in PRD/TRD/ADR-002/005:
 
 ### True-parameter recovery and AI validation
 
-Covered in PRD/TRD:
+Covered in PRD/TRD/V&V:
 
 - scale/alignment before error calculation;
 - bias/RMSE/coverage/convergence over correlation-only claims;
@@ -103,13 +107,25 @@ Covered in PRD/TRD:
 
 ### Multilevel, multiple membership, and time
 
-Covered in ADR-006, TRD, UML/ERD:
+Covered in ADR-006, TRD, UML/ERD, threat model, and V&V:
 
 - atomistic fallback is not acceptable when hierarchy is scientifically material;
 - context dimension and context identity are distinct;
 - cross-classification and multiple membership are explicit;
 - exact time/order/revision provenance is preserved;
-- discrete occasion-step dynamics are not mislabeled continuous-time dynamics.
+- discrete occasion-step dynamics are not mislabeled continuous-time dynamics;
+- resampling/validation units must respect dependency structure.
+
+### Security, privacy, and LLM boundaries
+
+Covered in TRD, ADR-003/007/008, threat model, doctoring, and V&V:
+
+- untrusted provider/model output is structurally and semantically validated before measurement use;
+- prompt injection, sensitive-information disclosure, improper output handling, excessive agency, supply-chain risk, and unbounded consumption are distinct integration threats;
+- hashes are provenance identities, not authorization/signatures/anonymity;
+- raw PII may remain operationally necessary in an owning service, so the core prefers purpose-bound minimization and opaque/fingerprint provenance rather than blanket masking;
+- GitHub/model/LLM output never becomes merge/release authority;
+- CSAP/SOC 2/ISO-style assurance is an owning-service/system claim, not a library certification claim.
 
 ### MSA / CWL ecosystem
 
@@ -129,10 +145,14 @@ Covered in ARCHITECTURE and ADR-001/008:
 | `docs/TRD.md` | enforceable technical, numerical, psychometric, security, quality, release constraints |
 | `docs/architecture/UML.md` | component, class, sequence, model-selection, state and deployment views |
 | `docs/architecture/ERD.md` | logical contract/provenance ERD and downstream persistence rules |
+| `docs/architecture/THREAT_MODEL.md` | core/integration assets, trust boundaries, threats, controls, misuse cases, assurance boundary |
+| `docs/verification_validation_plan.md` | software, numerical, recovery, model-selection, AI-evaluator, security, performance and release evidence plan |
 | `docs/adr/README.md` | ADR governance and index |
 | `docs/adr/ADR-001..008` | durable architecture decisions |
 | `docs/requirements_traceability.md` | requirement→architecture→implementation/evidence map |
+| `docs/doctoring/architecture_governance_baseline.md` | source/standards audit, APA 7 references and falsification criteria |
 | `docs/documentation_coverage.md` | this completeness and drift audit |
+| `tests/test_architecture_documentation_contract.py` | executable regression preventing loss/overclaim of the canonical architecture spine |
 
 ## 4. Remaining documentation gaps after this baseline
 
@@ -156,7 +176,8 @@ The architecture corpus is now sufficient as a **baseline**, but not complete fo
 - multilevel/longitudinal Rust estimator architecture and identification ADR;
 - continuous-time model ADR if elapsed intervals enter the likelihood;
 - RAG observation adapter specification;
-- essay calibration/adjudication/monitoring end-to-end operational guide.
+- essay calibration/adjudication/monitoring end-to-end operational guide;
+- architecture-diff/check automation for Mermaid links/diagrams and traceability beyond the initial regression test.
 
 ### P2 — downstream/product integration
 
@@ -168,7 +189,8 @@ These belong primarily in owning repositories, not here:
 - customer data residency and key-management deployment views;
 - billing/usage metering;
 - hosted SLO/SLA/topology;
-- public research catalog deployment.
+- public research catalog deployment;
+- owning-service CSAP/SOC 2/ISO 27001/ISO 42001 control/evidence mappings where pursued.
 
 ## 5. Documentation quality gates
 
@@ -177,28 +199,34 @@ A substantive PR should be considered documentation-complete only when all appli
 1. public behavior is described somewhere authoritative;
 2. a new architecture invariant has an ADR;
 3. the PRD/TRD are updated if the product/technical requirement changed;
-4. UML/ERD views are updated when components, flows, cardinalities, or ownership changed;
+4. UML/ERD/threat views are updated when components, flows, cardinalities, ownership, or trust boundaries changed;
 5. `docs/requirements_traceability.md` maps the new requirement/evidence;
 6. method claims cite primary authoritative sources in APA 7 form;
 7. implementation status is not overstated — planned contracts are not described as protected-main functionality;
 8. exact test/recovery/release evidence exists separately from design prose;
-9. changelog/version are updated when the release contract warrants them;
-10. outdated docs are removed or explicitly superseded rather than allowed to coexist ambiguously.
+9. V&V requirements are updated when a new scientific/product claim needs a different acceptance method;
+10. changelog/version are updated when the release contract warrants them;
+11. outdated docs are removed or explicitly superseded rather than allowed to coexist ambiguously.
 
 ## 6. Standards baseline
 
-The documentation framework is aligned to the following current or confirmed standards as of 2026-08-09:
+The documentation framework is aligned to the following current or confirmed standards/guidance as of 2026-08-09:
 
 - ISO/IEC/IEEE 42010:2022 — architecture descriptions;
-- ISO/IEC/IEEE 29148:2018 — requirements engineering (confirmed current in 2024, revision underway);
+- ISO/IEC/IEEE 29148:2018 — requirements engineering (published current standard; revision project exists);
 - ISO/IEC/IEEE 12207:2026 — software life-cycle processes;
-- ISO/IEC/IEEE 15289:2019 — life-cycle information items/documentation (confirmed current in 2025);
+- ISO/IEC/IEEE 15289:2019 — life-cycle information items/documentation;
 - ISO/IEC 25010:2023 — software product quality model;
 - ISO/IEC 5338:2023 — AI-system lifecycle processes where AI integrations are involved;
+- ISO/IEC 42001:2023 — AI management-system concerns without certification claim;
+- ISO/IEC 27001:2022 — information-security management-system concerns without certification claim;
+- NIST AI RMF 1.0 and NIST AI 600-1 GenAI Profile — supplementary AI-risk/TEVV guidance (AI RMF revision is in progress as of 2026-08-09);
+- OWASP Top 10 for LLMs and Gen AI Apps 2025 — supplementary GenAI application threat taxonomy;
+- KISA CSAP program/current published guidance — downstream cloud-service assurance context, not a library certification;
 - OMG UML 2.5.1 — diagram vocabulary used conceptually in the UML companion.
 
 ## 7. Overall assessment
 
 Before this baseline, documentation maturity was **strong at feature-level evidence and operational governance, weak at canonical system architecture and cross-feature traceability**.
 
-After this baseline, the repository has a coherent product/technical/architecture/decision/diagram/ERD/traceability spine. The remaining work is to keep that spine synchronized with implementation rather than continue adding isolated design documents without updating the canonical model.
+After this baseline, the repository has a coherent product/technical/architecture/decision/diagram/ERD/threat/V&V/traceability spine. The remaining work is to keep that spine synchronized with implementation rather than continue adding isolated design documents without updating the canonical model.
