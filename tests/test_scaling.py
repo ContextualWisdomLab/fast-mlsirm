@@ -4,69 +4,122 @@ import pytest
 from fast_mlsirm.scaling import lsr_rankings
 
 
-def test_lsr_rankings_basic():
-    # Test with a simple set of rankings (strongly connected to avoid ValueError)
-    # Items: 0, 1, 2
-    # Rankings:
-    # - [0, 1] (0 beats 1)
-    # - [1, 2] (1 beats 2)
-    # - [2, 0] (2 beats 0)
-    # - [0, 2] (0 beats 2) - breaking symmetry so 0 is uniquely ranked highest
+def lsr_oracle(rankings, n, alpha=0.0):
+    """Independent oracle computing LSR via continuous-time Markov chain eigenvalue."""
+    A = np.full((n, n), alpha, dtype=float)
+    np.fill_diagonal(A, 0.0)
+    for rank in rankings:
+        for i, winner in enumerate(rank[:-1]):
+            rate = 1.0 / (len(rank) - i)
+            for loser in rank[i + 1 :]:
+                A[loser, winner] += rate
+    Q = A.copy()
+    np.fill_diagonal(Q, -Q.sum(axis=1))
+    evals, evecs = np.linalg.eig(Q.T)
+    pi = np.real(evecs[:, np.argmin(np.abs(evals))])
+    weights = pi / pi.sum() * n
+    log_pi = np.log(weights)
+    return log_pi - np.mean(log_pi), weights
 
-    rankings = [[0, 1], [1, 2], [2, 0], [0, 2]]
+
+def test_lsr_rankings_numerical_oracle():
+    """Asserts that lsr_rankings matches an independent Markov-chain oracle exact calculation."""
+    rankings = [[0, 1, 2], [2, 0]]
     n = 3
+    alpha = 0.1
 
-    res = lsr_rankings(rankings, n)
+    oracle_params, oracle_weights = lsr_oracle(rankings, n, alpha=alpha)
+    res = lsr_rankings(rankings, n, alpha=alpha)
 
-    # 0 has 2 wins, 1 has 1 win, 2 has 1 win
-    assert res.params[0] > res.params[1]
-
-    # Should be centered
-    assert np.isclose(np.mean(res.params), 0.0)
+    np.testing.assert_allclose(res.params, oracle_params, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(res.weights, oracle_weights, rtol=1e-10, atol=1e-10)
     assert res.iterations == 1
 
 
-def test_lsr_rankings_partial():
-    # Test with partial rankings (more than 2 items)
-    rankings = [[0, 1, 2], [2, 1, 0]]
+def test_lsr_rankings_public_invariants():
+    """Verifies public invariants: positive finite weights, weights summing to n, and parameter centering."""
+    rankings = [[0, 1, 2], [2, 0, 1], [1, 0]]
     n = 3
-
     res = lsr_rankings(rankings, n)
 
-    # Due to symmetry, params should be equal for 0 and 2
-    assert np.isclose(res.params[0], res.params[2])
-    # Total sum should be ~0 due to centering
-    assert np.isclose(np.mean(res.params), 0.0)
+    assert np.all(np.isfinite(res.weights))
+    assert np.all(res.weights > 0)
+
+    # weights.sum() == n
+    np.testing.assert_allclose(res.weights.sum(), n, rtol=1e-12, atol=1e-12)
+
+    # centered params
+    np.testing.assert_allclose(res.params.sum(), 0.0, rtol=1e-12, atol=1e-12)
+
+    # params == log(weights) - mean(log(weights))
+    expected_params = np.log(res.weights) - np.mean(np.log(res.weights))
+    np.testing.assert_allclose(res.params, expected_params, rtol=1e-12, atol=1e-12)
 
 
-def test_lsr_rankings_alpha():
-    # Test with alpha parameter
-    rankings = [[0, 1], [1, 2]]
+def test_lsr_rankings_permutation_invariance_and_repeated():
+    """Tests that rearranging the input order of independent rankings, or adding duplicates, behaves consistently."""
+    rankings = [[0, 1, 2], [2, 1, 0], [0, 2]]
     n = 3
 
-    # With alpha=0, [0,1], [1,2] is not strongly connected
-    # Alpha > 0 ensures strong connectivity.
-    res_alpha = lsr_rankings(rankings, n, alpha=0.1)
+    # Base calculation
+    res_base = lsr_rankings(rankings, n)
 
-    assert len(res_alpha.params) == n
-    assert res_alpha.params[0] > res_alpha.params[1]
-    assert res_alpha.params[1] > res_alpha.params[2]
+    # Permute order of rankings
+    res_permuted = lsr_rankings([rankings[2], rankings[0], rankings[1]], n)
+    np.testing.assert_allclose(
+        res_base.params, res_permuted.params, rtol=1e-12, atol=1e-12
+    )
+
+    # Repeated rankings (weighting)
+    res_repeated = lsr_rankings(rankings * 3, n, alpha=0.0)
+    np.testing.assert_allclose(
+        res_base.params, res_repeated.params, rtol=1e-12, atol=1e-12
+    )
 
 
-def test_lsr_rankings_errors():
-    # Test invalid inputs
+def test_lsr_rankings_invalid_cases():
+    """Verifies that invalid bounds, duplicates, structural types, and broken graphs raise ValueError."""
     n = 3
 
-    # Empty rankings list
+    # Invalid empty rankings
     with pytest.raises(ValueError, match="at least one ranking is required"):
         lsr_rankings([], n)
 
-    # Ranking with only 1 item
-    with pytest.raises(ValueError, match="ranking 0 has fewer than 2 items"):
+    # Invalid short ranking
+    with pytest.raises(ValueError, match="fewer than 2 items"):
         lsr_rankings([[0]], n)
 
-    # Disconnected graph without alpha
+    # Invalid duplicate items within ranking
+    with pytest.raises(ValueError, match="duplicates"):
+        lsr_rankings([[0, 0]], n)
+
+    # Negative / out-of-range bounds
+    with pytest.raises(ValueError, match=">= n"):
+        lsr_rankings([[0, 3]], n)
+
+    # Invalid 'n' (e.g. 0 or 1, which cannot support pairwise graph)
+    with pytest.raises(ValueError):
+        lsr_rankings([[0, 1]], 1)
+
+    # Disconnected graph at alpha=0
     with pytest.raises(
         ValueError, match="stationary distribution could not be computed"
     ):
-        lsr_rankings([[0, 1], [1, 2]], n, alpha=0.0)
+        lsr_rankings([[0, 1]], 3, alpha=0.0)
+
+    # Valid with alpha > 0
+    assert lsr_rankings([[0, 1]], 3, alpha=0.1).weights.shape == (3,)
+
+    # Invalid alpha (negative or non-finite)
+    with pytest.raises(ValueError, match="alpha"):
+        lsr_rankings([[0, 1], [1, 2], [2, 0]], n, alpha=-1.0)
+
+    with pytest.raises(ValueError, match="alpha"):
+        lsr_rankings([[0, 1], [1, 2], [2, 0]], n, alpha=np.nan)
+
+    # Non-integral items
+    with pytest.raises(ValueError):
+        lsr_rankings([[0.5, 1.5]], n)
+
+    with pytest.raises(ValueError):
+        lsr_rankings([["a", "b"]], n)
