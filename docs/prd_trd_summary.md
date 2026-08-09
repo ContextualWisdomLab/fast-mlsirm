@@ -1,96 +1,36 @@
 # fast-mlsirm PRD/TRD Summary
 
-## Product Goal
+Status: **Compatibility pointer**  
+Last reconciled: **2026-08-09**
 
-`fast-mlsirm` provides fast simulation, fitting, and recovery diagnostics for
-Multidimensional Latent Space Item Response Models, especially MLS2PLM:
+The former content of this file described an early MLS2PLM MVP in which NumPy was the default implementation and ordinal scoring, adaptive testing, rubric generation, automated scoring, and broader measurement workflows were explicitly out of scope. That description is materially stale relative to protected `main` and must not be used as the product or technical specification.
 
-```text
-logit P(Y_pi = 1) = a_i * theta_p,d(i) + b_i - gamma * distance(xi_p, zeta_i)
-```
+The authoritative documents are now:
 
-The package is aimed at psychometrics, educational measurement, mental-health
-assessment, item diagnostics, adaptive testing research, and production-scale
-binary response scoring pipelines.
+- [Product Requirements Document](product_requirements.md)
+- [Technical Requirements Document](technical_requirements.md)
+- [Root architecture](../ARCHITECTURE.md)
+- [Architecture Decision Records](adr/README.md)
+- [Architecture/UML/logical ERD diagrams](architecture/diagrams.md)
+- [Requirements and evidence traceability](traceability_matrix.md)
 
-For sale and support purposes, the current product is a commercial beta for
-technical users. It can be packaged, verified, and supported for the documented
-local API/CLI workflows, but it is not a regulated decision product, hosted
-platform, or full ordinal/Bayesian estimation system.
+## Current concise boundary
 
-## MVP Scope
+`fast-mlsirm` is a reusable, domain-neutral measurement and psychometric computation layer. It provides versioned assessment/rubric/scoring contracts, governed rubric/item-generation boundaries, human/automated scoring evidence, Rust-first calibration/diagnostics, model comparison and scoreability evidence, recovery/simulation, linking, DIF/invariance/fairness-related utilities, and deterministic reports within the capabilities exposed by the current package.
 
-Must have:
+Rust is the production numerical authority. Python owns public contracts, validation, orchestration, retained reference/fallback paths where explicitly supported, and reporting. PyO3 is the reviewed bridge. GPU execution is a parity-gated device path rather than a separate scientific model.
 
-- Canonical MLS2PLM simulation.
-- `gamma=0` no-CD simulation.
-- `MIRT`, `MLSRM`, and `MLS2PLM` model constraints.
-- Missing response exclusion.
-- Likelihood and analytic gradient.
-- Adam and L-BFGS-style optimizers.
-- Procrustes alignment and recovery reports.
-- Python API and CLI.
-- Rust core formulas for likelihood and gradient.
-- Optional PyO3/maturin binding for using the Rust likelihood and gradient from
-  Python fitting.
+The package is not the hosted assessment product and does not own participant/session/consent persistence or hosted-product authorization/deployment. Those responsibilities belong downstream to `ContextualWisdomLab/psychometrics-commons`.
 
-Explicitly out of MVP:
+## Current major product directions
 
-- Full HMC/NUTS Bayesian sampling.
-- Ordinal graded response models.
-- Real-time adaptive testing.
-- GUI dashboards.
-- Automatic psychological construct naming.
+The authoritative PRD/TRD and traceability matrix distinguish released work from active/planned work. In particular:
 
-## Architecture
+- a generated item is untrusted until structural/provenance/source checks and later semantic/psychometric screening succeed;
+- humans and LLM judges are fallible raters rather than truth by identity;
+- correlated multidimensional, bifactor, higher-order, testlet/two-tier, multifaceted, and latent-space structures answer different scientific questions and require relation-safe comparison;
+- parameter recovery uses bias/MAE/RMSE/coverage and appropriate scale/alignment, not correlation alone;
+- multilevel, multiple-membership, cross-classified, and temporal structure must be preserved when scientifically relevant; and
+- release claims require exact-head CI/security/coverage/package/scientific/provenance/review evidence.
 
-The intended architecture is Python API first, Rust numerical core second:
-
-```text
-python/fast_mlsirm/
-  config, simulation, objective, fit, diagnostics, cli
-
-crates/mlsirm-core/
-  model structs, stable likelihood, analytic gradients, Rust tests
-
-crates/fast-mlsirm-py/
-  PyO3 module exposed as fast_mlsirm._core
-```
-
-The default Python backend is vectorized NumPy. The optional Rust backend uses
-the same core formula through a PyO3/maturin extension and can be selected with
-`FitConfig(backend="rust")`, `FitConfig(backend="auto")`, or
-`fast-mlsirm fit --backend`. Source and editable installs build that extension
-with maturin and therefore require a Rust toolchain; NumPy remains the default
-runtime backend after installation. The PyO3 crate is built through maturin and
-validated through Python backend parity tests, while `cargo test --workspace`
-covers the standalone Rust core.
-
-## Formula Contract
-
-For item `i` assigned to factor `d_i`:
-
-```text
-eta_pi = exp(alpha_i) * theta_p,d_i + b_i - exp(tau) * r_pi
-r_pi = sqrt(sum_k (xi_pk - zeta_ik)^2 + eps)
-loss = softplus(eta_pi) - y_pi * eta_pi
-```
-
-The NLL gradient uses:
-
-```text
-e_pi = sigmoid(eta_pi) - y_pi
-```
-
-and applies L2 regularization to `theta`, `xi`, `zeta`, `b`, `alpha`, and
-`tau` where those parameters are active for the selected model.
-
-## Roadmap
-
-1. Stabilize Python reference formulas and tests.
-2. Maintain NumPy/Rust objective parity through PyO3/maturin tests.
-3. Add block-mode likelihood/gradient execution.
-4. Add benchmark harness and repeated recovery-grid runner.
-5. Add sparse/missing optimized kernels.
-6. Explore JAX/GPU and ordinal response extensions as separate model/runtime
-   design work.
+This pointer is intentionally short. New normative requirements belong in the PRD/TRD or an ADR, not in another standalone summary that can silently diverge.
