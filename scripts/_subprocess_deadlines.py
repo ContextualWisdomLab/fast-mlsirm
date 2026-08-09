@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -124,6 +125,18 @@ def _validate_command(command: Sequence[str]) -> list[str]:
     return materialized
 
 
+def _posix_process_group_exists(process_group_id: int) -> bool:
+    """Return whether a POSIX process group still exists without changing it."""
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Fail closed: inability to signal does not prove that the group is gone.
+        return True
+    return True
+
+
 def _terminate_after_timeout(process: subprocess.Popen) -> None:
     """Terminate and reap one timed-out process or POSIX process group."""
     if os.name == "posix":
@@ -132,16 +145,18 @@ def _terminate_after_timeout(process: subprocess.Popen) -> None:
         except ProcessLookupError:
             process.communicate()
             return
-        try:
-            process.communicate(timeout=PROCESS_GROUP_GRACE_SECONDS)
-            return
-        except subprocess.TimeoutExpired:
+
+        # Keep the group leader unreaped during the grace period so its numeric
+        # process-group identifier cannot be recycled before the final liveness
+        # check. A leader may exit while a descendant in the same group survives.
+        time.sleep(PROCESS_GROUP_GRACE_SECONDS)
+        if _posix_process_group_exists(process.pid):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.communicate()
-            return
+        process.communicate()
+        return
 
     process.terminate()
     try:
