@@ -196,6 +196,35 @@ def test_posix_timeout_escalates_to_sigkill_when_group_ignores_sigterm(monkeypat
     assert fake.communicate_calls == [1800.0, None]
 
 
+def test_posix_timeout_reaps_when_group_exits_between_probe_and_sigkill(monkeypatch) -> None:
+    """A normal exit after liveness probing must not turn timeout cleanup into failure."""
+    fake = _FakeProcess(timeout_once=True)
+    signals: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        signals.append((pgid, sig))
+        if sig == signal.SIGKILL:
+            raise ProcessLookupError
+
+    monkeypatch.setattr(deadlines.os, "name", "posix", raising=False)
+    monkeypatch.setattr(deadlines.subprocess, "Popen", lambda *_args, **_kwargs: fake)
+    monkeypatch.setattr(deadlines.os, "killpg", fake_killpg)
+    monkeypatch.setattr(deadlines.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(deadlines.BoundedSubprocessTimeout):
+        deadlines.run_bounded(
+            ["cargo", "test"],
+            operation=deadlines.SubprocessOperation.STATISTICAL_TEST,
+        )
+
+    assert signals == [
+        (fake.pid, signal.SIGTERM),
+        (fake.pid, 0),
+        (fake.pid, signal.SIGKILL),
+    ]
+    assert fake.communicate_calls == [1800.0, None]
+
+
 def test_process_group_probe_treats_permission_denial_as_still_alive(monkeypatch) -> None:
     """EPERM must fail closed rather than being mistaken for group disappearance."""
     monkeypatch.setattr(
