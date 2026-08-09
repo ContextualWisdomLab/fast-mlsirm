@@ -112,7 +112,7 @@ Response Models** and adjacent psychometric measurement contracts. It provides
 MLS2PLM and related constraints (`MIRT`, `MLSRM`, `MLS2PLM`, `ULSRM`,
 `ULS2PLM`), binary response simulation, regularized JML/MAP-style point
 estimation (Adam + small L-BFGS, no SciPy), recovery/fit/dimensionality
- diagnostics, fixed-item calibration and linking diagnostics, reusable
+diagnostics, fixed-item calibration and linking diagnostics, reusable
 Assessment/Rubric/Scoring contracts, and standalone reports. It is intentionally
 *not* a Bayesian sampler and intentionally *not* the hosted Psychometrics Commons
 application.
