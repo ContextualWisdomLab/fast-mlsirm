@@ -108,8 +108,8 @@ def _identifier_list(
     """Render identifier evidence as a list or explicit atomic status region."""
     if not identifiers:
         return (
-            '<p class="empty-state" role="status" aria-atomic="true">'
-            f"{escape(empty_message)}</p>"
+            '<div class="empty-state" role="status" aria-atomic="true">'
+            f"{escape(empty_message)}</div>"
         )
     items = "".join(
         f"<li><code>{escape(identifier)}</code></li>" for identifier in identifiers
