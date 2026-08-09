@@ -14,6 +14,8 @@ REQUIRED_DOCUMENTS = (
     "docs/PRD.md",
     "docs/TRD.md",
     "docs/adr/README.md",
+    "docs/standards_watch.md",
+    "docs/verification_validation_plan.md",
     "docs/uml/README.md",
     "docs/uml/component.puml",
     "docs/uml/scoring-sequence.puml",
@@ -38,7 +40,7 @@ def _read(path: str) -> str:
 
 
 def test_canonical_architecture_documentation_files_exist() -> None:
-    """Keep requirements, decisions, diagrams, ERD, security, and traceability discoverable."""
+    """Keep requirements, decisions, V&V, diagrams, security, and traceability discoverable."""
     missing = [path for path in REQUIRED_DOCUMENTS if not (ROOT / path).is_file()]
     assert missing == []
 
@@ -50,6 +52,7 @@ def test_every_indexed_adr_exists_and_declares_supported_status() -> None:
     assert linked
     assert "0011-canonical-pyo3-public-export-registry.md" in linked
     assert "0012-purpose-limited-sensitive-data.md" in linked
+    assert "0013-continuous-execution-and-documentation-governance.md" in linked
     for relative_path in linked:
         adr_path = ROOT / "docs" / "adr" / relative_path
         assert adr_path.is_file(), relative_path
@@ -112,6 +115,45 @@ def test_documentation_index_and_completeness_matrix_cover_security_and_gaps() -
         assert state in coverage
     assert "P0 documentation gaps" in coverage
     assert "Canonical PyO3/public-export registry" in coverage
+
+
+def test_standards_watch_separates_published_sources_from_watch_items() -> None:
+    """Draft standards and future revisions cannot silently become normative contracts."""
+    standards = _read("docs/standards_watch.md")
+    for reference in (
+        "ISO/IEC/IEEE 29148:2018",
+        "ISO/IEC/IEEE 42010:2022",
+        "ISO/IEC 25010:2023",
+        "ISO/IEC 42001:2023",
+        "ISO/IEC 42005:2025",
+        "ISO/IEC 23894:2023",
+        "NIST AI RMF 1.0",
+        "NIST AI 600-1",
+        "WCAG 2.2",
+    ):
+        assert reference in standards
+    assert "watch item" in standards.lower()
+    assert "does not claim certification" in standards.lower()
+
+
+def test_verification_validation_plan_requires_recovery_not_correlation() -> None:
+    """Scientific acceptance must retain recovery, alignment, and anti-leakage evidence."""
+    validation = _read("docs/verification_validation_plan.md")
+    for concept in (
+        "True-parameter and structure recovery",
+        "MIRT sign/rotation/permutation",
+        "Bias",
+        "RMSE",
+        "Bifactor scoreability",
+        "Multilevel/multiple-membership recovery",
+        "Temporal/longitudinal recovery",
+        "Rater calibration",
+        "Reference-free RAG evaluation",
+        "Random response-cell splitting is prohibited",
+    ):
+        assert concept in validation
+    assert "correlation" in validation.lower()
+    assert "cannot replace absolute recovery" in validation
 
 
 def test_requirements_traceability_names_core_contract_sources_and_interpretation_rules() -> None:
