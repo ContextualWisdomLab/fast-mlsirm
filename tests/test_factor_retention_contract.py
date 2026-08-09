@@ -126,6 +126,19 @@ def test_duplicate_method_evidence_is_rejected() -> None:
         )
 
 
+def test_duplicate_method_is_rejected_before_outer_iterable_overread() -> None:
+    """Duplicate detection must not first exhaust an attacker-controlled iterable."""
+    _, _, Evidence, Method, govern = _surface()
+
+    def evidence_stream():
+        yield Evidence(Method.PARALLEL_ANALYSIS, 2)
+        yield Evidence(Method.PARALLEL_ANALYSIS, 3)
+        raise AssertionError("governance boundary over-read duplicate evidence")
+
+    with pytest.raises(ValueError, match="duplicate factor-retention method"):
+        govern(evidence_stream())
+
+
 def test_constructor_rejects_untyped_method_identity() -> None:
     """Method identity is a closed governed enum rather than arbitrary text."""
     _, _, Evidence, _, _ = _surface()
