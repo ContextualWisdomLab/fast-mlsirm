@@ -7,13 +7,6 @@ from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
 
-# Copy only declared legacy exports that are currently defined. This preserves
-# the established package surface without leaking helper imports from the
-# compatibility module or making import depend on unrelated stale names.
-for _public_name in _legacy_init.__all__:
-    if hasattr(_legacy_init, _public_name):
-        globals()[_public_name] = getattr(_legacy_init, _public_name)
-
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
     bifactor_scoreability as bifactor_scoreability,
@@ -26,6 +19,14 @@ from .rotation import (
     rotate_factor_loadings as rotate_factor_loadings,
     rotation_criterion_value_gradient as rotation_criterion_value_gradient,
 )
+
+# Copy only declared legacy exports that are currently defined. This preserves
+# the established package surface without leaking helper imports from the
+# compatibility module or making import depend on unrelated stale names.
+for _public_name in _legacy_init.__all__:
+    if hasattr(_legacy_init, _public_name):
+        globals()[_public_name] = getattr(_legacy_init, _public_name)
+
 
 # Resolve distribution metadata at the package boundary on every reload. The
 # compatibility module may remain cached, so its copied value is not sufficient
