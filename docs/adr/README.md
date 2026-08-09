@@ -2,7 +2,7 @@
 
 This directory is the authoritative decision log for architecture, scientific interpretation, trust boundaries, and cross-repository ownership decisions that materially affect `fast-mlsirm`.
 
-Use [`0000-template.md`](0000-template.md) for new material decisions.
+Template for new material decisions: `docs/adr/0000-template.md`. The template is guidance, not a live ADR and is therefore intentionally excluded from the decision index below.
 
 ## Status vocabulary
 
