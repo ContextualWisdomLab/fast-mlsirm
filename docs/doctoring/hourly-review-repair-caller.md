@@ -11,7 +11,12 @@ The workflow runs at minute 37 of every hour, scans only
 `ContextualWisdomLab/fast-mlsirm` pull requests targeting protected `main`, and
 permits at most one new repair dispatch per run. The same exact head cannot be
 redispatched more often than once per hour. Product-level and central
-single-flight concurrency prevent overlapping maintenance runs.
+single-flight concurrency prevent overlapping maintenance runs. The product
+caller uses `cancel-in-progress: false`: if a delayed heartbeat overlaps an
+existing bounded scan, GitHub may retain the later member of the concurrency
+group instead of terminating the in-flight scan. Exact-head retry suppression
+and the repository writer lease remain central-worker responsibilities, so
+non-cancellation does not authorize two repair writers for one PR head.
 
 ## Immutable implementation source
 
@@ -70,7 +75,7 @@ Permanent contract tests assert:
 2. immutable central workflow SHA and absence of mutable refs;
 3. exact target repository and base branch;
 4. one repair dispatch and one-hour same-head retry bounds;
-5. product-level single-flight concurrency;
+5. non-cancelling product-level single-flight concurrency;
 6. read-only workflow-generated token permissions;
 7. explicit scheduler-secret forwarding only; and
 8. absence of `secrets: inherit`, `COPILOT_GITHUB_TOKEN`, and direct model
