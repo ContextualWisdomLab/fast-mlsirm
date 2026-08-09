@@ -15,6 +15,7 @@ def test_factor_retention_contract_module_exists() -> None:
 def _surface():
     """Import the planned surface only after the fail-first existence assertion."""
     from fast_mlsirm.factor_retention import (
+        MAX_FACTOR_CANDIDATE_COUNT,
         FactorRetentionDecision,
         FactorRetentionEvidence,
         FactorRetentionMethod,
@@ -22,6 +23,7 @@ def _surface():
     )
 
     return (
+        MAX_FACTOR_CANDIDATE_COUNT,
         FactorRetentionDecision,
         FactorRetentionEvidence,
         FactorRetentionMethod,
@@ -31,7 +33,7 @@ def _surface():
 
 def test_consensus_returns_one_supported_count() -> None:
     """Independent supported methods may agree without declaring one method best."""
-    Decision, Evidence, Method, govern = _surface()
+    _, Decision, Evidence, Method, govern = _surface()
 
     result = govern(
         (
@@ -54,7 +56,7 @@ def test_consensus_returns_one_supported_count() -> None:
 
 def test_disagreement_preserves_conservative_candidate_range() -> None:
     """Conflicting supported methods must not be collapsed to one retained count."""
-    Decision, Evidence, Method, govern = _surface()
+    _, Decision, Evidence, Method, govern = _surface()
 
     result = govern(
         (
@@ -71,7 +73,7 @@ def test_disagreement_preserves_conservative_candidate_range() -> None:
 
 def test_single_method_is_insufficient_even_with_a_candidate() -> None:
     """One method can bound a candidate but cannot establish cross-method consensus."""
-    Decision, Evidence, Method, govern = _surface()
+    _, Decision, Evidence, Method, govern = _surface()
 
     result = govern((Evidence(Method.EXTERNAL_SUPPORTED, 5),))
 
@@ -83,7 +85,7 @@ def test_single_method_is_insufficient_even_with_a_candidate() -> None:
 
 def test_empty_evidence_is_insufficient_without_a_range() -> None:
     """No supplied evidence yields no fabricated candidate count or range."""
-    Decision, _, _, govern = _surface()
+    _, Decision, _, _, govern = _surface()
 
     result = govern(())
 
@@ -96,15 +98,24 @@ def test_empty_evidence_is_insufficient_without_a_range() -> None:
 @pytest.mark.parametrize("candidate_count", [True, False, 0, -1, 1.5, "2", None])
 def test_candidate_count_must_be_a_positive_integer(candidate_count: object) -> None:
     """Transport validation rejects booleans and non-positive/non-integer counts."""
-    _, Evidence, Method, _ = _surface()
+    _, _, Evidence, Method, _ = _surface()
 
     with pytest.raises(ValueError, match="positive integer"):
         Evidence(Method.PARALLEL_ANALYSIS, candidate_count)  # type: ignore[arg-type]
 
 
+def test_candidate_count_has_a_fixed_resource_ceiling() -> None:
+    """Caller-controlled retention counts cannot grow without a package bound."""
+    maximum, _, Evidence, Method, _ = _surface()
+
+    assert Evidence(Method.PARALLEL_ANALYSIS, maximum).candidate_count == maximum
+    with pytest.raises(ValueError, match="exceeds maximum"):
+        Evidence(Method.PARALLEL_ANALYSIS, maximum + 1)
+
+
 def test_duplicate_method_evidence_is_rejected() -> None:
     """One method cannot be double-counted as independent retention evidence."""
-    _, Evidence, Method, govern = _surface()
+    _, _, Evidence, Method, govern = _surface()
 
     with pytest.raises(ValueError, match="duplicate factor-retention method"):
         govern(
@@ -117,7 +128,7 @@ def test_duplicate_method_evidence_is_rejected() -> None:
 
 def test_constructor_rejects_untyped_method_identity() -> None:
     """Method identity is a closed governed enum rather than arbitrary text."""
-    _, Evidence, _, _ = _surface()
+    _, _, Evidence, _, _ = _surface()
 
     with pytest.raises(TypeError, match="FactorRetentionMethod"):
         Evidence("parallel_analysis", 2)  # type: ignore[arg-type]
@@ -125,7 +136,7 @@ def test_constructor_rejects_untyped_method_identity() -> None:
 
 def test_governance_rejects_non_evidence_entries() -> None:
     """The aggregation boundary accepts only package-owned evidence records."""
-    _, _, _, govern = _surface()
+    _, _, _, _, govern = _surface()
 
     with pytest.raises(TypeError, match="FactorRetentionEvidence"):
         govern((object(),))
