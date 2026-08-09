@@ -20,7 +20,7 @@ _SPEC.loader.exec_module(deadlines)
 
 
 class _LeaderExitsProcess:
-    """Timed-out leader that exits after SIGTERM while a descendant group remains."""
+    """Timed-out leader that exits while a same-group descendant remains alive."""
 
     def __init__(self) -> None:
         self.pid = 6262
@@ -28,7 +28,7 @@ class _LeaderExitsProcess:
         self.communicate_calls: list[float | None] = []
 
     def communicate(self, timeout=None):
-        """Timeout once, then model the leader exiting before its descendant."""
+        """Timeout once, then model the leader being reapable after group cleanup."""
         self.communicate_calls.append(timeout)
         if len(self.communicate_calls) == 1:
             raise subprocess.TimeoutExpired(["opaque-child"], timeout)
@@ -36,19 +36,19 @@ class _LeaderExitsProcess:
 
 
 def test_posix_timeout_kills_surviving_group_after_leader_exits(monkeypatch) -> None:
-    """Cleanup must verify the process group, not only the timed-out leader."""
+    """Cleanup verifies the group after grace and kills a surviving descendant."""
     fake = _LeaderExitsProcess()
     signals: list[tuple[int, int]] = []
-
-    def fake_killpg(pgid: int, sig: int) -> None:
-        signals.append((pgid, sig))
-        if sig == 0:
-            # The process-group probe sees a surviving descendant.
-            return
+    sleeps: list[float] = []
 
     monkeypatch.setattr(deadlines.os, "name", "posix", raising=False)
     monkeypatch.setattr(deadlines.subprocess, "Popen", lambda *_args, **_kwargs: fake)
-    monkeypatch.setattr(deadlines.os, "killpg", fake_killpg)
+    monkeypatch.setattr(
+        deadlines.os,
+        "killpg",
+        lambda pgid, sig: signals.append((pgid, sig)),
+    )
+    monkeypatch.setattr(deadlines.time, "sleep", sleeps.append)
 
     with pytest.raises(deadlines.BoundedSubprocessTimeout):
         deadlines.run_bounded(
@@ -56,6 +56,10 @@ def test_posix_timeout_kills_surviving_group_after_leader_exits(monkeypatch) -> 
             operation=deadlines.SubprocessOperation.STATISTICAL_TEST,
         )
 
-    assert (fake.pid, signal.SIGTERM) in signals
-    assert (fake.pid, 0) in signals
-    assert (fake.pid, signal.SIGKILL) in signals
+    assert signals == [
+        (fake.pid, signal.SIGTERM),
+        (fake.pid, 0),
+        (fake.pid, signal.SIGKILL),
+    ]
+    assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
+    assert fake.communicate_calls == [1800.0, None]
