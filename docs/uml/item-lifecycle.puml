@@ -1,0 +1,33 @@
+@startuml
+skinparam shadowing false
+
+title Governed item lifecycle
+
+[*] --> Draft
+Draft --> Audited
+Audited --> Screened
+Screened --> Pilot
+Pilot --> Calibrated
+Calibrated --> Approved
+Approved --> Active
+Active --> Suspended
+Suspended --> Active
+Suspended --> Retired
+Calibrated --> Quarantined
+Pilot --> Quarantined
+Quarantined --> Retired
+Quarantined --> Draft : create corrected revision
+Active --> Retired
+Draft --> Retired
+
+note right of Active
+Approved and active revisions are immutable.
+A semantic change creates a new revision.
+end note
+
+note left of Pilot
+Benchmark criteria are candidate-blind.
+Candidate-aware discovery is separated from scored candidates.
+end note
+
+@enduml
