@@ -77,7 +77,7 @@ def test_invalid_operation_and_command_vectors_fail_before_process_creation(monk
 
 
 def test_posix_timeout_handles_process_group_that_already_exited(monkeypatch) -> None:
-    """A group that disappears before cleanup is not treated as a second failure."""
+    """A group that disappears before cleanup is reaped without a second failure."""
     fake = _FakeProcess(timeouts=1)
 
     monkeypatch.setattr(deadlines.os, "name", "posix", raising=False)
@@ -93,7 +93,7 @@ def test_posix_timeout_handles_process_group_that_already_exited(monkeypatch) ->
             ["cargo", "metadata"],
             operation=deadlines.SubprocessOperation.CARGO_METADATA,
         )
-    assert fake.communicate_calls == [30.0]
+    assert fake.communicate_calls == [30.0, None]
 
 
 def test_non_posix_timeout_terminates_then_escalates_direct_process(monkeypatch) -> None:
