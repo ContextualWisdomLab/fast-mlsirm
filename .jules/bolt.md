@@ -44,3 +44,7 @@
 ## 2026-08-04 - Matrix-vector reductions for MMLE quadrature nodes
 **Learning:** In the NumPy MMLE reference fallback, expressions such as `(resid * nodes[None, :]).sum(axis=1)` materialize an item-by-node intermediate array. The mathematically equivalent matrix-vector product `resid @ nodes` avoids that broadcast temporary and can use the configured NumPy linear-algebra backend. Runtime gains depend on matrix shape, memory layout, BLAS implementation, and threading, so no universal percentage improvement should be claimed without a reproducible benchmark.
 **Action:** Prefer a matrix-vector product for equivalent quadrature-node reductions when dtype, shape, and numerical parity are preserved. Keep Rust as the primary production path, retain the NumPy implementation as a tested reference fallback, and benchmark representative workloads before making quantitative performance claims.
+
+## 2024-08-10 - Replace np.einsum with BLAS matrix multiplication in marginal E-step accumulation
+**Learning:** `marginal.py` 내부의 E-step 누적 루프(`_accumulate`)처럼 대규모 차원(P, Qt, Nx)을 갖는 배열을 boolean 마스킹과 결합하여 `np.einsum`으로 처리하는 것은 메모리 복사와 반복문 오버헤드 때문에 극도로 비효율적입니다.
+**Action:** `np.einsum`과 `sum(axis=0)` 기반 배열 차원 축소를 사전 할당된 `np.ones` 벡터와 고성능 BLAS 행렬 곱(`@`)으로 교체합니다. 다차원 배열을 2D로 `reshape`한 후 P(샘플) 차원에 대해 내적을 수행하고 다시 다차원 형태로 `reshape`하면 메모리 복사를 없애 극적인 성능 향상을 달성할 수 있습니다.
