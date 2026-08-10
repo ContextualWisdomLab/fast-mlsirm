@@ -231,8 +231,10 @@ def estimate_ability_mle(
             sel = adm[on_d]
             a_d = a[sel]
             p_d = prob[sel]
-            score = float(np.sum(a_d * (resp[on_d] - p_d)))
-            info = float(np.sum(a_d * a_d * p_d * (1.0 - p_d)))
+            # avoid intermediate array allocation by using vdot
+            score = float(np.vdot(a_d, resp[on_d] - p_d))
+            # avoid intermediate array allocation by using vdot
+            info = float(np.vdot(a_d * a_d, p_d * (1.0 - p_d)))
             if info <= _PROB_EPS:
                 continue
             new = float(np.clip(theta[d] + score / info, -bound, bound))
@@ -249,7 +251,8 @@ def estimate_ability_mle(
         sel = adm[on_d]
         a_d = a[sel]
         p_d = prob[sel]
-        info = float(np.sum(a_d * a_d * p_d * (1.0 - p_d)))
+        # avoid intermediate array allocation by using vdot
+        info = float(np.vdot(a_d * a_d, p_d * (1.0 - p_d)))
         if info > _PROB_EPS:
             se[d] = 1.0 / np.sqrt(info)
         u_d = resp[on_d]
@@ -310,8 +313,10 @@ def estimate_ability_eap(
         if total <= 0 or not np.isfinite(total):
             continue
         weights /= total
-        mean = float(np.sum(nodes * weights))
-        var = float(np.sum((nodes - mean) ** 2 * weights))
+        # avoid intermediate array allocation by using vdot
+        mean = float(np.vdot(nodes, weights))
+        # avoid intermediate array allocation by using vdot
+        var = float(np.vdot((nodes - mean) ** 2, weights))
         theta[d] = mean
         se[d] = float(np.sqrt(max(var, 0.0)))
     return AbilityEstimate(theta=theta, se=se, method="eap", finite=np.ones(n_dims, dtype=bool))

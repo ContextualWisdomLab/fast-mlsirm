@@ -768,7 +768,8 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        # avoid intermediate 2D array allocation by using einsum
+                        dist = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -869,7 +870,8 @@ def fit_marginal_numpy(
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
                 diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                # avoid intermediate 3D array allocation by using einsum
+                distz = np.sqrt(eps_distance + np.einsum("ijk,ijk->ij", diffz, diffz))  # (I, Nx)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
@@ -1295,13 +1297,15 @@ def _gpcm_item_negll_grad(params, theta_nodes, r_counts):
     a = np.exp(params[0])
     base = a * np.asarray(theta_nodes, dtype=np.float64)
     lp = category_logprobs(base, scores, intercepts)  # (n_node, K)
-    ll = float(np.sum(r_counts * lp))
+    # avoid intermediate array allocation by using vdot
+    ll = float(np.vdot(r_counts, lp))
     p = np.exp(lp)
     n = r_counts.sum(axis=1)
     resid = r_counts - n[:, None] * p
     grad = np.zeros_like(params)
     grad[1:] = resid[:, 1:].sum(axis=0)
-    grad[0] = float(np.sum((resid @ scores) * base))  # d base / d log_a = a*theta = base
+    # avoid intermediate array allocation by using vdot
+    grad[0] = float(np.vdot(resid @ scores, base))  # d base / d log_a = a*theta = base
     return -ll, -grad
 
 
