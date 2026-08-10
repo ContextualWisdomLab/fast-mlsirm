@@ -57,14 +57,43 @@ class BifactorScoreabilityResult:
     construct_replicability: np.ndarray
 
 
+def _bounded_shape_dimensions(
+    shape: Any,
+    *,
+    expected_dimensions: int,
+    error_message: str,
+) -> tuple[Any, ...]:
+    """Inspect advertised shape metadata with one bounded look-ahead entry.
+
+    The validator needs at most ``expected_dimensions + 1`` iterator requests:
+    the expected entries establish a candidate shape and one additional entry
+    is sufficient to prove excessive dimensionality. Ordinary caller-defined
+    iteration failures are normalized to a package-owned error without
+    reflecting caller content; process-control signals remain untouched.
+    """
+    try:
+        iterator = iter(shape)
+        dimensions: list[Any] = []
+        for _ in range(expected_dimensions + 1):
+            try:
+                dimensions.append(next(iterator))
+            except StopIteration:
+                break
+    except Exception as exc:
+        raise ValueError(error_message) from exc
+    if len(dimensions) != expected_dimensions:
+        raise ValueError(error_message)
+    return tuple(dimensions)
+
+
 def _validated_matrix_shape(shape: Any, name: str) -> tuple[int, int]:
     """Validate a matrix shape and work budget before allocating conversions."""
-    try:
-        dimensions = tuple(shape)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be a 2-D item-by-factor matrix") from exc
-    if len(dimensions) != 2:
-        raise ValueError(f"{name} must be a 2-D item-by-factor matrix")
+    shape_error = f"{name} must be a 2-D item-by-factor matrix"
+    dimensions = _bounded_shape_dimensions(
+        shape,
+        expected_dimensions=2,
+        error_message=shape_error,
+    )
     try:
         n_items, n_factors = (int(dimensions[0]), int(dimensions[1]))
     except (TypeError, ValueError, OverflowError) as exc:
@@ -111,12 +140,11 @@ def _uniqueness_vector(value: Any, n_items: int) -> np.ndarray:
     """Return a contiguous uniqueness vector with the required item count."""
     advertised_shape = getattr(value, "shape", None)
     if advertised_shape is not None:
-        try:
-            dimensions = tuple(advertised_shape)
-        except TypeError as exc:
-            raise ValueError("uniquenesses must be a 1-D item vector") from exc
-        if len(dimensions) != 1:
-            raise ValueError("uniquenesses must be a 1-D item vector")
+        dimensions = _bounded_shape_dimensions(
+            advertised_shape,
+            expected_dimensions=1,
+            error_message="uniquenesses must be a 1-D item vector",
+        )
         if dimensions[0] != n_items:
             raise ValueError(
                 f"uniquenesses length must equal the loading row count ({n_items})"
@@ -201,9 +229,10 @@ def bifactor_scoreability(
     Notes
     -----
     Requests are bounded by ``MAX_BIFACTOR_WORK_UNITS`` using the worst-case
-    ``n_items * n_factors**2`` reduction cost. The non-iterative diagnostic runs
-    on the Rust CPU path; GPU transfer and synchronization would exceed the
-    useful work at the accepted sizes.
+    ``n_items * n_factors**2`` reduction cost. Caller-advertised shape metadata
+    is also inspected with bounded look-ahead before any dtype-converting copy.
+    The non-iterative diagnostic runs on the Rust CPU path; GPU transfer and
+    synchronization would exceed the useful work at the accepted sizes.
 
     These indices support post-fit score interpretation; they do not select a
     bifactor model or define universal pass/fail cutoffs. Model selection,
@@ -244,8 +273,8 @@ def bifactor_scoreability_from_logit_slopes(
     Scaling is performed in overflow-resistant row coordinates in Rust. The
     resulting omega coefficients describe the continuous latent-response
     representation, not observed binary or ordinal sum-score reliability.
-    The same bounded CPU work contract as :func:`bifactor_scoreability`
-    applies.
+    The same bounded CPU work and advertised-shape inspection contract as
+    :func:`bifactor_scoreability` applies.
     """
     slope_matrix = _matrix(logit_slopes, "logit_slopes")
     raw = bifactor_core().bifactor_indices_from_logit_slopes(
