@@ -50,6 +50,14 @@ def _atomic_write_text(path: str | Path, content: str) -> None:
     _atomic_write(path, lambda stream: stream.write(content.encode("utf-8")))
 
 
+def _json_dumps_strict(payload: object, *, indent: int = 2) -> str:
+    """Serialize package-owned JSON without non-finite numeric extensions."""
+    try:
+        return json.dumps(payload, indent=indent, allow_nan=False)
+    except ValueError:
+        raise ValueError("artifact contains a non-finite JSON numeric value") from None
+
+
 def _validate_npy_header(stream: BinaryIO, source: str) -> tuple[int, int]:
     """Read only an NPY header and reject unsafe declared allocations."""
     version = np.lib.format.read_magic(stream)
@@ -215,7 +223,7 @@ def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
     """
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
-    _atomic_write_text(out / "config.json", json.dumps(asdict(data.config), indent=2))
+    _atomic_write_text(out / "config.json", _json_dumps_strict(asdict(data.config)))
     _atomic_write(out / "responses.npy", lambda stream: np.save(stream, data.Y))
     _atomic_write(
         out / "truth.npz",
@@ -248,7 +256,7 @@ def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
         "seed": int(data.config.seed),
         "files": {"responses": "responses.npy", "truth": "truth.npz", "factors": "item_factor.csv"},
     }
-    _atomic_write_text(out / "manifest.json", json.dumps(manifest, indent=2))
+    _atomic_write_text(out / "manifest.json", _json_dumps_strict(manifest))
 
 
 def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
@@ -287,7 +295,7 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
             if key in pop:
                 summary["population"][key] = float(pop[key])
     _atomic_write(out / "params.npz", lambda stream: np.savez(stream, **arrays))
-    _atomic_write_text(out / "fit_summary.json", json.dumps(summary, indent=2))
+    _atomic_write_text(out / "fit_summary.json", _json_dumps_strict(summary))
 
 
 def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> None:
@@ -305,7 +313,7 @@ def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> No
         "cluster_itemfit": _arrays_to_lists(diagnostics.cluster_itemfit or {}),
         "model_fit": diagnostics.model_fit,
     }
-    _atomic_write_text(out / "fit_diagnostics.json", json.dumps(payload, indent=2))
+    _atomic_write_text(out / "fit_diagnostics.json", _json_dumps_strict(payload))
 
 
 def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_dir: str | Path) -> None:
@@ -313,7 +321,7 @@ def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     payload = {"candidates": diagnostics.candidates, "best": diagnostics.best}
-    _atomic_write_text(out / "dimension_diagnostics.json", json.dumps(payload, indent=2))
+    _atomic_write_text(out / "dimension_diagnostics.json", _json_dumps_strict(payload))
 
 
 def load_params(path: str | Path) -> MLSIRMParams:
