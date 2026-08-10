@@ -97,15 +97,12 @@ def test_custom_title_and_identifiers_are_escaped(tmp_path: Path) -> None:
 
 def test_empty_identifier_list_renders_explicit_state() -> None:
     """An empty evidence list keeps paragraph spacing and atomic status semantics."""
-    assert (
-        validation_report_html._identifier_list(
-            (),
-            empty_message="No boundary is available.",
-        )
-        == (
-            '<p class="empty-state" role="status" aria-atomic="true">'
-            "No boundary is available.</p>"
-        )
+    assert validation_report_html._identifier_list(
+        (),
+        empty_message="No boundary is available.",
+    ) == (
+        '<div class="empty-state" role="status" aria-atomic="true">'
+        "No boundary is available.</div>"
     )
 
 
