@@ -148,6 +148,23 @@ def _content_feasible(
     return True
 
 
+def _validated_content_labels(content: np.ndarray | None, n_items: int) -> np.ndarray | None:
+    """Return bounded string labels without invoking arbitrary object coercion.
+
+    Caller-controlled object labels are rejected by type before NumPy is allowed
+    to stringify them. This keeps ``__str__``/``__repr__`` callbacks outside the
+    ATA trust boundary and lets invalid labels fail before item-information work.
+    """
+    if content is None:
+        return None
+    labels = np.asarray(content, dtype=object)
+    if labels.shape != (n_items,):
+        raise ValueError("content length must match the number of items")
+    if any(not isinstance(label, (str, np.str_)) for label in labels.flat):
+        raise ValueError("content labels must be strings")
+    return labels.astype(str)
+
+
 def assemble_to_target(
     bank: MLSIRMParams,
     factor_id: np.ndarray,
@@ -176,11 +193,18 @@ def assemble_to_target(
     * exposure: an item is ineligible when its prior usage count in
       ``exposure_counts`` reaches ``exposure_max``.
 
+    Content labels must already be strings; arbitrary objects are rejected
+    before psychometric scoring rather than coerced through caller callbacks.
     Deterministic given ``seed``. Raises ``ValueError`` if no form satisfying
     the constraints can be assembled.
     """
+    n_items = int(np.asarray(bank.b).shape[0])
+    labels = _validated_content_labels(content, n_items)
+
     matrix = item_information_matrix(bank, factor_id, target_thetas, model=model)
-    n_points, n_items = matrix.shape
+    n_points, matrix_n_items = matrix.shape
+    if matrix_n_items != n_items:
+        raise ValueError("item-information matrix must match the number of items")
     target = np.asarray(target_info, dtype=np.float64).ravel()
     if target.shape != (n_points,):
         raise ValueError("target_info must have one entry per target theta point")
@@ -192,13 +216,10 @@ def assemble_to_target(
     if not (1 <= length <= n_items):
         raise ValueError("length must be between 1 and the number of items")
 
-    labels = None if content is None else np.asarray(content).astype(str)
     min_counts = {str(k): int(v) for k, v in (min_per_content or {}).items()}
     max_counts = {str(k): int(v) for k, v in (max_per_content or {}).items()}
     if (min_counts or max_counts) and labels is None:
         raise ValueError("content labels are required for content constraints")
-    if labels is not None and labels.shape != (n_items,):
-        raise ValueError("content length must match the number of items")
 
     excluded = set(np.asarray(exclude, dtype=np.int64).tolist()) if exclude is not None else set()
     exposure_counts = {int(k): int(v) for k, v in (exposure_counts or {}).items()}
