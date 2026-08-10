@@ -39,6 +39,7 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
     except Exception:
         return "unknown"
@@ -62,7 +63,9 @@ def _content_security_policy() -> str:
 
 
 def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    return subprocess.run(
+        command, cwd=cwd, capture_output=True, text=True, timeout=3600
+    )
 
 
 def _parse_last_json_line(stdout: str) -> dict[str, Any] | None:

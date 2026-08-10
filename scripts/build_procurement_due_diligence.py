@@ -174,6 +174,7 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
     except Exception:
         return "unknown"
@@ -298,7 +299,7 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         ],
     }
     for name, command in commands.items():
-        completed = subprocess.run(command, capture_output=True, text=True)
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
         snapshot[name] = {
             "ok": completed.returncode == 0,
             "returncode": completed.returncode,
@@ -311,6 +312,7 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         ["gh", "release", "list", "--repo", repo, "--limit", "20"],
         capture_output=True,
         text=True,
+        timeout=60,
     )
     snapshot["releases"] = {
         "ok": release.returncode == 0,

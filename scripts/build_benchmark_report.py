@@ -39,6 +39,7 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
     except Exception:
         return "unknown"

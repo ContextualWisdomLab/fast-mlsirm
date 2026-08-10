@@ -110,6 +110,7 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
     except Exception:
         return "unknown"
@@ -143,7 +144,7 @@ def _json_from_completed(completed: subprocess.CompletedProcess[str]) -> Any:
 
 def _run_gh_json(command: list[str]) -> tuple[Any, dict[str, Any] | None]:
     """Execute a GitHub CLI JSON command and return payload plus redacted error."""
-    completed = subprocess.run(command, capture_output=True, text=True)
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
     payload = _json_from_completed(completed)
     if completed.returncode == 0:
         return payload, None
