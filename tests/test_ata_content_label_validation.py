@@ -66,3 +66,54 @@ def test_content_labels_reject_hostile_objects_before_numeric_work(monkeypatch) 
     assert information_calls == 0
     assert hostile.str_calls == 0
     assert hostile.repr_calls == 0
+
+
+def test_content_shape_rejected_before_numeric_work(monkeypatch) -> None:
+    """ATA must reject malformed label shape before evaluating item information."""
+    bank, factor_id = _bank()
+    information_calls = 0
+
+    def unexpected_information(*args, **kwargs):
+        nonlocal information_calls
+        information_calls += 1
+        return np.ones((1, 4), dtype=np.float64)
+
+    monkeypatch.setattr(ata, "item_information_matrix", unexpected_information)
+
+    with pytest.raises(ValueError, match="content length must match the number of items"):
+        ata.assemble_to_target(
+            bank,
+            factor_id,
+            np.array([0.0], dtype=np.float64),
+            np.array([1.0], dtype=np.float64),
+            length=2,
+            model="MIRT",
+            content=np.array([["A", "B", "A", "B"]], dtype=object),
+            seed=0,
+        )
+
+    assert information_calls == 0
+
+
+def test_numpy_string_scalars_remain_supported() -> None:
+    """ATA preserves accepted NumPy string labels and content constraints."""
+    bank, factor_id = _bank()
+    content = np.array(
+        [np.str_("A"), np.str_("A"), np.str_("B"), np.str_("B")],
+        dtype=object,
+    )
+
+    form = ata.assemble_to_target(
+        bank,
+        factor_id,
+        np.array([0.0], dtype=np.float64),
+        np.array([100.0], dtype=np.float64),
+        length=2,
+        model="MIRT",
+        content=content,
+        min_per_content={"B": 1},
+        seed=0,
+    )
+
+    assert form.items.shape == (2,)
+    assert form.content_counts.get("B", 0) >= 1
