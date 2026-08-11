@@ -1,15 +1,17 @@
-"""Fail-first operation-specific subprocess deadline boundary.
+"""Operation-specific bounded subprocess execution for repository automation.
 
-This module intentionally provides only the public configuration/error surface
-needed for the regression tests to reach subprocess execution. Process-group
-isolation, timeout cleanup, and ignored-Rust runner integration are implemented
-only after the exact RED boundary is observed.
+The helper deliberately separates short metadata and inventory commands from
+long-running statistical studies.  A timeout is treated as operational evidence,
+not scientific evidence: the raised error exposes only the operation class and
+the configured deadline, never the child command or captured output.
 """
 
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -18,7 +20,7 @@ PROCESS_GROUP_GRACE_SECONDS = 5.0
 
 
 class SubprocessOperation(str, Enum):
-    """Supported subprocess operation classes."""
+    """Supported subprocess operation classes with independent deadline policies."""
 
     CARGO_METADATA = "cargo_metadata"
     CARGO_TEST_LIST = "cargo_test_list"
@@ -27,7 +29,7 @@ class SubprocessOperation(str, Enum):
 
 @dataclass(frozen=True)
 class _DeadlinePolicy:
-    """Deadline configuration for one operation class."""
+    """Internal immutable deadline configuration for one operation class."""
 
     env_key: str
     default_seconds: int
@@ -37,29 +39,45 @@ class _DeadlinePolicy:
 
 _POLICIES = {
     SubprocessOperation.CARGO_METADATA: _DeadlinePolicy(
-        "FAST_MLSIRM_CARGO_METADATA_TIMEOUT_SECONDS", 30, 5, 120
+        "FAST_MLSIRM_CARGO_METADATA_TIMEOUT_SECONDS",
+        30,
+        5,
+        120,
     ),
     SubprocessOperation.CARGO_TEST_LIST: _DeadlinePolicy(
-        "FAST_MLSIRM_CARGO_TEST_LIST_TIMEOUT_SECONDS", 120, 30, 600
+        "FAST_MLSIRM_CARGO_TEST_LIST_TIMEOUT_SECONDS",
+        120,
+        30,
+        600,
     ),
     SubprocessOperation.STATISTICAL_TEST: _DeadlinePolicy(
-        "FAST_MLSIRM_STATISTICAL_TEST_TIMEOUT_SECONDS", 1800, 60, 7200
+        "FAST_MLSIRM_STATISTICAL_TEST_TIMEOUT_SECONDS",
+        1800,
+        60,
+        7200,
     ),
 }
 
 
 class BoundedSubprocessTimeout(RuntimeError):
-    """Redacted timeout evidence for one operation class."""
+    """Redacted timeout error for one operation class."""
 
-    def __init__(self, *, operation: SubprocessOperation, timeout_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        operation: SubprocessOperation,
+        timeout_seconds: float,
+    ) -> None:
+        """Create timeout evidence without retaining child-controlled text."""
         self.operation = operation
         self.timeout_seconds = timeout_seconds
         super().__init__(
-            f"{operation.value} exceeded bounded timeout ({timeout_seconds:g} seconds)"
+            f"{operation.value} exceeded bounded timeout "
+            f"({timeout_seconds:g} seconds)"
         )
 
     def as_dict(self) -> dict[str, object]:
-        """Return machine-readable package-owned timeout evidence."""
+        """Return machine-readable timeout evidence without child-controlled data."""
         return {
             "status": "timeout",
             "operation": self.operation.value,
@@ -71,7 +89,7 @@ def resolve_timeout_seconds(
     operation: SubprocessOperation,
     environ: Mapping[str, str] | None = None,
 ) -> float:
-    """Resolve one bounded operation-specific deadline."""
+    """Return the bounded timeout for one operation and optional environment."""
     if not isinstance(operation, SubprocessOperation):
         raise ValueError("operation must be a SubprocessOperation")
     policy = _POLICIES[operation]
@@ -81,37 +99,71 @@ def resolve_timeout_seconds(
         return float(policy.default_seconds)
     if not raw.isdecimal():
         raise ValueError(
-            f"{operation.name} timeout must be an integer number of seconds between "
-            f"{policy.minimum_seconds} and {policy.maximum_seconds}"
+            f"{operation.name} timeout must be an integer number of seconds "
+            f"between {policy.minimum_seconds} and {policy.maximum_seconds}"
         )
     seconds = int(raw)
     if not policy.minimum_seconds <= seconds <= policy.maximum_seconds:
         raise ValueError(
-            f"{operation.name} timeout must be between {policy.minimum_seconds} and "
-            f"{policy.maximum_seconds} seconds"
+            f"{operation.name} timeout must be between "
+            f"{policy.minimum_seconds} and {policy.maximum_seconds} seconds"
         )
     return float(seconds)
 
 
 def _validate_command(command: Sequence[str]) -> list[str]:
-    """Materialize and validate a subprocess argument vector."""
+    """Return a plain argument vector after rejecting malformed command fields."""
     if isinstance(command, (str, bytes)) or not command:
         raise ValueError("command must be a non-empty sequence of strings")
-    argv = list(command)
-    if not all(isinstance(part, str) and part for part in argv):
-        raise ValueError("command must be a non-empty sequence of non-empty strings")
-    return argv
+    materialized = list(command)
+    if not materialized or not all(
+        isinstance(part, str) and part for part in materialized
+    ):
+        raise ValueError(
+            "command must be a non-empty sequence of non-empty strings"
+        )
+    return materialized
 
 
 def _posix_process_group_exists(process_group_id: int) -> bool:
-    """Fail-first liveness probe used by the cleanup contract."""
+    """Return whether a POSIX process group still exists without changing it."""
     try:
         os.killpg(process_group_id, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
+        # Fail closed: inability to signal does not prove that the group is gone.
         return True
     return True
+
+
+def _terminate_after_timeout(process: subprocess.Popen) -> None:
+    """Terminate and reap one timed-out process or POSIX process group."""
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            process.communicate()
+            return
+
+        # Keep the group leader unreaped during the grace period so its numeric
+        # process-group identifier cannot be recycled before the final liveness
+        # check. A leader may exit while a descendant in the same group survives.
+        time.sleep(PROCESS_GROUP_GRACE_SECONDS)
+        if _posix_process_group_exists(process.pid):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.communicate()
+        return
+
+    process.terminate()
+    try:
+        process.communicate(timeout=PROCESS_GROUP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
 
 
 def run_bounded(
@@ -123,22 +175,37 @@ def run_bounded(
     text: bool = False,
     env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run one command; fail-first version lacks required process-group cleanup."""
+    """Run one command with an operation-specific timeout and bounded cleanup."""
     argv = _validate_command(command)
     timeout_seconds = resolve_timeout_seconds(operation)
-    kwargs: dict[str, object] = {"text": text, "env": env}
+    popen_kwargs: dict[str, object] = {
+        "text": text,
+        "env": env,
+    }
     if capture_output:
-        kwargs["stdout"] = subprocess.PIPE
-        kwargs["stderr"] = subprocess.PIPE
-    process = subprocess.Popen(argv, **kwargs)
+        popen_kwargs["stdout"] = subprocess.PIPE
+        popen_kwargs["stderr"] = subprocess.PIPE
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    elif os.name == "nt" and hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    process = subprocess.Popen(argv, **popen_kwargs)
     try:
         stdout, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
+        _terminate_after_timeout(process)
         raise BoundedSubprocessTimeout(
             operation=operation,
             timeout_seconds=timeout_seconds,
         ) from None
-    completed = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+    completed = subprocess.CompletedProcess(
+        argv,
+        process.returncode,
+        stdout,
+        stderr,
+    )
     if check:
         completed.check_returncode()
     return completed
