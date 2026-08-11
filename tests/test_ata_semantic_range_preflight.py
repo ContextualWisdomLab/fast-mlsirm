@@ -112,6 +112,19 @@ def test_exclude_requires_exact_integer_item_indices_before_information(
     assert str(failure) == "exclude must contain integer item indices"
 
 
+@pytest.mark.parametrize("exclude", [[-1], [4], np.array([4], dtype=np.int64)])
+def test_exclude_rejects_out_of_bank_indices_before_information(
+    monkeypatch: pytest.MonkeyPatch,
+    exclude: object,
+) -> None:
+    """Exclusions outside the calibrated bank must fail before scoring."""
+    calls, failure = _call_with_counted_information(monkeypatch, exclude=exclude)
+
+    assert calls == 0
+    assert isinstance(failure, ValueError)
+    assert str(failure) == "exclude item indices must identify existing items"
+
+
 def test_exclude_rejects_hostile_integer_without_conversion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -127,6 +140,40 @@ def test_exclude_rejects_hostile_integer_without_conversion(
     assert hostile.index_calls == 0
 
 
+@pytest.mark.parametrize(
+    "exclude",
+    [
+        [np.int64(3)],
+        (np.int32(3),),
+        np.array([3], dtype=np.int64),
+        np.array([], dtype=np.uint64),
+    ],
+)
+def test_valid_integer_exclusion_containers_reach_information(
+    monkeypatch: pytest.MonkeyPatch,
+    exclude: object,
+) -> None:
+    """Supported exact-integer exclusion containers preserve accepted behavior."""
+    calls, failure = _call_with_counted_information(monkeypatch, exclude=exclude)
+
+    assert calls == 1
+    assert failure is None
+
+
+def test_equal_nonnegative_content_bounds_remain_valid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A feasible equal minimum/maximum count remains an accepted boundary."""
+    calls, failure = _call_with_counted_information(
+        monkeypatch,
+        min_per_content={"A": 1},
+        max_per_content={"A": 1},
+    )
+
+    assert calls == 1
+    assert failure is None
+
+
 def test_valid_numpy_integer_controls_preserve_preflight_acceptance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -136,7 +183,7 @@ def test_valid_numpy_integer_controls_preserve_preflight_acceptance(
         seed=np.int64(7),
         min_per_content={np.str_("A"): np.int64(1)},
         max_per_content={np.str_("A"): np.int64(2)},
-        exposure_counts={np.int64(0): np.int64(0)},
+        exposure_counts={np.int64(0): np.int64(0), np.int64(3): np.int64(0)},
         exposure_max=np.int64(5),
         exclude=np.array([np.int64(3)], dtype=np.int64),
     )
