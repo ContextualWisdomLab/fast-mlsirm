@@ -177,6 +177,13 @@ def test_judge_rejects_missing_or_malformed_model_fields() -> None:
 
 
 def test_judge_criteria_reject_invalid_runtime_types() -> None:
+    class _HookedFloat(float):
+        invoked = False
+
+        def __float__(self):
+            type(self).invoked = True
+            return super().__float__()
+
     with pytest.raises(ValueError, match="criterion_id must be a string"):
         JudgeCriterion(1, "description")
     with pytest.raises(ValueError, match="criterion description must be a string"):
@@ -195,6 +202,22 @@ def test_judge_criteria_reject_invalid_runtime_types() -> None:
                 }
             ],
         )
+    for criterion in (
+        {"criterion_id": 1, "description": "ok"},
+        {"criterion_id": "task_alignment", "description": 1},
+        {
+            "criterion_id": "task_alignment",
+            "description": "ok",
+            "weight": _HookedFloat(1.0),
+        },
+    ):
+        with pytest.raises(ValueError):
+            ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+                task="task",
+                answer="answer",
+                criteria=[criterion],
+            )
+    assert _HookedFloat.invoked is False
 
 
 if __name__ == "__main__":

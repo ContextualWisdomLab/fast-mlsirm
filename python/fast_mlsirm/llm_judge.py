@@ -77,8 +77,8 @@ class JudgeCriterion:
             raise ValueError("criterion description must be a string")  # noqa: TRY004
         if not self.description.strip() or len(self.description) > 2_000:
             raise ValueError("criterion description must be non-empty and <= 2000 characters")
-        if isinstance(self.weight, bool) or not isinstance(self.weight, (int, float)):
-            raise ValueError("criterion weight must be a number")  # noqa: TRY004
+        if type(self.weight) not in (int, float):
+            raise ValueError("criterion weight must be a number")
         try:
             normalized_weight = float(self.weight)
         except (OverflowError, TypeError, ValueError) as exc:
