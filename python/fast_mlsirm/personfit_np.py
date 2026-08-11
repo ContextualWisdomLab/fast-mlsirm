@@ -78,7 +78,7 @@ def person_fit_np(x) -> PersonFitNpResult:
     if bad.any():
         p, i = np.argwhere(bad)[0]
         raise ValueError(
-            f"x[{p}, {i}] = {xf[p, i]}; responses must be exactly 0 or 1 "
+            f"x[{p}, {i}]: responses must be exactly 0 or 1 "
             "(missing data is out of scope)"
         )
 

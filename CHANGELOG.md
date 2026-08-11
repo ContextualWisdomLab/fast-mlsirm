@@ -285,6 +285,10 @@
 
 ### Security
 
+#### Person-fit invalid-response error redaction
+
+- Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.
+
 #### Model-comparison control validation hardening
 
 - Reject hostile semantic/numeric control objects before caller-defined `__str__`, `__repr__`, or `__float__` callbacks can execute, while preserving accepted relation identities, built-in/NumPy scalar semantics, and Rust-owned model-comparison arithmetic.
