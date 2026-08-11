@@ -27,6 +27,19 @@ class JudgeFormatError(ValueError):
     """Raised when a judge response is not a bounded, interpretable decision."""
 
 
+class _DuplicateJsonKeyError(ValueError):
+    """Internal signal for duplicate JSON object members."""
+
+
+def _duplicate_free_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, member in pairs:
+        if key in value:
+            raise _DuplicateJsonKeyError(key)
+        value[key] = member
+    return value
+
+
 def _category_count(value: Any) -> int:
     if (
         not isinstance(value, int)
@@ -296,15 +309,21 @@ def _validate_raw_json_depth(content: str) -> None:
             depth -= 1
 
 
-def _response_object(raw: str) -> dict[str, Any]:
+def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
     text = raw.strip()
     _validate_raw_json_depth(text)
     try:
-        value = json.loads(text)
+        value = json.loads(text, object_pairs_hook=_duplicate_free_object)
+    except _DuplicateJsonKeyError as exc:
+        raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
     except json.JSONDecodeError as exc:
         raise JudgeFormatError("judge response JSON is invalid") from exc
     if not isinstance(value, dict):
         raise JudgeFormatError("judge response must be a JSON object")
+    if set(value) != required_fields:
+        raise JudgeFormatError(
+            "judge response must contain exactly the required fields"
+        )
     return value
 
 
@@ -428,10 +447,16 @@ class ContextualOrchestratorJudge:
             raw = _bounded_text(completion.get("answer"), "judge answer")
         except ValueError as exc:
             raise JudgeFormatError(str(exc)) from exc
-        parsed = _response_object(raw)
+        criterion_field = (
+            "criterion_categories" if category_count is not None else "criterion_scores"
+        )
+        parsed = _response_object(
+            raw,
+            required_fields={"score", "accepted", "rationale", criterion_field},
+        )
         advisory_accepted = parsed.get("accepted")
-        if advisory_accepted is not None and not isinstance(advisory_accepted, bool):
-            raise JudgeFormatError("accepted must be a boolean when present")
+        if not isinstance(advisory_accepted, bool):
+            raise JudgeFormatError("accepted must be a boolean")
         try:
             rationale = _bounded_text(parsed.get("rationale"), "rationale")
         except ValueError as exc:
