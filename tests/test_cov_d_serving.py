@@ -90,15 +90,29 @@ def test_export_rejects_factor_id_length_mismatch():
 
 
 def test_export_without_population_and_without_core(monkeypatch):
-    # population None skips the population block; core None skips eapsum tables.
+    # Missing Rust core must fail closed so incomplete eapsum tables never ship.
     monkeypatch.setattr(serving, "_core_module", lambda: None)
-    bundle = export_serving_bundle(_converged_result(), ["a", "b"], np.array([0, 0]))
-    assert bundle["population"] is None
-    assert bundle["eapsum_tables"] is None
+    with pytest.raises(
+        RuntimeError, match="serving bundle export requires the compiled Rust core"
+    ):
+        export_serving_bundle(_converged_result(), ["a", "b"], np.array([0, 0]))
 
 
 def test_export_population_mu_pizero_delta(monkeypatch):
-    monkeypatch.setattr(serving, "_core_module", lambda: None)
+    class _StubCore:
+        @staticmethod
+        def eapsum_tables(*_args, **_kwargs):
+            return [
+                {
+                    "dim": 0,
+                    "n_items_dim": 2,
+                    "score_prob": [0.25, 0.5, 0.25],
+                    "eap": [-1.0, 0.0, 1.0],
+                    "sd": [0.5, 0.4, 0.5],
+                }
+            ]
+
+    monkeypatch.setattr(serving, "_core_module", lambda: _StubCore())
     population = {
         "kind": "multilevel",
         "mu": [0.0],
@@ -113,6 +127,7 @@ def test_export_population_mu_pizero_delta(monkeypatch):
     assert out_pop["mu"] == [0.0]
     assert out_pop["pi_zero"] == 0.2
     assert out_pop["covariate_delta"] == 0.3
+    assert bundle["eapsum_tables"] is not None
 
 
 # --- _validate_bundle structural / size / numeric-domain guards --------------
