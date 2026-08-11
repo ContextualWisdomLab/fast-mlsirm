@@ -279,6 +279,11 @@
 - Added sentinel delegation tests, Rust edge-case tests, seeded true-trait
   recovery tests, score-equation checks, and APA 7th CAT doctoring.
 
+#### Automatic backend preserves Rust numerical ownership
+
+- Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
+- Kept explicit `backend="numpy"` as an explicit reference/parity choice while preserving automatic Rust resolution and Rust CPU/GPU device fallback semantics.
+
 #### Current support-policy version line
 
 - Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
@@ -312,6 +317,11 @@
 
 ### Fixed
 
+#### Serving bundle export requires Rust core
+
+- `export_serving_bundle` fails closed when the compiled Rust core is unavailable
+  instead of shipping incomplete bundles with null `eapsum_tables`.
+
 #### Fail early for unimplemented estimator identities
 
 - Restricted the public `FitConfig.estimator` vocabulary to the implemented `jmle` and `mmle` fitting paths, so unsupported `em` and `bayes` requests fail during configuration validation instead of entering a fitting path that later raises `NotImplementedError`.
@@ -337,11 +347,27 @@
 - Removed opacity-based dimming of non-hovered chart and table rows so unrelated active data retains its normal rendered foreground and background colors.
 - Added public-renderer regression coverage and APA 7th doctoring grounded in WCAG 2.2 and Selectors Level 4 without making a formal conformance claim.
 
+#### Git metadata lookup deadlines
+
+- Commercial evidence builders fail closed with a bounded Git metadata timeout
+  (benchmark, buyer packet, procurement, commercial release, Figma evidence)
+  so hung `git rev-parse` cannot hang release pipelines.
+
+#### Python support floor
+
+- Raised `requires-python` to `>=3.12` so the advertised floor matches the
+  hashed CI dependency lock (NumPy 2.5.x) and the pull-request matrix on
+  CPython 3.12 and 3.14.
+
 ### Security
 
 #### Person-fit invalid-response error redaction
 
 - Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.
+
+#### Bounded mixed item-model validation
+
+- Bounded `item_models` iterable consumption to at most one look-ahead entry beyond the calibrated item count, rejected arbitrary non-string model controls before caller `__str__`/`__repr__` hooks can execute, and removed rejected model content from public validation errors while preserving accepted aliases and Rust-owned calibration numerics.
 
 #### Model-comparison control validation hardening
 
@@ -367,6 +393,12 @@
 - Rejected symbolic links, FIFOs, directories, path replacement, invalid UTF-8,
   malformed JSON, non-object roots, oversized input, and excessive nesting with
   deterministic tests.
+
+#### Bounded JSON loads for release acceptance
+
+- Release acceptance and generation-request contract loading use size- and
+  depth-bounded JSON parsers instead of unbounded `json.loads` on CLI stdout
+  and fit_summary artifacts.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
 ## [0.7.0] - 2026-08-04
