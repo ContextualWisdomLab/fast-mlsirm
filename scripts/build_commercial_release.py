@@ -31,6 +31,9 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+GIT_METADATA_TIMEOUT_SECONDS = 5.0
+
+
 def _source_commit(repo_root: Path) -> str:
     try:
         completed = subprocess.run(
@@ -39,7 +42,10 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_METADATA_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("source commit lookup timed out") from None
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
