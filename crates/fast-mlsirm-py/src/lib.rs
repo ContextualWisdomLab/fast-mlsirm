@@ -22,7 +22,12 @@ use mlsirm_core::linking::{
     irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
     LinkMethod,
 };
-use mlsirm_core::inference::{standard_errors_from_vcov as core_standard_errors_from_vcov, vcov_from_hessian as core_vcov_from_hessian};
+use mlsirm_core::inference::{
+    finite_difference_hessian as core_finite_difference_hessian,
+    second_order_test as core_second_order_test,
+    standard_errors_from_vcov as core_standard_errors_from_vcov,
+    vcov_from_hessian as core_vcov_from_hessian,
+};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
     PopulationSpec, XiRuleKind,
@@ -8823,6 +8828,70 @@ fn benjamini_hochberg(p_values: PyReadonlyArray1<'_, f64>, q: f64) -> PyResult<V
     Ok(core_benjamini_hochberg(p_values.as_slice()?, q))
 }
 
+/// Assemble a dense finite-difference Hessian and return a row-major flat matrix.
+///
+/// Python evaluates the scalar objective at the requested offsets; Rust owns the
+/// FD coefficients and symmetrisation so observed-information construction stays
+/// single-sourced on the numeric core.
+#[pyfunction]
+#[pyo3(signature = (
+    n,
+    step,
+    base,
+    diag_plus,
+    diag_minus,
+    off_pp,
+    off_pm,
+    off_mp,
+    off_mm,
+))]
+fn observed_information(
+    n: usize,
+    step: f64,
+    base: f64,
+    diag_plus: PyReadonlyArray1<'_, f64>,
+    diag_minus: PyReadonlyArray1<'_, f64>,
+    off_pp: PyReadonlyArray1<'_, f64>,
+    off_pm: PyReadonlyArray1<'_, f64>,
+    off_mp: PyReadonlyArray1<'_, f64>,
+    off_mm: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Vec<f64>> {
+    core_finite_difference_hessian(
+        n,
+        step,
+        base,
+        diag_plus.as_slice()?,
+        diag_minus.as_slice()?,
+        off_pp.as_slice()?,
+        off_pm.as_slice()?,
+        off_mp.as_slice()?,
+        off_mm.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Positive-definiteness diagnostic for a square Hessian / information matrix.
+#[pyfunction]
+#[pyo3(signature = (hessian, tol = 1e-8))]
+fn second_order_test(
+    py: Python<'_>,
+    hessian: PyReadonlyArray2<'_, f64>,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let shape = hessian.shape();
+    if shape.len() != 2 || shape[0] != shape[1] {
+        return Err(PyValueError::new_err("hessian must be a square matrix"));
+    }
+    let n = shape[0];
+    let (passed, min_eigenvalue, eigenvalues) =
+        core_second_order_test(hessian.as_slice()?, n, tol).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("passed", passed)?;
+    out.set_item("min_eigenvalue", min_eigenvalue)?;
+    out.set_item("eigenvalues", eigenvalues)?;
+    Ok(out.into())
+}
+
 /// Invert observed information / Hessian (pinv fallback). Returns row-major flat.
 #[pyfunction]
 fn vcov_from_hessian(hessian: PyReadonlyArray2<'_, f64>, rcond: f64) -> PyResult<Vec<f64>> {
@@ -9008,6 +9077,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
     m.add_function(wrap_pyfunction!(chi2_sf, m)?)?;
     m.add_function(wrap_pyfunction!(benjamini_hochberg, m)?)?;
+    m.add_function(wrap_pyfunction!(observed_information, m)?)?;
+    m.add_function(wrap_pyfunction!(second_order_test, m)?)?;
     m.add_function(wrap_pyfunction!(vcov_from_hessian, m)?)?;
     m.add_function(wrap_pyfunction!(standard_errors_from_vcov, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;

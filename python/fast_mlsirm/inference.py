@@ -53,38 +53,62 @@ def observed_information(
             f"observed_information supports at most {MAX_HESSIAN_DIM} parameters (got {n}); "
             "the dense finite-difference Hessian is O(n^2) memory and O(n^2) objective calls"
         )
-    hessian = np.zeros((n, n), dtype=np.float64)
     base = objective(x0)
     eye = np.eye(n, dtype=np.float64)
     h = float(step)
 
+    # Python evaluates the scalar objective at FD offsets; Rust owns the
+    # finite-difference coefficients and symmetrised matrix assembly.
+    diag_plus = np.empty(n, dtype=np.float64)
+    diag_minus = np.empty(n, dtype=np.float64)
+    off_n = n * (n - 1) // 2
+    off_pp = np.empty(off_n, dtype=np.float64)
+    off_pm = np.empty(off_n, dtype=np.float64)
+    off_mp = np.empty(off_n, dtype=np.float64)
+    off_mm = np.empty(off_n, dtype=np.float64)
+    k = 0
     for i in range(n):
-        x_plus = x0 + h * eye[i]
-        x_minus = x0 - h * eye[i]
-        hessian[i, i] = (objective(x_plus) - 2.0 * base + objective(x_minus)) / (h * h)
+        diag_plus[i] = objective(x0 + h * eye[i])
+        diag_minus[i] = objective(x0 - h * eye[i])
         for j in range(i + 1, n):
-            f_pp = objective(x0 + h * eye[i] + h * eye[j])
-            f_pm = objective(x0 + h * eye[i] - h * eye[j])
-            f_mp = objective(x0 - h * eye[i] + h * eye[j])
-            f_mm = objective(x0 - h * eye[i] - h * eye[j])
-            value = (f_pp - f_pm - f_mp + f_mm) / (4.0 * h * h)
-            hessian[i, j] = value
-            hessian[j, i] = value
+            off_pp[k] = objective(x0 + h * eye[i] + h * eye[j])
+            off_pm[k] = objective(x0 + h * eye[i] - h * eye[j])
+            off_mp[k] = objective(x0 - h * eye[i] + h * eye[j])
+            off_mm[k] = objective(x0 - h * eye[i] - h * eye[j])
+            k += 1
 
-    return (hessian + hessian.T) / 2.0
+    from . import _core as core
+
+    flat = core.observed_information(
+        n,
+        h,
+        float(base),
+        diag_plus,
+        diag_minus,
+        off_pp,
+        off_pm,
+        off_mp,
+        off_mm,
+    )
+    return np.asarray(flat, dtype=np.float64).reshape(n, n)
 
 
 def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float | bool | np.ndarray]:
-    """Check whether the Hessian/information matrix is positive definite."""
-    matrix = np.asarray(hessian, dtype=np.float64)
+    """Check whether the Hessian/information matrix is positive definite.
+
+    Eigenvalue diagnostics are owned by the compiled Rust core
+    (``second_order_test``); Python validates shape and marshals the matrix.
+    """
+    matrix = np.ascontiguousarray(np.asarray(hessian, dtype=np.float64))
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError("hessian must be a square matrix")
-    eigenvalues = np.linalg.eigvalsh((matrix + matrix.T) / 2.0)
-    min_eigenvalue = float(eigenvalues.min()) if eigenvalues.size else float("nan")
+    from . import _core as core
+
+    result = core.second_order_test(matrix, float(tol))
     return {
-        "passed": bool(np.all(eigenvalues > tol)),
-        "min_eigenvalue": min_eigenvalue,
-        "eigenvalues": eigenvalues,
+        "passed": bool(result["passed"]),
+        "min_eigenvalue": float(result["min_eigenvalue"]),
+        "eigenvalues": np.asarray(result["eigenvalues"], dtype=np.float64),
     }
 
 
