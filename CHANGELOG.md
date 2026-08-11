@@ -428,6 +428,11 @@
   tau update, and the covariate update while preserving the Rust production
   backend and public model contracts.
 
+#### S-X2 and person-fit Rust ownership fail-closed
+
+- Public `s_x2()` and `person_fit()` require the compiled Rust core entrypoints and no longer fall back to Python/NumPy numerical implementations when the core or symbols are missing.
+- `s_x2()` always dispatches trait `prior_mean` through the native S-X² entrypoint instead of selecting the Python reference path whenever a prior is supplied.
+
 #### Parallel-analysis input and workspace bounds
 
 - `parallel_analysis()` now rejects booleans, floats, strings, and caller-defined integer-conversion hooks for integer controls instead of silently coercing them before Rust dispatch.
@@ -534,6 +539,11 @@
 
 - Cap raw LLM-judge response JSON nesting at 32 levels before `json.loads`, failing closed with `JudgeFormatError` so hostile recursive objects cannot expand into parser resource exhaustion.
 - Keep valid shallow judge payloads accepted with the existing criterion/score contracts.
+
+#### Fit-statistics fallback tests match fail-closed ownership
+
+- Retarget S-X² and person-fit NumPy-fallback regressions to expect the
+  fail-closed Rust-required contract after public ownership hardening.
 
 #### Diagnostics-report focus and contrast preservation
 
