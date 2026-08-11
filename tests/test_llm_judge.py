@@ -94,6 +94,18 @@ def test_judge_rejects_malformed_decisions_and_derives_acceptance() -> None:
     assert result.accepted is True
 
 
+@pytest.mark.parametrize("accepted", [0, 1, "true", None])
+def test_judge_rejects_non_boolean_advisory_acceptance(accepted) -> None:
+    with pytest.raises(JudgeFormatError, match="accepted must be a boolean"):
+        ContextualOrchestratorJudge(
+            _FakeOrchestrator(_payload(accepted=accepted))
+        ).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+
 def test_judge_rejects_wrapped_or_fenced_json() -> None:
     for answer in (
         f"prefix {_payload()}",
@@ -372,4 +384,3 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
-

@@ -1,10 +1,9 @@
 """Coverage tests (batch C) for ``fast_mlsirm.fitstats``.
 
-These target NumPy-fallback bodies (reached by forcing ``_core_module`` to
-return ``None``), input-validation guards, and edge branches in the
-fit-statistics core. They assert real behaviour (the exact exception types the
-guards raise, and NumPy/native structural agreement) rather than merely
-executing lines.
+These target fit-statistics validation and the fail-closed Rust ownership
+boundary, input-validation guards, and edge branches in the fit-statistics
+core. They assert real behaviour (the exact exception types the guards raise,
+and native structural agreement) rather than merely executing lines.
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ def _pure_bh(p_values, q: float = 0.05):
 
 
 class _CoreWithFitStatsOnly:
-    """Stub core exposing only fit-statistics entrypoints for unrelated fallback tests."""
+    """Stub core without the native S-X²/person-fit entrypoints."""
 
     def chi2_sf(self, x, df):
         return _pure_chi2_sf(float(x), float(df))
@@ -184,75 +183,27 @@ def test_icc_grid_and_factorized_guards():
 
 
 # ---------------------------------------------------------------------------
-# S-X2 NumPy fallback body (core forced absent)
+# S-X2 native ownership (incomplete core fails closed)
 # ---------------------------------------------------------------------------
 
 
-def test_sx2_numpy_fallback_realistic(monkeypatch):
-    rng = np.random.default_rng(7)
-    n_items, n_persons = 6, 400
-    alpha = np.zeros(n_items)
-    b = np.array([-1.0, -0.5, 0.0, 0.5, 1.0, 800.0])  # last item is always correct
-    params = SimpleNamespace(alpha=alpha, b=b, zeta=np.zeros((n_items, 1)), tau=-30.0)
-    fid = np.zeros(n_items, dtype=np.int64)
-    theta = rng.standard_normal(n_persons)
-    eta = theta[:, None] + b[None, :]
-    y = (rng.random((n_persons, n_items)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
-
+def test_sx2_requires_compiled_rust_core(monkeypatch):
+    y, fid, params = _mirt_params(4, 20, seed=7)
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    out = fm.s_x2(y, fid, params, "MIRT", min_expected=1.0)
-    # ordinary items get finite chi-square with >=1 df; the always-correct item
-    # forms no usable score group.
-    assert np.isfinite(out.statistic[:5]).all()
-    assert (out.df[:5] >= 1).all()
-    assert out.n_score_groups[5] == 0
-    assert math.isnan(out.df[5])
-
-    # discriminating items with a large minimum-expected count force the top
-    # scores to be merged into the last closed score group (trailing-merge path).
-    a = np.full(n_items, 1.6)
-    disc = SimpleNamespace(
-        alpha=np.log(a), b=np.linspace(-1.2, 1.2, n_items),
-        zeta=np.zeros((n_items, 1)), tau=-30.0,
-    )
-    eta2 = a[None, :] * theta[:, None] + disc.b[None, :]
-    y2 = (rng.random((n_persons, n_items)) < 1.0 / (1.0 + np.exp(-eta2))).astype(float)
-    merged = fm.s_x2(y2, fid, disc, "MIRT", min_expected=6.0)
-    assert np.isfinite(merged.statistic).all()
-
-
-def test_sx2_numpy_fallback_spatial_and_dim_floors(monkeypatch):
-    # dim 0 has 3 items, dim 1 a single item (skipped), dim 2 two items but one
-    # is entirely missing so it has no complete cases.
-    y, fid, params = _spatial_params([0, 0, 0, 1, 2, 2], 300, seed=4)
-    mask = np.ones_like(y, dtype=bool)
-    mask[:, 4] = False
-    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    out = fm.s_x2(y, fid, params, "MLS2PLM", mask=mask, min_expected=1.0)
-    assert out.statistic.shape == (6,)
-    # single-item and no-complete-case dimensions yield no score groups.
-    assert out.n_score_groups[3] == 0
-    assert out.n_score_groups[4] == 0 and out.n_score_groups[5] == 0
+    with pytest.raises(RuntimeError, match="compiled Rust core"):
+        fm.s_x2(y, fid, params, "MIRT")
 
 
 # ---------------------------------------------------------------------------
-# person-fit / infit-outfit NumPy fallbacks (core forced absent)
+# person-fit Rust ownership (incomplete core fails closed)
 # ---------------------------------------------------------------------------
 
 
-def test_person_fit_numpy_fallback(monkeypatch):
-    y, fid, params = _mirt_params(6, 250, seed=8)
+def test_person_fit_requires_compiled_rust_core(monkeypatch):
+    y, fid, params = _mirt_params(6, 20, seed=8)
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    pf = fm.person_fit(
-        y, fid, params, "MIRT", prior_mean=np.full((y.shape[0], 1), 0.2)
-    )
-    assert pf.lz.shape == (250, 1)
-    assert np.isfinite(pf.lz).any()
-    assert pf.flagged.shape == (250,)
-
-    ys, fids, sparams = _spatial_params([0, 0, 1, 1], 200, seed=9)
-    pf2 = fm.person_fit(ys, fids, sparams, "MLS2PLM")
-    assert pf2.lz_star.shape == (200, 2)
+    with pytest.raises(RuntimeError, match="compiled Rust core"):
+        fm.person_fit(y, fid, params, "MIRT")
 
 
 def test_infit_outfit_numpy_fallback(monkeypatch):
