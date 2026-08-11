@@ -540,10 +540,10 @@ def test_bifactor_parity_and_recovery():
     # loadings track the truth
     c = np.corrcoef(r.params.zeta[:, 0], lam)[0, 1]
     assert abs(c) > 0.5, f"lambda recovery: {c}"
-    # jmle guard
+    # jmle guard: rejected at FitConfig validation before fit work
     import pytest as _pytest
 
-    with _pytest.raises(NotImplementedError, match="marginal estimator"):
+    with _pytest.raises(ValueError, match="BIFAC2PLM.*mmle"):
         fit(y, fid, FitConfig(model="BIFAC2PLM", estimator="jmle"))
 
 
