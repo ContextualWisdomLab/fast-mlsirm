@@ -116,23 +116,31 @@ fn rejects_degenerate_inputs() {
     let auto = [0, 1, 0, 1];
     let human = [0, 1, 1, 0];
     assert!(validate_scoring(&auto, &human, 2, None, Some(&[0, 1])).is_err());
-    let singleton = validate_scoring(&auto, &human, 2, None, Some(&[0, 1, 1, 1])).unwrap();
-    assert!(singleton
-        .gates
-        .iter()
-        .any(|gate| gate.name == "subgroup_smd"));
-    let zero_variance_group =
+    // Requested subgroups with n<2 or unscorable SMD must fail closed rather
+    // than silently skipping cells and reporting a vacuous subgroup_smd gate.
+    let singleton = validate_scoring(&auto, &human, 2, None, Some(&[0, 1, 1, 1]));
+    assert!(
+        singleton
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.contains("subgroup evidence is insufficient")),
+        "singleton subgroup must fail closed: {singleton:?}"
+    );
+    let scoreable_subgroups =
         validate_scoring(&auto, &human, 2, None, Some(&[0, 0, 1, 1])).unwrap();
-    assert!(zero_variance_group
+    assert!(scoreable_subgroups
         .gates
         .iter()
         .any(|gate| gate.name == "subgroup_smd"));
     let subgroup_human_zero_variance =
-        validate_scoring(&auto, &[0, 0, 0, 1], 2, None, Some(&[0, 0, 1, 1])).unwrap();
-    assert!(subgroup_human_zero_variance
-        .gates
-        .iter()
-        .any(|gate| gate.name == "subgroup_smd"));
+        validate_scoring(&auto, &[0, 0, 0, 1], 2, None, Some(&[0, 0, 1, 1]));
+    assert!(
+        subgroup_human_zero_variance
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.contains("subgroup evidence is insufficient")),
+        "zero-variance human subgroup must fail closed: {subgroup_human_zero_variance:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -211,13 +211,17 @@ pub fn validate_scoring(
             let idx: Vec<usize> = (0..groups.len())
                 .filter(|&i| groups[i] as usize == g)
                 .collect();
+            // Requested subgroups must be scoreable. Skipping singletons or
+            // zero-variance cells would silently drop fairness evidence and
+            // let incomplete subgroup designs pass as if they were evaluated.
             if idx.len() < 2 {
-                continue;
+                return Err("subgroup evidence is insufficient".into());
             }
             let ga: Vec<f64> = idx.iter().map(|&i| auto_f[i]).collect();
             let gh: Vec<f64> = idx.iter().map(|&i| human_f[i]).collect();
-            let Ok(gs) = smd(&ga, &gh) else {
-                continue;
+            let gs = match smd(&ga, &gh) {
+                Ok(value) => value,
+                Err(_) => return Err("subgroup evidence is insufficient".into()),
             };
             if gs.abs() > worst.abs() {
                 worst = gs;
