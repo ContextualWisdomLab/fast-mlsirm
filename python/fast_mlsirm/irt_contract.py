@@ -9,7 +9,6 @@ import numpy as np
 
 from .config import MAX_POLYTOMOUS_CATEGORIES
 
-
 IRTItemType = Literal["dichotomous", "polytomous"]
 MIN_IRT_ITEMS = 2
 
@@ -77,4 +76,4 @@ def validate_irt_response_matrix(
     return matrix
 
 
-__all__ = ["IRTItemType", "MIN_IRT_ITEMS", "validate_irt_response_matrix"]
+__all__ = ["MIN_IRT_ITEMS", "IRTItemType", "validate_irt_response_matrix"]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fast_mlsirm.llm_judge import (
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -23,6 +24,14 @@ class _FakeOrchestrator:
             "answer": self.answer,
             "trace": [{"usage": {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}}],
         }
+
+
+class _CompletionOrchestrator:
+    def __init__(self, completion):
+        self.completion = completion
+
+    def complete(self, messages, mode="auto"):
+        return self.completion
 
 
 CRITERIA = [
@@ -61,20 +70,19 @@ def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     assert result.trace_step_count == 1
     assert dict(result.usage) == {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}
     assert orchestrator.calls[0][1] == "route"
+    prompt = orchestrator.calls[0][0][1]["content"]
+    payload = json.loads(prompt.split("\n", 1)[1])
+    assert payload["task"] == "Explain the release plan."
+    assert payload["answer"] == "Use a staged release with rollback."
 
 
 def test_judge_rejects_malformed_decisions_and_derives_acceptance() -> None:
-    try:
+    with pytest.raises(JudgeFormatError):
         ContextualOrchestratorJudge(_FakeOrchestrator("not json")).judge(
             task="task",
             answer="answer",
             criteria=CRITERIA,
         )
-    except JudgeFormatError:
-        pass
-    else:  # pragma: no cover
-        raise AssertionError("invalid judge response should fail closed")
-
     result = ContextualOrchestratorJudge(
         _FakeOrchestrator(_payload(score=0.8, accepted=False))
     ).judge(
@@ -110,12 +118,8 @@ def test_judge_result_projects_only_multiple_criteria_to_irt_items() -> None:
         answer="answer",
         criteria=[CRITERIA[0]],
     )
-    try:
+    with pytest.raises(JudgeFormatError):
         single_criterion.to_irt_row()
-    except JudgeFormatError:
-        pass
-    else:  # pragma: no cover
-        raise AssertionError("a scalar criterion must not become an IRT row")
 
 
 def test_category_judgment_derives_ordered_scores_and_irt_items() -> None:
@@ -148,17 +152,37 @@ def test_category_judgment_rejects_non_integral_categories() -> None:
         "rationale": "mixed evidence",
         "criterion_categories": {"task_alignment": 1.5, "factual_support": 1},
     })
-    try:
+    with pytest.raises(JudgeFormatError, match="integer"):
         ContextualOrchestratorJudge(_FakeOrchestrator(payload)).judge(
             task="task",
             answer="answer",
             criteria=CRITERIA,
             category_count=3,
         )
-    except JudgeFormatError as exc:
-        assert "integer" in str(exc)
-    else:  # pragma: no cover
-        raise AssertionError("non-integral categories must fail closed")
+
+
+def test_judge_rejects_missing_or_malformed_model_fields() -> None:
+    cases = [
+        {},
+        {"answer": _payload().replace("rationale", "explanation")},
+        "not a completion mapping",
+    ]
+    for completion in cases:
+        with pytest.raises(JudgeFormatError):
+            ContextualOrchestratorJudge(_CompletionOrchestrator(completion)).judge(
+                task="task",
+                answer="answer",
+                criteria=CRITERIA,
+            )
+
+
+def test_judge_criteria_reject_invalid_runtime_types() -> None:
+    with pytest.raises(TypeError, match="criterion_id must be a string"):
+        JudgeCriterion(1, "description")
+    with pytest.raises(TypeError, match="criterion description must be a string"):
+        JudgeCriterion("task_alignment", 1)
+    with pytest.raises(TypeError, match="criterion weight must be a number"):
+        JudgeCriterion("task_alignment", "description", "1")
 
 
 if __name__ == "__main__":
@@ -167,4 +191,6 @@ if __name__ == "__main__":
     test_judge_result_projects_only_multiple_criteria_to_irt_items()
     test_category_judgment_derives_ordered_scores_and_irt_items()
     test_category_judgment_rejects_non_integral_categories()
+    test_judge_rejects_missing_or_malformed_model_fields()
+    test_judge_criteria_reject_invalid_runtime_types()
     print("ok")

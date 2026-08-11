@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
-
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 
 
@@ -39,8 +40,12 @@ def test_polytomous_contract_requires_explicit_categories_and_multiple_items() -
 
 
 def test_polytomous_contract_rejects_invalid_categories_and_shape() -> None:
-    with pytest.raises(ValueError, match="0..2"):
+    with pytest.raises(ValueError, match=re.escape("0..2")):
         validate_irt_response_matrix([[0, 3]], "polytomous", n_categories=3)
+    with pytest.raises(ValueError, match="n_categories is only valid"):
+        validate_irt_response_matrix([[0, 1]], "dichotomous", n_categories=2)
+    with pytest.raises(ValueError, match=re.escape("2..")):
+        validate_irt_response_matrix([[0, 1]], "polytomous", n_categories=1)
     with pytest.raises(ValueError, match="2-D"):
         validate_irt_response_matrix([0, 1], "polytomous", n_categories=3)
     with pytest.raises(ValueError, match="finite"):

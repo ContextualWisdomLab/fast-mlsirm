@@ -95,8 +95,9 @@ print(fixed_item_calibration.best)
   validate_irt_response_matrix() for a multi-item dichotomous or explicitly
   categorized polytomous matrix. Equal-width score projection is experimental;
   category-count and prompt-perturbation calibration are required. See
-  [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/main/docs/planning/adrs/0005-irt-response-matrix-contract.md) and
-  [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/main/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md).
+  [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0005-irt-response-matrix-contract.md) and
+  [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md) and
+  [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/95ec15465a7b241af260ff300c572c11b1a40d20/docs/planning/adrs/0008-fast-judge-review-hardening.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
