@@ -340,6 +340,12 @@
 
 ### Security
 
+#### Bounded JSON loads for release acceptance
+
+- Release acceptance and generation-request contract loading use size- and
+  depth-bounded JSON parsers instead of unbounded `json.loads` on CLI stdout
+  and fit_summary artifacts.
+
 #### Person-fit invalid-response error redaction
 
 - Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.

@@ -357,7 +357,7 @@ class GenerationRequest:
     @property
     def contract(self) -> dict[str, Any]:
         """Return a fresh JSON-compatible generation contract object."""
-        return json.loads(self.contract_json)
+        return _contract_object(self.contract_json)
 
     @property
     def contract_handle(self) -> str:

@@ -14,6 +14,7 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPOSITORY_ROOT))
 _bounded_json = importlib.import_module("scripts._bounded_json")
 read_json_object = _bounded_json.read_json_object
+parse_json_bounded = _bounded_json.parse_json_bounded
 
 _SCRIPT_MODULES = (
     "scripts.build_benchmark_report",
@@ -239,3 +240,29 @@ def test_initial_identity_mismatch_and_nonregular_identity_fail_closed(
     monkeypatch.setattr(_bounded_json.os, "lstat", lambda _: NonRegularStatus())
     with pytest.raises(ValueError, match="stable regular file"):
         read_json_object(path)
+
+
+def test_parse_json_bounded_valid() -> None:
+    """It successfully parses a valid, bounded string."""
+    assert parse_json_bounded('{"a": 1}') == {"a": 1}
+    assert parse_json_bounded("[1, 2, 3]") == [1, 2, 3]
+
+
+def test_parse_json_bounded_oversized() -> None:
+    """It rejects strings that exceed the byte limit."""
+    content = '{"a": 1}'
+    with pytest.raises(ValueError, match="exceeds maximum allowed size 4 bytes"):
+        parse_json_bounded(content, max_bytes=4)
+
+
+def test_parse_json_bounded_deep() -> None:
+    """It rejects strings that exceed the maximum depth."""
+    content = '{"a": {"b": {"c": 1}}}'
+    with pytest.raises(ValueError, match="exceeds maximum allowed depth 2"):
+        parse_json_bounded(content, max_depth=2)
+
+
+def test_parse_json_bounded_invalid_json() -> None:
+    """It raises ValueError for invalid JSON syntax."""
+    with pytest.raises(ValueError, match="is not valid JSON"):
+        parse_json_bounded("{bad")
