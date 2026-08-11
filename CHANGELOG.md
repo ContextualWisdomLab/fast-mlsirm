@@ -286,6 +286,10 @@
 
 ### Fixed
 
+#### Fail early for unimplemented estimator identities
+
+- Restricted the public `FitConfig.estimator` vocabulary to the implemented `jmle` and `mmle` fitting paths, so unsupported `em` and `bayes` requests fail during configuration validation instead of entering a fitting path that later raises `NotImplementedError`.
+
 #### Bounded bifactor shape metadata inspection
 
 - Replaced eager `tuple(shape)` materialization at the public bifactor scoreability boundary with package-owned bounded look-ahead.

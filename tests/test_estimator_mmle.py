@@ -43,10 +43,10 @@ def test_mmle_loglik_is_monotone_nondecreasing():
 
 
 @pytest.mark.parametrize("estimator", ["em", "bayes"])
-def test_reserved_estimators_raise(estimator):
-    y, factors, mask, *_ = _simulate_2pl(n_persons=50, n_items=5)
-    with pytest.raises(NotImplementedError):
-        fit(y, factors, FitConfig(model="ULS2PLM", estimator=estimator), mask=mask)
+def test_unimplemented_estimators_are_rejected_during_validation(estimator):
+    """Reserved estimator names must fail at configuration validation, not fitting."""
+    with pytest.raises(ValueError, match="estimator must be one of"):
+        FitConfig(model="ULS2PLM", estimator=estimator).validate()
 
 
 def test_mmle_spatial_models_route_to_marginal_estimator():
