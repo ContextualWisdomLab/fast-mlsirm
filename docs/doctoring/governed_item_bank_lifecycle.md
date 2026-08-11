@@ -34,7 +34,14 @@ A lifecycle evidence reference stores only:
 
 The referenced artifact may contain Rust-backed calibration, fit, DIF, information, linking, exposure, drift, approval, suspension, or retirement evidence. The lifecycle layer does not reproduce or reinterpret those calculations.
 
-The initial calibration gate requires references for calibration, item fit, DIF, and item information. This requirement proves only that the governed evidence classes are present; later slices must validate their schemas, estimator identity, uncertainty, population/design scope, parameter recovery, and decision thresholds.
+The initial calibration gate always requires calibration, item-fit, and item-information evidence plus **exactly one DIF-applicability branch**:
+
+- `dif` when the governed calibration design includes a comparison/grouping structure for which DIF evidence is applicable; or
+- `dif_not_applicable` when a separate governed evidence artifact establishes that the calibration design has no applicable DIF comparison.
+
+Supplying neither branch fails closed; supplying both fails closed as conflicting applicability evidence. `dif_not_applicable` is not a fairness, invariance, validity, or cross-population equivalence finding. It only prevents callers from fabricating a DIF result for a design in which DIF is scientifically inapplicable. Any approved use, population, language, domain, release, or score-comparability claim that requires DIF/invariance evidence must still provide the applicable evidence before that claim is made.
+
+These requirements prove only that the governed evidence classes are present; later slices must validate their schemas, estimator identity, uncertainty, population/design scope, parameter recovery, and decision thresholds.
 
 Approval is use-specific. An item cannot enter `approved` without at least one descriptive approved-use identifier, and an `active` record cannot erase that scope.
 
@@ -50,7 +57,7 @@ A low-information safety-critical criterion may therefore remain operationally r
 
 ## Suspension and retirement
 
-Suspension is reversible but requires both a governance suspension record and evidence of a measured concern such as drift or DIF. Reactivation requires new approval plus new drift evidence. Retirement is terminal for new operational use, while historical evidence remains content-addressed for audit reconstruction.
+Suspension is reversible but requires both a governance suspension record and evidence of a measured concern such as drift or DIF. A `dif_not_applicable` calibration determination is not evidence of a later operational concern and therefore does not satisfy the suspension gate. Reactivation requires new approval plus new drift evidence. Retirement is terminal for new operational use, while historical evidence remains content-addressed for audit reconstruction.
 
 The contract does not authorize physical deletion, retention exceptions, or erasure behavior. Those controls belong to the downstream persistence and governance system.
 
@@ -70,6 +77,7 @@ The implementation requires deterministic tests for:
 - direct-construction refusal;
 - transition graph enforcement;
 - required evidence classes;
+- mutually exclusive measured-DIF versus governed-DIF-not-applicable calibration evidence;
 - use-specific approval;
 - cumulative evidence and previous-record linkage;
 - evidence-order invariance;
