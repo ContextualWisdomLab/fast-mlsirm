@@ -401,6 +401,10 @@
 
 - Bound `git rev-parse` in the release evidence index builder with a fail-closed timeout.
 
+#### ATA constraint-map validation trust boundary
+
+- Validate ATA content-constraint keys/counts, exposure maps, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile string/integer conversion callbacks while preserving accepted Python/NumPy string keys and exact integers.
+
 #### Fit-statistics require compiled Rust core
 
 - Public `chi2_sf` and `benjamini_hochberg` fail closed with a stable RuntimeError when the compiled Rust core is unavailable, preventing silent pure-Python numerical ownership.
@@ -457,6 +461,10 @@
 #### LSR ranking input bounds
 
 - Bound LSR/I-LSR ranking CSR materialization (`MAX_RANKING_CSR_BYTES`, per-ranking `n+1` cap) and redact ordinary iterable failures at the Python validation boundary.
+
+#### ATA constraint-map validation trust boundary
+
+- Keep invalid ATA semantic controls on a stable package-owned error surface rather than allowing arbitrary `__str__`/`__int__`/`__index__` callbacks during constraint-map coercion.
 
 #### Descriptor-safe bounded JSON input for automation scripts
 
