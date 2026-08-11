@@ -16,7 +16,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
+  # Matrix legs report as "python (3.12)" / "python (3.14)". Branch protection
+  # still requires the exact check context name `python`, so a thin aggregate
+  # job below re-exports matrix success under that name.
+  python-matrix:
+    name: python (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,6 +40,18 @@ jobs:
       - name: Verify Rust core is the resolved default backend
         run: python -c "import fast_mlsirm._core as c; from fast_mlsirm.backend import resolve_backend; from fast_mlsirm import FitConfig; assert hasattr(c, 'neg_loglik_and_grad'); assert resolve_backend(FitConfig().backend) == 'rust'; print('rust primary OK')"
       - run: pytest
+
+  python:
+    name: python
+    needs: python-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CPython matrix leg
+        run: |
+          echo "python-matrix result=${{ needs.python-matrix.result }}"
+          test "${{ needs.python-matrix.result }}" = "success"
+
 
   rust:
     runs-on: ubuntu-latest
