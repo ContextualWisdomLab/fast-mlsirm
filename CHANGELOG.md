@@ -289,6 +289,10 @@
 
 - Reject hostile semantic/numeric control objects before caller-defined `__str__`, `__repr__`, or `__float__` callbacks can execute, while preserving accepted relation identities, built-in/NumPy scalar semantics, and Rust-owned model-comparison arithmetic.
 
+#### Rotation mode validation hardening
+
+- Reject non-built-in-string rotation `mode` controls before caller-defined representation callbacks can execute, while preserving the existing orthogonal/oblique vocabulary, aliases, default resolution, and Rust-owned rotation numerics.
+
 #### Descriptor-safe bounded JSON input for automation scripts
 
 - Consolidated governed automation JSON readers behind a descriptor-safe shared
