@@ -89,26 +89,37 @@ def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float
 
 
 def vcov_from_hessian(hessian: np.ndarray, rcond: float = 1e-10) -> np.ndarray:
-    """Invert the observed information, falling back to a Moore-Penrose inverse."""
-    matrix = np.asarray(hessian, dtype=np.float64)
+    """Invert the observed information, falling back to a Moore-Penrose inverse.
+
+    Numerical inversion / pseudoinversion is owned by the Rust core; this
+    wrapper only validates shape and reshapes the flat result.
+    """
+    from . import _core  # type: ignore
+
+    matrix = np.ascontiguousarray(np.asarray(hessian, dtype=np.float64))
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError("hessian must be a square matrix")
-    try:
-        vcov = np.linalg.inv(matrix)
-    except np.linalg.LinAlgError:
-        vcov = np.linalg.pinv(matrix, rcond=rcond)
-    return (vcov + vcov.T) / 2.0
+    n = int(matrix.shape[0])
+    flat = _core.vcov_from_hessian(matrix, float(rcond))
+    vcov = np.asarray(flat, dtype=np.float64).reshape(n, n)
+    return vcov
 
 
 def standard_errors_from_vcov(vcov: np.ndarray) -> np.ndarray:
     """Return standard errors as the square-root of a covariance matrix's diagonal.
 
-    Negative diagonal entries are clamped to zero before the square root.
+    Diagonal reduction and non-negative clamping are Rust-owned. Negative
+    diagonal entries are clamped to zero before the square root.
     """
-    matrix = np.asarray(vcov, dtype=np.float64)
+    from . import _core  # type: ignore
+
+    matrix = np.ascontiguousarray(np.asarray(vcov, dtype=np.float64))
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError("vcov must be a square matrix")
-    return np.sqrt(np.maximum(np.diag(matrix), 0.0))
+    return np.asarray(
+        _core.standard_errors_from_vcov(matrix),
+        dtype=np.float64,
+    )
 
 
 def oakes_standard_errors(
