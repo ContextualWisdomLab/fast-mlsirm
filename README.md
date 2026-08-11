@@ -97,7 +97,7 @@ print(fixed_item_calibration.best)
   category-count and prompt-perturbation calibration are required. See
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0005-irt-response-matrix-contract.md) and
   [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md) and
-  [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/2b65d5c2c2b3184f17f00371066bd30eecb1e1a6/docs/planning/adrs/0008-fast-judge-review-hardening.md).
+  [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/2b65d5c0f3d6bd64a9e05818f1f9286e98c334c1/docs/planning/adrs/0008-fast-judge-review-hardening.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
