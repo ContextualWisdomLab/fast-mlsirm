@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Public CAT `item_information` and `select_cat_item` delegate Fisher information and maximum-information ranking to the Rust core.
 - Bound top-1 CSR loser streams and enforce the shared ranking CSR byte ceiling with stable non-reflective iteration errors.
 - Validate ATA content-constraint maps, exposure counts, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile conversion callbacks while preserving accepted string keys and exact integers.
 - Cap LSR ranking CSR geometric growth under the live byte budget and stream validated item indices without list→uint64 temporaries beside the handoff arrays.

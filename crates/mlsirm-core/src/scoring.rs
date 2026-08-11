@@ -1835,6 +1835,71 @@ pub fn cat_ability_standard_error(
     cat_ability_standard_error_device(bank, xi_mean, theta, administered, crate::Device::Auto)
 }
 
+/// Dichotomous per-item Fisher information at one theta (van der Linden & Pashley, 2010).
+///
+/// Returns length-`n_items` information using the same frozen-bank linear predictor as
+/// [`bank_information_device`] (simple-structure slope, model-specific distance/inner term).
+pub fn cat_item_information_device(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi_mean: &[f64],
+    device: crate::Device,
+) -> Result<Vec<f64>, String> {
+    let (item_info, _) = bank_information_device(bank, theta, xi_mean, 1, device)?;
+    Ok(item_info)
+}
+
+/// Default-device wrapper for [`cat_item_information_device`].
+pub fn cat_item_information(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi_mean: &[f64],
+) -> Result<Vec<f64>, String> {
+    cat_item_information_device(bank, theta, xi_mean, crate::Device::Auto)
+}
+
+/// Maximum-Fisher-information next-item selection with administered exclusion.
+///
+/// Administered items are removed from the candidate set; the lowest index wins ties.
+/// Returns an error when no finite candidate remains.
+pub fn cat_select_item_device(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi_mean: &[f64],
+    administered: Option<&[usize]>,
+    device: crate::Device,
+) -> Result<usize, String> {
+    let info = cat_item_information_device(bank, theta, xi_mean, device)?;
+    let empty = [];
+    let selected = administered.unwrap_or(&empty);
+    validate_cat_indices(bank, selected, None)?;
+    let mut best_idx: Option<usize> = None;
+    let mut best_info = f64::NEG_INFINITY;
+    for (item, &value) in info.iter().enumerate() {
+        if selected.iter().any(|&adm| adm == item) {
+            continue;
+        }
+        if !value.is_finite() {
+            continue;
+        }
+        if value > best_info {
+            best_info = value;
+            best_idx = Some(item);
+        }
+    }
+    best_idx.ok_or_else(|| "no candidate items remain".to_string())
+}
+
+/// Default-device wrapper for [`cat_select_item_device`].
+pub fn cat_select_item(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi_mean: &[f64],
+    administered: Option<&[usize]>,
+) -> Result<usize, String> {
+    cat_select_item_device(bank, theta, xi_mean, administered, crate::Device::Auto)
+}
+
 /// Warm's (1989) weighted-likelihood ability estimates for a UNIDIMENSIONAL dichotomous test.
 ///
 /// The maximum-likelihood ability estimate carries an `O(1/n)` bias; Warm removes its leading term by

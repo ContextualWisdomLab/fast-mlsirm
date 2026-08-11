@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from .diagnostics import predict_proba
 from .types import MLSIRMParams
 
 
@@ -13,13 +12,36 @@ def item_information(
     person_index: int | None = None,
     model: str = "MLS2PLM",
 ) -> np.ndarray:
-    """Dichotomous item information for the simple-structure trait dimension."""
+    """Dichotomous item information for the simple-structure trait dimension.
+
+    Numerical Fisher information is owned by the compiled Rust core
+    (``cat_item_information``); Python validates shapes and marshals bank
+    parameters. The latent-space position follows
+    :func:`_person_params` (person ``xi`` when indexed, else the bank mean).
+    """
     factors = np.asarray(factor_id, dtype=np.int64)
     if factors.shape != params.alpha.shape:
         raise ValueError("factor_id length must match number of items")
     sub = _person_params(params, theta=theta, person_index=person_index)
-    prob = predict_proba(sub, factors, model=model)[0]
-    return params.a * params.a * prob * (1.0 - prob)
+    from . import _core as core
+
+    n_dims = int(np.asarray(params.theta).shape[1])
+    latent_dim = int(np.asarray(params.zeta).shape[1])
+    result = core.cat_item_information(
+        theta=np.ascontiguousarray(sub.theta.reshape(-1), dtype=np.float64),
+        xi_mean=np.ascontiguousarray(sub.xi.reshape(-1), dtype=np.float64),
+        alpha=np.ascontiguousarray(params.alpha, dtype=np.float64),
+        b=np.ascontiguousarray(params.b, dtype=np.float64),
+        zeta=np.ascontiguousarray(params.zeta, dtype=np.float64).reshape(-1),
+        tau=float(params.tau),
+        factor_id=np.ascontiguousarray(factors, dtype=np.int64),
+        model=model,
+        n_dims=n_dims,
+        latent_dim=latent_dim,
+        eps_distance=1e-8,
+        device="auto",
+    )
+    return np.asarray(result, dtype=np.float64)
 
 
 def select_cat_item(
@@ -33,18 +55,42 @@ def select_cat_item(
     """Select the next CAT item by maximum Fisher information.
 
     Returns the index of the not-yet-``administered`` item with the highest
-    item information at the given ``theta`` (or person), for adaptive testing.
+    item information at the given ``theta`` (or person). Ranking and exclusion
+    are owned by the compiled Rust core (``cat_select_item``); Python validates
+    and marshals controls.
     """
-    information = item_information(params, factor_id, theta=theta, person_index=person_index, model=model)
-    candidates = information.copy()
+    factors = np.asarray(factor_id, dtype=np.int64)
+    if factors.shape != params.alpha.shape:
+        raise ValueError("factor_id length must match number of items")
+    sub = _person_params(params, theta=theta, person_index=person_index)
+    adm = None
     if administered is not None:
         used = np.asarray(administered, dtype=np.int64)
-        if np.any(used < 0) or np.any(used >= candidates.size):
+        n_items = int(np.asarray(params.b).shape[0])
+        if used.size and (np.any(used < 0) or np.any(used >= n_items)):
             raise ValueError("administered item index out of range")
-        candidates[used] = -np.inf
-    if not np.any(np.isfinite(candidates)):
-        raise ValueError("no candidate items remain")
-    return int(np.argmax(candidates))
+        adm = np.ascontiguousarray(np.unique(used), dtype=np.int64)
+
+    from . import _core as core
+
+    n_dims = int(np.asarray(params.theta).shape[1])
+    latent_dim = int(np.asarray(params.zeta).shape[1])
+    selected = core.cat_select_item(
+        theta=np.ascontiguousarray(sub.theta.reshape(-1), dtype=np.float64),
+        xi_mean=np.ascontiguousarray(sub.xi.reshape(-1), dtype=np.float64),
+        administered=adm,
+        alpha=np.ascontiguousarray(params.alpha, dtype=np.float64),
+        b=np.ascontiguousarray(params.b, dtype=np.float64),
+        zeta=np.ascontiguousarray(params.zeta, dtype=np.float64).reshape(-1),
+        tau=float(params.tau),
+        factor_id=np.ascontiguousarray(factors, dtype=np.int64),
+        model=model,
+        n_dims=n_dims,
+        latent_dim=latent_dim,
+        eps_distance=1e-8,
+        device="auto",
+    )
+    return int(selected)
 
 
 def assemble_test_form(
