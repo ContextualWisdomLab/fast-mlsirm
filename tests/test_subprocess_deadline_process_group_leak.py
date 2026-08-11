@@ -36,7 +36,7 @@ class _LeaderExitsProcess:
 
 
 def test_posix_timeout_kills_surviving_group_after_leader_exits(monkeypatch) -> None:
-    """Cleanup verifies the group after grace and kills a surviving descendant."""
+    """Cleanup verifies the group after grace, kills descendants, and reaps boundedly."""
     fake = _LeaderExitsProcess()
     signals: list[tuple[int, int]] = []
     sleeps: list[float] = []
@@ -62,4 +62,7 @@ def test_posix_timeout_kills_surviving_group_after_leader_exits(monkeypatch) -> 
         (fake.pid, signal.SIGKILL),
     ]
     assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
-    assert fake.communicate_calls == [1800.0, None]
+    assert fake.communicate_calls == [
+        1800.0,
+        deadlines.PROCESS_REAP_TIMEOUT_SECONDS,
+    ]
