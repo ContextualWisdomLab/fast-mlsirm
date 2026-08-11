@@ -140,29 +140,46 @@ def _posix_process_group_exists(process_group_id: int) -> bool:
     return True
 
 
-def _reap_process(process: subprocess.Popen) -> None:
-    """Reap one child with a bounded communicate timeout.
+def _close_process_pipes(process: subprocess.Popen) -> None:
+    """Close inherited process pipe handles without inspecting child output."""
+    for name in ("stdin", "stdout", "stderr"):
+        pipe = getattr(process, name, None)
+        if pipe is None:
+            continue
+        try:
+            pipe.close()
+        except (OSError, ValueError):
+            # Cleanup is best-effort after the child has already exceeded both
+            # its operation deadline and the bounded reap interval.
+            pass
 
-    If the child is still stuck after the reap budget, abandon the wait so the
-    caller can surface ``BoundedSubprocessTimeout`` without hanging the parent.
-    """
+
+def _bounded_reap(process: subprocess.Popen) -> None:
+    """Bound final child reaping and release inherited pipes if communicate stalls."""
     try:
         process.communicate(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+        return
     except subprocess.TimeoutExpired:
-        try:
-            process.kill()
-        except ProcessLookupError:
-            pass
+        _close_process_pipes(process)
+
+    wait = getattr(process, "wait", None)
+    if wait is None:
+        return
+    try:
+        wait(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        # The timeout path itself must remain bounded. The caller will surface
+        # BoundedSubprocessTimeout; no child-controlled text is retained here.
         return
 
 
 def _terminate_after_timeout(process: subprocess.Popen) -> None:
-    """Terminate and reap one timed-out process or POSIX process group."""
+    """Terminate and boundedly reap one timed-out process or POSIX process group."""
     if os.name == "posix":
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
-            _reap_process(process)
+            _bounded_reap(process)
             return
 
         # Keep the group leader unreaped during the grace period so its numeric
@@ -174,7 +191,7 @@ def _terminate_after_timeout(process: subprocess.Popen) -> None:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        _reap_process(process)
+        _bounded_reap(process)
         return
 
     process.terminate()
@@ -182,7 +199,7 @@ def _terminate_after_timeout(process: subprocess.Popen) -> None:
         process.communicate(timeout=PROCESS_GROUP_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
         process.kill()
-        _reap_process(process)
+        _bounded_reap(process)
 
 
 def run_bounded(
