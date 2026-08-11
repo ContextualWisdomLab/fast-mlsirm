@@ -215,19 +215,21 @@ mod tests {
 
     #[test]
     fn standard_errors_preserve_nonfinite_diagonals() {
-        // row-major 5x5 with targeted diagonal entries
-        let mut v = vec![0.0_f64; 25];
+        // row-major 6x6 with targeted diagonal entries
+        let mut v = vec![0.0_f64; 36];
         v[0] = 4.0; // SE=2
-        v[6] = 0.0; // SE=0
-        v[12] = -1.0; // clamp to 0
-        v[18] = f64::NAN; // preserve NaN
-        v[24] = f64::INFINITY; // preserve +inf
-        let se = standard_errors_from_vcov(&v, 5).unwrap();
+        v[7] = 0.0; // SE=0
+        v[14] = -1.0; // clamp to 0
+        v[21] = f64::NAN; // preserve NaN
+        v[28] = f64::INFINITY; // preserve +inf
+        v[35] = f64::NEG_INFINITY; // preserve -inf
+        let se = standard_errors_from_vcov(&v, 6).unwrap();
         assert!((se[0] - 2.0).abs() < 1e-15);
         assert_eq!(se[1], 0.0);
         assert_eq!(se[2], 0.0);
         assert!(se[3].is_nan());
         assert!(se[4].is_infinite() && se[4].is_sign_positive());
+        assert!(se[5].is_infinite() && se[5].is_sign_negative());
     }
 
     #[test]
