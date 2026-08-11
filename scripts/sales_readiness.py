@@ -316,7 +316,7 @@ def _validate_doc_tokens(repo_root: Path) -> list[dict[str, object]]:
 
 
 def _validate_20b_product_evidence(
-    repo_root: Path, *, contract_value_krw: int
+    repo_root: Path, *, contract_value_krw: int | None
 ) -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
     for relative in REQUIRED_20B_PRODUCT_FILES:
@@ -395,7 +395,7 @@ def _validate_20b_product_evidence(
             checks.append(
                 _check(
                     "20b:roi_contract_value",
-                    payload.get("contract_value_krw") == contract_value_krw,
+                    (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
                     "ROI manifest contract value matches readiness gate",
                     expected=contract_value_krw,
                     actual=payload.get("contract_value_krw"),
@@ -439,7 +439,7 @@ def _validate_20b_product_evidence(
             checks.append(
                 _check(
                     "20b:completion_contract_value",
-                    payload.get("contract_value_krw") == contract_value_krw,
+                    (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
                     "completion manifest contract value matches readiness gate",
                     expected=contract_value_krw,
                     actual=payload.get("contract_value_krw"),
@@ -596,7 +596,7 @@ def _validate_buyer_packet(
     manifest_path: Path | None,
     *,
     required: bool,
-    contract_value_krw: int,
+    contract_value_krw: int | None,
 ) -> list[dict[str, object]]:
     if manifest_path is None:
         return [
@@ -666,7 +666,7 @@ def _validate_buyer_packet(
         ),
         _check(
             "buyer_packet:contract_value",
-            payload.get("contract_value_krw") == contract_value_krw,
+            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
             "buyer packet contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -826,7 +826,7 @@ def _validate_release_evidence_index(
     manifest_path: Path | None,
     *,
     required: bool,
-    contract_value_krw: int,
+    contract_value_krw: int | None,
 ) -> list[dict[str, object]]:
     if manifest_path is None:
         return [
@@ -909,7 +909,7 @@ def _validate_release_evidence_index(
         ),
         _check(
             "release_evidence_index:contract_value",
-            payload.get("contract_value_krw") == contract_value_krw,
+            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
             "release evidence index contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -954,7 +954,7 @@ def _validate_procurement_due_diligence(
     manifest_path: Path | None,
     *,
     required: bool,
-    contract_value_krw: int,
+    contract_value_krw: int | None,
 ) -> list[dict[str, object]]:
     if manifest_path is None:
         return [
@@ -1018,7 +1018,7 @@ def _validate_procurement_due_diligence(
         ),
         _check(
             "procurement_due_diligence:contract_value",
-            payload.get("contract_value_krw") == contract_value_krw,
+            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
             "procurement due-diligence contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1059,7 +1059,7 @@ def _validate_pr_queue_governance(
     manifest_path: Path | None,
     *,
     required: bool,
-    contract_value_krw: int,
+    contract_value_krw: int | None,
 ) -> list[dict[str, object]]:
     if manifest_path is None:
         return [
@@ -1130,7 +1130,7 @@ def _validate_pr_queue_governance(
         ),
         _check(
             "pr_queue_governance:contract_value",
-            payload.get("contract_value_krw") == contract_value_krw,
+            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
             "PR queue governance contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1185,7 +1185,7 @@ def _validate_figma_evidence_sync(
     manifest_path: Path | None,
     *,
     required: bool,
-    contract_value_krw: int,
+    contract_value_krw: int | None,
 ) -> list[dict[str, object]]:
     if manifest_path is None:
         return [
@@ -1257,7 +1257,7 @@ def _validate_figma_evidence_sync(
         ),
         _check(
             "figma_evidence_sync:contract_value",
-            payload.get("contract_value_krw") == contract_value_krw,
+            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
             "Figma evidence sync contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1362,6 +1362,9 @@ def _validate_imports(
 def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     repo_root = Path(args.repo_root).resolve()
     buyer_packet_manifest = getattr(args, "buyer_packet_manifest", None)
+    if getattr(args, "require_acquisition_readiness", False) and not args.require_20b_product:
+        # Generic acquisition readiness reuses the product evidence profile without fabricating a deal value.
+        args.require_20b_product = True
     require_buyer_packet = getattr(args, "require_buyer_packet", False)
     benchmark_report = getattr(args, "benchmark_report", None)
     require_benchmark_report = getattr(args, "require_benchmark_report", False)
@@ -1503,7 +1506,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--require-20b-product",
         action="store_true",
-        help="Require Product Design, Figma, ROI, benchmark, and demo evidence for KRW 2B review.",
+        help="Require Product Design, Figma, ROI, benchmark, and demo evidence for the product readiness profile.",
+    )
+    parser.add_argument(
+        "--require-acquisition-readiness",
+        action="store_true",
+        help="Require complete acquisition/commercial readiness evidence (generic evidence completeness gate).",
     )
     parser.add_argument(
         "--check-import",
@@ -1566,8 +1574,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--contract-value-krw",
         type=int,
-        default=2_000_000_000,
-        help="Target contract value for this gate.",
+        default=None,
+        help="Optional deal-scenario contract value (KRW). Omitted unless the caller supplies a scenario.",
     )
     parser.add_argument(
         "--max-acceptance-seconds",
