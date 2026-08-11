@@ -296,6 +296,11 @@
 
 - Restricted the public `FitConfig.estimator` vocabulary to the implemented `jmle` and `mmle` fitting paths, so unsupported `em` and `bayes` requests fail during configuration validation instead of entering a fitting path that later raises `NotImplementedError`.
 
+#### Node-rule fail-closed validation
+
+- Public polytomous and 2PL fitters reject non-string integration-rule controls
+  before importing the Rust core, without invoking caller ``__str__``/``__repr__``.
+
 #### Bounded bifactor shape metadata inspection
 
 - Replaced eager `tuple(shape)` materialization at the public bifactor scoreability boundary with package-owned bounded look-ahead.
