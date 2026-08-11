@@ -165,6 +165,59 @@ def _validated_content_labels(content: np.ndarray | None, n_items: int) -> np.nd
     return labels.astype(str)
 
 
+
+def _exact_public_integer(value: object, name: str) -> int:
+    """Return one exact integer while rejecting bools and conversion hooks.
+
+    Public ATA scalar/map counts are a type boundary: only Python ``int`` and
+    NumPy integer scalars are admitted. Booleans are rejected even though
+    ``bool`` subclasses ``int``. Arbitrary objects with ``__int__``/``__index__``
+    are rejected without invoking those callbacks.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        raise ValueError(f"{name} must be an integer")
+    return int(value)
+
+
+def _validated_content_constraints(
+    min_per_content: dict[str, int] | None,
+    max_per_content: dict[str, int] | None,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Validate content constraint maps without hostile key/count coercion."""
+
+    def _one(raw: dict[str, int] | None) -> dict[str, int]:
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            raise ValueError("content constraints must be mappings")
+        out: dict[str, int] = {}
+        for key, count in raw.items():
+            if not isinstance(key, (str, np.str_)):
+                raise ValueError("content constraint keys must be strings")
+            if isinstance(count, bool) or not isinstance(count, (int, np.integer)):
+                raise ValueError("content constraint counts must be integers")
+            out[str(key)] = int(count)
+        return out
+
+    return _one(min_per_content), _one(max_per_content)
+
+
+def _validated_exposure_counts(exposure_counts: dict[int, int] | None) -> dict[int, int]:
+    """Validate exposure maps without invoking integer conversion callbacks."""
+    if exposure_counts is None:
+        return {}
+    if not isinstance(exposure_counts, dict):
+        raise ValueError("exposure_counts must be a mapping")
+    out: dict[int, int] = {}
+    for key, count in exposure_counts.items():
+        if isinstance(key, bool) or not isinstance(key, (int, np.integer)):
+            raise ValueError("exposure_counts keys and values must be integers")
+        if isinstance(count, bool) or not isinstance(count, (int, np.integer)):
+            raise ValueError("exposure_counts keys and values must be integers")
+        out[int(key)] = int(count)
+    return out
+
+
 def assemble_to_target(
     bank: MLSIRMParams,
     factor_id: np.ndarray,
@@ -193,13 +246,35 @@ def assemble_to_target(
     * exposure: an item is ineligible when its prior usage count in
       ``exposure_counts`` reaches ``exposure_max``.
 
-    Content labels must already be strings; arbitrary objects are rejected
-    before psychometric scoring rather than coerced through caller callbacks.
-    Deterministic given ``seed``. Raises ``ValueError`` if no form satisfying
-    the constraints can be assembled.
+    Content labels and constraint-map keys/counts must already be the admitted
+    types (strings / exact integers); arbitrary objects and conversion hooks are
+    rejected before psychometric scoring rather than coerced through caller
+    callbacks. Deterministic given ``seed``. Raises ``ValueError`` if no form
+    satisfying the constraints can be assembled.
     """
     n_items = int(np.asarray(bank.b).shape[0])
     labels = _validated_content_labels(content, n_items)
+
+    # Validate semantic controls before any item-information evaluation so hostile
+    # constraint-map coercion cannot execute during scoring and invalid controls
+    # never reach the psychometric path.
+    if not isinstance(length, (int, np.integer)) or isinstance(length, bool):
+        raise ValueError("length must be an integer")
+    length = int(length)
+    if not (1 <= length <= n_items):
+        raise ValueError("length must be between 1 and the number of items")
+
+    min_counts, max_counts = _validated_content_constraints(min_per_content, max_per_content)
+    if (min_counts or max_counts) and labels is None:
+        raise ValueError("content labels are required for content constraints")
+
+    excluded = set(np.asarray(exclude, dtype=np.int64).tolist()) if exclude is not None else set()
+    exposure_counts = _validated_exposure_counts(exposure_counts)
+    if exposure_max is not None:
+        exposure_max = _exact_public_integer(exposure_max, "exposure_max")
+        if exposure_max < 0:
+            raise ValueError("exposure_max must be non-negative")
+    seed = _exact_public_integer(seed, "seed")
 
     matrix = item_information_matrix(bank, factor_id, target_thetas, model=model)
     n_points, matrix_n_items = matrix.shape
@@ -210,24 +285,9 @@ def assemble_to_target(
         raise ValueError("target_info must have one entry per target theta point")
     if np.any(target < 0) or not np.all(np.isfinite(target)):
         raise ValueError("target_info must be finite and non-negative")
-    if not isinstance(length, (int, np.integer)) or isinstance(length, bool):
-        raise ValueError("length must be an integer")
-    length = int(length)
-    if not (1 <= length <= n_items):
-        raise ValueError("length must be between 1 and the number of items")
-
-    min_counts = {str(k): int(v) for k, v in (min_per_content or {}).items()}
-    max_counts = {str(k): int(v) for k, v in (max_per_content or {}).items()}
-    if (min_counts or max_counts) and labels is None:
-        raise ValueError("content labels are required for content constraints")
-
-    excluded = set(np.asarray(exclude, dtype=np.int64).tolist()) if exclude is not None else set()
-    exposure_counts = {int(k): int(v) for k, v in (exposure_counts or {}).items()}
-    if exposure_max is not None and exposure_max < 0:
-        raise ValueError("exposure_max must be non-negative")
 
     raw_info = matrix.sum(axis=0)
-    rng = np.random.default_rng(int(seed))
+    rng = np.random.default_rng(seed)
     selected: list[int] = []
     counts: dict[str, int] = {}
     accum = np.zeros(n_points, dtype=np.float64)

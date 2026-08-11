@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Validate ATA content-constraint maps, exposure counts, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile conversion callbacks while preserving accepted string keys and exact integers.
 - Closed the Python-to-Rust equivalent-groups equating control boundary:
   method and explicit score-ceiling controls now reject arbitrary objects
   instead of invoking caller-defined ``__str__``/``__int__`` methods.
