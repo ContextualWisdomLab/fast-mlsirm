@@ -380,16 +380,35 @@ def rank_centrality(wins, alpha=0.0):
         iterations=int(res["iterations"]),
     )
 
+# Live CSR payload budget for ranking materialization: flattened item
+# indices plus CSR start offsets, each stored as fixed-width uint64
+# (8 bytes). This is an input-resource ceiling for the Python→Rust handoff
+# arrays only; it does not claim a process-wide memory capacity.
+MAX_RANKING_CSR_BYTES = 8 * 1024 * 1024
+
+
+def _ranking_csr_budget_allows(flat_count: int, start_count: int) -> bool:
+    """Return True when (flat + starts) * 8 fits under the CSR byte ceiling."""
+    total = flat_count + start_count
+    # Division-before-multiplication avoids oversized intermediate products.
+    return total <= (MAX_RANKING_CSR_BYTES // 8)
+
+
 def _rankings_to_csr(name, rankings, n):
-    """Validate a list of rankings (best first) and CSR-flatten to u64.
+    """Validate rankings (best first) and CSR-flatten to bounded u64 storage.
 
     Rejects, BEFORE any unsigned cast: non-integer entries, negative
     indices (a documented divergence -- Python's negative indices would
     silently wrap in choix), booleans, complex/object dtypes, rankings
-    shorter than 2 items (choix silently no-ops those), and out-of-range
-    items. Duplicate detection within a ranking is enforced by the Rust
-    core (documented divergence: choix accepts duplicates whenever the
-    chain stays connected).
+    shorter than 2 items (choix silently no-ops those), overlong rankings
+    (> n items), out-of-range items, and streams that would exceed
+    :data:`MAX_RANKING_CSR_BYTES` of live flat/start uint64 payload.
+    Ordinary caller iteration failures become stable ``ValueError`` text
+    without reflecting the rejected payload. Process-control exceptions
+    (``KeyboardInterrupt``, ``SystemExit``, ``GeneratorExit``) propagate.
+    Duplicate detection within a ranking is enforced by the Rust core
+    (documented divergence: choix accepts duplicates whenever the chain
+    stays connected).
     """
     if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
         raise ValueError(f"{name}: n must be an integer >= 2")
@@ -398,16 +417,58 @@ def _rankings_to_csr(name, rankings, n):
         # Mirrors the Rust dense-chain cap BEFORE any uint64/usize cast,
         # so a huge n raises ValueError, never a raw OverflowError.
         raise ValueError(f"{name}: n = {n} exceeds the 10000-item cap")
-    flat = []
-    starts = [0]
-    for r, ranking in enumerate(rankings):
-        items = list(ranking)
-        if len(items) < 2:
+
+    # Fixed-width accumulation (uint64) keeps the live CSR payload budgeted.
+    flat = np.empty(0, dtype=np.uint64)
+    starts = np.array([0], dtype=np.uint64)
+    flat_count = 0
+    start_count = 1
+    ranking_count = 0
+
+    try:
+        ranking_iter = iter(rankings)
+    except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+            raise
+        raise ValueError(f"{name}: ranking iteration failed") from None
+
+    while True:
+        try:
+            ranking = next(ranking_iter)
+        except StopIteration:
+            break
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            raise ValueError(f"{name}: ranking iteration failed") from None
+
+        ranking_count += 1
+        r = ranking_count - 1
+        # Budget one additional start offset for this ranking before reading items.
+        if not _ranking_csr_budget_allows(flat_count, start_count + 1):
             raise ValueError(
-                f"{name}: ranking {r} has fewer than 2 items "
-                "(choix silently ignores such rankings; this port rejects them)"
+                f"{name}: ranking CSR byte limit exceeded "
+                f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
             )
-        for x in items:
+
+        try:
+            item_iter = iter(ranking)
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            raise ValueError(f"{name}: ranking iteration failed") from None
+
+        ranking_items: list[int] = []
+        for _ in range(n + 1):
+            try:
+                x = next(item_iter)
+            except StopIteration:
+                break
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                    raise
+                raise ValueError(f"{name}: ranking iteration failed") from None
+
             if isinstance(x, (bool, np.bool_)) or np.iscomplexobj(np.asarray(x)):
                 raise ValueError(f"{name}: ranking {r} has a non-integer item")
             try:
@@ -423,15 +484,50 @@ def _rankings_to_csr(name, rankings, n):
                 )
             if xi >= n:
                 raise ValueError(f"{name}: ranking {r} has item {xi} >= n = {n}")
-            flat.append(xi)
-        starts.append(len(flat))
-    if len(starts) < 2:
+
+            if not _ranking_csr_budget_allows(flat_count + len(ranking_items) + 1, start_count + 1):
+                raise ValueError(
+                    f"{name}: ranking CSR byte limit exceeded "
+                    f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+                )
+            ranking_items.append(xi)
+        else:
+            # Consumed n+1 without StopIteration => overlong ranking.
+            raise ValueError(
+                f"{name}: ranking {r} has more than n = {n} items"
+            )
+
+        if len(ranking_items) < 2:
+            raise ValueError(
+                f"{name}: ranking {r} has fewer than 2 items "
+                "(choix silently ignores such rankings; this port rejects them)"
+            )
+
+        need = flat_count + len(ranking_items)
+        if flat.shape[0] < need:
+            grown = np.empty(max(need, max(8, flat.shape[0] * 2 or 8)), dtype=np.uint64)
+            if flat_count:
+                grown[:flat_count] = flat[:flat_count]
+            flat = grown
+        flat[flat_count : flat_count + len(ranking_items)] = np.asarray(
+            ranking_items, dtype=np.uint64
+        )
+        flat_count += len(ranking_items)
+        if starts.shape[0] < start_count + 1:
+            grown_starts = np.empty(
+                max(start_count + 1, max(8, starts.shape[0] * 2)), dtype=np.uint64
+            )
+            grown_starts[:start_count] = starts[:start_count]
+            starts = grown_starts
+        starts[start_count] = flat_count
+        start_count += 1
+
+    if start_count < 2:
         raise ValueError(f"{name}: at least one ranking is required")
-    return (
-        np.asarray(flat, dtype=np.uint64),
-        np.asarray(starts, dtype=np.uint64),
-        n,
-    )
+
+    flat_out = np.ascontiguousarray(flat[:flat_count], dtype=np.uint64)
+    starts_out = np.ascontiguousarray(starts[:start_count], dtype=np.uint64)
+    return flat_out, starts_out, n
 
 
 def lsr_rankings(rankings, n, alpha=0.0):
