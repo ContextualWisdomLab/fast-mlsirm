@@ -701,11 +701,6 @@ h3 {
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
-  transition: opacity 0.15s ease-in-out;
-}
-
-.bar-chart:hover .bar-row:not(:hover) {
-  opacity: 0.5;
 }
 
 .bar-label,
@@ -776,6 +771,10 @@ h3 {
   border-radius: 8px;
 }
 
+.table-wrap:focus {
+  outline: none;
+}
+
 .table-wrap:focus-visible {
   outline: 3px solid var(--teal);
   outline-offset: 3px;
@@ -825,15 +824,11 @@ tr:last-child td {
 }
 
 tbody tr {
-  transition: background-color 0.15s ease-in-out, opacity 0.15s ease-in-out;
+  transition: background-color 0.15s ease-in-out;
 }
 
 tbody tr:hover {
   background: var(--hover-bg);
-}
-
-tbody:hover tr:not(:hover) {
-  opacity: 0.5;
 }
 
 .empty-state {
@@ -889,6 +884,10 @@ tbody:hover tr:not(:hover) {
   background: var(--hover-bg);
   font-variant-numeric: tabular-nums;
   white-space: pre;
+}
+
+.export-block pre:focus {
+  outline: none;
 }
 
 .export-block pre:focus-visible {
