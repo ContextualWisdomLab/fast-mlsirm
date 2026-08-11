@@ -185,3 +185,9 @@ https://numpy.org/doc/stable/reference/generated/numpy.subtract.html
 
 NumPy Developers. (2026). *numpy.sqrt*. NumPy v2.5 manual.
 https://numpy.org/doc/stable/reference/generated/numpy.sqrt.html
+
+## References
+
+Jeon, M., Jin, I. H., Schweinberger, M., & Baughman, M. (2021). Mapping unobserved item–respondent interactions: A latent space item response model with application to the International Personality Item Pool. *Psychometrika, 86*(2), 378–403. https://doi.org/10.1007/s11336-021-09762-5
+
+Higham, N. J. (2002). *Accuracy and stability of numerical algorithms* (2nd ed.). Society for Industrial and Applied Mathematics. https://doi.org/10.1137/1.9780898718027
