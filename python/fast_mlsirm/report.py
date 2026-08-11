@@ -771,6 +771,10 @@ h3 {
   border-radius: 8px;
 }
 
+.table-wrap:focus {
+  outline: none;
+}
+
 .table-wrap:focus-visible {
   outline: 3px solid var(--teal);
   outline-offset: 3px;
@@ -880,6 +884,10 @@ tbody tr:hover {
   background: var(--hover-bg);
   font-variant-numeric: tabular-nums;
   white-space: pre;
+}
+
+.export-block pre:focus {
+  outline: none;
 }
 
 .export-block pre:focus-visible {
