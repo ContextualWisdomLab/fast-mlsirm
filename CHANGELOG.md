@@ -19,6 +19,11 @@
 - Supplemental native `title` tooltips exposing unrounded exact float representations on formatted cells in essay score HTML reports.
 - CSS `@media print` rules enforcing black-on-white text, hiding interactive skip links, and avoiding awkward page breaks for print and PDF exports.
 
+#### Governed factor-retention evidence contract
+
+- Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
+- Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
+
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -253,6 +258,12 @@
 - Expanded the full Python CI job from a single CPython 3.12 runtime to a fail-slow CPython 3.12 and 3.14 matrix while preserving the existing Rust/PyO3 build, Rust-primary backend verification, package, GPU, fuzz, and security gates.
 - Added a deterministic CI contract that requires Python 3.14 to execute the same complete pytest suite rather than a reduced compatibility smoke path.
 - Added a non-matrix `python` aggregate job so branch-protection's required check context named `python` still receives a single SUCCESS/FAILURE after every matrix leg finishes.
+
+#### Current support-policy version line
+
+- Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
+- Reframed support around released, documented public API and packaging behavior, preserved conservative high-stakes/certification/SLA boundaries, and clarified Rust-first production numerical ownership versus explicit reference/parity paths.
+- Added a repository contract that derives the supported minor line from `pyproject.toml` so future package-version changes cannot silently leave `SECURITY.md` or `SUPPORT.md` stale.
 
 #### MMLE theta calculation memory optimization
 
