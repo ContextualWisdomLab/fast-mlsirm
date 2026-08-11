@@ -38,15 +38,26 @@ implicitly merge the process environment into that mapping.
 The runner passes every command as an argument vector rather than invoking a
 shell. On POSIX systems, `subprocess.Popen(..., start_new_session=True)` creates a
 new session for the child. When a deadline expires, the package sends `SIGTERM`
-to that process group, allows a bounded five-second grace period, escalates to
-`SIGKILL` if the group does not exit, and drains the child with `communicate()` so
-that the parent does not intentionally leave an unreaped process.
+to that process group, allows a bounded five-second grace period, and escalates
+to `SIGKILL` if the group does not exit.
 
-If the process group has already disappeared, the parent still drains the process
-handle. On non-POSIX platforms the helper performs a bounded direct-process
-`terminate()`/`kill()` fallback. The non-POSIX path is intentionally **not**
-documented as providing POSIX-equivalent descendant-tree termination; stronger
-platform-specific tree control would require separate evidence.
+Final child-handle reaping is independently bounded. After the group disappears,
+a `SIGKILL` is issued, or a non-POSIX direct process is killed, the helper allows
+at most one second for a final `communicate()`. If that reap still times out—for
+example because a surviving descendant inherited one of the parent's pipe
+handles—the parent closes its inherited stdin/stdout/stderr handles without
+inspecting their contents and allows at most one additional one-second `wait()`.
+If that wait also times out, cleanup returns to the stable timeout path rather
+than blocking indefinitely. The original operation remains a
+`BoundedSubprocessTimeout`; timeout cleanup never becomes an unbounded second
+wait.
+
+If the process group has already disappeared, the same bounded final-reap policy
+applies to the process handle. On non-POSIX platforms the helper performs a
+bounded direct-process `terminate()`/`kill()` fallback followed by that same
+bounded final reap. The non-POSIX path is intentionally **not** documented as
+providing POSIX-equivalent descendant-tree termination; stronger platform-specific
+tree control would require separate evidence.
 
 Python's subprocess documentation defines `TimeoutExpired` as the timeout failure
 surface and documents `start_new_session=True` as the POSIX `setsid()` boundary.
@@ -99,12 +110,14 @@ Permanent tests cover:
 3. malformed command rejection before process creation;
 4. POSIX new-session creation;
 5. bounded `SIGTERM` then `SIGKILL` process-group escalation;
-6. process reaping when a group has already disappeared;
-7. non-POSIX terminate/kill fallback without claiming descendant parity;
-8. machine-readable timeout evidence that omits child-controlled command/output
+6. bounded final `communicate()` reaping when a group has already disappeared;
+7. pipe-handle closure plus one additional bounded `wait()` when final reaping
+   itself times out;
+8. non-POSIX terminate/kill fallback without claiming descendant parity;
+9. machine-readable timeout evidence that omits child-controlled command/output
    text;
-9. preservation of `check=True` non-zero-exit semantics; and
-10. integration routing of Cargo metadata, ignored-test inventory, and selected
+10. preservation of `check=True` non-zero-exit semantics; and
+11. integration routing of Cargo metadata, ignored-test inventory, and selected
     statistical tests through the appropriate operation class.
 
 The complete repository CI remains authoritative for Python tests, Rust and PyO3
