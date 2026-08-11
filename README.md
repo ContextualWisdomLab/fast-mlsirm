@@ -99,7 +99,8 @@ print(fixed_item_calibration.best)
   [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md) and
   [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/2b65d5c0f3d6bd64a9e05818f1f9286e98c334c1/docs/planning/adrs/0008-fast-judge-review-hardening.md).
   Cross-repository exact-head review, structured Strix evidence, and merge
-  policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/0168d4c68368e2f5b00737ec395edaa5444f721f/docs/planning/adrs/0004-pr-review-merge-loop.md).
+  policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/befa094784e37947841948fb42016de7e6b965ab/docs/planning/adrs/0004-pr-review-merge-loop.md) and
+  [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/befa094784e37947841948fb42016de7e6b965ab/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
