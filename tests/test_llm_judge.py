@@ -310,3 +310,34 @@ if __name__ == "__main__":
     test_judge_criteria_reject_invalid_runtime_types()
     test_judge_criteria_reject_non_contract_values_with_value_error()
     print("ok")
+
+def test_judge_rejects_excessive_json_nesting() -> None:
+    """Deeply nested JSON cannot expand into recursive parser DoS."""
+    # Nesting depth 33 exceeds MAX_JUDGE_JSON_DEPTH (32).
+    nested = "{" + '"k":{' * 32 + '"score": 0.8' + "}" * 32 + "}"
+    assert nested.count("{") == 33
+    with pytest.raises(JudgeFormatError, match="nesting exceeds maximum depth"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(nested)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+
+def test_judge_accepts_bounded_json_nesting() -> None:
+    """Nesting at the admitted depth still parses when the payload is valid."""
+    # Build a valid judge payload with modest nesting under the limit.
+    inner = {
+        "score": 0.8,
+        "accepted": True,
+        "rationale": "ok",
+        "criterion_scores": {"task_alignment": 0.8, "factual_support": 0.8},
+    }
+    raw = json.dumps(inner)
+    result = ContextualOrchestratorJudge(_FakeOrchestrator(raw)).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    assert result.score == 0.8
+
