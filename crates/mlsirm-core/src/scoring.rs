@@ -1393,6 +1393,448 @@ fn dispatch_information_device(
     bank_information_cpu_reduce(bank, theta, xi, n_points, n_items)
 }
 
+const CAT_PROB_EPS: f64 = 1e-12;
+
+/// Ability estimates returned by the Rust CAT arithmetic layer.
+pub struct CatAbilityScores {
+    pub theta: Vec<f64>,
+    pub se: Vec<f64>,
+    pub finite: Vec<bool>,
+}
+
+fn validate_cat_indices(
+    bank: &ItemBank<'_>,
+    administered: &[usize],
+    responses: Option<&[f64]>,
+) -> Result<(), String> {
+    let n_items = bank.b.len();
+    if let Some(response_values) = responses {
+        if response_values.len() != administered.len() {
+            return Err("administered and responses must have equal length".into());
+        }
+        if response_values
+            .iter()
+            .any(|&value| !value.is_finite() || (value != 0.0 && value != 1.0))
+        {
+            return Err("responses must be finite 0 or 1".into());
+        }
+    }
+    let mut seen = vec![false; n_items];
+    for &item in administered {
+        if item >= n_items {
+            return Err("administered item index out of range".into());
+        }
+        if seen[item] {
+            return Err("administered items must be unique".into());
+        }
+        seen[item] = true;
+    }
+    Ok(())
+}
+
+fn cat_interaction_terms(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    validate_bank(bank)?;
+    if xi_mean.len() != bank.latent_dim {
+        return Err("xi_mean length must match latent_dim".into());
+    }
+    if xi_mean.iter().any(|value| !value.is_finite()) {
+        return Err("xi_mean values must be finite".into());
+    }
+    let (free_alpha, _uses_space) = model_exec_flags(bank.model_type);
+    let kind = crate::interaction_kind(bank.model_type);
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
+    if !gamma.is_finite() {
+        return Err("latent-space weight must have a finite natural scale".into());
+    }
+    let mut slopes = Vec::with_capacity(bank.b.len());
+    let mut interactions = Vec::with_capacity(bank.b.len());
+    for item in 0..bank.b.len() {
+        let slope = if free_alpha {
+            bank.alpha[item].exp()
+        } else {
+            1.0
+        };
+        if !slope.is_finite() || slope <= 0.0 {
+            return Err("item discriminations must have a finite positive natural scale".into());
+        }
+        let interaction = match kind {
+            crate::InteractionKind::None => 0.0,
+            crate::InteractionKind::Distance => {
+                let mut distance_squared = bank.eps_distance;
+                for k in 0..bank.latent_dim {
+                    let diff = xi_mean[k] - bank.zeta[item * bank.latent_dim + k];
+                    distance_squared += diff * diff;
+                }
+                -gamma * distance_squared.sqrt()
+            }
+            crate::InteractionKind::Inner => (0..bank.latent_dim)
+                .map(|k| xi_mean[k] * bank.zeta[item * bank.latent_dim + k])
+                .sum(),
+        };
+        if !interaction.is_finite() {
+            return Err("CAT interaction terms must be finite".into());
+        }
+        slopes.push(slope);
+        interactions.push(interaction);
+    }
+    Ok((slopes, interactions))
+}
+
+#[inline]
+fn cat_probability(
+    bank: &ItemBank<'_>,
+    slopes: &[f64],
+    interactions: &[f64],
+    theta: f64,
+    item: usize,
+) -> f64 {
+    sigmoid(slopes[item] * theta + bank.b[item] + interactions[item])
+        .clamp(CAT_PROB_EPS, 1.0 - CAT_PROB_EPS)
+}
+
+/// Maximum-likelihood CAT ability estimation with a Rust-owned Newton loop.
+#[allow(clippy::too_many_arguments)]
+pub fn cat_ability_mle_device(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+    administered: &[usize],
+    responses: &[f64],
+    start: Option<&[f64]>,
+    max_iter: usize,
+    tol: f64,
+    bound: f64,
+    device: crate::Device,
+) -> Result<CatAbilityScores, String> {
+    let n_items = validate_bank(bank)?;
+    if administered.len() > n_items {
+        return Err("administered cannot contain more items than the bank".into());
+    }
+    validate_cat_indices(bank, administered, Some(responses))?;
+    if max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if !bound.is_finite() || bound <= 0.0 {
+        return Err("bound must be finite and positive".into());
+    }
+    let n_dims = bank.n_dims;
+    let start_values = match start {
+        Some(values) => {
+            if values.len() != n_dims {
+                return Err("start must have one value per trait dimension".into());
+            }
+            if values.iter().any(|value| !value.is_finite()) {
+                return Err("start values must be finite".into());
+            }
+            values.to_vec()
+        }
+        None => vec![0.0; n_dims],
+    };
+    let (slopes, interactions) = cat_interaction_terms(bank, xi_mean)?;
+
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(n_dims.max(1));
+    let chunk_size = n_dims.div_ceil(worker_count);
+    let start_values_ref = &start_values;
+    let slopes_ref = &slopes;
+    let interactions_ref = &interactions;
+    let chunks = std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for start_dim in (0..n_dims).step_by(chunk_size) {
+            let end_dim = (start_dim + chunk_size).min(n_dims);
+            handles.push(scope.spawn(move || {
+                let mut theta = vec![0.0; end_dim - start_dim];
+                let mut finite = vec![true; end_dim - start_dim];
+                for (local_dim, dimension) in (start_dim..end_dim).enumerate() {
+                    let selected: Vec<(usize, f64)> = administered
+                        .iter()
+                        .zip(responses)
+                        .filter(|(item, _)| bank.factor_id[**item] == dimension)
+                        .map(|(&item, &response)| (item, response))
+                        .collect();
+                    let mut estimate = start_values_ref[dimension];
+                    if selected.is_empty() {
+                        theta[local_dim] = estimate;
+                        continue;
+                    }
+                    for _ in 0..max_iter {
+                        let mut score = 0.0;
+                        let mut information = 0.0;
+                        for &(item, response) in &selected {
+                            let probability =
+                                cat_probability(bank, slopes_ref, interactions_ref, estimate, item);
+                            score += slopes_ref[item] * (response - probability);
+                            information += slopes_ref[item]
+                                * slopes_ref[item]
+                                * probability
+                                * (1.0 - probability);
+                        }
+                        if information <= CAT_PROB_EPS {
+                            break;
+                        }
+                        let updated = (estimate + score / information).clamp(-bound, bound);
+                        let delta = (updated - estimate).abs();
+                        estimate = updated;
+                        if delta < tol {
+                            break;
+                        }
+                    }
+                    finite[local_dim] = selected
+                        .iter()
+                        .any(|(_, response)| *response != selected[0].1);
+                    theta[local_dim] = estimate;
+                }
+                (start_dim, theta, finite)
+            }));
+        }
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("CAT MLE worker panicked"))
+            .collect::<Vec<_>>()
+    });
+    let mut theta = vec![0.0; n_dims];
+    let mut finite = vec![true; n_dims];
+    for (start_dim, local_theta, local_finite) in chunks {
+        theta[start_dim..start_dim + local_theta.len()].copy_from_slice(&local_theta);
+        finite[start_dim..start_dim + local_finite.len()].copy_from_slice(&local_finite);
+    }
+    let mut se =
+        cat_ability_standard_error_device(bank, xi_mean, &theta, Some(administered), device)?;
+    for (value, is_finite) in se.iter_mut().zip(&finite) {
+        if !is_finite {
+            *value = f64::INFINITY;
+        }
+    }
+    Ok(CatAbilityScores { theta, se, finite })
+}
+
+/// Default-device wrapper for [`cat_ability_mle_device`].
+pub fn cat_ability_mle(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+    administered: &[usize],
+    responses: &[f64],
+    start: Option<&[f64]>,
+    max_iter: usize,
+    tol: f64,
+    bound: f64,
+) -> Result<CatAbilityScores, String> {
+    cat_ability_mle_device(
+        bank,
+        xi_mean,
+        administered,
+        responses,
+        start,
+        max_iter,
+        tol,
+        bound,
+        crate::Device::Auto,
+    )
+}
+
+/// Expected-a-posteriori CAT ability estimation on a fixed, prior-centred grid.
+#[allow(clippy::too_many_arguments)]
+pub fn cat_ability_eap_device(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+    administered: &[usize],
+    responses: &[f64],
+    prior: &PriorSpec,
+    n_quad: usize,
+    quad_range: f64,
+    _device: crate::Device,
+) -> Result<CatAbilityScores, String> {
+    validate_bank(bank)?;
+    validate_cat_indices(bank, administered, Some(responses))?;
+    validate_prior(prior, bank.n_dims)?;
+    if n_quad < 2 {
+        return Err("n_quad must be an integer >= 2".into());
+    }
+    if !quad_range.is_finite() || quad_range <= 0.0 {
+        return Err("quad_range must be finite and positive".into());
+    }
+    let (slopes, interactions) = cat_interaction_terms(bank, xi_mean)?;
+    let n_dims = bank.n_dims;
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(n_dims.max(1));
+    let chunk_size = n_dims.div_ceil(worker_count);
+    let slopes_ref = &slopes;
+    let interactions_ref = &interactions;
+    let chunks = std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for start_dim in (0..n_dims).step_by(chunk_size) {
+            let end_dim = (start_dim + chunk_size).min(n_dims);
+            handles.push(scope.spawn(move || {
+                let mut theta = vec![0.0; end_dim - start_dim];
+                let mut se = vec![0.0; end_dim - start_dim];
+                let finite = vec![true; end_dim - start_dim];
+                for (local_dim, dimension) in (start_dim..end_dim).enumerate() {
+                    let selected: Vec<(usize, f64)> = administered
+                        .iter()
+                        .zip(responses)
+                        .filter(|(item, _)| bank.factor_id[**item] == dimension)
+                        .map(|(&item, &response)| (item, response))
+                        .collect();
+                    if selected.is_empty() {
+                        theta[local_dim] = prior.mean[dimension];
+                        se[local_dim] = prior.sd[dimension];
+                        continue;
+                    }
+                    let mut nodes = Vec::with_capacity(n_quad);
+                    let denominator = (n_quad - 1) as f64;
+                    for q in 0..n_quad {
+                        let fraction = q as f64 / denominator;
+                        nodes
+                            .push(prior.mean[dimension] - quad_range + 2.0 * quad_range * fraction);
+                    }
+                    let mut log_post = Vec::with_capacity(n_quad);
+                    for &node in &nodes {
+                        let mut log_likelihood = 0.0;
+                        for &(item, response) in &selected {
+                            let probability =
+                                cat_probability(bank, slopes_ref, interactions_ref, node, item);
+                            log_likelihood += if response == 1.0 {
+                                probability.ln()
+                            } else {
+                                (1.0 - probability).ln()
+                            };
+                        }
+                        let standardized = (node - prior.mean[dimension]) / prior.sd[dimension];
+                        log_post.push(log_likelihood - 0.5 * standardized * standardized);
+                    }
+                    let maximum = log_post.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                    let mut weights: Vec<f64> = log_post
+                        .iter()
+                        .map(|value| (value - maximum).exp())
+                        .collect();
+                    let total = weights.iter().sum::<f64>();
+                    if !total.is_finite() || total <= 0.0 {
+                        theta[local_dim] = prior.mean[dimension];
+                        se[local_dim] = prior.sd[dimension];
+                        continue;
+                    }
+                    for weight in &mut weights {
+                        *weight /= total;
+                    }
+                    let mean = nodes
+                        .iter()
+                        .zip(&weights)
+                        .map(|(node, weight)| node * weight)
+                        .sum::<f64>();
+                    let variance = nodes
+                        .iter()
+                        .zip(&weights)
+                        .map(|(node, weight)| (node - mean) * (node - mean) * weight)
+                        .sum::<f64>()
+                        .max(0.0);
+                    theta[local_dim] = mean;
+                    se[local_dim] = variance.sqrt();
+                }
+                (start_dim, theta, se, finite)
+            }));
+        }
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("CAT EAP worker panicked"))
+            .collect::<Vec<_>>()
+    });
+    let mut theta = vec![0.0; n_dims];
+    let mut se = vec![0.0; n_dims];
+    let mut finite = vec![true; n_dims];
+    for (start_dim, local_theta, local_se, local_finite) in chunks {
+        theta[start_dim..start_dim + local_theta.len()].copy_from_slice(&local_theta);
+        se[start_dim..start_dim + local_se.len()].copy_from_slice(&local_se);
+        finite[start_dim..start_dim + local_finite.len()].copy_from_slice(&local_finite);
+    }
+    Ok(CatAbilityScores { theta, se, finite })
+}
+
+/// Default-device wrapper for [`cat_ability_eap_device`].
+#[allow(clippy::too_many_arguments)]
+pub fn cat_ability_eap(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+    administered: &[usize],
+    responses: &[f64],
+    prior: &PriorSpec,
+    n_quad: usize,
+    quad_range: f64,
+) -> Result<CatAbilityScores, String> {
+    cat_ability_eap_device(
+        bank,
+        xi_mean,
+        administered,
+        responses,
+        prior,
+        n_quad,
+        quad_range,
+        crate::Device::Auto,
+    )
+}
+
+/// Asymptotic CAT standard errors for an arbitrary trait point.
+#[allow(clippy::too_many_arguments)]
+pub fn cat_ability_standard_error_device(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+    theta: &[f64],
+    administered: Option<&[usize]>,
+    device: crate::Device,
+) -> Result<Vec<f64>, String> {
+    validate_bank(bank)?;
+    if theta.len() != bank.n_dims {
+        return Err("theta must have one value per trait dimension".into());
+    }
+    if theta.iter().any(|value| !value.is_finite()) {
+        return Err("theta values must be finite".into());
+    }
+    let empty = [];
+    let selected = administered.unwrap_or(&empty);
+    validate_cat_indices(bank, selected, None)?;
+    let (item_info, test_info) = bank_information_device(bank, theta, xi_mean, 1, device)?;
+    let mut totals = vec![0.0; bank.n_dims];
+    if administered.is_some() {
+        for &item in selected {
+            totals[bank.factor_id[item]] += item_info[item];
+        }
+    } else {
+        totals.copy_from_slice(&test_info);
+    }
+    Ok(totals
+        .into_iter()
+        .map(|information| {
+            if information > CAT_PROB_EPS {
+                1.0 / information.sqrt()
+            } else {
+                f64::INFINITY
+            }
+        })
+        .collect())
+}
+
+/// Default-device wrapper for [`cat_ability_standard_error_device`].
+pub fn cat_ability_standard_error(
+    bank: &ItemBank<'_>,
+    xi_mean: &[f64],
+    theta: &[f64],
+    administered: Option<&[usize]>,
+) -> Result<Vec<f64>, String> {
+    cat_ability_standard_error_device(bank, xi_mean, theta, administered, crate::Device::Auto)
+}
+
 /// Warm's (1989) weighted-likelihood ability estimates for a UNIDIMENSIONAL dichotomous test.
 ///
 /// The maximum-likelihood ability estimate carries an `O(1/n)` bias; Warm removes its leading term by
