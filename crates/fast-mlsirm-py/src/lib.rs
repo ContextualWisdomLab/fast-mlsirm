@@ -129,6 +129,8 @@ use mlsirm_core::scoring::{
     cat_ability_eap_device as core_cat_ability_eap_device,
     cat_ability_mle_device as core_cat_ability_mle_device,
     cat_ability_standard_error_device as core_cat_ability_standard_error_device,
+    cat_item_information_device as core_cat_item_information_device,
+    cat_select_item_device as core_cat_select_item_device,
     cat_next_item_device as core_cat_next_item_device,
     eapsum_tables_device as core_eapsum_tables_device,
     empirical_reliability_device as core_empirical_reliability_device,
@@ -8118,6 +8120,105 @@ fn cat_ability_standard_error(
     .map_err(PyValueError::new_err)
 }
 
+/// Dichotomous per-item Fisher information at one theta for CAT/test design.
+///
+/// Delegates to the same frozen-bank information kernel as ability SE and bank
+/// information (van der Linden & Pashley, 2010 2PL form under c=0, d=1).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    theta, xi_mean, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, device = "auto",
+))]
+fn cat_item_information(
+    theta: PyReadonlyArray1<'_, f64>,
+    xi_mean: PyReadonlyArray1<'_, f64>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    device: &str,
+) -> PyResult<Vec<f64>> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    core_cat_item_information_device(
+        &bank,
+        theta.as_slice()?,
+        xi_mean.as_slice()?,
+        device,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Maximum-Fisher-information next-item selection with administered exclusion.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    theta, xi_mean, administered, alpha, b, zeta, tau, factor_id, model, n_dims,
+    latent_dim, eps_distance, device = "auto",
+))]
+fn cat_select_item(
+    theta: PyReadonlyArray1<'_, f64>,
+    xi_mean: PyReadonlyArray1<'_, f64>,
+    administered: Option<PyReadonlyArray1<'_, i64>>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    device: &str,
+) -> PyResult<usize> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let administered = match &administered {
+        Some(values) => Some(convert_item_indices(values.as_slice()?)?),
+        None => None,
+    };
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    core_cat_select_item_device(
+        &bank,
+        theta.as_slice()?,
+        xi_mean.as_slice()?,
+        administered.as_deref(),
+        device,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
 /// formula, c=0/d=1 logistic case; Lord test-information tradition).
 #[pyfunction]
@@ -8822,6 +8923,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_eap, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_item_information, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_select_item, m)?)?;
     m.add_function(wrap_pyfunction!(bank_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
     m.add_function(wrap_pyfunction!(plausible_values, m)?)?;
