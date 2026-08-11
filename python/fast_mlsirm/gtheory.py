@@ -12,6 +12,7 @@ tables (see the Rust module docs).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -26,6 +27,52 @@ _REFERENCES = """References (APA 7th ed.):
         Shavelson, R. J., & Webb, N. M. (1991). *Generalizability theory:
             A primer*. Sage. (As cited in Huebner & Lucht, 2019; not read.)
     """
+
+
+def _trusted_numpy_scalar(value: object, scalar_type: type[np.generic]) -> bool:
+    """Return whether ``value`` is a package-trusted NumPy scalar family.
+
+    Validation must not execute arbitrary caller conversion hooks. Restricting
+    NumPy acceptance to scalar classes defined by NumPy keeps later ``int`` or
+    ``float`` conversion inside a known implementation instead of accepting an
+    unrelated user subclass that only imitates the numeric protocol.
+    """
+
+    return isinstance(value, scalar_type) and type(value).__module__.startswith("numpy")
+
+
+def _positive_integer_control(value: object, message: str) -> int:
+    """Validate one positive Python/NumPy integer control without coercion hooks."""
+
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(message)
+    if type(value) is int:
+        parsed = value
+    elif _trusted_numpy_scalar(value, np.integer):
+        parsed = int(value)
+    else:
+        raise ValueError(message)
+    if parsed <= 0:
+        raise ValueError(message)
+    return parsed
+
+
+def _finite_real_control(value: object, message: str) -> float:
+    """Validate one finite Python/NumPy real control without arbitrary coercion."""
+
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(message)
+    if type(value) in (int, float):
+        parsed = float(value)
+    elif _trusted_numpy_scalar(value, np.integer) or _trusted_numpy_scalar(
+        value, np.floating
+    ):
+        parsed = float(value)
+    else:
+        raise ValueError(message)
+    if not math.isfinite(parsed):
+        raise ValueError(message)
+    return parsed
 
 
 @dataclass
@@ -116,7 +163,10 @@ def gtheory_pi(
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_p, n_i = x.shape
-    primes = [int(v) for v in n_i_prime]
+    primes = [
+        _positive_integer_control(v, "n_i_prime entries must be positive integers")
+        for v in n_i_prime
+    ]
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
 
 
@@ -143,7 +193,14 @@ def gtheory_pio(
     if x.ndim != 3:
         raise ValueError("data must be a 3-D persons x items x occasions array")
     n_p, n_i, n_o = x.shape
-    pairs = [(int(a), int(b)) for a, b in n_prime]
+    message = "n_prime entries must be pairs of positive integers"
+    pairs = [
+        (
+            _positive_integer_control(a, message),
+            _positive_integer_control(b, message),
+        )
+        for a, b in n_prime
+    ]
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
     )
@@ -207,12 +264,17 @@ def phi_lambda(
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_p, n_i = x.shape
+    parsed_cut = _finite_real_control(cut, "cut must be a finite real scalar")
+    primes = [
+        _positive_integer_control(v, "n_i_prime entries must be positive integers")
+        for v in n_i_prime
+    ]
     res = core.phi_lambda(
         x.reshape(-1),
         int(n_p),
         int(n_i),
-        float(cut),
-        [int(v) for v in n_i_prime],
+        parsed_cut,
+        primes,
     )
     return PhiLambdaResult(
         grand_mean=float(res["grand_mean"]),

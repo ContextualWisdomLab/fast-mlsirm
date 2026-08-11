@@ -18,6 +18,25 @@ import time
 from pathlib import Path
 
 
+RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = {
+    "simulate": 120.0,
+    "fit_auto": 900.0,
+    "fit_rust": 900.0,
+    "diagnose-fit": 300.0,
+    "diagnose-dimensions": 900.0,
+    "render-report-fit": 120.0,
+    "render-report-dimensions": 120.0,
+}
+
+
+def _cli_timeout_seconds(out_label: str) -> float:
+    """Return the bounded subprocess deadline for one acceptance operation."""
+    try:
+        return RELEASE_ACCEPTANCE_TIMEOUT_SECONDS[out_label]
+    except KeyError:
+        raise RuntimeError("unsupported release acceptance operation") from None
+
+
 def _cli_env() -> dict[str, str]:
     env = os.environ.copy()
     repo_python = Path(__file__).resolve().parents[1] / "python"
@@ -37,7 +56,17 @@ def _run_cli(args: list[str], out_label: str, *, require_json: bool = True) -> d
     if require_json and "--json" not in command:
         command.append("--json")
     started = time.perf_counter()
-    completed = subprocess.run(command, capture_output=True, text=True, env=_cli_env())
+    timeout_seconds = _cli_timeout_seconds(out_label)
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            env=_cli_env(),
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{out_label} timed out") from None
     duration_seconds = round(time.perf_counter() - started, 6)
     if completed.returncode != 0:
         stderr = completed.stderr.strip()
