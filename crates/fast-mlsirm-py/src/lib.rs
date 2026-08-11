@@ -19,6 +19,7 @@ use mlsirm_core::fitstats::{
     poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
+use mlsirm_core::inference::{standard_errors_from_vcov as core_standard_errors_from_vcov, vcov_from_hessian as core_vcov_from_hessian};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
     PopulationSpec, XiRuleKind,
@@ -8616,6 +8617,28 @@ fn benjamini_hochberg(p_values: PyReadonlyArray1<'_, f64>, q: f64) -> PyResult<V
     Ok(core_benjamini_hochberg(p_values.as_slice()?, q))
 }
 
+/// Invert observed information / Hessian (pinv fallback). Returns row-major flat.
+#[pyfunction]
+fn vcov_from_hessian(hessian: PyReadonlyArray2<'_, f64>, rcond: f64) -> PyResult<Vec<f64>> {
+    let shape = hessian.shape();
+    if shape.len() != 2 || shape[0] != shape[1] {
+        return Err(PyValueError::new_err("hessian must be a square matrix"));
+    }
+    let n = shape[0];
+    core_vcov_from_hessian(hessian.as_slice()?, n, rcond).map_err(PyValueError::new_err)
+}
+
+/// Standard errors from a square covariance (negative diag clamped to 0).
+#[pyfunction]
+fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f64>> {
+    let shape = vcov.shape();
+    if shape.len() != 2 || shape[0] != shape[1] {
+        return Err(PyValueError::new_err("vcov must be a square matrix"));
+    }
+    let n = shape[0];
+    core_standard_errors_from_vcov(vcov.as_slice()?, n).map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -8778,6 +8801,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
     m.add_function(wrap_pyfunction!(chi2_sf, m)?)?;
     m.add_function(wrap_pyfunction!(benjamini_hochberg, m)?)?;
+    m.add_function(wrap_pyfunction!(vcov_from_hessian, m)?)?;
+    m.add_function(wrap_pyfunction!(standard_errors_from_vcov, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_eap, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
