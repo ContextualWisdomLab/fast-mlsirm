@@ -81,8 +81,16 @@ def _identify_1d_mirt(truth, estimate) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
 @pytest.fixture(scope="module")
 def _jmle_recovery_data():
-    """Return one deterministic 2PL-generating sample shared by optimizer modes."""
-    return simulate(
+    """Return one deterministic, non-separated 2PL sample shared by optimizer modes.
+
+    ``simulate`` intentionally spans easiness from 0 to 5 for broad simulation
+    coverage. With only 12 items that fixture can generate near-constant easy
+    items, which creates quasi-separation and tests incidental-parameter
+    pathology rather than optimizer recovery. Keep its generated abilities and
+    discriminations, replace easiness with a balanced [-1.5, 1.5] design, and
+    resample responses from the same public 2PL predictor.
+    """
+    data = simulate(
         MLS2PLMConfig(
             n_persons=240,
             n_dims=1,
@@ -92,6 +100,20 @@ def _jmle_recovery_data():
             seed=62612,
         )
     )
+    rng = np.random.default_rng(62613)
+    data.truth.b = rng.permutation(
+        np.linspace(-1.5, 1.5, data.truth.b.size, dtype=np.float64)
+    )
+    eta = (
+        data.truth.a[None, :] * data.truth.theta[:, data.factor_id]
+        + data.truth.b[None, :]
+    )
+    data.probabilities = 1.0 / (1.0 + np.exp(-eta))
+    data.Y = rng.binomial(1, data.probabilities).astype(np.uint8)
+
+    item_rates = data.Y.mean(axis=0)
+    assert np.all((item_rates > 0.05) & (item_rates < 0.95))
+    return data
 
 
 @pytest.mark.parametrize("optimizer", ["adam", "lbfgs", "adam_lbfgs"])
