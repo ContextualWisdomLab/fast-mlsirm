@@ -16,3 +16,15 @@ def test_bifactor_jmle_is_rejected_during_configuration_validation() -> None:
 def test_bifactor_mmle_remains_a_valid_configuration() -> None:
     """The implemented bifactor MMLE path remains accepted by preflight."""
     FitConfig(model="BIFAC2PLM", estimator="mmle").validate()
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM"],
+)
+@pytest.mark.parametrize("estimator", ["jmle", "mmle"])
+def test_non_bifactor_estimator_matrix_remains_valid(
+    model: str, estimator: str
+) -> None:
+    """Implemented estimator pairs remain accepted for the other public models."""
+    FitConfig(model=model, estimator=estimator).validate()

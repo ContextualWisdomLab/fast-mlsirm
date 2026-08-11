@@ -12,6 +12,17 @@ VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
 # Public production estimators. Future estimator identities are added only after
 # their public fitting paths are implemented and validated end to end.
 VALID_ESTIMATORS = {"jmle", "mmle"}
+# Keep the public model × estimator contract explicit at configuration time.
+# BIFAC2PLM is implemented through the marginal likelihood path; accepting
+# JMLE here would defer a predictable incompatibility to the runtime fitter.
+MODEL_ESTIMATOR_COMPATIBILITY = {
+    "MIRT": frozenset(VALID_ESTIMATORS),
+    "MLS2PLM": frozenset(VALID_ESTIMATORS),
+    "MLSRM": frozenset(VALID_ESTIMATORS),
+    "ULS2PLM": frozenset(VALID_ESTIMATORS),
+    "ULSRM": frozenset(VALID_ESTIMATORS),
+    "BIFAC2PLM": frozenset({"mmle"}),
+}
 
 # Hard upper bounds on caller-supplied sizes, to reject sparse/oversized
 # configurations that would force huge allocations before any real work
@@ -215,6 +226,17 @@ class FitConfig:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
         if self.estimator not in VALID_ESTIMATORS:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
+        supported_estimators = MODEL_ESTIMATOR_COMPATIBILITY[model]
+        if self.estimator not in supported_estimators:
+            if model == "BIFAC2PLM":
+                raise ValueError(
+                    "BIFAC2PLM supports estimator='mmle' only; "
+                    "estimator='jmle' is not implemented"
+                )
+            raise ValueError(
+                "the selected model does not support the requested estimator; "
+                f"supported estimators are {sorted(supported_estimators)}"
+            )
         if isinstance(self.lbfgs_history, bool):
             raise ValueError("lbfgs_history must be an integer")
         try:
