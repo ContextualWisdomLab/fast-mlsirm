@@ -30,6 +30,9 @@
 //!   accuracy on test items. *Psychometrika, 72*(3), 287–308.
 //!   https://doi.org/10.1007/s11336-006-1478-z
 
+/// Package-wide ceiling for RT EM iterations (matches Python `MAX_MAX_ITER`).
+const RT_MAX_ITER: usize = 100_000;
+
 /// Estimation controls for [`fit_rt_lognormal`].
 #[derive(Clone, Copy, Debug)]
 pub struct RtConfig {
@@ -104,8 +107,8 @@ pub fn fit_rt_lognormal(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    if config.max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=RT_MAX_ITER).contains(&config.max_iter) {
+        return Err(format!("max_iter must be in 1..={RT_MAX_ITER}"));
     }
     if !(config.tol.is_finite() && config.tol > 0.0) {
         return Err("tol must be positive and finite".into());

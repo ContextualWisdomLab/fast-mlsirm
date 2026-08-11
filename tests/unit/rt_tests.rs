@@ -173,6 +173,10 @@ fn rt_rejects_invalid_controls() {
             ..RtConfig::default()
         },
         RtConfig {
+            max_iter: 100_001,
+            ..RtConfig::default()
+        },
+        RtConfig {
             tol: f64::NAN,
             ..RtConfig::default()
         },
@@ -187,6 +191,21 @@ fn rt_rejects_invalid_controls() {
     ] {
         assert!(fit_rt_lognormal(&times, None, 1, 1, config).is_err());
     }
+    let err = fit_rt_lognormal(
+        &times,
+        None,
+        1,
+        1,
+        RtConfig {
+            max_iter: 100_001,
+            ..RtConfig::default()
+        },
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("max_iter") && err.contains("100000"),
+        "unexpected max_iter ceiling error: {err}"
+    );
 }
 
 #[test]
