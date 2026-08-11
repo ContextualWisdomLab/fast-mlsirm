@@ -11,6 +11,7 @@ pub mod facets;
 pub mod factor;
 pub mod fitstats;
 pub mod inference;
+pub mod jmle_opt;
 pub mod gpcm;
 pub mod grm;
 pub mod gtheory;
