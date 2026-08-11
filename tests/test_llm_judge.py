@@ -108,6 +108,38 @@ def test_judge_rejects_wrapped_or_fenced_json() -> None:
             )
 
 
+
+def test_judge_rejects_duplicate_and_unknown_top_level_fields() -> None:
+    duplicate = (
+        '{"score":0.8,"accepted":true,"rationale":"supported",'
+        '"criterion_scores":{"task_alignment":0.8,"factual_support":0.8},'
+        '"score":0.2}'
+    )
+    unknown = json.loads(_payload())
+    unknown["unexpected"] = "ignored fields are unsafe"
+    for answer in (duplicate, json.dumps(unknown)):
+        with pytest.raises(JudgeFormatError, match="exactly|duplicate"):
+            ContextualOrchestratorJudge(_FakeOrchestrator(answer)).judge(
+                task="task",
+                answer="answer",
+                criteria=CRITERIA,
+            )
+
+
+def test_judge_rejects_duplicate_nested_criterion_fields() -> None:
+    answer = (
+        '{"score":0.8,"accepted":true,"rationale":"supported",'
+        '"criterion_scores":{"task_alignment":0.8,"task_alignment":0.2,'
+        '"factual_support":0.8}}'
+    )
+    with pytest.raises(JudgeFormatError, match="duplicate"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(answer)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+
 def test_judge_result_projects_only_multiple_criteria_to_irt_items() -> None:
     result = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
         task="task",
