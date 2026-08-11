@@ -320,6 +320,10 @@
 
 - Validate automated-test-assembly content-label shape and string element types before item-information evaluation, rejecting arbitrary object labels without invoking caller-controlled `__str__`/`__repr__` callbacks while preserving accepted Python/NumPy string labels and existing assembly numerics.
 
+#### Bound PR queue Git metadata lookup
+
+- PR queue governance now bounds the `git rev-parse HEAD` subprocess and fails closed with a stable timeout error instead of allowing a hung local Git child to stall the evidence pipeline.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
