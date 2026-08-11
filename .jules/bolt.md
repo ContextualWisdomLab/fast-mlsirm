@@ -44,3 +44,7 @@
 ## 2026-08-04 - Matrix-vector reductions for MMLE quadrature nodes
 **Learning:** In the NumPy MMLE reference fallback, expressions such as `(resid * nodes[None, :]).sum(axis=1)` materialize an item-by-node intermediate array. The mathematically equivalent matrix-vector product `resid @ nodes` avoids that broadcast temporary and can use the configured NumPy linear-algebra backend. Runtime gains depend on matrix shape, memory layout, BLAS implementation, and threading, so no universal percentage improvement should be claimed without a reproducible benchmark.
 **Action:** Prefer a matrix-vector product for equivalent quadrature-node reductions when dtype, shape, and numerical parity are preserved. Keep Rust as the primary production path, retain the NumPy implementation as a tested reference fallback, and benchmark representative workloads before making quantitative performance claims.
+
+## 2025-05-19 - Dot product scalar reductions in MMLE M-step
+**Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
+**Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.

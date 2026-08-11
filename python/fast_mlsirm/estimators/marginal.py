@@ -1295,13 +1295,15 @@ def _gpcm_item_negll_grad(params, theta_nodes, r_counts):
     a = np.exp(params[0])
     base = a * np.asarray(theta_nodes, dtype=np.float64)
     lp = category_logprobs(base, scores, intercepts)  # (n_node, K)
-    ll = float(np.sum(r_counts * lp))
+    # Optimized: replace np.sum(A * B) with np.vdot(A, B) to avoid intermediate array allocation
+    ll = float(np.vdot(r_counts, lp))
     p = np.exp(lp)
     n = r_counts.sum(axis=1)
     resid = r_counts - n[:, None] * p
     grad = np.zeros_like(params)
     grad[1:] = resid[:, 1:].sum(axis=0)
-    grad[0] = float(np.sum((resid @ scores) * base))  # d base / d log_a = a*theta = base
+    # Optimized: replace np.sum(A * B) with np.vdot(A, B) to avoid intermediate array allocation
+    grad[0] = float(np.vdot(resid @ scores, base))  # d base / d log_a = a*theta = base
     return -ll, -grad
 
 
