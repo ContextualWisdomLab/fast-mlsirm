@@ -586,16 +586,28 @@ def ilsr_rankings(rankings, n, alpha=0.0, max_iter=100, tol=1e-8):
     )
 
 def _top1_to_csr(name, data, n):
-    """Validate top-1 choice data and CSR-flatten to u64 arrays.
+    """Validate top-1 choice data and CSR-flatten to bounded u64 arrays.
 
     ``data`` is an iterable of ``(winner, losers)`` pairs. Rejects,
     BEFORE any unsigned cast: non-integer entries (bool/np.bool_,
     complex, non-integral floats, int() overflow), negative indices (a
     documented divergence -- Python's negative indices would silently
-    wrap in choix), empty loser sets (choix silently no-ops those), and
-    out-of-range indices. Winner-in-losers and duplicate-loser detection
-    is enforced by the Rust core (documented divergences: choix accepts
-    both, silently corrupting the denominator).
+    wrap in choix), empty loser sets (choix silently no-ops those),
+    overlong loser streams (more than ``n - 1`` items), out-of-range
+    indices, and streams that would exceed
+    :data:`MAX_RANKING_CSR_BYTES` of live winner/loser/start uint64
+    payload. Ordinary outer/inner iteration failures become stable
+    package-owned ``ValueError`` text without reflecting the rejected
+    payload. Process-control exceptions
+    (``KeyboardInterrupt``, ``SystemExit``, ``GeneratorExit``) propagate.
+    Winner-in-losers and duplicate-loser detection is enforced by the
+    Rust core (documented divergences: choix accepts both, silently
+    corrupting the denominator).
+
+    Implementation validates into pure-Python integer structures first,
+    then allocates exact-size ``uint64`` winner/loser/start arrays once
+    so reallocation peaks and list→``uint64`` temporaries do not exceed
+    the declared CSR ceiling.
     """
     if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
         raise ValueError(f"{name}: n must be an integer >= 2")
@@ -623,29 +635,118 @@ def _top1_to_csr(name, data, n):
             raise ValueError(f"{name}: observation {r} has {what} {xi} >= n = {n}")
         return xi
 
-    winners = []
-    flat = []
-    starts = [0]
-    for r, obs in enumerate(data):
-        winner, losers = obs
-        winners.append(_index(winner, "winner", r))
-        losers = list(losers)
-        if not losers:
+    def _top1_budget_allows(winner_count: int, loser_count: int, start_count: int) -> bool:
+        # Winner ids + loser flat + start offsets, each fixed-width uint64.
+        total = winner_count + loser_count + start_count
+        return total <= (MAX_RANKING_CSR_BYTES // 8)
+
+    winners: list[int] = []
+    losers_flat: list[int] = []
+    starts: list[int] = [0]
+
+    try:
+        observation_iter = iter(data)
+    except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+            raise
+        raise ValueError(f"{name}: top-1 observation iteration failed") from None
+
+    while True:
+        try:
+            obs = next(observation_iter)
+        except StopIteration:
+            break
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            raise ValueError(f"{name}: top-1 observation iteration failed") from None
+
+        r = len(winners)
+        # Budget the next winner id + start offset before reading losers.
+        if not _top1_budget_allows(len(winners) + 1, len(losers_flat), len(starts) + 1):
+            raise ValueError(
+                f"{name}: top-1 CSR byte limit exceeded "
+                f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+            )
+
+        try:
+            winner, losers = obs
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            raise ValueError(f"{name}: top-1 observation iteration failed") from None
+
+        winner_idx = _index(winner, "winner", r)
+
+        try:
+            loser_iter = iter(losers)
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            raise ValueError(f"{name}: loser iteration failed") from None
+
+        ranking_losers: list[int] = []
+        # At most n-1 losers in a complete choice set that excludes the winner.
+        for _ in range(n):
+            try:
+                x = next(loser_iter)
+            except StopIteration:
+                break
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                    raise
+                raise ValueError(f"{name}: loser iteration failed") from None
+
+            if not _top1_budget_allows(
+                len(winners) + 1,
+                len(losers_flat) + len(ranking_losers) + 1,
+                len(starts) + 1,
+            ):
+                raise ValueError(
+                    f"{name}: top-1 CSR byte limit exceeded "
+                    f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+                )
+            ranking_losers.append(_index(x, "loser", r))
+        else:
+            # Consumed n loser items without StopIteration => overlong loser set.
+            raise ValueError(f"{name}: loser set has more than n - 1 items")
+
+        if not ranking_losers:
             raise ValueError(
                 f"{name}: observation {r} has an empty loser set "
                 "(choix silently ignores such observations; this port rejects them)"
             )
-        for x in losers:
-            flat.append(_index(x, "loser", r))
-        starts.append(len(flat))
+
+        winners.append(winner_idx)
+        losers_flat.extend(ranking_losers)
+        starts.append(len(losers_flat))
+
     if len(starts) < 2:
         raise ValueError(f"{name}: at least one observation is required")
+
+    if not _top1_budget_allows(len(winners), len(losers_flat), len(starts)):
+        raise ValueError(
+            f"{name}: top-1 CSR byte limit exceeded "
+            f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+        )
+
+    # Exact-size handoff arrays allocated once under the CSR ceiling.
+    winners_out = np.empty(len(winners), dtype=np.uint64)
+    losers_out = np.empty(len(losers_flat), dtype=np.uint64)
+    starts_out = np.empty(len(starts), dtype=np.uint64)
+    for i, value in enumerate(winners):
+        winners_out[i] = value
+    for i, value in enumerate(losers_flat):
+        losers_out[i] = value
+    for i, value in enumerate(starts):
+        starts_out[i] = value
     return (
-        np.asarray(winners, dtype=np.uint64),
-        np.asarray(flat, dtype=np.uint64),
-        np.asarray(starts, dtype=np.uint64),
+        np.ascontiguousarray(winners_out, dtype=np.uint64),
+        np.ascontiguousarray(losers_out, dtype=np.uint64),
+        np.ascontiguousarray(starts_out, dtype=np.uint64),
         n,
     )
+
 
 
 def lsr_top1(data, n, alpha=0.0):

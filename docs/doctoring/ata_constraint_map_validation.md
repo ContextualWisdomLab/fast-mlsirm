@@ -1,43 +1,55 @@
-# ATA constraint-map validation trust boundary
+# ATA semantic-control validation trust boundary
 
 ## Status
 
-Implemented for the public `assemble_to_target` semantic-control boundary. This note documents a bounded public-input validation correction; it does not change ATA psychometric arithmetic or authorize broader test-assembly optimality claims.
+Implemented on the active `assemble_to_target` branch for exact semantic-control validation before item-information work. This note documents a bounded public-input correction; it does not change ATA item-information or greedy target-assembly arithmetic and does not claim exact test-assembly optimality.
 
 ## Problem
 
-`assemble_to_target()` accepted caller-controlled content and exposure maps through unconstrained `str(key)` / `int(value)` conversion after item-information evaluation began. In Python, those conversions invoke `__str__`, `__int__`, and `__index__` special methods. Booleans are also integers under `isinstance`, so `True` could be silently admitted as a seed or exposure ceiling. Therefore conversion of an arbitrary caller object is executable behavior, not a passive type check (Python Software Foundation, 2026).
+The first ATA trust-boundary correction rejected arbitrary `str(...)` / `int(...)` conversion for content/exposure maps, `seed`, and `exposure_max`. Fresh post-integration review found a second finite-domain gap: type-valid but invalid values could still reach psychometric work, and `exclude` still used NumPy integer coercion.
 
-The public contract did not require arbitrary object-to-string or object-to-integer coercion for content keys, content counts, exposure identities, exposure counts, `seed`, or `exposure_max`. Permitting such coercion before semantic validation created two avoidable risks:
+The residual cases were:
 
-1. caller conversion callbacks could execute or raise outside the package-owned validation surface; and
-2. invalid semantic controls could reach psychometric item-information work before rejection.
+- negative `seed` reaching item-information work before NumPy RNG construction rejected it;
+- negative content minimum/maximum counts;
+- a per-label minimum exceeding its maximum;
+- negative exposure counts or exposure item identities outside the calibrated bank;
+- Boolean/fractional exclusions silently coercible to integer identities;
+- arbitrary exclusion objects able to invoke `__int__`/`__index__`; and
+- out-of-bank exclusions being silently ignored by the eligibility loop.
 
-This is treated as a specified-type validation boundary consistent with CWE-1287: inputs expected to have a particular type should be validated as that type rather than accepted through unconstrained conversion (MITRE, 2026). CWE is used here as engineering taxonomy, not as a vulnerability-severity or certification claim. The correction continues the ATA content-label trust boundary (content elements already string-checked) for the remaining semantic control maps (van der Linden, 2005).
+Python's data model makes numeric/string conversion executable behavior: special methods such as `__int__`, `__index__`, and `__str__` may run caller code rather than merely inspect a type (Python Software Foundation, 2026). CWE-1287 is used only as engineering taxonomy for specified-type validation, not as a vulnerability-severity or certification claim (MITRE, 2026).
 
 ## Decision
 
-For this ATA boundary:
+For public ATA semantic controls that are decidable from bank/control metadata before scoring:
 
-- validate content constraint keys as Python `str` / NumPy `str_` before scoring;
-- validate content counts, exposure keys/values, `seed`, and `exposure_max` as exact integers while rejecting `bool` and conversion hooks without invoking `__int__`/`__index__`;
-- reject invalid controls with stable package-owned `ValueError` messages before `item_information_matrix` runs; and
-- keep information computation, greedy target matching, content minima/maxima semantics, exclusion, exposure ineligibility, tie-breaking, and all Rust-owned numerical semantics unchanged once controls are admitted.
+- content constraint keys admit only Python `str` / NumPy `str_`;
+- content counts admit only exact non-Boolean Python/NumPy integers, must be non-negative, and a shared label's minimum cannot exceed its maximum;
+- exposure item identities/counts admit only exact non-Boolean integers, counts must be non-negative, and item identities must exist in the calibrated bank;
+- `seed` and `exposure_max` admit only exact non-Boolean integers and must be non-negative;
+- `exclude` admits only a one-dimensional NumPy signed/unsigned integer array or an ordinary list/tuple of exact Python/NumPy integers; Boolean, fractional, object, arbitrary-iterable, and hostile integer-like values fail closed without invoking conversion hooks;
+- exclusion indices must identify existing bank items rather than being silently ignored; and
+- every invalid semantic control above fails with stable package-owned `ValueError` text before `item_information_matrix()` executes.
 
-## Evidence contract
+Once controls are admitted, item information, greedy capped-shortfall selection, content/exposure behavior, deterministic tie-breaking, and Rust-owned numerical semantics remain unchanged (van der Linden, 2005).
 
-GREEN requires all of the following:
+## Test-first evidence contract
 
-- hostile content-map keys raise `content constraint keys must be strings` without `__str__`/`__repr__` execution;
-- hostile content-map counts raise `content constraint counts must be integers` without `__int__`/`__index__` execution;
-- hostile exposure-map identities raise `exposure_counts keys and values must be integers` without conversion hooks;
-- boolean and fractional `seed` / `exposure_max` values raise `{field} must be an integer`;
-- invalid controls are rejected before item-information computation; and
-- the ordinary ATA suite plus package/Rust/PyO3/GPU/fuzz/security gates remain green.
+The branch preserved an exact fail-first run in which package installation and Rust-primary resolution succeeded, the full Python suite reached the public ATA boundary, and the new semantic-range tests alone demonstrated that invalid controls still reached scoring or leaked caller conversion exceptions. GREEN requires, on one unchanged final head:
+
+- negative seed/content/exposure values and impossible per-label min/max relations fail before information work;
+- out-of-bank exposure/exclusion identities fail before information work;
+- hostile exclusion objects do not execute `__int__` or `__index__`;
+- stable error messages do not reflect rejected caller exception text;
+- accepted Python/NumPy integer controls and list/tuple/NumPy integer exclusions still reach item-information work;
+- equal feasible minimum/maximum content bounds remain accepted;
+- ordinary ATA numerical/constraint behavior remains unchanged; and
+- Python 3.12/3.14, Rust/PyO3, package/reinstall, existing GPU, fuzz, Security Scan, SAST, coverage/docstring and current-head review gates pass.
 
 ## Scope limitations
 
-This correction does not re-home CAT/test-assembly numerical ownership into Rust, introduce a MIP solver, or claim optimality for the greedy assembly surrogate. Additional ATA control surfaces receive their own bounded regressions.
+This correction does not move CAT/test-assembly numerical ownership into Rust, add an exact MIP/solver, alter calibrated item parameters, change target-information equations, or establish consequential-use validity. The separate Rust CAT/test-assembly ownership roadmap remains governed independently.
 
 ## References
 
