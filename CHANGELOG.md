@@ -279,6 +279,11 @@
 - Added sentinel delegation tests, Rust edge-case tests, seeded true-trait
   recovery tests, score-equation checks, and APA 7th CAT doctoring.
 
+#### Automatic backend preserves Rust numerical ownership
+
+- Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
+- Kept explicit `backend="numpy"` as an explicit reference/parity choice while preserving automatic Rust resolution and Rust CPU/GPU device fallback semantics.
+
 #### Current support-policy version line
 
 - Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
@@ -312,6 +317,11 @@
 
 ### Fixed
 
+#### Serving bundle export requires Rust core
+
+- `export_serving_bundle` fails closed when the compiled Rust core is unavailable
+  instead of shipping incomplete bundles with null `eapsum_tables`.
+
 #### Fail early for unimplemented estimator identities
 
 - Restricted the public `FitConfig.estimator` vocabulary to the implemented `jmle` and `mmle` fitting paths, so unsupported `em` and `bayes` requests fail during configuration validation instead of entering a fitting path that later raises `NotImplementedError`.
@@ -331,6 +341,10 @@
 
 - Validate automated-test-assembly content-label shape and string element types before item-information evaluation, rejecting arbitrary object labels without invoking caller-controlled `__str__`/`__repr__` callbacks while preserving accepted Python/NumPy string labels and existing assembly numerics.
 
+#### Bound PR queue Git metadata lookup
+
+- PR queue governance now bounds the `git rev-parse HEAD` subprocess and fails closed with a stable timeout error instead of allowing a hung local Git child to stall the evidence pipeline.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
@@ -342,6 +356,10 @@
 #### Person-fit invalid-response error redaction
 
 - Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.
+
+#### Bounded mixed item-model validation
+
+- Bounded `item_models` iterable consumption to at most one look-ahead entry beyond the calibrated item count, rejected arbitrary non-string model controls before caller `__str__`/`__repr__` hooks can execute, and removed rejected model content from public validation errors while preserving accepted aliases and Rust-owned calibration numerics.
 
 #### Model-comparison control validation hardening
 
