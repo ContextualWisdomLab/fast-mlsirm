@@ -82,24 +82,42 @@ class MixedFormatFit:
 
 
 def _normalize_models(item_models, n_items: int) -> tuple[str, ...]:
-    """Resolve per-item model names to canonical forms, one per response column.
+    """Resolve bounded per-item model names to canonical response-family names.
 
-    Accepts a single model name (broadcast to all items) or a per-item sequence,
-    validating each against the supported response-model aliases.
+    A built-in string broadcasts to every item. Other inputs are consumed as a
+    per-item iterable with at most one look-ahead element, so an unbounded or
+    overlong caller iterable cannot be fully materialized. Ordinary iteration
+    failures are normalized to package-owned errors while process-control
+    exceptions remain untouched. Model tokens themselves must be built-in
+    strings; arbitrary object ``str``/``repr`` callbacks are never invoked.
     """
-    if isinstance(item_models, str):
+    if type(item_models) is str:
         raw = [item_models] * n_items
     else:
-        raw = list(item_models)
+        try:
+            iterator = iter(item_models)
+        except Exception:
+            raise ValueError("item_models must be a model string or iterable of strings") from None
+        raw = []
+        try:
+            for _ in range(n_items + 1):
+                try:
+                    raw.append(next(iterator))
+                except StopIteration:
+                    break
+        except Exception:
+            raise ValueError("item_models iteration failed") from None
     if len(raw) != n_items:
         raise ValueError("item_models length must match the number of response columns")
     normalized = []
+    expected = ", ".join(sorted(set(_ALIASES.values())))
     for item, value in enumerate(raw):
-        key = str(value).strip().lower()
+        if type(value) is not str:
+            raise ValueError(f"item {item}: response model must be a string")
+        key = value.strip().lower()
         if key not in _ALIASES:
-            expected = ", ".join(sorted(set(_ALIASES.values())))
             raise ValueError(
-                f"item {item}: unsupported response model {value!r}; expected {expected}"
+                f"item {item}: unsupported response model; expected {expected}"
             )
         normalized.append(_ALIASES[key])
     return tuple(normalized)
@@ -151,13 +169,14 @@ def fit_mixed_items(
 ) -> MixedFormatFit:
     """Fit one item bank containing heterogeneous response families by MMLE.
 
-    ``item_models`` is either one model name recycled over all columns or one
-    name per item. Supported canonical names are ``"rasch"``, ``"2pl"``,
-    ``"3pl"``, ``"3plu"``, ``"4pl"``, ``"cll"``, ``"grm"``, ``"pcm"``,
-    ``"gpcm"``, ``"sequential"``, ``"tutz"``, ``"nominal"``, ``"ideal"``,
-    ``"ggum"``, ``"lsirm"``, ``"lsirm_grm"``, and ``"lsirm_gpcm"``. Items
-    may have different category counts. ``NaN`` denotes missingness unless an
-    explicit boolean ``mask`` is supplied.
+    ``item_models`` is either one built-in model-name string recycled over all
+    columns or a bounded iterable containing exactly one built-in string per
+    item. Supported canonical names are ``"rasch"``, ``"2pl"``, ``"3pl"``,
+    ``"3plu"``, ``"4pl"``, ``"cll"``, ``"grm"``, ``"pcm"``, ``"gpcm"``,
+    ``"sequential"``, ``"tutz"``, ``"nominal"``, ``"ideal"``, ``"ggum"``,
+    ``"lsirm"``, ``"lsirm_grm"``, and ``"lsirm_gpcm"``. Items may have
+    different category counts. ``NaN`` denotes missingness unless an explicit
+    boolean ``mask`` is supplied.
 
     Every family retains its own conditional response probability. The shared
     trait is fixed to ``N(0, 1)`` for scale identification. Dominance slopes are
