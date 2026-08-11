@@ -16,13 +16,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
+  # Matrix legs report as "python (3.12)" / "python (3.14)". Branch protection
+  # still requires the exact check context name `python`, so a thin aggregate
+  # job below re-exports matrix success under that name.
+  python-matrix:
+    name: python (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       # Rust toolchain is required so the maturin build compiles the primary
       # numeric core (fast_mlsirm._core) during the editable install; the
       # Rust<->NumPy parity gate then exercises the Rust path.
@@ -32,6 +40,18 @@ jobs:
       - name: Verify Rust core is the resolved default backend
         run: python -c "import fast_mlsirm._core as c; from fast_mlsirm.backend import resolve_backend; from fast_mlsirm import FitConfig; assert hasattr(c, 'neg_loglik_and_grad'); assert resolve_backend(FitConfig().backend) == 'rust'; print('rust primary OK')"
       - run: pytest
+
+  python:
+    name: python
+    needs: python-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CPython matrix leg
+        run: |
+          echo "python-matrix result=${{ needs.python-matrix.result }}"
+          test "${{ needs.python-matrix.result }}" = "success"
+
 
   rust:
     runs-on: ubuntu-latest

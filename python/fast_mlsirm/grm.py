@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._integration_rule import normalize_node_rule
+
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
@@ -103,6 +105,9 @@ def fit_grm(
         Reckase, M. D. (2009). *Multidimensional item response theory*. Springer.
             https://doi.org/10.1007/978-0-387-89976-3
     """
+    # Fail closed on hostile node_rule before any core import or coercion.
+    node_rule = normalize_node_rule(node_rule)
+
     from .fitstats import _core_module
 
     core = _core_module()
@@ -115,7 +120,7 @@ def fit_grm(
     n_persons, n_items = y.shape
     resolved_model, pat = _resolve_model(model, n_items)
     n_dims = pat.shape[1]
-    _gh = str(node_rule).lower() in ("gh", "gauss-hermite", "gausshermite")
+    _gh = node_rule == "gh"
     _max_dims = _MAX_DIMS_GH if _gh else _MAX_DIMS_QMC
     if not 1 <= n_dims <= _max_dims:
         raise ValueError(
@@ -174,7 +179,7 @@ def fit_grm(
         q_int,
         max_iter_int,
         float(tol),
-        str(node_rule),
+        node_rule,
         xi_points_int,
         xi_seed_int,
     )

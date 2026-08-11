@@ -99,9 +99,9 @@ tests, documentation, and Rust parity together.
   `PATH` (e.g. Windows git-bash: `export PATH="$HOME/.cargo/bin:$PATH"`), then
   `pip install -e .[dev]`. No manual `maturin develop` step is needed.
 - **Python support claims must match evidence.** `pyproject.toml` declares
-  `requires-python = ">=3.10"`, while the required CI suite currently builds and
-  tests CPython 3.12. Treat other 3.10+ interpreters as intended support until a
-  PR adds matching build/import/full-suite CI evidence for that version.
+  `requires-python = ">=3.12"`, matching the required CI matrix legs on CPython
+  3.12 and 3.14. Do not advertise a lower floor than the hashed CI dependency
+  lock can install.
 
 <!-- BEGIN cwl-agent-guidance -->
 ## Agent guidance (CWL governance)

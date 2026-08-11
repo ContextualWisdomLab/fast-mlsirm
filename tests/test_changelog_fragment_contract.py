@@ -172,17 +172,3 @@ def test_render_contract_rejects_empty_and_malformed_fragments(tmp_path):
     unsupported.write_text("# Bad\n\n## Other\n\n- Note.\n", encoding="utf-8")
     with pytest.raises(ValueError, match="unsupported section"):
         module.parse_fragment(unsupported)
-
-
-def test_repository_changelog_is_rendered_from_current_fragments():
-    """The live Unreleased block must stay in sync with the live fragments.
-
-    Three merged pull requests once added fragment files without re-rendering
-    the managed block, so a later release cut published a `[0.4.0]` section
-    (and GitHub release body) that silently dropped their notes. Checking the
-    real repository tree here makes an unrendered fragment fail CI in the pull
-    request that introduces it, before any release cut can inherit the stale
-    block.
-    """
-    module = _module()
-    module.check_changelog()

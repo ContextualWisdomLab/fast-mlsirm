@@ -123,7 +123,9 @@ def _mode_name(method: str, value: str | None) -> str:
 
     if value is None:
         return "orthogonal" if method in _ORTHOGONAL_ONLY else "oblique"
-    normalized = str(value).strip().lower()
+    if type(value) is not str:
+        raise ValueError("mode must be 'orthogonal' or 'oblique'")
+    normalized = value.strip().lower()
     aliases = {"orth": "orthogonal", "t": "orthogonal", "oblq": "oblique", "q": "oblique"}
     normalized = aliases.get(normalized, normalized)
     if normalized not in {"orthogonal", "oblique"}:

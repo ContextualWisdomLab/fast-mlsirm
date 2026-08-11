@@ -10,6 +10,48 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_EG_METHOD_ALIASES = frozenset(
+    {"mean", "m", "linear", "lin", "l", "equipercentile", "equip", "ep"}
+)
+
+
+def _require_equating_method(method, *, name: str = "method") -> str:
+    """Return a trusted equating method identity without caller-controlled str().
+
+    Hostile objects can implement ``__str__`` / ``__repr__`` for side effects or
+    denial-of-service; accept only exact ``str`` identities so validation never
+    executes those callbacks before the Rust core is reached.
+    """
+    if type(method) is not str:
+        raise ValueError(f"{name} must be a str method identity")
+    normalized = method.lower().replace("-", "").replace("_", "")
+    if normalized not in _EG_METHOD_ALIASES:
+        raise ValueError(
+            f"{name} must be one of mean, linear, or equipercentile"
+        )
+    return method
+
+
+def _require_optional_score_ceiling(value, name: str) -> int | None:
+    """Return a trusted optional score ceiling without caller-controlled int().
+
+    Accept plain ``int`` and NumPy integer scalars only. Arbitrary objects that
+    implement ``__int__`` / ``__index__`` are rejected before conversion so
+    validation cannot be hijacked by hostile callables.
+    """
+    if value is None:
+        return None
+    if type(value) is int:
+        normalized = value
+    elif isinstance(value, np.integer):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer score ceiling")
+    if normalized <= 0:
+        raise ValueError(f"{name} must be a positive integer score ceiling")
+    return normalized
+
+
 @dataclass
 class EquateResult:
     """Observed-score equating result: the conversion table
@@ -40,8 +82,9 @@ def _infer_k(scores: np.ndarray, k, name: str) -> int:
     An explicit ``k`` is preferred: inferring the ceiling from observed scores
     under-counts it when the top score was never earned.
     """
+    k = _require_optional_score_ceiling(k, name)
     if k is not None:
-        return int(k)
+        return k
     arr = np.asarray(scores, dtype=np.float64)
     if arr.size == 0:
         raise ValueError(f"{name}: score vector must be non-empty")
@@ -99,6 +142,9 @@ def equate_observed_scores(
     """
     from .fitstats import _core_module
 
+    method = _require_equating_method(method)
+    k_x = _require_optional_score_ceiling(k_x, "k_x")
+    k_y = _require_optional_score_ceiling(k_y, "k_y")
     core = _core_module()
     if core is None or not hasattr(core, "equate_observed_scores"):
         raise RuntimeError("equate_observed_scores requires the compiled Rust core")
@@ -106,8 +152,8 @@ def equate_observed_scores(
     ys = np.asarray(y_scores, dtype=np.float64).ravel()
     kx = _infer_k(xs, k_x, "k_x")
     ky = _infer_k(ys, k_y, "k_y")
-    res = core.equate_observed_scores(xs, ys, int(kx), int(ky), method=str(method))
-    return _build(res, str(method), "EG")
+    res = core.equate_observed_scores(xs, ys, int(kx), int(ky), method=method)
+    return _build(res, method, "EG")
 
 
 def equate_neat(

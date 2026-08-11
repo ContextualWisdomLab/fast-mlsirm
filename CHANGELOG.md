@@ -2,9 +2,45 @@
 
 ## Unreleased
 
+### Fixed
+
+- Closed the Python-to-Rust equivalent-groups equating control boundary:
+  method and explicit score-ceiling controls now reject arbitrary objects
+  instead of invoking caller-defined ``__str__``/``__int__`` methods.
+  Built-in Python integers and NumPy integer scalars remain supported. Added
+  fail-closed regression tests and APA 7th doctoring for the validation
+  contract.
+
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
+
+#### Multilevel, multiple-membership, and longitudinal design contracts
+
+- Added a provider-neutral `fast_mlsirm.multilevel` contract namespace for one-hot nesting, cross-classified designs, weighted multiple membership, multiple-membership multiple-classification, and repeated longitudinal occasions. Every contextual edge names an explicit `context_dimension_id` and `context_id`; schema 1.0 never infers or invents a random-effect family from a context label.
+- Added independent weight normalization within every observation-by-context-dimension group, required coverage of every declared context dimension, dimension-scoped duplicate and context identities, exact per-dimension count/weight serialization, and assignment-revision fingerprints bound to the precise observation, dimension, context, and weight.
+- Added deterministic SHA-256 identities, descriptive 128-bit public handles, child-artifact replay protection, bounded and callback-safe collection handling, strict respondent-level occasion ordering, and source-text-free serialization.
+- Added separate random-intercept/slope and discrete occasion-step stationary AR(1) state specifications with independently controlled lagged-response dependence. Irregular millisecond offsets remain provenance only; continuous-time or interval-adjusted transitions require a later explicit Rust contract.
+- Added realistic contract and adversarial tests, an MSA RFC, staged implementation plan, and APA 7 doctoring while reserving all likelihood, integration, optimization, uncertainty, multithreading, GPU work, and true-parameter recovery for future Rust cores.
+
+#### Exact-value tooltips and print optimization for essay HTML reports
+
+- Supplemental native `title` tooltips exposing unrounded exact float representations on formatted cells in essay score HTML reports.
+- CSS `@media print` rules enforcing black-on-white text, hiding interactive skip links, and avoiding awkward page breaks for print and PDF exports.
+
+#### Governed factor-retention evidence contract
+
+- Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
+- Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
+
+#### Architecture baseline documentation
+
+- Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
+  orchestration, multilevel/multigroup population structures, modular MSA
+  stance, security/compliance posture, and recovery-oriented test strategy with
+  APA 7th citations.
+- `docs/doctoring/architecture_baseline.md` binding the architecture claims to
+  the psychometrics literature used by the product.
 
 #### Enterprise criterion-level observation adapter
 
@@ -175,6 +211,12 @@
 - Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
 - Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
 
+#### Governance index
+
+- `docs/GOVERNANCE_INDEX.md` consolidating ADR index, threat-model summary,
+  test strategy, operability, traceability matrix, and component UML with
+  APA 7th doctoring links.
+
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
@@ -214,6 +256,48 @@
 - Marked empty identifier evidence in standalone essay-validation HTML reports as a WAI-ARIA `status` region with explicit `aria-atomic="true"`, while preserving visible text and avoiding focus movement.
 - Added a deterministic regression for the exact status markup and documented the interoperability boundary: live-region semantics improve assistive-technology exposure for status updates, but a pre-populated static report is not claimed to trigger an initial announcement.
 
+#### Diagnostics-report numeric alignment and motion cleanup
+
+- Applied tabular numeral styling to standalone diagnostics-report body text so numeric values can align more consistently when the selected font supports equal-width figures.
+- Removed obsolete opacity transitions from bar rows and table rows while preserving the active table-row background hover cue and the existing reduced-motion override.
+- Added a rendered-report regression that pins the numeric-style declaration, transition cleanup, hover cue, and reduced-motion contract without changing report data, score semantics, or exported exact values.
+
+#### Python 3.14 CI compatibility
+
+- Expanded the full Python CI job from a single CPython 3.12 runtime to a fail-slow CPython 3.12 and 3.14 matrix while preserving the existing Rust/PyO3 build, Rust-primary backend verification, package, GPU, fuzz, and security gates.
+- Added a deterministic CI contract that requires Python 3.14 to execute the same complete pytest suite rather than a reduced compatibility smoke path.
+- Added a non-matrix `python` aggregate job so branch-protection's required check context named `python` still receives a single SUCCESS/FAILURE after every matrix leg finishes.
+
+#### Rust-owned CAT ability estimation
+
+- Moved public CAT MLE, EAP, and ability-standard-error arithmetic from the
+  Python wrapper into the compiled Rust scoring core, retaining Python only for
+  validation, marshalling, and adaptive-test policy.
+- Added bounded Newton MLE, prior-centred grid EAP, scoped per-dimension Rust
+  workers, and device-aware information reduction with explicit handling for
+  all-identical response patterns and unadministered dimensions.
+- Added sentinel delegation tests, Rust edge-case tests, seeded true-trait
+  recovery tests, score-equation checks, and APA 7th CAT doctoring.
+
+#### Automatic backend preserves Rust numerical ownership
+
+- Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
+- Kept explicit `backend="numpy"` as an explicit reference/parity choice while preserving automatic Rust resolution and Rust CPU/GPU device fallback semantics.
+
+#### Current support-policy version line
+
+- Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
+- Reframed support around released, documented public API and packaging behavior, preserved conservative high-stakes/certification/SLA boundaries, and clarified Rust-first production numerical ownership versus explicit reference/parity paths.
+- Added a repository contract that derives the supported minor line from `pyproject.toml` so future package-version changes cannot silently leave `SECURITY.md` or `SUPPORT.md` stale.
+
+#### Release serializes derived changelog aggregation
+
+- Move fragment→`CHANGELOG.md` aggregate parity enforcement from ordinary feature CI into the immutable release-tag workflow so concurrent PRs no longer thrash a shared derived file while release publication still fail-closes on drift.
+
+#### MMLE theta calculation memory optimization
+
+- Replaced the NumPy reference/fallback EAP expression `(posterior * nodes[None, :]).sum(axis=1)` with the algebraically equivalent matrix-vector product `posterior @ nodes`. This avoids constructing the explicit posterior-shaped broadcast product; NumPy may use optimized BLAS for matrix multiplication when available, while realized runtime remains dependent on array shape, layout, hardware, and the linked numerical library.
+
 #### Canonical product and architecture documentation baseline
 
 - Replaced the stale MVP-only PRD/TRD authority with canonical `docs/PRD.md` and `docs/TRD.md` requirements covering the current measurement, scoring, rubric/item-generation, model-selection, scientific-evidence, interoperability, security, lifecycle, and release boundaries.
@@ -246,13 +330,88 @@
 
 ### Fixed
 
+#### Subgroup validation evidence fails closed
+
+- Automated-scoring subgroup SMD gates reject requested subgroups with fewer
+  than two paired cases or zero human variance instead of silently skipping
+  them and reporting a vacuous pass.
+
+#### Serving bundle export requires Rust core
+
+- `export_serving_bundle` fails closed when the compiled Rust core is unavailable
+  instead of shipping incomplete bundles with null `eapsum_tables`.
+
+#### Fail early for unimplemented estimator identities
+
+- Restricted the public `FitConfig.estimator` vocabulary to the implemented `jmle` and `mmle` fitting paths, so unsupported `em` and `bayes` requests fail during configuration validation instead of entering a fitting path that later raises `NotImplementedError`.
+
+#### Strict JSON artifact interoperability
+
+- Governed JSON artifact writers now reject `NaN`, positive infinity, and negative infinity instead of emitting Python's non-standard JSON numeric extensions, preserving RFC 8259 interoperability and atomic publication failure.
+- Non-finite serialization errors use a bounded package-owned message without reflecting the rejected artifact payload.
+
+#### Node-rule fail-closed validation
+
+- Public polytomous and 2PL fitters reject non-string integration-rule controls
+  before importing the Rust core, without invoking caller ``__str__``/``__repr__``.
+
+#### Bounded bifactor shape metadata inspection
+
+- Replaced eager `tuple(shape)` materialization at the public bifactor scoreability boundary with package-owned bounded look-ahead.
+- Matrix and uniqueness advertised shapes now stop after the minimum dimensionality proof, normalize ordinary caller iterator failures to stable non-reflective package errors, and preserve process-control signals.
+- Kept accepted array marshalling, bifactor work ceilings, and all Rust-owned scoreability arithmetic unchanged; added fail-first resource/security regressions and primary Python 3.14 doctoring.
+
+#### ATA content-label validation trust boundary
+
+- Validate automated-test-assembly content-label shape and string element types before item-information evaluation, rejecting arbitrary object labels without invoking caller-controlled `__str__`/`__repr__` callbacks while preserving accepted Python/NumPy string labels and existing assembly numerics.
+
+#### Bound PR queue Git metadata lookup
+
+- PR queue governance now bounds the `git rev-parse HEAD` subprocess and fails closed with a stable timeout error instead of allowing a hung local Git child to stall the evidence pipeline.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
 - Removed opacity-based dimming of non-hovered chart and table rows so unrelated active data retains its normal rendered foreground and background colors.
 - Added public-renderer regression coverage and APA 7th doctoring grounded in WCAG 2.2 and Selectors Level 4 without making a formal conformance claim.
 
+#### Git metadata lookup deadlines
+
+- Commercial evidence builders fail closed with a bounded Git metadata timeout
+  (benchmark, buyer packet, procurement, commercial release, Figma evidence)
+  so hung `git rev-parse` cannot hang release pipelines.
+
+#### Python support floor
+
+- Raised `requires-python` to `>=3.12` so the advertised floor matches the
+  hashed CI dependency lock (NumPy 2.5.x) and the pull-request matrix on
+  CPython 3.12 and 3.14.
+
 ### Security
+
+#### Person-fit invalid-response error redaction
+
+- Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.
+
+#### Bounded mixed item-model validation
+
+- Bounded `item_models` iterable consumption to at most one look-ahead entry beyond the calibrated item count, rejected arbitrary non-string model controls before caller `__str__`/`__repr__` hooks can execute, and removed rejected model content from public validation errors while preserving accepted aliases and Rust-owned calibration numerics.
+
+#### Model-comparison control validation hardening
+
+- Reject hostile semantic/numeric control objects before caller-defined `__str__`, `__repr__`, or `__float__` callbacks can execute, while preserving accepted relation identities, built-in/NumPy scalar semantics, and Rust-owned model-comparison arithmetic.
+
+#### Rotation mode validation hardening
+
+- Reject non-built-in-string rotation `mode` controls before caller-defined representation callbacks can execute, while preserving the existing orthogonal/oblique vocabulary, aliases, default resolution, and Rust-owned rotation numerics.
+
+#### ATA content-label validation trust boundary
+
+- Keep invalid ATA content controls on a stable package-owned error surface rather than allowing arbitrary representation callbacks to execute during NumPy string coercion.
+
+#### G-theory public control validation
+
+- G-theory D-study sizes and `Phi(lambda)` mastery cuts now reject unsupported caller objects before executing conversion or representation callbacks, while preserving supported Python/NumPy scalar controls and Rust-owned numerical behavior.
 
 #### Descriptor-safe bounded JSON input for automation scripts
 
@@ -262,6 +421,12 @@
 - Rejected symbolic links, FIFOs, directories, path replacement, invalid UTF-8,
   malformed JSON, non-object roots, oversized input, and excessive nesting with
   deterministic tests.
+
+#### Bounded JSON loads for release acceptance
+
+- Release acceptance and generation-request contract loading use size- and
+  depth-bounded JSON parsers instead of unbounded `json.loads` on CLI stdout
+  and fit_summary artifacts.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
 ## [0.7.0] - 2026-08-04

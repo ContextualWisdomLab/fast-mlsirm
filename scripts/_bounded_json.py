@@ -157,4 +157,37 @@ def read_json_object(
     return payload
 
 
-__all__ = ["MAX_JSON_BYTES", "MAX_JSON_DEPTH", "read_json_object"]
+def parse_json_bounded(
+    content: str,
+    *,
+    max_bytes: int = MAX_JSON_BYTES,
+    max_depth: int = MAX_JSON_DEPTH,
+) -> Any:
+    """Parse a stable, bounded UTF-8 JSON string.
+
+    Args:
+        content: The string containing the JSON.
+        max_bytes: Inclusive maximum number of bytes accepted.
+        max_depth: Inclusive maximum object/array nesting depth.
+
+    Raises:
+        ValueError: If limits are exceeded, or decoder recursion fails.
+    """
+    byte_limit = _positive_limit(max_bytes, "max_bytes")
+    depth_limit = _positive_limit(max_depth, "max_depth")
+
+    encoded = content.encode("utf-8")
+    if len(encoded) > byte_limit:
+        raise ValueError(f"JSON input exceeds maximum allowed size {byte_limit} bytes")
+
+    _validate_json_depth(encoded, max_depth=depth_limit)
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        raise ValueError("JSON input is not valid JSON") from None
+    except RecursionError as exc:
+        raise ValueError("JSON input exceeds decoder recursion capacity") from exc
+
+
+__all__ = ["MAX_JSON_BYTES", "MAX_JSON_DEPTH", "read_json_object", "parse_json_bounded"]

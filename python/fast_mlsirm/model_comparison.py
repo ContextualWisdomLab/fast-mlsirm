@@ -85,9 +85,9 @@ class ModelComparisonResult:
 
 def _is_boolean_like(value: Any) -> bool:
     """Return whether ``value`` is a Python or NumPy boolean scalar."""
-    return isinstance(value, bool) or (
-        value.__class__.__module__.startswith("numpy")
-        and value.__class__.__name__ == "bool_"
+    value_type = type(value)
+    return value_type is bool or (
+        value_type.__module__.startswith("numpy") and value_type.__name__ == "bool_"
     )
 
 
@@ -108,14 +108,16 @@ def _model_label(value: str, name: str) -> str:
 
 
 def _relation(value: ModelRelation | str) -> ModelRelation:
-    """Normalize a relation value or raise an explicit validation error."""
+    """Normalize a relation value without invoking caller representation hooks."""
     if isinstance(value, ModelRelation):
         return value
+    choices = [item.value for item in ModelRelation]
+    if type(value) is not str:
+        raise ValueError(f"relation must be one of {choices}")
     try:
-        return ModelRelation(str(value))
-    except ValueError as exc:
-        choices = [item.value for item in ModelRelation]
-        raise ValueError(f"relation must be one of {choices}") from exc
+        return ModelRelation(value)
+    except ValueError:
+        raise ValueError(f"relation must be one of {choices}") from None
 
 
 def _parameter_count(value: Any, name: str) -> int:
@@ -131,29 +133,39 @@ def _parameter_count(value: Any, name: str) -> int:
     return int(normalized)
 
 
+def _trusted_real_scalar(value: Any, message: str) -> float:
+    """Return a built-in or NumPy real scalar without custom coercion hooks."""
+    value_type = type(value)
+    if _is_boolean_like(value):
+        raise ValueError(message)
+    if value_type is int or value_type is float:
+        return float(value)
+    if value_type.__module__.startswith("numpy"):
+        mro = value_type.__mro__
+        if any(
+            base.__module__.startswith("numpy")
+            and base.__name__ in {"integer", "floating"}
+            for base in mro
+        ):
+            return float(value)
+    raise ValueError(message)
+
+
 def _alpha_value(value: Any) -> float:
     """Return a finite probability threshold strictly between zero and one."""
-    if _is_boolean_like(value):
-        raise ValueError("alpha must be finite and in (0, 1)")
-    try:
-        normalized = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError("alpha must be finite and in (0, 1)") from exc
+    message = "alpha must be finite and in (0, 1)"
+    normalized = _trusted_real_scalar(value, message)
     if not math.isfinite(normalized) or not 0.0 < normalized < 1.0:
-        raise ValueError("alpha must be finite and in (0, 1)")
+        raise ValueError(message)
     return normalized
 
 
 def _omega_tolerance(value: Any) -> float:
     """Return a finite non-negative numerical variance tolerance."""
-    if _is_boolean_like(value):
-        raise ValueError("omega_tol must be finite and non-negative")
-    try:
-        normalized = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError("omega_tol must be finite and non-negative") from exc
+    message = "omega_tol must be finite and non-negative"
+    normalized = _trusted_real_scalar(value, message)
     if not math.isfinite(normalized) or normalized < 0.0:
-        raise ValueError("omega_tol must be finite and non-negative")
+        raise ValueError(message)
     return normalized
 
 

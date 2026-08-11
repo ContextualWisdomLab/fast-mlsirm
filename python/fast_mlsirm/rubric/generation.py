@@ -83,10 +83,37 @@ def _digest(value: Any, name: str) -> str:
     return normalized
 
 
+def _validate_contract_depth(content: str) -> None:
+    """Reject contract JSON strings whose nesting depth exceeds the maximum budget."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > 128:  # MAX_JSON_NESTING_DEPTH
+                raise ValueError(
+                    "contract_json exceeds the maximum JSON nesting depth of 128"
+                )
+        elif char in "]}":
+            depth -= 1
+
+
 def _contract_object(contract_json: str) -> dict[str, Any]:
     """Parse canonical contract JSON and require a top-level object."""
     if not isinstance(contract_json, str) or not contract_json:
         raise ValueError("contract_json must be non-empty JSON text")
+    _validate_contract_depth(contract_json)
     try:
         contract = json.loads(contract_json)
     except (TypeError, ValueError) as exc:
@@ -140,7 +167,9 @@ def _validate_contract_identity(
         raise ValueError("contract_id must match the generation contract fingerprint")
     derived_handle = f"generation_contract_{expected_fingerprint[:32]}"
     if contract_handle != derived_handle:
-        raise ValueError("contract_handle must match the generation contract fingerprint")
+        raise ValueError(
+            "contract_handle must match the generation contract fingerprint"
+        )
 
 
 def _validate_source_cardinality(
@@ -235,8 +264,7 @@ def _normalize_sources(values: Any) -> tuple[SourceDocument, ...]:
     total_characters = sum(len(source.content) for source in sources)
     if total_characters > MAX_TOTAL_SOURCE_CHARACTERS:
         raise ValueError(
-            "aggregate source content exceeds "
-            f"{MAX_TOTAL_SOURCE_CHARACTERS} characters"
+            f"aggregate source content exceeds {MAX_TOTAL_SOURCE_CHARACTERS} characters"
         )
     return sources
 
@@ -329,7 +357,7 @@ class GenerationRequest:
     @property
     def contract(self) -> dict[str, Any]:
         """Return a fresh JSON-compatible generation contract object."""
-        return json.loads(self.contract_json)
+        return _contract_object(self.contract_json)
 
     @property
     def contract_handle(self) -> str:

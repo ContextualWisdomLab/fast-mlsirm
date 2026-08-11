@@ -9,10 +9,9 @@ from .backend import normalize_backend, normalize_device
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"}
 VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
-# Estimation methods. "jmle" (penalized joint MLE) is the legacy default; "mmle"
-# (marginal MLE via EM) is robust to missing data. "em"/"bayes" are reserved
-# for future milestones (the driver raises NotImplementedError for now).
-VALID_ESTIMATORS = {"jmle", "mmle", "em", "bayes"}
+# Public production estimators. Future estimator identities are added only after
+# their public fitting paths are implemented and validated end to end.
+VALID_ESTIMATORS = {"jmle", "mmle"}
 
 # Hard upper bounds on caller-supplied sizes, to reject sparse/oversized
 # configurations that would force huge allocations before any real work
@@ -141,13 +140,12 @@ class PenaltyConfig:
 class FitConfig:
     """Estimation settings for a fit.
 
-    Selects the model variant (``model``), latent-space dimension, optimizer
-    and ``estimator`` (``jmle`` penalized joint MLE or ``mmle`` marginal MLE;
-    ``em`` and ``bayes`` are accepted but reserved for future milestones),
-    the compute ``backend``/``rust_device`` axis, optimizer controls
-    (iterations, restarts, learning rate, tolerance, gradient clipping, L-BFGS
-    history), the L2 ``penalty`` block, and the marginal-estimator quadrature
-    and zero-inflation options.
+    Selects the model variant (``model``), latent-space dimension, optimizer,
+    and implemented public ``estimator`` (``jmle`` penalized joint MLE or
+    ``mmle`` marginal MLE), the compute ``backend``/``rust_device`` axis,
+    optimizer controls (iterations, restarts, learning rate, tolerance,
+    gradient clipping, L-BFGS history), the L2 ``penalty`` block, and the
+    marginal-estimator quadrature and zero-inflation options.
     """
 
     model: str = "MLS2PLM"
@@ -217,6 +215,8 @@ class FitConfig:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
         if self.estimator not in VALID_ESTIMATORS:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
+        if model == "BIFAC2PLM" and self.estimator == "jmle":
+            raise ValueError("BIFAC2PLM requires estimator 'mmle'")
         if isinstance(self.lbfgs_history, bool):
             raise ValueError("lbfgs_history must be an integer")
         try:

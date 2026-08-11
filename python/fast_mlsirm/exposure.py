@@ -52,18 +52,28 @@ import numpy as np
 
 
 def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
-    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``."""
-    if isinstance(value, bool) or not isinstance(
-        value, (int, np.integer, float, np.floating)
-    ):
-        raise ValueError(f"{name} must be an integer, got {value!r}")
-    if isinstance(value, (float, np.floating)) and not np.isfinite(value):
-        raise ValueError(f"{name} must be an integer, got {value!r}")
-    iv = int(value)
-    if iv != value:
-        raise ValueError(f"{name} must be an integer, got {value!r}")
+    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``.
+
+    Error messages name only the field and package-owned bounds. They never
+    interpolate caller-controlled values (or invoke ``repr``/``str`` on them),
+    so hostile content cannot leak through validation diagnostics.
+    """
+    # Reject bool first: ``bool`` is a subclass of ``int`` but is not an
+    # exposure-control cardinality.
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(value, (int, np.integer)):
+        iv = int(value)
+    elif isinstance(value, (float, np.floating)):
+        if not np.isfinite(value) or int(value) != value:
+            raise ValueError(f"{name} must be an integer")
+        iv = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer")
     if iv < minimum or (maximum is not None and iv > maximum):
-        raise ValueError(f"{name} out of range: {iv}")
+        raise ValueError(
+            f"{name} out of range [{minimum}, {maximum if maximum is not None else '∞'}]"
+        )
     return iv
 
 
@@ -109,6 +119,15 @@ def sympson_hetter(
     the stopping rule. ``r_max = 1`` reduces exactly to unconstrained
     max-information CAT (no exposure randomization is consumed).
     """
+    # Validate public integer controls before importing the Rust extension so
+    # hostile values fail closed even when the optional core is unavailable.
+    _usize_max = int(np.iinfo(np.uintp).max)
+    test_length = _as_int("test_length", test_length, maximum=_usize_max)
+    n_simulees = _as_int("n_simulees", n_simulees, maximum=_usize_max)
+    max_iter = _as_int("max_iter", max_iter, maximum=_usize_max)
+    seed = _as_int("seed", seed, maximum=2**64 - 1)
+    q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
+
     from . import _core
 
     a = np.ascontiguousarray(a, dtype=np.float64)
@@ -117,18 +136,17 @@ def sympson_hetter(
         c = np.zeros_like(a)
     c = np.ascontiguousarray(c, dtype=np.float64)
 
-    _usize_max = int(np.iinfo(np.uintp).max)
     r = _core.py_sympson_hetter(
         a,
         b,
         c,
         float(r_max),
-        _as_int("test_length", test_length, maximum=_usize_max),
-        _as_int("n_simulees", n_simulees, maximum=_usize_max),
-        _as_int("max_iter", max_iter, maximum=_usize_max),
+        test_length,
+        n_simulees,
+        max_iter,
         float(tol),
-        _as_int("seed", seed, maximum=2**64 - 1),
-        _as_int("q_theta", q_theta, maximum=_usize_max),
+        seed,
+        q_theta,
     )
     return SympsonHetterResult(
         k=np.asarray(r["k"]),

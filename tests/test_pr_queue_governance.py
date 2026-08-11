@@ -411,6 +411,267 @@ def test_run_gh_snapshot_fails_closed_on_command_errors(monkeypatch):
     assert len(snapshot["errors"]) == 3
 
 
+def test_history_pr_list_omits_heavy_nested_fields_that_502():
+    """Audit history must not request files/labels (run 31374029017 failure mode)."""
+    module = _load_governance()
+
+    assert "files" not in module._HISTORY_PR_JSON_FIELDS.split(",")
+    assert "labels" not in module._HISTORY_PR_JSON_FIELDS.split(",")
+    assert "mergeStateStatus" not in module._HISTORY_PR_JSON_FIELDS.split(",")
+    # History still needs body for closing-keyword audit.
+    assert "body" in module._HISTORY_PR_JSON_FIELDS.split(",")
+    assert "number" in module._HISTORY_PR_JSON_FIELDS.split(",")
+    # Open queue still needs full classification fields.
+    open_fields = module._OPEN_PR_JSON_FIELDS.split(",")
+    assert "files" in open_fields
+    assert "labels" in open_fields
+    assert "mergeStateStatus" in open_fields
+
+
+def test_pr_list_command_binds_state_limit_and_fields():
+    module = _load_governance()
+    command = module._pr_list_command(
+        "ContextualWisdomLab/fast-mlsirm",
+        state="all",
+        limit=100,
+        fields=module._HISTORY_PR_JSON_FIELDS,
+    )
+
+    assert command[:3] == ["gh", "pr", "list"]
+    assert "--state" in command and command[command.index("--state") + 1] == "all"
+    assert "--limit" in command and command[command.index("--limit") + 1] == "100"
+    assert command[command.index("--json") + 1] == module._HISTORY_PR_JSON_FIELDS
+    assert "files" not in command[command.index("--json") + 1]
+
+
+def test_run_gh_json_retries_only_transient_gateway_statuses(monkeypatch):
+    """502/503/504 retry; non-transient failures fail closed without sleep loops."""
+    module = _load_governance()
+    sleeps: list[float] = []
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    transient = iter(
+        [
+            subprocess.CompletedProcess(
+                [],
+                1,
+                "",
+                "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
+            ),
+            subprocess.CompletedProcess([], 0, json.dumps([{"number": 1}]), ""),
+        ]
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: next(transient),
+    )
+    payload, error = module._run_gh_json(
+        ["gh", "pr", "list"],
+        max_attempts=3,
+        retry_sleep_seconds=0.01,
+    )
+    assert error is None
+    assert payload == [{"number": 1}]
+    assert sleeps == [0.01]
+
+    permanent = iter(
+        [
+            subprocess.CompletedProcess([], 1, "", "HTTP 401: Bad credentials"),
+            subprocess.CompletedProcess([], 0, json.dumps([{"number": 9}]), ""),
+        ]
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: next(permanent),
+    )
+    payload, error = module._run_gh_json(
+        ["gh", "pr", "list"],
+        max_attempts=3,
+        retry_sleep_seconds=0.01,
+    )
+    assert payload is None
+    assert error is not None
+    assert error["returncode"] == 1
+    assert "401" in error["stderr"]
+    assert sleeps == [0.01]  # no additional sleep for non-transient
+
+
+def test_run_gh_snapshot_uses_light_history_fields_and_recovers_from_502(
+    monkeypatch,
+):
+    """Open list keeps full fields; history uses light fields and recovers after 502."""
+    module = _load_governance()
+    recorded: list[list[str]] = []
+    history_attempts = {"n": 0}
+
+    def fake_run(command, capture_output=True, text=True):
+        recorded.append(list(command))
+        if command[1:3] == ["repo", "view"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                json.dumps({"defaultBranchRef": {"name": "main"}}),
+                "",
+            )
+        if command[1:3] == ["pr", "list"]:
+            state = command[command.index("--state") + 1]
+            fields = command[command.index("--json") + 1]
+            if state == "open":
+                assert "files" in fields.split(",")
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    json.dumps([_base_pr(10, files=["a.py", "b.py"])]),
+                    "",
+                )
+            if state == "all":
+                assert "files" not in fields.split(",")
+                assert "labels" not in fields.split(",")
+                history_attempts["n"] += 1
+                if history_attempts["n"] == 1:
+                    return subprocess.CompletedProcess(
+                        command,
+                        1,
+                        "",
+                        "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
+                    )
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    json.dumps(
+                        [
+                            _base_pr(10, files=["a.py"]),
+                            _base_pr(9, state="MERGED", body="Fixes #1"),
+                        ]
+                    ),
+                    "",
+                )
+        if command[1] == "api":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                json.dumps({"sha": "d" * 40}),
+                "",
+            )
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+
+    snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
+
+    assert snapshot["errors"] == []
+    assert snapshot["base_sha"] == "d" * 40
+    assert len(snapshot["open_prs"]) == 1
+    assert len(snapshot["pr_history"]) == 2
+    assert history_attempts["n"] == 2
+    history_commands = [
+        cmd for cmd in recorded if cmd[1:3] == ["pr", "list"] and "--state" in cmd
+    ]
+    all_cmds = [cmd for cmd in history_commands if cmd[cmd.index("--state") + 1] == "all"]
+    assert all_cmds
+    assert all(
+        "files" not in cmd[cmd.index("--json") + 1].split(",") for cmd in all_cmds
+    )
+
+
+def test_run_gh_snapshot_records_exhausted_history_502_without_dropping_open_prs(
+    monkeypatch,
+):
+    """When history stays 502 after retries, open PRs remain and the error is kept."""
+    module = _load_governance()
+
+    def fake_run(command, capture_output=True, text=True):
+        if command[1:3] == ["repo", "view"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                json.dumps({"defaultBranchRef": {"name": "main"}}),
+                "",
+            )
+        if command[1:3] == ["pr", "list"]:
+            state = command[command.index("--state") + 1]
+            if state == "open":
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    json.dumps([_base_pr(25)]),
+                    "",
+                )
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                "",
+                "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
+            )
+        if command[1] == "api":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                json.dumps({"sha": "e" * 40}),
+                "",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+
+    snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
+
+    assert len(snapshot["open_prs"]) == 1
+    assert snapshot["pr_history"] == []
+    assert snapshot["base_sha"] == "e" * 40
+    assert len(snapshot["errors"]) == 1
+    assert snapshot["errors"][0]["command"] == ["pr", "list"]
+    assert "HTTP 502" in snapshot["errors"][0]["stderr"]
+
+
+def test_build_fails_when_history_snapshot_still_errors_after_retries(
+    tmp_path, monkeypatch
+):
+    """Real non-recovered transport failure still hard-fails github:snapshot."""
+    module = _load_governance()
+
+    def broken_snapshot(repo: str) -> dict:
+        return {
+            "mode": "live",
+            "repo": repo,
+            "default_branch": "main",
+            "base_sha": "f" * 40,
+            "open_prs": [_base_pr(1)],
+            "pr_history": [],
+            "errors": [
+                {
+                    "command": ["pr", "list"],
+                    "returncode": 1,
+                    "stderr": "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(module, "_run_gh_snapshot", broken_snapshot)
+    args = argparse.Namespace(
+        repo_root=str(tmp_path),
+        out=str(tmp_path / "out"),
+        repo="ContextualWisdomLab/fast-mlsirm",
+        contract_value_krw=2_000_000_000,
+        offline_snapshot=None,
+        offline_github=False,
+        max_stale_days=7,
+        generated_at="2026-07-03T00:00:00+00:00",
+    )
+    manifest = module.build_pr_queue_governance(args)
+
+    assert manifest["status"] == "failed"
+    assert any(
+        check["name"] == "github:snapshot" and check["ok"] is False
+        for check in manifest["failed_checks"]
+    )
+    assert manifest["open_pr_count"] == 1
+
+
 def test_source_commit_and_json_helpers_cover_success_and_failure(tmp_path, monkeypatch):
     module = _load_governance()
     monkeypatch.setattr(

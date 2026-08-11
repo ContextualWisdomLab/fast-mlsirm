@@ -5,9 +5,12 @@ core."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import operator
 import warnings
 
 import numpy as np
+
+from .config import MAX_MAX_ITER
 
 
 @dataclass
@@ -32,6 +35,24 @@ class RtFit:
     final_loglik_change: float = float("inf")
 
 
+def _validated_max_iter(value: int) -> int:
+    """Return an exact bounded RT iteration count or raise a stable ``ValueError``.
+
+    Boolean and floating-point values are rejected instead of being silently
+    truncated by ``int(...)``. Python and NumPy integer scalars are accepted only
+    in the package-wide ``1..MAX_MAX_ITER`` resource envelope.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
+    try:
+        validated = operator.index(value)
+    except TypeError as exc:
+        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}") from exc
+    if not 1 <= validated <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
+    return int(validated)
+
+
 def fit_response_times(
     times: np.ndarray,
     max_iter: int = 500,
@@ -50,9 +71,11 @@ def fit_response_times(
     or ``NaN`` entries are treated as missing (marginalized per person). By default
     ``sigma_tau`` is estimated (the log-time metric identifies the speed scale);
     pass ``fix_sigma_tau`` only to impose a deliberately standardized metric.
-    The result exposes the likelihood trace, termination reason, and final
-    likelihood change. Non-convergence emits ``RuntimeWarning``; set
-    ``require_convergence=True`` to raise instead.
+    ``max_iter`` must be an exact Python/NumPy integer in ``1..MAX_MAX_ITER``;
+    Boolean/floating controls are rejected rather than truncated. The result
+    exposes the likelihood trace, termination reason, and final likelihood change.
+    Non-convergence emits ``RuntimeWarning``; set ``require_convergence=True`` to
+    raise instead.
 
     References (APA 7th ed.):
         van der Linden, W. J. (2007). A hierarchical framework for modeling speed
@@ -61,6 +84,7 @@ def fit_response_times(
     """
     from .fitstats import _core_module
 
+    validated_max_iter = _validated_max_iter(max_iter)
     core = _core_module()
     if core is None or not hasattr(core, "fit_rt_lognormal"):
         raise RuntimeError("fit_response_times requires the compiled Rust core")
@@ -73,7 +97,7 @@ def fit_response_times(
     tt = np.where(observed, t, 1.0).reshape(-1)  # masked entries get a valid placeholder
     res = core.fit_rt_lognormal(
         tt, obs_arg, int(n_persons), int(n_items),
-        int(max_iter), float(tol), float(var_floor), float(sigma_floor),
+        validated_max_iter, float(tol), float(var_floor), float(sigma_floor),
         None if fix_sigma_tau is None else float(fix_sigma_tau),
     )
     fit = RtFit(
@@ -93,7 +117,7 @@ def fit_response_times(
     if not fit.converged:
         message = (
             "response-time calibration did not converge: "
-            f"reason={fit.termination_reason}, iterations={fit.n_iter}/{max_iter}, "
+            f"reason={fit.termination_reason}, iterations={fit.n_iter}/{validated_max_iter}, "
             f"final_loglik_change={fit.final_loglik_change:.12g}, tolerance={tol:.12g}"
         )
         if require_convergence:
@@ -127,7 +151,8 @@ def fit_speed_accuracy(
     ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
     :func:`fit_response_times`). At least one paired observation and one observed
     item with non-zero accuracy discrimination are required to identify ``rho``.
-    Returns a dict with ``rho``, ``sigma_tau``,
+    ``max_iter`` obeys the same exact integer ``1..MAX_MAX_ITER`` resource bound as
+    standalone RT calibration. Returns a dict with ``rho``, ``sigma_tau``,
     ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,
     ``loglik``, ``loglik_trace``, ``n_iter``, ``converged``,
     ``termination_reason``, and ``final_loglik_change``. Non-convergence emits
@@ -143,6 +168,7 @@ def fit_speed_accuracy(
     """
     from .fitstats import _core_module
 
+    validated_max_iter = _validated_max_iter(max_iter)
     core = _core_module()
     if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
         raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
@@ -160,7 +186,7 @@ def fit_speed_accuracy(
         np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64),
         np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
         int(n_persons), int(n_items),
-        int(q), int(max_iter), float(tol),
+        int(q), validated_max_iter, float(tol),
         None if fix_sigma_tau is None else float(fix_sigma_tau),
     )
     fit = {
@@ -179,7 +205,7 @@ def fit_speed_accuracy(
     if not fit["converged"]:
         message = (
             "joint speed-accuracy calibration did not converge: "
-            f"reason={fit['termination_reason']}, iterations={fit['n_iter']}/{max_iter}, "
+            f"reason={fit['termination_reason']}, iterations={fit['n_iter']}/{validated_max_iter}, "
             f"final_loglik_change={fit['final_loglik_change']:.12g}, tolerance={tol:.12g}"
         )
         if require_convergence:

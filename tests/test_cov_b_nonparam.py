@@ -33,6 +33,20 @@ def test_person_fit_np_rejects_non_numeric_dtype():
         personfit_np.person_fit_np(np.array([["a", "b"], ["c", "d"]]))
 
 
+def test_person_fit_np_rejects_invalid_response_without_reflecting_value():
+    """Invalid response values must not be copied into public exception text."""
+    raw_value = "7.123456789"
+    with pytest.raises(ValueError) as exc_info:
+        personfit_np.person_fit_np(
+            np.array([[0.0, float(raw_value)], [1.0, 0.0]], dtype=np.float64)
+        )
+
+    message = str(exc_info.value)
+    assert "x[0, 1]" in message
+    assert "responses must be exactly 0 or 1" in message
+    assert raw_value not in message
+
+
 def test_person_fit_np_requires_core(monkeypatch):
     _patch_core_none(monkeypatch)
     with pytest.raises(RuntimeError, match="py_person_fit_np is required"):
