@@ -177,12 +177,24 @@ def test_judge_rejects_missing_or_malformed_model_fields() -> None:
 
 
 def test_judge_criteria_reject_invalid_runtime_types() -> None:
-    with pytest.raises(TypeError, match="criterion_id must be a string"):
+    with pytest.raises(ValueError, match="criterion_id must be a string"):
         JudgeCriterion(1, "description")
-    with pytest.raises(TypeError, match="criterion description must be a string"):
+    with pytest.raises(ValueError, match="criterion description must be a string"):
         JudgeCriterion("task_alignment", 1)
-    with pytest.raises(TypeError, match="criterion weight must be a number"):
+    with pytest.raises(ValueError, match="criterion weight must be a number"):
         JudgeCriterion("task_alignment", "description", "1")
+    with pytest.raises(ValueError, match="criterion weight must be a number"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=[
+                {
+                    "criterion_id": "task_alignment",
+                    "description": "ok",
+                    "weight": "1",
+                }
+            ],
+        )
 
 
 if __name__ == "__main__":

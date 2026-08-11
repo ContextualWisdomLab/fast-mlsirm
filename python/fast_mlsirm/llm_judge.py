@@ -70,15 +70,15 @@ class JudgeCriterion:
 
     def __post_init__(self) -> None:
         if not isinstance(self.criterion_id, str):
-            raise TypeError("criterion_id must be a string")
+            raise ValueError("criterion_id must be a string")  # noqa: TRY004
         if not _IDENTIFIER.fullmatch(self.criterion_id):
             raise ValueError("criterion_id must contain two or more snake_case words")
         if not isinstance(self.description, str):
-            raise TypeError("criterion description must be a string")
+            raise ValueError("criterion description must be a string")  # noqa: TRY004
         if not self.description.strip() or len(self.description) > 2_000:
             raise ValueError("criterion description must be non-empty and <= 2000 characters")
         if isinstance(self.weight, bool) or not isinstance(self.weight, (int, float)):
-            raise TypeError("criterion weight must be a number")
+            raise ValueError("criterion weight must be a number")  # noqa: TRY004
         try:
             normalized_weight = float(self.weight)
         except (OverflowError, TypeError, ValueError) as exc:
