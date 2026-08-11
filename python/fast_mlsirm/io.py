@@ -54,8 +54,10 @@ def _json_dumps_strict(payload: object, *, indent: int = 2) -> str:
     """Serialize package-owned JSON without non-finite numeric extensions."""
     try:
         return json.dumps(payload, indent=indent, allow_nan=False)
-    except ValueError:
-        raise ValueError("artifact contains a non-finite JSON numeric value") from None
+    except ValueError as exc:
+        if str(exc).startswith("Out of range float values"):
+            raise ValueError("artifact contains a non-finite JSON numeric value") from None
+        raise ValueError("artifact could not be serialized as strict JSON") from None
 
 
 def _validate_npy_header(stream: BinaryIO, source: str) -> tuple[int, int]:
