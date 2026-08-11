@@ -44,7 +44,7 @@ pub fn assemble_test_form_greedy(
     } else if !min_per_content.is_empty() || !max_per_content.is_empty() {
         return Err("content labels are required for content constraints".into());
     }
-    for (_label, &minimum) in min_per_content {
+    for (label, &minimum) in min_per_content {
         if minimum < 0 {
             return Err("content constraint counts must be non-negative".into());
         }
