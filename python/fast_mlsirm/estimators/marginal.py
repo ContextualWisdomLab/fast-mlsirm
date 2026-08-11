@@ -15,6 +15,11 @@ import numpy as np
 SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
+MAX_MARGINAL_WORKING_SET = 100_000_000
+MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024
+_FLOAT64_ITEMSIZE = np.dtype(np.float64).itemsize
+_BOOL_ITEMSIZE = np.dtype(np.bool_).itemsize
+_MAX_TENSOR_XI_NODES = 1_000_000
 
 # Priors of Jeon et al. (2021) / lsirm12pl, used as MAP penalties by the
 # marginal estimator (mirror of PenaltyConfig::lsirm_prior in Rust):
@@ -27,6 +32,243 @@ LSIRM_PRIOR = {
     "lambda_tau": 1.0,
     "mu_tau": 0.5,
 }
+
+
+def _checked_marginal_workspace_bytes(
+    name: str,
+    *dimensions: int,
+    itemsize: int,
+    limit_bytes: int,
+) -> int:
+    """Return a bounded byte product without first forming an unbounded product.
+
+    Dimensions must be exact non-negative integers. ``itemsize`` and the byte
+    ceiling must be exact positive integers. Each multiplication is checked by
+    division against the ceiling before it is performed.
+    """
+    if type(name) is not str or not name.strip():
+        raise ValueError("workspace name must be a non-empty string")
+    if any(type(value) is not int or value < 0 for value in dimensions):
+        raise ValueError(f"{name} dimensions must be non-negative integers")
+    if type(itemsize) is not int or itemsize <= 0:
+        raise ValueError("itemsize must be a positive integer")
+    if type(limit_bytes) is not int or limit_bytes <= 0:
+        raise ValueError("workspace byte limit must be a positive integer")
+
+    total = itemsize
+    for dimension in dimensions:
+        if dimension != 0 and total > limit_bytes // dimension:
+            raise ValueError(f"{name} exceeds the {limit_bytes}-byte limit")
+        total *= dimension
+    return total
+
+
+def _validate_pairwise_distance_workspace(
+    n_left: int,
+    n_right: int,
+    latent_dim: int,
+) -> None:
+    """Preflight the peak memory of one stable pairwise distance calculation.
+
+    The coordinate-subtraction kernel keeps exactly one float64 output matrix
+    and one same-shaped float64 scratch matrix live while accumulating squared
+    coordinate differences. The scratch is released before the final
+    ``np.isfinite`` output mask is materialized. Direct helper calls can also
+    materialize one boolean finiteness mask for the larger input matrix before
+    the numerical kernel starts. The largest phase must fit the private
+    distance-workspace ceiling.
+    """
+    limit = MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES
+    output_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    output_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        n_right,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    left_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_left,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+    right_input_mask_bytes = _checked_marginal_workspace_bytes(
+        "pairwise distance workspace",
+        n_right,
+        latent_dim,
+        itemsize=_BOOL_ITEMSIZE,
+        limit_bytes=limit,
+    )
+
+    if output_bytes > limit - output_bytes:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+    kernel_peak = output_bytes + output_bytes
+    if output_bytes > limit - output_mask_bytes:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+    output_validation_peak = output_bytes + output_mask_bytes
+    input_mask_peak = max(left_input_mask_bytes, right_input_mask_bytes)
+    if max(kernel_peak, output_validation_peak, input_mask_peak) > limit:
+        raise ValueError(f"pairwise distance workspace exceeds the {limit}-byte limit")
+
+
+def _validate_marginal_distance_workspaces(
+    *,
+    n_items: int,
+    n_x: int,
+    latent_dim: int,
+    uses_space: bool,
+) -> None:
+    """Fail before allocating bounded latent-distance workspaces.
+
+    The intentional ``n_x × latent_dim`` item-gradient buffer is checked before
+    the pairwise output because both can be equal-sized for small item banks.
+    Non-spatial models deliberately skip all latent-distance byte contracts.
+    """
+    if type(uses_space) is not bool:
+        raise ValueError("uses_space must be a boolean")
+    if not uses_space:
+        return
+    _checked_marginal_workspace_bytes(
+        "item distance gradient workspace",
+        n_x,
+        latent_dim,
+        itemsize=_FLOAT64_ITEMSIZE,
+        limit_bytes=MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES,
+    )
+    _validate_pairwise_distance_workspace(n_items, n_x, latent_dim)
+
+
+def _pairwise_euclidean_distances(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    eps_distance: float,
+) -> np.ndarray:
+    """Return bounded, translation-stable pairwise Euclidean distances.
+
+    The implementation subtracts coordinates before squaring and reuses one
+    ``L × R`` scratch matrix, avoiding both the catastrophic cancellation of
+    ``||x||² + ||y||² - 2x·y`` at large common offsets and an
+    ``L × R × D`` broadcast. Exact C-contiguous NumPy arrays are required so
+    hidden layout-conversion copies cannot escape the byte accounting.
+    """
+    if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
+        raise ValueError("distance inputs must be two-dimensional float64 arrays")
+    if type(left) is not np.ndarray or type(right) is not np.ndarray:
+        raise ValueError("distance inputs must be exact NumPy arrays")
+    if left.ndim != 2 or right.ndim != 2:
+        raise ValueError("distance inputs must be two-dimensional")
+    if left.shape[1] != right.shape[1]:
+        raise ValueError("distance inputs must share one latent dimension")
+    if left.shape[1] == 0:
+        raise ValueError("distance inputs must have a positive latent dimension")
+    if left.dtype != np.float64 or right.dtype != np.float64:
+        raise ValueError("distance inputs must use float64")
+    if not left.flags.c_contiguous or not right.flags.c_contiguous:
+        raise ValueError("distance inputs must be C-contiguous")
+
+    _validate_pairwise_distance_workspace(
+        left.shape[0],
+        right.shape[0],
+        left.shape[1],
+    )
+    if not np.all(np.isfinite(left)) or not np.all(np.isfinite(right)):
+        raise ValueError("distance inputs must be finite")
+    if (
+        isinstance(eps_distance, (bool, np.bool_))
+        or not isinstance(eps_distance, (int, float, np.integer, np.floating))
+        or not np.isfinite(eps_distance)
+        or float(eps_distance) <= 0.0
+    ):
+        raise ValueError("eps_distance must be a finite positive number")
+
+    distances = np.zeros((left.shape[0], right.shape[0]), dtype=np.float64)
+    scratch = np.empty_like(distances)
+    for coordinate in range(left.shape[1]):
+        np.subtract(
+            left[:, coordinate, None],
+            right[None, :, coordinate],
+            out=scratch,
+        )
+        np.square(scratch, out=scratch)
+        distances += scratch
+    del scratch
+    distances += float(eps_distance)
+    np.sqrt(distances, out=distances)
+    if not np.all(np.isfinite(distances)):
+        raise ValueError("computed pairwise distances must be finite")
+    return distances
+
+
+def _bounded_tensor_node_count(q_xi: int, latent_dim: int, *, limit: int) -> int:
+    """Return ``min(q_xi ** latent_dim, limit + 1)`` without intermediate overflow.
+
+    Uses repeated multiply-with-division-check so astronomical ``q_xi`` values
+    never construct an unbounded Python integer power. When the product would
+    exceed ``limit``, returns ``limit + 1`` so callers can reject the design.
+    """
+    if type(q_xi) is not int or type(latent_dim) is not int or type(limit) is not int:
+        raise ValueError("q_xi, latent_dim, and limit must be exact built-in integers")
+    if q_xi < 1 or latent_dim < 1 or limit < 1:
+        raise ValueError("q_xi, latent_dim, and limit must be positive")
+    total = 1
+    for _ in range(latent_dim):
+        if total > limit // q_xi:
+            return limit + 1
+        total *= q_xi
+    return total
+
+
+def _preflight_xi_node_count(
+    *,
+    xi_rule: str,
+    q_xi: object,
+    xi_points: object,
+    latent_dim: object,
+    uses_space: bool,
+) -> int:
+    """Return the latent-space node count after fail-closed quadrature preflight.
+
+    Non-spatial models own a single placeholder node and ignore tensor/QMC
+    controls so hostile ``q_xi`` objects never execute. Tensor GH rules require
+    an exact built-in integer from :data:`SUPPORTED_Q` and bound the product
+    grid with :func:`_bounded_tensor_node_count`. QMC/MC rules require exact
+    integer ``xi_points`` and never inspect ``q_xi``.
+    """
+    if type(uses_space) is not bool:
+        raise ValueError("uses_space must be a boolean")
+    if not uses_space:
+        return 1
+    rule = str(xi_rule).lower()
+    if rule in {"qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
+        if type(xi_points) is not int or isinstance(xi_points, bool):
+            raise ValueError("xi_points must be an exact built-in integer")
+        if xi_points < 1:
+            raise ValueError("xi_points must be a positive integer")
+        return xi_points
+    # Tensor Gauss-Hermite product rule.
+    if type(q_xi) is not int or isinstance(q_xi, bool):
+        raise ValueError("q_xi must be an exact built-in integer")
+    if type(latent_dim) is not int or isinstance(latent_dim, bool):
+        raise ValueError("latent_dim must be an exact built-in integer")
+    if q_xi not in SUPPORTED_Q:
+        raise ValueError(f"unsupported quadrature size {q_xi}; supported: {list(SUPPORTED_Q)}")
+    if latent_dim < 1:
+        raise ValueError("latent_dim must be a positive integer")
+    count = _bounded_tensor_node_count(q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES)
+    if count > _MAX_TENSOR_XI_NODES:
+        raise ValueError(
+            "q_xi ** latent_dim exceeds the tensor-grid limit; use qmc/mc"
+        )
+    return count
 
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
@@ -170,8 +412,10 @@ def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
     """
     nodes, weights = _gh(q_xi)
     # Match the Rust ordering: axis k advances every q_xi^k nodes.
-    n_points = q_xi**latent_dim
-    if n_points > 1_000_000:
+    n_points = _bounded_tensor_node_count(
+        q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES
+    )
+    if n_points > _MAX_TENSOR_XI_NODES:
         raise ValueError("q_xi ** latent_dim exceeds the tensor-grid limit; use qmc/mc")
     idx = np.arange(n_points)
     grid = np.empty((len(idx), latent_dim))
@@ -186,8 +430,12 @@ def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _log_sigmoid(x: np.ndarray) -> np.ndarray:
-    """Numerically stable elementwise ``log(sigmoid(x))``."""
-    return np.where(x >= 0.0, -np.log1p(np.exp(-np.abs(x))), x - np.log1p(np.exp(x)))
+    """Numerically stable elementwise ``log(sigmoid(x))``.
+
+    Equivalent to ``-softplus(-x)`` via ``logaddexp``, so extreme finite logits
+    never evaluate an overflowing inactive branch of a ``where`` expression.
+    """
+    return -np.logaddexp(0.0, -x)
 
 
 def _build_contexts(
@@ -241,11 +489,15 @@ def _build_tables(
         eta = eta + offsets[:, :, None, None]
     kind = _interaction_kind(model)
     if kind == "distance":
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-        z_sq = np.einsum("ij,ij->i", zeta, zeta)
-        dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
-        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
+        # Translation-stable pairwise distances with bounded L×R scratch (not the
+        # cancellation-prone ||x||²+||y||²-2x·y identity).
+        zeta_c = np.ascontiguousarray(zeta, dtype=np.float64)
+        x_c = np.ascontiguousarray(x_grid, dtype=np.float64)
+        dist = _pairwise_euclidean_distances(
+            zeta_c,
+            x_c,
+            eps_distance=float(eps_distance),
+        )
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
@@ -476,6 +728,20 @@ def fit_marginal_numpy(
     Computation and Simulation, 83*(9), 1671–1683.
     https://doi.org/10.1080/00949655.2012.668550
     """
+    # Fail-closed quadrature preflight before any caller-controlled array
+    # coercion so hostile q_xi/xi_points objects never execute or allocate.
+    model = str(model).upper()
+    free_alpha, uses_space = _model_flags(model)
+    n_xi = _preflight_xi_node_count(
+        xi_rule=xi_rule,
+        q_xi=q_xi,
+        xi_points=xi_points,
+        latent_dim=latent_dim,
+        uses_space=uses_space,
+    )
+    if type(q_theta) is not int or isinstance(q_theta, bool) or q_theta < 1:
+        raise ValueError("q_theta must be an exact positive built-in integer")
+
     y = np.asarray(y, dtype=np.float64)
     observed = np.asarray(observed, dtype=bool)
     factor_id = np.asarray(factor_id, dtype=np.int64)
@@ -484,16 +750,11 @@ def fit_marginal_numpy(
         n_dims = int(factor_id.max()) + 1
     # Bound the dominant EM working array (persons x max(items,dims) x q_theta x
     # n_xi_nodes) so oversized quadrature/data cannot exhaust memory (DoS).
-    MAX_MARGINAL_WORKING_SET = 100_000_000
-    _rule = str(xi_rule).lower()
-    _nx = xi_points if _rule in {'qmc', 'halton', 'mc', 'montecarlo', 'monte-carlo'} else min(int(q_xi) ** int(latent_dim), 1_000_001)
-    if n_persons * max(n_items, n_dims) * int(q_theta) * _nx > MAX_MARGINAL_WORKING_SET:
+    if n_persons * max(n_items, n_dims) * int(q_theta) * int(n_xi) > MAX_MARGINAL_WORKING_SET:
         raise ValueError(
             'marginal working set (persons x max(items,dims) x q_theta x n_xi) '
             f'exceeds the {MAX_MARGINAL_WORKING_SET}-element limit'
         )
-    model = model.upper()
-    free_alpha, uses_space = _model_flags(model)
     pop = pop or {"kind": "single"}
     pen = dict(LSIRM_PRIOR)
     if penalty:
@@ -503,11 +764,20 @@ def fit_marginal_numpy(
         raise ValueError("unidimensional models require n_dims == 1")
     if factor_id.min() < 0 or factor_id.max() >= n_dims:
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    if latent_dim < 1 or latent_dim > 3:
+    if type(latent_dim) is not int or isinstance(latent_dim, bool) or not (1 <= latent_dim <= 3):
         raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
     obs_vals = y[observed]
     if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
         raise ValueError("observed responses must be 0 or 1")
+
+    # Distance/gradient workspace preflight uses the preflight node count and
+    # must run before GH tables or latent-node allocation.
+    _validate_marginal_distance_workspaces(
+        n_items=n_items,
+        n_x=int(n_xi),
+        latent_dim=latent_dim if uses_space else 1,
+        uses_space=uses_space,
+    )
 
     t_nodes, t_weights = _gh(q_theta)
     t_logw = np.log(t_weights)
@@ -733,11 +1003,14 @@ def fit_marginal_numpy(
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
-                    # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-                    x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-                    z_sq = np.vdot(zeta_c, zeta_c)
-                    dist_sq = x_sq + z_sq - 2 * np.dot(x_grid, zeta_c)
-                    dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
+                    # (1, Nx) pairwise distances from one item embedding to all nodes.
+                    zeta_row = np.ascontiguousarray(zeta_c.reshape(1, -1), dtype=np.float64)
+                    x_c = np.ascontiguousarray(x_grid, dtype=np.float64)
+                    dist = _pairwise_euclidean_distances(
+                        zeta_row,
+                        x_c,
+                        eps_distance=float(eps_distance),
+                    )[0]
                     e = e - gamma * dist[None, None, :]
                 elif kind_i == "inner":
                     e = e + (x_grid @ zeta_c)[None, None, :]
@@ -809,11 +1082,13 @@ def fit_marginal_numpy(
         # --- M-step: tau (distance kind only) ---
         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
-            # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-            x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
-            z_sq = np.einsum("ij,ij->i", zeta, zeta)
-            dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
-            dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
+            zeta_c = np.ascontiguousarray(zeta, dtype=np.float64)
+            x_c = np.ascontiguousarray(x_grid, dtype=np.float64)
+            dist = _pairwise_euclidean_distances(
+                zeta_c,
+                x_c,
+                eps_distance=float(eps_distance),
+            )
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
@@ -868,8 +1143,13 @@ def fit_marginal_numpy(
             n_all = nbar[:, factor_id] - mbar
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
-                diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                zeta_c = np.ascontiguousarray(zeta, dtype=np.float64)
+                x_c = np.ascontiguousarray(x_grid, dtype=np.float64)
+                distz = _pairwise_euclidean_distances(
+                    zeta_c,
+                    x_c,
+                    eps_distance=float(eps_distance),
+                )
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
