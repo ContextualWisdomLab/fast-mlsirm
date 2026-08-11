@@ -145,6 +145,7 @@ use mlsirm_core::security::k_variants as core_k_variants;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::standard_setting::hofstee as core_hofstee;
 use mlsirm_core::subscores::subscores as core_subscores;
+use mlsirm_core::test_form::assemble_test_form_greedy as core_assemble_test_form_greedy;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
 use mlsirm_core::utility::{
@@ -8219,6 +8220,42 @@ fn cat_select_item(
     .map_err(PyValueError::new_err)
 }
 
+/// Greedy maximum-information fixed-form assembly with content constraints.
+///
+/// Python validates public shapes and marshals maps; ordering, exclusion, and
+/// content-feasibility decisions are owned by the Rust numeric core.
+#[pyfunction]
+#[pyo3(signature = (
+    information,
+    length,
+    content = None,
+    min_per_content = None,
+    max_per_content = None,
+    exclude = None,
+))]
+fn assemble_test_form_greedy(
+    information: PyReadonlyArray1<'_, f64>,
+    length: usize,
+    content: Option<Vec<String>>,
+    min_per_content: Option<HashMap<String, i64>>,
+    max_per_content: Option<HashMap<String, i64>>,
+    exclude: Option<Vec<i64>>,
+) -> PyResult<Vec<i64>> {
+    let min_map = min_per_content.unwrap_or_default();
+    let max_map = max_per_content.unwrap_or_default();
+    let exclude_idx = exclude.unwrap_or_default();
+    let content_ref = content.as_deref();
+    core_assemble_test_form_greedy(
+        information.as_slice()?,
+        length,
+        content_ref,
+        &min_map,
+        &max_map,
+        &exclude_idx,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
 /// formula, c=0/d=1 logistic case; Lord test-information tradition).
 #[pyfunction]
@@ -8925,6 +8962,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
     m.add_function(wrap_pyfunction!(cat_item_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_select_item, m)?)?;
+    m.add_function(wrap_pyfunction!(assemble_test_form_greedy, m)?)?;
     m.add_function(wrap_pyfunction!(bank_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
     m.add_function(wrap_pyfunction!(plausible_values, m)?)?;
