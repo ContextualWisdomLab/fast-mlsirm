@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Reject ambiguous LLM-judge JSON with duplicate keys or unexpected top-level fields; require the exact mode-specific schema including advisory `accepted`.
 - Require compiled Rust ownership for public `s_x2` and `person_fit`, including prior-mean S-X² dispatch, with fail-closed errors when the core is missing.
 - Validate parallel-analysis integer controls and bound random-eigenvalue workspace before Rust dispatch.
 - Cap LLM-judge response JSON nesting at 32 levels before parse to prevent recursive-object resource exhaustion.
