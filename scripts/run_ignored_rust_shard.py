@@ -12,6 +12,8 @@ exclusions, and invokes the matching Cargo target with ``--ignored --exact``.
 The runner is source-read-only. Its package scope comes exclusively from
 Cargo's ``workspace_members`` metadata, matching the former ``--workspace``
 command and leaving explicitly excluded packages to their dedicated workflows.
+Every child process is additionally bounded by an operation-specific deadline;
+GitHub Actions job timeouts remain an independent outer ceiling.
 """
 
 from __future__ import annotations
@@ -19,10 +21,19 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+
+# The helper must remain importable both when this file is executed directly and
+# when repository tests load it through ``spec_from_file_location``.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _subprocess_deadlines import (  # noqa: E402
+    BoundedSubprocessTimeout,
+    SubprocessOperation,
+    run_bounded,
+)
 
 _TEST_LINE = re.compile(r"^(?P<name>.+): test$")
 _SUPPORTED_SELECTORS = frozenset({"lib", "bin", "test", "example", "doc"})
@@ -212,8 +223,9 @@ def inventory_ignored_tests(targets: Sequence[CargoTarget]) -> list[IgnoredTest]
     inventory: list[IgnoredTest] = []
     seen: set[str] = set()
     for target in targets:
-        completed = subprocess.run(
+        completed = run_bounded(
             cargo_list_command(target),
+            operation=SubprocessOperation.CARGO_TEST_LIST,
             check=True,
             capture_output=True,
             text=True,
@@ -290,8 +302,9 @@ def select_shard(
 
 def run_shard(shard: int, shard_count: int, skipped: Sequence[str]) -> int:
     """Run one target-qualified ignored-test shard and return its process code."""
-    metadata = subprocess.run(
+    metadata = run_bounded(
         cargo_metadata_command(),
+        operation=SubprocessOperation.CARGO_METADATA,
         check=True,
         capture_output=True,
         text=True,
@@ -317,7 +330,11 @@ def run_shard(shard: int, shard_count: int, skipped: Sequence[str]) -> int:
         test = by_identifier[identifier]
         command = cargo_test_command(test.target, test.test_name)
         print("+ " + " ".join(command), flush=True)
-        completed = subprocess.run(command, check=False)
+        completed = run_bounded(
+            command,
+            operation=SubprocessOperation.STATISTICAL_TEST,
+            check=False,
+        )
         if completed.returncode != 0:
             return completed.returncode
     return 0
@@ -356,9 +373,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Execute the requested ignored-test shard."""
+    """Execute the requested ignored-test shard with redacted timeout evidence."""
     args = parse_args(argv)
-    return run_shard(args.shard, args.shards, args.skip)
+    try:
+        return run_shard(args.shard, args.shards, args.skip)
+    except BoundedSubprocessTimeout as exc:
+        print(json.dumps(exc.as_dict(), sort_keys=True), file=sys.stderr)
+        return 124
 
 
 if __name__ == "__main__":
