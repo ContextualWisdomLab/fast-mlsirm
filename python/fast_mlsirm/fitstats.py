@@ -92,9 +92,12 @@ def _xlogx_over_y(x: float, y: float) -> float:
 
 
 def _core_module():
-    """The compiled Rust core, when built — the compute path for every
-    statistic here (the NumPy bodies below are the parity reference and
-    fallback)."""
+    """Return the compiled Rust core when built.
+
+    Public fit-statistics entrypoints require this module and fail closed when
+    it is missing. Pure-NumPy bodies retained beside them are explicit
+    reference/parity helpers only and are not ordinary production fallbacks.
+    """
     try:
         from . import _core  # type: ignore
 
@@ -442,6 +445,10 @@ def s_x2(
     ``min_effect`` guards the BH flag with the RMS observed-minus-expected
     effect size (practical significance at large N).
 
+    Numerical ownership is the compiled Rust ``s_x2_stat`` entrypoint, including
+    when ``prior_mean`` shifts the trait prior. Missing or incomplete cores raise
+    ``RuntimeError`` rather than selecting the NumPy reference path.
+
     References
     ----------
     Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
@@ -483,47 +490,113 @@ def s_x2(
         if np.any(~np.isfinite(weight)) or np.any((weight != 0.0) & (weight != 1.0)):
             raise ValueError("person_weight must contain only finite 0/1 values")
 
+    n_dims = int(d_of_i.max()) + 1
+    if prior_mean is None:
+        prior_mean_vec = np.zeros(n_dims, dtype=np.float64)
+    else:
+        prior_mean_vec = np.asarray(prior_mean, dtype=np.float64)
+        if prior_mean_vec.shape != (n_dims,):
+            raise ValueError(f"prior_mean must have shape ({n_dims},)")
+        if np.any(~np.isfinite(prior_mean_vec)):
+            raise ValueError("prior_mean must be finite")
+    prior_sd_vec = np.ones(n_dims, dtype=np.float64)
+
     core = _core_module()
-    if core is not None and hasattr(core, "s_x2_stat") and prior_mean is None:
-        n_dims = int(d_of_i.max()) + 1
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.s_x2_stat(
-            np.where(observed0, y0, 0.0).ravel(),
-            observed0.ravel(),
-            int(y0.shape[0]),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.zeros(n_dims),
-            np.ones(n_dims),
-            q_theta=int(q_theta),
-            xi_rule="gh",
-            q_xi=int(q_xi),
-            min_expected=float(min_expected),
-            fdr_q=float(fdr_q),
-            min_effect=float(min_effect),
-            person_weight=None if person_weight is None else weight,
-        )
-        return SX2Result(
-            statistic=np.asarray(res["statistic"]),
-            g2_statistic=np.asarray(
-                res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
-            ),
-            df=np.asarray(res["df"]),
-            p_value=np.asarray(res["p_value"]),
-            g2_p_value=np.asarray(
-                res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
-            ),
-            flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
-            n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
-            rms_residual=np.asarray(res["rms_residual"]),
-        )
+    if core is None or not hasattr(core, "s_x2_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.s_x2_stat(
+        np.where(observed0, y0, 0.0).ravel(),
+        observed0.ravel(),
+        int(y0.shape[0]),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        prior_mean_vec,
+        prior_sd_vec,
+        q_theta=int(q_theta),
+        xi_rule="gh",
+        q_xi=int(q_xi),
+        min_expected=float(min_expected),
+        fdr_q=float(fdr_q),
+        min_effect=float(min_effect),
+        person_weight=None if person_weight is None else weight,
+    )
+    return SX2Result(
+        statistic=np.asarray(res["statistic"]),
+        g2_statistic=np.asarray(
+            res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
+        ),
+        df=np.asarray(res["df"]),
+        p_value=np.asarray(res["p_value"]),
+        g2_p_value=np.asarray(
+            res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
+        ),
+        flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
+        n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
+        rms_residual=np.asarray(res["rms_residual"]),
+    )
+
+
+def _s_x2_python_reference(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+    prior_mean: np.ndarray | None = None,
+    min_expected: float = 1.0,
+    fdr_q: float = 0.05,
+    person_weight: np.ndarray | None = None,
+    min_effect: float = 0.0,
+) -> SX2Result:
+    """NumPy reference for Orlando-Thissen S-X² (parity/tests only).
+
+    Ordinary public callers must use :func:`s_x2`, which requires the compiled
+    Rust ``s_x2_stat`` entrypoint. This helper intentionally retains the pure
+    Python numerical path so native-vs-reference contracts can still be checked
+    without reopening a silent production fallback.
+    """
+    (
+        q_theta,
+        q_xi,
+        min_expected,
+        fdr_q,
+        min_effect,
+    ) = _validate_sx2_controls(q_theta, q_xi, min_expected, fdr_q, min_effect)
+    try:
+        y0 = np.asarray(responses, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("responses must be a 2-D numeric array") from exc
+    if y0.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y0.shape
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    if d_of_i.shape != (n_items,):
+        raise ValueError("factor_id length must match the number of response items")
+    observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    if observed0.shape != y0.shape:
+        raise ValueError("mask shape must match responses")
+    if np.any(observed0 & (~np.isfinite(y0) | ((y0 != 0.0) & (y0 != 1.0)))):
+        raise ValueError("observed responses must be dichotomous (0/1)")
+    if person_weight is None:
+        weight = np.ones(n_persons)
+    else:
+        weight = np.asarray(person_weight, dtype=float)
+        if weight.shape != (n_persons,):
+            raise ValueError("person_weight must have length n_persons")
+        if np.any(~np.isfinite(weight)) or np.any((weight != 0.0) & (weight != 1.0)):
+            raise ValueError("person_weight must contain only finite 0/1 values")
+
     observed = observed0
     y = np.where(observed, y0, 0.0)
     n_dims = int(d_of_i.max()) + 1
@@ -667,6 +740,10 @@ def person_fit(
     the latent-space position is held at its EAP, so the correction covers
     the trait estimate only (documented approximation).
 
+    Numerical ownership is the compiled Rust ``person_fit_stat`` entrypoint.
+    Missing or incomplete cores raise ``RuntimeError`` rather than silently
+    selecting the NumPy reference arithmetic.
+
     References
     ----------
     Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
@@ -679,6 +756,64 @@ def person_fit(
     331–342. https://doi.org/10.1007/BF02294437
     """
     model = model.upper()
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
+    n_persons, _n_items = y.shape
+    n_dims = int(d_of_i.max()) + 1
+    core = _core_module()
+    if core is None or not hasattr(core, "person_fit_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.person_fit_stat(
+        y.ravel(),
+        observed.ravel(),
+        int(n_persons),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        np.asarray(params.theta, dtype=np.float64).ravel(),
+        np.asarray(params.xi, dtype=np.float64).ravel(),
+        prior_mean=None
+        if prior_mean is None
+        else np.broadcast_to(
+            np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
+        )
+        .ravel()
+        .copy(),
+        flag_threshold=float(flag_threshold),
+    )
+    return PersonFitResult(
+        lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
+        lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
+        flagged=np.asarray(res["flagged"], dtype=bool),
+    )
+
+
+def _person_fit_python_reference(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    eps_distance: float = 1e-8,
+    prior_mean: np.ndarray | None = None,
+    flag_threshold: float = -1.645,
+) -> PersonFitResult:
+    """NumPy reference for l_z / l_z* person fit (parity/tests only).
+
+    Ordinary public callers must use :func:`person_fit`, which requires the
+    compiled Rust ``person_fit_stat`` entrypoint. This helper keeps the pure
+    Python arithmetic available for native-vs-reference contracts without a
+    silent production fallback.
+    """
+    model = model.upper()
     free_alpha = model not in {"MLSRM", "ULSRM"}
     uses_space = model != "MIRT"
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
@@ -686,38 +821,6 @@ def person_fit(
     )
     n_persons, n_items = y.shape
     n_dims = int(d_of_i.max()) + 1
-    core = _core_module()
-    if core is not None and hasattr(core, "person_fit_stat"):
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.person_fit_stat(
-            y.ravel(),
-            observed.ravel(),
-            int(n_persons),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.asarray(params.theta, dtype=np.float64).ravel(),
-            np.asarray(params.xi, dtype=np.float64).ravel(),
-            prior_mean=None
-            if prior_mean is None
-            else np.broadcast_to(
-                np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
-            )
-            .ravel()
-            .copy(),
-            flag_threshold=float(flag_threshold),
-        )
-        return PersonFitResult(
-            lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
-            lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
-            flagged=np.asarray(res["flagged"], dtype=bool),
-        )
     theta = np.asarray(params.theta, dtype=float)
     a = np.exp(params.alpha) if free_alpha else np.ones(n_items)
     shift = np.zeros((n_persons, n_dims))

@@ -187,6 +187,12 @@ def test_sx2_rejects_factor_length_mismatch_before_native(monkeypatch):
 
 
 def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
+    """Native public S-X² must match the explicit NumPy reference helper.
+
+    Public ``s_x2`` fails closed without ``s_x2_stat``; parity therefore calls
+    the retained ``_s_x2_python_reference`` path rather than reopening a silent
+    production fallback.
+    """
     if fitstats_module._core_module() is None:
         pytest.skip("compiled core is unavailable")
     rng = np.random.default_rng(29)
@@ -200,7 +206,7 @@ def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
     )
     native = s_x2(y, factor_id, params, "MIRT")
 
-    # Incomplete core: tails available via pure helpers, s_x2_stat absent.
+    # Incomplete core for chi2/BH tails used by the reference helper only.
     class _TailsOnly:
         def chi2_sf(self, x, df):
             x = float(x)
@@ -227,7 +233,11 @@ def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
             return p <= cut
 
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _TailsOnly())
-    numpy_reference = s_x2(y, factor_id, params, "MIRT")
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        s_x2(y, factor_id, params, "MIRT")
+    numpy_reference = fitstats_module._s_x2_python_reference(
+        y, factor_id, params, "MIRT"
+    )
     assert np.all(np.isfinite(native.statistic))
     assert np.all(np.isfinite(native.g2_statistic))
     np.testing.assert_allclose(native.statistic, numpy_reference.statistic)
