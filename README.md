@@ -89,6 +89,14 @@ print(fixed_item_calibration.best)
 - Rubric-centered schemas, deterministic bounded item-blueprint compilation,
   and canonical provider-neutral generation contracts. See
   [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
+- Provider-neutral contextual-orchestrator LLM-as-a-Judge integration with
+  strict structured parsing. A judge result becomes an IRT row only through
+  LLMJudgeResult.to_irt_row() with at least two criteria, followed by
+  validate_irt_response_matrix() for a multi-item dichotomous or explicitly
+  categorized polytomous matrix. Equal-width score projection is experimental;
+  category-count and prompt-perturbation calibration are required. See
+  [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/main/docs/planning/adrs/0005-irt-response-matrix-contract.md) and
+  [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/main/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
