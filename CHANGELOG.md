@@ -19,6 +19,15 @@
 - Supplemental native `title` tooltips exposing unrounded exact float representations on formatted cells in essay score HTML reports.
 - CSS `@media print` rules enforcing black-on-white text, hiding interactive skip links, and avoiding awkward page breaks for print and PDF exports.
 
+#### Architecture baseline documentation
+
+- Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
+  orchestration, multilevel/multigroup population structures, modular MSA
+  stance, security/compliance posture, and recovery-oriented test strategy with
+  APA 7th citations.
+- `docs/doctoring/architecture_baseline.md` binding the architecture claims to
+  the psychometrics literature used by the product.
+
 #### Enterprise criterion-level observation adapter
 
 - Added `build_enterprise_issue_score_observation`, which compiles exact
