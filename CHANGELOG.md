@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Public CAT `item_information` and `select_cat_item` delegate Fisher information and maximum-information ranking to the Rust core.
 - Bound top-1 CSR loser streams and enforce the shared ranking CSR byte ceiling with stable non-reflective iteration errors.
 - Validate ATA content-constraint maps, exposure counts, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile conversion callbacks while preserving accepted string keys and exact integers.
 - Cap LSR ranking CSR geometric growth under the live byte budget and stream validated item indices without list→uint64 temporaries beside the handoff arrays.
@@ -17,6 +18,12 @@
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
+
+#### Paired rating-range evidence
+
+- Added a Rust-owned paired automated/reference rating diagnostic for observed category endpoints, distinct category use, span, empirical dispersion, relative ratios, endpoint gaps, narrower-support evidence, and a conservative central-tendency signal.
+- Added a thin PyO3/Python product path that delegates numerical statistics to `mlsirm-core` and keeps descriptive range-use evidence separate from agreement, rater severity, and future generalized many-facet range-restriction parameters.
+- Added fail-closed input/degenerate-reference behavior and APA 7 doctoring for automated essay-scoring validation.
 
 #### Multilevel, multiple-membership, and longitudinal design contracts
 
@@ -359,6 +366,26 @@
 
 ### Fixed
 
+#### Operation-specific ignored Rust subprocess deadlines
+
+- Added bounded operation-specific deadlines for Cargo metadata, ignored-test inventory, and long-running statistical-study execution in the ignored Rust shard runner while retaining the independent GitHub Actions job ceiling.
+- Timed-out POSIX child groups now receive bounded `SIGTERM`-to-`SIGKILL` cleanup and machine-readable timeout evidence that omits command and captured child-output text; operator overrides remain constrained by per-operation minimum and maximum ranges.
+- Added deterministic configuration, cleanup, redaction, command-routing, and cross-platform fallback contracts. Issue #555 remains open for the remaining repository subprocess operation classes.
+
+#### Bounded marginal latent-distance workspaces
+
+- Replaced the NumPy fallback's item-by-node-by-dimension covariate distance
+  broadcast and cancellation-prone squared-norm identity with a
+  coordinate-subtraction-first kernel that reuses one bounded two-dimensional
+  float64 scratch buffer.
+- Added a private 128 MiB distance-workspace ceiling, checked byte products,
+  and pre-allocation gates for the pairwise output-plus-scratch peak, finite
+  masks, and the intentional item-gradient workspace before latent nodes are
+  built.
+- Reused the governed helper in table construction, candidate predictors, the
+  tau update, and the covariate update while preserving the Rust production
+  backend and public model contracts.
+
 #### Subgroup validation evidence fails closed
 
 - Automated-scoring subgroup SMD gates reject requested subgroups with fewer
@@ -394,6 +421,10 @@
 
 - Validate automated-test-assembly content-label shape and string element types before item-information evaluation, rejecting arbitrary object labels without invoking caller-controlled `__str__`/`__repr__` callbacks while preserving accepted Python/NumPy string labels and existing assembly numerics.
 
+#### ATA semantic-range and exclusion preflight
+
+- Reject negative or contradictory ATA content constraints, invalid exposure-map ranges, negative seeds, and non-integral or out-of-bank exclusions before item-information evaluation while preserving accepted Python/NumPy integer controls and assembly semantics.
+
 #### Bound PR queue Git metadata lookup
 
 - PR queue governance now bounds the `git rev-parse HEAD` subprocess and fails closed with a stable timeout error instead of allowing a hung local Git child to stall the evidence pipeline.
@@ -406,14 +437,26 @@
 
 - Validate ATA content-constraint keys/counts, exposure maps, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile string/integer conversion callbacks while preserving accepted Python/NumPy string keys and exact integers.
 
+#### LSR ranking CSR live allocation budget
+
+- Cap geometric growth of LSR/I-LSR ranking CSR `uint64` buffers so intermediate capacities never exceed the declared live CSR byte budget, and stream validated item indices without a list→`uint64` temporary beside the live payload.
+
 #### Fit-statistics require compiled Rust core
 
 - Public `chi2_sf` and `benjamini_hochberg` fail closed with a stable RuntimeError when the compiled Rust core is unavailable, preventing silent pure-Python numerical ownership.
+
+#### CAT item information and selection Rust ownership
+
+- Public `item_information` and `select_cat_item` now delegate Fisher information and maximum-information ranking to the compiled Rust core (`cat_item_information` / `cat_select_item`), reusing the frozen-bank information kernel already used by ability SE.
 
 #### Non-finite inference uncertainty preserves scientific meaning
 
 - Standard errors from covariance diagonals preserve `NaN` and infinite values instead of converting them into false zero uncertainty.
 - `vcov_from_hessian` rejects non-finite observed-information entries with a stable finite-entry contract.
+
+#### Top-1 CSR input bounds
+
+- Bound top-1 loser streams to at most `n - 1` items, enforce the shared `MAX_RANKING_CSR_BYTES` ceiling on winner/loser/start `uint64` payloads, and normalize ordinary outer/inner iteration failures to stable non-reflective package errors while propagating process-control signals.
 
 #### Diagnostics-report focus and contrast preservation
 
@@ -435,6 +478,15 @@
 
 ### Security
 
+#### Bounded marginal latent-distance workspaces
+
+- Rejected malformed dimensions, Boolean coercion, non-finite or non-float64
+  matrices, hidden layout conversions, invalid epsilon, and oversized distance
+  workloads with bounded non-reflective diagnostics.
+- Added deterministic high-offset translation-stability, missing-data, and
+  covariate parity tests plus a safe environment-reporting benchmark and APA 7
+  operational doctoring.
+
 #### Person-fit invalid-response error redaction
 
 - Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.
@@ -454,6 +506,10 @@
 #### ATA content-label validation trust boundary
 
 - Keep invalid ATA content controls on a stable package-owned error surface rather than allowing arbitrary representation callbacks to execute during NumPy string coercion.
+
+#### ATA semantic-range and exclusion preflight
+
+- Keep ATA exclusion identities on an exact package-owned type/range boundary so Boolean, fractional, hostile integer-like, and out-of-bank values cannot be silently coerced or ignored before psychometric work.
 
 #### G-theory public control validation
 
