@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from fast_mlsirm.llm_judge import (
@@ -136,6 +137,40 @@ def test_judge_result_projects_only_multiple_criteria_to_irt_items() -> None:
         single_criterion.to_irt_row()
 
 
+def test_irt_projection_rejects_malformed_result_mappings() -> None:
+    result = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    with pytest.raises(JudgeFormatError, match="keys must be strings"):
+        replace(result, criterion_scores={1: 0.8, "factual_support": 0.8}).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="criterion_categories must be an object"):
+        replace(
+            result,
+            criterion_categories=[0, 1],
+            category_count=2,
+        ).to_irt_row()
+
+
+def test_criteria_limit_is_enforced_during_iteration() -> None:
+    yielded = 0
+
+    def criteria():
+        nonlocal yielded
+        for index in range(33):
+            yielded += 1
+            yield JudgeCriterion(f"criterion_{index}", "observable evidence")
+
+    with pytest.raises(ValueError, match="1..32"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=criteria(),
+        )
+    assert yielded == 33
+
+
 def test_category_judgment_derives_ordered_scores_and_irt_items() -> None:
     orchestrator = _FakeOrchestrator(_category_payload())
     result = ContextualOrchestratorJudge(orchestrator).judge(
@@ -238,6 +273,8 @@ if __name__ == "__main__":
     test_judge_uses_contextual_orchestrator_route_and_reports_usage()
     test_judge_rejects_malformed_decisions_and_derives_acceptance()
     test_judge_result_projects_only_multiple_criteria_to_irt_items()
+    test_irt_projection_rejects_malformed_result_mappings()
+    test_criteria_limit_is_enforced_during_iteration()
     test_category_judgment_derives_ordered_scores_and_irt_items()
     test_category_judgment_rejects_non_integral_categories()
     test_judge_rejects_missing_or_malformed_model_fields()

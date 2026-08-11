@@ -125,6 +125,10 @@ class LLMJudgeResult:
         """
         if item_type not in {"dichotomous", "polytomous"}:
             raise JudgeFormatError("item_type must be dichotomous or polytomous")
+        if not isinstance(self.criterion_scores, Mapping):
+            raise JudgeFormatError("criterion_scores must be an object")
+        if any(not isinstance(criterion_id, str) for criterion_id in self.criterion_scores):
+            raise JudgeFormatError("criterion_scores keys must be strings")
         criterion_ids = sorted(self.criterion_scores)
         if len(criterion_ids) < 2:
             raise JudgeFormatError(
@@ -133,6 +137,13 @@ class LLMJudgeResult:
         if self.criterion_categories is not None:
             if self.category_count is None:
                 raise JudgeFormatError("criterion categories require category_count")
+            if not isinstance(self.criterion_categories, Mapping):
+                raise JudgeFormatError("criterion_categories must be an object")
+            if any(
+                not isinstance(criterion_id, str)
+                for criterion_id in self.criterion_categories
+            ):
+                raise JudgeFormatError("criterion_categories keys must be strings")
             try:
                 category_count = _category_count(self.category_count)
             except ValueError as exc:
@@ -241,6 +252,8 @@ def _bounded_text(value: Any, name: str) -> str:
 def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[JudgeCriterion, ...]:
     normalized: list[JudgeCriterion] = []
     for value in values:
+        if len(normalized) >= MAX_JUDGE_CRITERIA:
+            raise ValueError(f"criteria must contain 1..{MAX_JUDGE_CRITERIA} values")
         if isinstance(value, JudgeCriterion):
             criterion = value
         elif isinstance(value, Mapping):
