@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._integration_rule import normalize_node_rule
+
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
@@ -119,6 +121,9 @@ def fit_2pl(
             Carlo EM. *Computational Statistics & Data Analysis, 48*(4), 685-701.
             https://doi.org/10.1016/j.csda.2004.03.019
     """
+    # Fail closed on hostile node_rule before any core import or coercion.
+    node_rule = normalize_node_rule(node_rule)
+
     from .fitstats import _core_module
 
     core = _core_module()
@@ -133,7 +138,7 @@ def fit_2pl(
     n_dims = pat.shape[1]
     # The Gauss-Hermite product grid caps D <= _MAX_DIMS; the QMC/MC rules reach D <= 6 (the Halton
     # prime axes). The core does the authoritative rule-dependent check; this mirrors it up front.
-    _gh = str(node_rule).lower() in ("gh", "gauss-hermite", "gausshermite")
+    _gh = node_rule == "gh"
     _max_dims = _MAX_DIMS if _gh else 6
     if not 1 <= n_dims <= _max_dims:
         raise ValueError(
@@ -190,7 +195,7 @@ def fit_2pl(
         bool(estimate_corr),
         max_iter_int,
         float(tol),
-        str(node_rule),
+        node_rule,
         xi_points_int,
         xi_seed_int,
     )
