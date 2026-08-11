@@ -13,6 +13,7 @@ use mlsirm_core::equating::{
     SeeResult,
 };
 use mlsirm_core::fitstats::{
+    benjamini_hochberg as core_benjamini_hochberg, chi2_sf as core_chi2_sf,
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
     m2_rmsea2 as core_m2, person_fit as core_person_fit, poly_local_dependence as core_poly_ld,
     poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
@@ -8602,6 +8603,19 @@ fn empirical_reliability(
     .map_err(PyValueError::new_err)
 }
 
+
+/// Chi-square upper-tail survival P(Chi2_df >= x).
+#[pyfunction]
+fn chi2_sf(x: f64, df: f64) -> f64 {
+    core_chi2_sf(x, df)
+}
+
+/// Benjamini–Hochberg FDR rejection mask (NaN p-values skipped).
+#[pyfunction]
+fn benjamini_hochberg(p_values: PyReadonlyArray1<'_, f64>, q: f64) -> PyResult<Vec<bool>> {
+    Ok(core_benjamini_hochberg(p_values.as_slice()?, q))
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -8762,6 +8776,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(vuong_nonnested, m)?)?;
     m.add_function(wrap_pyfunction!(dimensionality_residuals, m)?)?;
     m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
+    m.add_function(wrap_pyfunction!(chi2_sf, m)?)?;
+    m.add_function(wrap_pyfunction!(benjamini_hochberg, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_eap, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
