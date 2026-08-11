@@ -225,6 +225,12 @@
 - Removed obsolete opacity transitions from bar rows and table rows while preserving the active table-row background hover cue and the existing reduced-motion override.
 - Added a rendered-report regression that pins the numeric-style declaration, transition cleanup, hover cue, and reduced-motion contract without changing report data, score semantics, or exported exact values.
 
+#### Python 3.14 CI compatibility
+
+- Expanded the full Python CI job from a single CPython 3.12 runtime to a fail-slow CPython 3.12 and 3.14 matrix while preserving the existing Rust/PyO3 build, Rust-primary backend verification, package, GPU, fuzz, and security gates.
+- Added a deterministic CI contract that requires Python 3.14 to execute the same complete pytest suite rather than a reduced compatibility smoke path.
+- Added a non-matrix `python` aggregate job so branch-protection's required check context named `python` still receives a single SUCCESS/FAILURE after every matrix leg finishes.
+
 #### MMLE theta calculation memory optimization
 
 - Replaced the NumPy reference/fallback EAP expression `(posterior * nodes[None, :]).sum(axis=1)` with the algebraically equivalent matrix-vector product `posterior @ nodes`. This avoids constructing the explicit posterior-shaped broadcast product; NumPy may use optimized BLAS for matrix multiplication when available, while realized runtime remains dependent on array shape, layout, hardware, and the linked numerical library.
