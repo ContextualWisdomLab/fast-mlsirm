@@ -187,6 +187,7 @@ def test_sx2_rejects_factor_length_mismatch_before_native(monkeypatch):
 
 
 def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
+    """Incomplete core without s_x2_stat fails closed instead of pure-Python parity path."""
     if fitstats_module._core_module() is None:
         pytest.skip("compiled core is unavailable")
     rng = np.random.default_rng(29)
@@ -198,42 +199,20 @@ def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
         zeta=np.zeros((6, 1)),
         tau=-30.0,
     )
-    native = s_x2(y, factor_id, params, "MIRT")
 
-    # Incomplete core: tails available via pure helpers, s_x2_stat absent.
     class _TailsOnly:
         def chi2_sf(self, x, df):
-            x = float(x)
-            df = float(df)
-            if df <= 0:
-                return float("nan")
-            return fitstats_module._gammainc_upper_reg(df / 2.0, max(x, 0.0) / 2.0)
+            return float("nan")
 
         def benjamini_hochberg(self, p_values, q=0.05):
             import numpy as np
 
-            p = np.asarray(p_values, dtype=float).ravel()
-            n = p.size
-            if n == 0:
-                return np.zeros(0, dtype=bool)
-            order = np.argsort(p)
-            ranked = p[order]
-            thresh = q * (np.arange(1, n + 1) / n)
-            below = ranked <= thresh
-            if not below.any():
-                return np.zeros(n, dtype=bool)
-            k = int(np.max(np.where(below)[0]))
-            cut = ranked[k]
-            return p <= cut
+            return np.zeros(np.asarray(p_values).size, dtype=bool)
 
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _TailsOnly())
-    numpy_reference = s_x2(y, factor_id, params, "MIRT")
-    assert np.all(np.isfinite(native.statistic))
-    assert np.all(np.isfinite(native.g2_statistic))
-    np.testing.assert_allclose(native.statistic, numpy_reference.statistic)
-    np.testing.assert_allclose(native.g2_statistic, numpy_reference.g2_statistic)
-    np.testing.assert_allclose(native.rms_residual, numpy_reference.rms_residual)
-    np.testing.assert_array_equal(native.n_score_groups, numpy_reference.n_score_groups)
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        s_x2(y, factor_id, params, "MIRT")
+
 
 
 def test_sx2_g2_p_values_follow_chi2_mapping():

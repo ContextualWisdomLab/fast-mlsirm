@@ -533,6 +533,12 @@
 - Cap raw LLM-judge response JSON nesting at 32 levels before `json.loads`, failing closed with `JudgeFormatError` so hostile recursive objects cannot expand into parser resource exhaustion.
 - Keep valid shallow judge payloads accepted with the existing criterion/score contracts.
 
+#### Fit-statistics S-X² and person-fit fail closed
+
+- Public `s_x2()` and `person_fit()` fail closed when the compiled Rust core or
+  required entrypoints are missing, and nonzero trait priors dispatch through
+  the existing Rust `s_x2_stat` path instead of the Python ICC-grid reference.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.

@@ -484,51 +484,63 @@ def s_x2(
             raise ValueError("person_weight must contain only finite 0/1 values")
 
     core = _core_module()
-    if core is not None and hasattr(core, "s_x2_stat") and prior_mean is None:
-        n_dims = int(d_of_i.max()) + 1
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.s_x2_stat(
-            np.where(observed0, y0, 0.0).ravel(),
-            observed0.ravel(),
-            int(y0.shape[0]),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.zeros(n_dims),
-            np.ones(n_dims),
-            q_theta=int(q_theta),
-            xi_rule="gh",
-            q_xi=int(q_xi),
-            min_expected=float(min_expected),
-            fdr_q=float(fdr_q),
-            min_effect=float(min_effect),
-            person_weight=None if person_weight is None else weight,
-        )
-        return SX2Result(
-            statistic=np.asarray(res["statistic"]),
-            g2_statistic=np.asarray(
-                res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
-            ),
-            df=np.asarray(res["df"]),
-            p_value=np.asarray(res["p_value"]),
-            g2_p_value=np.asarray(
-                res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
-            ),
-            flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
-            n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
-            rms_residual=np.asarray(res["rms_residual"]),
-        )
-    observed = observed0
-    y = np.where(observed, y0, 0.0)
+    if core is None or not hasattr(core, "s_x2_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
     n_dims = int(d_of_i.max()) + 1
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    if prior_mean is None:
+        prior_mean_vec = np.zeros(n_dims, dtype=np.float64)
+    else:
+        prior_mean_vec = np.asarray(prior_mean, dtype=np.float64).reshape(-1)
+        if prior_mean_vec.shape != (n_dims,):
+            raise ValueError("prior_mean must have length n_dims")
+        if not np.all(np.isfinite(prior_mean_vec)):
+            raise ValueError("prior_mean must be finite")
+    res = core.s_x2_stat(
+        np.where(observed0, y0, 0.0).ravel(),
+        observed0.ravel(),
+        int(y0.shape[0]),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        prior_mean_vec,
+        np.ones(n_dims, dtype=np.float64),
+        q_theta=int(q_theta),
+        xi_rule="gh",
+        q_xi=int(q_xi),
+        min_expected=float(min_expected),
+        fdr_q=float(fdr_q),
+        min_effect=float(min_effect),
+        person_weight=None if person_weight is None else weight,
+    )
+    return SX2Result(
+        statistic=np.asarray(res["statistic"]),
+        g2_statistic=np.asarray(
+            res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
+        ),
+        df=np.asarray(res["df"]),
+        p_value=np.asarray(res["p_value"]),
+        g2_p_value=np.asarray(
+            res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
+        ),
+        flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
+        n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
+        rms_residual=np.asarray(res["rms_residual"]),
+    )
+    # Unreachable: production S-X² is Rust-owned. Retained only so any future
+    # partial-edit that drops the early return fails closed rather than
+    # reintroducing the Python ICC-grid reference path as a silent fallback.
+    observed = observed0  # pragma: no cover
+    y = np.where(observed, y0, 0.0)  # pragma: no cover
+    n_dims = int(d_of_i.max()) + 1  # pragma: no cover
 
-    probs, t_w, x_w, _ = _icc_grid(
+    probs, t_w, x_w, _ = _icc_grid(  # pragma: no cover
         params, d_of_i, model, q_theta, q_xi, eps_distance, prior_mean
     )
     n_free = {"MLSRM": 1, "ULSRM": 1}.get(model.upper(), 2)
@@ -687,38 +699,40 @@ def person_fit(
     n_persons, n_items = y.shape
     n_dims = int(d_of_i.max()) + 1
     core = _core_module()
-    if core is not None and hasattr(core, "person_fit_stat"):
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.person_fit_stat(
-            y.ravel(),
-            observed.ravel(),
-            int(n_persons),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.asarray(params.theta, dtype=np.float64).ravel(),
-            np.asarray(params.xi, dtype=np.float64).ravel(),
-            prior_mean=None
-            if prior_mean is None
-            else np.broadcast_to(
-                np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
-            )
-            .ravel()
-            .copy(),
-            flag_threshold=float(flag_threshold),
+    if core is None or not hasattr(core, "person_fit_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.person_fit_stat(
+        y.ravel(),
+        observed.ravel(),
+        int(n_persons),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        np.asarray(params.theta, dtype=np.float64).ravel(),
+        np.asarray(params.xi, dtype=np.float64).ravel(),
+        prior_mean=None
+        if prior_mean is None
+        else np.broadcast_to(
+            np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
         )
-        return PersonFitResult(
-            lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
-            lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
-            flagged=np.asarray(res["flagged"], dtype=bool),
-        )
-    theta = np.asarray(params.theta, dtype=float)
+        .ravel()
+        .copy(),
+        flag_threshold=float(flag_threshold),
+    )
+    return PersonFitResult(
+        lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
+        lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
+        flagged=np.asarray(res["flagged"], dtype=bool),
+    )
+    # Unreachable: production person-fit is Rust-owned.
+    theta = np.asarray(params.theta, dtype=float)  # pragma: no cover
     a = np.exp(params.alpha) if free_alpha else np.ones(n_items)
     shift = np.zeros((n_persons, n_dims))
     if prior_mean is not None:
