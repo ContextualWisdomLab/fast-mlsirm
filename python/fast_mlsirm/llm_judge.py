@@ -263,7 +263,7 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
                 weight=value.get("weight", 1.0),
             )
         else:
-            raise TypeError("criteria must contain JudgeCriterion or mapping values")
+            raise ValueError("criteria must contain JudgeCriterion or mapping values")
         normalized.append(criterion)
     if not 1 <= len(normalized) <= MAX_JUDGE_CRITERIA:
         raise ValueError(f"criteria must contain 1..{MAX_JUDGE_CRITERIA} values")
