@@ -11,6 +11,12 @@ import pytest
 
 def _load_release_acceptance():
     """Load the release-acceptance script as a testable module."""
+    import sys
+
+    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
     script = Path(__file__).resolve().parents[1] / "scripts" / "release_acceptance.py"
     spec = importlib.util.spec_from_file_location("release_acceptance", script)
     assert spec is not None
@@ -20,7 +26,9 @@ def _load_release_acceptance():
     return module
 
 
-def test_fit_cli_timeout_is_bounded_and_fails_closed_without_reflection(monkeypatch) -> None:
+def test_fit_cli_timeout_is_bounded_and_fails_closed_without_reflection(
+    monkeypatch,
+) -> None:
     """A hung fit subprocess must use a bounded deadline and a redacted stable error."""
     module = _load_release_acceptance()
     observed: dict[str, object] = {}

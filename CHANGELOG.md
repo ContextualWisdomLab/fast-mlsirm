@@ -326,25 +326,7 @@
 - Removed opacity-based dimming of non-hovered chart and table rows so unrelated active data retains its normal rendered foreground and background colors.
 - Added public-renderer regression coverage and APA 7th doctoring grounded in WCAG 2.2 and Selectors Level 4 without making a formal conformance claim.
 
-#### Git metadata lookup deadlines
-
-- Commercial evidence builders fail closed with a bounded Git metadata timeout
-  (benchmark, buyer packet, procurement, commercial release, Figma evidence)
-  so hung `git rev-parse` cannot hang release pipelines.
-
-#### Python support floor
-
-- Raised `requires-python` to `>=3.12` so the advertised floor matches the
-  hashed CI dependency lock (NumPy 2.5.x) and the pull-request matrix on
-  CPython 3.12 and 3.14.
-
 ### Security
-
-#### Bounded JSON loads for release acceptance
-
-- Release acceptance and generation-request contract loading use size- and
-  depth-bounded JSON parsers instead of unbounded `json.loads` on CLI stdout
-  and fit_summary artifacts.
 
 #### Person-fit invalid-response error redaction
 
