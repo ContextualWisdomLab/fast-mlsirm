@@ -92,7 +92,9 @@ def vcov_from_hessian(hessian: np.ndarray, rcond: float = 1e-10) -> np.ndarray:
     """Invert the observed information, falling back to a Moore-Penrose inverse.
 
     Numerical inversion / pseudoinversion is owned by the Rust core; this
-    wrapper only validates shape and reshapes the flat result.
+    wrapper only validates shape and reshapes the flat result. Non-finite
+    Hessian entries fail closed with ``ValueError`` rather than producing an
+    uncontrolled covariance artifact.
     """
     from . import _core  # type: ignore
 
@@ -108,8 +110,9 @@ def vcov_from_hessian(hessian: np.ndarray, rcond: float = 1e-10) -> np.ndarray:
 def standard_errors_from_vcov(vcov: np.ndarray) -> np.ndarray:
     """Return standard errors as the square-root of a covariance matrix's diagonal.
 
-    Diagonal reduction and non-negative clamping are Rust-owned. Negative
-    diagonal entries are clamped to zero before the square root.
+    Diagonal reduction is Rust-owned. Finite non-positive diagonal entries are
+    clamped to zero; ``NaN`` and infinite diagonals are preserved so undefined
+    or unbounded uncertainty is never misreported as zero.
     """
     from . import _core  # type: ignore
 

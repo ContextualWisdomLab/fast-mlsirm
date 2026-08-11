@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Validate ATA content-constraint maps, exposure counts, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile conversion callbacks while preserving accepted string keys and exact integers.
+- Cap LSR ranking CSR geometric growth under the live byte budget and stream validated item indices without list→uint64 temporaries beside the handoff arrays.
 - Closed the Python-to-Rust equivalent-groups equating control boundary:
   method and explicit score-ceiling controls now reject arbitrary objects
   instead of invoking caller-defined ``__str__``/``__int__`` methods.
@@ -32,6 +34,19 @@
 
 - Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
 - Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
+
+#### Governed RAG scoring request
+
+- Reference-free RAG scoring request adapter with privacy-preserving identity channels and fail-closed rejection of raw system configuration content.
+
+#### Governed automated-scoring validation threshold policy
+
+- Added `ValidationPolicy` and verdict `policy_id`/`policy_version` fields so
+  automated-scoring acceptance gates identify their governing policy.
+- Marshaled policy thresholds (`qwk_min`, `pearson_r_min`, `degradation_max`,
+  overall/subgroup SMD, `min_subgroup_n`) into the Rust `validate_scoring`
+  decision owner instead of hard-coding Williamson high-stakes cutoffs only in
+  Python.
 
 #### Architecture baseline documentation
 
@@ -289,6 +304,14 @@
 - Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
 - Kept explicit `backend="numpy"` as an explicit reference/parity choice while preserving automatic Rust resolution and Rust CPU/GPU device fallback semantics.
 
+#### Fit-statistics tail ownership
+
+- Public `chi2_sf` and `benjamini_hochberg` now prefer the Rust core for ranking and tail arithmetic, with a pure-Python fallback only when the compiled core methods are unavailable.
+
+#### Inference covariance ownership
+
+- `vcov_from_hessian` and `standard_errors_from_vcov` now own inversion, pseudoinverse, and SE extraction in Rust.
+
 #### Current support-policy version line
 
 - Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
@@ -298,6 +321,19 @@
 #### Release serializes derived changelog aggregation
 
 - Move fragment→`CHANGELOG.md` aggregate parity enforcement from ordinary feature CI into the immutable release-tag workflow so concurrent PRs no longer thrash a shared derived file while release publication still fail-closes on drift.
+
+#### Direct Rust response-time iteration ceiling
+
+- Enforce the package-wide `max_iter` ceiling (`1..=100_000`) inside the Rust
+  lognormal response-time EM (`fit_rt_lognormal`) so direct PyO3 callers cannot
+  bypass the Python `MAX_MAX_ITER` bound.
+- Added a fail-closed ownership contract that rejects `MAX_MAX_ITER + 1` at the
+  Rust boundary and documented the van der Linden (2007) speed model reference.
+
+#### Governed automated-scoring validation threshold policy
+
+- Default policy remains `williamson_high_stakes` v1.0 with the published
+  high-stakes thresholds; invalid threshold ranges fail closed before Rust work.
 
 #### MMLE theta calculation memory optimization
 
@@ -361,6 +397,23 @@
 
 - PR queue governance now bounds the `git rev-parse HEAD` subprocess and fails closed with a stable timeout error instead of allowing a hung local Git child to stall the evidence pipeline.
 
+#### Release evidence Git metadata timeout
+
+- Bound `git rev-parse` in the release evidence index builder with a fail-closed timeout.
+
+#### ATA constraint-map validation trust boundary
+
+- Validate ATA content-constraint keys/counts, exposure maps, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile string/integer conversion callbacks while preserving accepted Python/NumPy string keys and exact integers.
+
+#### Fit-statistics require compiled Rust core
+
+- Public `chi2_sf` and `benjamini_hochberg` fail closed with a stable RuntimeError when the compiled Rust core is unavailable, preventing silent pure-Python numerical ownership.
+
+#### Non-finite inference uncertainty preserves scientific meaning
+
+- Standard errors from covariance diagonals preserve `NaN` and infinite values instead of converting them into false zero uncertainty.
+- `vcov_from_hessian` rejects non-finite observed-information entries with a stable finite-entry contract.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
@@ -404,6 +457,14 @@
 #### G-theory public control validation
 
 - G-theory D-study sizes and `Phi(lambda)` mastery cuts now reject unsupported caller objects before executing conversion or representation callbacks, while preserving supported Python/NumPy scalar controls and Rust-owned numerical behavior.
+
+#### LSR ranking input bounds
+
+- Bound LSR/I-LSR ranking CSR materialization (`MAX_RANKING_CSR_BYTES`, per-ranking `n+1` cap) and redact ordinary iterable failures at the Python validation boundary.
+
+#### ATA constraint-map validation trust boundary
+
+- Keep invalid ATA semantic controls on a stable package-owned error surface rather than allowing arbitrary `__str__`/`__int__`/`__index__` callbacks during constraint-map coercion.
 
 #### Descriptor-safe bounded JSON input for automation scripts
 

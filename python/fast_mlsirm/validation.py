@@ -40,12 +40,70 @@ def _validate_labels(a, name: str, *, k: int | None = None, n: int | None = None
     return arr.astype(np.uint32)
 
 
+DEFAULT_VALIDATION_POLICY_ID = "williamson_high_stakes"
+DEFAULT_VALIDATION_POLICY_VERSION = "1.0"
+
+
+@dataclass(frozen=True)
+class ValidationPolicy:
+    """Governed threshold policy for automated-scoring acceptance gates.
+
+    Thresholds are validated in Python and marshaled to the Rust decision owner.
+    Defaults match Williamson, Xi & Breyer (2012) high-stakes guidance.
+    """
+
+    policy_id: str = DEFAULT_VALIDATION_POLICY_ID
+    policy_version: str = DEFAULT_VALIDATION_POLICY_VERSION
+    qwk_min: float = 0.70
+    pearson_r_min: float = 0.70
+    degradation_max: float = 0.10
+    overall_smd_max: float = 0.15
+    subgroup_smd_max: float = 0.10
+    min_subgroup_n: int = 2
+
+    def __post_init__(self) -> None:
+        """Reject empty identities and thresholds outside closed unit intervals."""
+        if not isinstance(self.policy_id, str) or not self.policy_id.strip():
+            raise ValueError("policy_id must be a non-empty string")
+        if not isinstance(self.policy_version, str) or not self.policy_version.strip():
+            raise ValueError("policy_version must be a non-empty string")
+        for name in (
+            "qwk_min",
+            "pearson_r_min",
+            "degradation_max",
+            "overall_smd_max",
+            "subgroup_smd_max",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError(f"{name} must be a real number in 0..1")
+            f = float(value)
+            if not (0.0 <= f <= 1.0):
+                raise ValueError(f"{name} must be in 0..1")
+            object.__setattr__(self, name, f)
+        n = self.min_subgroup_n
+        if not isinstance(n, int) or isinstance(n, bool) or n < 2:
+            raise ValueError("min_subgroup_n must be an integer >= 2")
+
+    def rust_kwargs(self) -> dict[str, Any]:
+        """Keyword arguments consumed by the Rust ``validate_scoring`` owner."""
+        return {
+            "qwk_min": float(self.qwk_min),
+            "pearson_r_min": float(self.pearson_r_min),
+            "degradation_max": float(self.degradation_max),
+            "overall_smd_max": float(self.overall_smd_max),
+            "subgroup_smd_max": float(self.subgroup_smd_max),
+            "min_subgroup_n": int(self.min_subgroup_n),
+        }
+
+
 @dataclass
 class ValidationVerdict:
     """Outcome of validating a judge against reference labels.
 
     Holds the per-gate results, the exact and adjacent agreement rates, the
-    overall pass/fail verdict, and the names of any gates that failed.
+    overall pass/fail verdict, the names of any gates that failed, and the
+    governing policy identity/version.
     """
 
     gates: list[dict[str, Any]]
@@ -53,6 +111,8 @@ class ValidationVerdict:
     adjacent_agreement: float
     passed: bool
     failed_gates: list[str] = field(default_factory=list)
+    policy_id: str = DEFAULT_VALIDATION_POLICY_ID
+    policy_version: str = DEFAULT_VALIDATION_POLICY_VERSION
 
 
 def validate_judge(
@@ -61,6 +121,7 @@ def validate_judge(
     k: int = 2,
     human_human: tuple[np.ndarray, np.ndarray] | None = None,
     subgroup: np.ndarray | None = None,
+    policy: ValidationPolicy | None = None,
 ) -> ValidationVerdict:
     """Run the Williamson et al. (2012) conjunctive acceptance gates.
 
@@ -70,6 +131,10 @@ def validate_judge(
     fairness SMD.
     """
     from . import _core  # computation lives in the Rust core
+
+    active_policy = policy if policy is not None else ValidationPolicy()
+    if not isinstance(active_policy, ValidationPolicy):
+        raise TypeError("policy must be a ValidationPolicy")
 
     MAX_JUDGE_CATEGORIES = 1_000
     if int(k) < 2:
@@ -93,6 +158,7 @@ def validate_judge(
         # so a sparse label (e.g. uint32 max) is an O(n_groups) CPU-DoS.
         _uniq, sg_compact = np.unique(sg, return_inverse=True)
         kwargs["subgroup"] = sg_compact.astype(np.uint32)
+    kwargs.update(active_policy.rust_kwargs())
     res = _core.validate_scoring(
         judge_v,
         human_v,
@@ -106,6 +172,8 @@ def validate_judge(
         adjacent_agreement=float(res["adjacent_agreement"]),
         passed=bool(res["pass"]),
         failed_gates=[g["name"] for g in gates if not g["pass"]],
+        policy_id=active_policy.policy_id,
+        policy_version=active_policy.policy_version,
     )
 
 

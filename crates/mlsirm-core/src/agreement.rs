@@ -153,6 +153,30 @@ pub struct ValidationVerdict {
     pub pass: bool,
 }
 
+/// Threshold policy for [`validate_scoring`] (Williamson et al., 2012 defaults).
+#[derive(Clone, Copy, Debug)]
+pub struct ValidationThresholds {
+    pub qwk_min: f64,
+    pub pearson_r_min: f64,
+    pub degradation_max: f64,
+    pub overall_smd_max: f64,
+    pub subgroup_smd_max: f64,
+    pub min_subgroup_n: usize,
+}
+
+impl Default for ValidationThresholds {
+    fn default() -> Self {
+        Self {
+            qwk_min: 0.70,
+            pearson_r_min: 0.70,
+            degradation_max: 0.10,
+            overall_smd_max: 0.15,
+            subgroup_smd_max: 0.10,
+            min_subgroup_n: 2,
+        }
+    }
+}
+
 /// Run the conjunctive acceptance gates on paired (auto, human) labels in
 /// `0..k`. `human_human` optionally supplies a double-scored baseline
 /// (pairs of human labels) for the degradation criterion; `subgroup` labels
@@ -164,6 +188,25 @@ pub fn validate_scoring(
     human_human: Option<(&[u32], &[u32])>,
     subgroup: Option<&[u32]>,
 ) -> Result<ValidationVerdict, String> {
+    validate_scoring_with_thresholds(
+        auto,
+        human,
+        k,
+        human_human,
+        subgroup,
+        ValidationThresholds::default(),
+    )
+}
+
+/// Same as [`validate_scoring`] with an explicit threshold policy.
+pub fn validate_scoring_with_thresholds(
+    auto: &[u32],
+    human: &[u32],
+    k: usize,
+    human_human: Option<(&[u32], &[u32])>,
+    subgroup: Option<&[u32]>,
+    thr: ValidationThresholds,
+) -> Result<ValidationVerdict, String> {
     let auto_f: Vec<f64> = auto.iter().map(|&v| v as f64).collect();
     let human_f: Vec<f64> = human.iter().map(|&v| v as f64).collect();
     let mut gates = Vec::new();
@@ -172,22 +215,22 @@ pub fn validate_scoring(
     gates.push(Gate {
         name: "qwk",
         value: qwk,
-        threshold: 0.70,
-        pass: qwk >= 0.70,
+        threshold: thr.qwk_min,
+        pass: qwk >= thr.qwk_min,
     });
     let r = pearson_r(&auto_f, &human_f)?;
     gates.push(Gate {
         name: "pearson_r",
         value: r,
-        threshold: 0.70,
-        pass: r >= 0.70,
+        threshold: thr.pearson_r_min,
+        pass: r >= thr.pearson_r_min,
     });
     let s = smd(&auto_f, &human_f)?;
     gates.push(Gate {
         name: "smd",
         value: s,
-        threshold: 0.15,
-        pass: s.abs() <= 0.15,
+        threshold: thr.overall_smd_max,
+        pass: s.abs() <= thr.overall_smd_max,
     });
 
     if let Some((h1, h2)) = human_human {
@@ -196,8 +239,8 @@ pub fn validate_scoring(
         gates.push(Gate {
             name: "degradation",
             value: degradation,
-            threshold: 0.10,
-            pass: degradation <= 0.10,
+            threshold: thr.degradation_max,
+            pass: degradation <= thr.degradation_max,
         });
     }
 
@@ -214,7 +257,7 @@ pub fn validate_scoring(
             // Requested subgroups must be scoreable. Skipping singletons or
             // zero-variance cells would silently drop fairness evidence and
             // let incomplete subgroup designs pass as if they were evaluated.
-            if idx.len() < 2 {
+            if idx.len() < thr.min_subgroup_n {
                 return Err("subgroup evidence is insufficient".into());
             }
             let ga: Vec<f64> = idx.iter().map(|&i| auto_f[i]).collect();
@@ -230,8 +273,8 @@ pub fn validate_scoring(
         gates.push(Gate {
             name: "subgroup_smd",
             value: worst,
-            threshold: 0.10,
-            pass: worst.abs() <= 0.10,
+            threshold: thr.subgroup_smd_max,
+            pass: worst.abs() <= thr.subgroup_smd_max,
         });
     }
 

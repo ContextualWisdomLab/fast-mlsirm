@@ -15,6 +15,11 @@ pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f6
     if !rcond.is_finite() || rcond < 0.0 {
         return Err("rcond must be a finite non-negative float".into());
     }
+    // Non-finite observed information is scientifically undefined; fail closed
+    // rather than emitting an uncontrolled covariance artifact.
+    if hessian.iter().any(|v| !v.is_finite()) {
+        return Err("hessian entries must be finite".into());
+    }
     let mut inv = match invert_square(hessian, n) {
         Some(v) => v,
         None => pseudoinverse_symmetric(hessian, n, rcond)?,
@@ -30,7 +35,12 @@ pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f6
     Ok(inv)
 }
 
-/// Standard errors as `sqrt(max(diag(vcov), 0))`.
+/// Standard errors from a covariance diagonal.
+///
+/// Finite positive diagonal entries become `sqrt(d)`. Finite non-positive
+/// entries are clamped to `0.0` (negative numerical noise). Non-finite
+/// diagonals (`NaN`, `±∞`) are preserved so undefined or unbounded uncertainty
+/// is never misrepresented as zero.
 pub fn standard_errors_from_vcov(vcov: &[f64], n: usize) -> Result<Vec<f64>, String> {
     if n == 0 || vcov.len() != n * n {
         return Err("vcov must be a square matrix".into());
@@ -38,7 +48,9 @@ pub fn standard_errors_from_vcov(vcov: &[f64], n: usize) -> Result<Vec<f64>, Str
     let mut out = vec![0.0_f64; n];
     for i in 0..n {
         let d = vcov[i * n + i];
-        out[i] = if d.is_finite() && d > 0.0 {
+        out[i] = if !d.is_finite() {
+            d
+        } else if d > 0.0 {
             d.sqrt()
         } else {
             0.0
@@ -184,6 +196,40 @@ mod tests {
         let se = standard_errors_from_vcov(&v, 2).unwrap();
         assert!((se[0] - 0.5).abs() < 1e-12);
         assert!((se[1] - 1.0 / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nonfinite_hessian_fails_closed() {
+        for h in [
+            [f64::NAN],
+            [f64::INFINITY],
+            [f64::NEG_INFINITY],
+        ] {
+            let err = vcov_from_hessian(&h, 1, 1e-10).unwrap_err();
+            assert!(
+                err.contains("finite"),
+                "unexpected nonfinite hessian error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn standard_errors_preserve_nonfinite_diagonals() {
+        // row-major 6x6 with targeted diagonal entries
+        let mut v = vec![0.0_f64; 36];
+        v[0] = 4.0; // SE=2
+        v[7] = 0.0; // SE=0
+        v[14] = -1.0; // clamp to 0
+        v[21] = f64::NAN; // preserve NaN
+        v[28] = f64::INFINITY; // preserve +inf
+        v[35] = f64::NEG_INFINITY; // preserve -inf
+        let se = standard_errors_from_vcov(&v, 6).unwrap();
+        assert!((se[0] - 2.0).abs() < 1e-15);
+        assert_eq!(se[1], 0.0);
+        assert_eq!(se[2], 0.0);
+        assert!(se[3].is_nan());
+        assert!(se[4].is_infinite() && se[4].is_sign_positive());
+        assert!(se[5].is_infinite() && se[5].is_sign_negative());
     }
 
     #[test]

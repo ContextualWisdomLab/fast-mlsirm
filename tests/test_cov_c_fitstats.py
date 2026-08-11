@@ -20,6 +20,44 @@ from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit
 
 
+def _pure_chi2_sf(x: float, df: float) -> float:
+    import math
+    if df <= 0:
+        return float("nan")
+    # use public pure helper still on module if present
+    from fast_mlsirm import fitstats as fm
+    return fm._gammainc_upper_reg(df / 2.0, max(x, 0.0) / 2.0)
+
+
+def _pure_bh(p_values, q: float = 0.05):
+    import numpy as np
+    p = np.asarray(p_values, dtype=float)
+    valid = np.isfinite(p)
+    m = int(valid.sum())
+    reject = np.zeros(p.shape, dtype=bool)
+    if m == 0:
+        return reject.tolist() if hasattr(p_values, '__iter__') else reject
+    order = np.argsort(np.where(valid, p, np.inf))
+    ranked = p[order][:m]
+    thresh = q * (np.arange(1, m + 1) / m)
+    below = ranked <= thresh
+    if below.any():
+        k = int(np.max(np.nonzero(below)[0]))
+        reject[order[: k + 1]] = True
+    return reject.tolist()
+
+
+class _CoreWithFitStatsOnly:
+    """Stub core exposing only fit-statistics entrypoints for unrelated fallback tests."""
+
+    def chi2_sf(self, x, df):
+        return _pure_chi2_sf(float(x), float(df))
+
+    def benjamini_hochberg(self, p_values, q):
+        return _pure_bh(p_values, float(q))
+
+
+
 # ---------------------------------------------------------------------------
 # small synthetic parameter/response builders (no model fitting required)
 # ---------------------------------------------------------------------------
@@ -161,7 +199,7 @@ def test_sx2_numpy_fallback_realistic(monkeypatch):
     eta = theta[:, None] + b[None, :]
     y = (rng.random((n_persons, n_items)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
 
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     out = fm.s_x2(y, fid, params, "MIRT", min_expected=1.0)
     # ordinary items get finite chi-square with >=1 df; the always-correct item
     # forms no usable score group.
@@ -189,7 +227,7 @@ def test_sx2_numpy_fallback_spatial_and_dim_floors(monkeypatch):
     y, fid, params = _spatial_params([0, 0, 0, 1, 2, 2], 300, seed=4)
     mask = np.ones_like(y, dtype=bool)
     mask[:, 4] = False
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     out = fm.s_x2(y, fid, params, "MLS2PLM", mask=mask, min_expected=1.0)
     assert out.statistic.shape == (6,)
     # single-item and no-complete-case dimensions yield no score groups.
@@ -204,7 +242,7 @@ def test_sx2_numpy_fallback_spatial_and_dim_floors(monkeypatch):
 
 def test_person_fit_numpy_fallback(monkeypatch):
     y, fid, params = _mirt_params(6, 250, seed=8)
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     pf = fm.person_fit(
         y, fid, params, "MIRT", prior_mean=np.full((y.shape[0], 1), 0.2)
     )
@@ -219,7 +257,7 @@ def test_person_fit_numpy_fallback(monkeypatch):
 
 def test_infit_outfit_numpy_fallback(monkeypatch):
     y, fid, params = _mirt_params(6, 250, seed=10)
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     io = fm.infit_outfit(y, fid, params, "MIRT")
     assert io["infit"].shape == (6,) and io["outfit"].shape == (6,)
     assert np.all(np.isfinite(io["infit"]))
@@ -348,7 +386,7 @@ def test_select_items_population_none_path():
 def test_vuong_nonnested_guards(monkeypatch):
     la = np.zeros(5)
     lb = np.ones(5)
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         fm.vuong_nonnested(la, lb, 1, 1)
     monkeypatch.undo()
@@ -369,7 +407,7 @@ def test_dimensionality_residuals_guards(monkeypatch):
         theta=np.zeros((20, 1)), alpha=np.zeros(4), b=np.zeros(4),
         xi=np.zeros((20, 1)), zeta=np.zeros((4, 1)), tau=-30.0,
     )
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         fm.dimensionality_residuals(y, fid, params, "MIRT")
     monkeypatch.undo()
@@ -401,7 +439,7 @@ def test_dimensionality_residuals_guards(monkeypatch):
 
 def test_residual_item_fit_guards_and_happy_path(monkeypatch):
     y, fid, params = _mirt_params(4, 60, seed=15)
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         fm.residual_item_fit(y, fid, params, "MIRT", n_bins=2)
     monkeypatch.undo()
@@ -430,7 +468,7 @@ def test_residual_item_fit_guards_and_happy_path(monkeypatch):
 
 def test_adjusted_chi2_pairs_guards(monkeypatch):
     y, fid, params = _mirt_params(3, 40, seed=16)
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         fm.adjusted_chi2_pairs(y, fid, params, "MIRT")
     monkeypatch.undo()
@@ -451,7 +489,7 @@ def test_adjusted_chi2_pairs_guards(monkeypatch):
 
 def test_person_fit_resampling_guards_and_happy_path(monkeypatch):
     y, fid, params = _mirt_params(4, 30, seed=17)
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         fm.person_fit_resampling(y, fid, params, "MIRT")
     monkeypatch.undo()
@@ -500,7 +538,7 @@ def test_tcc_drift_requires_core(monkeypatch):
     params = SimpleNamespace(
         alpha=np.zeros(4), b=np.zeros(4), zeta=np.zeros((4, 1)), tau=-30.0
     )
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         fm.tcc_drift(params, params, np.zeros(4, dtype=np.int64), "MIRT")
 
@@ -586,7 +624,7 @@ def test_m2_public_guards_and_numpy_dispatch(monkeypatch):
     with pytest.raises(ValueError, match="prior_sd must be positive"):
         fm.m2(y, fid, params, "MIRT", prior_sd=np.array([0.0]))
 
-    monkeypatch.setattr(fm, "_core_module", lambda: None)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
     result = fm.m2(y, fid, params, "MIRT", q_theta=7, q_xi=7)
     assert np.isfinite(result.m2)
     assert result.estimator == "mmle"

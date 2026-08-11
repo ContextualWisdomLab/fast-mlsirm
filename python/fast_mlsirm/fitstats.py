@@ -206,41 +206,31 @@ def _gammainc_upper_reg(a: float, x: float) -> float:
 
 
 def chi2_sf(x: float, df: float) -> float:
-    """P(Chi2_df >= x). Prefer the Rust core when available."""
+    """P(Chi2_df >= x) via the Rust core survival function.
+
+    Fail closed when the compiled core is unavailable or lacks the entrypoint
+    so production numerical ownership cannot silently regress to pure Python.
+    """
     core = _core_module()
-    if core is not None and hasattr(core, "chi2_sf"):
-        return float(core.chi2_sf(float(x), float(df)))
-    if df <= 0:
-        return float("nan")
-    return _gammainc_upper_reg(df / 2.0, max(x, 0.0) / 2.0)
+    if core is None or not hasattr(core, "chi2_sf"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    return float(core.chi2_sf(float(x), float(df)))
 
 
 def benjamini_hochberg(p_values: np.ndarray, q: float = 0.05) -> np.ndarray:
     """Boolean rejection mask controlling FDR at level q (BH 1995).
 
-    Prefer the Rust core for ranking/threshold arithmetic when available;
-    fall back to the pure-Python/NumPy algorithm when the core methods are
-    absent so coverage and local pure-Python environments remain usable.
+    Ranking/threshold arithmetic is owned by the Rust core. Fail closed when
+    the compiled core is unavailable or lacks the entrypoint.
     """
     core = _core_module()
-    if core is not None and hasattr(core, "benjamini_hochberg"):
-        p = np.ascontiguousarray(np.asarray(p_values, dtype=np.float64).ravel())
-        decisions = core.benjamini_hochberg(p, float(q))
-        return np.asarray(decisions, dtype=bool).reshape(np.asarray(p_values).shape)
-    p = np.asarray(p_values, dtype=float)
-    valid = np.isfinite(p)
-    m = int(valid.sum())
-    reject = np.zeros(p.shape, dtype=bool)
-    if m == 0:
-        return reject
-    order = np.argsort(np.where(valid, p, np.inf))
-    ranked = p[order][:m]
-    thresh = q * (np.arange(1, m + 1) / m)
-    below = ranked <= thresh
-    if below.any():
-        k = int(np.max(np.nonzero(below)[0]))
-        reject[order[: k + 1]] = True
-    return reject
+    if core is None or not hasattr(core, "benjamini_hochberg"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    p = np.ascontiguousarray(np.asarray(p_values, dtype=np.float64).ravel())
+    decisions = core.benjamini_hochberg(p, float(q))
+    return np.asarray(decisions, dtype=bool).reshape(np.asarray(p_values).shape)
+
+
 
 
 # --------------------------------------------------------------------------
@@ -494,7 +484,7 @@ def s_x2(
             raise ValueError("person_weight must contain only finite 0/1 values")
 
     core = _core_module()
-    if core is not None and prior_mean is None:
+    if core is not None and hasattr(core, "s_x2_stat") and prior_mean is None:
         n_dims = int(d_of_i.max()) + 1
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.s_x2_stat(
@@ -697,7 +687,7 @@ def person_fit(
     n_persons, n_items = y.shape
     n_dims = int(d_of_i.max()) + 1
     core = _core_module()
-    if core is not None:
+    if core is not None and hasattr(core, "person_fit_stat"):
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.person_fit_stat(
             y.ravel(),
@@ -806,7 +796,7 @@ def infit_outfit(
         responses, factor_id, mask
     )
     core = _core_module()
-    if core is not None:
+    if core is not None and hasattr(core, "infit_outfit_stat"):
         n_persons = y.shape[0]
         n_dims = int(d_of_i.max()) + 1
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
@@ -1155,7 +1145,7 @@ def vuong_nonnested(
             https://doi.org/10.2307/1912557
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "vuong_nonnested"):
         raise RuntimeError("vuong_nonnested requires the compiled Rust core")
 
     ll_a = np.asarray(loglik_a)
@@ -1231,7 +1221,7 @@ def dimensionality_residuals(
             https://doi.org/10.1177/014662168400800201
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "dimensionality_residuals"):
         raise RuntimeError("dimensionality_residuals requires the compiled Rust core")
     if convergence_status is not None:
         status = str(convergence_status).strip().lower()
@@ -1485,7 +1475,7 @@ def residual_item_fit(
         https://doi.org/10.1007/s11336-012-9305-1
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "residual_item_fit"):
         raise RuntimeError("residual_item_fit requires the compiled Rust core")
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
@@ -1568,7 +1558,7 @@ def adjusted_chi2_pairs(
         https://doi.org/10.1177/0013164411416976
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "adjusted_chi2_pairs"):
         raise RuntimeError("adjusted_chi2_pairs requires the compiled Rust core")
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
@@ -1640,7 +1630,7 @@ def person_fit_resampling(
     https://doi.org/10.1111/jedm.12101
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "person_fit_resampling"):
         raise RuntimeError("person_fit_resampling requires the compiled Rust core")
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
@@ -1744,7 +1734,7 @@ def tcc_drift(
         Measurement, 52*(3), 280–300. https://doi.org/10.1111/jedm.12077
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "tcc_drift"):
         raise RuntimeError("tcc_drift requires the compiled Rust core")
     for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
         if isinstance(value, (bool, np.bool_)) or not isinstance(
@@ -1813,7 +1803,7 @@ def empirical_reliability(result, device: str = "auto") -> np.ndarray:
     https://doi.org/10.1177/0013164416638900
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "empirical_reliability"):
         raise RuntimeError("empirical_reliability requires the compiled Rust core")
     if result.population is None or "theta_sd" not in result.population:
         raise ValueError("empirical_reliability needs a marginal fit with theta_sd")
@@ -2014,7 +2004,7 @@ def m2(
         )
 
     core = _core_module()
-    if core is not None:
+    if core is not None and hasattr(core, "m2_stat"):
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.m2_stat(
             np.where(observed0, y0, 0.0).ravel(),
