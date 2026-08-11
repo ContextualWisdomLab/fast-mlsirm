@@ -206,41 +206,31 @@ def _gammainc_upper_reg(a: float, x: float) -> float:
 
 
 def chi2_sf(x: float, df: float) -> float:
-    """P(Chi2_df >= x). Prefer the Rust core when available."""
+    """P(Chi2_df >= x) via the Rust core survival function.
+
+    Fail closed when the compiled core is unavailable or lacks the entrypoint
+    so production numerical ownership cannot silently regress to pure Python.
+    """
     core = _core_module()
-    if core is not None and hasattr(core, "chi2_sf"):
-        return float(core.chi2_sf(float(x), float(df)))
-    if df <= 0:
-        return float("nan")
-    return _gammainc_upper_reg(df / 2.0, max(x, 0.0) / 2.0)
+    if core is None or not hasattr(core, "chi2_sf"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    return float(core.chi2_sf(float(x), float(df)))
 
 
 def benjamini_hochberg(p_values: np.ndarray, q: float = 0.05) -> np.ndarray:
     """Boolean rejection mask controlling FDR at level q (BH 1995).
 
-    Prefer the Rust core for ranking/threshold arithmetic when available;
-    fall back to the pure-Python/NumPy algorithm when the core methods are
-    absent so coverage and local pure-Python environments remain usable.
+    Ranking/threshold arithmetic is owned by the Rust core. Fail closed when
+    the compiled core is unavailable or lacks the entrypoint.
     """
     core = _core_module()
-    if core is not None and hasattr(core, "benjamini_hochberg"):
-        p = np.ascontiguousarray(np.asarray(p_values, dtype=np.float64).ravel())
-        decisions = core.benjamini_hochberg(p, float(q))
-        return np.asarray(decisions, dtype=bool).reshape(np.asarray(p_values).shape)
-    p = np.asarray(p_values, dtype=float)
-    valid = np.isfinite(p)
-    m = int(valid.sum())
-    reject = np.zeros(p.shape, dtype=bool)
-    if m == 0:
-        return reject
-    order = np.argsort(np.where(valid, p, np.inf))
-    ranked = p[order][:m]
-    thresh = q * (np.arange(1, m + 1) / m)
-    below = ranked <= thresh
-    if below.any():
-        k = int(np.max(np.nonzero(below)[0]))
-        reject[order[: k + 1]] = True
-    return reject
+    if core is None or not hasattr(core, "benjamini_hochberg"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    p = np.ascontiguousarray(np.asarray(p_values, dtype=np.float64).ravel())
+    decisions = core.benjamini_hochberg(p, float(q))
+    return np.asarray(decisions, dtype=bool).reshape(np.asarray(p_values).shape)
+
+
 
 
 # --------------------------------------------------------------------------
