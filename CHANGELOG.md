@@ -268,6 +268,11 @@
 - Added a deterministic CI contract that requires Python 3.14 to execute the same complete pytest suite rather than a reduced compatibility smoke path.
 - Added a non-matrix `python` aggregate job so branch-protection's required check context named `python` still receives a single SUCCESS/FAILURE after every matrix leg finishes.
 
+#### Automatic backend preserves Rust numerical ownership
+
+- Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
+- Kept explicit `backend="numpy"` as an explicit reference/parity choice while preserving automatic Rust resolution and Rust CPU/GPU device fallback semantics.
+
 #### Current support-policy version line
 
 - Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
@@ -300,6 +305,11 @@
 - Added an explicit, fail-closed schema-`1.0` request migration that verifies canonical content, fingerprint, public handle, and the authoritative engine-policy projection; requires a caller-supplied task revision; preserves normalized caller metadata; and intentionally does not migrate legacy observations or results. Content identity prevents accidental pooling but does not establish cross-revision comparability, which still requires anchors, invariance/DIF, drift, and recovery evidence.
 
 ### Fixed
+
+#### Serving bundle export requires Rust core
+
+- `export_serving_bundle` fails closed when the compiled Rust core is unavailable
+  instead of shipping incomplete bundles with null `eapsum_tables`.
 
 #### Fail early for unimplemented estimator identities
 
@@ -347,6 +357,10 @@
 #### Person-fit invalid-response error redaction
 
 - Stopped reflecting caller-controlled invalid response values in `person_fit_np()` validation errors while preserving the failing matrix coordinate and the complete-data 0/1 response contract.
+
+#### Bounded mixed item-model validation
+
+- Bounded `item_models` iterable consumption to at most one look-ahead entry beyond the calibrated item count, rejected arbitrary non-string model controls before caller `__str__`/`__repr__` hooks can execute, and removed rejected model content from public validation errors while preserving accepted aliases and Rust-owned calibration numerics.
 
 #### Model-comparison control validation hardening
 
