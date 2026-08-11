@@ -19,6 +19,12 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Paired rating-range evidence
+
+- Added a Rust-owned paired automated/reference rating diagnostic for observed category endpoints, distinct category use, span, empirical dispersion, relative ratios, endpoint gaps, narrower-support evidence, and a conservative central-tendency signal.
+- Added a thin PyO3/Python product path that delegates numerical statistics to `mlsirm-core` and keeps descriptive range-use evidence separate from agreement, rater severity, and future generalized many-facet range-restriction parameters.
+- Added fail-closed input/degenerate-reference behavior and APA 7 doctoring for automated essay-scoring validation.
+
 #### Multilevel, multiple-membership, and longitudinal design contracts
 
 - Added a provider-neutral `fast_mlsirm.multilevel` contract namespace for one-hot nesting, cross-classified designs, weighted multiple membership, multiple-membership multiple-classification, and repeated longitudinal occasions. Every contextual edge names an explicit `context_dimension_id` and `context_id`; schema 1.0 never infers or invents a random-effect family from a context label.

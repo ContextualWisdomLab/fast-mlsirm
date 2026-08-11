@@ -19,6 +19,10 @@ from .bifactor_scoreability import (
     bifactor_scoreability as bifactor_scoreability,
     bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
 )
+from .rating_range import (
+    RatingRangeEvidence as RatingRangeEvidence,
+    paired_rating_range_evidence as paired_rating_range_evidence,
+)
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
     RotationSolution as RotationSolution,
@@ -38,6 +42,13 @@ from .irt_contract import (
     MIN_IRT_ITEMS as MIN_IRT_ITEMS,
     validate_irt_response_matrix as validate_irt_response_matrix,
 )
+
+# Bind the rating-range API on the historical validation namespace without
+# duplicating implementation or arithmetic ownership.
+from . import validation as _validation
+
+_validation.RatingRangeEvidence = RatingRangeEvidence
+_validation.paired_rating_range_evidence = paired_rating_range_evidence
 
 # Resolve distribution metadata at the package boundary on every reload. The
 # compatibility module may remain cached, so its copied value is not sufficient
@@ -64,6 +75,8 @@ __all__ = list(_legacy_init.__all__) + [
     "IRTItemType",
     "MIN_IRT_ITEMS",
     "validate_irt_response_matrix",
+    "RatingRangeEvidence",
+    "paired_rating_range_evidence",
 ]
 
 del _PackageNotFoundError, _distribution_version, _public_name
