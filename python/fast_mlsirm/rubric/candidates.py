@@ -89,6 +89,34 @@ def _reject_nonfinite(_value: str) -> None:
     raise _NonFiniteJsonNumber
 
 
+def _validate_raw_json_depth(content: str) -> None:
+    """Reject string JSON whose nesting depth exceeds the maximum budget."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise _error(
+                    "json_too_deep",
+                    "$",
+                    f"JSON nesting exceeds the maximum depth of {MAX_JSON_DEPTH}",
+                )
+        elif char in "]}":
+            depth -= 1
+
+
 def _validate_json_depth(value: Any) -> None:
     """Reject provider JSON whose container nesting or node count exceeds a budget."""
     stack: list[tuple[Any, int]] = [(value, 1)]
@@ -465,9 +493,7 @@ class GeneratedItemCandidate:
             "options": [option.to_dict() for option in self.options],
             "answer_key": self.answer_key.to_dict(),
             "scoring_guide": [entry.to_dict() for entry in self.scoring_guide],
-            "rubric_alignment": [
-                entry.to_dict() for entry in self.rubric_alignment
-            ],
+            "rubric_alignment": [entry.to_dict() for entry in self.rubric_alignment],
             "source_attributions": [
                 attribution.to_dict() for attribution in self.source_attributions
             ],
@@ -879,7 +905,9 @@ def _parse_answer_key(
                 "tie outcome requires a null preferred option",
             )
     else:
-        expected = options[0].option_id if outcome == "left_option" else options[1].option_id
+        expected = (
+            options[0].option_id if outcome == "left_option" else options[1].option_id
+        )
         if preferred != expected:
             raise _error(
                 "invalid_answer_key",
@@ -914,6 +942,7 @@ def parse_generated_item_candidate(
             "$",
             "provider output exceeds the allowed size",
         )
+    _validate_raw_json_depth(raw_json)
     try:
         decoded = json.loads(
             raw_json,
