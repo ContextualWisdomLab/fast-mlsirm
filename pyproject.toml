@@ -7,7 +7,7 @@ name = "fast-mlsirm"
 version = "0.7.0"
 description = "Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "ContextualWisdomLab" }]
 dependencies = ["numpy>=1.24"]

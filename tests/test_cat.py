@@ -44,6 +44,42 @@ def _bank(n_items: int = 30) -> tuple[MLSIRMParams, np.ndarray]:
     return bank, np.zeros(n_items, dtype=int)
 
 
+def _multidimensional_bank() -> tuple[MLSIRMParams, np.ndarray]:
+    """Build a two-trait bank with non-zero latent-space and bifactor terms."""
+    discrimination = np.array(
+        [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9],
+        dtype=np.float64,
+    )
+    bank = MLSIRMParams(
+        theta=np.array([[0.0, 0.0]], dtype=np.float64),
+        alpha=np.log(discrimination),
+        b=np.array(
+            [-1.8, -1.0, -0.3, 0.2, 0.9, 1.6, -1.5, -0.7, 0.0, 0.5, 1.1, 1.8],
+            dtype=np.float64,
+        ),
+        xi=np.array([[0.2, -0.15]], dtype=np.float64),
+        zeta=np.array(
+            [
+                [0.1, -0.2],
+                [0.2, -0.1],
+                [0.3, 0.0],
+                [0.4, 0.1],
+                [0.5, 0.2],
+                [0.6, 0.3],
+                [-0.1, 0.2],
+                [-0.2, 0.1],
+                [-0.3, 0.0],
+                [-0.4, -0.1],
+                [-0.5, -0.2],
+                [-0.6, -0.3],
+            ],
+            dtype=np.float64,
+        ),
+        tau=-0.7,
+    )
+    return bank, np.repeat(np.arange(2, dtype=np.int64), 6)
+
+
 def test_mfi_selection_picks_max_information_unadministered_item():
     bank, fid = _bank()
     theta = np.array([0.8])
@@ -125,6 +161,58 @@ def test_mixed_pattern_mle_solves_score_equation():
     # Reported SE matches 1/sqrt(test information) at the estimate.
     se = ability_standard_error(bank, fid, est.theta, administered=administered, model=MODEL)
     assert np.isclose(se[0], est.se[0], rtol=1e-6)
+
+
+def test_multidimensional_rust_cat_preserves_latent_and_bifactor_predictors():
+    """Rust CAT estimates satisfy the independent score equations for both models."""
+    bank, fid = _multidimensional_bank()
+    administered = np.arange(12, dtype=np.int64)
+    responses = np.array([1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0], dtype=np.float64)
+    from fast_mlsirm.diagnostics import predict_proba
+
+    for model in ("MLS2PLM", "BIFAC2PLM"):
+        estimate = estimate_ability_mle(
+            bank, fid, administered, responses, model=model, max_iter=100
+        )
+        assert np.all(estimate.finite)
+        assert np.all(np.isfinite(estimate.theta))
+        query = MLSIRMParams(
+            theta=estimate.theta[None, :],
+            alpha=bank.alpha,
+            b=bank.b,
+            xi=np.repeat(bank.xi.mean(axis=0, keepdims=True), 1, axis=0),
+            zeta=bank.zeta,
+            tau=bank.tau,
+        )
+        probabilities = predict_proba(query, fid, model=model)[0]
+        for dimension in range(2):
+            selected = fid == dimension
+            score = float(
+                np.sum(bank.a[selected] * (responses[selected] - probabilities[selected]))
+            )
+            assert abs(score) < 1e-4
+        reported_se = ability_standard_error(
+            bank, fid, estimate.theta, administered=administered, model=model
+        )
+        expected_information = item_information(
+            query, fid, theta=estimate.theta, model=model
+        )
+        expected_se = np.array(
+            [1.0 / np.sqrt(np.sum(expected_information[fid == d])) for d in range(2)]
+        )
+        assert np.allclose(reported_se, expected_se, rtol=1e-6, atol=1e-9)
+
+    eap = estimate_ability_eap(
+        bank,
+        fid,
+        administered,
+        responses,
+        model="MLS2PLM",
+        prior_mean=np.array([0.25, -0.35]),
+        prior_sd=np.array([1.2, 0.8]),
+    )
+    assert np.all(eap.finite)
+    assert np.all(np.isfinite(eap.theta)) and np.all(np.isfinite(eap.se))
 
 
 def test_se_threshold_stopping_is_more_precise_than_short_fixed_length():

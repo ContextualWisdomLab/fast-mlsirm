@@ -61,15 +61,18 @@ def test_fit_rejects_covariate_without_mmle():
 # --- _fit_mmle NumPy fallback (core absent) ---------------------------------
 
 
-def test_fit_mmle_fails_closed_when_core_missing(monkeypatch):
-    """Without the compiled 2PL MMLE kernel, MMLE fails closed (no silent NumPy path)."""
+def test_fit_mmle_falls_back_to_numpy_when_core_missing(monkeypatch):
+    """Without the compiled 2PL MMLE kernel, the NumPy reference runs (220-230)."""
     monkeypatch.setattr(_core, "fit_mmle_2pl", None)
     rng = np.random.default_rng(0)
     y = (rng.random((30, 6)) < 0.5).astype(float)
     fid = np.zeros(6, dtype=np.int64)
 
-    with pytest.raises(RuntimeError, match="compiled Rust core is required for MMLE"):
-        fit(y, fid, FitConfig(estimator="mmle", model="ULS2PLM", max_iter=30))
+    res = fit(y, fid, FitConfig(estimator="mmle", model="ULS2PLM", max_iter=30))
+
+    assert res.optimizer == "mmle_em/numpy"
+    assert res.params.b.shape == (6,)
+    assert res.params.theta.shape == (30, 1)
 
 
 # --- _fit_mmle_marginal covariate validation --------------------------------

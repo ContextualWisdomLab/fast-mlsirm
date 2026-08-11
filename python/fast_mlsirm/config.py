@@ -215,8 +215,6 @@ class FitConfig:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
         if self.estimator not in VALID_ESTIMATORS:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
-        if model == "BIFAC2PLM" and self.estimator == "jmle":
-            raise ValueError("BIFAC2PLM requires estimator 'mmle'")
         if isinstance(self.lbfgs_history, bool):
             raise ValueError("lbfgs_history must be an integer")
         try:

@@ -268,6 +268,17 @@
 - Added a deterministic CI contract that requires Python 3.14 to execute the same complete pytest suite rather than a reduced compatibility smoke path.
 - Added a non-matrix `python` aggregate job so branch-protection's required check context named `python` still receives a single SUCCESS/FAILURE after every matrix leg finishes.
 
+#### Rust-owned CAT ability estimation
+
+- Moved public CAT MLE, EAP, and ability-standard-error arithmetic from the
+  Python wrapper into the compiled Rust scoring core, retaining Python only for
+  validation, marshalling, and adaptive-test policy.
+- Added bounded Newton MLE, prior-centred grid EAP, scoped per-dimension Rust
+  workers, and device-aware information reduction with explicit handling for
+  all-identical response patterns and unadministered dimensions.
+- Added sentinel delegation tests, Rust edge-case tests, seeded true-trait
+  recovery tests, score-equation checks, and APA 7th CAT doctoring.
+
 #### Automatic backend preserves Rust numerical ownership
 
 - Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
@@ -339,18 +350,6 @@
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
 - Removed opacity-based dimming of non-hovered chart and table rows so unrelated active data retains its normal rendered foreground and background colors.
 - Added public-renderer regression coverage and APA 7th doctoring grounded in WCAG 2.2 and Selectors Level 4 without making a formal conformance claim.
-
-#### Git metadata lookup deadlines
-
-- Commercial evidence builders fail closed with a bounded Git metadata timeout
-  (benchmark, buyer packet, procurement, commercial release, Figma evidence)
-  so hung `git rev-parse` cannot hang release pipelines.
-
-#### Python support floor
-
-- Raised `requires-python` to `>=3.12` so the advertised floor matches the
-  hashed CI dependency lock (NumPy 2.5.x) and the pull-request matrix on
-  CPython 3.12 and 3.14.
 
 ### Security
 

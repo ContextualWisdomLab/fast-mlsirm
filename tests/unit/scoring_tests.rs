@@ -41,6 +41,89 @@ fn bank_information_rejects_overflowing_point_shapes() {
 }
 
 #[test]
+fn cat_mle_flags_perfect_patterns_and_returns_finite_mixed_estimates() {
+    let (alpha, b, zeta, fid) = small_bank();
+    let bk = bank(&alpha, &b, &zeta, &fid);
+    let administered = vec![0, 2, 4];
+    let mixed = vec![1.0, 0.0, 1.0];
+    let mixed_result = cat_ability_mle_device(
+        &bk,
+        &[0.0, 0.0],
+        &administered,
+        &mixed,
+        None,
+        50,
+        1e-6,
+        6.0,
+        crate::Device::Cpu,
+    )
+    .unwrap();
+    assert!(mixed_result.finite[0]);
+    assert!(mixed_result.theta[0].is_finite());
+    assert!(mixed_result.se[0].is_finite() && mixed_result.se[0] > 0.0);
+    assert!(mixed_result.se[1].is_infinite());
+
+    let perfect = cat_ability_mle_device(
+        &bk,
+        &[0.0, 0.0],
+        &administered,
+        &[1.0, 1.0, 1.0],
+        None,
+        50,
+        1e-6,
+        6.0,
+        crate::Device::Cpu,
+    )
+    .unwrap();
+    assert!(!perfect.finite[0]);
+    assert!(perfect.se[0].is_infinite());
+}
+
+#[test]
+fn cat_eap_preserves_prior_without_administered_items() {
+    let (alpha, b, zeta, fid) = small_bank();
+    let bk = bank(&alpha, &b, &zeta, &fid);
+    let prior = PriorSpec {
+        mean: vec![0.3, -0.2],
+        sd: vec![1.2, 0.8],
+    };
+    let result = cat_ability_eap_device(
+        &bk,
+        &[0.0, 0.0],
+        &[],
+        &[],
+        &prior,
+        41,
+        6.0,
+        crate::Device::Cpu,
+    )
+    .unwrap();
+    assert_eq!(result.theta, prior.mean);
+    assert_eq!(result.se, prior.sd);
+    assert!(result.finite.iter().all(|value| *value));
+}
+
+#[test]
+fn cat_standard_error_respects_the_administered_item_mask() {
+    let (alpha, b, zeta, fid) = small_bank();
+    let bk = bank(&alpha, &b, &zeta, &fid);
+    let all =
+        cat_ability_standard_error_device(&bk, &[0.0, 0.0], &[0.0, 0.0], None, crate::Device::Cpu)
+            .unwrap();
+    let dim_zero = cat_ability_standard_error_device(
+        &bk,
+        &[0.0, 0.0],
+        &[0.0, 0.0],
+        Some(&[0, 2, 4]),
+        crate::Device::Cpu,
+    )
+    .unwrap();
+    assert!(all[0].is_finite() && all[1].is_finite());
+    assert!(dim_zero[0].is_finite() && dim_zero[1].is_infinite());
+    assert!(dim_zero[0] >= all[0]);
+}
+
+#[test]
 fn default_eap_policy_matches_auto_device() {
     let (alpha, b, zeta, fid) = small_bank();
     let bk = bank(&alpha, &b, &zeta, &fid);
