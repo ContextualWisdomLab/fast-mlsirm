@@ -316,6 +316,10 @@
 
 - Keep invalid ATA content controls on a stable package-owned error surface rather than allowing arbitrary representation callbacks to execute during NumPy string coercion.
 
+#### G-theory public control validation
+
+- G-theory D-study sizes and `Phi(lambda)` mastery cuts now reject unsupported caller objects before executing conversion or representation callbacks, while preserving supported Python/NumPy scalar controls and Rust-owned numerical behavior.
+
 #### Descriptor-safe bounded JSON input for automation scripts
 
 - Consolidated governed automation JSON readers behind a descriptor-safe shared
