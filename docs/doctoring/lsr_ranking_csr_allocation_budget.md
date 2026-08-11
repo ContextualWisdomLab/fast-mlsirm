@@ -10,8 +10,9 @@ Implemented for Python-side ranking CSR materialization before the Rust LSR/I-LS
 
 ## Decision
 
-- Cap geometric growth by the remaining CSR element budget after reserving start-offset slots.
-- Write validated integer item indices directly into the live flat buffer without a list→`uint64` temporary.
+- Validate rankings into pure-Python integer lists first, enforcing the CSR byte ceiling against final flat/start sizes before any `uint64` allocation.
+- Allocate exact-size live CSR arrays once (no geometric growth / reallocation peaks where old and replacement buffers are both live).
+- Stream validated integers into the flat buffer without a list→`uint64` temporary.
 - Preserve existing validation, redaction, and Rust ranking solvers.
 
 ## Evidence contract
