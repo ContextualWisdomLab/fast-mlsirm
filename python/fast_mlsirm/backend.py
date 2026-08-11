@@ -9,7 +9,7 @@ VALID_BACKENDS = {"numpy", "rust", "auto"}
 # Execution device for the Rust backend. This is a sub-option of the ``rust``
 # backend (CPU vs. wgpu GPGPU), NOT a separate compute-backend axis: the single
 # backend axis stays {numpy, rust, auto}. ``auto``/``gpu`` run the GPGPU kernels
-# when a GPU is present and fall back to the identical CPU path otherwise.
+# when a GPU is present and fall back to the identical Rust CPU path otherwise.
 VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
 
@@ -31,11 +31,13 @@ def normalize_device(name: str) -> str:
 
 
 def resolve_backend(name: str) -> str:
-    """Resolve a requested backend to the concrete one that will run.
+    """Resolve a requested numerical backend to the concrete backend that runs.
 
-    ``numpy`` always resolves to ``numpy``; ``rust`` requires the compiled
-    ``fast_mlsirm._core`` extension (raising if absent); ``auto`` resolves to
-    ``rust`` when the core is importable and to ``numpy`` otherwise.
+    ``numpy`` is an explicit reference/parity choice and always resolves to
+    ``numpy``. ``rust`` requires the compiled :mod:`fast_mlsirm._core`
+    extension. ``auto`` is the production convenience choice: it resolves to
+    ``rust`` when the compiled core is available and fails closed otherwise.
+    Automatic resolution never silently changes the numerical owner to NumPy.
     """
     backend = normalize_backend(name)
     if backend == "numpy":
@@ -45,7 +47,9 @@ def resolve_backend(name: str) -> str:
         if core is None:
             raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
         return "rust"
-    return "rust" if core is not None else "numpy"
+    if core is None:
+        raise RuntimeError("compiled Rust core is required for automatic backend resolution")
+    return "rust"
 
 
 def load_rust_core() -> ModuleType:
