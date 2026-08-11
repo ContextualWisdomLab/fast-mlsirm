@@ -30,6 +30,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0011](0011-canonical-pyo3-public-export-registry.md) | Proposed | Future Rust-backed features converge on one reviewed PyO3/public-export registry instead of competing extension initializers/import rewrites. |
 | [0012](0012-purpose-limited-sensitive-data.md) | Accepted | Preserve valid measurement linkage through purpose-limited sensitive-data handling rather than blanket masking or raw-data proliferation. |
 | [0013](0013-continuous-execution-and-documentation-governance.md) | Proposed | Keep autonomous work work-conserving and enforce one canonical cross-cutting documentation writer with explicit maturity states. |
+| [0014](0014-bounded-llm-judge-category-inputs.md) | Proposed | Bound LLM-judge category inputs to exact built-in scalars and keep model/provider security evidence fail-closed and independently verifiable. |
 
 ## ADR completeness rule
 
