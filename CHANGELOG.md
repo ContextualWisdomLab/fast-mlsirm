@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Validate parallel-analysis integer controls and bound random-eigenvalue workspace before Rust dispatch.
 - Cap LLM-judge response JSON nesting at 32 levels before parse to prevent recursive-object resource exhaustion.
 - Public fixed-form `assemble_test_form` delegates greedy maximum-information selection and content-feasibility look-ahead to the Rust core (`assemble_test_form_greedy`).
 - Public fixed-anchor `link_fixed_item_parameters` delegates affine scale/shift estimation and parameter transformation to the Rust core.
