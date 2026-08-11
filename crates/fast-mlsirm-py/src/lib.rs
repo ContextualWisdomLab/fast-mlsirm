@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
+use mlsirm_core::agreement::{validate_scoring_with_thresholds as core_validate_scoring, ValidationThresholds};
 use mlsirm_core::equating::{
     analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
     circle_arc_equate as core_circle_arc_equate,
@@ -7686,7 +7686,8 @@ fn infit_outfit_stat(
 
 /// Machine-scoring validation gates (Williamson, Xi & Breyer 2012).
 #[pyfunction]
-#[pyo3(signature = (auto, human, k, human_a = None, human_b = None, subgroup = None))]
+#[pyo3(signature = (auto, human, k, human_a = None, human_b = None, subgroup = None, qwk_min = 0.70, pearson_r_min = 0.70, degradation_max = 0.10, overall_smd_max = 0.15, subgroup_smd_max = 0.10, min_subgroup_n = 2))]
+#[allow(clippy::too_many_arguments)]
 fn validate_scoring(
     py: Python<'_>,
     auto: PyReadonlyArray1<'_, u32>,
@@ -7695,6 +7696,12 @@ fn validate_scoring(
     human_a: Option<PyReadonlyArray1<'_, u32>>,
     human_b: Option<PyReadonlyArray1<'_, u32>>,
     subgroup: Option<PyReadonlyArray1<'_, u32>>,
+    qwk_min: f64,
+    pearson_r_min: f64,
+    degradation_max: f64,
+    overall_smd_max: f64,
+    subgroup_smd_max: f64,
+    min_subgroup_n: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let hh_storage = match (&human_a, &human_b) {
         (Some(a), Some(b)) => Some((a.as_slice()?.to_vec(), b.as_slice()?.to_vec())),
@@ -7709,6 +7716,14 @@ fn validate_scoring(
         Some(g) => Some(g.as_slice()?.to_vec()),
         None => None,
     };
+    let thr = ValidationThresholds {
+        qwk_min,
+        pearson_r_min,
+        degradation_max,
+        overall_smd_max,
+        subgroup_smd_max,
+        min_subgroup_n,
+    };
     let verdict = core_validate_scoring(
         auto.as_slice()?,
         human.as_slice()?,
@@ -7717,6 +7732,7 @@ fn validate_scoring(
             .as_ref()
             .map(|(a, b)| (a.as_slice(), b.as_slice())),
         sg_storage.as_deref(),
+        thr,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
