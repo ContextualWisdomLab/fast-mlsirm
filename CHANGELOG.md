@@ -540,11 +540,10 @@
 - Cap raw LLM-judge response JSON nesting at 32 levels before `json.loads`, failing closed with `JudgeFormatError` so hostile recursive objects cannot expand into parser resource exhaustion.
 - Keep valid shallow judge payloads accepted with the existing criterion/score contracts.
 
-#### Fit-statistics infit/outfit fail closed
+#### Infit/outfit require Rust ownership
 
-- Public `infit_outfit()` requires the compiled `infit_outfit_stat` entrypoint and
-  fails closed when the Rust core is missing or incomplete, matching S-X² and
-  person-fit ownership after #771.
+- Public `infit_outfit()` fails closed when the compiled Rust core or required `infit_outfit_stat` entrypoint is missing, instead of silently selecting pure-Python residual arithmetic.
+- Retargeted legacy S-X² / person-fit / infit-outfit NumPy-fallback coverage tests to the fail-closed ownership contract.
 
 #### Diagnostics-report focus and contrast preservation
 
