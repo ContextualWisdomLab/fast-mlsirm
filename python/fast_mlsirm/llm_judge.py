@@ -261,13 +261,8 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
 
 def _response_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        raise JudgeFormatError("judge response must contain one JSON object")
     try:
-        value = json.loads(text[start : end + 1])
+        value = json.loads(text)
     except json.JSONDecodeError as exc:
         raise JudgeFormatError("judge response JSON is invalid") from exc
     if not isinstance(value, dict):

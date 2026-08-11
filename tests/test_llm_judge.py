@@ -93,6 +93,20 @@ def test_judge_rejects_malformed_decisions_and_derives_acceptance() -> None:
     assert result.accepted is True
 
 
+def test_judge_rejects_wrapped_or_fenced_json() -> None:
+    for answer in (
+        f"prefix {_payload()}",
+        f"{_payload()} suffix",
+        f"```json\n{_payload()}\n```",
+    ):
+        with pytest.raises(JudgeFormatError):
+            ContextualOrchestratorJudge(_FakeOrchestrator(answer)).judge(
+                task="task",
+                answer="answer",
+                criteria=CRITERIA,
+            )
+
+
 def test_judge_result_projects_only_multiple_criteria_to_irt_items() -> None:
     result = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
         task="task",
