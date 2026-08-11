@@ -23,13 +23,8 @@ def _python_gate_job_source() -> str:
 
 
 def test_python_job_runs_full_suite_on_python_314() -> None:
-<<<<<<< HEAD
     """Pull-request CI must execute the full fail-slow suite on CPython 3.14."""
-    python_job = _python_job_source()
-=======
-    """Pull-request CI must execute the full Python suite on CPython 3.14."""
     python_job = _python_matrix_job_source()
->>>>>>> a94b8be (ci: aggregate Python 3.12/3.14 matrix under required python check)
 
     assert 'python-version: ["3.12", "3.14"]' in python_job
     assert "python-version: ${{ matrix.python-version }}" in python_job
@@ -46,5 +41,5 @@ def test_required_python_check_context_aggregates_matrix() -> None:
     """
     gate = _python_gate_job_source()
     assert "needs: python-matrix" in gate
-    assert 'name: python' in gate or "name: python\n" in _CI_WORKFLOW.read_text(encoding="utf-8")
+    assert "name: python" in gate
     assert 'test "${{ needs.python-matrix.result }}" = "success"' in gate
