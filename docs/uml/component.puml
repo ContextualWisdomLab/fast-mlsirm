@@ -7,6 +7,7 @@ title fast-mlsirm component architecture
 
 actor "Independent Python/Rust Consumer" as Consumer
 component "Psychometrics Commons\n(downstream hosted product)" as Commons <<external>>
+component "Caller-supplied Host Adapter" as HostAdapter <<host boundary>>
 
 package "fast-mlsirm" {
   component "Python Public API / CLI" as PyAPI
@@ -28,6 +29,7 @@ component "semantic-data-portal" as Portal <<external>>
 component "EgressWeave" as Egress <<external>>
 
 Consumer --> PyAPI : package API
+Commons --> HostAdapter : supplies hosted boundary
 Commons --> PyAPI : versioned contracts/results
 PyAPI --> Contracts
 PyAPI --> Scoring
@@ -47,7 +49,7 @@ Scoring ..> Orchestrator : optional LLM orchestration
 PyAPI ..> TEPP : explicit integration only
 PyAPI ..> Gyeot : explicit integration only
 PyAPI ..> Portal : immutable research artifact handoff
-PyAPI ..> Egress : host-controlled external egress
+HostAdapter --> Egress : host-controlled external egress
 
 note right of RustCore
   Production psychometric arithmetic owner.

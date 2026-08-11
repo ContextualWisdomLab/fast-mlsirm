@@ -1,6 +1,6 @@
 # ADR-NNNN: Decision title
 
-Status: **Proposed**  
+Status: Proposed
 Date: YYYY-MM-DD  
 Supersedes: none  
 Superseded by: none

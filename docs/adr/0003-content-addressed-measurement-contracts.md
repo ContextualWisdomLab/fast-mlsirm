@@ -23,6 +23,45 @@ Key rules:
 8. Published/approved artifacts are immutable; corrections create superseding revisions.
 9. Caller/provider text is bounded and sensitive content is not embedded in error identifiers or audit hashes beyond the explicit canonical input.
 
+## Canonical fingerprint preimage contract
+
+The v1 fingerprint preimage contract is named `fast-mlsirm-cjson-v1` and is
+part of every exposed fingerprint record together with the digest algorithm
+`sha-256`. Implementations MUST reject an unknown canonicalization version or
+digest algorithm rather than silently selecting a local default.
+
+For `fast-mlsirm-cjson-v1`, the preimage is the UTF-8 encoding of compact JSON
+with no trailing newline, using these rules:
+
+1. Object keys are unique strings and are ordered by Unicode scalar-value order;
+   arrays retain their declared order.
+2. A contract's declared field set is authoritative. Omitted fields and explicit
+   `null` are different values; no serializer may add, omit, or coerce fields.
+3. Strings are preserved as supplied after valid UTF-8 validation. No implicit
+   Unicode normalization is performed, so composed and decomposed spellings
+   have different identities unless the contract normalizes them before
+   construction.
+4. Integers are signed 64-bit values. Floating-point values are finite; negative
+   zero is serialized as `0.0`. Non-finite values are rejected. Numbers use the
+   shortest round-trippable JSON decimal representation of the package
+   canonicalizer.
+5. Whitespace is omitted, escaping follows the UTF-8 JSON serializer, and the
+   SHA-256 digest is computed over the exact resulting bytes.
+
+The package-owned implementation and any Rust/other-language implementation
+MUST pass the same normative vectors. For example, after the v1 validation and
+negative-zero normalization, this value:
+
+```json
+{"a":null,"items":[2,1.5],"n":0.0,"z":"café"}
+```
+
+has UTF-8 SHA-256
+`b2384fee029c793d3e661b5a741b318155a401482a7495d057bb696a2711c9c5`.
+The vector binds the version, encoding, key ordering, null retention, array
+ordering, Unicode preservation, numeric formatting and digest calculation; a
+cross-language implementation is not interoperable until it reproduces it.
+
 ## Primary contract family
 
 ```text

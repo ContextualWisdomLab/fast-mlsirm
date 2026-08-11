@@ -81,10 +81,16 @@ Architecture effect:
 
 Research basis:
 
-- Hashemi et al. (2024), LLM-Rubric and calibrated multidimensional evaluation.
-- AutoNuggetizer/TREC RAG work for generated atomic evaluation obligations.
-- Shankar et al. (2024), EvalGen, for criteria drift and validator alignment.
-- emerging 2025–2026 instance-specific/recursive rubric and automated item-generation work is treated as promising but not settled evidence; implementation claims remain conservative.
+- Hashemi, H., Eisner, J., Rosset, C., Van Durme, B., & Kedzie, C. (2024). LLM-RUBRIC: A multidimensional, calibrated approach to automated evaluation of natural language texts. In *Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)* (pp. 13806–13834). Association for Computational Linguistics. https://aclanthology.org/2024.acl-long.745/
+  Scope: calibrates multiple rubric-question outputs to human annotations and motivates treating automated judges as fallible, multidimensional raters rather than truth oracles.
+- Pradeep, R., Thakur, N., Upadhyay, S., Campos, D., Craswell, N., & Lin, J. (2024). *Initial nugget evaluation results for the TREC 2024 RAG track with the AutoNuggetizer framework* (arXiv preprint arXiv:2411.09607). https://arxiv.org/abs/2411.09607
+  Scope: describes atomic information nuggets, human post-editing/calibration and semantic assignment for reference-free RAG evaluation; it does not justify lexical-only matching or an absolute-truth claim.
+- Shankar, S., Zamfirescu-Pereira, J. D., Hartmann, B., Parameswaran, A. G., & Arawjo, I. (2024). Who validates the validators? Aligning LLM-assisted evaluation of LLM outputs with human preferences. In *Proceedings of the 37th Annual ACM Symposium on User Interface Software and Technology*. Association for Computing Machinery. https://doi.org/10.1145/3654777.3676450
+  Scope: introduces EvalGen and the criteria-drift problem, supporting human alignment, held-out validation and explicit validator provenance.
+- Pradeep, R., Thakur, N., Upadhyay, S., Campos, D., Craswell, N., & Lin, J. (2025). *The great nugget recall: Automating fact extraction and RAG evaluation with large language models* (arXiv preprint arXiv:2504.15068). https://arxiv.org/abs/2504.15068
+  Scope: reports AutoNuggetizer variants calibrated against human-based conditions and explicitly notes remaining per-topic diagnostic limitations.
+- Norgaila, E., Daniela, L., & Kalniņa, D. (2026). Reflective prompt engineering for assessment rubric optimization: An empirical study of human–AI alignment. *Technology, Knowledge and Learning, 31*, 1023–1038. https://doi.org/10.1007/s10758-026-09979-2
+  Scope: provides a recent rubric-refinement and human–AI alignment study; it is evidence for an experiment, not a release-time validity guarantee or a substitute for psychometric calibration.
 
 ## 6. Automated essay scoring / automated scoring as many-facet measurement — Accepted baseline / evolving
 
@@ -161,6 +167,12 @@ Architecture effect:
 - compare simple routing versus deeper agent orchestration under comparable budgets before hard-coding a complex topology;
 - treat Fugu/Conductor/TRINITY-class results as research input, not a universal mandate.
 
+The complete APA 7 records and evidence classification for Conductor, TRINITY
+and the vendor-described Fugu system are maintained in
+[`docs/doctoring/llm_orchestration_test_time_compute.md`](../doctoring/llm_orchestration_test_time_compute.md).
+That record distinguishes peer-reviewed/preprint research from vendor product
+evidence and keeps the implementation claim bounded to an experiment plan.
+
 ## 12. Standards baseline
 
 Architecture/product documentation also uses:
@@ -171,6 +183,10 @@ Architecture/product documentation also uses:
 - ISO/IEC 42001:2023 for AI lifecycle/governance concerns where applicable;
 - WCAG 2.2 for accessible report surfaces;
 - AERA/APA/NCME 2014 Testing Standards for evidence, fairness and score-use interpretation.
+- National Institute of Standards and Technology. (2023). *Artificial intelligence risk management framework (AI RMF 1.0)* (NIST AI 100-1). https://doi.org/10.6028/NIST.AI.100-1
+  Governance scope: Govern, Map, Measure and Manage are used as a risk-management input; this citation is not a certification or conformity claim.
+- National Institute of Standards and Technology. (2024). *Artificial intelligence risk management framework: Generative artificial intelligence profile* (NIST AI 600-1). https://doi.org/10.6028/NIST.AI.600-1
+  Governance scope: provider/model risk, provenance, evaluation, human oversight and incident considerations; this citation is not a certification or conformity claim.
 
 ## Maintenance rule
 

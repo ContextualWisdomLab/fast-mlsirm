@@ -14,6 +14,7 @@ REQUIRED_DOCUMENTS = (
     "docs/PRD.md",
     "docs/TRD.md",
     "docs/adr/README.md",
+    "docs/adr/0000-template.md",
     "docs/standards_watch.md",
     "docs/verification_validation_plan.md",
     "docs/uml/README.md",
@@ -21,7 +22,9 @@ REQUIRED_DOCUMENTS = (
     "docs/uml/scoring-sequence.puml",
     "docs/uml/model-selection-sequence.puml",
     "docs/uml/item-lifecycle.puml",
+    "docs/uml/item-bank-state.puml",
     "docs/uml/deployment.puml",
+    "docs/uml/domain-public-contract.puml",
     "docs/erd/domain-model.puml",
     "docs/traceability/requirements-matrix.md",
     "docs/traceability/research-basis.md",
@@ -30,7 +33,8 @@ REQUIRED_DOCUMENTS = (
 )
 
 ADR_STATUS_RE = re.compile(
-    r"^Status: \*\*(Accepted|Proposed|Deprecated|Superseded)\*\*$", re.MULTILINE
+    r"^Status: (?:\*\*)?(Accepted|Proposed|Deprecated|Superseded)(?:\*\*)?[ \t]*$",
+    re.MULTILINE,
 )
 
 
@@ -57,6 +61,35 @@ def test_every_indexed_adr_exists_and_declares_supported_status() -> None:
         adr_path = ROOT / "docs" / "adr" / relative_path
         assert adr_path.is_file(), relative_path
         assert ADR_STATUS_RE.search(adr_path.read_text(encoding="utf-8")), relative_path
+
+
+def test_adr_template_uses_the_parseable_status_grammar() -> None:
+    """Keep the new-ADR template compatible with the status parser."""
+    template = _read("docs/adr/0000-template.md")
+    assert re.search(
+        r"^Status: (Accepted|Proposed|Deprecated|Superseded)$",
+        template,
+        re.MULTILINE,
+    )
+
+
+def test_every_uml_source_is_indexed_and_has_safe_plantuml_boundaries() -> None:
+    """Require the complete UML set and reject malformed or nested sources."""
+    index = _read("docs/uml/README.md")
+    sources = sorted((ROOT / "docs/uml").glob("*.puml"))
+    assert sources
+    for source in sources:
+        assert source.name in index, source.name
+        text = source.read_text(encoding="utf-8")
+        if source.name == "item-bank-state.puml":
+            assert text == "!include item-lifecycle.puml\n"
+            continue
+        assert text.lstrip().startswith("@startuml"), source.name
+        assert text.count("@startuml") == 1, source.name
+        assert text.count("@enduml") == 1, source.name
+        assert text.rstrip().endswith("@enduml"), source.name
+        assert "<<<<<<<" not in text, source.name
+        assert not re.search(r"^!include\s+[/~]", text, re.MULTILINE), source.name
 
 
 def test_canonical_documents_state_the_hosted_product_boundary() -> None:

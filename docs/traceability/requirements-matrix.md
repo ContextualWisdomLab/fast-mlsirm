@@ -31,7 +31,7 @@ This matrix makes the major product requirements discoverable without reconstruc
 | LLM credentials/orchestration | TRD-LLM-001..004 | ADR-0010 | repo/org automation contracts; deterministic paths avoid unnecessary model credentials | Accepted governance |
 | Scientific vs business/safety criticality | enterprise/automated scoring decision boundary | ADR-0005 | measurement outputs remain separate from causal intervention/cost/utility policy; critical safety/business gates are not derived from psychometric discrimination alone | Accepted boundary |
 | Release/provenance | PRD-FR-080..082, TRD release section | ADR-0003, ADR-0008 | release acceptance, commercial evidence, buyer packet, SBOM/provenance/readiness builders | Accepted baseline |
-| Documentation architecture completeness | documentation governance | ADR index + `docs/README.md` | `ARCHITECTURE.md`, PRD/TRD, UML, logical ERD, traceability, threat model, documentation contract | Accepted baseline; maintained by `docs/documentation_coverage.md` |
+| Documentation architecture completeness | documentation governance | ADR index + `docs/README.md` | `ARCHITECTURE.md`, PRD/TRD, UML, logical ERD, domain/public-contract class view, traceability, threat model, documentation contract | ACTIVE PR; becomes an Accepted baseline only after the canonical set and contract test are protected-main integrated |
 
 ## Key source locations
 

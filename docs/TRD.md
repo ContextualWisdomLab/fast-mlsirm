@@ -34,7 +34,7 @@ The document follows ISO/IEC/IEEE 29148 requirements-engineering principles and 
 - provider credential stores;
 - operational research-release catalogs.
 
-These belong to downstream bounded contexts such as Psychometrics Commons, Keyverse, semantic-data-portal, contextual-orchestrator, or another explicitly versioned service.
+These belong to downstream bounded contexts such as `ContextualWisdomLab/psychometrics-commons`, Keyverse, semantic-data-portal, contextual-orchestrator, or another explicitly versioned service.
 
 ## 3. Repository architecture
 

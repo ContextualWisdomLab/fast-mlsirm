@@ -8,7 +8,9 @@ These PlantUML files are source-controlled architecture views. They are explanat
 | [`scoring-sequence.puml`](scoring-sequence.puml) | Assessment/rubric -> scoring -> observation -> Rust calibration -> validation/report flow. |
 | [`model-selection-sequence.puml`](model-selection-sequence.puml) | Relation-safe factor/model selection and recovery flow. |
 | [`item-lifecycle.puml`](item-lifecycle.puml) | Governed item/rubric lifecycle and immutable revision semantics. |
+| [`item-bank-state.puml`](item-bank-state.puml) | Compatibility alias for the canonical governed item lifecycle view. |
 | [`deployment.puml`](deployment.puml) | Package deployment and downstream-host/service composition boundary. |
+| [`domain-public-contract.puml`](domain-public-contract.puml) | Persistence-neutral domain/public-contract classes, construction invariants and host-adapter boundary. |
 
 ## Update rule
 

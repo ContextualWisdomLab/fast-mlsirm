@@ -29,7 +29,7 @@ This matrix answers whether the repository has enough durable documentation to r
 | Requirements traceability | absent | `docs/traceability/requirements-matrix.md` | IMPLEMENTED | update maturity/evidence with material feature PRs |
 | Scientific/standards basis | strong but scattered doctoring | `docs/traceability/research-basis.md` + doctoring | IMPLEMENTED | keep APA 7, primary/current standards and preprint status honest |
 | Reusable-core threat model | implicit in security feature docs | `docs/security/threat-model.md` | IMPLEMENTED | update on new trust/native/provider/artifact boundaries |
-| Documentation contract CI | absent | `tests/test_architecture_documentation_contract.py` | IMPLEMENTED | must fail on missing/stale/overclaiming architecture artifacts, ADR statuses, standards/V&V authority |
+| Documentation contract CI | absent | `tests/test_architecture_documentation_contract.py` | ACTIVE PR | this PR enforces the complete ADR-template/UML/index/source-hygiene set; protected-main integration is required before calling the baseline IMPLEMENTED |
 | Release/changelog evidence | managed changelog and release docs already exist | changelog fragment + existing release controls | IMPLEMENTED | render fragment before Ready/merge according to repo policy |
 | Operational runbook for hosted product | intentionally not owned here | Psychometrics Commons/operator docs | DOWNSTREAM | link only when a versioned integration requires it |
 | Physical DB schema/migrations | intentionally not owned here | Psychometrics Commons/owning host | DOWNSTREAM | do not manufacture ORM from logical ERD |
@@ -63,12 +63,13 @@ This matrix answers whether the repository has enough durable documentation to r
 
 A P0 gap blocks treating the architecture package as complete:
 
+- the canonical documentation baseline or its complete contract test is still only on an open PR rather than protected main;
 - missing canonical PRD or TRD;
 - missing root architecture boundary;
 - missing ADR index/status for a material cross-cutting decision;
 - missing standards status registry when a release or buyer claim relies on standards;
 - missing V&V plan for a new scientific/scoring/generalization claim;
-- missing UML/ERD view for a major public-contract or lifecycle change;
+- missing UML/ERD or persistence-neutral domain/public-contract view for a major public-contract or lifecycle change;
 - missing reusable-core threat model after a new trust boundary;
 - traceability that falsely marks an active/planned feature as protected-main implemented;
 - a stale historical summary that competes with the canonical requirements source; or

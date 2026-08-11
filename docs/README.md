@@ -12,7 +12,8 @@ This index distinguishes governing product/architecture documents from implement
 | [`adr/README.md`](adr/README.md) | Durable architecture/scientific decision log and status history |
 | [`standards_watch.md`](standards_watch.md) | Published governing standards versus draft/revision watch items; no certification shortcut |
 | [`verification_validation_plan.md`](verification_validation_plan.md) | Software, numerical, scientific, scoring/RAG, recovery, security, packaging and exact-artifact V&V evidence |
-| [`uml/README.md`](uml/README.md) | PlantUML component, sequence, lifecycle, model-selection and deployment views |
+| [`uml/README.md`](uml/README.md) | PlantUML component, sequence, lifecycle, model-selection, deployment and reusable domain/public-contract views |
+| [`uml/domain-public-contract.puml`](uml/domain-public-contract.puml) | Persistence-neutral reusable domain/public-contract classes and construction rules |
 | [`erd/domain-model.puml`](erd/domain-model.puml) | Logical reusable-domain artifact relationships; **not** a hosted ORM schema |
 | [`traceability/requirements-matrix.md`](traceability/requirements-matrix.md) | PRD/TRD/ADR -> protected-main implementation/evidence maturity |
 | [`traceability/research-basis.md`](traceability/research-basis.md) | Scientific/standards evidence and APA 7 reference mapping |
@@ -47,4 +48,4 @@ A material change is incomplete if it creates a contradiction among code, accept
 
 ## Cross-repository boundary
 
-`fast-mlsirm` is the standalone reusable measurement/psychometric core. Psychometrics Commons or another owning downstream service is responsible for hosted HTTP/session/consent/tenant/RBAC/UI/database/deployment lifecycle. Architecture documents here may define interoperable reusable artifacts and versioned handoffs without creating a shared application database or reverse product dependency.
+`fast-mlsirm` is the standalone reusable measurement/psychometric core. `ContextualWisdomLab/psychometrics-commons` or another owning downstream service is responsible for hosted HTTP/session/consent/tenant/RBAC/UI/database/deployment lifecycle. Architecture documents here may define interoperable reusable artifacts and versioned handoffs without creating a shared application database or reverse product dependency.

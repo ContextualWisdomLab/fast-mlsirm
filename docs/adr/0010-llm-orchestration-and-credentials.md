@@ -12,7 +12,7 @@ Some `fast-mlsirm` features and validation studies may use LLMs for item generat
 ### Product/model calls
 
 - Prefer provider-neutral interfaces.
-- Use `contextual-orchestrator` when a reusable orchestration boundary is appropriate, but do not create a reverse source dependency or write there while its owner loop controls that repository.
+- Use `contextual-orchestrator` when a reusable orchestration boundary is appropriate, but do not create a reverse source dependency or write there while its owner loop controls that repository. Every cross-repository call MUST bind a versioned request/result schema (for example, `contextual-orchestrator-contract-v1`) or an immutable artifact digest, and the compatibility policy for that contract must be recorded with the caller.
 - Treat all model output as untrusted; schema/provenance/semantic validation remains inside the calling workflow.
 - Deterministic tests/gates that do not require a model call shall remain executable without model credentials.
 

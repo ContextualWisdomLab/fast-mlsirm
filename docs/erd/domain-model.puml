@@ -91,6 +91,16 @@ entity calibration_design {
   connected_state : enum
 }
 
+entity calibration_design_input {
+  * design_input_id : opaque string
+  * design_input_fingerprint : sha256
+  --
+  design_fingerprint : sha256
+  observation_fingerprint : sha256
+  inclusion_role : enum
+  source_revision : semantic version
+}
+
 entity calibration_report {
   * report_id : opaque string
   * report_fingerprint : sha256
@@ -124,7 +134,8 @@ item_blueprint ||--o{ item_candidate : generates
 assessment_specification ||--o{ scoring_request : governs
 engine_descriptor ||--o{ score_observation : produces
 scoring_request ||--o{ score_observation : binds
-score_observation }o--|| calibration_design : assembled_into
+calibration_design ||--o{ calibration_design_input : selects
+score_observation ||--o{ calibration_design_input : included_in
 calibration_design ||--o{ calibration_report : fitted_as
 item_candidate ||--o{ item_bank_entry : versioned_as
 calibration_report ||--o{ item_bank_entry : supports

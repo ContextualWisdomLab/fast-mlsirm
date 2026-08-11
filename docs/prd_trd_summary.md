@@ -20,6 +20,13 @@ Use the following canonical documents instead:
 
 The initial product goal was fast simulation, fitting and recovery diagnostics for the simple-structure MLS2PLM specialization:
 
+> The following equation is historical MVP notation only. It is retained to
+> explain the origin of this deprecated summary and is not the current runtime
+> contract. Current simple-structure MLS2PLM usage follows the canonical
+> parameterization in [`docs/papers/mls2plm-canonical-equations.md`](papers/mls2plm-canonical-equations.md),
+> including `a_i = exp(alpha_i)`, `gamma = exp(tau)`, the declared distance
+> term, and the package's finite-value/epsilon rules.
+
 ```text
 logit P(Y_pi = 1) = a_i * theta_p,d(i) + b_i - gamma * distance(xi_p, zeta_i)
 ```
