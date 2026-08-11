@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- Closed the Python-to-Rust equivalent-groups equating control boundary:
+  method and explicit score-ceiling controls now reject arbitrary objects
+  instead of invoking caller-defined ``__str__``/``__int__`` methods.
+  Built-in Python integers and NumPy integer scalars remain supported. Added
+  fail-closed regression tests and APA 7th doctoring for the validation
+  contract.
+
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added

@@ -9,6 +9,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+
+_EG_METHOD_ALIASES = frozenset(
+    {"mean", "m", "linear", "lin", "l", "equipercentile", "equip", "ep"}
+)
+
+
 def _require_equating_method(method, *, name: str = "method") -> str:
     """Return a trusted equating method identity without caller-controlled str().
 
@@ -18,6 +24,11 @@ def _require_equating_method(method, *, name: str = "method") -> str:
     """
     if type(method) is not str:
         raise ValueError(f"{name} must be a str method identity")
+    normalized = method.lower().replace("-", "").replace("_", "")
+    if normalized not in _EG_METHOD_ALIASES:
+        raise ValueError(
+            f"{name} must be one of mean, linear, or equipercentile"
+        )
     return method
 
 
@@ -31,10 +42,14 @@ def _require_optional_score_ceiling(value, name: str) -> int | None:
     if value is None:
         return None
     if type(value) is int:
-        return value
-    if isinstance(value, np.integer):
-        return int(value)
-    raise ValueError(f"{name} must be an integer score ceiling")
+        normalized = value
+    elif isinstance(value, np.integer):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer score ceiling")
+    if normalized <= 0:
+        raise ValueError(f"{name} must be a positive integer score ceiling")
+    return normalized
 
 
 @dataclass
