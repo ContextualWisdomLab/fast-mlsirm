@@ -81,106 +81,64 @@ def _former_equations(
     }
 
 
-def test_fallback_source_reuses_residual_buffer_without_numeric_mask_copy() -> None:
-    """The source pins the bounded operations rather than a flaky peak heuristic."""
 
-    source = inspect.getsource(fitstats.infit_outfit)
-
-    assert "observed.astype" not in source
-    assert "resid2 / v" not in source
-    assert "v * observed" not in source
-    assert "resid2 = np.subtract(y, p)" in source
-    assert "np.square(resid2, out=resid2)" in source
-    assert "np.multiply(resid2, observed, out=resid2)" in source
-    assert "np.divide(resid2, v, out=resid2)" in source
-    assert "np.sum(v, axis=0, where=observed)" in source
-
-
-def test_fallback_matches_former_equations_with_sparse_and_boundary_inputs(
+def test_public_infit_outfit_fails_closed_without_rust_core(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Buffer reuse preserves missingness and probability-clipping semantics."""
-
+    """Missing/incomplete cores raise before NumPy residual arithmetic."""
     responses, observed, factor_id, params = _fixture()
-    epsilon = 1e-8
-    expected = _former_equations(
-        responses,
-        observed,
-        factor_id,
-        params,
-        eps_distance=epsilon,
-    )
     monkeypatch.setattr(fitstats, "_core_module", lambda: None)
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fitstats.infit_outfit(
+            responses,
+            factor_id,
+            params,
+            "mlsirm",
+            mask=observed,
+        )
 
+
+def test_public_infit_outfit_source_is_rust_owned() -> None:
+    """Production path must call the compiled entrypoint rather than residual buffers."""
+    source = inspect.getsource(fitstats.infit_outfit)
+    assert "infit_outfit_stat" in source
+    assert "fit statistics require the compiled Rust core" in source
+    assert "resid2 = np.subtract(y, p)" not in source
+
+
+def test_public_infit_outfit_dispatches_to_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A compatible core owns the public numerical result without Python residual math."""
+    responses, observed, factor_id, params = _fixture()
+    n_items = responses.shape[1]
+
+    class RecordingCore:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def infit_outfit_stat(self, *args, **kwargs):
+            self.calls += 1
+            return {
+                "infit": np.full(n_items, 0.9, dtype=np.float64),
+                "outfit": np.full(n_items, 1.1, dtype=np.float64),
+            }
+
+    core = RecordingCore()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+    monkeypatch.setattr(
+        fitstats.np,
+        "exp",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("python path")),
+    )
     result = fitstats.infit_outfit(
         responses,
         factor_id,
         params,
         "mlsirm",
         mask=observed,
-        eps_distance=epsilon,
     )
+    assert core.calls == 1
+    np.testing.assert_array_equal(result["infit"], np.full(n_items, 0.9))
+    np.testing.assert_array_equal(result["outfit"], np.full(n_items, 1.1))
 
-    np.testing.assert_allclose(
-        result["infit"], expected["infit"], rtol=1e-13, atol=1e-13
-    )
-    np.testing.assert_allclose(
-        result["outfit"], expected["outfit"], rtol=1e-13, atol=1e-13
-    )
-    assert result["infit"][0] == 0.0
-    assert result["outfit"][0] == 0.0
-
-
-def test_fallback_uses_in_place_division_and_boolean_where_reduction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The fallback creates neither a numeric mask copy nor quotient buffer."""
-
-    responses, observed, factor_id, params = _fixture()
-    monkeypatch.setattr(fitstats, "_core_module", lambda: None)
-    original_divide = np.divide
-    original_sum = np.sum
-    divide_calls: list[tuple[np.ndarray, np.ndarray, object]] = []
-    sum_calls: list[dict[str, Any]] = []
-
-    def recording_divide(
-        numerator: np.ndarray,
-        denominator: np.ndarray,
-        *args: Any,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        """Record the quotient output identity before delegating to NumPy."""
-
-        divide_calls.append((numerator, denominator, kwargs.get("out")))
-        return original_divide(numerator, denominator, *args, **kwargs)
-
-    def recording_sum(array: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
-        """Record the Boolean where reduction before delegating to NumPy."""
-
-        sum_calls.append(
-            {
-                "array": array,
-                "axis": kwargs.get("axis"),
-                "where": kwargs.get("where"),
-            }
-        )
-        return original_sum(array, *args, **kwargs)
-
-    monkeypatch.setattr(fitstats.np, "divide", recording_divide)
-    monkeypatch.setattr(fitstats.np, "sum", recording_sum)
-
-    fitstats.infit_outfit(
-        responses,
-        factor_id,
-        params,
-        "mlsirm",
-        mask=observed,
-    )
-
-    assert len(divide_calls) == 1
-    numerator, denominator, output = divide_calls[0]
-    assert output is numerator
-    assert numerator.shape == denominator.shape == observed.shape
-    assert len(sum_calls) == 1
-    assert sum_calls[0]["axis"] == 0
-    assert sum_calls[0]["where"] is observed

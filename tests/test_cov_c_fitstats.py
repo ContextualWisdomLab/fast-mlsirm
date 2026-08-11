@@ -256,15 +256,13 @@ def test_person_fit_numpy_fallback(monkeypatch):
 
 
 def test_infit_outfit_numpy_fallback(monkeypatch):
-    y, fid, params = _mirt_params(6, 250, seed=10)
+    """Incomplete core must fail closed for public infit/outfit."""
+    y, fid, params = _mirt_params(6, 25, seed=10)
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    io = fm.infit_outfit(y, fid, params, "MIRT")
-    assert io["infit"].shape == (6,) and io["outfit"].shape == (6,)
-    assert np.all(np.isfinite(io["infit"]))
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fm.infit_outfit(y, fid, params, "MIRT")
 
-    ys, fids, sparams = _spatial_params([0, 0, 1, 1], 200, seed=11)
-    io2 = fm.infit_outfit(ys, fids, sparams, "MLS2PLM")
-    assert io2["outfit"].shape == (4,)
+
 
 
 # ---------------------------------------------------------------------------
