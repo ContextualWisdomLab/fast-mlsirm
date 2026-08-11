@@ -499,6 +499,7 @@ __all__ = [
     "MAX_JUDGE_CATEGORIES",
     "MAX_JUDGE_CRITERIA",
     "MAX_JUDGE_TEXT_CHARACTERS",
+    "MAX_JUDGE_JSON_DEPTH",
     "ContextualOrchestratorJudge",
     "JudgeCriterion",
     "JudgeFormatError",
