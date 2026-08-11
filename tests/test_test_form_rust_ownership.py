@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 import fast_mlsirm._core as core
 from fast_mlsirm.test_design import assemble_test_form
@@ -40,3 +41,20 @@ def test_public_test_form_assembly_delegates_selection_to_rust(monkeypatch) -> N
     assert np.array_equal(information, information_before)
     assert np.array_equal(content, content_before)
     assert np.array_equal(exclude, exclude_before)
+
+
+def test_invalid_content_constraint_error_does_not_reflect_caller_label() -> None:
+    """Validation failures must not echo caller-controlled content labels."""
+    sensitive_label = "customer_secret_content_category"
+    information = np.array([1.0], dtype=np.float64)
+    content = np.array([sensitive_label], dtype=object)
+
+    with pytest.raises(ValueError) as exc_info:
+        assemble_test_form(
+            information,
+            length=1,
+            content=content,
+            min_per_content={sensitive_label: -1},
+        )
+
+    assert sensitive_label not in str(exc_info.value)
