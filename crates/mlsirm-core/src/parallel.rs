@@ -1,4 +1,4 @@
-﻿//! Horn's parallel analysis for principal-component retention.
+//! Horn's parallel analysis for principal-component retention.
 //!
 //! Compares the eigenvalues of the Pearson correlation matrix of an observed
 //! `n x p` data matrix against the mean (or a Glorfeld upper-centile) of
@@ -36,7 +36,8 @@
 //! 3. **Guards narrowed.** The oracle feeds `cor()`/`eigen()` whatever it is
 //!    given; this implementation rejects `n_persons < 3`, `n_items < 2`,
 //!    non-finite cells, zero-variance columns, `n_iterations == 0`, and
-//!    `centile > 99` with explicit errors.
+//!    `centile > 99` with explicit errors. The random-eigenvalue simulation
+//!    workspace is capped at 128 MiB before allocation.
 //! 4. `iterations = 0` does NOT default to `30 * p` here; the core is
 //!    explicit and callers supply the default.
 //!
@@ -79,6 +80,7 @@ pub struct ParallelAnalysisResult {
 
 const JACOBI_MAX_SWEEPS: usize = 100;
 const JACOBI_TOL: f64 = 1e-12;
+const MAX_PARALLEL_RANDOM_WORKSPACE_BYTES: usize = 128 * 1024 * 1024;
 
 /// Horn's parallel analysis (PCA path of `paran`, see module docs).
 ///
@@ -121,15 +123,24 @@ pub fn parallel_analysis(
         return Err("data must be finite (no NaN/inf; complete data required)".into());
     }
 
+    let sim_len = n_iterations
+        .checked_mul(n_items)
+        .ok_or("parallel analysis random benchmark workspace size overflows usize")?;
+    let sim_bytes = sim_len
+        .checked_mul(std::mem::size_of::<f64>())
+        .ok_or("parallel analysis random benchmark workspace size overflows usize")?;
+    if sim_bytes > MAX_PARALLEL_RANDOM_WORKSPACE_BYTES {
+        return Err(format!(
+            "parallel analysis random benchmark workspace exceeds {MAX_PARALLEL_RANDOM_WORKSPACE_BYTES} bytes"
+        ));
+    }
+
     let corr = correlation_matrix(data, n_persons, n_items)?;
     let eigenvalues = symmetric_eigenvalues_desc(&corr, n_items)?;
 
     // Random benchmark: n_iterations standard-normal data sets from a single
     // deterministic LCG stream (crate idiom; see module docs, divergence 2).
     let mut state = seed.max(1);
-    let sim_len = n_iterations
-        .checked_mul(n_items)
-        .ok_or("n_iterations * n_items overflows usize")?;
     let mut sim = vec![0.0_f64; sim_len];
     let mut rand_data = vec![0.0_f64; cells];
     for k in 0..n_iterations {
