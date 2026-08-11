@@ -187,7 +187,7 @@ def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
 
 def _log_sigmoid(x: np.ndarray) -> np.ndarray:
     """Numerically stable elementwise ``log(sigmoid(x))``."""
-    return np.where(x >= 0.0, -np.log1p(np.exp(-np.abs(x))), x - np.log1p(np.exp(x)))
+    return -np.logaddexp(0.0, -x)
 
 
 def _build_contexts(

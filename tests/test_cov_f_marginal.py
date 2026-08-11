@@ -12,7 +12,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from fast_mlsirm.estimators.marginal import fit_marginal_numpy
+from fast_mlsirm.estimators.marginal import _log_sigmoid, fit_marginal_numpy
+
+
+def test_log_sigmoid_extremes_do_not_emit_overflow_warning():
+    with np.errstate(over="raise", invalid="raise"):
+        result = _log_sigmoid(np.array([-1000.0, 0.0, 1000.0]))
+
+    np.testing.assert_allclose(result, [-1000.0, -np.log(2.0), 0.0])
 
 
 def _binary(n_persons, n_items, seed=0):
