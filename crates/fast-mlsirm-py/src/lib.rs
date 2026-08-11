@@ -124,6 +124,9 @@ use mlsirm_core::rt::{
 use mlsirm_core::rt_joint::{fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig};
 use mlsirm_core::scoring::{
     bank_information_device as core_bank_information_device,
+    cat_ability_eap_device as core_cat_ability_eap_device,
+    cat_ability_mle_device as core_cat_ability_mle_device,
+    cat_ability_standard_error_device as core_cat_ability_standard_error_device,
     cat_next_item_device as core_cat_next_item_device,
     eapsum_tables_device as core_eapsum_tables_device,
     empirical_reliability_device as core_empirical_reliability_device,
@@ -7923,6 +7926,180 @@ fn oakes_standard_errors(
     Ok(out.into())
 }
 
+/// Rust-owned CAT MLE ability estimation.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    xi_mean, administered, responses, alpha, b, zeta, tau, factor_id, model,
+    n_dims, latent_dim, eps_distance, start = None, max_iter = 50, tol = 1e-6,
+    bound = 6.0, device = "auto",
+))]
+fn cat_ability_mle(
+    xi_mean: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, i64>,
+    responses: PyReadonlyArray1<'_, f64>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    start: Option<PyReadonlyArray1<'_, f64>>,
+    max_iter: usize,
+    tol: f64,
+    bound: f64,
+    device: &str,
+) -> PyResult<(Vec<f64>, Vec<f64>, Vec<bool>)> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let administered = convert_item_indices(administered.as_slice()?)?;
+    let start = start
+        .as_ref()
+        .map(|values| values.as_slice().map(|slice| slice.to_vec()))
+        .transpose()?;
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let result = core_cat_ability_mle_device(
+        &bank,
+        xi_mean.as_slice()?,
+        &administered,
+        responses.as_slice()?,
+        start.as_deref(),
+        max_iter,
+        tol,
+        bound,
+        device,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok((result.theta, result.se, result.finite))
+}
+
+/// Rust-owned CAT EAP ability estimation.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    xi_mean, administered, responses, alpha, b, zeta, tau, factor_id, model,
+    n_dims, latent_dim, eps_distance, prior_mean, prior_sd, n_quad = 41,
+    quad_range = 6.0, device = "auto",
+))]
+fn cat_ability_eap(
+    xi_mean: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, i64>,
+    responses: PyReadonlyArray1<'_, f64>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    n_quad: usize,
+    quad_range: f64,
+    device: &str,
+) -> PyResult<(Vec<f64>, Vec<f64>, Vec<bool>)> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let administered = convert_item_indices(administered.as_slice()?)?;
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let result = core_cat_ability_eap_device(
+        &bank,
+        xi_mean.as_slice()?,
+        &administered,
+        responses.as_slice()?,
+        &prior,
+        n_quad,
+        quad_range,
+        device,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok((result.theta, result.se, result.finite))
+}
+
+/// Rust-owned CAT asymptotic standard-error reduction.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    xi_mean, theta, administered, alpha, b, zeta, tau, factor_id, model,
+    n_dims, latent_dim, eps_distance, device = "auto",
+))]
+fn cat_ability_standard_error(
+    xi_mean: PyReadonlyArray1<'_, f64>,
+    theta: PyReadonlyArray1<'_, f64>,
+    administered: Option<PyReadonlyArray1<'_, i64>>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    device: &str,
+) -> PyResult<Vec<f64>> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let administered = match &administered {
+        Some(values) => Some(convert_item_indices(values.as_slice()?)?),
+        None => None,
+    };
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    core_cat_ability_standard_error_device(
+        &bank,
+        xi_mean.as_slice()?,
+        theta.as_slice()?,
+        administered.as_deref(),
+        device,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
 /// formula, c=0/d=1 logistic case; Lord test-information tradition).
 #[pyfunction]
@@ -8585,6 +8762,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(vuong_nonnested, m)?)?;
     m.add_function(wrap_pyfunction!(dimensionality_residuals, m)?)?;
     m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_ability_eap, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
     m.add_function(wrap_pyfunction!(bank_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
     m.add_function(wrap_pyfunction!(plausible_values, m)?)?;
@@ -8635,6 +8815,15 @@ fn convert_factor_id(raw: &[i64], n_dims: usize) -> PyResult<Vec<usize>> {
             } else {
                 Ok(value as usize)
             }
+        })
+        .collect()
+}
+
+fn convert_item_indices(raw: &[i64]) -> PyResult<Vec<usize>> {
+    raw.iter()
+        .map(|&value| {
+            usize::try_from(value)
+                .map_err(|_| PyValueError::new_err("item indices must be non-negative"))
         })
         .collect()
 }

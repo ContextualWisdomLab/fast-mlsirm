@@ -268,6 +268,17 @@
 - Added a deterministic CI contract that requires Python 3.14 to execute the same complete pytest suite rather than a reduced compatibility smoke path.
 - Added a non-matrix `python` aggregate job so branch-protection's required check context named `python` still receives a single SUCCESS/FAILURE after every matrix leg finishes.
 
+#### Rust-owned CAT ability estimation
+
+- Moved public CAT MLE, EAP, and ability-standard-error arithmetic from the
+  Python wrapper into the compiled Rust scoring core, retaining Python only for
+  validation, marshalling, and adaptive-test policy.
+- Added bounded Newton MLE, prior-centred grid EAP, scoped per-dimension Rust
+  workers, and device-aware information reduction with explicit handling for
+  all-identical response patterns and unadministered dimensions.
+- Added sentinel delegation tests, Rust edge-case tests, seeded true-trait
+  recovery tests, score-equation checks, and APA 7th CAT doctoring.
+
 #### Current support-policy version line
 
 - Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
