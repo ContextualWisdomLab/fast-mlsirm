@@ -505,18 +505,37 @@ def _rankings_to_csr(name, rankings, n):
 
         need = flat_count + len(ranking_items)
         if flat.shape[0] < need:
-            grown = np.empty(max(need, max(8, flat.shape[0] * 2 or 8)), dtype=np.uint64)
+            # Geometric growth is optional; never allocate more uint64 capacity than
+            # the declared CSR byte budget can hold when combined with the reserved
+            # start-offset slots for this ranking (including its closing offset).
+            geometric = max(need, max(8, flat.shape[0] * 2 or 8))
+            max_flat_elems = (MAX_RANKING_CSR_BYTES // 8) - (start_count + 1)
+            capacity = min(geometric, max_flat_elems)
+            if capacity < need:
+                raise ValueError(
+                    f"{name}: ranking CSR byte limit exceeded "
+                    f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+                )
+            grown = np.empty(capacity, dtype=np.uint64)
             if flat_count:
                 grown[:flat_count] = flat[:flat_count]
             flat = grown
-        flat[flat_count : flat_count + len(ranking_items)] = np.asarray(
-            ranking_items, dtype=np.uint64
-        )
+        # Stream validated integers into the live buffer without a list→uint64
+        # temporary that would double the working set outside the CSR budget.
+        for offset, xi in enumerate(ranking_items):
+            flat[flat_count + offset] = xi
         flat_count += len(ranking_items)
         if starts.shape[0] < start_count + 1:
-            grown_starts = np.empty(
-                max(start_count + 1, max(8, starts.shape[0] * 2)), dtype=np.uint64
-            )
+            need_starts = start_count + 1
+            geometric_starts = max(need_starts, max(8, starts.shape[0] * 2))
+            max_start_elems = (MAX_RANKING_CSR_BYTES // 8) - flat_count
+            start_capacity = min(geometric_starts, max_start_elems)
+            if start_capacity < need_starts:
+                raise ValueError(
+                    f"{name}: ranking CSR byte limit exceeded "
+                    f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+                )
+            grown_starts = np.empty(start_capacity, dtype=np.uint64)
             grown_starts[:start_count] = starts[:start_count]
             starts = grown_starts
         starts[start_count] = flat_count
