@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Bound LLM-judge response JSON nesting depth before ``json.loads`` so excessively nested payloads fail closed with ``JudgeFormatError`` instead of risking process-level recursion failure.
 - Public fixed-form `assemble_test_form` delegates greedy maximum-information selection and content-feasibility look-ahead to the Rust core (`assemble_test_form_greedy`).
 - Public fixed-anchor `link_fixed_item_parameters` delegates affine scale/shift estimation and parameter transformation to the Rust core.
 - Public `observed_information` and `second_order_test` delegate Hessian assembly and eigenvalue diagnostics to the Rust core.

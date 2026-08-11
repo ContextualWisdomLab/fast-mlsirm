@@ -108,6 +108,19 @@ def test_judge_rejects_wrapped_or_fenced_json() -> None:
             )
 
 
+def test_judge_rejects_excessively_nested_json() -> None:
+    """Deep object nesting must fail closed before json.loads recursion risk."""
+    from fast_mlsirm.llm_judge import MAX_JUDGE_JSON_DEPTH
+
+    nested = "{" * (MAX_JUDGE_JSON_DEPTH + 1) + "}" * (MAX_JUDGE_JSON_DEPTH + 1)
+    with pytest.raises(JudgeFormatError, match="nesting exceeds maximum depth"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(nested)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+
 def test_judge_result_projects_only_multiple_criteria_to_irt_items() -> None:
     result = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
         task="task",
