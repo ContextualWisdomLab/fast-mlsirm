@@ -9,6 +9,10 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_MAX_PARALLEL_RANDOM_WORKSPACE_BYTES = 128 * 1024 * 1024
+_U64_MAX = (1 << 64) - 1
+
+
 @dataclass
 class ParallelAnalysisResult:
     """Parallel-analysis outputs, all vectors in descending observed-
@@ -37,6 +41,33 @@ _REFERENCES = """References (APA 7th ed.):
     """
 
 
+def _integer_control(
+    name: str,
+    value: object,
+    *,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    """Validate an integer control without invoking caller conversion hooks."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+        raise ValueError(f"{name} must be an integer")
+    parsed = int(value)
+    if parsed < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be <= {maximum}")
+    return parsed
+
+
+def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
+    """Reject random-eigenvalue workspaces above the package safety ceiling."""
+    workspace_bytes = n_iterations * n_items * np.dtype(np.float64).itemsize
+    if workspace_bytes > _MAX_PARALLEL_RANDOM_WORKSPACE_BYTES:
+        raise ValueError(
+            "parallel analysis random benchmark workspace exceeds 128 MiB"
+        )
+
+
 def parallel_analysis(
     data: np.ndarray,
     n_iterations: int | None = None,
@@ -59,9 +90,12 @@ def parallel_analysis(
     (R type-7 quantile) instead — Glorfeld's conservative variant.
     ``n_iterations`` defaults to ``30 * n_items`` (paran's default). The
     random stream is this crate's deterministic LCG — results are
-    paran-inspired but not bit-identical to any R run. In LLM-as-a-Judge
-    quality management this estimates how many latent dimensions the judge
-    rubric actually measures.
+    paran-inspired but not bit-identical to any R run. Integer controls
+    accept Python and NumPy integer scalars but reject booleans and implicit
+    conversion hooks. The random-eigenvalue benchmark workspace is bounded
+    to 128 MiB before compiled dispatch. In LLM-as-a-Judge quality management
+    this estimates how many latent dimensions the judge rubric actually
+    measures.
 
     """
     from .fitstats import _core_module
@@ -73,15 +107,21 @@ def parallel_analysis(
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_persons, n_items = x.shape
-    iters = 30 * n_items if n_iterations is None else int(n_iterations)
-    if iters < 1:
-        raise ValueError("n_iterations must be >= 1")
-    if not 0 <= int(centile) <= 99:
-        raise ValueError("centile must be 0 (mean) or in 1..=99")
-    if int(seed) < 0:
-        raise ValueError("seed must be non-negative")
+    iters = (
+        30 * n_items
+        if n_iterations is None
+        else _integer_control("n_iterations", n_iterations, minimum=1)
+    )
+    centile_value = _integer_control("centile", centile, minimum=0, maximum=99)
+    seed_value = _integer_control("seed", seed, minimum=0, maximum=_U64_MAX)
+    _validate_random_workspace(iters, n_items)
     res = core.parallel_analysis(
-        x.reshape(-1), int(n_persons), int(n_items), iters, int(centile), int(seed)
+        x.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        iters,
+        centile_value,
+        seed_value,
     )
     return ParallelAnalysisResult(
         retained=int(res["retained"]),
