@@ -1,0 +1,51 @@
+@startuml
+skinparam shadowing false
+
+title Governed automated-scoring sequence
+
+actor Caller
+participant "AssessmentSpec /\nRubricSpecification" as Spec
+participant "ScoringRequest Factory" as Request
+participant "ScoringEngine\n(Human / AI / External)" as Engine
+participant "Observation Boundary" as Obs
+participant "Facets Design Builder" as Facets
+participant "Rust Calibration Core" as Rust
+participant "Validation / Fairness" as Validate
+participant "Report / Adjudication" as Report
+
+Caller -> Spec : select exact approved versions/fingerprints
+Caller -> Request : create request(response revision, task revision, engine policy)
+Request -> Spec : replay contract provenance
+Spec --> Request : verified
+Request --> Caller : content-addressed ScoringRequest
+
+Caller -> Engine : execute exact request
+Engine --> Caller : untrusted/raw engine result
+Caller -> Obs : construct governed ScoreObservation
+Obs -> Request : replay request + criterion + evidence + engine identity
+Request --> Obs : verified
+Obs --> Caller : scored | abstained | failed | excluded
+
+Caller -> Facets : assemble governed observations
+Facets -> Obs : replay child provenance
+Facets -> Facets : validate respondent-task and task-rater design
+Facets --> Caller : criterion-specific design(s)
+
+Caller -> Rust : fit exact design
+Rust --> Caller : estimates + convergence + trace evidence
+Caller -> Validate : validate fit/agreement/DIF/range/drift evidence
+Validate --> Caller : validation evidence + review triggers
+Caller -> Report : build source-text-minimized audit report
+Report --> Caller : exact-value JSON/HTML + human review route
+
+note over Obs,Facets
+Terminal states remain distinct.
+Abstention/failure is never coerced into a low score.
+end note
+
+note over Engine,Obs
+Engine output is not trusted merely because it is valid JSON.
+Provider/rater identity and exact task/response revision remain separate.
+end note
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml
+skinparam shadowing false
+
+title Governed item lifecycle
+
+[*] --> Draft
+Draft --> Audited
+Audited --> Screened
+Screened --> Pilot
+Pilot --> Calibrated
+Calibrated --> Approved
+Approved --> Active
+Active --> Suspended
+Suspended --> Active
+Suspended --> Retired
+Calibrated --> Quarantined
+Pilot --> Quarantined
+Quarantined --> Retired
+state "Draft (new revision)" as CorrectedDraft
+Quarantined --> CorrectedDraft : create corrected revision
+CorrectedDraft --> Audited : new fingerprint
+CorrectedDraft ..> Quarantined : supersedes
+Active --> Retired
+Draft --> Retired
+
+note right of Active
+Approved and active revisions are immutable.
+The quarantined revision is retained or terminated; it is never edited in place.
+A correction is a new draft with a new revision fingerprint and an explicit
+supersedes relationship.
+end note
+
+note left of Pilot
+Benchmark criteria are candidate-blind.
+Candidate-aware discovery is separated from scored candidates.
+end note
+
+@enduml

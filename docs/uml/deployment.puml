@@ -1,0 +1,51 @@
+@startuml
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+title fast-mlsirm deployment and composition boundary
+
+node "Independent Consumer" as Independent {
+  artifact "Python wheel" as Wheel
+  component "Python Process / Notebook / Batch" as PythonHost
+  artifact "fast_mlsirm._core\nRust cdylib" as Core
+  PythonHost --> Wheel
+  Wheel --> Core
+}
+
+node "Hosted Psychometrics Product" as Hosted {
+  component "Psychometrics Commons" as Commons
+  database "Product persistence\n(owned downstream)" as ProductDB
+  component "Auth / tenant / consent / sessions" as ProductRuntime
+  artifact "fast-mlsirm wheel" as HostedWheel
+  Commons --> ProductRuntime
+  ProductRuntime --> ProductDB
+  Commons --> HostedWheel : versioned package/API
+}
+
+cloud "Optional CWL Services" as Services {
+  component "contextual-orchestrator" as Orchestrator
+  component "Keyverse" as Keyverse
+  component "TEPP" as TEPP
+  component "Gyeot" as Gyeot
+  component "semantic-data-portal" as Portal
+  component "EgressWeave" as Egress
+}
+
+Hosted ..> Orchestrator : explicit LLM orchestration contract
+Hosted ..> Keyverse : identity/federation contract
+Hosted ..> TEPP : temporal/event integration
+Hosted ..> Gyeot : EMA/ESM collection integration
+Hosted ..> Portal : research artifact/provenance integration
+Hosted ..> Egress : external-egress policy integration
+
+note right of Wheel
+Contains Python API plus compiled Rust numerical core.
+No hosted DB, HTTP router, tenant identity, or deployment state.
+end note
+
+note bottom of Hosted
+Host owns transport, authn/authz, tenancy, persistence,
+retention, deployment and service credentials.
+end note
+
+@enduml

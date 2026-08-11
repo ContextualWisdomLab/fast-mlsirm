@@ -1,0 +1,59 @@
+@startuml
+skinparam shadowing false
+
+title Relation-safe measurement-model selection
+
+actor Analyst
+participant "Factor Retention" as Retention
+participant "Candidate Model Fits" as Fits
+participant "Relation Classifier" as Relation
+participant "Inferential Comparator" as Infer
+participant "Held-out Validator" as CV
+participant "Residual / DIF /\nScoreability Diagnostics" as Diagnostics
+participant "Recovery Simulation" as Recovery
+participant "Selection Policy" as Select
+
+Analyst -> Retention : propose substantive factor counts
+Retention --> Analyst : candidate counts + uncertainty
+Analyst -> Fits : fit correlated MIRT / bifactor / higher-order / testlet / two-tier / facets / latent-space
+Fits --> Analyst : exact fit artifacts + case/cluster likelihood evidence
+
+Analyst -> Relation : classify from actual constraints/boundaries
+Relation --> Analyst : regular_nested | boundary_nested | nonlinear_nested | non_nested | overlapping | unknown
+
+alt regular nested
+  Analyst -> Infer : LR / robust LR
+else boundary or singular
+  Analyst -> Infer : parametric-bootstrap / boundary-aware LR
+else strictly non-nested or overlapping
+  Analyst -> Infer : formal distinguishability first
+  Infer --> Analyst : distinguishable?
+  alt distinguishable
+    Analyst -> Infer : non-nested selection statistic
+  else not established
+    Infer --> Analyst : no preferred model
+  end
+else unknown
+  Relation --> Analyst : fail closed; establish relation
+end
+
+Analyst -> CV : leave-query/person/testlet/rater/domain-out as appropriate
+CV --> Analyst : cluster-aware predictive evidence
+Analyst -> Diagnostics : fit + local dependence + DIF/invariance + scoreability/stability
+Diagnostics --> Analyst : interpretation evidence
+Analyst -> Recovery : realistic true-structure simulation
+Recovery --> Analyst : selection accuracy + bias/RMSE/coverage/convergence
+Analyst -> Select : combine evidence under declared policy
+Select --> Analyst : simplest supported model or indeterminate
+
+note over Relation,Infer
+Model names do not define nestedness.
+A positive numeric likelihood-difference variance is not, by itself,
+the formal Vuong distinguishability test.
+end note
+
+note over Select
+A better in-sample fit does not automatically authorize a score interpretation.
+end note
+
+@enduml
