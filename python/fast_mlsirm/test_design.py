@@ -106,6 +106,10 @@ def assemble_test_form(
     Picks the ``length`` highest-information items (skipping ``exclude``d ones)
     subject to per-content min/max count constraints, raising if no feasible
     form satisfies them. Returns the selected item indices.
+
+    Ordering, exclusion, and content-feasibility decisions are owned by the
+    compiled Rust core (``assemble_test_form_greedy``); Python validates public
+    shapes and marshals constraint maps without mutating caller arrays.
     """
     scores = np.asarray(information, dtype=np.float64)
     if scores.ndim != 1:
@@ -121,34 +125,20 @@ def assemble_test_form(
     if labels is not None and labels.shape != scores.shape:
         raise ValueError("content length must match information")
 
-    excluded = set(np.asarray(exclude, dtype=np.int64).tolist()) if exclude is not None else set()
-    selected: list[int] = []
-    counts: dict[str, int] = {}
-    order = [int(i) for i in np.argsort(-scores) if i not in excluded and np.isfinite(scores[i])]
+    exclude_list: list[int] = []
+    if exclude is not None:
+        exclude_list = [int(i) for i in np.asarray(exclude, dtype=np.int64).tolist()]
 
-    for _ in range(length):
-        for item in order:
-            if item in selected:
-                continue
-            label = None if labels is None else str(labels[item])
-            next_counts = counts.copy()
-            if label is not None:
-                if next_counts.get(label, 0) >= max_counts.get(label, length):
-                    continue
-                next_counts[label] = next_counts.get(label, 0) + 1
-            if _constraints_feasible(order, selected + [item], excluded, labels, next_counts, length, min_counts, max_counts):
-                selected.append(item)
-                counts = next_counts
-                break
-        else:
-            raise ValueError("could not assemble a form that satisfies constraints")
+    from . import _core as core
 
-    for label, minimum in min_counts.items():
-        if counts.get(label, 0) < minimum:
-            # Unreachable: the per-slot feasibility look-ahead only admits a pick
-            # when every minimum can still be met, so no completed length-form can
-            # leave a minimum unsatisfied here. Kept as a defensive guard.
-            raise ValueError(f"minimum content constraint not met: {label}")  # pragma: no cover
+    selected = core.assemble_test_form_greedy(
+        np.ascontiguousarray(scores, dtype=np.float64),
+        int(length),
+        None if labels is None else [str(x) for x in labels.tolist()],
+        min_counts,
+        max_counts,
+        exclude_list,
+    )
     return np.asarray(selected, dtype=np.int64)
 
 
@@ -180,38 +170,3 @@ def _person_params(params: MLSIRMParams, theta: np.ndarray | None, person_index:
     )
 
 
-def _constraints_feasible(
-    order: list[int],
-    selected: list[int],
-    excluded: set[int],
-    labels: np.ndarray | None,
-    counts: dict[str, int],
-    length: int,
-    min_counts: dict[str, int],
-    max_counts: dict[str, int],
-) -> bool:
-    """Return whether the remaining slots can still satisfy the min-content constraints.
-
-    A look-ahead feasibility check used during greedy form assembly: verifies
-    enough eligible items remain per content area to meet each minimum.
-    """
-    slots_left = length - len(selected)
-    required_left = sum(max(0, minimum - counts.get(label, 0)) for label, minimum in min_counts.items())
-    if required_left > slots_left:
-        return False
-    if labels is None:
-        return True
-
-    blocked = set(selected) | excluded
-    for label, minimum in min_counts.items():
-        needed = max(0, minimum - counts.get(label, 0))
-        available = 0
-        for item in order:
-            if item in blocked or str(labels[item]) != label:
-                continue
-            if counts.get(label, 0) + available >= max_counts.get(label, length):
-                break
-            available += 1
-        if available < needed:
-            return False
-    return True

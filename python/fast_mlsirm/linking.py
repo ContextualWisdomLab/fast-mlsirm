@@ -11,7 +11,12 @@ def link_fixed_item_parameters(
     anchor_items: np.ndarray,
     factor_id: np.ndarray | None = None,
 ) -> tuple[MLSIRMParams, dict[str, np.ndarray]]:
-    """Put source parameters on the target metric using fixed anchor items."""
+    """Put source parameters on the target metric using fixed anchor items.
+
+    Affine scale/shift estimation and parameter transformation are owned by the
+    compiled Rust core (``link_fixed_item_parameters``); Python validates public
+    shapes and reconstructs the parameter object plus evidence map.
+    """
     anchors_raw = np.asarray(anchor_items)
     if anchors_raw.ndim != 1 or anchors_raw.size == 0:
         raise ValueError("anchor_items must be a non-empty 1D array")
@@ -61,33 +66,24 @@ def link_fixed_item_parameters(
     if np.any(factors >= n_dims):
         raise ValueError("factor_id values must be in 0..n_dims-1")
 
+    # Affine coefficients and transformed parameters are Rust-owned.
+    from . import _core as core
+
+    res = core.link_fixed_item_parameters(
+        np.ascontiguousarray(source.theta, dtype=np.float64),
+        np.ascontiguousarray(source.alpha, dtype=np.float64),
+        np.ascontiguousarray(source.b, dtype=np.float64),
+        np.ascontiguousarray(target.alpha, dtype=np.float64),
+        np.ascontiguousarray(target.b, dtype=np.float64),
+        np.ascontiguousarray(anchors, dtype=np.int64),
+        np.ascontiguousarray(factors, dtype=np.int64),
+    )
     linked = source.copy()
-    scale = np.ones(n_dims, dtype=np.float64)
-    shift = np.zeros(n_dims, dtype=np.float64)
-
-    for dim in range(n_dims):
-        dim_anchors = anchors[factors[anchors] == dim]
-        if dim_anchors.size == 0:
-            continue
-        target_a = target.a[dim_anchors]
-        if np.any(target_a <= 0):
-            # Reachable: a = exp(alpha) underflows to 0.0 for a finite but very
-            # negative alpha (which passes the finiteness check), and params can
-            # be constructed with a non-positive anchor slope directly.
-            raise ValueError("target anchor slopes must be positive")
-        scale[dim] = float(np.exp(np.mean(np.log(source.a[dim_anchors] / target_a))))
-        shift[dim] = float(np.mean((source.b[dim_anchors] - target.b[dim_anchors]) / target_a))
-        if not (np.isfinite(scale[dim]) and scale[dim] > 0.0 and np.isfinite(shift[dim])):
-            # Reachable: a source anchor slope that underflows to 0 makes
-            # log(source.a / target_a) = -inf, so scale underflows to 0.0 even
-            # when every target slope is strictly positive.
-            raise ValueError("non-finite or non-positive linking coefficients (check anchor parameters)")
-
-        items = factors == dim
-        linked.theta[:, dim] = scale[dim] * source.theta[:, dim] + shift[dim]
-        linked.alpha[items] = source.alpha[items] - np.log(scale[dim])
-        linked.b[items] = source.b[items] - linked.a[items] * shift[dim]
-
+    linked.theta = np.asarray(res["theta"], dtype=np.float64)
+    linked.alpha = np.asarray(res["alpha"], dtype=np.float64)
+    linked.b = np.asarray(res["b"], dtype=np.float64)
+    scale = np.asarray(res["scale"], dtype=np.float64)
+    shift = np.asarray(res["shift"], dtype=np.float64)
     return linked, {"scale": scale, "shift": shift, "anchor_items": anchors.copy()}
 
 

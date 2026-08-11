@@ -18,8 +18,17 @@ use mlsirm_core::fitstats::{
     m2_rmsea2 as core_m2, person_fit as core_person_fit, poly_local_dependence as core_poly_ld,
     poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
-use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
-use mlsirm_core::inference::{standard_errors_from_vcov as core_standard_errors_from_vcov, vcov_from_hessian as core_vcov_from_hessian};
+use mlsirm_core::linking::{
+    irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
+    LinkMethod,
+};
+use mlsirm_core::inference::{
+    finite_difference_hessian as core_finite_difference_hessian,
+    second_order_test as core_second_order_test,
+    standard_errors_from_vcov as core_standard_errors_from_vcov,
+    vcov_from_hessian as core_vcov_from_hessian,
+};
+use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
     PopulationSpec, XiRuleKind,
@@ -145,6 +154,7 @@ use mlsirm_core::security::k_variants as core_k_variants;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::standard_setting::hofstee as core_hofstee;
 use mlsirm_core::subscores::subscores as core_subscores;
+use mlsirm_core::test_form::assemble_test_form_greedy as core_assemble_test_form_greedy;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
 use mlsirm_core::utility::{
@@ -5066,6 +5076,55 @@ fn irt_link(
     Ok(out.into())
 }
 
+/// Fixed-anchor mean/mean-style parameter linking onto a target metric.
+///
+/// Returns a dict with linked ``theta`` (list of per-person rows), ``alpha``,
+/// ``b``, and affine evidence ``scale`` / ``shift``. Python reconstructs the
+/// parameter object and attaches ``anchor_items``.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn link_fixed_item_parameters(
+    py: Python<'_>,
+    source_theta: PyReadonlyArray2<'_, f64>,
+    source_alpha: PyReadonlyArray1<'_, f64>,
+    source_b: PyReadonlyArray1<'_, f64>,
+    target_alpha: PyReadonlyArray1<'_, f64>,
+    target_b: PyReadonlyArray1<'_, f64>,
+    anchors: PyReadonlyArray1<'_, i64>,
+    factors: PyReadonlyArray1<'_, i64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let shape = source_theta.shape();
+    if shape.len() != 2 {
+        return Err(PyValueError::new_err("source theta must be 2-D"));
+    }
+    let n_persons = shape[0];
+    let n_dims = shape[1];
+    let res = core_link_fixed_item_parameters(
+        source_theta.as_slice()?,
+        n_persons,
+        n_dims,
+        source_alpha.as_slice()?,
+        source_b.as_slice()?,
+        target_alpha.as_slice()?,
+        target_b.as_slice()?,
+        anchors.as_slice()?,
+        factors.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)?;
+    let mut theta_rows: Vec<Vec<f64>> = Vec::with_capacity(n_persons);
+    for p in 0..n_persons {
+        let start = p * n_dims;
+        theta_rows.push(res.theta[start..start + n_dims].to_vec());
+    }
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta", theta_rows)?;
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("b", res.b)?;
+    out.set_item("scale", res.scale)?;
+    out.set_item("shift", res.shift)?;
+    Ok(out.into())
+}
+
 fn equate_result_dict(py: Python<'_>, res: EquateResult) -> PyResult<Py<pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("x_scores", res.x_scores)?;
@@ -8219,6 +8278,154 @@ fn cat_select_item(
     .map_err(PyValueError::new_err)
 }
 
+/// Greedy maximum-information fixed-form assembly with content constraints.
+///
+/// Python validates public shapes and marshals maps; ordering, exclusion, and
+/// content-feasibility decisions are owned by the Rust numeric core.
+#[pyfunction]
+#[pyo3(signature = (
+    information,
+    length,
+    content = None,
+    min_per_content = None,
+    max_per_content = None,
+    exclude = None,
+))]
+fn assemble_test_form_greedy(
+    information: PyReadonlyArray1<'_, f64>,
+    length: usize,
+    content: Option<Vec<String>>,
+    min_per_content: Option<HashMap<String, i64>>,
+    max_per_content: Option<HashMap<String, i64>>,
+    exclude: Option<Vec<i64>>,
+) -> PyResult<Vec<i64>> {
+    let min_map = min_per_content.unwrap_or_default();
+    let max_map = max_per_content.unwrap_or_default();
+    let exclude_idx = exclude.unwrap_or_default();
+    let content_ref = content.as_deref();
+    core_assemble_test_form_greedy(
+        information.as_slice()?,
+        length,
+        content_ref,
+        &min_map,
+        &max_map,
+        &exclude_idx,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Adam optimizer for packed JMLE parameters (Kingma & Ba, 2015).
+///
+/// `objective(x) -> (obj, grad, loglik)` is evaluated from Python; moment
+/// updates and convergence control run in Rust.
+#[pyfunction]
+#[pyo3(signature = (x0, objective, learning_rate, max_iter, tolerance))]
+fn jmle_optimize_adam<'py>(
+    py: Python<'py>,
+    x0: PyReadonlyArray1<'_, f64>,
+    objective: Bound<'py, PyAny>,
+    learning_rate: f64,
+    max_iter: usize,
+    tolerance: f64,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String)> {
+    let x0_slice = x0.as_slice()?.to_vec();
+    let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
+        let arr = PyArray1::from_slice(py, x);
+        let out = objective
+            .call1((arr,))
+            .map_err(|e| format!("jmle objective failed: {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
+            .extract()
+            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        Ok((obj, grad, loglik))
+    };
+    let (x, obj_t, ll_t, status) =
+        core_jmle_adam(&x0_slice, &mut obj_cb, learning_rate, max_iter, tolerance)
+            .map_err(PyValueError::new_err)?;
+    Ok((
+        PyArray1::from_slice(py, &x),
+        PyArray1::from_slice(py, &obj_t),
+        PyArray1::from_slice(py, &ll_t),
+        status,
+    ))
+}
+
+/// L-BFGS optimizer for packed JMLE parameters (Liu & Nocedal, 1989).
+#[pyfunction]
+#[pyo3(signature = (x0, objective, max_iter, tolerance, history))]
+fn jmle_optimize_lbfgs<'py>(
+    py: Python<'py>,
+    x0: PyReadonlyArray1<'_, f64>,
+    objective: Bound<'py, PyAny>,
+    max_iter: usize,
+    tolerance: f64,
+    history: usize,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String)> {
+    let x0_slice = x0.as_slice()?.to_vec();
+    let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
+        let arr = PyArray1::from_slice(py, x);
+        let out = objective
+            .call1((arr,))
+            .map_err(|e| format!("jmle objective failed: {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
+            .extract()
+            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        Ok((obj, grad, loglik))
+    };
+    let (x, obj_t, ll_t, status) =
+        core_jmle_lbfgs(&x0_slice, &mut obj_cb, max_iter, tolerance, history)
+            .map_err(PyValueError::new_err)?;
+    Ok((
+        PyArray1::from_slice(py, &x),
+        PyArray1::from_slice(py, &obj_t),
+        PyArray1::from_slice(py, &ll_t),
+        status,
+    ))
+}
+
+/// Sequence Adam and/or L-BFGS for public JMLE (`adam` / `lbfgs` / `adam_lbfgs`).
+#[pyfunction]
+#[pyo3(signature = (x0, objective, optimizer, max_iter, learning_rate, tolerance, lbfgs_history))]
+fn jmle_optimize<'py>(
+    py: Python<'py>,
+    x0: PyReadonlyArray1<'_, f64>,
+    objective: Bound<'py, PyAny>,
+    optimizer: &str,
+    max_iter: usize,
+    learning_rate: f64,
+    tolerance: f64,
+    lbfgs_history: usize,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String, usize)> {
+    let x0_slice = x0.as_slice()?.to_vec();
+    let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
+        let arr = PyArray1::from_slice(py, x);
+        let out = objective
+            .call1((arr,))
+            .map_err(|e| format!("jmle objective failed: {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
+            .extract()
+            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        Ok((obj, grad, loglik))
+    };
+    let (x, obj_t, ll_t, status, n_iter) = core_jmle_run_optimizer(
+        &x0_slice,
+        &mut obj_cb,
+        optimizer,
+        max_iter,
+        learning_rate,
+        tolerance,
+        lbfgs_history,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok((
+        PyArray1::from_slice(py, &x),
+        PyArray1::from_slice(py, &obj_t),
+        PyArray1::from_slice(py, &ll_t),
+        status,
+        n_iter,
+    ))
+}
+
 /// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
 /// formula, c=0/d=1 logistic case; Lord test-information tradition).
 #[pyfunction]
@@ -8734,6 +8941,70 @@ fn benjamini_hochberg(p_values: PyReadonlyArray1<'_, f64>, q: f64) -> PyResult<V
     Ok(core_benjamini_hochberg(p_values.as_slice()?, q))
 }
 
+/// Assemble a dense finite-difference Hessian and return a row-major flat matrix.
+///
+/// Python evaluates the scalar objective at the requested offsets; Rust owns the
+/// FD coefficients and symmetrisation so observed-information construction stays
+/// single-sourced on the numeric core.
+#[pyfunction]
+#[pyo3(signature = (
+    n,
+    step,
+    base,
+    diag_plus,
+    diag_minus,
+    off_pp,
+    off_pm,
+    off_mp,
+    off_mm,
+))]
+fn observed_information(
+    n: usize,
+    step: f64,
+    base: f64,
+    diag_plus: PyReadonlyArray1<'_, f64>,
+    diag_minus: PyReadonlyArray1<'_, f64>,
+    off_pp: PyReadonlyArray1<'_, f64>,
+    off_pm: PyReadonlyArray1<'_, f64>,
+    off_mp: PyReadonlyArray1<'_, f64>,
+    off_mm: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Vec<f64>> {
+    core_finite_difference_hessian(
+        n,
+        step,
+        base,
+        diag_plus.as_slice()?,
+        diag_minus.as_slice()?,
+        off_pp.as_slice()?,
+        off_pm.as_slice()?,
+        off_mp.as_slice()?,
+        off_mm.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Positive-definiteness diagnostic for a square Hessian / information matrix.
+#[pyfunction]
+#[pyo3(signature = (hessian, tol = 1e-8))]
+fn second_order_test(
+    py: Python<'_>,
+    hessian: PyReadonlyArray2<'_, f64>,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let shape = hessian.shape();
+    if shape.len() != 2 || shape[0] != shape[1] {
+        return Err(PyValueError::new_err("hessian must be a square matrix"));
+    }
+    let n = shape[0];
+    let (passed, min_eigenvalue, eigenvalues) =
+        core_second_order_test(hessian.as_slice()?, n, tol).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("passed", passed)?;
+    out.set_item("min_eigenvalue", min_eigenvalue)?;
+    out.set_item("eigenvalues", eigenvalues)?;
+    Ok(out.into())
+}
+
 /// Invert observed information / Hessian (pinv fallback). Returns row-major flat.
 #[pyfunction]
 fn vcov_from_hessian(hessian: PyReadonlyArray2<'_, f64>, rcond: f64) -> PyResult<Vec<f64>> {
@@ -8876,6 +9147,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
+    m.add_function(wrap_pyfunction!(link_fixed_item_parameters, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat_linear, m)?)?;
@@ -8918,6 +9190,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
     m.add_function(wrap_pyfunction!(chi2_sf, m)?)?;
     m.add_function(wrap_pyfunction!(benjamini_hochberg, m)?)?;
+    m.add_function(wrap_pyfunction!(observed_information, m)?)?;
+    m.add_function(wrap_pyfunction!(second_order_test, m)?)?;
     m.add_function(wrap_pyfunction!(vcov_from_hessian, m)?)?;
     m.add_function(wrap_pyfunction!(standard_errors_from_vcov, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
@@ -8925,6 +9199,10 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
     m.add_function(wrap_pyfunction!(cat_item_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_select_item, m)?)?;
+    m.add_function(wrap_pyfunction!(assemble_test_form_greedy, m)?)?;
+    m.add_function(wrap_pyfunction!(jmle_optimize_adam, m)?)?;
+    m.add_function(wrap_pyfunction!(jmle_optimize_lbfgs, m)?)?;
+    m.add_function(wrap_pyfunction!(jmle_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(bank_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
     m.add_function(wrap_pyfunction!(plausible_values, m)?)?;

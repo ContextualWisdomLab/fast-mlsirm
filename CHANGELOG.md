@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Public fixed-form `assemble_test_form` delegates greedy maximum-information selection and content-feasibility look-ahead to the Rust core (`assemble_test_form_greedy`).
+- Public fixed-anchor `link_fixed_item_parameters` delegates affine scale/shift estimation and parameter transformation to the Rust core.
+- Public `observed_information` and `second_order_test` delegate Hessian assembly and eigenvalue diagnostics to the Rust core.
 - Public CAT `item_information` and `select_cat_item` delegate Fisher information and maximum-information ranking to the Rust core.
 - Bound top-1 CSR loser streams and enforce the shared ranking CSR byte ceiling with stable non-reflective iteration errors.
 - Validate ATA content-constraint maps, exposure counts, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile conversion callbacks while preserving accepted string keys and exact integers.
@@ -246,6 +249,22 @@
   test strategy, operability, traceability matrix, and component UML with
   APA 7th doctoring links.
 
+#### Hourly bounded review-repair caller
+
+- Added a schedule-only fast-mlsirm caller that runs at minute 37 every hour and
+  delegates to one immutable organization-owned review-repair workflow.
+- Bounded each run to one new repair dispatch, one-hour same-head retries,
+  protected `main`, non-cancelling product-level single-flight concurrency, and
+  explicit scheduler credentials without direct model secrets or inherited
+  secrets. A delayed next heartbeat does not discard an in-flight bounded scan;
+  exact-head retry and single-writer controls remain owned by the central worker.
+- Kept the workflow-generated `GITHUB_TOKEN` read-only at both workflow and call
+  job scope; cross-repository mutation requires an explicitly forwarded
+  established scheduler credential and fails closed when none is available.
+- Added permanent caller-contract tests and APA 7th doctoring for default-branch
+  activation, immutable reusable-workflow source, failure behavior, rollback,
+  and the NVIDIA NIM control-plane boundary.
+
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
@@ -476,6 +495,12 @@
 #### Top-1 CSR input bounds
 
 - Bound top-1 loser streams to at most `n - 1` items, enforce the shared `MAX_RANKING_CSR_BYTES` ceiling on winner/loser/start `uint64` payloads, and normalize ordinary outer/inner iteration failures to stable non-reflective package errors while propagating process-control signals.
+
+#### JMLE Adam/L-BFGS Rust ownership
+
+- Public JMLE `backend="rust"` routes Adam, L-BFGS, and `adam_lbfgs` sequencing
+  through compiled `jmle_optimize` entrypoints so optimizer state updates no longer
+  re-implement production arithmetic in Python loops.
 
 #### Diagnostics-report focus and contrast preservation
 

@@ -35,6 +35,109 @@ pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f6
     Ok(inv)
 }
 
+/// Positive-definiteness diagnostic for an observed-information / Hessian matrix.
+///
+/// Symmetrises the matrix, computes eigenvalues via Jacobi, and reports whether
+/// every eigenvalue exceeds `tol`. Used by public second-order tests so
+/// uncertainty diagnostics stay single-sourced on the numeric core.
+pub fn second_order_test(
+    hessian: &[f64],
+    n: usize,
+    tol: f64,
+) -> Result<(bool, f64, Vec<f64>), String> {
+    if n == 0 || hessian.len() != n * n {
+        return Err("hessian must be a square matrix".into());
+    }
+    if !tol.is_finite() {
+        return Err("tol must be finite".into());
+    }
+    if hessian.iter().any(|v| !v.is_finite()) {
+        return Err("hessian entries must be finite".into());
+    }
+    let mut symmetric = hessian.to_vec();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let mean = 0.5 * (symmetric[i * n + j] + symmetric[j * n + i]);
+            symmetric[i * n + j] = mean;
+            symmetric[j * n + i] = mean;
+        }
+    }
+    let (mut evals, _) = jacobi_symmetric_eigen(&symmetric, n)?;
+    evals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    // Fix Ordering
+    let min_eigenvalue = evals.first().copied().unwrap_or(f64::NAN);
+    let passed = evals.iter().all(|&lam| lam > tol);
+    Ok((passed, min_eigenvalue, evals))
+}
+
+/// Assemble a dense central finite-difference Hessian from scalar objective values.
+///
+/// `objective(i_sign, j_sign)` is invoked by the public binding with packed
+/// parameter offsets; this core routine only owns the FD coefficients and
+/// final symmetrisation so uncertainty matrices stay single-sourced.
+pub fn finite_difference_hessian(
+    n: usize,
+    step: f64,
+    base: f64,
+    // Diagonal second differences: f(x+h e_i) and f(x-h e_i) for each i
+    diag_plus: &[f64],
+    diag_minus: &[f64],
+    // Upper triangle: f(x+h ei + h ej), f(+ei -ej), f(-ei +ej), f(-ei -ej)
+    // stored as length n*(n-1)/2 each, row-major i<j order
+    off_pp: &[f64],
+    off_pm: &[f64],
+    off_mp: &[f64],
+    off_mm: &[f64],
+) -> Result<Vec<f64>, String> {
+    if n == 0 {
+        return Err("hessian dimension must be positive".into());
+    }
+    if !step.is_finite() || step <= 0.0 {
+        return Err("step must be > 0 and finite".into());
+    }
+    if !base.is_finite() {
+        return Err("objective must be finite for Hessian calculation".into());
+    }
+    let off_n = n * (n - 1) / 2;
+    if diag_plus.len() != n
+        || diag_minus.len() != n
+        || off_pp.len() != off_n
+        || off_pm.len() != off_n
+        || off_mp.len() != off_n
+        || off_mm.len() != off_n
+    {
+        return Err("finite-difference sample lengths do not match dimension".into());
+    }
+    for sample in [diag_plus, diag_minus, off_pp, off_pm, off_mp, off_mm] {
+        if sample.iter().any(|v| !v.is_finite()) {
+            return Err("objective must be finite for Hessian calculation".into());
+        }
+    }
+    let h2 = step * step;
+    let mut hessian = vec![0.0_f64; n * n];
+    for i in 0..n {
+        hessian[i * n + i] = (diag_plus[i] - 2.0 * base + diag_minus[i]) / h2;
+    }
+    let mut k = 0usize;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let value = (off_pp[k] - off_pm[k] - off_mp[k] + off_mm[k]) / (4.0 * h2);
+            hessian[i * n + j] = value;
+            hessian[j * n + i] = value;
+            k += 1;
+        }
+    }
+    // Explicit symmetrisation for numerical hygiene.
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let mean = 0.5 * (hessian[i * n + j] + hessian[j * n + i]);
+            hessian[i * n + j] = mean;
+            hessian[j * n + i] = mean;
+        }
+    }
+    Ok(hessian)
+}
+
 /// Standard errors from a covariance diagonal.
 ///
 /// Finite positive diagonal entries become `sqrt(d)`. Finite non-positive
@@ -186,6 +289,55 @@ fn jacobi_symmetric_eigen(matrix: &[f64], p: usize) -> Result<(Vec<f64>, Vec<f64
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn second_order_detects_positive_definite() {
+        let h = [4.0, 1.0, 1.0, 3.0];
+        let (passed, min_ev, evals) = second_order_test(&h, 2, 1e-8).unwrap();
+        assert!(passed);
+        assert!(min_ev > 0.0);
+        assert_eq!(evals.len(), 2);
+    }
+
+    #[test]
+    fn second_order_detects_indefinite() {
+        let h = [1.0, 0.0, 0.0, -2.0];
+        let (passed, min_ev, _) = second_order_test(&h, 2, 1e-8).unwrap();
+        assert!(!passed);
+        assert!((min_ev + 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn finite_difference_hessian_recovers_quadratic() {
+        // f(x) = 0.5 x^T A x with A = [[2,1],[1,4]] has Hessian A.
+        // base = 0 at x=0; samples follow f(h e_i) = 0.5 A_ii h^2 etc.
+        let n = 2usize;
+        let step = 1e-3;
+        let base = 0.0;
+        let a = [2.0, 1.0, 1.0, 4.0];
+        let quad = |x0: f64, x1: f64| 0.5 * (a[0] * x0 * x0 + 2.0 * a[1] * x0 * x1 + a[3] * x1 * x1);
+        let diag_plus = [quad(step, 0.0), quad(0.0, step)];
+        let diag_minus = [quad(-step, 0.0), quad(0.0, -step)];
+        let off_pp = [quad(step, step)];
+        let off_pm = [quad(step, -step)];
+        let off_mp = [quad(-step, step)];
+        let off_mm = [quad(-step, -step)];
+        let h = finite_difference_hessian(
+            n,
+            step,
+            base,
+            &diag_plus,
+            &diag_minus,
+            &off_pp,
+            &off_pm,
+            &off_mp,
+            &off_mm,
+        )
+        .unwrap();
+        for i in 0..4 {
+            assert!((h[i] - a[i]).abs() < 1e-8, "h={:?} a={:?}", h, a);
+        }
+    }
 
     #[test]
     fn inverts_diagonal_information() {

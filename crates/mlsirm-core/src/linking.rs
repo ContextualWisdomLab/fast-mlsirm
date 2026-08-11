@@ -405,6 +405,218 @@ pub fn irt_link(
     }
 }
 
+/// Result of fixed-anchor mean/mean-style parameter linking.
+///
+/// Arrays are flat: `theta` is row-major `n_persons * n_dims`; item vectors are
+/// length `n_items`; `scale`/`shift` are length `n_dims`.
+#[derive(Clone, Debug)]
+pub struct FixedAnchorLinkResult {
+    pub theta: Vec<f64>,
+    pub alpha: Vec<f64>,
+    pub b: Vec<f64>,
+    pub scale: Vec<f64>,
+    pub shift: Vec<f64>,
+}
+
+/// Put source parameters on the target metric using fixed common items.
+///
+/// Per trait dimension with at least one anchor, scale and shift are
+///
+/// ```text
+/// scale_d = exp(mean(log(a_source / a_target)))
+/// shift_d = mean((b_source - b_target) / a_target)
+/// ```
+///
+/// then `theta* = scale * theta + shift`, `alpha* = alpha - log(scale)`, and
+/// `b* = b - a* * shift` on items loading that dimension.
+///
+/// # References (APA 7th ed.)
+///
+/// Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and
+/// linking: Methods and practices* (3rd ed.). Springer.
+/// https://doi.org/10.1007/978-1-4939-0317-7
+pub fn link_fixed_item_parameters(
+    source_theta: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+    source_alpha: &[f64],
+    source_b: &[f64],
+    target_alpha: &[f64],
+    target_b: &[f64],
+    anchors: &[i64],
+    factors: &[i64],
+) -> Result<FixedAnchorLinkResult, String> {
+    let n_items = source_alpha.len();
+    if n_persons == 0 || n_dims == 0 {
+        return Err("source theta shape must be non-empty".into());
+    }
+    if source_theta.len() != n_persons * n_dims {
+        return Err("source theta length must equal n_persons * n_dims".into());
+    }
+    if source_b.len() != n_items
+        || target_alpha.len() != n_items
+        || target_b.len() != n_items
+        || factors.len() != n_items
+    {
+        return Err("source and target item parameters must have matching shapes".into());
+    }
+    if anchors.is_empty() {
+        return Err("anchor_items must be a non-empty 1D array".into());
+    }
+    let mut seen = std::collections::HashSet::with_capacity(anchors.len());
+    for &raw in anchors {
+        if raw < 0 {
+            return Err("anchor_items must be finite non-negative integers".into());
+        }
+        let idx = raw as usize;
+        if idx >= n_items {
+            return Err("anchor_items must reference existing items".into());
+        }
+        if !seen.insert(idx) {
+            return Err("anchor_items must be unique".into());
+        }
+    }
+    for &f in factors {
+        if f < 0 || (f as usize) >= n_dims {
+            return Err("factor_id values must be in 0..n_dims-1".into());
+        }
+    }
+    for (arr, name) in [
+        (source_alpha, "source.alpha"),
+        (source_b, "source.b"),
+        (target_alpha, "target.alpha"),
+        (target_b, "target.b"),
+        (source_theta, "source.theta"),
+    ] {
+        if arr.iter().any(|v| !v.is_finite()) {
+            return Err(format!("{name} must be finite"));
+        }
+    }
+
+    let mut linked_theta = source_theta.to_vec();
+    let mut linked_alpha = source_alpha.to_vec();
+    let mut linked_b = source_b.to_vec();
+    let mut scale = vec![1.0_f64; n_dims];
+    let mut shift = vec![0.0_f64; n_dims];
+
+    for dim in 0..n_dims {
+        let dim_i = dim as i64;
+        let dim_anchors: Vec<usize> = anchors
+            .iter()
+            .copied()
+            .map(|a| a as usize)
+            .filter(|&i| factors[i] == dim_i)
+            .collect();
+        if dim_anchors.is_empty() {
+            continue;
+        }
+        let mut log_ratio_sum = 0.0_f64;
+        let mut shift_sum = 0.0_f64;
+        let n_a = dim_anchors.len() as f64;
+        for &i in &dim_anchors {
+            let source_a = source_alpha[i].exp();
+            let target_a = target_alpha[i].exp();
+            if !(target_a > 0.0) {
+                return Err("target anchor slopes must be positive".into());
+            }
+            let ratio = source_a / target_a;
+            if !(ratio > 0.0) {
+                return Err(
+                    "non-finite or non-positive linking coefficients (check anchor parameters)"
+                        .into(),
+                );
+            }
+            log_ratio_sum += ratio.ln();
+            shift_sum += (source_b[i] - target_b[i]) / target_a;
+        }
+        let s = (log_ratio_sum / n_a).exp();
+        let sh = shift_sum / n_a;
+        if !(s.is_finite() && s > 0.0 && sh.is_finite()) {
+            return Err(
+                "non-finite or non-positive linking coefficients (check anchor parameters)".into(),
+            );
+        }
+        scale[dim] = s;
+        shift[dim] = sh;
+        let log_s = s.ln();
+        for p in 0..n_persons {
+            let idx = p * n_dims + dim;
+            linked_theta[idx] = s * source_theta[idx] + sh;
+        }
+        for i in 0..n_items {
+            if factors[i] != dim_i {
+                continue;
+            }
+            linked_alpha[i] = source_alpha[i] - log_s;
+            let linked_a = linked_alpha[i].exp();
+            linked_b[i] = source_b[i] - linked_a * sh;
+        }
+    }
+
+    Ok(FixedAnchorLinkResult {
+        theta: linked_theta,
+        alpha: linked_alpha,
+        b: linked_b,
+        scale,
+        shift,
+    })
+}
+
+#[cfg(test)]
+mod fixed_anchor_tests {
+    use super::*;
+
+    #[test]
+    fn identity_when_source_matches_target() {
+        let theta = [-0.5_f64, 0.5];
+        let alpha = [0.0_f64, (1.5_f64).ln()];
+        let b = [-0.2_f64, 0.7];
+        let res = link_fixed_item_parameters(
+            &theta, 2, 1, &alpha, &b, &alpha, &b, &[0, 1], &[0, 0],
+        )
+        .expect("link");
+        assert!((res.scale[0] - 1.0).abs() < 1e-12);
+        assert!(res.shift[0].abs() < 1e-12);
+        for i in 0..2 {
+            assert!((res.theta[i] - theta[i]).abs() < 1e-12);
+            assert!((res.alpha[i] - alpha[i]).abs() < 1e-12);
+            assert!((res.b[i] - b[i]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn recovers_known_scale_and_shift() {
+        // target a = source a / 2, target b = source b - source_a * 0.5
+        // implies scale=2, shift=0.5 when linking source onto target metric.
+        let source_theta = [0.0_f64, 1.0];
+        let source_alpha = [0.0_f64]; // a=1
+        let source_b = [0.0_f64];
+        let target_alpha = [(-(2.0_f64).ln())]; // a=0.5
+        let target_b = [-0.5_f64]; // b_s - a_t * shift with shift=1? use formula
+        // scale = exp(mean(log(1/0.5))) = 2
+        // shift = mean((0 - (-0.5)) / 0.5) = 1.0
+        let res = link_fixed_item_parameters(
+            &source_theta,
+            2,
+            1,
+            &source_alpha,
+            &source_b,
+            &target_alpha,
+            &target_b,
+            &[0],
+            &[0],
+        )
+        .expect("link");
+        assert!((res.scale[0] - 2.0).abs() < 1e-12);
+        assert!((res.shift[0] - 1.0).abs() < 1e-12);
+        assert!((res.theta[0] - 1.0).abs() < 1e-12); // 2*0+1
+        assert!((res.theta[1] - 3.0).abs() < 1e-12); // 2*1+1
+        assert!((res.alpha[0] - (-(2.0_f64).ln())).abs() < 1e-12);
+        // linked_a = 0.5; b* = 0 - 0.5*1 = -0.5
+        assert!((res.b[0] + 0.5).abs() < 1e-12);
+    }
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/linking_tests.rs"]
 mod tests;
