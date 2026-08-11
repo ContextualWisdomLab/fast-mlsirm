@@ -43,6 +43,12 @@
 - Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
 - Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
 
+#### Governed post-pilot item-bank lifecycle
+
+- Add a factory-sealed, content-addressed post-pilot item-bank lifecycle that requires exact calibration, item-fit, DIF, information, approval, drift, suspension, and retirement evidence before an item can advance through `piloting`, `calibrated`, `approved`, `active`, `suspended`, reactivated, or terminal `retired` states.
+- Preserve policy criticality independently of psychometric discrimination, require use-specific approval, link every successor to the exact previous record fingerprint, and retain only source-text-free evidence identities while leaving numerical calibration and item-bank arithmetic Rust-owned.
+- Keep tenancy, authorization, identity mapping, persistence, encryption, retention, deletion, human governance, provider SDKs, new estimators, version bumps, and releases outside this reusable-core slice.
+
 #### Governed RAG scoring request
 
 - Reference-free RAG scoring request adapter with privacy-preserving identity channels and fail-closed rejection of raw system configuration content.

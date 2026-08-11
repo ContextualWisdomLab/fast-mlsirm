@@ -1,4 +1,4 @@
-"""Rubric-centered authoring, governed generation, audit, and pilot admission."""
+"""Rubric-centered authoring, generation, audit, pilot, and bank lifecycle."""
 
 from .candidates import BinaryAnswerKey as BinaryAnswerKey
 from .candidates import CandidateValidationError as CandidateValidationError
@@ -46,6 +46,14 @@ from .gtheory_pilot import GTheoryPiPilotDesign as GTheoryPiPilotDesign
 from .gtheory_pilot import (
     build_gtheory_pi_pilot_design as build_gtheory_pi_pilot_design,
 )
+from .item_bank import ItemBankEvidenceKind as ItemBankEvidenceKind
+from .item_bank import ItemBankEvidenceReference as ItemBankEvidenceReference
+from .item_bank import ItemBankLifecycleError as ItemBankLifecycleError
+from .item_bank import ItemBankLifecycleRecord as ItemBankLifecycleRecord
+from .item_bank import ItemBankLifecycleState as ItemBankLifecycleState
+from .item_bank import PolicyCriticality as PolicyCriticality
+from .item_bank import build_item_bank_pilot_record as build_item_bank_pilot_record
+from .item_bank import transition_item_bank_record as transition_item_bank_record
 from .models import BlueprintPlan as BlueprintPlan
 from .models import DifficultyBand as DifficultyBand
 from .models import EvidenceMode as EvidenceMode
@@ -69,9 +77,10 @@ from .testlet_pilot import TestletPilotDesign as TestletPilotDesign
 from .testlet_pilot import build_testlet_pilot_design as build_testlet_pilot_design
 from .verified_pilot import PilotCandidateRecord as PilotCandidateRecord
 
-# Preserve the established star-import contract. Audit and pilot types remain
-# explicit subpackage attributes and are imported by their documented names,
-# but are not added to ``__all__`` until the next public-surface version bump.
+# Preserve the established star-import contract. Audit, pilot, and item-bank
+# types remain explicit subpackage attributes and are imported by their
+# documented names, but are not added to ``__all__`` until the next
+# public-surface version bump.
 __all__ = [
     "MAX_BLUEPRINTS",
     "BinaryAnswerKey",
