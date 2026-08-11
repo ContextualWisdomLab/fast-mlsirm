@@ -195,13 +195,11 @@ def test_workspace_cap_precedes_response_grid_allocation(monkeypatch: pytest.Mon
         )
 
 
-def test_public_mmle_fallback_defers_response_grid_to_guard(
+def test_public_mmle_fails_closed_without_allocating_fallback_grid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The public MMLE route must not allocate a second response grid before fallback."""
+    """Without the Rust MMLE kernel, the public route fails closed before NumPy fallback."""
     responses = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
-    observed = np.array([[True, True], [True, True]], dtype=bool)
-    captured: dict[str, np.ndarray] = {}
 
     try:
         from fast_mlsirm import _core
@@ -210,37 +208,17 @@ def test_public_mmle_fallback_defers_response_grid_to_guard(
     else:
         monkeypatch.setattr(_core, "fit_mmle_2pl", None)
 
-    def fake_fallback(
-        fallback_responses: np.ndarray,
-        fallback_observed: np.ndarray,
-        **_kwargs: object,
-    ) -> dict[str, object]:
-        captured["responses"] = fallback_responses
-        captured["observed"] = fallback_observed
-        return {
-            "a": np.ones(2, dtype=np.float64),
-            "b": np.zeros(2, dtype=np.float64),
-            "theta": np.zeros(2, dtype=np.float64),
-            "loglik_trace": [-1.0],
-            "status": "converged",
-        }
+    from fast_mlsirm.config import FitConfig
+    from fast_mlsirm.fit import _fit_mmle
 
-    def unexpected_where(*_args: object, **_kwargs: object) -> np.ndarray:
-        pytest.fail("public fallback routing must defer numpy.where to guarded fallback")
-
-    monkeypatch.setattr(mmle_module, "fit_mmle_2pl", fake_fallback)
-    monkeypatch.setattr(fit_module.np, "where", unexpected_where)
-
-    result = fit_module._fit_mmle(
-        responses,
-        observed,
-        "ULS2PLM",
-        FitConfig(estimator="mmle", max_iter=1, n_restarts=1),
-    )
-
-    assert captured["responses"] is responses
-    assert captured["observed"] is observed
-    assert result.optimizer == "mmle_em/numpy"
+    observed = np.ones_like(responses, dtype=bool)
+    with pytest.raises(RuntimeError, match="compiled Rust core is required for MMLE"):
+        _fit_mmle(
+            responses,
+            observed,
+            model="ULS2PLM",
+            config=FitConfig(estimator="mmle", model="ULS2PLM", max_iter=1),
+        )
 
 
 def test_changelog_avoids_universal_eap_speedup_claims() -> None:
