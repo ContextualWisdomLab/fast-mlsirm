@@ -61,21 +61,24 @@ def test_recently_integrated_capabilities_are_not_left_as_active_pr_only() -> No
         "Factor retention evidence contract",
         "Fixed-anchor parameter linking arithmetic",
         "Observed-information Hessian and second-order diagnostics",
+        "JMLE Adam/L-BFGS optimizer arithmetic",
+        "Hourly review-repair caller",
+        "LLM-judge raw JSON depth hardening",
     ):
         assert "IMPLEMENTED_ON_PROTECTED_MAIN" in _row(source, capability)
 
 
-def test_current_jmle_migration_is_not_promoted_to_protected_main() -> None:
-    """The current JMLE optimizer migration remains active-PR truth until merge."""
+def test_parallel_hardening_is_not_promoted_to_protected_main() -> None:
+    """The active parallel-analysis hardening lane cannot be called shipped before merge."""
     source = _matrix()
-    row = _row(source, "JMLE Adam/L-BFGS optimizer arithmetic")
+    row = _row(source, "Parallel-analysis public control/resource hardening")
     assert "IMPLEMENTED_ON_ACTIVE_PR" in row
     assert "IMPLEMENTED_ON_PROTECTED_MAIN" not in row
 
 
-def test_fail_first_parallel_hardening_is_not_promoted_to_protected_main() -> None:
-    """The active parallel-analysis hardening lane cannot be called shipped before GREEN merge."""
+def test_dark_mode_report_change_is_not_promoted_before_merge() -> None:
+    """The current accessibility PR remains active-PR evidence until integrated."""
     source = _matrix()
-    row = _row(source, "Parallel-analysis public control/resource hardening")
+    row = _row(source, "Essay-report native dark-mode status accents")
     assert "IMPLEMENTED_ON_ACTIVE_PR" in row
     assert "IMPLEMENTED_ON_PROTECTED_MAIN" not in row
