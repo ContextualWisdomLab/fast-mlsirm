@@ -33,6 +33,10 @@
 - Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
 - Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
 
+#### Governed RAG scoring request
+
+- Reference-free RAG scoring request adapter with privacy-preserving identity channels and fail-closed rejection of raw system configuration content.
+
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -289,6 +293,14 @@
 - Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
 - Kept explicit `backend="numpy"` as an explicit reference/parity choice while preserving automatic Rust resolution and Rust CPU/GPU device fallback semantics.
 
+#### Fit-statistics tail ownership
+
+- Public `chi2_sf` and `benjamini_hochberg` now prefer the Rust core for ranking and tail arithmetic, with a pure-Python fallback only when the compiled core methods are unavailable.
+
+#### Inference covariance ownership
+
+- `vcov_from_hessian` and `standard_errors_from_vcov` now own inversion, pseudoinverse, and SE extraction in Rust.
+
 #### Current support-policy version line
 
 - Aligned the public security and support policies with the released `0.7.x` pre-1.0 package line instead of the obsolete `0.1.x` policy.
@@ -361,6 +373,14 @@
 
 - PR queue governance now bounds the `git rev-parse HEAD` subprocess and fails closed with a stable timeout error instead of allowing a hung local Git child to stall the evidence pipeline.
 
+#### Release evidence Git metadata timeout
+
+- Bound `git rev-parse` in the release evidence index builder with a fail-closed timeout.
+
+#### Fit-statistics require compiled Rust core
+
+- Public `chi2_sf` and `benjamini_hochberg` fail closed with a stable RuntimeError when the compiled Rust core is unavailable, preventing silent pure-Python numerical ownership.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
@@ -404,6 +424,10 @@
 #### G-theory public control validation
 
 - G-theory D-study sizes and `Phi(lambda)` mastery cuts now reject unsupported caller objects before executing conversion or representation callbacks, while preserving supported Python/NumPy scalar controls and Rust-owned numerical behavior.
+
+#### LSR ranking input bounds
+
+- Bound LSR/I-LSR ranking CSR materialization (`MAX_RANKING_CSR_BYTES`, per-ranking `n+1` cap) and redact ordinary iterable failures at the Python validation boundary.
 
 #### Descriptor-safe bounded JSON input for automation scripts
 
