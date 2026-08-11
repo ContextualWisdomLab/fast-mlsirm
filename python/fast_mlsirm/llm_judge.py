@@ -19,6 +19,7 @@ from .config import MAX_POLYTOMOUS_CATEGORIES
 MAX_JUDGE_TEXT_CHARACTERS = 200_000
 MAX_JUDGE_CRITERIA = 32
 MAX_JUDGE_CATEGORIES = MAX_POLYTOMOUS_CATEGORIES
+MAX_JUDGE_JSON_DEPTH = 32
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 
 
@@ -272,8 +273,32 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
     return tuple(normalized)
 
 
+def _validate_raw_json_depth(content: str) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > MAX_JUDGE_JSON_DEPTH:
+                raise JudgeFormatError(f"judge response JSON nesting exceeds maximum depth of {MAX_JUDGE_JSON_DEPTH}")
+        elif char in "]}":
+            depth -= 1
+
+
 def _response_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
+    _validate_raw_json_depth(text)
     try:
         value = json.loads(text)
     except json.JSONDecodeError as exc:

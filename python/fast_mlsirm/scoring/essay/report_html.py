@@ -200,7 +200,7 @@ def _canonical_json(report: EssayScoreReport) -> str:
 def _css() -> str:
     """Return compact accessible styling without external resources."""
     return """
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; }
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
@@ -212,8 +212,8 @@ main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); }
 .subtitle { margin: 0; max-width: 78ch; }
 section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-radius: 10px; }
-.review-required { border-inline-start: 8px solid #9c2f1f; }
-.review-clear { border-inline-start: 8px solid #357a38; }
+.review-required { border-inline-start: 8px solid var(--review-required); }
+.review-clear { border-inline-start: 8px solid var(--review-clear); }
 .notice { padding: 14px; border: 2px solid currentColor; font-weight: 650; }
 .details-grid { display: grid; grid-template-columns: minmax(150px, 0.35fr) 1fr; gap: 8px 16px; }
 .details-grid dt { font-weight: 700; }
@@ -236,6 +236,12 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --review-required: #e57373;
+    --review-clear: #81c784;
   }
 }
 @media print {
