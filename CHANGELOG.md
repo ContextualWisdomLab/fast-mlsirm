@@ -480,6 +480,12 @@
 
 - Bound top-1 loser streams to at most `n - 1` items, enforce the shared `MAX_RANKING_CSR_BYTES` ceiling on winner/loser/start `uint64` payloads, and normalize ordinary outer/inner iteration failures to stable non-reflective package errors while propagating process-control signals.
 
+#### JMLE Adam/L-BFGS Rust ownership
+
+- Public JMLE `backend="rust"` routes Adam, L-BFGS, and `adam_lbfgs` sequencing
+  through compiled `jmle_optimize` entrypoints so optimizer state updates no longer
+  re-implement production arithmetic in Python loops.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.

@@ -28,6 +28,7 @@ use mlsirm_core::inference::{
     standard_errors_from_vcov as core_standard_errors_from_vcov,
     vcov_from_hessian as core_vcov_from_hessian,
 };
+use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
     PopulationSpec, XiRuleKind,
@@ -8313,6 +8314,118 @@ fn assemble_test_form_greedy(
     .map_err(PyValueError::new_err)
 }
 
+/// Adam optimizer for packed JMLE parameters (Kingma & Ba, 2015).
+///
+/// `objective(x) -> (obj, grad, loglik)` is evaluated from Python; moment
+/// updates and convergence control run in Rust.
+#[pyfunction]
+#[pyo3(signature = (x0, objective, learning_rate, max_iter, tolerance))]
+fn jmle_optimize_adam<'py>(
+    py: Python<'py>,
+    x0: PyReadonlyArray1<'_, f64>,
+    objective: Bound<'py, PyAny>,
+    learning_rate: f64,
+    max_iter: usize,
+    tolerance: f64,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String)> {
+    let x0_slice = x0.as_slice()?.to_vec();
+    let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
+        let arr = PyArray1::from_slice(py, x);
+        let out = objective
+            .call1((arr,))
+            .map_err(|e| format!("jmle objective failed: {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
+            .extract()
+            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        Ok((obj, grad, loglik))
+    };
+    let (x, obj_t, ll_t, status) =
+        core_jmle_adam(&x0_slice, &mut obj_cb, learning_rate, max_iter, tolerance)
+            .map_err(PyValueError::new_err)?;
+    Ok((
+        PyArray1::from_slice(py, &x),
+        PyArray1::from_slice(py, &obj_t),
+        PyArray1::from_slice(py, &ll_t),
+        status,
+    ))
+}
+
+/// L-BFGS optimizer for packed JMLE parameters (Liu & Nocedal, 1989).
+#[pyfunction]
+#[pyo3(signature = (x0, objective, max_iter, tolerance, history))]
+fn jmle_optimize_lbfgs<'py>(
+    py: Python<'py>,
+    x0: PyReadonlyArray1<'_, f64>,
+    objective: Bound<'py, PyAny>,
+    max_iter: usize,
+    tolerance: f64,
+    history: usize,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String)> {
+    let x0_slice = x0.as_slice()?.to_vec();
+    let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
+        let arr = PyArray1::from_slice(py, x);
+        let out = objective
+            .call1((arr,))
+            .map_err(|e| format!("jmle objective failed: {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
+            .extract()
+            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        Ok((obj, grad, loglik))
+    };
+    let (x, obj_t, ll_t, status) =
+        core_jmle_lbfgs(&x0_slice, &mut obj_cb, max_iter, tolerance, history)
+            .map_err(PyValueError::new_err)?;
+    Ok((
+        PyArray1::from_slice(py, &x),
+        PyArray1::from_slice(py, &obj_t),
+        PyArray1::from_slice(py, &ll_t),
+        status,
+    ))
+}
+
+/// Sequence Adam and/or L-BFGS for public JMLE (`adam` / `lbfgs` / `adam_lbfgs`).
+#[pyfunction]
+#[pyo3(signature = (x0, objective, optimizer, max_iter, learning_rate, tolerance, lbfgs_history))]
+fn jmle_optimize<'py>(
+    py: Python<'py>,
+    x0: PyReadonlyArray1<'_, f64>,
+    objective: Bound<'py, PyAny>,
+    optimizer: &str,
+    max_iter: usize,
+    learning_rate: f64,
+    tolerance: f64,
+    lbfgs_history: usize,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String, usize)> {
+    let x0_slice = x0.as_slice()?.to_vec();
+    let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
+        let arr = PyArray1::from_slice(py, x);
+        let out = objective
+            .call1((arr,))
+            .map_err(|e| format!("jmle objective failed: {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
+            .extract()
+            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        Ok((obj, grad, loglik))
+    };
+    let (x, obj_t, ll_t, status, n_iter) = core_jmle_run_optimizer(
+        &x0_slice,
+        &mut obj_cb,
+        optimizer,
+        max_iter,
+        learning_rate,
+        tolerance,
+        lbfgs_history,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok((
+        PyArray1::from_slice(py, &x),
+        PyArray1::from_slice(py, &obj_t),
+        PyArray1::from_slice(py, &ll_t),
+        status,
+        n_iter,
+    ))
+}
+
 /// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
 /// formula, c=0/d=1 logistic case; Lord test-information tradition).
 #[pyfunction]
@@ -9087,6 +9200,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cat_item_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_select_item, m)?)?;
     m.add_function(wrap_pyfunction!(assemble_test_form_greedy, m)?)?;
+    m.add_function(wrap_pyfunction!(jmle_optimize_adam, m)?)?;
+    m.add_function(wrap_pyfunction!(jmle_optimize_lbfgs, m)?)?;
+    m.add_function(wrap_pyfunction!(jmle_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(bank_information, m)?)?;
     m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
     m.add_function(wrap_pyfunction!(plausible_values, m)?)?;

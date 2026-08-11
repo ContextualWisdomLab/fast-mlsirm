@@ -528,27 +528,36 @@ def _run_single_fit(
     status = "max_iter_reached"
     n_iter = 0
 
-    if config.optimizer in {"adam", "adam_lbfgs"}:
-        adam_iter = (
-            config.max_iter
-            if config.optimizer == "adam"
-            else max(1, config.max_iter // 2)
+    if backend == "rust":
+        # Result-affecting Adam / L-BFGS arithmetic is Rust-owned; Python only
+        # supplies the packed objective callback and final reporting.
+        x, obj_trace, loglik_trace, status, n_iter = _rust_optimize(
+            x, objective, config
         )
-        x, adam_obj, adam_loglik, status = _adam(x, objective, config, adam_iter)
-        obj_trace.extend(adam_obj)
-        loglik_trace.extend(adam_loglik)
-        n_iter += len(adam_obj)
+    else:
+        if config.optimizer in {"adam", "adam_lbfgs"}:
+            adam_iter = (
+                config.max_iter
+                if config.optimizer == "adam"
+                else max(1, config.max_iter // 2)
+            )
+            x, adam_obj, adam_loglik, status = _adam(x, objective, config, adam_iter)
+            obj_trace.extend(adam_obj)
+            loglik_trace.extend(adam_loglik)
+            n_iter += len(adam_obj)
 
-    if config.optimizer in {"lbfgs", "adam_lbfgs"}:
-        lbfgs_iter = (
-            config.max_iter
-            if config.optimizer == "lbfgs"
-            else max(1, config.max_iter - n_iter)
-        )
-        x, lbfgs_obj, lbfgs_loglik, status = _lbfgs(x, objective, config, lbfgs_iter)
-        obj_trace.extend(lbfgs_obj)
-        loglik_trace.extend(lbfgs_loglik)
-        n_iter += len(lbfgs_obj)
+        if config.optimizer in {"lbfgs", "adam_lbfgs"}:
+            lbfgs_iter = (
+                config.max_iter
+                if config.optimizer == "lbfgs"
+                else max(1, config.max_iter - n_iter)
+            )
+            x, lbfgs_obj, lbfgs_loglik, status = _lbfgs(
+                x, objective, config, lbfgs_iter
+            )
+            obj_trace.extend(lbfgs_obj)
+            loglik_trace.extend(lbfgs_loglik)
+            n_iter += len(lbfgs_obj)
 
     final_params = _unpack(x, params0, model)
     if model != "MIRT":
@@ -711,6 +720,52 @@ def _unpack(x: np.ndarray, template: MLSIRMParams, model: str) -> MLSIRMParams:
         xi=np.array(xi),
         zeta=np.array(zeta),
         tau=tau,
+    )
+
+
+def _rust_optimize(
+    x0: np.ndarray,
+    objective: Callable[[np.ndarray], tuple[float, np.ndarray, float]],
+    config: FitConfig,
+) -> tuple[np.ndarray, list[float], list[float], str, int]:
+    """Run Adam / L-BFGS / adam_lbfgs via the compiled Rust core.
+
+    Fails closed when the extension or optimizer entrypoints are missing so a
+    ``backend="rust"`` request cannot silently fall back to Python loops.
+    """
+    try:
+        from . import _core as core
+    except Exception as exc:  # pragma: no cover - import path exercised in CI
+        raise RuntimeError(
+            "Rust backend requested but fast_mlsirm._core is unavailable"
+        ) from exc
+    optimize = getattr(core, "jmle_optimize", None)
+    if optimize is None:
+        raise RuntimeError(
+            "Rust backend requested but core.jmle_optimize is unavailable"
+        )
+
+    def _py_objective(x_arr: object) -> tuple[float, list[float], float]:
+        """Marshal a packed vector from Rust into the Python objective closure."""
+        x_np = np.ascontiguousarray(x_arr, dtype=np.float64)
+        obj, grad, loglik = objective(x_np)
+        return float(obj), np.asarray(grad, dtype=np.float64).ravel().tolist(), float(loglik)
+
+    x, obj_trace, loglik_trace, status, n_iter = optimize(
+        np.ascontiguousarray(x0, dtype=np.float64),
+        _py_objective,
+        str(config.optimizer),
+        int(config.max_iter),
+        float(config.learning_rate),
+        float(config.tolerance),
+        int(config.lbfgs_history),
+    )
+    return (
+        np.asarray(x, dtype=np.float64),
+        [float(v) for v in np.asarray(obj_trace, dtype=np.float64).ravel()],
+        [float(v) for v in np.asarray(loglik_trace, dtype=np.float64).ravel()],
+        str(status),
+        int(n_iter),
     )
 
 
