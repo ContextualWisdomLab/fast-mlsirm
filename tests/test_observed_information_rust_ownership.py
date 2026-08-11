@@ -1,10 +1,11 @@
-"""Fail-first ownership contract for public observed-information arithmetic.
+"""Fail-first ownership contracts for public observed-information arithmetic.
 
 The public inference API may validate and marshal in Python, but Hessian
-construction and symmetrization determine reported uncertainty and therefore
-belong to the compiled Rust numerical core.  The test installs an unmistakable
-compiled-core sentinel and requires the public API to transport that exact
-matrix instead of independently finite-differencing the likelihood in Python.
+construction, symmetrization, and positive-definiteness diagnostics determine
+reported uncertainty and therefore belong to the compiled Rust numerical core.
+The tests install unmistakable compiled-core sentinels and require the public
+API to transport those exact results instead of independently reproducing the
+numerics in Python.
 """
 
 from __future__ import annotations
@@ -63,3 +64,32 @@ def test_public_observed_information_delegates_matrix_to_rust(monkeypatch) -> No
 
     assert len(calls) == 1
     assert np.array_equal(result, sentinel)
+
+
+def test_public_second_order_diagnostic_delegates_to_rust(monkeypatch) -> None:
+    """Positive-definiteness evidence must come from the Rust numerical owner."""
+    information = np.array([[4.0, 1.0], [1.0, 3.0]], dtype=np.float64)
+    sentinel_eigenvalues = np.array([-7.0, 42.0], dtype=np.float64)
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_second_order_test(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {
+            "passed": False,
+            "min_eigenvalue": -7.0,
+            "eigenvalues": sentinel_eigenvalues.copy(),
+        }
+
+    monkeypatch.setattr(
+        core,
+        "second_order_test",
+        fake_second_order_test,
+        raising=False,
+    )
+
+    result = inference.second_order_test(information, tol=1e-8)
+
+    assert len(calls) == 1
+    assert result["passed"] is False
+    assert result["min_eigenvalue"] == -7.0
+    assert np.array_equal(result["eigenvalues"], sentinel_eigenvalues)
