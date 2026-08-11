@@ -52,18 +52,28 @@ import numpy as np
 
 
 def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
-    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``."""
-    if isinstance(value, bool) or not isinstance(
-        value, (int, np.integer, float, np.floating)
-    ):
-        raise ValueError(f"{name} must be an integer, got {value!r}")
-    if isinstance(value, (float, np.floating)) and not np.isfinite(value):
-        raise ValueError(f"{name} must be an integer, got {value!r}")
-    iv = int(value)
-    if iv != value:
-        raise ValueError(f"{name} must be an integer, got {value!r}")
+    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``.
+
+    Error messages name only the field and package-owned bounds. They never
+    interpolate caller-controlled values (or invoke ``repr``/``str`` on them),
+    so hostile content cannot leak through validation diagnostics.
+    """
+    # Reject bool first: ``bool`` is a subclass of ``int`` but is not an
+    # exposure-control cardinality.
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(value, (int, np.integer)):
+        iv = int(value)
+    elif isinstance(value, (float, np.floating)):
+        if not np.isfinite(value) or int(value) != value:
+            raise ValueError(f"{name} must be an integer")
+        iv = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer")
     if iv < minimum or (maximum is not None and iv > maximum):
-        raise ValueError(f"{name} out of range: {iv}")
+        raise ValueError(
+            f"{name} out of range [{minimum}, {maximum if maximum is not None else '∞'}]"
+        )
     return iv
 
 
