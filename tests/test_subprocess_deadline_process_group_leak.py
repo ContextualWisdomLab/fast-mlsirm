@@ -62,4 +62,4 @@ def test_posix_timeout_kills_surviving_group_after_leader_exits(monkeypatch) -> 
         (fake.pid, signal.SIGKILL),
     ]
     assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
-    assert fake.communicate_calls == [1800.0, None]
+    assert fake.communicate_calls == [1800.0, deadlines.PROCESS_REAP_TIMEOUT_SECONDS]

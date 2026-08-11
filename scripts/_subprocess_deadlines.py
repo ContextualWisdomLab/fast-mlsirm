@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 PROCESS_GROUP_GRACE_SECONDS = 5.0
+# Bound every post-timeout communicate/reap so a stuck child cannot hang the
+# parent after SIGTERM/SIGKILL (fail-closed evidence still returns promptly).
+PROCESS_REAP_TIMEOUT_SECONDS = 5.0
 
 
 class SubprocessOperation(str, Enum):
@@ -137,13 +140,29 @@ def _posix_process_group_exists(process_group_id: int) -> bool:
     return True
 
 
+def _reap_process(process: subprocess.Popen) -> None:
+    """Reap one child with a bounded communicate timeout.
+
+    If the child is still stuck after the reap budget, abandon the wait so the
+    caller can surface ``BoundedSubprocessTimeout`` without hanging the parent.
+    """
+    try:
+        process.communicate(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+        return
+
+
 def _terminate_after_timeout(process: subprocess.Popen) -> None:
     """Terminate and reap one timed-out process or POSIX process group."""
     if os.name == "posix":
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
-            process.communicate()
+            _reap_process(process)
             return
 
         # Keep the group leader unreaped during the grace period so its numeric
@@ -155,7 +174,7 @@ def _terminate_after_timeout(process: subprocess.Popen) -> None:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        process.communicate()
+        _reap_process(process)
         return
 
     process.terminate()
@@ -163,7 +182,7 @@ def _terminate_after_timeout(process: subprocess.Popen) -> None:
         process.communicate(timeout=PROCESS_GROUP_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.communicate()
+        _reap_process(process)
 
 
 def run_bounded(

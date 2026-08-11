@@ -93,7 +93,7 @@ def test_posix_timeout_handles_process_group_that_already_exited(monkeypatch) ->
             ["cargo", "metadata"],
             operation=deadlines.SubprocessOperation.CARGO_METADATA,
         )
-    assert fake.communicate_calls == [30.0, None]
+    assert fake.communicate_calls == [30.0, deadlines.PROCESS_REAP_TIMEOUT_SECONDS]
 
 
 def test_non_posix_timeout_terminates_then_escalates_direct_process(monkeypatch) -> None:
@@ -122,7 +122,7 @@ def test_non_posix_timeout_terminates_then_escalates_direct_process(monkeypatch)
     assert fake.communicate_calls == [
         120.0,
         deadlines.PROCESS_GROUP_GRACE_SECONDS,
-        None,
+        deadlines.PROCESS_REAP_TIMEOUT_SECONDS,
     ]
 
 
