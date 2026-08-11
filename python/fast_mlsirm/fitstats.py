@@ -484,7 +484,7 @@ def s_x2(
             raise ValueError("person_weight must contain only finite 0/1 values")
 
     core = _core_module()
-    if core is not None and prior_mean is None:
+    if core is not None and hasattr(core, "s_x2_stat") and prior_mean is None:
         n_dims = int(d_of_i.max()) + 1
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.s_x2_stat(
@@ -687,7 +687,7 @@ def person_fit(
     n_persons, n_items = y.shape
     n_dims = int(d_of_i.max()) + 1
     core = _core_module()
-    if core is not None:
+    if core is not None and hasattr(core, "person_fit_stat"):
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.person_fit_stat(
             y.ravel(),
@@ -796,7 +796,7 @@ def infit_outfit(
         responses, factor_id, mask
     )
     core = _core_module()
-    if core is not None:
+    if core is not None and hasattr(core, "infit_outfit_stat"):
         n_persons = y.shape[0]
         n_dims = int(d_of_i.max()) + 1
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
@@ -1145,7 +1145,7 @@ def vuong_nonnested(
             https://doi.org/10.2307/1912557
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "vuong_nonnested"):
         raise RuntimeError("vuong_nonnested requires the compiled Rust core")
 
     ll_a = np.asarray(loglik_a)
@@ -1221,7 +1221,7 @@ def dimensionality_residuals(
             https://doi.org/10.1177/014662168400800201
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "dimensionality_residuals"):
         raise RuntimeError("dimensionality_residuals requires the compiled Rust core")
     if convergence_status is not None:
         status = str(convergence_status).strip().lower()
@@ -1475,7 +1475,7 @@ def residual_item_fit(
         https://doi.org/10.1007/s11336-012-9305-1
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "residual_item_fit"):
         raise RuntimeError("residual_item_fit requires the compiled Rust core")
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
@@ -1558,7 +1558,7 @@ def adjusted_chi2_pairs(
         https://doi.org/10.1177/0013164411416976
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "adjusted_chi2_pairs"):
         raise RuntimeError("adjusted_chi2_pairs requires the compiled Rust core")
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
@@ -1630,7 +1630,7 @@ def person_fit_resampling(
     https://doi.org/10.1111/jedm.12101
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "person_fit_resampling"):
         raise RuntimeError("person_fit_resampling requires the compiled Rust core")
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
@@ -1734,7 +1734,7 @@ def tcc_drift(
         Measurement, 52*(3), 280–300. https://doi.org/10.1111/jedm.12077
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "tcc_drift"):
         raise RuntimeError("tcc_drift requires the compiled Rust core")
     for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
         if isinstance(value, (bool, np.bool_)) or not isinstance(
@@ -1803,7 +1803,7 @@ def empirical_reliability(result, device: str = "auto") -> np.ndarray:
     https://doi.org/10.1177/0013164416638900
     """
     core = _core_module()
-    if core is None:
+    if core is None or not hasattr(core, "empirical_reliability"):
         raise RuntimeError("empirical_reliability requires the compiled Rust core")
     if result.population is None or "theta_sd" not in result.population:
         raise ValueError("empirical_reliability needs a marginal fit with theta_sd")
@@ -2004,7 +2004,7 @@ def m2(
         )
 
     core = _core_module()
-    if core is not None:
+    if core is not None and hasattr(core, "m2_stat"):
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.m2_stat(
             np.where(observed0, y0, 0.0).ravel(),
