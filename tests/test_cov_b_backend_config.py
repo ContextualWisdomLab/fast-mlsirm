@@ -41,9 +41,10 @@ def test_load_rust_core_raises_when_core_missing(monkeypatch):
         backend.load_rust_core()
 
 
-def test_resolve_backend_auto_falls_back_to_numpy_when_core_missing(monkeypatch):
+def test_resolve_backend_auto_and_rust_fail_closed_when_core_missing(monkeypatch):
     monkeypatch.setattr(backend, "_load_core", lambda: None)
-    assert backend.resolve_backend("auto") == "numpy"
+    with pytest.raises(RuntimeError, match="compiled Rust core is required"):
+        backend.resolve_backend("auto")
     with pytest.raises(RuntimeError, match="unavailable"):
         backend.resolve_backend("rust")
 

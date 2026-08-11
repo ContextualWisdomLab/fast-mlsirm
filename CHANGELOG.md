@@ -336,6 +336,12 @@
   (benchmark, buyer packet, procurement, commercial release, Figma evidence)
   so hung `git rev-parse` cannot hang release pipelines.
 
+#### Python support floor
+
+- Raised `requires-python` to `>=3.12` so the advertised floor matches the
+  hashed CI dependency lock (NumPy 2.5.x) and the pull-request matrix on
+  CPython 3.12 and 3.14.
+
 ### Security
 
 #### Person-fit invalid-response error redaction

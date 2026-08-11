@@ -159,36 +159,39 @@ def export_serving_bundle(
         bundle["population"] = out_pop
     # Summed-score EAP conversion tables (Lord-Wingersky / Thissen et al.
     # 1995) under the bundle's serving prior — the lookup-table serving path.
+    # Fail closed when the compiled core is missing so incomplete bundles
+    # (null eapsum_tables) never ship as if they were fully exportable.
     core = _core_module()
-    if core is not None:
-        mean, sd = serving_prior(bundle)
-        zeta = np.asarray(p.zeta, dtype=np.float64)
-        tables = core.eapsum_tables(
-            np.asarray(p.alpha, dtype=np.float64),
-            np.asarray(p.b, dtype=np.float64),
-            zeta.ravel(),
-            float(p.tau),
-            factor_id,
-            result.model,
-            int(factor_id.max()) + 1,
-            int(zeta.shape[1]),
-            float(eps_distance),
-            mean,
-            sd,
-            q_theta=int(q_theta),
-            q_xi=int(q_xi),
-        )
-        bundle["eapsum_tables"] = [
-            {
-                "dim": int(t["dim"]),
-                "dim_name": None if dim_names is None else dim_names[int(t["dim"])],
-                "n_items_dim": int(t["n_items_dim"]),
-                "score_prob": [float(v) for v in t["score_prob"]],
-                "eap": [float(v) for v in t["eap"]],
-                "sd": [float(v) for v in t["sd"]],
-            }
-            for t in tables
-        ]
+    if core is None:
+        raise RuntimeError("serving bundle export requires the compiled Rust core")
+    mean, sd = serving_prior(bundle)
+    zeta = np.asarray(p.zeta, dtype=np.float64)
+    tables = core.eapsum_tables(
+        np.asarray(p.alpha, dtype=np.float64),
+        np.asarray(p.b, dtype=np.float64),
+        zeta.ravel(),
+        float(p.tau),
+        factor_id,
+        result.model,
+        int(factor_id.max()) + 1,
+        int(zeta.shape[1]),
+        float(eps_distance),
+        mean,
+        sd,
+        q_theta=int(q_theta),
+        q_xi=int(q_xi),
+    )
+    bundle["eapsum_tables"] = [
+        {
+            "dim": int(t["dim"]),
+            "dim_name": None if dim_names is None else dim_names[int(t["dim"])],
+            "n_items_dim": int(t["n_items_dim"]),
+            "score_prob": [float(v) for v in t["score_prob"]],
+            "eap": [float(v) for v in t["eap"]],
+            "sd": [float(v) for v in t["sd"]],
+        }
+        for t in tables
+    ]
     if path is not None:
         _atomic_write_text(path, json.dumps(bundle, ensure_ascii=False, indent=2))
     return bundle
