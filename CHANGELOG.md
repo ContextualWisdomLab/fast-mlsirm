@@ -279,6 +279,11 @@
 - Added sentinel delegation tests, Rust edge-case tests, seeded true-trait
   recovery tests, score-equation checks, and APA 7th CAT doctoring.
 
+#### Acquisition readiness gate
+
+- Sales readiness no longer fabricates a KRW 2B contract value by default; deal scenarios must be supplied explicitly, and a generic `--require-acquisition-readiness` profile now activates buyer-packet, benchmark, release-evidence, procurement, PR-queue, and Figma validators without the legacy 20B file/token bundle.
+- The legacy `--require-20b-product` profile remains a deprecated compatibility mode, while the manifest records generic readiness, compatibility mode, and transaction-scenario identity separately.
+
 #### Automatic backend preserves Rust numerical ownership
 
 - Changed `backend="auto"` so a missing compiled Rust core fails closed instead of silently selecting the independent NumPy reference implementation.
@@ -317,6 +322,12 @@
 
 ### Fixed
 
+#### Subgroup validation evidence fails closed
+
+- Automated-scoring subgroup SMD gates reject requested subgroups with fewer
+  than two paired cases or zero human variance instead of silently skipping
+  them and reporting a vacuous pass.
+
 #### Serving bundle export requires Rust core
 
 - `export_serving_bundle` fails closed when the compiled Rust core is unavailable
@@ -325,6 +336,11 @@
 #### Fail early for unimplemented estimator identities
 
 - Restricted the public `FitConfig.estimator` vocabulary to the implemented `jmle` and `mmle` fitting paths, so unsupported `em` and `bayes` requests fail during configuration validation instead of entering a fitting path that later raises `NotImplementedError`.
+
+#### Strict JSON artifact interoperability
+
+- Governed JSON artifact writers now reject `NaN`, positive infinity, and negative infinity instead of emitting Python's non-standard JSON numeric extensions, preserving RFC 8259 interoperability and atomic publication failure.
+- Non-finite serialization errors use a bounded package-owned message without reflecting the rejected artifact payload.
 
 #### Node-rule fail-closed validation
 
