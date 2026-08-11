@@ -349,6 +349,40 @@ def test_category_judgment_rejects_non_integral_categories() -> None:
         )
 
 
+def test_category_count_and_category_values_reject_runtime_subclasses() -> None:
+    class _ForgedInt(int):
+        def __le__(self, other):
+            return True
+
+        def __ge__(self, other):
+            return True
+
+    judge = ContextualOrchestratorJudge(_FakeOrchestrator(_category_payload()))
+    for value in (True, 1.0, 65, 10**1000, _ForgedInt(10**1000)):
+        with pytest.raises(ValueError, match="category_count must be an integer"):
+            judge.judge(
+                task="task",
+                answer="answer",
+                criteria=CRITERIA,
+                category_count=value,
+            )
+
+    result = judge.judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=5,
+    )
+    with pytest.raises(JudgeFormatError, match="criterion_categories"):
+        replace(
+            result,
+            criterion_categories={
+                "task_alignment": _ForgedInt(10**1000),
+                "factual_support": 1,
+            },
+        ).to_irt_row()
+
+
 def test_category_judgment_rejects_malformed_top_level_score() -> None:
     payload = json.dumps({
         "score": {"factual_support": 0.8},

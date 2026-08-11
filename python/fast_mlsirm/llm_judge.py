@@ -42,8 +42,7 @@ def _duplicate_free_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _category_count(value: Any) -> int:
     if (
-        not isinstance(value, int)
-        or isinstance(value, bool)
+        type(value) is not int
         or not 2 <= value <= MAX_JUDGE_CATEGORIES
     ):
         raise ValueError(
@@ -54,7 +53,7 @@ def _category_count(value: Any) -> int:
 
 def _category(value: Any, name: str, category_count: int) -> int:
     """Accept JSON integer values, including mathematically integral 1.0 forms."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if type(value) not in (int, float):
         raise JudgeFormatError(
             f"{name} must be an integer in 0..{category_count - 1}"
         )
