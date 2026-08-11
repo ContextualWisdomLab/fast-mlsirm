@@ -1,12 +1,10 @@
 """Computerized adaptive testing (CAT) administration on a calibrated bank.
 
 This module is a *downstream application* built on already-calibrated item
-parameters. It does not touch the calibration objective, likelihood, gradients,
-or the MLS2PLM formula (those are reserved for a model-design PR per
-``AGENTS.md``); it only consumes the item parameters and reuses the repository's
-existing probability and item-information machinery
-(:func:`fast_mlsirm.diagnostics.predict_proba` and
-:func:`fast_mlsirm.test_design.item_information`).
+parameters. It does not touch the calibration objective, likelihood, or
+gradients. Public ability estimation delegates its probability, likelihood,
+posterior, and information arithmetic to the compiled Rust core; Python keeps
+only contract validation, array marshalling, and the adaptive-test policy.
 
 Scope and dimensionality choice
 -------------------------------
@@ -72,6 +70,7 @@ __all__ = [
 ]
 
 _PROB_EPS = 1e-12
+_CAT_EPS_DISTANCE = 1e-8
 
 
 @dataclass
@@ -197,6 +196,32 @@ def _validate_administration(
     return fid, adm, resp
 
 
+def _cat_core_kwargs(
+    bank: MLSIRMParams,
+    factor_id: np.ndarray,
+    administered: np.ndarray,
+    responses: np.ndarray,
+    model: str,
+) -> dict[str, object]:
+    """Marshal a validated CAT request for the Rust numerical owner."""
+    n_dims = _bank_dims(bank)
+    return {
+        "xi_mean": np.ascontiguousarray(_mean_xi(bank).reshape(-1), dtype=np.float64),
+        "administered": np.ascontiguousarray(administered, dtype=np.int64),
+        "responses": np.ascontiguousarray(responses, dtype=np.float64),
+        "alpha": np.ascontiguousarray(bank.alpha, dtype=np.float64),
+        "b": np.ascontiguousarray(bank.b, dtype=np.float64),
+        "zeta": np.ascontiguousarray(bank.zeta, dtype=np.float64).reshape(-1),
+        "tau": float(bank.tau),
+        "factor_id": np.ascontiguousarray(factor_id, dtype=np.int64),
+        "model": model,
+        "n_dims": n_dims,
+        "latent_dim": int(np.asarray(bank.zeta).shape[1]),
+        "eps_distance": _CAT_EPS_DISTANCE,
+        "device": "auto",
+    }
+
+
 def estimate_ability_mle(
     bank: MLSIRMParams,
     factor_id: np.ndarray,
@@ -218,45 +243,24 @@ def estimate_ability_mle(
     all identical has no finite MLE and is flagged ``finite=False``.
     """
     fid, adm, resp = _validate_administration(bank, factor_id, administered, responses)
-    n_dims = _bank_dims(bank)
-    a = np.asarray(bank.a, dtype=np.float64)
-    theta = np.zeros(n_dims) if start is None else np.array(start, dtype=np.float64).reshape(n_dims)
-    dims_present = np.unique(fid[adm]) if adm.size else np.array([], dtype=np.int64)
+    from . import _core as core
 
-    for _ in range(max_iter):
-        prob = np.clip(predict_proba(_query_params(bank, theta[None, :]), fid, model=model)[0], _PROB_EPS, 1 - _PROB_EPS)
-        delta_max = 0.0
-        for d in dims_present:
-            on_d = fid[adm] == d
-            sel = adm[on_d]
-            a_d = a[sel]
-            p_d = prob[sel]
-            score = float(np.sum(a_d * (resp[on_d] - p_d)))
-            info = float(np.sum(a_d * a_d * p_d * (1.0 - p_d)))
-            if info <= _PROB_EPS:
-                continue
-            new = float(np.clip(theta[d] + score / info, -bound, bound))
-            delta_max = max(delta_max, abs(new - theta[d]))
-            theta[d] = new
-        if delta_max < tol:
-            break
-
-    se = np.full(n_dims, np.inf)
-    finite = np.ones(n_dims, dtype=bool)
-    prob = np.clip(predict_proba(_query_params(bank, theta[None, :]), fid, model=model)[0], _PROB_EPS, 1 - _PROB_EPS)
-    for d in dims_present:
-        on_d = fid[adm] == d
-        sel = adm[on_d]
-        a_d = a[sel]
-        p_d = prob[sel]
-        info = float(np.sum(a_d * a_d * p_d * (1.0 - p_d)))
-        if info > _PROB_EPS:
-            se[d] = 1.0 / np.sqrt(info)
-        u_d = resp[on_d]
-        if u_d.size and np.all(u_d == u_d[0]):
-            finite[d] = False
-            se[d] = np.inf
-    return AbilityEstimate(theta=theta, se=se, method="mle", finite=finite)
+    kwargs = _cat_core_kwargs(bank, fid, adm, resp, model)
+    raw_theta, raw_se, raw_finite = core.cat_ability_mle(
+        **kwargs,
+        start=None
+        if start is None
+        else np.ascontiguousarray(np.asarray(start, dtype=np.float64).reshape(_bank_dims(bank))),
+        max_iter=max_iter,
+        tol=tol,
+        bound=bound,
+    )
+    return AbilityEstimate(
+        theta=np.asarray(raw_theta, dtype=np.float64),
+        se=np.asarray(raw_se, dtype=np.float64),
+        method="mle",
+        finite=np.asarray(raw_finite, dtype=bool),
+    )
 
 
 def estimate_ability_eap(
@@ -281,40 +285,27 @@ def estimate_ability_eap(
     with no administered items returns the prior mean and prior SD.
     """
     fid, adm, resp = _validate_administration(bank, factor_id, administered, responses)
-    if not isinstance(n_quad, (int, np.integer)) or n_quad < 2:
-        raise ValueError("n_quad must be an integer >= 2")
-    if not (quad_range > 0):
-        raise ValueError("quad_range must be positive")
     n_dims = _bank_dims(bank)
     pm = np.broadcast_to(np.asarray(prior_mean, dtype=np.float64), (n_dims,)).astype(np.float64)
     psd = np.broadcast_to(np.asarray(prior_sd, dtype=np.float64), (n_dims,)).astype(np.float64)
     if np.any(psd <= 0):
         raise ValueError("prior_sd must be positive")
+    from . import _core as core
 
-    theta = pm.copy()
-    se = psd.copy()
-    dims_present = np.unique(fid[adm]) if adm.size else np.array([], dtype=np.int64)
-    for d in dims_present:
-        nodes = np.linspace(-quad_range, quad_range, int(n_quad)) + pm[d]
-        theta_grid = np.repeat(theta[None, :], nodes.size, axis=0)
-        theta_grid[:, d] = nodes
-        prob = np.clip(predict_proba(_query_params(bank, theta_grid), fid, model=model), _PROB_EPS, 1 - _PROB_EPS)
-        on_d = fid[adm] == d
-        sel = adm[on_d]
-        u_d = resp[on_d]
-        loglik = np.sum(u_d[None, :] * np.log(prob[:, sel]) + (1.0 - u_d)[None, :] * np.log(1.0 - prob[:, sel]), axis=1)
-        logprior = -0.5 * ((nodes - pm[d]) / psd[d]) ** 2
-        log_post = loglik + logprior
-        weights = np.exp(log_post - np.max(log_post))
-        total = float(np.sum(weights))
-        if total <= 0 or not np.isfinite(total):
-            continue
-        weights /= total
-        mean = float(np.sum(nodes * weights))
-        var = float(np.sum((nodes - mean) ** 2 * weights))
-        theta[d] = mean
-        se[d] = float(np.sqrt(max(var, 0.0)))
-    return AbilityEstimate(theta=theta, se=se, method="eap", finite=np.ones(n_dims, dtype=bool))
+    kwargs = _cat_core_kwargs(bank, fid, adm, resp, model)
+    raw_theta, raw_se, raw_finite = core.cat_ability_eap(
+        **kwargs,
+        prior_mean=np.ascontiguousarray(pm),
+        prior_sd=np.ascontiguousarray(psd),
+        n_quad=n_quad,
+        quad_range=quad_range,
+    )
+    return AbilityEstimate(
+        theta=np.asarray(raw_theta, dtype=np.float64),
+        se=np.asarray(raw_se, dtype=np.float64),
+        method="eap",
+        finite=np.asarray(raw_finite, dtype=bool),
+    )
 
 
 def ability_standard_error(
@@ -334,22 +325,35 @@ def ability_standard_error(
     """
     n_dims = _bank_dims(bank)
     theta_vec = np.asarray(theta, dtype=np.float64).reshape(n_dims)
-    info = item_information(_query_params(bank, theta_vec[None, :]), factor_id, model=model)
-    fid = validate_factor_id(factor_id, info.size, n_dims)
+    fid = validate_factor_id(factor_id, int(np.asarray(bank.b).size), n_dims)
     if administered is None:
-        mask = np.ones(info.size, dtype=bool)
+        adm = None
     else:
-        mask = np.zeros(info.size, dtype=bool)
         adm = np.asarray(administered, dtype=np.int64)
-        if adm.size and (np.any(adm < 0) or np.any(adm >= info.size)):
+        if adm.size and (np.any(adm < 0) or np.any(adm >= fid.size)):
             raise ValueError("administered item index out of range")
-        mask[adm] = True
-    se = np.full(n_dims, np.inf)
-    for d in range(n_dims):
-        total = float(np.sum(info[mask & (fid == d)]))
-        if total > _PROB_EPS:
-            se[d] = 1.0 / np.sqrt(total)
-    return se
+        # Rust rejects duplicate indices; duplicate administration has the
+        # same mask semantics as the historical Python implementation.
+        adm = np.unique(adm)
+
+    from . import _core as core
+
+    result = core.cat_ability_standard_error(
+        xi_mean=np.ascontiguousarray(_mean_xi(bank).reshape(-1), dtype=np.float64),
+        theta=np.ascontiguousarray(theta_vec, dtype=np.float64),
+        administered=None if adm is None else np.ascontiguousarray(adm, dtype=np.int64),
+        alpha=np.ascontiguousarray(bank.alpha, dtype=np.float64),
+        b=np.ascontiguousarray(bank.b, dtype=np.float64),
+        zeta=np.ascontiguousarray(bank.zeta, dtype=np.float64).reshape(-1),
+        tau=float(bank.tau),
+        factor_id=np.ascontiguousarray(fid, dtype=np.int64),
+        model=model,
+        n_dims=n_dims,
+        latent_dim=int(np.asarray(bank.zeta).shape[1]),
+        eps_distance=_CAT_EPS_DISTANCE,
+        device="auto",
+    )
+    return np.asarray(result, dtype=np.float64)
 
 
 def select_max_information_item(

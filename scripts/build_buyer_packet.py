@@ -13,8 +13,6 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-GIT_METADATA_TIMEOUT_SECONDS = 5
-
 try:
     from scripts._bounded_json import read_json_object
 except ModuleNotFoundError:
@@ -60,7 +58,6 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return HEAD SHA, failing closed when Git metadata lookup times out."""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -68,10 +65,7 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
-            timeout=GIT_METADATA_TIMEOUT_SECONDS,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("source commit lookup timed out") from exc
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
