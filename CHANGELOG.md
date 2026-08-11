@@ -37,6 +37,15 @@
 
 - Reference-free RAG scoring request adapter with privacy-preserving identity channels and fail-closed rejection of raw system configuration content.
 
+#### Governed automated-scoring validation threshold policy
+
+- Added `ValidationPolicy` and verdict `policy_id`/`policy_version` fields so
+  automated-scoring acceptance gates identify their governing policy.
+- Marshaled policy thresholds (`qwk_min`, `pearson_r_min`, `degradation_max`,
+  overall/subgroup SMD, `min_subgroup_n`) into the Rust `validate_scoring`
+  decision owner instead of hard-coding Williamson high-stakes cutoffs only in
+  Python.
+
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -311,6 +320,19 @@
 
 - Move fragment→`CHANGELOG.md` aggregate parity enforcement from ordinary feature CI into the immutable release-tag workflow so concurrent PRs no longer thrash a shared derived file while release publication still fail-closes on drift.
 
+#### Direct Rust response-time iteration ceiling
+
+- Enforce the package-wide `max_iter` ceiling (`1..=100_000`) inside the Rust
+  lognormal response-time EM (`fit_rt_lognormal`) so direct PyO3 callers cannot
+  bypass the Python `MAX_MAX_ITER` bound.
+- Added a fail-closed ownership contract that rejects `MAX_MAX_ITER + 1` at the
+  Rust boundary and documented the van der Linden (2007) speed model reference.
+
+#### Governed automated-scoring validation threshold policy
+
+- Default policy remains `williamson_high_stakes` v1.0 with the published
+  high-stakes thresholds; invalid threshold ranges fail closed before Rust work.
+
 #### MMLE theta calculation memory optimization
 
 - Replaced the NumPy reference/fallback EAP expression `(posterior * nodes[None, :]).sum(axis=1)` with the algebraically equivalent matrix-vector product `posterior @ nodes`. This avoids constructing the explicit posterior-shaped broadcast product; NumPy may use optimized BLAS for matrix multiplication when available, while realized runtime remains dependent on array shape, layout, hardware, and the linked numerical library.
@@ -380,6 +402,11 @@
 #### Fit-statistics require compiled Rust core
 
 - Public `chi2_sf` and `benjamini_hochberg` fail closed with a stable RuntimeError when the compiled Rust core is unavailable, preventing silent pure-Python numerical ownership.
+
+#### Non-finite inference uncertainty preserves scientific meaning
+
+- Standard errors from covariance diagonals preserve `NaN` and infinite values instead of converting them into false zero uncertainty.
+- `vcov_from_hessian` rejects non-finite observed-information entries with a stable finite-entry contract.
 
 #### Diagnostics-report focus and contrast preservation
 
