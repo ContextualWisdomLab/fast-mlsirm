@@ -192,6 +192,9 @@ def test_category_judgment_derives_ordered_scores_and_irt_items() -> None:
     assert "numeric keys" in prompt
     assert "whole-number values from [0, 1, 2, 3, 4]" in prompt
     assert "category 4 means fully satisfies" in prompt
+    assert "no markdown fences" in prompt
+    assert "category values are JSON integers" in prompt
+    assert "category 4" in prompt
 
 
 def test_category_judgment_rejects_non_integral_categories() -> None:
@@ -207,6 +210,22 @@ def test_category_judgment_rejects_non_integral_categories() -> None:
             answer="answer",
             criteria=CRITERIA,
             category_count=3,
+        )
+
+
+def test_category_judgment_rejects_malformed_top_level_score() -> None:
+    payload = json.dumps({
+        "score": {"factual_support": 0.8},
+        "accepted": True,
+        "rationale": "mixed evidence",
+        "criterion_categories": {"task_alignment": 1, "factual_support": 1},
+    })
+    with pytest.raises(JudgeFormatError, match="score must be a number"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(payload)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=2,
         )
 
 
