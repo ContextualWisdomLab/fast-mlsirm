@@ -288,6 +288,16 @@ def test_judge_criteria_reject_invalid_runtime_types() -> None:
     assert _HookedFloat.invoked is False
 
 
+def test_judge_criteria_reject_non_contract_values_with_value_error() -> None:
+    """Arbitrary criterion elements must fail through the stable benign error contract."""
+    with pytest.raises(ValueError, match="JudgeCriterion or mapping"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=[object()],
+        )
+
+
 if __name__ == "__main__":
     test_judge_uses_contextual_orchestrator_route_and_reports_usage()
     test_judge_rejects_malformed_decisions_and_derives_acceptance()
@@ -298,4 +308,5 @@ if __name__ == "__main__":
     test_category_judgment_rejects_non_integral_categories()
     test_judge_rejects_missing_or_malformed_model_fields()
     test_judge_criteria_reject_invalid_runtime_types()
+    test_judge_criteria_reject_non_contract_values_with_value_error()
     print("ok")
