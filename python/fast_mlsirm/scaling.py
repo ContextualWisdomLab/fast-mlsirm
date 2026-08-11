@@ -409,6 +409,12 @@ def _rankings_to_csr(name, rankings, n):
     Duplicate detection within a ranking is enforced by the Rust core
     (documented divergence: choix accepts duplicates whenever the chain
     stays connected).
+
+    Implementation uses a validate-then-allocate handoff: pure-Python integer
+    lists accumulate admitted rankings, then exact-size ``uint64`` flat/start
+    arrays are allocated once. That avoids reallocation peaks where old and
+    replacement buffers would both be live above the declared byte ceiling,
+    and avoids list→``uint64`` temporaries beside the live CSR payload.
     """
     if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
         raise ValueError(f"{name}: n must be an integer >= 2")
@@ -418,12 +424,8 @@ def _rankings_to_csr(name, rankings, n):
         # so a huge n raises ValueError, never a raw OverflowError.
         raise ValueError(f"{name}: n = {n} exceeds the 10000-item cap")
 
-    # Fixed-width accumulation (uint64) keeps the live CSR payload budgeted.
-    flat = np.empty(0, dtype=np.uint64)
-    starts = np.array([0], dtype=np.uint64)
+    validated: list[list[int]] = []
     flat_count = 0
-    start_count = 1
-    ranking_count = 0
 
     try:
         ranking_iter = iter(rankings)
@@ -442,10 +444,9 @@ def _rankings_to_csr(name, rankings, n):
                 raise
             raise ValueError(f"{name}: ranking iteration failed") from None
 
-        ranking_count += 1
-        r = ranking_count - 1
+        r = len(validated)
         # Budget one additional start offset for this ranking before reading items.
-        if not _ranking_csr_budget_allows(flat_count, start_count + 1):
+        if not _ranking_csr_budget_allows(flat_count, len(validated) + 2):
             raise ValueError(
                 f"{name}: ranking CSR byte limit exceeded "
                 f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
@@ -485,7 +486,9 @@ def _rankings_to_csr(name, rankings, n):
             if xi >= n:
                 raise ValueError(f"{name}: ranking {r} has item {xi} >= n = {n}")
 
-            if not _ranking_csr_budget_allows(flat_count + len(ranking_items) + 1, start_count + 1):
+            if not _ranking_csr_budget_allows(
+                flat_count + len(ranking_items) + 1, len(validated) + 2
+            ):
                 raise ValueError(
                     f"{name}: ranking CSR byte limit exceeded "
                     f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
@@ -503,31 +506,36 @@ def _rankings_to_csr(name, rankings, n):
                 "(choix silently ignores such rankings; this port rejects them)"
             )
 
-        need = flat_count + len(ranking_items)
-        if flat.shape[0] < need:
-            grown = np.empty(max(need, max(8, flat.shape[0] * 2 or 8)), dtype=np.uint64)
-            if flat_count:
-                grown[:flat_count] = flat[:flat_count]
-            flat = grown
-        flat[flat_count : flat_count + len(ranking_items)] = np.asarray(
-            ranking_items, dtype=np.uint64
-        )
+        validated.append(ranking_items)
         flat_count += len(ranking_items)
-        if starts.shape[0] < start_count + 1:
-            grown_starts = np.empty(
-                max(start_count + 1, max(8, starts.shape[0] * 2)), dtype=np.uint64
-            )
-            grown_starts[:start_count] = starts[:start_count]
-            starts = grown_starts
-        starts[start_count] = flat_count
-        start_count += 1
 
-    if start_count < 2:
+    if not validated:
         raise ValueError(f"{name}: at least one ranking is required")
 
-    flat_out = np.ascontiguousarray(flat[:flat_count], dtype=np.uint64)
-    starts_out = np.ascontiguousarray(starts[:start_count], dtype=np.uint64)
+    start_count = len(validated) + 1
+    if not _ranking_csr_budget_allows(flat_count, start_count):
+        raise ValueError(
+            f"{name}: ranking CSR byte limit exceeded "
+            f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
+        )
+
+    # Exact-size CSR handoff arrays only. Allocate once so reallocation peaks
+    # cannot exceed the declared live payload ceiling.
+    flat = np.empty(flat_count, dtype=np.uint64)
+    starts = np.empty(start_count, dtype=np.uint64)
+    starts[0] = 0
+    pos = 0
+    for i, ranking_items in enumerate(validated):
+        for offset, xi in enumerate(ranking_items):
+            flat[pos + offset] = xi
+        pos += len(ranking_items)
+        starts[i + 1] = pos
+
+    # Already contiguous exact-size arrays; keep the historical return shape.
+    flat_out = np.ascontiguousarray(flat, dtype=np.uint64)
+    starts_out = np.ascontiguousarray(starts, dtype=np.uint64)
     return flat_out, starts_out, n
+
 
 
 def lsr_rankings(rankings, n, alpha=0.0):
