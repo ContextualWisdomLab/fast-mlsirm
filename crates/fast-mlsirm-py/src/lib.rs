@@ -18,7 +18,10 @@ use mlsirm_core::fitstats::{
     m2_rmsea2 as core_m2, person_fit as core_person_fit, poly_local_dependence as core_poly_ld,
     poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
-use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
+use mlsirm_core::linking::{
+    irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
+    LinkMethod,
+};
 use mlsirm_core::inference::{standard_errors_from_vcov as core_standard_errors_from_vcov, vcov_from_hessian as core_vcov_from_hessian};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
@@ -5067,6 +5070,55 @@ fn irt_link(
     Ok(out.into())
 }
 
+/// Fixed-anchor mean/mean-style parameter linking onto a target metric.
+///
+/// Returns a dict with linked ``theta`` (list of per-person rows), ``alpha``,
+/// ``b``, and affine evidence ``scale`` / ``shift``. Python reconstructs the
+/// parameter object and attaches ``anchor_items``.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn link_fixed_item_parameters(
+    py: Python<'_>,
+    source_theta: PyReadonlyArray2<'_, f64>,
+    source_alpha: PyReadonlyArray1<'_, f64>,
+    source_b: PyReadonlyArray1<'_, f64>,
+    target_alpha: PyReadonlyArray1<'_, f64>,
+    target_b: PyReadonlyArray1<'_, f64>,
+    anchors: PyReadonlyArray1<'_, i64>,
+    factors: PyReadonlyArray1<'_, i64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let shape = source_theta.shape();
+    if shape.len() != 2 {
+        return Err(PyValueError::new_err("source theta must be 2-D"));
+    }
+    let n_persons = shape[0];
+    let n_dims = shape[1];
+    let res = core_link_fixed_item_parameters(
+        source_theta.as_slice()?,
+        n_persons,
+        n_dims,
+        source_alpha.as_slice()?,
+        source_b.as_slice()?,
+        target_alpha.as_slice()?,
+        target_b.as_slice()?,
+        anchors.as_slice()?,
+        factors.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)?;
+    let mut theta_rows: Vec<Vec<f64>> = Vec::with_capacity(n_persons);
+    for p in 0..n_persons {
+        let start = p * n_dims;
+        theta_rows.push(res.theta[start..start + n_dims].to_vec());
+    }
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta", theta_rows)?;
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("b", res.b)?;
+    out.set_item("scale", res.scale)?;
+    out.set_item("shift", res.shift)?;
+    Ok(out.into())
+}
+
 fn equate_result_dict(py: Python<'_>, res: EquateResult) -> PyResult<Py<pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("x_scores", res.x_scores)?;
@@ -8913,6 +8965,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
+    m.add_function(wrap_pyfunction!(link_fixed_item_parameters, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat_linear, m)?)?;
