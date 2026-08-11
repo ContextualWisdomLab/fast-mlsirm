@@ -137,11 +137,11 @@ class LLMJudgeResult:
         that equal-width score bins remove judge bias; category-count and
         prompt-perturbation calibration remains required.
         """
-        if item_type not in {"dichotomous", "polytomous"}:
+        if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
             raise JudgeFormatError("item_type must be dichotomous or polytomous")
         if not isinstance(self.criterion_scores, Mapping):
             raise JudgeFormatError("criterion_scores must be an object")
-        if any(not isinstance(criterion_id, str) for criterion_id in self.criterion_scores):
+        if any(type(criterion_id) is not str for criterion_id in self.criterion_scores):
             raise JudgeFormatError("criterion_scores keys must be strings")
         criterion_ids = sorted(self.criterion_scores)
         if len(criterion_ids) < 2:
@@ -154,7 +154,7 @@ class LLMJudgeResult:
             if not isinstance(self.criterion_categories, Mapping):
                 raise JudgeFormatError("criterion_categories must be an object")
             if any(
-                not isinstance(criterion_id, str)
+                type(criterion_id) is not str
                 for criterion_id in self.criterion_categories
             ):
                 raise JudgeFormatError("criterion_categories keys must be strings")
@@ -256,7 +256,7 @@ class LLMJudgeResult:
 
 
 def _bounded_text(value: Any, name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if type(value) is not str or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     normalized = value.strip()
     if len(normalized) > MAX_JUDGE_TEXT_CHARACTERS:
@@ -333,9 +333,12 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
 
 
 def _score(value: Any, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if type(value) not in (int, float):
         raise JudgeFormatError(f"{name} must be a number between 0 and 1")
-    normalized = float(value)
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError):
+        raise JudgeFormatError(f"{name} must be a number between 0 and 1") from None
     if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
         raise JudgeFormatError(f"{name} must be a number between 0 and 1")
     return normalized
@@ -351,7 +354,7 @@ def _usage(trace: Any) -> dict[str, int]:
             continue
         for key in totals:
             value = usage.get(key)
-            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            if type(value) is int and value >= 0:
                 totals[key] += value
     return totals
 
@@ -362,7 +365,7 @@ class ContextualOrchestratorJudge:
     def __init__(self, orchestrator: Any, *, mode: str = "route", accept_threshold: float = 0.7) -> None:
         if not callable(getattr(orchestrator, "complete", None)):
             raise TypeError("orchestrator must provide complete(messages, mode=...)")
-        if mode not in {"auto", "route", "conduct"}:
+        if type(mode) is not str or mode not in {"auto", "route", "conduct"}:
             raise ValueError("mode must be auto, route, or conduct")
         self.orchestrator = orchestrator
         self.mode = mode
