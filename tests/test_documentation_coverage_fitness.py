@@ -11,6 +11,11 @@ def _matrix() -> str:
     return _MATRIX.read_text(encoding="utf-8")
 
 
+def _row(source: str, capability: str) -> str:
+    """Return one capability row from the protected-main maturity table."""
+    return next(line for line in source.splitlines() if f"| {capability} |" in line)
+
+
 def test_document_and_capability_states_are_not_conflated() -> None:
     """The matrix must expose separate finite vocabularies for docs and runtime maturity."""
     source = _matrix()
@@ -47,7 +52,7 @@ def test_protected_main_docs_are_not_described_as_open_pr_only() -> None:
 
 
 def test_recently_integrated_capabilities_are_not_left_as_active_pr_only() -> None:
-    """Protected-main RAG, multilevel, factor-retention, and lifecycle contracts remain shipped truth."""
+    """Recent protected-main contracts and numerical migrations remain shipped truth."""
     source = _matrix()
     for capability in (
         "Reference-free RAG request/provenance boundary",
@@ -55,18 +60,22 @@ def test_recently_integrated_capabilities_are_not_left_as_active_pr_only() -> No
         "Multilevel / cross-classified / multiple-membership contracts",
         "Factor retention evidence contract",
         "Fixed-anchor parameter linking arithmetic",
-    ):
-        row = next(line for line in source.splitlines() if f"| {capability} |" in line)
-        assert "IMPLEMENTED_ON_PROTECTED_MAIN" in row
-
-
-def test_active_numerical_migrations_are_not_promoted_to_protected_main() -> None:
-    """Current JMLE and observed-information migrations remain active-PR truth until merge."""
-    source = _matrix()
-    for capability in (
-        "JMLE Adam/L-BFGS optimizer arithmetic",
         "Observed-information Hessian and second-order diagnostics",
     ):
-        row = next(line for line in source.splitlines() if f"| {capability} |" in line)
-        assert "IMPLEMENTED_ON_ACTIVE_PR" in row
-        assert "IMPLEMENTED_ON_PROTECTED_MAIN" not in row
+        assert "IMPLEMENTED_ON_PROTECTED_MAIN" in _row(source, capability)
+
+
+def test_current_jmle_migration_is_not_promoted_to_protected_main() -> None:
+    """The current JMLE optimizer migration remains active-PR truth until merge."""
+    source = _matrix()
+    row = _row(source, "JMLE Adam/L-BFGS optimizer arithmetic")
+    assert "IMPLEMENTED_ON_ACTIVE_PR" in row
+    assert "IMPLEMENTED_ON_PROTECTED_MAIN" not in row
+
+
+def test_fail_first_parallel_hardening_is_not_promoted_to_protected_main() -> None:
+    """The active parallel-analysis hardening lane cannot be called shipped before GREEN merge."""
+    source = _matrix()
+    row = _row(source, "Parallel-analysis public control/resource hardening")
+    assert "IMPLEMENTED_ON_ACTIVE_PR" in row
+    assert "IMPLEMENTED_ON_PROTECTED_MAIN" not in row
