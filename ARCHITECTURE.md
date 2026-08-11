@@ -1,4 +1,4 @@
-# fast-mlsirm Architecture
+# Architecture — fast-mlsirm
 
 Status: **Authoritative living architecture baseline**
 Repository: `ContextualWisdomLab/fast-mlsirm`  
@@ -67,6 +67,12 @@ product. The dependency direction is downstream -> `fast-mlsirm`; never the reve
 Optional integrations are explicit host adapters, not hidden imports or
 cross-service database access.
 
+## Rust numeric core
+
+Production psychometric arithmetic is owned by the **Rust numeric core** in
+`crates/mlsirm-core` with PyO3 bindings in `crates/fast-mlsirm-py` and a thin
+`python/fast_mlsirm` orchestration layer.
+
 ## 2. Architecture drivers
 
 1. **Scientific defensibility:** interpretation is tied to identification, fit,
@@ -84,6 +90,12 @@ cross-service database access.
    convergence, and interpretation boundaries remain machine-readable.
 7. **Evolution:** changed rubrics, items, models, and calibration artifacts are
    new versions or superseding revisions, never silent semantic mutation.
+
+## Recovery evidence path
+
+True-parameter recovery is a first-class **Recovery evidence path**: simulate
+→ estimate with the production Rust path → report RMSE/bias-style accuracy
+metrics under CI-gated contracts (see ADR 0008 and the verification plan).
 
 ## 3. Architectural views
 
