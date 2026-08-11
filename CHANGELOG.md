@@ -259,6 +259,10 @@
 - Reframed support around released, documented public API and packaging behavior, preserved conservative high-stakes/certification/SLA boundaries, and clarified Rust-first production numerical ownership versus explicit reference/parity paths.
 - Added a repository contract that derives the supported minor line from `pyproject.toml` so future package-version changes cannot silently leave `SECURITY.md` or `SUPPORT.md` stale.
 
+#### Release serializes derived changelog aggregation
+
+- Move fragment→`CHANGELOG.md` aggregate parity enforcement from ordinary feature CI into the immutable release-tag workflow so concurrent PRs no longer thrash a shared derived file while release publication still fail-closes on drift.
+
 #### MMLE theta calculation memory optimization
 
 - Replaced the NumPy reference/fallback EAP expression `(posterior * nodes[None, :]).sum(axis=1)` with the algebraically equivalent matrix-vector product `posterior @ nodes`. This avoids constructing the explicit posterior-shaped broadcast product; NumPy may use optimized BLAS for matrix multiplication when available, while realized runtime remains dependent on array shape, layout, hardware, and the linked numerical library.

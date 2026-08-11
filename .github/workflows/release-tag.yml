@@ -81,6 +81,10 @@ jobs:
                   f"found {len(matches)}"
               )
           PY
+      - name: Fail closed on fragment to CHANGELOG aggregate drift
+        run: |
+          set -euo pipefail
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
       - name: Extract the release notes from the CHANGELOG section
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
