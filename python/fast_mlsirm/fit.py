@@ -185,10 +185,13 @@ def _fit_mmle(
 ) -> FitResult:
     """Marginal MLE (EM) — robust to missing data. Unidimensional 2PL measurement.
 
-    Requires the compiled Rust core (``fast_mlsirm._core.fit_mmle_2pl``).
-    The estimator integrates ability over Gauss-Hermite quadrature, so
-    unanswered items contribute nothing (missing-at-random safe) — no imputation.
+    Uses the compiled Rust core (``fast_mlsirm._core.fit_mmle_2pl``) when present;
+    otherwise the pure-numpy reference in ``fast_mlsirm.estimators.mmle``. Both
+    integrate ability over Gauss-Hermite quadrature, so unanswered items
+    contribute nothing (missing-at-random safe) — no imputation.
     """
+    from .estimators.mmle import fit_mmle_2pl as _py_mmle
+
     n_persons, n_items = y.shape
 
     rust = None
@@ -199,22 +202,33 @@ def _fit_mmle(
     except Exception:  # pragma: no cover
         rust = None
 
-    if rust is None:
-        raise RuntimeError("compiled Rust core is required for MMLE")
-    y_filled = np.where(observed, y, 0.0).astype(np.float64)
-    observed_bool = observed.astype(bool)
-    a, b, theta, loglik_trace, converged = rust(
-        y_filled.ravel(),
-        observed_bool.ravel(),
-        int(n_persons),
-        int(n_items),
-        int(config.max_iter),
-        float(config.tolerance),
-    )
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
-    theta = np.asarray(theta, dtype=np.float64)
-    loglik_trace = list(loglik_trace)
+    if rust is not None:  # pragma: no cover - exercised only when the ext is built
+        y_filled = np.where(observed, y, 0.0).astype(np.float64)
+        observed_bool = observed.astype(bool)
+        a, b, theta, loglik_trace, converged = rust(
+            y_filled.ravel(),
+            observed_bool.ravel(),
+            int(n_persons),
+            int(n_items),
+            int(config.max_iter),
+            float(config.tolerance),
+        )
+        a = np.asarray(a, dtype=np.float64)
+        b = np.asarray(b, dtype=np.float64)
+        theta = np.asarray(theta, dtype=np.float64)
+        loglik_trace = list(loglik_trace)
+    else:
+        res = _py_mmle(
+            y,
+            observed,
+            max_iter=config.max_iter,
+            tol=config.tolerance,
+        )
+        a = np.asarray(res["a"], dtype=np.float64)
+        b = np.asarray(res["b"], dtype=np.float64)
+        theta = np.asarray(res["theta"], dtype=np.float64)
+        loglik_trace = list(res["loglik_trace"])
+        converged = res["status"] == "converged"
 
     params = MLSIRMParams(
         theta=theta.reshape(n_persons, 1),
@@ -227,7 +241,7 @@ def _fit_mmle(
     return FitResult(
         params=params,
         model=model,
-        optimizer="mmle_em/rust",
+        optimizer=f"mmle_em/{'rust' if rust is not None else 'numpy'}",
         backend=config.backend,
         rust_device=config.rust_device,
         objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
