@@ -53,6 +53,36 @@ class _NoNumericCore:
         raise AssertionError("invalid Phi(lambda) controls reached Rust")
 
 
+class _RecordingCore:
+    """Minimal successful core used to inspect trusted scalar marshalling."""
+
+    def __init__(self) -> None:
+        self.primes: list[int] | None = None
+        self.cut: float | None = None
+
+    def gtheory_pi(self, data, n_p, n_i, primes):
+        self.primes = primes
+        return {
+            "df": [1.0, 1.0, 1.0],
+            "ss": [1.0, 1.0, 1.0],
+            "ms": [1.0, 1.0, 1.0],
+            "var_raw": [1.0, 1.0, 1.0],
+            "var": [1.0, 1.0, 1.0],
+            "d_study": [],
+        }
+
+    def phi_lambda(self, data, n_p, n_i, cut, primes):
+        self.cut = cut
+        self.primes = primes
+        return {
+            "grand_mean": 0.5,
+            "var": [1.0, 1.0, 1.0],
+            "var_xbar": 1.0,
+            "signal": 0.5,
+            "phi": [0.5 for _ in primes],
+        }
+
+
 def _pi_data() -> np.ndarray:
     """Return the smallest non-degenerate one-facet score matrix."""
     return np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
@@ -108,23 +138,45 @@ def test_phi_lambda_rejects_hostile_cut_before_float_coercion(monkeypatch) -> No
     assert hostile.repr_calls == 0
 
 
+@pytest.mark.parametrize("value", [True, np.bool_(False), 0, -1, 1.5, "2"])
+def test_pi_rejects_non_positive_or_non_integer_dstudy_controls(
+    monkeypatch, value: object
+) -> None:
+    """D-study sizes accept only positive trusted integer scalar types."""
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"n_i_prime entries must be positive integers"):
+        gtheory.gtheory_pi(_pi_data(), n_i_prime=[value])
+
+
+@pytest.mark.parametrize("cut", [True, np.bool_(False), np.nan, np.inf, "0.5"])
+def test_phi_lambda_rejects_non_finite_or_non_real_cuts(monkeypatch, cut: object) -> None:
+    """Mastery cut accepts only finite trusted Python/NumPy real scalars."""
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"cut must be a finite real scalar"):
+        gtheory.phi_lambda(_pi_data(), cut, n_i_prime=[2])
+
+
 def test_dstudy_controls_preserve_builtin_and_numpy_scalar_types(monkeypatch) -> None:
-    """Trusted Python/NumPy scalar controls remain accepted after hardening."""
-    seen: dict[str, object] = {}
+    """Trusted Python/NumPy integer controls remain accepted after hardening."""
+    core = _RecordingCore()
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: core)
 
-    class _Core:
-        def gtheory_pi(self, data, n_p, n_i, primes):
-            seen["primes"] = primes
-            return {
-                "df": [1.0, 1.0, 1.0],
-                "ss": [1.0, 1.0, 1.0],
-                "ms": [1.0, 1.0, 1.0],
-                "var_raw": [1.0, 1.0, 1.0],
-                "var": [1.0, 1.0, 1.0],
-                "d_study": [],
-            }
-
-    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _Core())
     gtheory.gtheory_pi(_pi_data(), n_i_prime=[2, np.int64(3)])
 
-    assert seen["primes"] == [2, 3]
+    assert core.primes == [2, 3]
+
+
+def test_phi_lambda_preserves_numpy_real_and_integer_controls(monkeypatch) -> None:
+    """Trusted NumPy real and integer controls marshal to ordinary scalars."""
+    core = _RecordingCore()
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: core)
+
+    result = gtheory.phi_lambda(
+        _pi_data(), np.float64(0.5), n_i_prime=[np.int32(2)]
+    )
+
+    assert core.cut == 0.5
+    assert core.primes == [2]
+    assert result.phi == [0.5]
