@@ -15,9 +15,10 @@ def _python_job_source() -> str:
 
 
 def test_python_job_runs_full_suite_on_python_314() -> None:
-    """Pull-request CI must execute the full Python suite on CPython 3.14."""
+    """Pull-request CI must execute the full fail-slow suite on CPython 3.14."""
     python_job = _python_job_source()
 
     assert 'python-version: ["3.12", "3.14"]' in python_job
-    assert "matrix.python-version" in python_job
+    assert "python-version: ${{ matrix.python-version }}" in python_job
+    assert "fail-fast: false" in python_job
     assert "- run: pytest" in python_job
