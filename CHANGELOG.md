@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Require compiled Rust ownership for public `s_x2` and `person_fit`, including prior-mean S-X² dispatch, with fail-closed errors when the core is missing.
 - Validate parallel-analysis integer controls and bound random-eigenvalue workspace before Rust dispatch.
 - Cap LLM-judge response JSON nesting at 32 levels before parse to prevent recursive-object resource exhaustion.
 - Public fixed-form `assemble_test_form` delegates greedy maximum-information selection and content-feasibility look-ahead to the Rust core (`assemble_test_form_greedy`).

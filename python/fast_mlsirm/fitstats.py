@@ -484,154 +484,57 @@ def s_x2(
             raise ValueError("person_weight must contain only finite 0/1 values")
 
     core = _core_module()
-    if core is not None and hasattr(core, "s_x2_stat") and prior_mean is None:
-        n_dims = int(d_of_i.max()) + 1
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.s_x2_stat(
-            np.where(observed0, y0, 0.0).ravel(),
-            observed0.ravel(),
-            int(y0.shape[0]),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.zeros(n_dims),
-            np.ones(n_dims),
-            q_theta=int(q_theta),
-            xi_rule="gh",
-            q_xi=int(q_xi),
-            min_expected=float(min_expected),
-            fdr_q=float(fdr_q),
-            min_effect=float(min_effect),
-            person_weight=None if person_weight is None else weight,
-        )
-        return SX2Result(
-            statistic=np.asarray(res["statistic"]),
-            g2_statistic=np.asarray(
-                res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
-            ),
-            df=np.asarray(res["df"]),
-            p_value=np.asarray(res["p_value"]),
-            g2_p_value=np.asarray(
-                res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
-            ),
-            flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
-            n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
-            rms_residual=np.asarray(res["rms_residual"]),
-        )
-    observed = observed0
-    y = np.where(observed, y0, 0.0)
+    if core is None or not hasattr(core, "s_x2_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
     n_dims = int(d_of_i.max()) + 1
-
-    probs, t_w, x_w, _ = _icc_grid(
-        params, d_of_i, model, q_theta, q_xi, eps_distance, prior_mean
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    if prior_mean is None:
+        prior_mean_vec = np.zeros(n_dims, dtype=np.float64)
+    else:
+        prior_mean_vec = np.asarray(prior_mean, dtype=np.float64).reshape(-1)
+        if prior_mean_vec.shape != (n_dims,):
+            raise ValueError("prior_mean must be a length-n_dims vector")
+        if not np.all(np.isfinite(prior_mean_vec)):
+            raise ValueError("prior_mean must be finite")
+    res = core.s_x2_stat(
+        np.where(observed0, y0, 0.0).ravel(),
+        observed0.ravel(),
+        int(y0.shape[0]),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        prior_mean_vec,
+        np.ones(n_dims, dtype=np.float64),
+        q_theta=int(q_theta),
+        xi_rule="gh",
+        q_xi=int(q_xi),
+        min_expected=float(min_expected),
+        fdr_q=float(fdr_q),
+        min_effect=float(min_effect),
+        person_weight=None if person_weight is None else weight,
     )
-    n_free = {"MLSRM": 1, "ULSRM": 1}.get(model.upper(), 2)
-    if model.upper() != "MIRT":
-        n_free += params.zeta.shape[1]
-
-    stat = np.full(n_items, np.nan)
-    g2_stat = np.full(n_items, np.nan)
-    dof = np.full(n_items, np.nan)
-    pval = np.full(n_items, np.nan)
-    g2_pval = np.full(n_items, np.nan)
-    rms = np.full(n_items, np.nan)
-    n_groups_out = np.zeros(n_items, dtype=int)
-
-    for d in range(n_dims):
-        items = np.flatnonzero(d_of_i == d)
-        if len(items) < 2:
-            continue
-        complete = observed[:, items].all(axis=1) & (weight > 0)
-        yd = y[np.ix_(complete, items)]
-        n_d = len(items)
-        if yd.shape[0] == 0:
-            continue
-        scores = yd.sum(axis=1).astype(int)
-        # grid: flatten (t, x) nodes with product weights
-        p_flat = probs[items].reshape(n_d, -1)  # (I_d, Qt*Nx)
-        w_flat = (t_w[:, None] * x_w[None, :]).reshape(-1)
-        s_all = _lord_wingersky(p_flat)  # (I_d+1, Q)
-        denom = s_all @ w_flat  # (I_d+1,)
-        for local_i, i in enumerate(items):
-            rest = np.delete(np.arange(n_d), local_i)
-            s_rest = _lord_wingersky(p_flat[rest]) if len(rest) else None
-            # E_is for s = 1..I_d-1
-            e = np.full(n_d + 1, np.nan)
-            for s_score in range(1, n_d):
-                num = float((p_flat[local_i] * s_rest[s_score - 1]) @ w_flat)
-                den = float(denom[s_score])
-                e[s_score] = num / den if den > 0 else np.nan
-            obs_n = np.bincount(scores, minlength=n_d + 1).astype(float)
-            obs_r = np.bincount(scores, weights=yd[:, local_i], minlength=n_d + 1)
-            # score groups 1..I_d-1; collapse adjacent until expected >= min_expected
-            groups: list[tuple[float, float, float]] = []  # (N, O_sum, E_sum)
-            acc_n, acc_r, acc_e = 0.0, 0.0, 0.0
-            for s_score in range(1, n_d):
-                if not np.isfinite(e[s_score]):
-                    continue
-                acc_n += obs_n[s_score]
-                acc_r += obs_r[s_score]
-                acc_e += obs_n[s_score] * e[s_score]
-                if (
-                    acc_n > 0
-                    and acc_e >= min_expected
-                    and (acc_n - acc_e) >= min_expected
-                ):
-                    groups.append((acc_n, acc_r, acc_e))
-                    acc_n, acc_r, acc_e = 0.0, 0.0, 0.0
-            if acc_n > 0 and groups:
-                n0, r0, e0 = groups[-1]
-                groups[-1] = (n0 + acc_n, r0 + acc_r, e0 + acc_e)
-            elif acc_n > 0:
-                groups.append((acc_n, acc_r, acc_e))
-            x2, g2, n_grp = 0.0, 0.0, 0
-            rss, n_tot = 0.0, 0.0
-            for gn, gr, ge in groups:
-                if gn <= 0:
-                    continue  # pragma: no cover - groups hold only appended acc_n>0 counts, so gn>=1
-                e_prop = ge / gn
-                if e_prop <= 0.0 or e_prop >= 1.0:
-                    continue
-                o_prop = gr / gn
-                x2 += gn * (o_prop - e_prop) ** 2 / (e_prop * (1.0 - e_prop))
-                g2 += (
-                    2.0
-                    * gn
-                    * (
-                        _xlogx_over_y(o_prop, e_prop)
-                        + _xlogx_over_y(1.0 - o_prop, 1.0 - e_prop)
-                    )
-                )
-                rss += gn * (o_prop - e_prop) ** 2
-                n_tot += gn
-                n_grp += 1
-            df_i = n_grp - n_free
-            stat[i] = x2
-            g2_stat[i] = g2
-            n_groups_out[i] = n_grp
-            rms[i] = np.sqrt(rss / n_tot) if n_tot > 0 else np.nan
-            if df_i >= 1:
-                dof[i] = df_i
-                pval[i] = chi2_sf(x2, df_i)
-                g2_pval[i] = chi2_sf(g2, df_i)
-    flagged = benjamini_hochberg(pval, fdr_q)
-    flagged &= np.where(np.isfinite(rms), rms, -np.inf) >= min_effect
     return SX2Result(
-        statistic=stat,
-        g2_statistic=g2_stat,
-        df=dof,
-        p_value=pval,
-        g2_p_value=g2_pval,
-        flagged_bh=flagged,
-        n_score_groups=n_groups_out,
-        rms_residual=rms,
+        statistic=np.asarray(res["statistic"]),
+        g2_statistic=np.asarray(
+            res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
+        ),
+        df=np.asarray(res["df"]),
+        p_value=np.asarray(res["p_value"]),
+        g2_p_value=np.asarray(
+            res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
+        ),
+        flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
+        n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
+        rms_residual=np.asarray(res["rms_residual"]),
     )
+
+
 
 
 # --------------------------------------------------------------------------
@@ -679,100 +582,44 @@ def person_fit(
     331–342. https://doi.org/10.1007/BF02294437
     """
     model = model.upper()
-    free_alpha = model not in {"MLSRM", "ULSRM"}
-    uses_space = model != "MIRT"
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
     )
     n_persons, n_items = y.shape
     n_dims = int(d_of_i.max()) + 1
     core = _core_module()
-    if core is not None and hasattr(core, "person_fit_stat"):
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.person_fit_stat(
-            y.ravel(),
-            observed.ravel(),
-            int(n_persons),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.asarray(params.theta, dtype=np.float64).ravel(),
-            np.asarray(params.xi, dtype=np.float64).ravel(),
-            prior_mean=None
-            if prior_mean is None
-            else np.broadcast_to(
-                np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
-            )
-            .ravel()
-            .copy(),
-            flag_threshold=float(flag_threshold),
+    if core is None or not hasattr(core, "person_fit_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.person_fit_stat(
+        y.ravel(),
+        observed.ravel(),
+        int(n_persons),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        np.asarray(params.theta, dtype=np.float64).ravel(),
+        np.asarray(params.xi, dtype=np.float64).ravel(),
+        prior_mean=None
+        if prior_mean is None
+        else np.broadcast_to(
+            np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
         )
-        return PersonFitResult(
-            lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
-            lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
-            flagged=np.asarray(res["flagged"], dtype=bool),
-        )
-    theta = np.asarray(params.theta, dtype=float)
-    a = np.exp(params.alpha) if free_alpha else np.ones(n_items)
-    shift = np.zeros((n_persons, n_dims))
-    if prior_mean is not None:
-        shift += np.asarray(prior_mean)
-
-    # eta_pi at EAP estimates
-    eta = a[None, :] * theta[:, d_of_i] + params.b[None, :]
-    if uses_space:
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi = np.asarray(params.xi)
-        zeta = np.asarray(params.zeta)
-        x_sq = np.einsum("ij,ij->i", xi, xi)
-        z_sq = np.einsum("ij,ij->i", zeta, zeta)
-        dist_sq = x_sq[:, None] + z_sq[None, :] - 2 * np.dot(xi, zeta.T)
-        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
-        eta = eta - math.exp(params.tau) * dist
-    p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
-    p = np.clip(p, 1e-12, 1.0 - 1e-12)
-    w = np.log(p / (1.0 - p))  # w_i(theta) for l_z
-    var_i = p * (1.0 - p)
-
-    lz = np.full((n_persons, n_dims), np.nan)
-    lz_star = np.full((n_persons, n_dims), np.nan)
-    for d in range(n_dims):
-        items = d_of_i == d
-        o = observed[:, items]
-        yd, pd, wd, vd = y[:, items], p[:, items], w[:, items], var_i[:, items]
-        ad = a[items]
-        n_obs = o.sum(axis=1)
-        ok = n_obs >= 2
-        # l_z
-        w_stat = ((yd - pd) * wd * o).sum(axis=1)
-        var_l = (vd * wd**2 * o).sum(axis=1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            lz[:, d] = np.where(ok & (var_l > 0), w_stat / np.sqrt(var_l), np.nan)
-        # l_z*: r_i = P'/(P(1-P)) = a_i ; c = sum P' w / sum P' r
-        p_prime = ad[None, :] * vd  # (P, I_d)
-        num_c = (p_prime * wd * o).sum(axis=1)
-        den_c = (p_prime * ad[None, :] * o).sum(axis=1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            c = np.where(den_c > 0, num_c / den_c, 0.0)
-        w_tilde = wd - c[:, None] * ad[None, :]
-        tau2 = (w_tilde**2 * vd * o).sum(axis=1) / np.maximum(n_obs, 1)
-        r0 = -(theta[:, d] - shift[:, d])  # MAP correction, N(mean, 1) prior
-        with np.errstate(divide="ignore", invalid="ignore"):
-            lz_star[:, d] = np.where(
-                ok & (tau2 > 0),
-                (w_stat + c * r0) / (np.sqrt(np.maximum(n_obs, 1)) * np.sqrt(tau2)),
-                np.nan,
-            )
-    flagged = (
-        np.nanmin(np.where(np.isnan(lz_star), np.inf, lz_star), axis=1) < flag_threshold
+        .ravel()
+        .copy(),
+        flag_threshold=float(flag_threshold),
     )
-    return PersonFitResult(lz=lz, lz_star=lz_star, flagged=flagged)
+    return PersonFitResult(
+        lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
+        lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
+        flagged=np.asarray(res["flagged"], dtype=bool),
+    )
 
 
 # --------------------------------------------------------------------------
