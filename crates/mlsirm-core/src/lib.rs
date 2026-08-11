@@ -42,6 +42,7 @@ pub mod scoring;
 pub mod security;
 pub mod standard_setting;
 pub mod subscores;
+pub mod test_form;
 pub mod testlet;
 pub mod twopl;
 pub mod utility;

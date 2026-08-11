@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Public fixed-form `assemble_test_form` delegates greedy maximum-information selection and content-feasibility look-ahead to the Rust core (`assemble_test_form_greedy`).
 - Public CAT `item_information` and `select_cat_item` delegate Fisher information and maximum-information ranking to the Rust core.
 - Bound top-1 CSR loser streams and enforce the shared ranking CSR byte ceiling with stable non-reflective iteration errors.
 - Validate ATA content-constraint maps, exposure counts, seed, and exposure_max as admitted types before item-information evaluation, rejecting hostile conversion callbacks while preserving accepted string keys and exact integers.
