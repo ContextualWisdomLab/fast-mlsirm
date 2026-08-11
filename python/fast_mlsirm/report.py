@@ -701,6 +701,11 @@ h3 {
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
+  transition: opacity 0.15s ease-in-out;
+}
+
+.bar-chart:hover .bar-row:not(:hover) {
+  opacity: 0.5;
 }
 
 .bar-label,
@@ -820,11 +825,15 @@ tr:last-child td {
 }
 
 tbody tr {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.15s ease-in-out, opacity 0.15s ease-in-out;
 }
 
 tbody tr:hover {
   background: var(--hover-bg);
+}
+
+tbody:hover tr:not(:hover) {
+  opacity: 0.5;
 }
 
 .empty-state {
