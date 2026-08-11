@@ -426,6 +426,12 @@
   tau update, and the covariate update while preserving the Rust production
   backend and public model contracts.
 
+#### Parallel-analysis input and workspace bounds
+
+- `parallel_analysis()` now rejects booleans, floats, strings, and caller-defined integer-conversion hooks for integer controls instead of silently coercing them before Rust dispatch.
+- The public wrapper validates the Rust `u64` seed range and rejects oversized random-eigenvalue benchmark workspaces before PyO3 dispatch.
+- `mlsirm-core` independently caps the random-eigenvalue simulation workspace at 128 MiB before allocation while preserving the existing Horn/paran numerical algorithm and deterministic RNG contract.
+
 #### Subgroup validation evidence fails closed
 
 - Automated-scoring subgroup SMD gates reject requested subgroups with fewer
@@ -498,11 +504,34 @@
 
 - Bound top-1 loser streams to at most `n - 1` items, enforce the shared `MAX_RANKING_CSR_BYTES` ceiling on winner/loser/start `uint64` payloads, and normalize ordinary outer/inner iteration failures to stable non-reflective package errors while propagating process-control signals.
 
+#### Observed-information Rust ownership
+
+- Public `observed_information` assembles finite-difference Hessians in the Rust
+  core from evaluated objective samples, and `second_order_test` eigenvalue
+  diagnostics are Rust-owned.
+
+#### Fixed-anchor linking Rust ownership
+
+- Public `link_fixed_item_parameters` delegates affine scale/shift estimation and
+  parameter transformation to the compiled Rust core, retaining Python for
+  validation and evidence packaging only.
+
+#### Fixed-form greedy assembly Rust ownership
+
+- Public `assemble_test_form` delegates ordering, exclusion, and content-feasibility
+  decisions to the compiled Rust core (`assemble_test_form_greedy`), keeping Python
+  for validation and marshalling only.
+
 #### JMLE Adam/L-BFGS Rust ownership
 
 - Public JMLE `backend="rust"` routes Adam, L-BFGS, and `adam_lbfgs` sequencing
   through compiled `jmle_optimize` entrypoints so optimizer state updates no longer
   re-implement production arithmetic in Python loops.
+
+#### LLM judge JSON nesting depth bound
+
+- Cap raw LLM-judge response JSON nesting at 32 levels before `json.loads`, failing closed with `JudgeFormatError` so hostile recursive objects cannot expand into parser resource exhaustion.
+- Keep valid shallow judge payloads accepted with the existing criterion/score contracts.
 
 #### Diagnostics-report focus and contrast preservation
 
