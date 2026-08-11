@@ -44,21 +44,19 @@ pub fn assemble_test_form_greedy(
     } else if !min_per_content.is_empty() || !max_per_content.is_empty() {
         return Err("content labels are required for content constraints".into());
     }
-    for (label, &minimum) in min_per_content {
+    for (_label, &minimum) in min_per_content {
         if minimum < 0 {
-            return Err(format!("minimum content constraint for {label} must be non-negative"));
+            return Err("content constraint counts must be non-negative".into());
         }
         if let Some(&maximum) = max_per_content.get(label) {
             if minimum > maximum {
-                return Err(format!(
-                    "minimum content constraint cannot exceed maximum for {label}"
-                ));
+                return Err("minimum content constraint cannot exceed maximum".into());
             }
         }
     }
-    for (label, &maximum) in max_per_content {
+    for (_label, &maximum) in max_per_content {
         if maximum < 0 {
-            return Err(format!("maximum content constraint for {label} must be non-negative"));
+            return Err("content constraint counts must be non-negative".into());
         }
     }
 
@@ -134,7 +132,7 @@ pub fn assemble_test_form_greedy(
         let have = counts.get(label).copied().unwrap_or(0);
         if have < minimum {
             // Defensive: look-ahead should already enforce minima.
-            return Err(format!("minimum content constraint not met: {label}"));
+            return Err("minimum content constraint not met".into());
         }
     }
 
