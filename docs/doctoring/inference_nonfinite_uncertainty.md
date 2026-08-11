@@ -12,6 +12,6 @@ Non-finite Hessian entries fail closed before inversion.
 
 ## References
 
-American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association. [Official AERA edition and open-access files](https://www.aera.net/Publications/Books/Standards-for-Educational-Psychological-Testing-2014-Edition). The Standards require technically sound, appropriately documented score interpretations; preserving undefined or unbounded uncertainty makes that limitation observable instead of presenting a false zero-uncertainty claim.
 
-Casella, G., & Berger, R. L. (2002). *Statistical inference* (2nd ed.). Duxbury.
+Casella, G., & Berger, R. L. (2002). *Statistical inference* (2nd ed.). Duxbury. [WorldCat bibliographic record](https://search.worldcat.org/title/Statistical-inference/oclc/67327073). The text supplies the mathematical basis for covariance-derived standard errors: finite positive variance gives a square-root standard error, while an undefined or unbounded variance cannot be treated as zero. The implementation therefore clamps only finite numerical residue and preserves `NaN` and signed infinities.
