@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import weakref
 
 import numpy as np
 import pytest
@@ -40,6 +41,46 @@ def test_tiny_budget_does_not_allocate_oversized_uint64_capacity(
     assert flat.nbytes + starts.nbytes == budget
     assert requested_uint64_bytes
     assert max(requested_uint64_bytes) <= budget
+
+
+def test_growth_never_exceeds_budget_with_old_and_new_buffers_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reallocation overlap must count both old and replacement uint64 buffers."""
+    budget = 48
+    monkeypatch.setattr(scaling, "MAX_RANKING_CSR_BYTES", budget)
+    real_empty = np.empty
+    real_array = np.array
+    live_allocations: list[weakref.ReferenceType[np.ndarray]] = []
+    peak_live_bytes = 0
+
+    def record(array: np.ndarray) -> np.ndarray:
+        nonlocal peak_live_bytes
+        if array.dtype == np.dtype(np.uint64):
+            alive_bytes = sum(
+                live.nbytes
+                for ref in live_allocations
+                if (live := ref()) is not None
+            )
+            peak_live_bytes = max(peak_live_bytes, alive_bytes + array.nbytes)
+            live_allocations.append(weakref.ref(array))
+        return array
+
+    def recording_empty(shape: object, *args: object, **kwargs: object) -> np.ndarray:
+        return record(real_empty(shape, *args, **kwargs))
+
+    def recording_array(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        return record(real_array(value, *args, **kwargs))
+
+    monkeypatch.setattr(scaling.np, "empty", recording_empty)
+    monkeypatch.setattr(scaling.np, "array", recording_array)
+
+    flat, starts, n = scaling._rankings_to_csr("probe", [[0, 1]], 2)
+
+    assert n == 2
+    assert np.array_equal(flat, real_array([0, 1], dtype=np.uint64))
+    assert np.array_equal(starts, real_array([0, 2], dtype=np.uint64))
+    assert peak_live_bytes <= budget
 
 
 def test_ranking_copy_does_not_create_unbudgeted_uint64_list_temporary(
