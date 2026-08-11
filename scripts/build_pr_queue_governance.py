@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import subprocess
+import time
 from datetime import UTC, datetime
 from html import escape
 from itertools import combinations
@@ -66,6 +67,25 @@ _CANONICAL_REFERENCE_RE = re.compile(
 )
 _MIN_OVERLAP_FILES = 2
 _HIGH_OVERLAP_THRESHOLD = 0.80
+
+# Open-queue classification needs merge/review/file evidence.
+_OPEN_PR_JSON_FIELDS = (
+    "number,title,body,headRefName,headRefOid,baseRefName,isDraft,"
+    "mergeStateStatus,reviewDecision,state,updatedAt,closedAt,mergedAt,"
+    "url,labels,files"
+)
+# Audit-history only needs closing-reference and identity fields. Including
+# nested ``files``/``labels`` on ``--state all --limit 100`` routinely trips
+# GitHub GraphQL HTTP 502 for this repository (see Actions run 31374029017).
+_HISTORY_PR_JSON_FIELDS = (
+    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,"
+    "mergedAt,url"
+)
+_OPEN_PR_LIST_LIMIT = 100
+_HISTORY_PR_LIST_LIMIT = 100
+_GH_TRANSIENT_STATUS_RE = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
+_GH_JSON_MAX_ATTEMPTS = 3
+_GH_JSON_RETRY_SLEEP_SECONDS = 0.5
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -141,17 +161,40 @@ def _json_from_completed(completed: subprocess.CompletedProcess[str]) -> Any:
     return json.loads(completed.stdout)
 
 
-def _run_gh_json(command: list[str]) -> tuple[Any, dict[str, Any] | None]:
-    """Execute a GitHub CLI JSON command and return payload plus redacted error."""
-    completed = subprocess.run(command, capture_output=True, text=True)
-    payload = _json_from_completed(completed)
-    if completed.returncode == 0:
-        return payload, None
-    return None, {
-        "command": command[1:3],
-        "stderr": completed.stderr.strip(),
-        "returncode": completed.returncode,
-    }
+def _is_transient_gh_stderr(stderr: str) -> bool:
+    """Return True when stderr reports an approved transient GitHub gateway status."""
+    return _GH_TRANSIENT_STATUS_RE.search(stderr) is not None
+
+
+def _run_gh_json(
+    command: list[str],
+    *,
+    max_attempts: int = _GH_JSON_MAX_ATTEMPTS,
+    retry_sleep_seconds: float = _GH_JSON_RETRY_SLEEP_SECONDS,
+) -> tuple[Any, dict[str, Any] | None]:
+    """Execute a GitHub CLI JSON command and return payload plus redacted error.
+
+    Retries only on HTTP 502/503/504. Non-transient failures fail closed on the
+    first response so real auth/query defects are not masked.
+    """
+    attempts = max(1, int(max_attempts))
+    last_error: dict[str, Any] | None = None
+    for attempt in range(1, attempts + 1):
+        completed = subprocess.run(command, capture_output=True, text=True)
+        payload = _json_from_completed(completed)
+        if completed.returncode == 0:
+            return payload, None
+        stderr = completed.stderr.strip()
+        last_error = {
+            "command": command[1:3],
+            "stderr": stderr,
+            "returncode": completed.returncode,
+        }
+        if attempt >= attempts or not _is_transient_gh_stderr(stderr):
+            break
+        if retry_sleep_seconds > 0:
+            time.sleep(retry_sleep_seconds)
+    return None, last_error
 
 
 def _normalize_pr_list(payload: Any) -> list[dict[str, Any]]:
@@ -161,13 +204,31 @@ def _normalize_pr_list(payload: Any) -> list[dict[str, Any]]:
     return [item for item in payload if isinstance(item, dict)]
 
 
+def _pr_list_command(
+    repo: str,
+    *,
+    state: str,
+    limit: int,
+    fields: str,
+) -> list[str]:
+    """Build a ``gh pr list`` JSON command for one bounded state snapshot."""
+    return [
+        "gh",
+        "pr",
+        "list",
+        "--repo",
+        repo,
+        "--state",
+        state,
+        "--limit",
+        str(limit),
+        "--json",
+        fields,
+    ]
+
+
 def _run_gh_snapshot(repo: str) -> dict[str, Any]:
     """Capture open PR state, bounded audit history, and the default-base SHA."""
-    fields = (
-        "number,title,body,headRefName,headRefOid,baseRefName,isDraft,"
-        "mergeStateStatus,reviewDecision,state,updatedAt,closedAt,mergedAt,"
-        "url,labels,files"
-    )
     repo_payload, repo_error = _run_gh_json(
         [
             "gh",
@@ -179,34 +240,20 @@ def _run_gh_snapshot(repo: str) -> dict[str, Any]:
         ]
     )
     open_payload, open_error = _run_gh_json(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--repo",
+        _pr_list_command(
             repo,
-            "--state",
-            "open",
-            "--limit",
-            "100",
-            "--json",
-            fields,
-        ]
+            state="open",
+            limit=_OPEN_PR_LIST_LIMIT,
+            fields=_OPEN_PR_JSON_FIELDS,
+        )
     )
     history_payload, history_error = _run_gh_json(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--repo",
+        _pr_list_command(
             repo,
-            "--state",
-            "all",
-            "--limit",
-            "100",
-            "--json",
-            fields,
-        ]
+            state="all",
+            limit=_HISTORY_PR_LIST_LIMIT,
+            fields=_HISTORY_PR_JSON_FIELDS,
+        )
     )
 
     default_branch = ""
