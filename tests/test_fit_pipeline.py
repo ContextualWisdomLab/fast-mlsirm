@@ -16,9 +16,9 @@ def test_fit_pipeline_smoke():
     assert result.params.theta.shape == (30, 2)
     assert result.params.alpha.shape == (6,)
     assert result.params.xi.shape == (30, 2)
-    # Default backend is "auto": Rust core when the extension is built,
-    # numpy reference otherwise. Both produce numerically-identical results.
-    assert result.backend in {"rust", "numpy"}
+    # Default backend is "auto": production execution requires the compiled
+    # Rust numerical core rather than silently changing numerical owner.
+    assert result.backend == "rust"
     assert np.isfinite(result.objective)
 
     report = recovery_report(data.truth, result.params)
@@ -31,17 +31,16 @@ def test_mirt_fit_sets_gamma_near_zero():
     assert result.params.gamma < 1e-10
 
 
-def test_auto_backend_falls_back_to_numpy_when_rust_core_missing(monkeypatch):
+def test_auto_backend_requires_rust_core(monkeypatch):
     data = simulate(MLS2PLMConfig(n_persons=12, n_dims=1, items_per_dim=2, latent_dim=1, seed=23))
     monkeypatch.setattr("fast_mlsirm.backend._load_core", lambda: None)
 
-    result = fit(
-        data.Y,
-        data.factor_id,
-        config=FitConfig(model="MLS2PLM", optimizer="adam", max_iter=1, n_restarts=1, backend="auto"),
-    )
-
-    assert result.backend == "numpy"
+    with pytest.raises(RuntimeError, match="compiled Rust core is required for automatic backend resolution"):
+        fit(
+            data.Y,
+            data.factor_id,
+            config=FitConfig(model="MLS2PLM", optimizer="adam", max_iter=1, n_restarts=1, backend="auto"),
+        )
 
 
 def test_rust_backend_fit_smoke():
