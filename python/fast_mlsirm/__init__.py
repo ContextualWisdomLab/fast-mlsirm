@@ -26,6 +26,18 @@ from .rotation import (
     rotate_factor_loadings as rotate_factor_loadings,
     rotation_criterion_value_gradient as rotation_criterion_value_gradient,
 )
+from .llm_judge import (
+    ContextualOrchestratorJudge as ContextualOrchestratorJudge,
+    JudgeCriterion as JudgeCriterion,
+    JudgeFormatError as JudgeFormatError,
+    LLMJudgeResult as LLMJudgeResult,
+    MAX_JUDGE_CATEGORIES as MAX_JUDGE_CATEGORIES,
+)
+from .irt_contract import (
+    IRTItemType as IRTItemType,
+    MIN_IRT_ITEMS as MIN_IRT_ITEMS,
+    validate_irt_response_matrix as validate_irt_response_matrix,
+)
 
 # Resolve distribution metadata at the package boundary on every reload. The
 # compatibility module may remain cached, so its copied value is not sufficient
@@ -44,6 +56,14 @@ __all__ = list(_legacy_init.__all__) + [
     "available_rotation_criteria",
     "rotate_factor_loadings",
     "rotation_criterion_value_gradient",
+    "ContextualOrchestratorJudge",
+    "JudgeCriterion",
+    "JudgeFormatError",
+    "LLMJudgeResult",
+    "MAX_JUDGE_CATEGORIES",
+    "IRTItemType",
+    "MIN_IRT_ITEMS",
+    "validate_irt_response_matrix",
 ]
 
 del _PackageNotFoundError, _distribution_version, _public_name
