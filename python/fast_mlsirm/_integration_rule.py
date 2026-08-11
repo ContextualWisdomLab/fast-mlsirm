@@ -22,7 +22,7 @@ def normalize_node_rule(node_rule: str) -> str:
     ``str.lower`` is called as the built-in descriptor so a string subclass
     cannot replace normalization with a caller-defined ``lower`` hook.
     """
-    if not isinstance(node_rule, str):
+    if type(node_rule) is not str:
         raise ValueError(_NODE_RULE_ERROR)
     canonical = _NODE_RULE_ALIASES.get(str.lower(node_rule))
     if canonical is None:
