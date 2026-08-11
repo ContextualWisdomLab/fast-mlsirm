@@ -1,0 +1,109 @@
+@startuml
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+title fast-mlsirm reusable domain and public-contract view
+
+interface "VersionedContract" as VersionedContract {
+  +schema_version : string
+  +semantic_revision : string
+  +fingerprint : sha256
+  +canonicalization : string
+  +digest_algorithm : string
+}
+
+class AssessmentSpec {
+  +assessment_id : opaque string
+  +rubric_fingerprint : sha256
+  +construct_id : string
+  +build() : VersionedContract
+}
+
+class RubricSpecification {
+  +rubric_id : opaque string
+  +rubric_version : semantic version
+  +rubric_fingerprint : sha256
+  +levels : immutable sequence
+}
+
+class ItemBlueprint {
+  +blueprint_id : opaque string
+  +blueprint_fingerprint : sha256
+  +generation_seed : unsigned integer
+  +evidence_mode : enum
+}
+
+class GenerationContract {
+  +contract_id : opaque string
+  +contract_fingerprint : sha256
+  +source_revisions : immutable sequence
+  +provider_boundary : untrusted adapter
+}
+
+class ScoringRequest {
+  +request_id : opaque string
+  +request_fingerprint : sha256
+  +task_revision_fingerprint : sha256
+  +response_content_fingerprint : sha256
+}
+
+class ScoreObservation {
+  +observation_id : opaque string
+  +observation_fingerprint : sha256
+  +engine_fingerprint : sha256
+  +observation_state : enum
+}
+
+class CalibrationDesign {
+  +design_id : opaque string
+  +design_fingerprint : sha256
+  +design_input_revision : semantic version
+  +connected_state : enum
+}
+
+class CalibrationReport {
+  +report_id : opaque string
+  +report_fingerprint : sha256
+  +convergence_state : enum
+  +model_family : string
+}
+
+interface "Caller-supplied HostAdapter" as HostAdapter {
+  +publish(contract : VersionedContract)
+  +request(request : ScoringRequest)
+  +external_egress(policy : versioned policy)
+}
+
+VersionedContract <|.. AssessmentSpec
+VersionedContract <|.. RubricSpecification
+VersionedContract <|.. ItemBlueprint
+VersionedContract <|.. GenerationContract
+VersionedContract <|.. ScoringRequest
+VersionedContract <|.. ScoreObservation
+VersionedContract <|.. CalibrationDesign
+VersionedContract <|.. CalibrationReport
+
+RubricSpecification "1" --> "*" ItemBlueprint : compiles
+RubricSpecification "1" --> "*" AssessmentSpec : referenced by
+AssessmentSpec "1" --> "*" ScoringRequest : governs
+ItemBlueprint "1" --> "*" GenerationContract : binds
+ScoringRequest "1" --> "*" ScoreObservation : produces
+CalibrationDesign "1" --> "*" CalibrationReport : fitted as
+CalibrationDesign "*" --> "*" ScoreObservation : versioned design inputs
+HostAdapter ..> VersionedContract : exchanges immutable artifacts
+
+note right of VersionedContract
+  Construction validates identifiers, schema/revision, cardinality,
+  UTF-8/finite values and trust-boundary provenance. The canonical
+  preimage binds fast-mlsirm-cjson-v1 and sha-256.
+end note
+
+note bottom of ScoreObservation
+  Published artifacts are immutable. A correction creates a new
+  revision with a new fingerprint and an explicit supersedes link.
+  A host adapter owns HTTP, sessions, tenants, persistence and
+  external egress; the reusable core never calls the hosted product.
+end note
+
+@enduml
