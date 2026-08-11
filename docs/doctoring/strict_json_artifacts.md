@@ -6,7 +6,7 @@ Package-owned JSON artifacts must use the RFC 8259 number grammar. `NaN`, positi
 
 Python's standard `json` encoder deliberately defaults `allow_nan=True` for JavaScript compatibility, which emits `NaN`, `Infinity`, and `-Infinity`. `fast-mlsirm` overrides that compatibility default with `allow_nan=False` at one shared serialization boundary so a non-finite value fails before the destination JSON artifact is atomically replaced.
 
-The failure surface is intentionally non-reflective: callers receive the package-owned message `artifact contains a non-finite JSON numeric value`; the rejected payload, raw source content, local path, provider output, and other caller-controlled material are not interpolated into the error.
+The failure surface is intentionally non-reflective: non-finite numeric failures use the package-owned message `artifact contains a non-finite JSON numeric value`, while other JSON serialization failures use a separate bounded package-owned error. The rejected payload, raw source content, local path, provider output, and other caller-controlled material are not interpolated into either error.
 
 ## Scope
 
@@ -21,7 +21,7 @@ NumPy `.npy`/`.npz` numerical artifacts are a separate binary format and are not
 
 ## Verification
 
-The regression suite requires nested non-finite `NaN`, `Infinity`, and `-Infinity` values to fail without publishing the target JSON file. Finite IEEE-754 binary64 extreme values remain serializable and must round-trip through a strict JSON parser. Existing atomic-write semantics remain the publication boundary.
+The regression suite tests nested `NaN`, `Infinity`, and `-Infinity` values at the governed public writer boundaries. Each value must fail without publishing a new target or replacing a pre-existing JSON artifact. A circular-reference regression separately proves that non-numeric serialization failures are not mislabeled as non-finite numeric failures. Finite IEEE-754 binary64 extreme values remain serializable and must round-trip through a strict JSON parser. Existing atomic-write semantics remain the publication boundary.
 
 The fail-first head `90f3ccfb23dafea528d9b7c43d2cc57457fe7081` reached the public dimensionality-artifact writer and completed the full Python suite with exactly one intended failure because the old writer did not raise on `NaN`. The first GREEN implementation head `d8e22e3ecd793d40273244f9cb6e007d7f0a57ba` then completed the full Python suite with 2,949 passed and 2 skipped; the strengthened final head must recreate all acceptance evidence after its last mutation.
 
