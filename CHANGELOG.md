@@ -202,6 +202,12 @@
 - Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
 - Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
 
+#### Governance index
+
+- `docs/GOVERNANCE_INDEX.md` consolidating ADR index, threat-model summary,
+  test strategy, operability, traceability matrix, and component UML with
+  APA 7th doctoring links.
+
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
