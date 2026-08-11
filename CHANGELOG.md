@@ -366,6 +366,20 @@
 - Timed-out POSIX child groups now receive bounded `SIGTERM`-to-`SIGKILL` cleanup and machine-readable timeout evidence that omits command and captured child-output text; operator overrides remain constrained by per-operation minimum and maximum ranges.
 - Added deterministic configuration, cleanup, redaction, command-routing, and cross-platform fallback contracts. Issue #555 remains open for the remaining repository subprocess operation classes.
 
+#### Bounded marginal latent-distance workspaces
+
+- Replaced the NumPy fallback's item-by-node-by-dimension covariate distance
+  broadcast and cancellation-prone squared-norm identity with a
+  coordinate-subtraction-first kernel that reuses one bounded two-dimensional
+  float64 scratch buffer.
+- Added a private 128 MiB distance-workspace ceiling, checked byte products,
+  and pre-allocation gates for the pairwise output-plus-scratch peak, finite
+  masks, and the intentional item-gradient workspace before latent nodes are
+  built.
+- Reused the governed helper in table construction, candidate predictors, the
+  tau update, and the covariate update while preserving the Rust production
+  backend and public model contracts.
+
 #### Subgroup validation evidence fails closed
 
 - Automated-scoring subgroup SMD gates reject requested subgroups with fewer
@@ -425,6 +439,10 @@
 
 - Public `chi2_sf` and `benjamini_hochberg` fail closed with a stable RuntimeError when the compiled Rust core is unavailable, preventing silent pure-Python numerical ownership.
 
+#### CAT item information and selection Rust ownership
+
+- Public `item_information` and `select_cat_item` now delegate Fisher information and maximum-information ranking to the compiled Rust core (`cat_item_information` / `cat_select_item`), reusing the frozen-bank information kernel already used by ability SE.
+
 #### Non-finite inference uncertainty preserves scientific meaning
 
 - Standard errors from covariance diagonals preserve `NaN` and infinite values instead of converting them into false zero uncertainty.
@@ -453,6 +471,15 @@
   CPython 3.12 and 3.14.
 
 ### Security
+
+#### Bounded marginal latent-distance workspaces
+
+- Rejected malformed dimensions, Boolean coercion, non-finite or non-float64
+  matrices, hidden layout conversions, invalid epsilon, and oversized distance
+  workloads with bounded non-reflective diagnostics.
+- Added deterministic high-offset translation-stability, missing-data, and
+  covariate parity tests plus a safe environment-reporting benchmark and APA 7
+  operational doctoring.
 
 #### Person-fit invalid-response error redaction
 
