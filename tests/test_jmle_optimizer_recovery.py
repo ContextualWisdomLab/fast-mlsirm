@@ -84,23 +84,25 @@ def _jmle_recovery_data():
     """Return one deterministic, non-separated 2PL sample shared by optimizer modes.
 
     ``simulate`` intentionally spans easiness from 0 to 5 for broad simulation
-    coverage. With only 12 items that fixture can generate near-constant easy
-    items, which creates quasi-separation and tests incidental-parameter
-    pathology rather than optimizer recovery. Keep its generated abilities and
-    discriminations, replace easiness with a balanced [-1.5, 1.5] design, and
-    resample responses from the same public 2PL predictor.
+    coverage. The original 12-item recovery fixture corrected only item margins;
+    its deterministic response sample still contained 15 all-zero and 3 all-one
+    person patterns, so JMLE correctly encountered person-parameter separation
+    rather than an optimizer-recovery problem. Keep the generated abilities and
+    discriminations, use 40 balanced-easiness items, and resample a deterministic
+    response matrix whose item and person margins are both non-extreme. No fit,
+    convergence, or recovery threshold is relaxed by this fixture correction.
     """
     data = simulate(
         MLS2PLMConfig(
-            n_persons=240,
+            n_persons=160,
             n_dims=1,
-            items_per_dim=12,
+            items_per_dim=40,
             latent_dim=1,
             gamma=0.0,
             seed=62612,
         )
     )
-    rng = np.random.default_rng(62613)
+    rng = np.random.default_rng(62621)
     data.truth.b = rng.permutation(
         np.linspace(-1.5, 1.5, data.truth.b.size, dtype=np.float64)
     )
@@ -112,7 +114,9 @@ def _jmle_recovery_data():
     data.Y = rng.binomial(1, data.probabilities).astype(np.uint8)
 
     item_rates = data.Y.mean(axis=0)
+    person_rates = data.Y.mean(axis=1)
     assert np.all((item_rates > 0.05) & (item_rates < 0.95))
+    assert np.all((person_rates >= 0.05) & (person_rates <= 0.95))
     return data
 
 
