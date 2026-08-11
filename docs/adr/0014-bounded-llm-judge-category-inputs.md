@@ -21,7 +21,9 @@ The same trust-boundary concern applies to category values accepted by the
 deterministic IRT projection. A model response parsed by `json.loads` contains
 built-in scalar types, but callers can construct `LLMJudgeResult` directly.
 Security evidence must therefore distinguish a real code defect from a model
-or provider failure and must never weaken the fail-closed gate.
+or provider failure and must never weaken the fail-closed gate. Review of this
+active PR also found that an unhashable `category_method` could leak a raw
+`TypeError` during set membership instead of the package-owned `ValueError`.
 
 ## Decision drivers
 
@@ -55,6 +57,9 @@ response nor a Strix narrative becomes numerical or merge authority.
    claim is not called a confirmed vulnerability without independent evidence.
 5. Required checks remain fail-closed. No scan failure is bypassed, and no
    self-approval or protected-branch merge is manufactured.
+6. `category_method` must be an exact built-in string before vocabulary
+   membership is checked; unsupported or unhashable values fail with the
+   package-owned `ValueError`.
 
 ## Invariants / acceptance evidence
 
@@ -63,11 +68,13 @@ response nor a Strix narrative becomes numerical or merge authority.
    and comparison-forging `int` subclasses.
 2. `judge()` and `LLMJudgeResult.to_irt_row()` share the same bounded category
    validation before cumulative threshold allocation or IRT projection.
-3. PR #778's Strix log records an initial NVIDIA NIM 429, a fallback-model
+3. `tests/test_llm_judge.py::test_judge_rejects_unknown_category_method` covers
+   unknown strings, lists, and dictionaries without leaking `TypeError`.
+4. PR #778's Strix log records an initial NVIDIA NIM 429, a fallback-model
    report, no structured vulnerability artifact, and the exact finding. The
    finding is treated as an adjacent hardening signal, not as proof of integer
    wraparound.
-4. The full Python and Rust test suites, targeted Ruff checks, and exact-head
+5. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
 ## Non-goals and claims not made
@@ -144,6 +151,20 @@ coercive validation is not an acceptable compatibility path.
 - Review current inline/general PR feedback and obtain an independent approval
   before a protected merge.
 - Preserve contextual-orchestrator routing for every LLM-as-a-Judge call.
+
+## Research and standards basis
+
+Samejima, F. (1969). *Estimation of latent ability using a response pattern of
+graded scores*. Psychometrika, 34(S1), 1–97. https://doi.org/10.1007/BF03372160.
+The Psychometric Society provides an openly accessible reproduction at
+https://www.psychometricsociety.org/sites/main/files/file-attachments/mn17.pdf.
+Samejima's graded-response formulation uses ordered cumulative boundaries for
+polytomous categories, which is the limited psychometric basis for representing
+our cumulative threshold vector. It does not validate LLM prompts, rater
+fairness, equal weighting, or the claim that more response options cause
+positive bias; those remain empirical calibration questions. The local Zotero
+record is parent `XR8LNVF5` with the 97-page PDF attachment `345PA99V`
+(37,178,609 bytes; MD5 `e558448c14a2e400a947e19f16cbcb7e`).
 
 ## Follow-ups
 

@@ -323,13 +323,14 @@ def test_cumulative_threshold_requires_explicit_category_count() -> None:
         )
 
 
-def test_judge_rejects_unknown_category_method() -> None:
+@pytest.mark.parametrize("category_method", ["unknown", [], {}])
+def test_judge_rejects_unknown_category_method(category_method) -> None:
     with pytest.raises(ValueError, match="category_method"):
         ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
             task="task",
             answer="answer",
             criteria=CRITERIA,
-            category_method="unknown",
+            category_method=category_method,
         )
 
 

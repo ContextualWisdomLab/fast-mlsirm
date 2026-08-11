@@ -379,7 +379,10 @@ class ContextualOrchestratorJudge:
         category_method: str = "direct",
     ) -> LLMJudgeResult:
         """Return a strict JSON decision from the orchestrator-backed judge."""
-        if category_method not in {"direct", "cumulative_threshold"}:
+        if (
+            type(category_method) is not str
+            or category_method not in {"direct", "cumulative_threshold"}
+        ):
             raise ValueError(
                 "category_method must be direct or cumulative_threshold"
             )
