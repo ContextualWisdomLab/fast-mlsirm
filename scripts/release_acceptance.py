@@ -17,7 +17,13 @@ import sys
 import time
 from pathlib import Path
 
-from _bounded_json import read_json_object, parse_json_bounded
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+try:
+    from scripts._bounded_json import parse_json_bounded, read_json_object
+except ModuleNotFoundError:  # executed from scripts/ or loaded via importlib
+    from _bounded_json import parse_json_bounded, read_json_object
 
 
 RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = {
