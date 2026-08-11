@@ -78,14 +78,14 @@ The table below records product truth, not documentation-file presence. “Imple
 | Paired automated-vs-reference rating-range evidence | IMPLEMENTED_ON_PROTECTED_MAIN | Rust-owned paired range/compression diagnostic is integrated |
 | Enterprise issue measurement | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | reusable evidence/calibration adapters exist; causal intervention utility remains downstream/policy-bound |
 | Factor retention evidence contract | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | governed factor-retention evidence contract is integrated; structural model selection remains a distinct subsequent decision |
-| Rust-first numerical ownership | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | architecture is enforced progressively by kernel; fixed-anchor linking, CAT/ATA, covariance, observed-information Hessian assembly, and second-order diagnostics are protected-main Rust/PyO3 paths, while currently active ownership migrations remain non-shipped until merged |
+| Rust-first numerical ownership | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | fixed-anchor linking, CAT/ATA, covariance, observed-information Hessian assembly, second-order diagnostics, and JMLE Adam/L-BFGS optimizer sequencing are protected-main Rust/PyO3 paths; remaining kernel-specific migrations stay explicit |
 | Fixed-anchor parameter linking arithmetic | IMPLEMENTED_ON_PROTECTED_MAIN | protected main owns scale/shift estimation and theta/alpha/b transformation in Rust/PyO3 |
 | Observed-information Hessian and second-order diagnostics | IMPLEMENTED_ON_PROTECTED_MAIN | protected main owns finite-difference coefficients/symmetric Hessian assembly and eigenvalue/positive-definiteness diagnostics in Rust/PyO3; Python only evaluates objective samples and transports results |
-| JMLE Adam/L-BFGS optimizer arithmetic | IMPLEMENTED_ON_ACTIVE_PR | current active PR owns the migration; no active-head behavior is protected-main truth until integration |
-| Parallel-analysis public control/resource hardening | IMPLEMENTED_ON_ACTIVE_PR | current fail-first PR owns strict integer/control and bounded-workspace regression evidence; production behavior remains protected-main-old until GREEN integration |
-| Hourly review-repair caller | IMPLEMENTED_ON_ACTIVE_PR / PARTIAL | caller work remains unmerged and depends on the accepted central control-plane contract; operational activation requires protected-main evidence |
-| LLM-judge raw JSON depth hardening | IMPLEMENTED_ON_ACTIVE_PR | current security PR owns the proposed pre-parse nesting guard; do not treat it as protected-main until integration |
-| Essay-report native dark-mode status accents | IMPLEMENTED_ON_ACTIVE_PR | current accessibility PR owns the proposed CSS variables/media-query change; do not treat it as protected-main until integration |
+| JMLE Adam/L-BFGS optimizer arithmetic | IMPLEMENTED_ON_PROTECTED_MAIN | PR #760 is ancestral to current protected main; `backend="rust"` delegates Adam/L-BFGS/combined optimizer control to compiled Rust while recovery evidence remains governed separately by issue #626 |
+| Parallel-analysis public control/resource hardening | IMPLEMENTED_ON_ACTIVE_PR | current fail-first/implementation PR owns strict integer/control and bounded-workspace hardening; it remains non-shipped until exact-head integration |
+| Hourly review-repair caller | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | PR #763 integrated the product-side bounded caller; operational scheduler/control-plane acceptance remains external evidence rather than a library capability |
+| LLM-judge raw JSON depth hardening | IMPLEMENTED_ON_PROTECTED_MAIN | PR #764 is ancestral to current protected main and bounds recursive JSON nesting before parser materialization |
+| Essay-report native dark-mode status accents | IMPLEMENTED_ON_ACTIVE_PR | current accessibility PR owns the CSS-variable/media-query change; do not treat it as protected-main until integration |
 | Canonical PyO3/public-export governance | ACCEPTED_ARCHITECTURE / PARTIAL | ADR-0011 governs convergence; feature-by-feature hardening continues |
 | Purpose-limited sensitive-data handling | IMPLEMENTED_ON_PROTECTED_MAIN / DOWNSTREAM | reusable contracts prefer purpose limitation/minimization/separated identities; hosted authorization/retention execution remains downstream |
 | LLM orchestration/model credentials | IMPLEMENTED_ON_PROTECTED_MAIN | provider execution and independent reviewer identity/credential boundaries are governed; provider calls remain outside psychometric numerical core |
@@ -95,13 +95,11 @@ The table below records product truth, not documentation-file presence. “Imple
 
 At this review, material open work includes:
 
-- Rust ownership of JMLE Adam/L-BFGS optimizer loops;
-- strict/bounded public controls for Rust-backed parallel analysis;
-- the bounded hourly review-repair caller, whose central dependency remains read-only and unmerged;
-- LLM-judge raw-JSON nesting hardening; and
+- strict/bounded public controls and Rust allocation preflight for parallel analysis;
+- the documentation-fitness refresh itself, which may describe current protected truth but is not authoritative until merged; and
 - native dark-mode report status accents.
 
-These are **IMPLEMENTED_ON_ACTIVE_PR** (or, for test-first work, the active PR owns the implementation lane), not protected-main capability. Their source heads, checks, reviews, writer leases, and mergeability are operational evidence and must be re-fetched rather than copied into timeless architecture prose.
+These remain active-PR evidence, not protected-main capability. Their source heads, checks, reviews, writer leases, and mergeability are operational evidence and must be re-fetched rather than copied into timeless architecture prose.
 
 ## P0 documentation gaps
 
