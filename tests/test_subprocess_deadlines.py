@@ -139,7 +139,7 @@ def test_successful_run_uses_isolated_process_group_and_returns_completed_proces
 
 
 def test_posix_timeout_terminates_process_group_and_omits_child_output(monkeypatch) -> None:
-    """A terminated group is probed after the full grace period before reaping."""
+    """A terminated group is probed after the full grace period before bounded reaping."""
     fake = _FakeProcess(timeout_once=True)
     signals: list[tuple[int, int]] = []
     sleeps: list[float] = []
@@ -164,13 +164,16 @@ def test_posix_timeout_terminates_process_group_and_omits_child_output(monkeypat
 
     assert signals == [(fake.pid, signal.SIGTERM), (fake.pid, 0)]
     assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
-    assert fake.communicate_calls == [1800.0, None]
+    assert fake.communicate_calls == [
+        1800.0,
+        deadlines.PROCESS_REAP_TIMEOUT_SECONDS,
+    ]
     assert "do-not-echo" not in str(caught.value)
     assert "opaque-stdout" not in str(caught.value)
 
 
 def test_posix_timeout_escalates_to_sigkill_when_group_ignores_sigterm(monkeypatch) -> None:
-    """A group that survives the grace period receives SIGKILL before leader reap."""
+    """A group that survives the grace period receives SIGKILL before bounded reap."""
     fake = _FakeProcess(timeout_once=True)
     signals: list[tuple[int, int]] = []
     sleeps: list[float] = []
@@ -196,7 +199,10 @@ def test_posix_timeout_escalates_to_sigkill_when_group_ignores_sigterm(monkeypat
         (fake.pid, signal.SIGKILL),
     ]
     assert sleeps == [deadlines.PROCESS_GROUP_GRACE_SECONDS]
-    assert fake.communicate_calls == [1800.0, None]
+    assert fake.communicate_calls == [
+        1800.0,
+        deadlines.PROCESS_REAP_TIMEOUT_SECONDS,
+    ]
 
 
 def test_process_group_probe_treats_permission_denial_as_still_alive(monkeypatch) -> None:
