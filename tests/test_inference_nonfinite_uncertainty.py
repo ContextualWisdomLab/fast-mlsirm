@@ -11,18 +11,21 @@ from fast_mlsirm.inference import standard_errors_from_vcov, vcov_from_hessian
 
 def test_standard_errors_preserve_invalid_and_infinite_uncertainty() -> None:
     """Undefined/infinite covariance must never be converted into zero uncertainty."""
-    vcov = np.diag(np.array([4.0, 0.0, -1.0, np.nan, np.inf], dtype=np.float64))
+    vcov = np.diag(
+        np.array([4.0, 0.0, -1.0, np.nan, np.inf, -np.inf], dtype=np.float64)
+    )
 
     result = standard_errors_from_vcov(vcov)
 
     assert np.array_equal(result[:3], np.array([2.0, 0.0, 0.0]))
     assert np.isnan(result[3])
     assert np.isposinf(result[4])
+    assert np.isneginf(result[5])
 
 
 def test_direct_rust_standard_errors_match_public_nonfinite_semantics() -> None:
     """Rust and public wrappers must agree on non-finite uncertainty semantics."""
-    vcov = np.diag(np.array([1.0, np.nan, np.inf], dtype=np.float64))
+    vcov = np.diag(np.array([1.0, np.nan, np.inf, -np.inf], dtype=np.float64))
 
     rust = np.asarray(core.standard_errors_from_vcov(vcov), dtype=np.float64)
     public = standard_errors_from_vcov(vcov)
@@ -30,6 +33,7 @@ def test_direct_rust_standard_errors_match_public_nonfinite_semantics() -> None:
     assert np.array_equal(rust[:1], public[:1])
     assert np.isnan(rust[1]) and np.isnan(public[1])
     assert np.isposinf(rust[2]) and np.isposinf(public[2])
+    assert np.isneginf(rust[3]) and np.isneginf(public[3])
 
 
 @pytest.mark.parametrize(
