@@ -277,6 +277,10 @@
 - Matrix and uniqueness advertised shapes now stop after the minimum dimensionality proof, normalize ordinary caller iterator failures to stable non-reflective package errors, and preserve process-control signals.
 - Kept accepted array marshalling, bifactor work ceilings, and all Rust-owned scoreability arithmetic unchanged; added fail-first resource/security regressions and primary Python 3.14 doctoring.
 
+#### ATA content-label validation trust boundary
+
+- Validate automated-test-assembly content-label shape and string element types before item-information evaluation, rejecting arbitrary object labels without invoking caller-controlled `__str__`/`__repr__` callbacks while preserving accepted Python/NumPy string labels and existing assembly numerics.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
@@ -292,6 +296,10 @@
 #### Rotation mode validation hardening
 
 - Reject non-built-in-string rotation `mode` controls before caller-defined representation callbacks can execute, while preserving the existing orthogonal/oblique vocabulary, aliases, default resolution, and Rust-owned rotation numerics.
+
+#### ATA content-label validation trust boundary
+
+- Keep invalid ATA content controls on a stable package-owned error surface rather than allowing arbitrary representation callbacks to execute during NumPy string coercion.
 
 #### Descriptor-safe bounded JSON input for automation scripts
 
