@@ -123,6 +123,7 @@ class LLMJudgeResult:
     usage: Mapping[str, int]
     criterion_categories: Mapping[str, int] | None = None
     category_count: int | None = None
+    category_method: str = "direct"
 
     def to_irt_row(
         self,
@@ -251,6 +252,7 @@ class LLMJudgeResult:
                 else None
             ),
             "category_count": self.category_count,
+            "category_method": self.category_method,
         }
 
 
@@ -277,7 +279,11 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
                 weight=value.get("weight", 1.0),
             )
         else:
-            raise ValueError("criteria must contain JudgeCriterion or mapping values")
+            # The public criterion contract deliberately normalizes malformed
+            # inputs to ValueError for callers that validate user-supplied mappings.
+            raise ValueError(  # noqa: TRY004
+                "criteria must contain JudgeCriterion or mapping values"
+            )
         normalized.append(criterion)
     if not 1 <= len(normalized) <= MAX_JUDGE_CRITERIA:
         raise ValueError(f"criteria must contain 1..{MAX_JUDGE_CRITERIA} values")
@@ -371,8 +377,13 @@ class ContextualOrchestratorJudge:
         criteria: Iterable[JudgeCriterion | Mapping[str, Any]],
         reference_answer: str | None = None,
         category_count: int | None = None,
+        category_method: str = "direct",
     ) -> LLMJudgeResult:
         """Return a strict JSON decision from the orchestrator-backed judge."""
+        if category_method not in {"direct", "cumulative_threshold"}:
+            raise ValueError(
+                "category_method must be direct or cumulative_threshold"
+            )
         task = _bounded_text(task, "task")
         answer = _bounded_text(answer, "answer")
         if reference_answer is not None:
@@ -381,32 +392,61 @@ class ContextualOrchestratorJudge:
         expected_ids = [criterion.criterion_id for criterion in normalized_criteria]
         if category_count is not None:
             category_count = _category_count(category_count)
+        if category_method == "cumulative_threshold" and category_count is None:
+            raise ValueError(
+                "cumulative_threshold requires an explicit category_count"
+            )
         criterion_payload = [criterion.to_dict() for criterion in normalized_criteria]
         reference_block = reference_answer or "(none supplied)"
         category_instruction = ""
         if category_count is not None:
-            category_template = {
-                "score": 0.0,
-                "accepted": False,
-                "rationale": "brief evidence-based reason",
-                "criterion_categories": {criterion_id: 0 for criterion_id in expected_ids},
-            }
-            category_instruction = (
-                f" Use exactly {category_count} ordered categories indexed 0 through "
-                f"{category_count - 1}. Return criterion_categories as a JSON object "
-                f"with exactly these string keys: {json.dumps(expected_ids)}. "
-                f"Use only whole-number values from {list(range(category_count))}; "
-                "category values are JSON integers, never decimals such as 0.2 or 0.8; "
-                "never use numeric keys or an array. "
-                f"The exact JSON shape is {json.dumps(category_template, ensure_ascii=False)}. "
-                "Replace the example values and keep every key unchanged. Derive the overall score from those "
-                "categories. Category 0 means no credible evidence or complete failure; "
-                f"category {category_count - 1} means fully satisfies the criterion with accurate evidence. "
-                "Intermediate categories are ordered levels between those anchors. A strong answer that fully "
-                f"satisfies a criterion must use category {category_count - 1}. More categories add "
-                "resolution; they do not reverse the meaning of the anchors. Do not choose a higher category "
-                "merely because more categories exist."
-            )
+            if category_method == "cumulative_threshold":
+                threshold_template = {
+                    "score": 0.0,
+                    "accepted": False,
+                    "rationale": "brief evidence-based reason",
+                    "criterion_thresholds": {
+                        criterion_id: [False] * (category_count - 1)
+                        for criterion_id in expected_ids
+                    },
+                }
+                category_instruction = (
+                    f" Use exactly {category_count} ordered categories indexed 0 through "
+                    f"{category_count - 1}, but judge them with cumulative thresholds rather than one K-way choice. "
+                    "Return criterion_thresholds as a JSON object with exactly these string keys: "
+                    f"{json.dumps(expected_ids)}. Each value must be a JSON boolean array of exactly "
+                    f"{category_count - 1} values. Array position j answers whether the evidence meets at least "
+                    "ordered category j+1 for that criterion. Threshold arrays must be monotone: once false, "
+                    "all later values must be false; never emit a higher true threshold after a lower false one. "
+                    f"The exact JSON shape is {json.dumps(threshold_template, ensure_ascii=False)}. "
+                    "Replace the example values and keep every key unchanged. Category 0 means no credible "
+                    "evidence or complete failure; the highest category means fully satisfies the criterion "
+                    "with accurate evidence. Derive the overall score from the number of true thresholds. "
+                    "Do not reward answer length, agreement, or the presence of more categories."
+                )
+            else:
+                category_template = {
+                    "score": 0.0,
+                    "accepted": False,
+                    "rationale": "brief evidence-based reason",
+                    "criterion_categories": {criterion_id: 0 for criterion_id in expected_ids},
+                }
+                category_instruction = (
+                    f" Use exactly {category_count} ordered categories indexed 0 through "
+                    f"{category_count - 1}. Return criterion_categories as a JSON object "
+                    f"with exactly these string keys: {json.dumps(expected_ids)}. "
+                    f"Use only whole-number values from {list(range(category_count))}; "
+                    "category values are JSON integers, never decimals such as 0.2 or 0.8; "
+                    "never use numeric keys or an array. "
+                    f"The exact JSON shape is {json.dumps(category_template, ensure_ascii=False)}. "
+                    "Replace the example values and keep every key unchanged. Derive the overall score from those "
+                    "categories. Category 0 means no credible evidence or complete failure; "
+                    f"category {category_count - 1} means fully satisfies the criterion with accurate evidence. "
+                    "Intermediate categories are ordered levels between those anchors. A strong answer that fully "
+                    f"satisfies a criterion must use category {category_count - 1}. More categories add "
+                    "resolution; they do not reverse the meaning of the anchors. Do not choose a higher category "
+                    "merely because more categories exist."
+                )
         else:
             category_instruction = (
                 " Include criterion_scores as a JSON object with exactly one number "
@@ -417,6 +457,7 @@ class ContextualOrchestratorJudge:
             "answer": answer,
             "reference": reference_block,
             "criteria": criterion_payload,
+            "category_method": category_method,
         }
         messages = [
             {
@@ -447,9 +488,12 @@ class ContextualOrchestratorJudge:
             raw = _bounded_text(completion.get("answer"), "judge answer")
         except ValueError as exc:
             raise JudgeFormatError(str(exc)) from exc
-        criterion_field = (
-            "criterion_categories" if category_count is not None else "criterion_scores"
-        )
+        if category_count is None:
+            criterion_field = "criterion_scores"
+        elif category_method == "cumulative_threshold":
+            criterion_field = "criterion_thresholds"
+        else:
+            criterion_field = "criterion_categories"
         parsed = _response_object(
             raw,
             required_fields={"score", "accepted", "rationale", criterion_field},
@@ -467,18 +511,43 @@ class ContextualOrchestratorJudge:
             # Validate the redundant field's shape, but derive the accepted score
             # from the ordered category items below rather than trusting it.
             _score(parsed.get("score"), "score")
-            raw_categories = parsed.get("criterion_categories")
-            if not isinstance(raw_categories, Mapping) or set(raw_categories) != expected_id_set:
-                raise JudgeFormatError(
-                    "criterion_categories must contain exactly the rubric criterion ids"
-                )
             criterion_categories = {}
-            for criterion_id in sorted(expected_ids):
-                criterion_categories[criterion_id] = _category(
-                    raw_categories[criterion_id],
-                    f"criterion_categories.{criterion_id}",
-                    category_count,
-                )
+            if category_method == "cumulative_threshold":
+                raw_thresholds = parsed.get("criterion_thresholds")
+                if not isinstance(raw_thresholds, Mapping) or set(raw_thresholds) != expected_id_set:
+                    raise JudgeFormatError(
+                        "criterion_thresholds must contain exactly the rubric criterion ids"
+                    )
+                for criterion_id in sorted(expected_ids):
+                    thresholds = raw_thresholds[criterion_id]
+                    if not isinstance(thresholds, list) or len(thresholds) != category_count - 1:
+                        raise JudgeFormatError(
+                            "criterion thresholds must be a boolean array for every ordered boundary"
+                        )
+                    if any(type(value) is not bool for value in thresholds):
+                        raise JudgeFormatError(
+                            "criterion thresholds must contain only boolean values"
+                        )
+                    if any(
+                        not thresholds[index] and thresholds[index + 1]
+                        for index in range(len(thresholds) - 1)
+                    ):
+                        raise JudgeFormatError(
+                            "criterion thresholds must be monotone"
+                        )
+                    criterion_categories[criterion_id] = sum(thresholds)
+            else:
+                raw_categories = parsed.get("criterion_categories")
+                if not isinstance(raw_categories, Mapping) or set(raw_categories) != expected_id_set:
+                    raise JudgeFormatError(
+                        "criterion_categories must contain exactly the rubric criterion ids"
+                    )
+                for criterion_id in sorted(expected_ids):
+                    criterion_categories[criterion_id] = _category(
+                        raw_categories[criterion_id],
+                        f"criterion_categories.{criterion_id}",
+                        category_count,
+                    )
             criterion_scores = {
                 criterion_id: criterion_categories[criterion_id] / (category_count - 1)
                 for criterion_id in sorted(expected_ids)
@@ -517,14 +586,15 @@ class ContextualOrchestratorJudge:
             usage=_usage(trace),
             criterion_categories=criterion_categories,
             category_count=category_count,
+            category_method=category_method,
         )
 
 
 __all__ = [
     "MAX_JUDGE_CATEGORIES",
     "MAX_JUDGE_CRITERIA",
-    "MAX_JUDGE_TEXT_CHARACTERS",
     "MAX_JUDGE_JSON_DEPTH",
+    "MAX_JUDGE_TEXT_CHARACTERS",
     "ContextualOrchestratorJudge",
     "JudgeCriterion",
     "JudgeFormatError",

@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 
 import pytest
+from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -56,6 +57,18 @@ def _category_payload():
         "accepted": False,
         "rationale": "The evidence supports the ordered criterion levels.",
         "criterion_categories": {"task_alignment": 4.0, "factual_support": 2.0},
+    })
+
+
+def _threshold_payload(thresholds=None):
+    return json.dumps({
+        "score": 0.0,
+        "accepted": True,
+        "rationale": "The ordered evidence supports separate cumulative thresholds.",
+        "criterion_thresholds": thresholds or {
+            "task_alignment": [True, True, True, True],
+            "factual_support": [True, False, False, False],
+        },
     })
 
 
@@ -239,6 +252,85 @@ def test_category_judgment_derives_ordered_scores_and_irt_items() -> None:
     assert "no markdown fences" in prompt
     assert "category values are JSON integers" in prompt
     assert "category 4" in prompt
+
+
+def test_cumulative_threshold_judgment_derives_monotone_polytomous_items() -> None:
+    orchestrator = _FakeOrchestrator(_threshold_payload())
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=5,
+        category_method="cumulative_threshold",
+    )
+
+    assert result.category_method == "cumulative_threshold"
+    assert dict(result.criterion_categories) == {
+        "factual_support": 1,
+        "task_alignment": 4,
+    }
+    assert result.score == 0.625
+    assert result.accepted is False
+    assert result.to_dict()["category_method"] == "cumulative_threshold"
+    row = result.to_irt_row()
+    assert row == (1, 4)
+    matrix = validate_irt_response_matrix([row], "polytomous", n_categories=5)
+    assert matrix.shape == (1, 2)
+    prompt = orchestrator.calls[0][0][0]["content"]
+    assert "criterion_thresholds" in prompt
+    assert "cumulative thresholds" in prompt
+    assert "must be monotone" in prompt
+    assert "K-way choice" in prompt
+
+
+@pytest.mark.parametrize(
+    ("thresholds", "match"),
+    [
+        (
+            {"task_alignment": [True, False, True, False], "factual_support": [False] * 4},
+            "monotone",
+        ),
+        (
+            {"task_alignment": [True, 1, False, False], "factual_support": [False] * 4},
+            "boolean",
+        ),
+        (
+            {"task_alignment": [True, True], "factual_support": [False] * 4},
+            "boolean array",
+        ),
+    ],
+)
+def test_cumulative_threshold_rejects_malformed_thresholds(thresholds, match) -> None:
+    with pytest.raises(JudgeFormatError, match=match):
+        ContextualOrchestratorJudge(
+            _FakeOrchestrator(_threshold_payload(thresholds))
+        ).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=5,
+            category_method="cumulative_threshold",
+        )
+
+
+def test_cumulative_threshold_requires_explicit_category_count() -> None:
+    with pytest.raises(ValueError, match="explicit category_count"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_method="cumulative_threshold",
+        )
+
+
+def test_judge_rejects_unknown_category_method() -> None:
+    with pytest.raises(ValueError, match="category_method"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_method="unknown",
+        )
 
 
 def test_category_judgment_rejects_non_integral_categories() -> None:
