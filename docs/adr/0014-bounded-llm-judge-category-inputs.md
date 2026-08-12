@@ -212,6 +212,20 @@ response nor a Strix narrative becomes numerical or merge authority.
     status in the terminal error; this repository must rerun exact-head
     coverage after that central fix and must not treat a skipped or failed
     coverage job as approval evidence.
+19. A local full-suite run after the protected-main merge exposed two JMLE
+    recovery failures (`lbfgs` and `adam_lbfgs`) reporting
+    `line_search_failed` at finite objective reduction. Reproduction showed the
+    Rust source's bounded objective-convergence rule was present, but the local
+    validation command
+    `maturin develop --manifest-path crates/fast-mlsirm-py/Cargo.toml` built a
+    separate `fast_mlsirm_core` module while pytest loaded the stale
+    `python/fast_mlsirm/_core` binary. The canonical validation command is the
+    repository-root `maturin develop --release`, followed by the Rust and
+    Python recovery suites. The optimizer regression test now keeps the
+    gradient above tolerance after the first accepted step, proving the
+    objective-reduction guard rather than accidentally passing through the
+    gradient-norm guard. Stale extension artifacts are not evidence of a
+    source regression, and a failed exact-head build must never be hidden.
 
 ## Non-goals and claims not made
 

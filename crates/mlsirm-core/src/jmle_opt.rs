@@ -363,13 +363,16 @@ mod tests {
         let mut obj = |x: &[f64]| {
             let d = x[0] - 1.0;
             let value = 1_000_000.0 + 0.5 * d * d;
-            Ok((value, vec![d], -value))
+            // Keep the gradient above the convergence tolerance after the
+            // first accepted step so this test exercises objective reduction,
+            // not the gradient-norm guard.
+            Ok((value, vec![0.5 * d], -value))
         };
         let (x, trace, _, status) =
             lbfgs(&[0.0], &mut obj, 10, 1e-6, 5).expect("lbfgs");
         assert_eq!(status, "converged");
         assert_eq!(trace.len(), 2);
-        assert!((x[0] - 1.0).abs() < 1e-12);
+        assert!((x[0] - 0.5).abs() < 1e-12);
     }
 
     #[test]
