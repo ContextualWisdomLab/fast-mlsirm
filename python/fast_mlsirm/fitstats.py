@@ -1733,6 +1733,10 @@ def m2(
     p-value and RMSEA confidence interval are suppressed because ordinary JMLE
     is not a fixed-dimensional consistent estimator.
 
+    Ordinary public M2 numerical ownership is the compiled Rust core
+    (``m2_stat``). Missing or incomplete cores fail closed rather than
+    silently selecting the private NumPy reference.
+
     Set ``estimate_population=True`` when ``prior_mean`` and ``prior_sd`` were
     estimated in the calibration (the single-free population used by FIPC).
     Those ``2 * n_dims`` nuisance columns then enter both the M2 projection and
@@ -1828,56 +1832,44 @@ def m2(
         )
 
     core = _core_module()
-    if core is not None and hasattr(core, "m2_stat"):
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.m2_stat(
-            np.where(observed0, y0, 0.0).ravel(),
-            observed0.ravel(),
-            int(y0.shape[0]),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            prior_mean,
-            prior_sd,
-            q_theta=int(q_theta),
-            xi_rule="gh",
-            q_xi=int(q_xi),
-        )
-        result = M2Result(
-            m2=float(res["m2"]),
-            df=float(res["df"]),
-            p_value=float(res["p_value"]),
-            rmsea2=float(res["rmsea2"]),
-            rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
-            rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
-            srmsr=float(res["srmsr"]),
-            null_m2=float(res["null_m2"]),
-            null_df=float(res["null_df"]),
-            cfi=float(res["cfi"]),
-            tli=float(res["tli"]),
-            n_moments=int(res["n_moments"]),
-            n_parameters=int(res["n_parameters"]),
-            n_complete=int(res["n_complete"]),
-        )
-    else:
-        result = _m2_numpy(
-            y0,
-            observed0,
-            d_of_i,
-            params,
-            model,
-            q_theta,
-            q_xi,
-            eps_distance,
-            prior_mean,
-            prior_sd,
-        )
+    if core is None or not hasattr(core, "m2_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.m2_stat(
+        np.where(observed0, y0, 0.0).ravel(),
+        observed0.ravel(),
+        int(y0.shape[0]),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        prior_mean,
+        prior_sd,
+        q_theta=int(q_theta),
+        xi_rule="gh",
+        q_xi=int(q_xi),
+    )
+    result = M2Result(
+        m2=float(res["m2"]),
+        df=float(res["df"]),
+        p_value=float(res["p_value"]),
+        rmsea2=float(res["rmsea2"]),
+        rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
+        rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
+        srmsr=float(res["srmsr"]),
+        null_m2=float(res["null_m2"]),
+        null_df=float(res["null_df"]),
+        cfi=float(res["cfi"]),
+        tli=float(res["tli"]),
+        n_moments=int(res["n_moments"]),
+        n_parameters=int(res["n_parameters"]),
+        n_complete=int(res["n_complete"]),
+    )
     if estimator == "mmle":
         return result
     result.estimator = estimator

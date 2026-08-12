@@ -596,9 +596,10 @@ def test_m2_public_guards_and_numpy_dispatch(monkeypatch):
         fm.m2(y, fid, params, "MIRT", prior_sd=np.array([0.0]))
 
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    result = fm.m2(y, fid, params, "MIRT", q_theta=7, q_xi=7)
-    assert np.isfinite(result.m2)
-    assert result.estimator == "mmle"
+    with pytest.raises(
+        RuntimeError, match="fit statistics require the compiled Rust core"
+    ):
+        fm.m2(y, fid, params, "MIRT", q_theta=7, q_xi=7)
 
 
 # ---------------------------------------------------------------------------
