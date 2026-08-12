@@ -93,10 +93,10 @@ The table below records product truth, not documentation-file presence. “Imple
 | Fixed-anchor parameter linking arithmetic | IMPLEMENTED_ON_PROTECTED_MAIN | protected main owns scale/shift estimation and theta/alpha/b transformation in Rust/PyO3 |
 | Observed-information Hessian and second-order diagnostics | IMPLEMENTED_ON_PROTECTED_MAIN | protected main owns finite-difference coefficients/symmetric Hessian assembly and eigenvalue/positive-definiteness diagnostics in Rust/PyO3; Python only evaluates objective samples and transports results |
 | JMLE Adam/L-BFGS optimizer arithmetic | IMPLEMENTED_ON_PROTECTED_MAIN | PR #760 is ancestral to current protected main; `backend="rust"` delegates Adam/L-BFGS/combined optimizer control to compiled Rust while recovery evidence remains governed separately by issue #626 |
-| Parallel-analysis public control/resource hardening | IMPLEMENTED_ON_PROTECTED_MAIN | strict integer/control validation and bounded Rust/Python benchmark-workspace preflight from #767 are integrated; broader factor-retention and structural-selection work remains separate |
+| Parallel-analysis public control/resource hardening | IMPLEMENTED_ON_PROTECTED_MAIN | strict integer/control validation and bounded random-benchmark workspace ceilings are ancestral to protected main |
 | Hourly review-repair caller | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | PR #763 integrated the product-side bounded caller; operational scheduler/control-plane acceptance remains external evidence rather than a library capability |
 | LLM-judge raw JSON depth hardening | IMPLEMENTED_ON_PROTECTED_MAIN | PR #764 is ancestral to current protected main and bounds recursive JSON nesting before parser materialization |
-| Essay-report native dark-mode status accents | IMPLEMENTED_ON_PROTECTED_MAIN | native dark-mode review-status accents are integrated in the standalone essay-report renderer; broader accessibility/reporting work remains incremental |
+| Essay-report native dark-mode status accents | IMPLEMENTED_ON_PROTECTED_MAIN | CSS-variable and prefers-color-scheme dark-mode status accents are ancestral to protected main |
 | Canonical PyO3/public-export governance | ACCEPTED_ARCHITECTURE / PARTIAL | ADR-0011 governs convergence; feature-by-feature hardening continues |
 | Purpose-limited sensitive-data handling | IMPLEMENTED_ON_PROTECTED_MAIN / DOWNSTREAM | reusable contracts prefer purpose limitation/minimization/separated identities; hosted authorization/retention execution remains downstream |
 | LLM orchestration/model credentials | IMPLEMENTED_ON_PROTECTED_MAIN | provider execution and independent reviewer identity/credential boundaries are governed; provider calls remain outside psychometric numerical core |
@@ -104,7 +104,12 @@ The table below records product truth, not documentation-file presence. “Imple
 
 ## Current active-PR boundary
 
-Volatile pull-request identities are intentionally not duplicated in this timeless maturity matrix. Read the live GitHub queue and issue #621 for current branch/head/check/review identities. This matrix records only whether a work family is protected-main truth, active-PR-only, partial, accepted architecture, planned, research-only, downstream, superseded, rejected, or out of scope. The documentation-fitness refresh itself remains non-authoritative until merged.
+At this review, material open work includes:
+
+- Rust allocation preflight for parallel analysis, if it remains separate;
+- the documentation-fitness refresh itself, which may describe current protected truth but is not authoritative until merged.
+
+These remain active-PR evidence, not protected-main capability. Their source heads, checks, reviews, writer leases, and mergeability are operational evidence and must be re-fetched rather than copied into timeless architecture prose.
 
 ## P0 documentation gaps
 

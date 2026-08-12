@@ -187,11 +187,29 @@ def test_icc_grid_and_factorized_guards():
 # ---------------------------------------------------------------------------
 
 
-def test_sx2_requires_compiled_rust_core(monkeypatch):
-    y, fid, params = _mirt_params(4, 20, seed=7)
+def test_sx2_numpy_fallback_realistic(monkeypatch):
+    """Incomplete core must fail closed; public S-X² no longer uses NumPy fallback."""
+    rng = np.random.default_rng(7)
+    n_items, n_persons = 6, 40
+    params = SimpleNamespace(
+        alpha=np.zeros(n_items),
+        b=np.linspace(-1.0, 1.0, n_items),
+        zeta=np.zeros((n_items, 1)),
+        tau=-30.0,
+    )
+    fid = np.zeros(n_items, dtype=np.int64)
+    y = (rng.random((n_persons, n_items)) < 0.5).astype(float)
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    with pytest.raises(RuntimeError, match="compiled Rust core"):
-        fm.s_x2(y, fid, params, "MIRT")
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fm.s_x2(y, fid, params, "MIRT", min_expected=1.0)
+
+
+def test_sx2_numpy_fallback_spatial_and_dim_floors(monkeypatch):
+    """Spatial S-X² with incomplete core fails closed before Python numerics."""
+    y, fid, params = _spatial_params([0, 0, 0, 1, 2, 2], 30, seed=4)
+    monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fm.s_x2(y, fid, params, "MLS2PLM", min_expected=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -199,23 +217,24 @@ def test_sx2_requires_compiled_rust_core(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_person_fit_requires_compiled_rust_core(monkeypatch):
-    y, fid, params = _mirt_params(6, 20, seed=8)
+def test_person_fit_numpy_fallback(monkeypatch):
+    """Incomplete core must fail closed; public person-fit no longer uses NumPy fallback."""
+    y, fid, params = _mirt_params(6, 25, seed=8)
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    with pytest.raises(RuntimeError, match="compiled Rust core"):
-        fm.person_fit(y, fid, params, "MIRT")
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fm.person_fit(
+            y, fid, params, "MIRT", prior_mean=np.full((y.shape[0], 1), 0.2)
+        )
 
 
 def test_infit_outfit_numpy_fallback(monkeypatch):
-    y, fid, params = _mirt_params(6, 250, seed=10)
+    """Incomplete core must fail closed for public infit/outfit."""
+    y, fid, params = _mirt_params(6, 25, seed=10)
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    io = fm.infit_outfit(y, fid, params, "MIRT")
-    assert io["infit"].shape == (6,) and io["outfit"].shape == (6,)
-    assert np.all(np.isfinite(io["infit"]))
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fm.infit_outfit(y, fid, params, "MIRT")
 
-    ys, fids, sparams = _spatial_params([0, 0, 1, 1], 200, seed=11)
-    io2 = fm.infit_outfit(ys, fids, sparams, "MLS2PLM")
-    assert io2["outfit"].shape == (4,)
+
 
 
 # ---------------------------------------------------------------------------
@@ -576,9 +595,8 @@ def test_m2_public_guards_and_numpy_dispatch(monkeypatch):
         fm.m2(y, fid, params, "MIRT", prior_sd=np.array([0.0]))
 
     monkeypatch.setattr(fm, "_core_module", lambda: _CoreWithFitStatsOnly())
-    result = fm.m2(y, fid, params, "MIRT", q_theta=7, q_xi=7)
-    assert np.isfinite(result.m2)
-    assert result.estimator == "mmle"
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fm.m2(y, fid, params, "MIRT", q_theta=7, q_xi=7)
 
 
 # ---------------------------------------------------------------------------

@@ -155,10 +155,17 @@ def test_documentation_index_and_completeness_matrix_cover_security_and_gaps() -
         "traceability/requirements-matrix.md",
     ):
         assert target in index
-    for state in ("IMPLEMENTED", "ACTIVE PR", "PLANNED", "DOWNSTREAM"):
+    for state in (
+        "IMPLEMENTED_ON_PROTECTED_MAIN",
+        "IMPLEMENTED_ON_ACTIVE_PR",
+        "PLANNED",
+        "DOWNSTREAM",
+        "PRESENT_CURRENT",
+        "OWNED_BY_ACTIVE_PR",
+    ):
         assert state in coverage
     assert "P0 documentation gaps" in coverage
-    assert "Canonical PyO3/public-export registry" in coverage
+    assert "Canonical PyO3/public-export governance" in coverage
 
 
 def test_standards_watch_separates_published_sources_from_watch_items() -> None:
@@ -268,8 +275,14 @@ def test_documentation_contract_distinguishes_implemented_rotation_from_active_w
 
     assert "Accepted CPU baseline / planned GPU and broader recovery extensions" in trace
     assert "Proposed/partial / active PR" in trace
-    assert "IMPLEMENTED / PLANNED extensions" in coverage
-    assert "ACTIVE PR" in coverage
-    assert "ACCEPTED_ARCHITECTURE / PARTIAL" in coverage
+    rotation_row = next(
+        line
+        for line in coverage.splitlines()
+        if line.startswith("| Adaptive rotation criterion selection |")
+    )
+    assert "IMPLEMENTED_ON_PROTECTED_MAIN" in rotation_row
+    assert "PARTIAL" in rotation_row
+    assert "IMPLEMENTED_ON_ACTIVE_PR" not in rotation_row
+    assert "PLANNED" not in rotation_row
     assert "Status: **Accepted**" in rotation_adr
     assert "GPU/additional-criterion/recovery expansion remains planned" in rotation_adr

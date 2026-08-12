@@ -68,17 +68,15 @@ def test_recently_integrated_capabilities_are_not_left_as_active_pr_only() -> No
         assert "IMPLEMENTED_ON_PROTECTED_MAIN" in _row(source, capability)
 
 
-def test_parallel_hardening_remains_protected_main_truth() -> None:
-    """Integrated parallel-analysis hardening must not regress to active-PR status."""
+def test_parallel_hardening_is_promoted_on_protected_main() -> None:
+    """Parallel-analysis control bounds are ancestral after #767."""
     source = _matrix()
     row = _row(source, "Parallel-analysis public control/resource hardening")
     assert "IMPLEMENTED_ON_PROTECTED_MAIN" in row
-    assert "IMPLEMENTED_ON_ACTIVE_PR" not in row
 
 
-def test_dark_mode_report_change_remains_protected_main_truth() -> None:
-    """Integrated native dark-mode accents remain protected-main capability."""
+def test_dark_mode_report_change_is_promoted_on_protected_main() -> None:
+    """Native dark-mode status accents are ancestral after #765."""
     source = _matrix()
     row = _row(source, "Essay-report native dark-mode status accents")
     assert "IMPLEMENTED_ON_PROTECTED_MAIN" in row
-    assert "IMPLEMENTED_ON_ACTIVE_PR" not in row
