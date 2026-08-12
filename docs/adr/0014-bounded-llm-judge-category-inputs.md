@@ -69,6 +69,11 @@ response nor a Strix narrative becomes numerical or merge authority.
    regex validation, hashing, dictionary-key construction, or category
    template generation; runtime string subclasses fail with the package-owned
    `ValueError`.
+9. Strict structured-output failure remains a failed comparison. An identical
+   second completion through `contextual-orchestrator` is not a repair contract:
+   it may be measured, but the final response must pass the same parser and no
+   keyword, positional, or silent-drop fallback may convert failure into an
+   IRT category.
 
 ## Invariants / acceptance evidence
 
@@ -124,6 +129,33 @@ response nor a Strix narrative becomes numerical or merge authority.
 9. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
+10. A 2026-08-12 local 3B probe used the
+    `ContextualOrchestratorJudge -> contextual-orchestrator -> mlx-lm` route
+    with temperature `0`, disabled thinking, and 256 output tokens. Nine
+    direct K-way calls parsed but varied across K and framing: neutral
+    `(0.0000, 1.0000, 0.8333)`, liked `(0.0000, 1.0000, 0.9167)`, and
+    disliked `(0.0000, 0.7500, 1.0000)` for K=`(2,5,7)`. Four cumulative
+    threshold calls failed strict parsing, and one identical retry per call
+    recovered none. This is calibration evidence, not a quality or bias
+    conclusion.
+
+11. Central PR #937's latest green Strix job
+    `31555003423`/`93985504528` for head
+    `2c6f4323ac864587d767824464379678ebfe888a` did not execute the PR-head
+    workflow definition: its step list had no `Validate Strix report
+    provenance` step, its artifact had no `evidence-binding.json`, and its
+    log contained the old neutral provider-outage skip plus NVIDIA 429 and
+    GitHub Models 410 failures. This is base-workflow evidence, not proof of
+    the central PR change; after central integration, this PR must be rescanned
+    through the active trusted workflow at its exact head.
+12. Central PR #937 then advanced to exact head `8726df15` with a separate
+    non-privileged `strix-workflow-contract.yml` data-only workflow and a
+    doctoring record for the base-workflow evidence boundary. All previous
+    central checks and review interpretations are stale for this new head.
+    The provider-backed provenance binding remains unproven until central
+    integration and a fresh exact-head run emit a binding manifest without
+    provider-failure markers.
+
 ## Non-goals and claims not made
 
 - This decision does not claim that Python integers overflow or that a single
@@ -166,6 +198,15 @@ provider 429, and made a false claim about Python integer wraparound.
 Rejected because the same code admitted adversarial `int` subclasses that could
 forge comparisons. The boundary is now hardened and regression-tested.
 
+### Blindly retry or repair invalid model output
+
+Rejected as a default because the local probe recovered no cumulative-threshold
+failure after one identical contextual-orchestrator retry, and any lexical or
+positional repair would violate the semantic judge boundary. A future
+independent binary-threshold decomposition or stronger local judge must be
+benchmarked with added cost, first/final parse status, held-out paired cases,
+and the same fail-closed parser.
+
 ## Failure, degraded, and recovery behavior
 
 Malformed category, score, text, mode, item-type, and criterion-key inputs raise
@@ -201,6 +242,9 @@ coercive validation is not an acceptable compatibility path.
 - Review current inline/general PR feedback and obtain any approval required by
   the live repository policy before a protected merge.
 - Preserve contextual-orchestrator routing for every LLM-as-a-Judge call.
+- Keep the 3B retry probe and any future threshold-decomposition comparison in
+  the calibration denominator; do not promote a recovered subset to an IRT
+  release claim without paired gold/human evidence.
 
 ## Research and standards basis
 
