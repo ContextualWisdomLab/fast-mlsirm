@@ -38,8 +38,8 @@ remains planned or partial; **ACTIVE PR** never means protected-main truth.
 The **Canonical PyO3/public-export registry** is the target source of truth
 for native entrypoints. ADR-0011 remains **Proposed**: protected main still
 uses its existing separate native initializers and package export paths, while
-**PLANNED/partial** describes the target registry capability that is not yet a
-protected-main completion claim.
+**ACCEPTED_ARCHITECTURE / PARTIAL** describes the target registry capability
+that is not yet a protected-main completion claim.
 
 ## Canonical documentation coverage
 
