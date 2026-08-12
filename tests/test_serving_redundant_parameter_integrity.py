@@ -93,3 +93,23 @@ def test_public_scoring_rejects_hostile_item_slope_without_callback() -> None:
         score_respondents(bundle, [{"item_1": 1}], device="cpu")
 
     assert "sensitive_numeric_callback" not in str(caught.value)
+
+
+def test_public_scoring_rejects_oversized_gamma_without_overflow() -> None:
+    """Reject an oversized integer gamma as a stable package-owned ValueError."""
+    bundle = _bundle()
+    bundle["gamma"] = 10**309
+
+    with pytest.raises(ValueError, match=r"gamma must match exp\(tau\)"):
+        score_respondents(bundle, [{"item_1": 1}], device="cpu")
+
+
+def test_public_scoring_rejects_oversized_item_slope_without_overflow() -> None:
+    """Reject an oversized integer slope as a stable package-owned ValueError."""
+    bundle = _bundle()
+    item = bundle["items"][0]
+    assert isinstance(item, dict)
+    item["a"] = 10**309
+
+    with pytest.raises(ValueError, match=r"a must match exp\(alpha\)"):
+        score_respondents(bundle, [{"item_1": 1}], device="cpu")
