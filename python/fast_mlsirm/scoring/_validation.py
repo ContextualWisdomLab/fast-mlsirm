@@ -150,8 +150,8 @@ def semantic_version(value: Any, name: str, path: str | None = None) -> str:
 
 
 def assessment_schema_version(value: Any) -> str:
-    """Require the independent assessment wire-schema version."""
-    if value != ASSESSMENT_SCHEMA_VERSION:
+    """Require the exact built-in assessment wire-schema version string."""
+    if type(value) is not str or value != ASSESSMENT_SCHEMA_VERSION:
         raise assessment_error(
             "invalid_schema_version",
             "$.schema_version",
