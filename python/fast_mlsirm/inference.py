@@ -39,8 +39,8 @@ def _preflight_observed_information(n: int) -> None:
     if objective_calls > _MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS:
         raise ValueError(
             "observed_information objective-call budget exceeded: "
-            f"requires {objective_calls} calls, limit is "
-            f"{_MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS}"
+            f"requires {objective_calls} calls, at most "
+            f"{_MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS} are supported"
         )
     if workspace_bytes > _MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES:
         raise ValueError(
