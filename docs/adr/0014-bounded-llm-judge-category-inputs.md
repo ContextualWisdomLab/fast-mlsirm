@@ -194,6 +194,16 @@ response nor a Strix narrative becomes numerical or merge authority.
     liveness, timeout/queue/restart events, prompt size, and every failed
     comparison; no retry may repair a malformed judge result.
 
+17. The remote PR/evidence path also exposed a host-network boundary:
+    GitHub HTTPS failed with `LibreSSL SSL_connect: SSL_ERROR_SYSCALL` on the
+    VPN `utun12` route but succeeded over `en0`. This distinguishes a route,
+    MTU, or firewall failure from a bad certificate, repository, or Keyverse
+    credential. The judge and security evidence must therefore not be
+    collected through a TLS-verification bypass or silently changed credential
+    path. An authorized temporary interface-bound relay may unblock a remote
+    operation, but it is not part of the package or benchmark configuration
+    and must be terminated and rechecked afterward.
+
 ## Non-goals and claims not made
 
 - This decision does not claim that Python integers overflow or that a single
