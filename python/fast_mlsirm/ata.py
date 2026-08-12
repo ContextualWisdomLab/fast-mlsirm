@@ -373,8 +373,12 @@ def assemble_to_target(
             raise ValueError("could not assemble a form that satisfies the constraints")
 
         cand = np.asarray(candidates, dtype=np.int64)
-        gain = np.array(
-            [float(np.sum(np.minimum(target, accum + matrix[:, i]) - np.minimum(target, accum))) for i in cand]
+
+        # Optimized gain calculation: vectorize over candidates to avoid slow Python loop
+        min_target_accum = np.minimum(target, accum)
+        gain = np.sum(
+            np.minimum(target[:, None], accum[:, None] + matrix[:, cand]) - min_target_accum[:, None],
+            axis=0,
         )
         best_gain = float(np.max(gain))
         tied = cand[gain >= best_gain - _TIE_EPS]
