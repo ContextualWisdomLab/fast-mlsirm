@@ -69,11 +69,6 @@
   decision owner instead of hard-coding Williamson high-stakes cutoffs only in
   Python.
 
-#### Governed RAG perturbation anchors
-
-- Added source-free, content-addressed reference-free RAG perturbation anchors with finite preregistered construct/direction semantics for unsupported claims, contradictions, irrelevant context, required-evidence removal, citation swaps, semantic paraphrases, style-only rewrites, and unanswerable queries.
-- Require distinct governed baseline and perturbed request fingerprints and fail closed on unknown perturbation semantics or malformed identities. Expected directions are validation hypotheses, not claims that an observed system actually changed or that an evaluator is ground truth.
-
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -569,6 +564,10 @@
 - Multilevel membership weights and AR(1) coefficients now admit only exact
   built-in `int`/`float` scalars, rejecting booleans and caller-defined
   conversion hooks before contract arithmetic.
+
+#### Scoring schema-version callback redaction
+
+- Assessment schema-version validation now requires an exact built-in `str` matching the wire version, rejecting hostile string subclasses before equality work so callback messages cannot leak into contract errors.
 
 #### Diagnostics-report focus and contrast preservation
 
