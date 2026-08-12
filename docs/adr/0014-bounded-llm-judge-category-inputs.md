@@ -86,24 +86,42 @@ response nor a Strix narrative becomes numerical or merge authority.
 5. `tests/test_llm_judge.py::test_judge_rejects_unhashable_criterion_id_before_category_template`
    rejects an unhashable `str` subclass before it can become a category
    template key or leak a raw `TypeError`.
-6. PR #778's exact-head Strix run `31549881616`/job `93970141054` returned a
-   green `strix` CheckRun even though `gate-console.log` recorded NVIDIA NIM
-   429s, GitHub Models 410 retirement-brownout failures, repeated fail-closed
-   and no-report markers, and a generic report that admitted an incomplete AST
-   pass. The completed report is not clean security evidence because the
-   provider-failure path was accepted before structured provenance validation.
-   The central `.github` fix must land and this exact head must be rescanned;
-   the old green status is not merge evidence.
-7. PR #778's later exact-head run `31552408884`/job `93977765693` for
-   `6c42d4a53d6d70cb1ae0127df624c3cc178ddd4b` also returned a green `strix`
-   CheckRun without `evidence-binding.json`; its successful `run.json` omitted
-   head metadata while `gate-console.log` recorded NVIDIA NIM `429`, GitHub
-   Models `410` retirement-brownout, fail-closed/no-report markers, and a
-   generic fallback report. Because the trusted provenance fix was not yet on
-   protected main, this is inconclusive provider evidence, not a clean scan.
-   The PR remains blocked until the central fix is reviewed/merged and this
-   exact fast head is rescanned through that trusted workflow.
-8. The full Python and Rust test suites, targeted Ruff checks, and exact-head
+6. PR #778 Strix run `31549881616` is immutable evidence for exact scan head
+   `c54706cc16c8452d603c22d9604e7d27ede6288f`:
+   `https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/31549881616`
+   and job
+   `https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/31549881616/job/93970141054`.
+   GitHub recorded no failed job step; `Run Strix (quick)` itself concluded
+   success. Inside that step, however, `gate-console.log` recorded NVIDIA NIM
+   HTTP 429 rate limiting, GitHub Models HTTP 410 retirement-brownout failures,
+   repeated fail-closed/no-report markers, and a generic report that admitted an
+   incomplete AST pass. Artifact `9124255508` (`strix-reports`) therefore
+   predates the trusted provenance contract and has no authoritative
+   `evidence-binding.json`. This is provider-degraded/incomplete evidence, not
+   a clean security result.
+7. PR #778 Strix run `31552408884` is immutable evidence for exact scan head
+   `6c42d4a53d6d70cb1ae0127df624c3cc178ddd4b`:
+   `https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/31552408884`
+   and job
+   `https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/31552408884/job/93977765693`.
+   Again, GitHub recorded no failed job step and `Run Strix (quick)` concluded
+   success, while `gate-console.log` recorded NVIDIA NIM HTTP 429, GitHub Models
+   HTTP 410 retirement-brownout, fail-closed/no-report markers, and a generic
+   fallback report. Artifact `9125226971` (`strix-reports`) lacked
+   `evidence-binding.json`, and its successful `run.json` omitted authoritative
+   head metadata. It is inconclusive provider evidence, not a clean scan.
+8. The central correction is owned by `ContextualWisdomLab/.github` PR #937,
+   exact active-PR head `2c6f4323ac864587d767824464379678ebfe888a`.
+   Its `.github/workflows/strix.yml` change removes provider-outage
+   neutral-success behavior, records the exact scan-start head, requires a
+   completed successful `run.json` plus non-empty report, rejects fail-closed
+   provider markers, and emits `evidence-binding.json` bound to the exact head
+   and report digest. Protected central `main` is still
+   `6eb06cdd08c79a06f7b390069d4ffa49e2eb7dba`, so #937 is a read-only external
+   prerequisite here rather than shipped central truth. After it integrates,
+   this PR must be rescanned on its then-current exact head; no predecessor
+   Strix result transfers.
+9. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
 ## Non-goals and claims not made
@@ -150,9 +168,11 @@ forge comparisons. The boundary is now hardened and regression-tested.
 
 ## Failure, degraded, and recovery behavior
 
-Malformed category, score, text, mode, item-type, and usage inputs raise the
-package-owned `ValueError` or `JudgeFormatError` before model output is
-accepted or an IRT row is returned.
+Malformed category, score, text, mode, item-type, and criterion-key inputs raise
+the package-owned `ValueError` or `JudgeFormatError` before model output is
+accepted or an IRT row is returned. Invalid usage counters are deliberately
+ignored by `_usage()` and contribute zero token totals; they are not promoted
+to score, category, or merge evidence.
 Malformed model JSON, missing structured scan evidence, provider rate limits,
 and failed required checks remain fail-closed. After a code change, rerun the
 security workflow against the exact pushed head and record the new result;
@@ -178,8 +198,8 @@ coercive validation is not an acceptable compatibility path.
 - Run the targeted judge tests and Ruff on changed Python files.
 - Run the full Python suite, Rust workspace tests, and binding tests.
 - Re-run Strix and all required checks on the exact pushed PR head.
-- Review current inline/general PR feedback and obtain an independent approval
-  before a protected merge.
+- Review current inline/general PR feedback and obtain any approval required by
+  the live repository policy before a protected merge.
 - Preserve contextual-orchestrator routing for every LLM-as-a-Judge call.
 
 ## Research and standards basis
