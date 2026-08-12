@@ -565,11 +565,9 @@
   built-in `int`/`float` scalars, rejecting booleans and caller-defined
   conversion hooks before contract arithmetic.
 
-#### Serving redundant parameter integrity
+#### Scoring schema-version callback redaction
 
-- Serving-bundle validation fails closed when exported redundant slope/distance-weight
-  fields contradict canonical log-scale parameters, and admits only exact built-in
-  numeric scalars so hostile conversion hooks cannot execute during load/score.
+- Assessment schema-version validation now requires an exact built-in `str` matching the wire version, rejecting hostile string subclasses before equality work so callback messages cannot leak into contract errors.
 
 #### Diagnostics-report focus and contrast preservation
 
