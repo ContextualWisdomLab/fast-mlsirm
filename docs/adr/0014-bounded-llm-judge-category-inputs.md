@@ -94,7 +94,16 @@ response nor a Strix narrative becomes numerical or merge authority.
    provider-failure path was accepted before structured provenance validation.
    The central `.github` fix must land and this exact head must be rescanned;
    the old green status is not merge evidence.
-7. The full Python and Rust test suites, targeted Ruff checks, and exact-head
+7. PR #778's later exact-head run `31552408884`/job `93977765693` for
+   `6c42d4a53d6d70cb1ae0127df624c3cc178ddd4b` also returned a green `strix`
+   CheckRun without `evidence-binding.json`; its successful `run.json` omitted
+   head metadata while `gate-console.log` recorded NVIDIA NIM `429`, GitHub
+   Models `410` retirement-brownout, fail-closed/no-report markers, and a
+   generic fallback report. Because the trusted provenance fix was not yet on
+   protected main, this is inconclusive provider evidence, not a clean scan.
+   The PR remains blocked until the central fix is reviewed/merged and this
+   exact fast head is rescanned through that trusted workflow.
+8. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
 ## Non-goals and claims not made
