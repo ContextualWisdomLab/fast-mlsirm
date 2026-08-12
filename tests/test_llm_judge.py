@@ -552,6 +552,25 @@ def test_judge_criteria_reject_invalid_runtime_types() -> None:
     assert _HookedFloat.invoked is False
 
 
+def test_judge_rejects_unhashable_criterion_id_before_category_template() -> None:
+    class _UnhashableStr(str):
+        __hash__ = None
+
+    with pytest.raises(ValueError, match="criterion_id must be a string"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=[
+                {
+                    "criterion_id": _UnhashableStr("task_alignment"),
+                    "description": "ok",
+                },
+                CRITERIA[1],
+            ],
+            category_count=3,
+        )
+
+
 def test_judge_criteria_reject_non_contract_values_with_value_error() -> None:
     """Arbitrary criterion elements must fail through the stable benign error contract."""
     with pytest.raises(ValueError, match="JudgeCriterion or mapping"):

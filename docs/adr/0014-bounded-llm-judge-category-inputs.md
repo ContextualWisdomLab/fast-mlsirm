@@ -65,6 +65,10 @@ response nor a Strix narrative becomes numerical or merge authority.
    set membership. Oversized numeric JSON values become `JudgeFormatError`
    rather than leaking `OverflowError`; non-built-in usage counters are
    ignored rather than compared or accumulated.
+8. `JudgeCriterion.criterion_id` accepts only an exact built-in `str` before
+   regex validation, hashing, dictionary-key construction, or category
+   template generation; runtime string subclasses fail with the package-owned
+   `ValueError`.
 
 ## Invariants / acceptance evidence
 
@@ -79,7 +83,10 @@ response nor a Strix narrative becomes numerical or merge authority.
    and `test_judge_text_and_usage_boundaries_reject_runtime_subclasses` cover
    overflow, conversion-hook, unhashable-mode, item-type, text, and usage
    boundary behavior.
-5. PR #778's exact-head Strix run `31549881616`/job `93970141054` returned a
+5. `tests/test_llm_judge.py::test_judge_rejects_unhashable_criterion_id_before_category_template`
+   rejects an unhashable `str` subclass before it can become a category
+   template key or leak a raw `TypeError`.
+6. PR #778's exact-head Strix run `31549881616`/job `93970141054` returned a
    green `strix` CheckRun even though `gate-console.log` recorded NVIDIA NIM
    429s, GitHub Models 410 retirement-brownout failures, repeated fail-closed
    and no-report markers, and a generic report that admitted an incomplete AST
@@ -87,7 +94,7 @@ response nor a Strix narrative becomes numerical or merge authority.
    provider-failure path was accepted before structured provenance validation.
    The central `.github` fix must land and this exact head must be rescanned;
    the old green status is not merge evidence.
-6. The full Python and Rust test suites, targeted Ruff checks, and exact-head
+7. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
 ## Non-goals and claims not made

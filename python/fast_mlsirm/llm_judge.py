@@ -82,8 +82,8 @@ class JudgeCriterion:
     weight: float = 1.0
 
     def __post_init__(self) -> None:
-        if not isinstance(self.criterion_id, str):
-            raise ValueError("criterion_id must be a string")  # noqa: TRY004
+        if type(self.criterion_id) is not str:
+            raise ValueError("criterion_id must be a string")
         if not _IDENTIFIER.fullmatch(self.criterion_id):
             raise ValueError("criterion_id must contain two or more snake_case words")
         if not isinstance(self.description, str):
