@@ -34,9 +34,14 @@ def _mirt_case() -> tuple[np.ndarray, np.ndarray, SimpleNamespace]:
 
 
 def test_public_m2_requires_compiled_rust_core(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ordinary public M2 must not select the private NumPy reference implicitly."""
+    """Ordinary public M2 must reject missing Rust before NumPy reference dispatch."""
     responses, factor_id, params = _mirt_case()
     monkeypatch.setattr(fitstats, "_core_module", lambda: None)
+
+    def forbidden_numpy_reference(*_args, **_kwargs):
+        raise AssertionError("public M2 dispatched to the private NumPy reference")
+
+    monkeypatch.setattr(fitstats, "_m2_numpy", forbidden_numpy_reference)
 
     with pytest.raises(
         RuntimeError,
