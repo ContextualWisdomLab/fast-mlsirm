@@ -208,6 +208,8 @@ def test_irt_projection_rejects_malformed_result_mappings() -> None:
             criterion_categories=[0, 1],
             category_count=2,
         ).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="item_type"):
+        result.to_irt_row(item_type=[])
 
 
 def test_criteria_limit_is_enforced_during_iteration() -> None:
@@ -334,6 +336,11 @@ def test_judge_rejects_unknown_category_method(category_method) -> None:
         )
 
 
+def test_judge_rejects_unhashable_mode_before_membership() -> None:
+    with pytest.raises(ValueError, match="mode must be"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload()), mode=[])
+
+
 def test_category_judgment_rejects_non_integral_categories() -> None:
     payload = json.dumps({
         "score": 0.5,
@@ -398,6 +405,92 @@ def test_category_judgment_rejects_malformed_top_level_score() -> None:
             criteria=CRITERIA,
             category_count=2,
         )
+
+
+def test_judge_rejects_overflowing_and_runtime_subclass_scores() -> None:
+    class _HookedFloat(float):
+        invoked = False
+
+        def __float__(self):
+            type(self).invoked = True
+            return super().__float__()
+
+    overflowing = json.dumps({
+        "score": 10**1000,
+        "accepted": True,
+        "rationale": "unsupported numeric shape",
+        "criterion_scores": {"task_alignment": 0.8, "factual_support": 0.8},
+    })
+    with pytest.raises(JudgeFormatError, match="score must be a number"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(overflowing)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+    subclass_score = _HookedFloat(0.8)
+    result = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    with pytest.raises(JudgeFormatError, match="criterion_scores"):
+        replace(
+            result,
+            criterion_scores={
+                "task_alignment": subclass_score,
+                "factual_support": 0.8,
+            },
+        ).to_irt_row(item_type="dichotomous")
+    assert _HookedFloat.invoked is False
+
+
+def test_judge_text_and_usage_boundaries_reject_runtime_subclasses() -> None:
+    class _HookedString(str):
+        invoked = False
+
+        def strip(self, *args, **kwargs):
+            type(self).invoked = True
+            return super().strip(*args, **kwargs)
+
+    class _ForgedInt(int):
+        invoked = False
+
+        def __ge__(self, other):
+            type(self).invoked = True
+            return True
+
+    with pytest.raises(ValueError, match="task must be"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task=_HookedString("task"),
+            answer="answer",
+            criteria=CRITERIA,
+        )
+    assert _HookedString.invoked is False
+
+    forged = _ForgedInt(7)
+    result = _CompletionOrchestrator({
+        "mode": "route",
+        "answer": _payload(),
+        "trace": [{
+            "usage": {
+                "prompt_tokens": forged,
+                "completion_tokens": forged,
+                "total_tokens": forged,
+            }
+        }],
+    })
+    judged = ContextualOrchestratorJudge(result).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    assert dict(judged.usage) == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    assert _ForgedInt.invoked is False
 
 
 def test_judge_rejects_missing_or_malformed_model_fields() -> None:

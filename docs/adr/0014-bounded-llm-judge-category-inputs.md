@@ -60,6 +60,11 @@ response nor a Strix narrative becomes numerical or merge authority.
 6. `category_method` must be an exact built-in string before vocabulary
    membership is checked; unsupported or unhashable values fail with the
    package-owned `ValueError`.
+7. Public score, mode, item-type, text, criterion-key, and usage-counter
+   boundaries reject runtime subclasses before invoking conversion hooks or
+   set membership. Oversized numeric JSON values become `JudgeFormatError`
+   rather than leaking `OverflowError`; non-built-in usage counters are
+   ignored rather than compared or accumulated.
 
 ## Invariants / acceptance evidence
 
@@ -70,11 +75,15 @@ response nor a Strix narrative becomes numerical or merge authority.
    validation before cumulative threshold allocation or IRT projection.
 3. `tests/test_llm_judge.py::test_judge_rejects_unknown_category_method` covers
    unknown strings, lists, and dictionaries without leaking `TypeError`.
-4. PR #778's Strix log records an initial NVIDIA NIM 429, a fallback-model
+4. `tests/test_llm_judge.py::test_judge_rejects_overflowing_and_runtime_subclass_scores`
+   and `test_judge_text_and_usage_boundaries_reject_runtime_subclasses` cover
+   overflow, conversion-hook, unhashable-mode, item-type, text, and usage
+   boundary behavior.
+5. PR #778's Strix log records an initial NVIDIA NIM 429, a fallback-model
    report, no structured vulnerability artifact, and the exact finding. The
    finding is treated as an adjacent hardening signal, not as proof of integer
    wraparound.
-5. The full Python and Rust test suites, targeted Ruff checks, and exact-head
+6. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
 ## Non-goals and claims not made
@@ -121,8 +130,9 @@ forge comparisons. The boundary is now hardened and regression-tested.
 
 ## Failure, degraded, and recovery behavior
 
-Malformed category inputs raise the package-owned `ValueError` or
-`JudgeFormatError` before model output is accepted or an IRT row is returned.
+Malformed category, score, text, mode, item-type, and usage inputs raise the
+package-owned `ValueError` or `JudgeFormatError` before model output is
+accepted or an IRT row is returned.
 Malformed model JSON, missing structured scan evidence, provider rate limits,
 and failed required checks remain fail-closed. After a code change, rerun the
 security workflow against the exact pushed head and record the new result;
