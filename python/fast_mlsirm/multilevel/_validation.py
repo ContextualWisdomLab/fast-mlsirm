@@ -114,7 +114,7 @@ def exact_integer(
 
 def membership_weight(value: Any) -> float:
     """Return one finite membership weight in the interval ``(0, 1]``."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if type(value) not in (int, float):
         raise contract_error(
             "invalid_membership_weight",
             "$.membership_weight",
@@ -132,7 +132,7 @@ def membership_weight(value: Any) -> float:
 
 def autoregressive_coefficient(value: Any) -> float:
     """Return one finite stationary AR(1) coefficient strictly inside unity."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if type(value) not in (int, float):
         raise contract_error(
             "invalid_autoregressive_coefficient",
             "$.autoregressive_coefficient",
