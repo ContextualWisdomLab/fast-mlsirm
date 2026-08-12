@@ -172,6 +172,17 @@ response nor a Strix narrative becomes numerical or merge authority.
     results remain stale until the exact head is reviewed and a post-integration
     run emits a clean binding manifest.
 
+15. A live bearer-authenticated probe used the configured
+    `mlx-community/llama-3.2-3b-instruct-4bit` worker through
+    `ContextualOrchestratorJudge -> contextual-orchestrator -> mlx-lm`. On the
+    same answer and two criteria with `category_count=5`, direct judging
+    produced score `1.0000` (`4/4`, accepted) and cumulative-threshold judging
+    produced score `0.0000` (`0/0`, rejected). Both outputs passed the same
+    strict parser and retained one nested contextual trace step (568 and 570
+    tokens respectively). This is paired method sensitivity, not a claim that
+    more choices cause positive bias; method, K, trace, usage, and parse status
+    remain part of the calibration denominator.
+
 ## Non-goals and claims not made
 
 - This decision does not claim that Python integers overflow or that a single
