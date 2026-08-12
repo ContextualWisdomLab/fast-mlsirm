@@ -40,6 +40,39 @@ class _ExplodingIndex:
         raise RuntimeError("sensitive_index_text_should_not_escape")
 
 
+class _MemoryIteratorFactory:
+    """Raise resource exhaustion while constructing the casewise iterator."""
+
+    def __iter__(self):
+        """Preserve process-level resource exhaustion from iterator creation."""
+        raise MemoryError("iterator allocation exhausted")
+
+
+class _MemoryIterable:
+    """Raise resource exhaustion after yielding one casewise contribution."""
+
+    def __iter__(self):
+        """Preserve process-level resource exhaustion during iteration."""
+        yield 0.25
+        raise MemoryError("iteration allocation exhausted")
+
+
+class _MemoryFloat:
+    """Raise resource exhaustion during caller-controlled numeric coercion."""
+
+    def __float__(self) -> float:
+        """Preserve process-level resource exhaustion from float conversion."""
+        raise MemoryError("float allocation exhausted")
+
+
+class _MemoryIndex:
+    """Raise resource exhaustion during caller-controlled index coercion."""
+
+    def __index__(self) -> int:
+        """Preserve process-level resource exhaustion from index conversion."""
+        raise MemoryError("index allocation exhausted")
+
+
 def _assert_redacted_value_error(callable_, sentinel: str, field_name: str) -> None:
     """Require a package-owned validation error without caller-controlled text."""
     with pytest.raises(ValueError) as caught:
@@ -105,3 +138,20 @@ def test_parameter_count_conversion_failure_is_redacted() -> None:
         "sensitive_index_text_should_not_escape",
         "k_a",
     )
+
+
+@pytest.mark.parametrize(
+    "callable_",
+    [
+        lambda: compare_nonnested_models(_MemoryIteratorFactory(), (0.1, 0.2), 2, 2),
+        lambda: compare_nonnested_models(_MemoryIterable(), (0.1, 0.2), 2, 2),
+        lambda: compare_nonnested_models((_MemoryFloat(), 0.2), (0.1, 0.2), 2, 2),
+        lambda: compare_nonnested_models(
+            (0.1, 0.2), (0.1, 0.2), _MemoryIndex(), 2  # type: ignore[arg-type]
+        ),
+    ],
+)
+def test_memory_error_remains_explicit_resource_exhaustion(callable_) -> None:
+    """Resource exhaustion must not be downgraded into an input-validation error."""
+    with pytest.raises(MemoryError):
+        callable_()
