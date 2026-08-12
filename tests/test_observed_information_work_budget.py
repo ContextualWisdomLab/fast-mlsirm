@@ -1,4 +1,4 @@
-"""Fail-first resource budgets for public observed-information evaluation."""
+"""Resource budgets for public observed-information evaluation."""
 
 from __future__ import annotations
 
@@ -36,22 +36,30 @@ def _constant_objective(*_args, **_kwargs):
     return 0.0, None, None
 
 
+def test_observed_information_work_estimate_matches_stencil_and_workspace() -> None:
+    """Resource accounting must match the governed finite-difference layout."""
+    calls, workspace = inference._observed_information_work(4)
+    assert calls == 1 + 2 * 4**2
+    assert workspace == (3 * 4**2 + 4) * np.dtype(np.float64).itemsize
+    assert inference._observed_information_work(0) == (1, 0)
+
+
+def test_observed_information_work_rejects_negative_internal_dimension() -> None:
+    """Internal resource accounting rejects impossible negative dimensions."""
+    with pytest.raises(ValueError, match="parameter count"):
+        inference._observed_information_work(-1)
+
+
 def test_observed_information_rejects_objective_call_budget_before_evaluation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The exact ``1 + 2*n**2`` call budget must fail closed before objective work."""
     responses, factor_id, params = _small_mirt_problem()
-    monkeypatch.setattr(
-        inference,
-        "_MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS",
-        1,
-        raising=False,
-    )
+    monkeypatch.setattr(inference, "_MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS", 1)
     monkeypatch.setattr(
         inference,
         "_MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES",
         2**63 - 1,
-        raising=False,
     )
     monkeypatch.setattr(inference, "neg_loglik_and_grad", _objective_must_not_run)
 
@@ -75,14 +83,8 @@ def test_observed_information_rejects_workspace_budget_before_evaluation(
         inference,
         "_MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS",
         2**63 - 1,
-        raising=False,
     )
-    monkeypatch.setattr(
-        inference,
-        "_MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES",
-        1,
-        raising=False,
-    )
+    monkeypatch.setattr(inference, "_MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES", 1)
     monkeypatch.setattr(inference, "neg_loglik_and_grad", _objective_must_not_run)
 
     with pytest.raises(ValueError, match="workspace budget"):
@@ -105,13 +107,11 @@ def test_observed_information_avoids_dense_identity_workspace(
         inference,
         "_MAX_OBSERVED_INFORMATION_OBJECTIVE_CALLS",
         2**63 - 1,
-        raising=False,
     )
     monkeypatch.setattr(
         inference,
         "_MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES",
         2**63 - 1,
-        raising=False,
     )
     monkeypatch.setattr(inference, "neg_loglik_and_grad", _constant_objective)
 
