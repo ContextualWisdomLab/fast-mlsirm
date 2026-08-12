@@ -552,6 +552,12 @@
   vocabulary and mark parallel-analysis control bounds and essay-report native
   dark-mode accents as ancestral after their integration.
 
+#### Multilevel hostile numeric callback rejection
+
+- Multilevel membership weights and AR(1) coefficients now admit only exact
+  built-in `int`/`float` scalars, rejecting booleans and caller-defined
+  conversion hooks before contract arithmetic.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
