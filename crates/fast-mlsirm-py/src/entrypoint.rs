@@ -10,5 +10,6 @@ include!("lib.rs");
 
 mod ata_bindings;
 mod bifactor_bindings;
+mod multilevel_bindings;
 mod rating_range_bindings;
 mod rotation_bindings;
