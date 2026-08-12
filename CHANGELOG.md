@@ -540,6 +540,18 @@
 - Cap raw LLM-judge response JSON nesting at 32 levels before `json.loads`, failing closed with `JudgeFormatError` so hostile recursive objects cannot expand into parser resource exhaustion.
 - Keep valid shallow judge payloads accepted with the existing criterion/score contracts.
 
+#### Fit-statistics infit/outfit and M2 fail closed
+
+- Public `infit_outfit()` and ordinary `m2()` fail closed when the compiled Rust
+  core or required entrypoints are missing, completing the residual ownership
+  gaps from issue #627 after S-X² and person-fit hardening.
+
+#### Documentation coverage vocabulary and shipped-capability matrix
+
+- Align architecture documentation contracts with the protected-main maturity
+  vocabulary and mark parallel-analysis control bounds and essay-report native
+  dark-mode accents as ancestral after their integration.
+
 #### Model-comparison input error redaction
 
 - Model-comparison public inputs fail closed with package-owned errors and do
