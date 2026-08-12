@@ -69,6 +69,11 @@
   decision owner instead of hard-coding Williamson high-stakes cutoffs only in
   Python.
 
+#### Essay facets synthetic recovery evidence
+
+- Deterministic governed synthetic recovery coverage for scoring-facets MFRM/RSM
+  recovery against true injected rater/item effects (issue #397).
+
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -551,6 +556,13 @@
 - Align architecture documentation contracts with the protected-main maturity
   vocabulary and mark parallel-analysis control bounds and essay-report native
   dark-mode accents as ancestral after their integration.
+
+#### Retire competing hourly review-repair caller
+
+- Remove the repository-local hourly review-repair GitHub Actions caller so only
+  the organization single-writer control plane schedules mutation loops, matching
+  ADR-0013 continuous-execution governance after failed startup evidence for the
+  local caller.
 
 #### Multilevel hostile numeric callback rejection
 
