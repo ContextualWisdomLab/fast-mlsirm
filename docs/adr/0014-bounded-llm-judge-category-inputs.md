@@ -161,6 +161,17 @@ response nor a Strix narrative becomes numerical or merge authority.
     the exact built-in list for provider trace accounting; subclass traces
     produce zero derived usage and zero trace steps without executing hooks.
 
+14. CodeRabbit's exact-head review of central PR #937 at `8726df15` found that
+    the new data-only Strix workflow contract trusted marker strings: a phrase
+    could be supplied only by a comment or by a statically unreachable
+    `if: false` step. The contract now parses the fetched workflow with
+    `Psych.safe_load`, follows the reachable `jobs.strix.steps` structure and
+    required order, and checks executable provenance commands plus the
+    fail-closed gate. Comment-only and unreachable fixtures are regression
+    cases. This is still pre-integration evidence; all prior central Strix
+    results remain stale until the exact head is reviewed and a post-integration
+    run emits a clean binding manifest.
+
 ## Non-goals and claims not made
 
 - This decision does not claim that Python integers overflow or that a single
