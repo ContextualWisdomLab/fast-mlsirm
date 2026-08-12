@@ -15,5 +15,4 @@ Ordinary public S-X² and person-fit results are produced only by the compiled R
 ## Verification
 
 - `tests/test_fitstats_rust_ownership_failclosed.py`
-- `tests/test_cov_c_fitstats.py` incomplete-core regression
 - `tests/test_fitstats.py` incomplete-core regression
