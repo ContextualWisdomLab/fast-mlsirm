@@ -69,6 +69,11 @@
   decision owner instead of hard-coding Williamson high-stakes cutoffs only in
   Python.
 
+#### Governed RAG perturbation anchors
+
+- Added source-free, content-addressed reference-free RAG perturbation anchors with finite preregistered construct/direction semantics for unsupported claims, contradictions, irrelevant context, required-evidence removal, citation swaps, semantic paraphrases, style-only rewrites, and unanswerable queries.
+- Require distinct governed baseline and perturbed request fingerprints and fail closed on unknown perturbation semantics or malformed identities. Expected directions are validation hypotheses, not claims that an observed system actually changed or that an evaluator is ground truth.
+
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -551,6 +556,13 @@
 - Align architecture documentation contracts with the protected-main maturity
   vocabulary and mark parallel-analysis control bounds and essay-report native
   dark-mode accents as ancestral after their integration.
+
+#### Retire competing hourly review-repair caller
+
+- Remove the repository-local hourly review-repair GitHub Actions caller so only
+  the organization single-writer control plane schedules mutation loops, matching
+  ADR-0013 continuous-execution governance after failed startup evidence for the
+  local caller.
 
 #### Multilevel hostile numeric callback rejection
 
