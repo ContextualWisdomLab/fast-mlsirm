@@ -155,6 +155,11 @@ response nor a Strix narrative becomes numerical or merge authority.
     The provider-backed provenance binding remains unproven until central
     integration and a fresh exact-head run emit a binding manifest without
     provider-failure markers.
+13. A review regression showed that a caller-supplied `list` subclass in the
+    orchestration trace could execute overridden iteration/length hooks during
+    usage aggregation and trace-count reporting. The judge now accepts only
+    the exact built-in list for provider trace accounting; subclass traces
+    produce zero derived usage and zero trace steps without executing hooks.
 
 ## Non-goals and claims not made
 
@@ -206,6 +211,13 @@ positional repair would violate the semantic judge boundary. A future
 independent binary-threshold decomposition or stronger local judge must be
 benchmarked with added cost, first/final parse status, held-out paired cases,
 and the same fail-closed parser.
+
+### Iterate over arbitrary trace containers
+
+Rejected because a provider-controlled or caller-supplied list subclass can
+execute code through `__iter__` or `__len__` while the result record is being
+assembled. Exact built-in container typing keeps usage and trace metadata
+bounded and side-effect free; malformed custom traces are treated as absent.
 
 ## Failure, degraded, and recovery behavior
 

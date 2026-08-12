@@ -270,6 +270,6 @@ def test_documentation_contract_distinguishes_implemented_rotation_from_active_w
     assert "Proposed/partial / active PR" in trace
     assert "IMPLEMENTED / PLANNED extensions" in coverage
     assert "ACTIVE PR" in coverage
-    assert "PLANNED/partial" in coverage
+    assert "ACCEPTED_ARCHITECTURE / PARTIAL" in coverage
     assert "Status: **Accepted**" in rotation_adr
     assert "GPU/additional-criterion/recovery expansion remains planned" in rotation_adr

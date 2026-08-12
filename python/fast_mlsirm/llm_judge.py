@@ -346,7 +346,7 @@ def _score(value: Any, name: str) -> float:
 
 def _usage(trace: Any) -> dict[str, int]:
     totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-    if not isinstance(trace, list):
+    if type(trace) is not list:
         return totals
     for step in trace:
         usage = step.get("usage") if isinstance(step, dict) else None
@@ -587,7 +587,7 @@ class ContextualOrchestratorJudge:
             criterion_scores=criterion_scores,
             raw_output=raw,
             orchestration_mode=str(completion.get("mode", self.mode)),
-            trace_step_count=len(trace) if isinstance(trace, list) else 0,
+            trace_step_count=len(trace) if type(trace) is list else 0,
             usage=_usage(trace),
             criterion_categories=criterion_categories,
             category_count=category_count,
