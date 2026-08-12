@@ -69,11 +69,6 @@
   decision owner instead of hard-coding Williamson high-stakes cutoffs only in
   Python.
 
-#### Essay facets synthetic recovery evidence
-
-- Deterministic governed synthetic recovery coverage for scoring-facets MFRM/RSM
-  recovery against true injected rater/item effects (issue #397).
-
 #### Architecture baseline documentation
 
 - Root `ARCHITECTURE.md` describing layered Rust-primary numeric core, Python
@@ -569,6 +564,10 @@
 - Multilevel membership weights and AR(1) coefficients now admit only exact
   built-in `int`/`float` scalars, rejecting booleans and caller-defined
   conversion hooks before contract arithmetic.
+
+#### Scoring schema-version callback redaction
+
+- Assessment schema-version validation now requires an exact built-in `str` matching the wire version, rejecting hostile string subclasses before equality work so callback messages cannot leak into contract errors.
 
 #### Diagnostics-report focus and contrast preservation
 
