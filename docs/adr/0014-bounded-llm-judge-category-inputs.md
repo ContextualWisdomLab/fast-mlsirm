@@ -183,6 +183,17 @@ response nor a Strix narrative becomes numerical or merge authority.
     more choices cause positive bias; method, K, trace, usage, and parse status
     remain part of the calibration denominator.
 
+16. The same live route exposed an operational boundary: with MLX
+    `prompt-concurrency=1`, abandoned large prompts remained queued after a
+    client timeout, the provider logged `BrokenPipe` while writing to the
+    disconnected client, and the supervised process restarted. A judge retry
+    must not multiply that device work. `contextual-orchestrator` therefore
+    defaults same-agent retries to zero for explicit local providers while
+    retaining remote retry behavior and an explicit local opt-in. Judge
+    benchmarks must record provider readiness separately from gateway
+    liveness, timeout/queue/restart events, prompt size, and every failed
+    comparison; no retry may repair a malformed judge result.
+
 ## Non-goals and claims not made
 
 - This decision does not claim that Python integers overflow or that a single
