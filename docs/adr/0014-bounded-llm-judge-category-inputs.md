@@ -204,6 +204,15 @@ response nor a Strix narrative becomes numerical or merge authority.
     operation, but it is not part of the package or benchmark configuration
     and must be terminated and rechecked afterward.
 
+18. The same protected coverage path recorded `trusted uv archive download
+    failed: HTTPError` for this PR before repository coverage executed. That is
+    an evidence blocker, not a model or test pass. The central CI downloader
+    retains its fixed HTTPS/no-proxy/no-redirect/checksum boundary and now
+    retries only transient HTTP/socket failures while preserving the HTTP
+    status in the terminal error; this repository must rerun exact-head
+    coverage after that central fix and must not treat a skipped or failed
+    coverage job as approval evidence.
+
 ## Non-goals and claims not made
 
 - This decision does not claim that Python integers overflow or that a single
