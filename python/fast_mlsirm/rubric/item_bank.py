@@ -50,6 +50,7 @@ class ItemBankEvidenceKind(str, Enum):
     CALIBRATION = "calibration"
     ITEM_FIT = "item_fit"
     DIF = "dif"
+    DIF_NOT_APPLICABLE = "dif_not_applicable"
     ITEM_INFORMATION = "item_information"
     LINKING = "linking"
     EXPOSURE = "exposure"
@@ -504,9 +505,14 @@ def _missing_required_kinds(
         required = {
             ItemBankEvidenceKind.CALIBRATION,
             ItemBankEvidenceKind.ITEM_FIT,
-            ItemBankEvidenceKind.DIF,
             ItemBankEvidenceKind.ITEM_INFORMATION,
         }
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not supplied_kinds.intersection(
+            {ItemBankEvidenceKind.DIF, ItemBankEvidenceKind.DIF_NOT_APPLICABLE}
+        ):
+            missing.append("dif_or_dif_not_applicable")
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.APPROVED:
         required = {ItemBankEvidenceKind.APPROVAL}
     elif (
@@ -561,6 +567,16 @@ def transition_item_bank_record(
         error_type=ItemBankLifecycleError,
     )
     supplied_kinds = {reference.evidence_kind for reference in additions}
+    if (
+        target is ItemBankLifecycleState.CALIBRATED
+        and ItemBankEvidenceKind.DIF in supplied_kinds
+        and ItemBankEvidenceKind.DIF_NOT_APPLICABLE in supplied_kinds
+    ):
+        raise ItemBankLifecycleError(
+            "conflicting_dif_applicability",
+            "$.evidence_references",
+            "calibration requires exactly one DIF applicability evidence class",
+        )
     missing = _missing_required_kinds(
         current.lifecycle_state,
         target,
