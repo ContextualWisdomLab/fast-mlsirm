@@ -86,8 +86,8 @@ class JudgeCriterion:
             raise ValueError("criterion_id must be a string")
         if not _IDENTIFIER.fullmatch(self.criterion_id):
             raise ValueError("criterion_id must contain two or more snake_case words")
-        if not isinstance(self.description, str):
-            raise ValueError("criterion description must be a string")  # noqa: TRY004
+        if type(self.description) is not str:
+            raise ValueError("criterion description must be a string")
         if not self.description.strip() or len(self.description) > 2_000:
             raise ValueError("criterion description must be non-empty and <= 2000 characters")
         if type(self.weight) not in (int, float):
