@@ -238,18 +238,19 @@ response nor a Strix narrative becomes numerical or merge authority.
     cannot override the provider failure. Central `.github` PR #937 contains
     the minimal fail-closed/provenance repair; after it integrates, rerun this
     PR at the same exact head and accept only a clean bound artifact.
-20. The exact-head Strix run for PR #778 at
-    `0fb9e466847325edfb32506d77bb615d3c65298f` (`31581202078`, job
-    `94064514313`, artifact `9136142983`) is not clean security evidence.
-    GitHub marked every job step successful because the trusted central `main`
-    workflow still neutralized a provider-unavailable gate exit. The console
-    evidence records NVIDIA NIM HTTP 429 rate limits, GitHub Models HTTP 410
-    retirement-brownout failures, and repeated fail-closed/no-report markers;
-    the job had no `Validate Strix report provenance` step and emitted no
-    `evidence-binding.json`. The structured NVIDIA fallback report therefore
-    cannot override the provider failure. Central `.github` PR #937 contains
-    the minimal fail-closed/provenance repair; after it integrates, rerun this
-    PR at the same exact head and accept only a clean bound artifact.
+21. The 2026-08-12 Zotero Local API review distinguishes evidence from
+    redistribution permission. Li et al. (2025, arXiv:2506.22316), Sharma et
+    al. (2023, arXiv:2310.13548), and Pezeshkpour and Hruschka (2024, ACL
+    Findings) expose CC BY 4.0 terms and their original PDFs are preserved in
+    `docs/papers/papers/` with source URLs and SHA-256 digests in
+    `docs/papers/oa-pdf-manifest.md`. Zheng et al. (2024, ICLR) and Samejima
+    (1969) remain citation-only because the locally available arXiv/ICLR and
+    Psychometric Society terms do not provide an explicit third-party
+    redistribution license. The literature supports option-ID/order and
+    scoring/sycophancy bias as risks; it does not establish that increasing K
+    necessarily creates positive bias. A K-effect claim requires paired,
+    randomized-order, multi-item, gold/human-anchored calibration with parse,
+    provider, and IRT-shape failures retained in the denominator.
 
 ## Non-goals and claims not made
 
