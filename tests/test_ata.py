@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.ata as ata_module
+from fast_mlsirm._ata_core_loader import ata_core
 from fast_mlsirm.ata import AssembledForm, assemble_to_target, item_information_matrix
 from fast_mlsirm.types import MLSIRMParams
 
@@ -157,6 +158,44 @@ def test_target_gain_arithmetic_is_owned_by_rust_boundary(monkeypatch):
     assert form.items.size == 4
     assert calls
     assert all(shape == (2, 8) for shape, _ in calls)
+
+
+def test_compiled_target_gain_matches_reference_formula():
+    """The installed Rust ATA core matches the explicit capped-shortfall oracle."""
+    matrix = np.array(
+        [
+            [1.0, 2.0, 4.0],
+            [0.5, 2.0, 3.0],
+        ],
+        dtype=np.float64,
+    )
+    candidates = np.array([0, 2], dtype=np.int64)
+    target = np.array([4.0, 3.0], dtype=np.float64)
+    accumulated = np.array([1.0, 2.0], dtype=np.float64)
+    expected = np.array(
+        [
+            np.sum(
+                np.minimum(target, accumulated + matrix[:, item])
+                - np.minimum(target, accumulated)
+            )
+            for item in candidates
+        ],
+        dtype=np.float64,
+    )
+
+    actual = np.asarray(
+        ata_core().target_information_gains(matrix, candidates, target, accumulated),
+        dtype=np.float64,
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-12)
+    with pytest.raises(ValueError, match="non-negative"):
+        ata_core().target_information_gains(
+            matrix,
+            np.array([-1], dtype=np.int64),
+            target,
+            accumulated,
+        )
 
 
 def test_invalid_arguments_raise():

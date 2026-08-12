@@ -11,11 +11,13 @@ _REPOSITORY_ROOT = Path(__file__).parents[1]
 _ENTRYPOINT = _REPOSITORY_ROOT / "crates" / "fast-mlsirm-py" / "src" / "entrypoint.rs"
 
 
-def test_shared_library_registers_both_secondary_extension_modules():
-    """Adding rotation must not replace the bifactor extension registration."""
+def test_shared_library_registers_all_secondary_extension_modules():
+    """Adding one bounded Rust surface must not replace existing registrations."""
     source = _ENTRYPOINT.read_text(encoding="utf-8")
     assert 'include!("lib.rs");' in source
+    assert "mod ata_bindings;" in source
     assert "mod bifactor_bindings;" in source
+    assert "mod rating_range_bindings;" in source
     assert "mod rotation_bindings;" in source
 
 
