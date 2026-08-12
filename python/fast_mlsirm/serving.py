@@ -203,8 +203,15 @@ def _reject_nonfinite_json(literal: str) -> float:
 
 
 def _finite_number(x) -> bool:
-    """Return whether ``x`` is a finite, non-boolean real number."""
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
+    """Return whether ``x`` is a finite, exact built-in non-boolean real number.
+
+    Subclasses of ``float``/``int`` are rejected so hostile conversion hooks
+    cannot execute during serving-bundle validation.
+    """
+    if type(x) is bool or type(x) not in (int, float):
+        return False
+    return math.isfinite(x)
+
 
 
 def _validate_bundle(bundle: Any) -> None:
@@ -242,6 +249,13 @@ def _validate_bundle(bundle: Any) -> None:
             f"bundle tau must be in the safe numeric range "
             f"[-{MAX_ABS_LOG_SCALE}, {MAX_ABS_LOG_SCALE}]"
         )
+    if "gamma" in bundle:
+        gamma = bundle["gamma"]
+        expected_gamma = math.exp(float(bundle["tau"]))
+        if not _finite_number(gamma) or not math.isclose(
+            float(gamma), expected_gamma, rel_tol=1e-12, abs_tol=0.0
+        ):
+            raise ValueError("bundle gamma must match exp(tau)")
     eps = bundle.get("eps_distance")
     if (
         not _finite_number(eps)
@@ -294,6 +308,13 @@ def _validate_bundle(bundle: Any) -> None:
                     f"bundle item {code!r} {pk} must be in the safe numeric "
                     f"range [-{bound}, {bound}]"
                 )
+        if "a" in it:
+            slope = it["a"]
+            expected_slope = math.exp(float(it["alpha"]))
+            if not _finite_number(slope) or not math.isclose(
+                float(slope), expected_slope, rel_tol=1e-12, abs_tol=0.0
+            ):
+                raise ValueError(f"bundle item {code!r} a must match exp(alpha)")
         zeta = it.get("zeta")
         if (
             not isinstance(zeta, list)
