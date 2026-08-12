@@ -144,17 +144,17 @@ def test_observed_information_rejects_nonpositive_or_nonfinite_step(step):
 
 
 def test_observed_information_bounds_dense_hessian_dimension():
-    """The dense finite-difference Hessian is capped to a safe parameter count.
+    """The dense finite-difference Hessian is capped by a pre-objective work budget.
 
     The observed information is an O(n^2)-memory, O(n^2)-objective-call dense
     matrix, so an unbounded parameter vector would exhaust memory/time. The
     routine must reject an over-large model before doing any work rather than
     attempt the allocation.
     """
-    params = _mirt_params(n_persons=5200)  # packs to > 5000 free parameters
+    params = _mirt_params(n_persons=5200)
     responses = np.zeros((5200, 2))
     factors = np.zeros(2, dtype=int)
-    with pytest.raises(ValueError, match="at most 5000 parameters"):
+    with pytest.raises(ValueError, match="objective-call budget exceeded"):
         observed_information(
             responses, factors, params, config=FitConfig(model="MIRT"), step=1e-4
         )
