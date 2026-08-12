@@ -275,9 +275,14 @@ def test_documentation_contract_distinguishes_implemented_rotation_from_active_w
 
     assert "Accepted CPU baseline / planned GPU and broader recovery extensions" in trace
     assert "Proposed/partial / active PR" in trace
-    assert "IMPLEMENTED_ON_PROTECTED_MAIN" in coverage
-    assert "IMPLEMENTED_ON_ACTIVE_PR" in coverage
-    assert "PLANNED" in coverage
-    assert "PARTIAL" in coverage
+    rotation_row = next(
+        line
+        for line in coverage.splitlines()
+        if line.startswith("| Adaptive rotation criterion selection |")
+    )
+    assert "IMPLEMENTED_ON_PROTECTED_MAIN" in rotation_row
+    assert "PARTIAL" in rotation_row
+    assert "IMPLEMENTED_ON_ACTIVE_PR" not in rotation_row
+    assert "PLANNED" not in rotation_row
     assert "Status: **Accepted**" in rotation_adr
     assert "GPU/additional-criterion/recovery expansion remains planned" in rotation_adr

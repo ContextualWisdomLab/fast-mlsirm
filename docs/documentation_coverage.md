@@ -95,9 +95,8 @@ The table below records product truth, not documentation-file presence. “Imple
 
 At this review, material open work includes:
 
-- strict/bounded public controls and Rust allocation preflight for parallel analysis;
-- the documentation-fitness refresh itself, which may describe current protected truth but is not authoritative until merged; and
-- native dark-mode report status accents.
+- Rust allocation preflight for parallel analysis, if it remains separate;
+- the documentation-fitness refresh itself, which may describe current protected truth but is not authoritative until merged.
 
 These remain active-PR evidence, not protected-main capability. Their source heads, checks, reviews, writer leases, and mergeability are operational evidence and must be re-fetched rather than copied into timeless architecture prose.
 
