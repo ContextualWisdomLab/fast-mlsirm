@@ -9,9 +9,12 @@ are honored, exposure caps are respected, and assembly is deterministic.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+import fast_mlsirm.ata as ata_module
 from fast_mlsirm.ata import AssembledForm, assemble_to_target, item_information_matrix
 from fast_mlsirm.types import MLSIRMParams
 
@@ -121,6 +124,39 @@ def test_assembly_is_deterministic_under_seed():
     a = assemble_to_target(bank, fid, thetas, target, length=10, model=MODEL, seed=42)
     b = assemble_to_target(bank, fid, thetas, target, length=10, model=MODEL, seed=42)
     assert a.items.tolist() == b.items.tolist()
+
+
+def test_target_gain_arithmetic_is_owned_by_rust_boundary(monkeypatch):
+    """Public ATA must delegate the result-affecting target-gain arithmetic."""
+    bank, fid = _bank(n_items=8)
+    thetas = np.array([-0.5, 0.5])
+    target = np.array([4.0, 4.0])
+    calls: list[tuple[tuple[int, int], tuple[int, ...]]] = []
+
+    def target_information_gains(matrix, candidates, target_info, accumulated):
+        matrix = np.asarray(matrix, dtype=np.float64)
+        candidates = np.asarray(candidates, dtype=np.int64)
+        target_info = np.asarray(target_info, dtype=np.float64)
+        accumulated = np.asarray(accumulated, dtype=np.float64)
+        calls.append((matrix.shape, tuple(int(i) for i in candidates.tolist())))
+        return [
+            float(
+                np.sum(
+                    np.minimum(target_info, accumulated + matrix[:, item])
+                    - np.minimum(target_info, accumulated)
+                )
+            )
+            for item in candidates
+        ]
+
+    fake_core = SimpleNamespace(target_information_gains=target_information_gains)
+    monkeypatch.setattr(ata_module, "ata_core", lambda: fake_core, raising=False)
+
+    form = assemble_to_target(bank, fid, thetas, target, length=4, model=MODEL, seed=7)
+
+    assert form.items.size == 4
+    assert calls
+    assert all(shape == (2, 8) for shape, _ in calls)
 
 
 def test_invalid_arguments_raise():
