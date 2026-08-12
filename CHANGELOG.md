@@ -552,6 +552,17 @@
   vocabulary and mark parallel-analysis control bounds and essay-report native
   dark-mode accents as ancestral after their integration.
 
+#### Retire competing hourly review-repair caller
+
+- Remove the repository-local hourly review-repair GitHub Actions caller so only
+  the organization single-writer control plane schedules mutation loops, matching
+  ADR-0013 continuous-execution governance after failed startup evidence for the
+  local caller.
+
+#### Model-comparison hostile input redaction
+
+- Model-comparison parameter counts and casewise iterables redact hostile conversion and iteration callback failures into stable package-owned `ValueError` messages while preserving `MemoryError`.
+
 #### Multilevel hostile numeric callback rejection
 
 - Multilevel membership weights and AR(1) coefficients now admit only exact

@@ -126,8 +126,10 @@ def _parameter_count(value: Any, name: str) -> int:
         raise ValueError(f"{name} must be a non-negative integer")
     try:
         normalized = operator.index(value)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be a non-negative integer") from exc
+    except MemoryError:
+        raise
+    except Exception:
+        raise ValueError(f"{name} must be a non-negative integer") from None
     if normalized < 0:
         raise ValueError(f"{name} must be a non-negative integer")
     return int(normalized)
@@ -171,17 +173,27 @@ def _omega_tolerance(value: Any) -> float:
 
 def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
     """Materialize and normalize a bounded iterable of finite numeric values."""
+    iterable_message = f"{name} must be an iterable of numeric casewise values"
     if isinstance(value, (str, bytes)):
-        raise ValueError(f"{name} must be an iterable of numeric casewise values")
+        raise ValueError(iterable_message)
     try:
         iterator = iter(value)
-    except TypeError as exc:
-        raise ValueError(
-            f"{name} must be an iterable of numeric casewise values"
-        ) from exc
+    except MemoryError:
+        raise
+    except Exception:
+        raise ValueError(iterable_message) from None
 
     materialized: list[float] = []
-    for index, item in enumerate(iterator):
+    index = 0
+    while True:
+        try:
+            item = next(iterator)
+        except StopIteration:
+            break
+        except MemoryError:
+            raise
+        except Exception:
+            raise ValueError(iterable_message) from None
         if index >= MAX_CASEWISE_VALUES:
             raise ValueError(
                 f"{name} must contain at most {MAX_CASEWISE_VALUES} casewise values"
@@ -190,11 +202,14 @@ def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
             raise ValueError(f"{name}[{index}] must be a finite number")
         try:
             numeric = float(item)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(f"{name}[{index}] must be a finite number") from exc
+        except MemoryError:
+            raise
+        except Exception:
+            raise ValueError(f"{name}[{index}] must be a finite number") from None
         if not math.isfinite(numeric):
             raise ValueError(f"{name}[{index}] must be a finite number")
         materialized.append(numeric)
+        index += 1
     return tuple(materialized)
 
 
