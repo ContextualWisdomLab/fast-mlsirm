@@ -79,10 +79,14 @@ response nor a Strix narrative becomes numerical or merge authority.
    and `test_judge_text_and_usage_boundaries_reject_runtime_subclasses` cover
    overflow, conversion-hook, unhashable-mode, item-type, text, and usage
    boundary behavior.
-5. PR #778's Strix log records an initial NVIDIA NIM 429, a fallback-model
-   report, no structured vulnerability artifact, and the exact finding. The
-   finding is treated as an adjacent hardening signal, not as proof of integer
-   wraparound.
+5. PR #778's exact-head Strix run `31549881616`/job `93970141054` returned a
+   green `strix` CheckRun even though `gate-console.log` recorded NVIDIA NIM
+   429s, GitHub Models 410 retirement-brownout failures, repeated fail-closed
+   and no-report markers, and a generic report that admitted an incomplete AST
+   pass. The completed report is not clean security evidence because the
+   provider-failure path was accepted before structured provenance validation.
+   The central `.github` fix must land and this exact head must be rescanned;
+   the old green status is not merge evidence.
 6. The full Python and Rust test suites, targeted Ruff checks, and exact-head
    required checks must pass before this hardening is considered integrated.
 
@@ -178,8 +182,9 @@ record is parent `XR8LNVF5` with the 97-page PDF attachment `345PA99V`
 
 ## Follow-ups
 
-- Re-run PR #778's Strix workflow after this hardening and compare the exact
-  head SHA, provider status, structured artifact, and finding intersection.
+- Re-run PR #778's Strix workflow after the central trusted-gate hardening and
+  compare the exact head SHA, provider status, structured artifact, and finding
+  intersection; require a current-head report/provenance binding.
 - If a later scan reports a reproducible issue, create a superseding ADR or
   append a new evidence record with the reproducer and regression test.
 
