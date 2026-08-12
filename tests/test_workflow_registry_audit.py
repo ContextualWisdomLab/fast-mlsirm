@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -231,3 +232,23 @@ def test_audit_surfaces_permission_missing_and_server_failures(status):
 
     with pytest.raises(GitHubApiError, match=f"HTTP {status}"):
         audit_workflow_registry(api, REPO, observed_at=OBSERVED)
+
+
+def test_hourly_governance_publishes_workflow_registry_audit_read_only():
+    """The hourly evidence loop observes registry drift without mutation authority."""
+    workflow = (
+        Path(__file__).parents[1]
+        / ".github"
+        / "workflows"
+        / "hourly-pr-governance.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "actions: read" in workflow
+    assert "actions: write" not in workflow
+    assert "contents: write" not in workflow
+    assert "pull-requests: write" not in workflow
+    assert "python scripts/audit_workflow_registry.py" in workflow
+    assert "--repo ContextualWisdomLab/fast-mlsirm" in workflow
+    assert "workflow_registry_audit.json" in workflow
+    assert "scripts/audit_workflow_registry.py" in workflow
+    assert "tests/test_workflow_registry_audit.py" in workflow
