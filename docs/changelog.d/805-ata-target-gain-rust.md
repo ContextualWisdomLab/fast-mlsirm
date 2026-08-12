@@ -1,5 +1,7 @@
 # ATA target-gain Rust ownership
 
+## Changed
+
 - Moved result-affecting capped-shortfall target-information gains for automated
   test assembly from Python/NumPy into a bounded Rust PyO3 kernel.
 - Kept Python responsible for validated candidate/content/exposure orchestration
