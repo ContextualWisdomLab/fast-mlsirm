@@ -103,8 +103,8 @@ def test_empty_identifier_list_renders_explicit_state() -> None:
             empty_message="No boundary is available.",
         )
         == (
-            '<p class="empty-state" role="status" aria-atomic="true">'
-            "No boundary is available.</p>"
+            '<div class="empty-state" role="status" aria-atomic="true">'
+            "No boundary is available.</div>"
         )
     )
 

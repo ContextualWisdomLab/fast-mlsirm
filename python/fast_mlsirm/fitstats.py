@@ -635,61 +635,39 @@ def infit_outfit(
     mask: np.ndarray | None = None,
     eps_distance: float = 1e-8,
 ) -> dict[str, np.ndarray]:
-    """Per-item infit/outfit mean squares at the EAP estimates."""
+    """Per-item infit/outfit mean squares at the EAP estimates.
+
+    Production numerical ownership is the compiled Rust core
+    (``infit_outfit_stat``). Missing or incomplete cores fail closed.
+    """
     model = model.upper()
-    free_alpha = model not in {"MLSRM", "ULSRM"}
-    uses_space = model != "MIRT"
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
     )
     core = _core_module()
-    if core is not None and hasattr(core, "infit_outfit_stat"):
-        n_persons = y.shape[0]
-        n_dims = int(d_of_i.max()) + 1
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.infit_outfit_stat(
-            y.ravel(),
-            observed.ravel(),
-            int(n_persons),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.asarray(params.theta, dtype=np.float64).ravel(),
-            np.asarray(params.xi, dtype=np.float64).ravel(),
-        )
-        return {"infit": np.asarray(res["infit"]), "outfit": np.asarray(res["outfit"])}
-    a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
-    eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
-    if uses_space:
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi = np.asarray(params.xi)
-        zeta = np.asarray(params.zeta)
-        x_sq = np.einsum("ij,ij->i", xi, xi)
-        z_sq = np.einsum("ij,ij->i", zeta, zeta)
-        dist_sq = x_sq[:, None] + z_sq[None, :] - 2 * np.dot(xi, zeta.T)
-        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
-        eta = eta - math.exp(params.tau) * dist
-    p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
-    v = p * (1.0 - p)
-    resid2 = np.subtract(y, p)
-    np.square(resid2, out=resid2)
-    np.multiply(resid2, observed, out=resid2)
-    n_obs = np.maximum(observed.sum(axis=0), 1)
+    if core is None or not hasattr(core, "infit_outfit_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    n_persons = y.shape[0]
+    n_dims = int(d_of_i.max()) + 1
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.infit_outfit_stat(
+        y.ravel(),
+        observed.ravel(),
+        int(n_persons),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        np.asarray(params.theta, dtype=np.float64).ravel(),
+        np.asarray(params.xi, dtype=np.float64).ravel(),
+    )
+    return {"infit": np.asarray(res["infit"]), "outfit": np.asarray(res["outfit"])}
 
-    # Preserve the masked squared-residual numerator, then reuse its owned
-    # float64 buffer for the outfit division without a numeric mask copy.
-    resid2_sum = resid2.sum(axis=0)
-    infit_denominator = np.sum(v, axis=0, where=observed)
-    np.divide(resid2, v, out=resid2)
-    outfit = resid2.sum(axis=0) / n_obs
-    infit = resid2_sum / np.maximum(infit_denominator, 1e-12)
-    return {"infit": infit, "outfit": outfit}
 
 
 # --------------------------------------------------------------------------
@@ -1851,56 +1829,44 @@ def m2(
         )
 
     core = _core_module()
-    if core is not None and hasattr(core, "m2_stat"):
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.m2_stat(
-            np.where(observed0, y0, 0.0).ravel(),
-            observed0.ravel(),
-            int(y0.shape[0]),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            prior_mean,
-            prior_sd,
-            q_theta=int(q_theta),
-            xi_rule="gh",
-            q_xi=int(q_xi),
-        )
-        result = M2Result(
-            m2=float(res["m2"]),
-            df=float(res["df"]),
-            p_value=float(res["p_value"]),
-            rmsea2=float(res["rmsea2"]),
-            rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
-            rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
-            srmsr=float(res["srmsr"]),
-            null_m2=float(res["null_m2"]),
-            null_df=float(res["null_df"]),
-            cfi=float(res["cfi"]),
-            tli=float(res["tli"]),
-            n_moments=int(res["n_moments"]),
-            n_parameters=int(res["n_parameters"]),
-            n_complete=int(res["n_complete"]),
-        )
-    else:
-        result = _m2_numpy(
-            y0,
-            observed0,
-            d_of_i,
-            params,
-            model,
-            q_theta,
-            q_xi,
-            eps_distance,
-            prior_mean,
-            prior_sd,
-        )
+    if core is None or not hasattr(core, "m2_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.m2_stat(
+        np.where(observed0, y0, 0.0).ravel(),
+        observed0.ravel(),
+        int(y0.shape[0]),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        prior_mean,
+        prior_sd,
+        q_theta=int(q_theta),
+        xi_rule="gh",
+        q_xi=int(q_xi),
+    )
+    result = M2Result(
+        m2=float(res["m2"]),
+        df=float(res["df"]),
+        p_value=float(res["p_value"]),
+        rmsea2=float(res["rmsea2"]),
+        rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
+        rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
+        srmsr=float(res["srmsr"]),
+        null_m2=float(res["null_m2"]),
+        null_df=float(res["null_df"]),
+        cfi=float(res["cfi"]),
+        tli=float(res["tli"]),
+        n_moments=int(res["n_moments"]),
+        n_parameters=int(res["n_parameters"]),
+        n_complete=int(res["n_complete"]),
+    )
     if estimator == "mmle":
         return result
     result.estimator = estimator
