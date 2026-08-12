@@ -226,6 +226,18 @@ response nor a Strix narrative becomes numerical or merge authority.
     objective-reduction guard rather than accidentally passing through the
     gradient-norm guard. Stale extension artifacts are not evidence of a
     source regression, and a failed exact-head build must never be hidden.
+20. The exact-head Strix run for PR #778 at
+    `0fb9e466847325edfb32506d77bb615d3c65298f` (`31581202078`, job
+    `94064514313`, artifact `9136142983`) is not clean security evidence.
+    GitHub marked every job step successful because the trusted central `main`
+    workflow still neutralized a provider-unavailable gate exit. The console
+    evidence records NVIDIA NIM HTTP 429 rate limits, GitHub Models HTTP 410
+    retirement-brownout failures, and repeated fail-closed/no-report markers;
+    the job had no `Validate Strix report provenance` step and emitted no
+    `evidence-binding.json`. The structured NVIDIA fallback report therefore
+    cannot override the provider failure. Central `.github` PR #937 contains
+    the minimal fail-closed/provenance repair; after it integrates, rerun this
+    PR at the same exact head and accept only a clean bound artifact.
 
 ## Non-goals and claims not made
 
