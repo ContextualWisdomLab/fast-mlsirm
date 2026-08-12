@@ -552,12 +552,11 @@
   vocabulary and mark parallel-analysis control bounds and essay-report native
   dark-mode accents as ancestral after their integration.
 
-#### Retire competing hourly review-repair caller
+#### Multilevel hostile numeric callback rejection
 
-- Remove the repository-local hourly review-repair GitHub Actions caller so only
-  the organization single-writer control plane schedules mutation loops, matching
-  ADR-0013 continuous-execution governance after failed startup evidence for the
-  local caller.
+- Multilevel membership weights and AR(1) coefficients now admit only exact
+  built-in `int`/`float` scalars, rejecting booleans and caller-defined
+  conversion hooks before contract arithmetic.
 
 #### Diagnostics-report focus and contrast preservation
 
