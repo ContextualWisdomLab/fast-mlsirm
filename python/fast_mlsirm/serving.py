@@ -210,7 +210,10 @@ def _finite_number(x) -> bool:
     """
     if type(x) is bool or type(x) not in (int, float):
         return False
-    return math.isfinite(x)
+    try:
+        return math.isfinite(x)
+    except OverflowError:
+        return False
 
 
 
