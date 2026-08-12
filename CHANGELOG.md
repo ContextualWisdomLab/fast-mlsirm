@@ -565,11 +565,9 @@
   built-in `int`/`float` scalars, rejecting booleans and caller-defined
   conversion hooks before contract arithmetic.
 
-#### Item-bank DIF applicability evidence
+#### Scoring schema-version callback redaction
 
-- Calibration transitions accept either DIF evidence or explicit
-  `dif_not_applicable` evidence, forbid both at once, and keep other lifecycle
-  gates unchanged.
+- Assessment schema-version validation now requires an exact built-in `str` matching the wire version, rejecting hostile string subclasses before equality work so callback messages cannot leak into contract errors.
 
 #### Diagnostics-report focus and contrast preservation
 
