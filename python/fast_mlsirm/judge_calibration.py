@@ -483,7 +483,7 @@ def _calibration_concurrency(
         # already uses this same capability for its per-boundary calls.
         return 1
     try:
-        configured = getattr(judge, "_binary_threshold_concurrency")(case_count)
+        configured = judge._binary_threshold_concurrency(case_count)
     except Exception:  # noqa: BLE001 - optional capability discovery is fail-closed
         return 1
     if type(configured) is not int or configured < 1:
