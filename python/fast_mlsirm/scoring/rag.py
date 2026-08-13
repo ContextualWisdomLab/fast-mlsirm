@@ -8,7 +8,7 @@ LLM inference, metric arithmetic, thresholding, or truth adjudication.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import Any
@@ -65,63 +65,139 @@ class RAGPerturbationDirection(str, Enum):
     INCREASE = "increase"
 
 
+class RAGPerturbationConstructBasis(str, Enum):
+    """Whether cited primary sources directly align with the named construct."""
+
+    LITERATURE_ALIGNED_CONSTRUCT = "literature_aligned_construct"
+    MODEL_DESIGN_HYPOTHESIS = "model_design_hypothesis"
+
+
 _PERTURBATION_EXPECTATIONS = MappingProxyType(
     {
         RAGPerturbationKind.UNSUPPORTED_CLAIM: (
             "grounded_generation",
             RAGPerturbationDirection.DECREASE,
+            RAGPerturbationConstructBasis.LITERATURE_ALIGNED_CONSTRUCT,
         ),
         RAGPerturbationKind.EXPLICIT_CONTRADICTION: (
             "grounded_generation",
             RAGPerturbationDirection.DECREASE,
+            RAGPerturbationConstructBasis.LITERATURE_ALIGNED_CONSTRUCT,
         ),
         RAGPerturbationKind.IRRELEVANT_CONTEXT: (
             "retrieval_relevance",
             RAGPerturbationDirection.DECREASE,
+            RAGPerturbationConstructBasis.LITERATURE_ALIGNED_CONSTRUCT,
         ),
         RAGPerturbationKind.REQUIRED_EVIDENCE_REMOVAL: (
             "coverage_or_completeness_proxy",
             RAGPerturbationDirection.DECREASE,
+            RAGPerturbationConstructBasis.MODEL_DESIGN_HYPOTHESIS,
         ),
         RAGPerturbationKind.CITATION_TARGET_SWAP: (
             "citation_attribution",
             RAGPerturbationDirection.DECREASE,
+            RAGPerturbationConstructBasis.MODEL_DESIGN_HYPOTHESIS,
         ),
         RAGPerturbationKind.SEMANTIC_QUERY_PARAPHRASE: (
             "robustness",
             RAGPerturbationDirection.INVARIANT,
+            RAGPerturbationConstructBasis.MODEL_DESIGN_HYPOTHESIS,
         ),
         RAGPerturbationKind.STYLE_ONLY_REWRITE: (
             "robustness",
             RAGPerturbationDirection.INVARIANT,
+            RAGPerturbationConstructBasis.MODEL_DESIGN_HYPOTHESIS,
         ),
         RAGPerturbationKind.UNANSWERABLE_QUERY: (
             "answerability_and_abstention",
             RAGPerturbationDirection.INCREASE,
+            RAGPerturbationConstructBasis.MODEL_DESIGN_HYPOTHESIS,
         ),
     }
 )
 
+_RESPONSE_PERTURBATIONS = frozenset(
+    {
+        RAGPerturbationKind.UNSUPPORTED_CLAIM,
+        RAGPerturbationKind.EXPLICIT_CONTRADICTION,
+        RAGPerturbationKind.CITATION_TARGET_SWAP,
+        RAGPerturbationKind.STYLE_ONLY_REWRITE,
+    }
+)
+_RETRIEVAL_PERTURBATIONS = frozenset(
+    {
+        RAGPerturbationKind.IRRELEVANT_CONTEXT,
+        RAGPerturbationKind.REQUIRED_EVIDENCE_REMOVAL,
+    }
+)
+_QUERY_PERTURBATIONS = frozenset(
+    {
+        RAGPerturbationKind.SEMANTIC_QUERY_PARAPHRASE,
+        RAGPerturbationKind.UNANSWERABLE_QUERY,
+    }
+)
+_COMMON_REQUEST_FIELDS = (
+    "assessment_fingerprint",
+    "rubric_id",
+    "rubric_fingerprint",
+    "construct_id",
+    "response_format",
+    "granularity",
+    "respondent_id",
+    "task_id",
+    "task_family_id",
+    "occasion_id",
+    "criterion_ids",
+    "allowed_scores",
+    "schema_version",
+)
+_RAG_RELATION_METADATA_KEYS = frozenset(
+    {
+        "rag_evidence_regime",
+        "rag_candidate_visibility",
+        "rag_system_configuration_id",
+        "rag_system_configuration_fingerprint",
+        "rag_retrieval_run_fingerprint",
+        "rag_query_revision_fingerprint",
+    }
+)
+_RELATION_AXIS_METADATA_KEYS = frozenset(
+    {"rag_retrieval_run_fingerprint", "rag_query_revision_fingerprint"}
+)
+_RAG_PERTURBATION_ANCHOR_TOKEN = object()
+
 
 @dataclass(frozen=True)
 class RAGPerturbationAnchor(CanonicalContract):
-    """Source-free identity and expected direction for a controlled RAG perturbation.
+    """Verified identity and preregistered direction for one RAG perturbation.
 
-    The anchor binds two distinct governed scoring-request fingerprints to one
-    finite perturbation kind. ``expected_construct`` and ``expected_direction``
-    are package-derived preregistration metadata; they do not assert that an
-    observed system response actually moved in the expected direction.
+    The factory binds two canonical governed scoring requests and validates the
+    kind-specific changed axis before this source-free artifact is constructed.
+    ``construct_basis`` distinguishes constructs aligned with the cited RAGAS /
+    ARES dimensions from package-owned model-design hypotheses. Every expected
+    direction remains a preregistered hypothesis rather than an observed effect.
     """
 
     anchor_id: str
     baseline_request_fingerprint: str
     perturbed_request_fingerprint: str
+    perturbation_specification_fingerprint: str
+    perturbation_run_fingerprint: str
     perturbation_kind: RAGPerturbationKind
     expected_construct: str = field(init=False)
     expected_direction: RAGPerturbationDirection = field(init=False)
+    construct_basis: RAGPerturbationConstructBasis = field(init=False)
+    _anchor_token: InitVar[object | None] = None
 
-    def __post_init__(self) -> None:
-        """Normalize identity fields and derive immutable perturbation semantics."""
+    def __post_init__(self, _anchor_token: object | None) -> None:
+        """Reject direct construction and derive immutable perturbation semantics."""
+        if _anchor_token is not _RAG_PERTURBATION_ANCHOR_TOKEN:
+            raise assessment_error(
+                "unverified_rag_perturbation_anchor",
+                "$",
+                "use build_rag_perturbation_anchor",
+            )
         normalized_anchor_id = descriptive_identifier(
             self.anchor_id,
             "anchor_id",
@@ -137,6 +213,16 @@ class RAGPerturbationAnchor(CanonicalContract):
             "perturbed_request_fingerprint",
             "$.perturbed_request_fingerprint",
         )
+        normalized_specification = fingerprint(
+            self.perturbation_specification_fingerprint,
+            "perturbation_specification_fingerprint",
+            "$.perturbation_specification_fingerprint",
+        )
+        normalized_run = fingerprint(
+            self.perturbation_run_fingerprint,
+            "perturbation_run_fingerprint",
+            "$.perturbation_run_fingerprint",
+        )
         normalized_kind = enum_value(
             self.perturbation_kind,
             RAGPerturbationKind,
@@ -149,9 +235,9 @@ class RAGPerturbationAnchor(CanonicalContract):
                 "$.perturbed_request_fingerprint",
                 "baseline and perturbed request fingerprints must differ",
             )
-        expected_construct, expected_direction = _PERTURBATION_EXPECTATIONS[
-            normalized_kind
-        ]
+        expected_construct, expected_direction, construct_basis = (
+            _PERTURBATION_EXPECTATIONS[normalized_kind]
+        )
         object.__setattr__(self, "anchor_id", normalized_anchor_id)
         object.__setattr__(
             self,
@@ -163,9 +249,20 @@ class RAGPerturbationAnchor(CanonicalContract):
             "perturbed_request_fingerprint",
             normalized_perturbed,
         )
+        object.__setattr__(
+            self,
+            "perturbation_specification_fingerprint",
+            normalized_specification,
+        )
+        object.__setattr__(
+            self,
+            "perturbation_run_fingerprint",
+            normalized_run,
+        )
         object.__setattr__(self, "perturbation_kind", normalized_kind)
         object.__setattr__(self, "expected_construct", expected_construct)
         object.__setattr__(self, "expected_direction", expected_direction)
+        object.__setattr__(self, "construct_basis", construct_basis)
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical anchor content without the derived content digest."""
@@ -173,9 +270,14 @@ class RAGPerturbationAnchor(CanonicalContract):
             "anchor_id": self.anchor_id,
             "baseline_request_fingerprint": self.baseline_request_fingerprint,
             "perturbed_request_fingerprint": self.perturbed_request_fingerprint,
+            "perturbation_specification_fingerprint": (
+                self.perturbation_specification_fingerprint
+            ),
+            "perturbation_run_fingerprint": self.perturbation_run_fingerprint,
             "perturbation_kind": self.perturbation_kind.value,
             "expected_construct": self.expected_construct,
             "expected_direction": self.expected_direction.value,
+            "construct_basis": self.construct_basis.value,
         }
 
     @property
@@ -191,24 +293,252 @@ class RAGPerturbationAnchor(CanonicalContract):
         }
 
 
+def _canonical_rag_request(value: Any, name: str) -> ScoringRequest:
+    """Return one canonical RAG request with complete managed provenance."""
+    if not isinstance(value, ScoringRequest):
+        raise assessment_error(
+            f"invalid_{name}",
+            f"$.{name}",
+            f"{name} must be a ScoringRequest",
+        )
+    metadata = thaw_json_value(value.metadata)
+    if not isinstance(metadata, dict) or not (
+        _RAG_RELATION_METADATA_KEYS.issubset(metadata)
+    ):
+        raise assessment_error(
+            f"invalid_{name}",
+            f"$.{name}.metadata",
+            f"{name} must contain complete managed RAG provenance",
+        )
+    query_revision = fingerprint(
+        metadata["rag_query_revision_fingerprint"],
+        "rag_query_revision_fingerprint",
+        f"$.{name}.metadata.rag_query_revision_fingerprint",
+    )
+    if query_revision != value.task_revision_fingerprint:
+        raise assessment_error(
+            f"invalid_{name}",
+            f"$.{name}.metadata.rag_query_revision_fingerprint",
+            "RAG query revision must replay the shared task revision",
+        )
+    fingerprint(
+        metadata["rag_system_configuration_fingerprint"],
+        "rag_system_configuration_fingerprint",
+        f"$.{name}.metadata.rag_system_configuration_fingerprint",
+    )
+    fingerprint(
+        metadata["rag_retrieval_run_fingerprint"],
+        "rag_retrieval_run_fingerprint",
+        f"$.{name}.metadata.rag_retrieval_run_fingerprint",
+    )
+    descriptive_identifier(
+        metadata["rag_system_configuration_id"],
+        "rag_system_configuration_id",
+        f"$.{name}.metadata.rag_system_configuration_id",
+    )
+    enum_value(
+        metadata["rag_evidence_regime"],
+        RAGEvidenceRegime,
+        "rag_evidence_regime",
+        f"$.{name}.metadata.rag_evidence_regime",
+    )
+    enum_value(
+        metadata["rag_candidate_visibility"],
+        RAGCandidateVisibility,
+        "rag_candidate_visibility",
+        f"$.{name}.metadata.rag_candidate_visibility",
+    )
+    return value
+
+
+def _request_metadata(request: ScoringRequest) -> dict[str, Any]:
+    """Return mutable JSON metadata from one immutable scoring request."""
+    metadata = thaw_json_value(request.metadata)
+    if not isinstance(metadata, dict):  # pragma: no cover - sealed request invariant
+        raise assessment_error(
+            "invalid_rag_perturbation_request",
+            "$.metadata",
+            "RAG request metadata must be a mapping",
+        )
+    return metadata
+
+
+def _raise_relationship_error(message: str) -> None:
+    """Raise one stable kind-specific relationship failure."""
+    raise assessment_error(
+        "invalid_rag_perturbation_relationship",
+        "$.perturbed_request",
+        message,
+    )
+
+
+def _validate_common_request_provenance(
+    baseline: ScoringRequest,
+    perturbed: ScoringRequest,
+    baseline_metadata: Mapping[str, Any],
+    perturbed_metadata: Mapping[str, Any],
+) -> None:
+    """Reject pairs that differ outside controlled RAG treatment axes."""
+    if any(
+        getattr(baseline, field_name) != getattr(perturbed, field_name)
+        for field_name in _COMMON_REQUEST_FIELDS
+    ):
+        raise assessment_error(
+            "unrelated_rag_perturbation_requests",
+            "$.perturbed_request",
+            "requests must share assessment, rubric, system run, task, "
+            "and occasion provenance",
+        )
+    baseline_invariants = {
+        key: value
+        for key, value in baseline_metadata.items()
+        if key not in _RELATION_AXIS_METADATA_KEYS
+    }
+    perturbed_invariants = {
+        key: value
+        for key, value in perturbed_metadata.items()
+        if key not in _RELATION_AXIS_METADATA_KEYS
+    }
+    if baseline_invariants != perturbed_invariants:
+        raise assessment_error(
+            "unrelated_rag_perturbation_requests",
+            "$.perturbed_request.metadata",
+            "requests must share evidence, visibility, system, policy, "
+            "and split provenance",
+        )
+
+
+def _validate_perturbation_relationship(
+    baseline: ScoringRequest,
+    perturbed: ScoringRequest,
+    kind: RAGPerturbationKind,
+) -> None:
+    """Validate the exact governed request relation permitted for ``kind``."""
+    baseline_metadata = _request_metadata(baseline)
+    perturbed_metadata = _request_metadata(perturbed)
+    _validate_common_request_provenance(
+        baseline,
+        perturbed,
+        baseline_metadata,
+        perturbed_metadata,
+    )
+    if baseline.request_id == perturbed.request_id:
+        _raise_relationship_error(
+            "baseline and perturbed request identifiers must differ"
+        )
+
+    same_query = (
+        baseline.task_revision_fingerprint == perturbed.task_revision_fingerprint
+    )
+    same_retrieval = (
+        baseline_metadata["rag_retrieval_run_fingerprint"]
+        == perturbed_metadata["rag_retrieval_run_fingerprint"]
+    )
+    same_response = (
+        baseline.response_content_fingerprint
+        == perturbed.response_content_fingerprint
+    )
+
+    if kind in _RESPONSE_PERTURBATIONS:
+        if not same_query or not same_retrieval or same_response:
+            _raise_relationship_error(
+                "response perturbations must change only the governed response artifact"
+            )
+        if baseline.response_id == perturbed.response_id:
+            _raise_relationship_error(
+                "a changed response artifact requires a distinct response identifier"
+            )
+        return
+
+    if kind in _RETRIEVAL_PERTURBATIONS:
+        if not same_query or same_retrieval or not same_response:
+            _raise_relationship_error(
+                "retrieval perturbations must change only retrieval provenance"
+            )
+        if (
+            baseline.response_id != perturbed.response_id
+            or baseline.response_character_count != perturbed.response_character_count
+            or baseline.response_unit_count != perturbed.response_unit_count
+        ):
+            _raise_relationship_error(
+                "retrieval perturbations must preserve the exact governed "
+                "response artifact"
+            )
+        return
+
+    if kind in _QUERY_PERTURBATIONS:
+        if same_query:
+            _raise_relationship_error(
+                "query perturbations require a distinct governed query revision"
+            )
+        return
+
+    raise AssertionError(f"unhandled RAG perturbation kind: {kind}")
+
+
 def build_rag_perturbation_anchor(
     *,
     anchor_id: str,
-    baseline_request_fingerprint: str,
-    perturbed_request_fingerprint: str,
+    baseline_request: ScoringRequest,
+    perturbed_request: ScoringRequest,
+    perturbation_specification_fingerprint: str,
+    perturbation_run_fingerprint: str,
     perturbation_kind: RAGPerturbationKind | str,
 ) -> RAGPerturbationAnchor:
-    """Build one content-addressed controlled RAG perturbation anchor.
+    """Build one verified, source-free controlled RAG perturbation anchor.
 
-    The contract intentionally stores only bounded identities and package-owned
-    preregistration semantics. It does not accept raw query, context, response,
-    or source text and performs no scoring, retrieval, or truth adjudication.
+    Both inputs must be canonical governed requests. The factory validates
+    shared provenance and the kind-specific changed axis, then binds the pair
+    to an externally governed perturbation specification and execution run. It
+    stores only content-addressed identities, accepts no raw query, context,
+    response, or source text, and performs no scoring or truth adjudication.
     """
+    normalized_baseline = _canonical_rag_request(
+        baseline_request,
+        "baseline_request",
+    )
+    normalized_perturbed = _canonical_rag_request(
+        perturbed_request,
+        "perturbed_request",
+    )
+    normalized_specification = fingerprint(
+        perturbation_specification_fingerprint,
+        "perturbation_specification_fingerprint",
+        "$.perturbation_specification_fingerprint",
+    )
+    normalized_run = fingerprint(
+        perturbation_run_fingerprint,
+        "perturbation_run_fingerprint",
+        "$.perturbation_run_fingerprint",
+    )
+    normalized_kind = enum_value(
+        perturbation_kind,
+        RAGPerturbationKind,
+        "rag_perturbation_kind",
+        "$.perturbation_kind",
+    )
+    if (
+        normalized_baseline.request_fingerprint
+        == normalized_perturbed.request_fingerprint
+    ):
+        raise assessment_error(
+            "identical_rag_perturbation_requests",
+            "$.perturbed_request",
+            "baseline and perturbed requests must differ",
+        )
+    _validate_perturbation_relationship(
+        normalized_baseline,
+        normalized_perturbed,
+        normalized_kind,
+    )
     return RAGPerturbationAnchor(
         anchor_id=anchor_id,
-        baseline_request_fingerprint=baseline_request_fingerprint,
-        perturbed_request_fingerprint=perturbed_request_fingerprint,
-        perturbation_kind=perturbation_kind,
+        baseline_request_fingerprint=normalized_baseline.request_fingerprint,
+        perturbed_request_fingerprint=normalized_perturbed.request_fingerprint,
+        perturbation_specification_fingerprint=normalized_specification,
+        perturbation_run_fingerprint=normalized_run,
+        perturbation_kind=normalized_kind,
+        _anchor_token=_RAG_PERTURBATION_ANCHOR_TOKEN,
     )
 
 
@@ -392,6 +722,7 @@ __all__ = [
     "RAGCandidateVisibility",
     "RAGEvidenceRegime",
     "RAGPerturbationAnchor",
+    "RAGPerturbationConstructBasis",
     "RAGPerturbationDirection",
     "RAGPerturbationKind",
     "build_rag_perturbation_anchor",
