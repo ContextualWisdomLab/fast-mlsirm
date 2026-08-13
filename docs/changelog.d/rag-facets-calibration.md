@@ -9,4 +9,5 @@
   estimator or rely on legacy evaluation package implementations (e.g.
   RAGAS-style tooling) as the source of psychometric validity; all
   likelihood/threshold arithmetic is delegated to the existing Rust-backed MFRM
-  fit grounded in the primary many-facet Rasch measurement literature.
+  fit grounded in the primary many-facet Rasch measurement literature. Full
+  citations are in `docs/scoring_facets_calibration_handoff.md`.
