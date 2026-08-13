@@ -207,7 +207,8 @@ def collect_workflow_registry(
             raise RuntimeError("workflow registry returned more records than total_count")
         page += 1
 
-    assert expected_total is not None
+    if expected_total is None:
+        raise RuntimeError("workflow registry pagination produced no pages")
     return workflows, {
         "per_page": page_size,
         "total_count": expected_total,
