@@ -67,11 +67,21 @@ from .item_bank import ItemBankRelease as ItemBankRelease
 from .item_bank import ItemLifecycleState as ItemLifecycleState
 from .item_bank import build_item_bank_entry as build_item_bank_entry
 from .item_bank import build_item_bank_release as build_item_bank_release
+from .item_screening import CandidateScreeningResult as CandidateScreeningResult
+from .item_screening import ItemScreeningFinding as ItemScreeningFinding
+from .item_screening import ScreeningDimension as ScreeningDimension
+from .item_screening import ScreeningStatus as ScreeningStatus
+from .item_screening import (
+    build_candidate_screening_result as build_candidate_screening_result,
+)
+from .item_screening import (
+    build_item_screening_finding as build_item_screening_finding,
+)
 
 # Preserve the pinned star-import contract. Execution, authorization,
-# calibration, and item-bank contracts remain explicit package attributes
-# imported by their documented names, but are not added to ``__all__`` until
-# the next public-surface version bump.
+# calibration, item-bank, and candidate-screening contracts remain explicit
+# package attributes imported by their documented names, but are not added to
+# ``__all__`` until the next public-surface version bump.
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",
