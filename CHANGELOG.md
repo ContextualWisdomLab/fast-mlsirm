@@ -41,6 +41,14 @@
 - Added separate random-intercept/slope and discrete occasion-step stationary AR(1) state specifications with independently controlled lagged-response dependence. Irregular millisecond offsets remain provenance only; continuous-time or interval-adjusted transitions require a later explicit Rust contract.
 - Added realistic contract and adversarial tests, an MSA RFC, staged implementation plan, and APA 7 doctoring while reserving all likelihood, integration, optimization, uncertainty, multithreading, GPU work, and true-parameter recovery for future Rust cores.
 
+#### Rust-owned sparse weighted contextual-effects predictor
+
+- Added `mlsirm_core::multilevel::weighted_contextual_effect`: the contextual term `sum_h w_ph u_h` of the multilevel linear predictor (Browne, Goldstein, & Rasbash, 2001) over a sparse CSR-style cross-classified multiple-membership design. Ordinary nesting is the one-hot special case (`w_ph = 1` for exactly one edge per dimension), not a separate code path.
+- Deterministic regardless of edge order within an observation, observation order, or worker count: each row is summed in ascending context-index order and rows are independent, backed by a bounded manual `std::thread::scope` worker pool (no new dependency).
+- Added one-hot-nesting-parity, weighted-membership, cross-classified-dimension, permutation-invariance (edge order and row order), and worker-count-determinism Rust unit tests, plus fail-closed validation of malformed CSR offsets, out-of-range context indices, and non-finite/negative weights.
+- Added a `_multilevel_core` PyO3 extension module (dual-`PyInit_*` pattern, matching bifactor/rotation/rating-range) exposing `weighted_contextual_effect` as a marshal-only numpy binding, plus `fast_mlsirm.multilevel.weighted_contextual_effect`, which marshals a validated `ContextMembershipDesign` and a per-context effect mapping into the Rust call and back.
+- Reserves the Bayesian/MCMC estimation of the random effects `u_h` themselves, longitudinal state transitions, uncertainty, GPU batch path, and fairness/DIF work for the later staged PRs in issue #565.
+
 #### Exact-value tooltips and print optimization for essay HTML reports
 
 - Supplemental native `title` tooltips exposing unrounded exact float representations on formatted cells in essay score HTML reports.
@@ -581,6 +589,18 @@
 #### Scoring schema-version callback redaction
 
 - Assessment schema-version validation now requires an exact built-in `str` matching the wire version, rejecting hostile string subclasses before equality work so callback messages cannot leak into contract errors.
+
+#### Item-bank DIF applicability evidence
+
+- Calibration transitions accept either DIF evidence or explicit
+  `dif_not_applicable` evidence, forbid both at once, and keep other lifecycle
+  gates unchanged.
+
+#### Serving redundant parameter integrity
+
+- Serving-bundle validation fails closed when exported redundant slope/distance-weight
+  fields contradict canonical log-scale parameters, and admits only exact built-in
+  numeric scalars so hostile conversion hooks cannot execute during load/score.
 
 #### Diagnostics-report focus and contrast preservation
 
