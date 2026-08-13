@@ -67,7 +67,6 @@ graded scores*. *Psychometrika, 34*(Suppl. 1), 1–97.
 <https://doi.org/10.1007/BF03372160>. The Psychometric Society reproduction is
 linked from ADR-0014 but remains citation-only because its accessible PDF does
 not state a redistribution license.
-
 Iannario, M., Monti, A. C., & Scalera, P. (2022). *The number of response
 categories in ordered response models*. *The International Journal of
 Biostatistics, 18*(2), 593–611. <https://doi.org/10.1515/ijb-2021-0013>.
