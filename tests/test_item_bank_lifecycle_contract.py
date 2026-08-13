@@ -339,3 +339,10 @@ def test_retired_state_is_terminal_and_decisions_cannot_be_rewritten() -> None:
         "transition_decision_changed",
         lambda: item_bank.validate_item_bank_transition(active, suspended),
     )
+
+
+def test_transition_validator_is_explicit_package_attribute() -> None:
+    """The validator is reachable through the documented scoring namespace."""
+    import fast_mlsirm.scoring as scoring
+
+    assert scoring.validate_item_bank_transition is item_bank.validate_item_bank_transition
