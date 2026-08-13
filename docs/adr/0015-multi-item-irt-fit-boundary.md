@@ -74,15 +74,23 @@ without this gate.
    thresholds, and fails the complete comparison on malformed or
    non-monotone output. The method is bounded at 64 provider calls per result,
    is not the default, and must record its call count, latency, usage, parse
-   status, and category row alongside direct/cumulative results.
+   status, and category row alongside direct/cumulative results. When the
+   injected contextual-orchestrator exposes its already-bounded
+   `client.local_concurrency`, independent boundary calls may run concurrently
+   through that limit; otherwise the adapter remains sequential. Output order
+   is deterministic and monotonicity is validated only after all returned
+   boundaries are assembled.
 
 ## Implementation Plan
 
 - `python/fast_mlsirm/llm_judge.py`: keep direct and cumulative methods
   compatible, add the bounded binary-threshold method, and derive only from
-  strict Boolean boundary responses.
+  strict Boolean boundary responses. Reuse an exposed contextual-orchestrator
+  local-concurrency bound for independent boundary calls without adding a
+  provider client or a fallback transport.
 - `tests/test_llm_judge.py`: cover call decomposition, weighted category/IRT
-  projection, malformed/non-monotone responses, and the 64-call resource cap.
+  projection, malformed/non-monotone responses, bounded gateway concurrency,
+  and the 64-call resource cap.
 - `README.md` and this ADR: document the method as calibration-only and retain
   the no-keyword/no-positional-repair boundary.
 - `contextual-orchestrator/docs/benchmarks/` and ADR 0006/0008: record paired
@@ -112,6 +120,8 @@ without this gate.
   it does not infer a positive bias from a single K or from keyword matches.
 - Binary-threshold calibration never uses keywords, category positions, or
   silent output repair; an unparseable boundary invalidates that comparison.
+  Concurrent boundary calls are still bounded by contextual-orchestrator and
+  retain request order in the evidence record.
 
 ## Consequences and trade-offs
 
@@ -159,6 +169,7 @@ format changes, and violates the fail-closed judge contract.
 | A fresh 2026-08-13 contextual-orchestrator/MLX K sweep produced valid two-item rows but changed criterion categories as K increased (`(1,0)`, `(2,0)`, `(4,0)`, `(6,2)` for K `2,3,5,7`) from one person | Retain the complete paired observation as calibration evidence, require multiple persons and declared-category occupancy before readiness/IRT interpretation, and do not infer a positive-bias law from the one-person shape smoke | Observed; calibration remains required |
 | A fresh two-case 3B MLX probe through contextual-orchestrator produced direct scores of `0.5 -> 1.0 -> 1.0` for the safe case and `0.0 -> 0.0 -> 0.3333` for the unsafe case at K `2,5,7`; cumulative thresholds parsed only at K=5 and failed JSON/monotonicity at K=2/7 | Retain every result and failure in the calibration denominator; do not promote direct or cumulative to an unbiased default. Add an opt-in bounded binary-threshold decomposition, compare its extra calls/tokens against paired human/gold anchors, and keep production IRT claims blocked until replicated. | Observed 2026-08-14; binary-threshold method implemented as experimental, calibration remains required |
 | The binary-threshold follow-up made each boundary a Boolean call, but the safe case still failed monotonicity at K=5/7 while the unsafe case parsed at score `0.0` with 8/12 calls and `2,606/3,940` tokens | Keep the method fail-closed and experimental; treat its higher call/latency budget and semantic under-recognition as measured trade-offs, not as bias removal. Do not short-circuit or synthesize higher categories without an explicit ordinal measurement design and held-out gold evidence. | Observed 2026-08-14; follow-up calibration required |
+| Binary-threshold boundaries were independent but were previously issued sequentially, making K=7 two-criterion calibration a long serial path | Reuse the injected contextual-orchestrator `client.local_concurrency` as a bounded executor limit; preserve deterministic request order, aggregate trace/usage, and fail closed after complete validation. Keep generic injected orchestrators sequential. | Implemented on current exact follow-up; targeted `58 passed`, full `3630 passed` after native extension build; live K=5/K=7 MLX probe retained with parse/failure and latency evidence |
 | K/order/framing perturbations can change judge scores | Use randomized paired perturbations, human/gold anchors, category occupancy, and parse/provider denominators; never infer a universal positive-K law | Required next |
 | A live cumulative-threshold call through contextual-orchestrator parsed into the valid two-item row `(4,0)` but assigned `risk_awareness=0` despite explicit rollback-rehearsal evidence in the answer, while `evidence_quality=4` | Treat valid schema and semantic item accuracy as separate outcomes; retain the miss with trace/usage metadata, add item-level human/gold anchors and balanced held-out recall checks, and do not keyword-match or coerce a replacement category | Observed 2026-08-13; semantic calibration remains required |
 | Fast PR #816 was moved from Draft to Ready, then updated with base `origin/main` commit `3d1eab5` in merge head `b3bbeb0431453b07df948714aa08415b031f88af`; the exact merge head passed the full suite (`3630 passed, 2 warnings`) after supplying the current compiled PyO3 extension in the detached verification tree | Keep the base-update evidence separate from remote CI: preserve the native-extension build/preflight contract, rerun exact-head checks after the docs follow-up, and do not treat local full-suite success as independent approval or Strix evidence | Observed 2026-08-13; remote checks and independent review remain required |

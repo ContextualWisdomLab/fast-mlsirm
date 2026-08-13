@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
@@ -49,6 +51,27 @@ class _SequencedOrchestrator:
             "answer": next(self.answers),
             "trace": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}],
         }
+
+
+class _ParallelOrchestrator(_SequencedOrchestrator):
+    def __init__(self, answers):
+        super().__init__(answers)
+        self.client = SimpleNamespace(local_concurrency=2)
+        self.barrier = threading.Barrier(2)
+        self._lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def complete(self, messages, mode="auto"):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            self.barrier.wait(timeout=2)
+            return super().complete(messages, mode)
+        finally:
+            with self._lock:
+                self.active -= 1
 
 
 CRITERIA = [
@@ -384,6 +407,20 @@ def test_binary_threshold_judgment_uses_independent_boolean_boundaries() -> None
         "completion_tokens": 4,
         "total_tokens": 8,
     }
+
+
+def test_binary_threshold_reuses_bounded_gateway_concurrency() -> None:
+    payload = json.dumps({"meets_threshold": True, "rationale": "supported"})
+    orchestrator = _ParallelOrchestrator([payload, payload])
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=[CRITERIA[0]],
+        category_count=3,
+        category_method="binary_threshold",
+    )
+    assert result.score == 1.0
+    assert orchestrator.peak == 2
 
 
 def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
