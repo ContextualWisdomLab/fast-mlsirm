@@ -90,9 +90,25 @@ def govern_factor_retention(
     testlet, faceted, or latent-space structure.
     """
 
+    iterable_message = "evidence must be an iterable of FactorRetentionEvidence"
+    try:
+        iterator = iter(evidence)
+    except MemoryError:
+        raise
+    except Exception:
+        raise ValueError(iterable_message) from None
+
     records: list[FactorRetentionEvidence] = []
     seen_methods: set[FactorRetentionMethod] = set()
-    for record in evidence:
+    while True:
+        try:
+            record = next(iterator)
+        except StopIteration:
+            break
+        except MemoryError:
+            raise
+        except Exception:
+            raise ValueError(iterable_message) from None
         if not isinstance(record, FactorRetentionEvidence):
             raise TypeError("evidence entries must be FactorRetentionEvidence")
         if record.method in seen_methods:
