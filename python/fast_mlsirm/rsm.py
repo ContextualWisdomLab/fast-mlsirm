@@ -59,7 +59,7 @@ def fit_rsm(
             *Psychometrika, 43*(4), 561-573. https://doi.org/10.1007/BF02293814
     """
     if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
-        raise ValueError("n_cat must be an integer >= 2")
+        raise TypeError("n_cat must be an integer >= 2")
     if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
         raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
     if q_theta not in {7, 11, 15, 21, 31, 41}:

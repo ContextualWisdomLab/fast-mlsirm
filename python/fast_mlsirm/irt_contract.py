@@ -110,7 +110,7 @@ def validate_irt_experiment_readiness(
         if not isinstance(value, (int, np.integer)) or isinstance(
             value, (bool, np.bool_)
         ):
-            raise ValueError(f"{name} must be an integer >= {minimum}")
+            raise TypeError(f"{name} must be an integer >= {minimum}")
         normalized = int(value)
         if normalized < minimum:
             raise ValueError(f"{name} must be at least {minimum}")
@@ -231,7 +231,7 @@ def validate_irt_experiment_readiness(
     return matrix
 
 
-def fit_irt_experiment(
+def fit_irt_experiment(  # noqa: UP047  # PEP 695 syntax would break Python 3.10 support.
     fit_callable: Callable[..., _FitResultT],
     responses: Iterable[Iterable[float]] | np.ndarray,
     item_type: IRTItemType,
@@ -283,12 +283,12 @@ def _normalize_experiment_responses(
 
 
 __all__ = [
-    "IRTItemType",
     "MIN_FACTOR_ANCHOR_ITEMS",
     "MIN_IRT_ITEMS",
     "MIN_IRT_PERSONS",
     "MIN_ITEM_DISTINCT_VALUES",
     "MIN_OBSERVED_PER_ITEM",
+    "IRTItemType",
     "fit_irt_experiment",
     "validate_irt_experiment_readiness",
     "validate_irt_response_matrix",

@@ -6,19 +6,18 @@ import re
 
 import numpy as np
 import pytest
-
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit as fit_binary
 from fast_mlsirm.grm import fit_grm
-from fast_mlsirm.polytomous import fit_polytomous
-from fast_mlsirm.rsm import fit_rsm
-from fast_mlsirm.twopl import fit_2pl
-from fast_mlsirm.models import confirmatory
 from fast_mlsirm.irt_contract import (
     fit_irt_experiment,
     validate_irt_experiment_readiness,
     validate_irt_response_matrix,
 )
+from fast_mlsirm.models import confirmatory
+from fast_mlsirm.polytomous import fit_polytomous
+from fast_mlsirm.rsm import fit_rsm
+from fast_mlsirm.twopl import fit_2pl
 
 
 def test_dichotomous_contract_requires_multiple_items() -> None:
@@ -242,7 +241,7 @@ def test_fit_irt_experiment_reports_configured_distinct_value_threshold() -> Non
 
 def test_irt_experiment_readiness_rejects_unsafe_controls_and_factor_shapes() -> None:
     matrix = [[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]]
-    with pytest.raises(ValueError, match="min_items_per_factor"):
+    with pytest.raises(TypeError, match="min_items_per_factor"):
         validate_irt_experiment_readiness(
             matrix,
             "dichotomous",

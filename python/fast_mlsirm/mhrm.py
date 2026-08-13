@@ -165,7 +165,7 @@ def fit_mhrm(
     burn_in_int = _finite_int(burn_in, "burn_in")
     mh_steps_int = _finite_int(mh_steps, "mh_steps")
     if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
-        raise ValueError("seed must be a non-negative integer")
+        raise TypeError("seed must be a non-negative integer")
     seed_int = int(seed)
     if not 0 <= seed_int < 2**64:
         raise ValueError("seed must be in [0, 2**64)")

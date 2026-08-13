@@ -6,10 +6,9 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-
+from fast_mlsirm.irt_contract import fit_irt_experiment
 from fast_mlsirm.mhrm import MhrmFit, fit_mhrm
 from fast_mlsirm.models import confirmatory
-from fast_mlsirm.irt_contract import fit_irt_experiment
 
 
 def _binary(seed=0, n_persons=60, n_items=6):
@@ -26,7 +25,7 @@ def _poly(n_cat=3, seed=1, n_persons=60, n_items=6):
 
 
 def _short(**kw):
-    base = dict(max_cycles=40, burn_in=10, mh_steps=2)
+    base = {"max_cycles": 40, "burn_in": 10, "mh_steps": 2}
     base.update(kw)
     return base
 
@@ -104,9 +103,10 @@ def test_fit_mhrm_direct_all_missing_keeps_low_level_path(monkeypatch):
 
 
 def test_fit_mhrm_requires_rust_core():
-    with patch("fast_mlsirm.fitstats._core_module", return_value=None):
-        with pytest.raises(RuntimeError):
-            fit_mhrm(_binary(), 1)
+    with patch("fast_mlsirm.fitstats._core_module", return_value=None), pytest.raises(
+        RuntimeError
+    ):
+        fit_mhrm(_binary(), 1)
 
 
 def test_fit_mhrm_rejects_non_2d():
@@ -127,9 +127,9 @@ def test_fit_mhrm_rejects_non_integer_cycle_counts():
 
 
 def test_fit_mhrm_rejects_bad_seed():
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         fit_mhrm(_binary(), 1, seed=True)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         fit_mhrm(_binary(), 1, seed=1.5)
     with pytest.raises(ValueError):
         fit_mhrm(_binary(), 1, seed=-1)

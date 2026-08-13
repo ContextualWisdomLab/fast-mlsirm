@@ -13,7 +13,6 @@ from importlib import import_module
 
 import numpy as np
 import pytest
-
 from fast_mlsirm import FitConfig, fit
 from fast_mlsirm import diagnostics as diag
 from fast_mlsirm.diagnostics import (

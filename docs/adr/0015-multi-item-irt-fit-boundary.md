@@ -147,6 +147,7 @@ format changes, and violates the fail-closed judge contract.
 | IRT item-variation errors hardcoded two categories and called an item constant even when a caller configured another distinct-value threshold | Report the configured threshold and observed distinct count, describe the actual insufficiency, and update regex tests without changing model behavior | Implemented on current head; exact-head review follow-up required |
 | The low-level all-missing MH-RM path was not directly covered while the production boundary correctly rejects it as unready | Preserve the diagnostic fitter's existing low-level behavior with a stub-core regression, while keeping `fit_irt_experiment` fail-closed on insufficient observations | Implemented on current head; exact-head review follow-up required |
 | Exact-head review found raw-regex lint warnings, an unsorted `__all__`, and a missing citation paragraph boundary | Fix the minimal documentation/test hygiene issues, keep the public export set unchanged, and rerun the targeted suite before the next review cycle | Implemented on current head; exact-head review follow-up required |
+| Strict Ruff review also classified invalid readiness controls, MH-RM seeds, and RSM category-count types as type errors rather than value errors | Raise `TypeError` for those invalid Python types, retain `ValueError` for numerically invalid values, and keep regression tests aligned with the public fail-closed contract | Implemented on current working tree; remote exact-head review follow-up required |
 
 ## References
 
