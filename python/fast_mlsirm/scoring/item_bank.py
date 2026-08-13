@@ -35,6 +35,42 @@ class ItemLifecycleState(str, Enum):
     RETIRED = "retired"
 
 
+_ALLOWED_ITEM_TRANSITIONS = {
+    ItemLifecycleState.DRAFT: frozenset({ItemLifecycleState.AUDITED}),
+    ItemLifecycleState.AUDITED: frozenset({ItemLifecycleState.SCREENED}),
+    ItemLifecycleState.SCREENED: frozenset({ItemLifecycleState.PILOTING}),
+    ItemLifecycleState.PILOTING: frozenset({ItemLifecycleState.CALIBRATED}),
+    ItemLifecycleState.CALIBRATED: frozenset({ItemLifecycleState.APPROVED}),
+    ItemLifecycleState.APPROVED: frozenset({ItemLifecycleState.ACTIVE}),
+    ItemLifecycleState.ACTIVE: frozenset(
+        {ItemLifecycleState.SUSPENDED, ItemLifecycleState.RETIRED}
+    ),
+    ItemLifecycleState.SUSPENDED: frozenset(
+        {ItemLifecycleState.ACTIVE, ItemLifecycleState.RETIRED}
+    ),
+    ItemLifecycleState.RETIRED: frozenset(),
+}
+_ITEM_TRANSITION_PROVENANCE_FIELDS = (
+    "entry_id",
+    "item_id",
+    "item_version",
+    "rubric_fingerprint",
+    "blueprint_fingerprint",
+    "generation_contract_fingerprint",
+    "item_content_fingerprint",
+)
+_ITEM_TRANSITION_EVIDENCE_FIELDS = (
+    "audit_evidence_fingerprints",
+    "screening_result_fingerprints",
+    "pilot_assignment_fingerprints",
+    "calibration_evidence_fingerprints",
+)
+_ITEM_TRANSITION_DECISION_FIELDS = (
+    "approval_decision_fingerprint",
+    "retirement_decision_fingerprint",
+)
+
+
 def _optional_digest(value: Any, name: str) -> str | None:
     """Validate one optional SHA-256 provenance identity."""
     return None if value is None else fingerprint(value, name)
@@ -219,6 +255,67 @@ class ItemBankEntry(CanonicalContract):
             "entry_handle": self.entry_handle,
             "entry_fingerprint": self.entry_fingerprint,
         }
+
+
+def validate_item_bank_transition(
+    previous: ItemBankEntry,
+    successor: ItemBankEntry,
+) -> None:
+    """Validate one append-only lifecycle transition between immutable snapshots.
+
+    Lifecycle changes are state transitions, not item edits. The successor must
+    bind the exact predecessor fingerprint, follow an allowed state-machine
+    edge, retain the same logical item/version and interpretation-bearing
+    provenance, preserve every already-recorded evidence fingerprint, and keep
+    prior approval/retirement decisions immutable. Content or rubric changes
+    therefore require a new item version instead of being hidden inside a
+    lifecycle advance.
+    """
+    if not isinstance(previous, ItemBankEntry) or not isinstance(
+        successor, ItemBankEntry
+    ):
+        raise assessment_error(
+            "invalid_item_bank_transition_entry",
+            "$",
+            "previous and successor must be verified ItemBankEntry values",
+        )
+    if successor.predecessor_entry_fingerprint != previous.entry_fingerprint:
+        raise assessment_error(
+            "transition_predecessor_mismatch",
+            "$.predecessor_entry_fingerprint",
+            "successor must bind the exact predecessor entry fingerprint",
+        )
+    if successor.lifecycle_state not in _ALLOWED_ITEM_TRANSITIONS[previous.lifecycle_state]:
+        raise assessment_error(
+            "invalid_item_bank_transition",
+            "$.lifecycle_state",
+            f"{previous.lifecycle_state.value} cannot transition to "
+            f"{successor.lifecycle_state.value}",
+        )
+    for name in _ITEM_TRANSITION_PROVENANCE_FIELDS:
+        if getattr(successor, name) != getattr(previous, name):
+            raise assessment_error(
+                "transition_provenance_changed",
+                f"$.{name}",
+                "lifecycle transition cannot rewrite item/version provenance",
+            )
+    for name in _ITEM_TRANSITION_EVIDENCE_FIELDS:
+        previous_evidence = set(getattr(previous, name))
+        successor_evidence = set(getattr(successor, name))
+        if not previous_evidence.issubset(successor_evidence):
+            raise assessment_error(
+                "transition_evidence_regression",
+                f"$.{name}",
+                "lifecycle transition cannot remove cumulative governance evidence",
+            )
+    for name in _ITEM_TRANSITION_DECISION_FIELDS:
+        previous_decision = getattr(previous, name)
+        if previous_decision is not None and getattr(successor, name) != previous_decision:
+            raise assessment_error(
+                "transition_decision_changed",
+                f"$.{name}",
+                "lifecycle transition cannot rewrite an existing governance decision",
+            )
 
 
 @dataclass(frozen=True)
