@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 
 import pytest
+from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -59,6 +60,18 @@ def _category_payload():
     })
 
 
+def _threshold_payload(thresholds=None):
+    return json.dumps({
+        "score": 0.0,
+        "accepted": True,
+        "rationale": "The ordered evidence supports separate cumulative thresholds.",
+        "criterion_thresholds": thresholds or {
+            "task_alignment": [True, True, True, True],
+            "factual_support": [True, False, False, False],
+        },
+    })
+
+
 def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     orchestrator = _FakeOrchestrator(_payload())
     result = ContextualOrchestratorJudge(orchestrator).judge(
@@ -92,6 +105,18 @@ def test_judge_rejects_malformed_decisions_and_derives_acceptance() -> None:
         criteria=CRITERIA,
     )
     assert result.accepted is True
+
+
+@pytest.mark.parametrize("accepted", [0, 1, "true", None])
+def test_judge_rejects_non_boolean_advisory_acceptance(accepted) -> None:
+    with pytest.raises(JudgeFormatError, match="accepted must be a boolean"):
+        ContextualOrchestratorJudge(
+            _FakeOrchestrator(_payload(accepted=accepted))
+        ).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
 
 
 def test_judge_rejects_wrapped_or_fenced_json() -> None:
@@ -183,6 +208,8 @@ def test_irt_projection_rejects_malformed_result_mappings() -> None:
             criterion_categories=[0, 1],
             category_count=2,
         ).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="item_type"):
+        result.to_irt_row(item_type=[])
 
 
 def test_criteria_limit_is_enforced_during_iteration() -> None:
@@ -229,6 +256,91 @@ def test_category_judgment_derives_ordered_scores_and_irt_items() -> None:
     assert "category 4" in prompt
 
 
+def test_cumulative_threshold_judgment_derives_monotone_polytomous_items() -> None:
+    orchestrator = _FakeOrchestrator(_threshold_payload())
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=5,
+        category_method="cumulative_threshold",
+    )
+
+    assert result.category_method == "cumulative_threshold"
+    assert dict(result.criterion_categories) == {
+        "factual_support": 1,
+        "task_alignment": 4,
+    }
+    assert result.score == 0.625
+    assert result.accepted is False
+    assert result.to_dict()["category_method"] == "cumulative_threshold"
+    row = result.to_irt_row()
+    assert row == (1, 4)
+    matrix = validate_irt_response_matrix([row], "polytomous", n_categories=5)
+    assert matrix.shape == (1, 2)
+    prompt = orchestrator.calls[0][0][0]["content"]
+    assert "criterion_thresholds" in prompt
+    assert "cumulative thresholds" in prompt
+    assert "must be monotone" in prompt
+    assert "K-way choice" in prompt
+
+
+@pytest.mark.parametrize(
+    ("thresholds", "match"),
+    [
+        (
+            {"task_alignment": [True, False, True, False], "factual_support": [False] * 4},
+            "monotone",
+        ),
+        (
+            {"task_alignment": [True, 1, False, False], "factual_support": [False] * 4},
+            "boolean",
+        ),
+        (
+            {"task_alignment": [True, True], "factual_support": [False] * 4},
+            "boolean array",
+        ),
+    ],
+)
+def test_cumulative_threshold_rejects_malformed_thresholds(thresholds, match) -> None:
+    with pytest.raises(JudgeFormatError, match=match):
+        ContextualOrchestratorJudge(
+            _FakeOrchestrator(_threshold_payload(thresholds))
+        ).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=5,
+            category_method="cumulative_threshold",
+        )
+
+
+def test_cumulative_threshold_requires_explicit_category_count() -> None:
+    with pytest.raises(ValueError, match="explicit category_count"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_method="cumulative_threshold",
+        )
+
+
+@pytest.mark.parametrize("category_method", ["unknown", [], {}])
+def test_judge_rejects_unknown_category_method(category_method) -> None:
+    with pytest.raises(ValueError, match="category_method"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_method=category_method,
+        )
+
+
+def test_judge_rejects_unhashable_mode_before_membership() -> None:
+    with pytest.raises(ValueError, match="mode must be"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload()), mode=[])
+
+
 def test_category_judgment_rejects_non_integral_categories() -> None:
     payload = json.dumps({
         "score": 0.5,
@@ -245,6 +357,40 @@ def test_category_judgment_rejects_non_integral_categories() -> None:
         )
 
 
+def test_category_count_and_category_values_reject_runtime_subclasses() -> None:
+    class _ForgedInt(int):
+        def __le__(self, other):
+            return True
+
+        def __ge__(self, other):
+            return True
+
+    judge = ContextualOrchestratorJudge(_FakeOrchestrator(_category_payload()))
+    for value in (True, 1.0, 65, 10**1000, _ForgedInt(10**1000)):
+        with pytest.raises(ValueError, match="category_count must be an integer"):
+            judge.judge(
+                task="task",
+                answer="answer",
+                criteria=CRITERIA,
+                category_count=value,
+            )
+
+    result = judge.judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=5,
+    )
+    with pytest.raises(JudgeFormatError, match="criterion_categories"):
+        replace(
+            result,
+            criterion_categories={
+                "task_alignment": _ForgedInt(10**1000),
+                "factual_support": 1,
+            },
+        ).to_irt_row()
+
+
 def test_category_judgment_rejects_malformed_top_level_score() -> None:
     payload = json.dumps({
         "score": {"factual_support": 0.8},
@@ -259,6 +405,92 @@ def test_category_judgment_rejects_malformed_top_level_score() -> None:
             criteria=CRITERIA,
             category_count=2,
         )
+
+
+def test_judge_rejects_overflowing_and_runtime_subclass_scores() -> None:
+    class _HookedFloat(float):
+        invoked = False
+
+        def __float__(self):
+            type(self).invoked = True
+            return super().__float__()
+
+    overflowing = json.dumps({
+        "score": 10**1000,
+        "accepted": True,
+        "rationale": "unsupported numeric shape",
+        "criterion_scores": {"task_alignment": 0.8, "factual_support": 0.8},
+    })
+    with pytest.raises(JudgeFormatError, match="score must be a number"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(overflowing)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+    subclass_score = _HookedFloat(0.8)
+    result = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    with pytest.raises(JudgeFormatError, match="criterion_scores"):
+        replace(
+            result,
+            criterion_scores={
+                "task_alignment": subclass_score,
+                "factual_support": 0.8,
+            },
+        ).to_irt_row(item_type="dichotomous")
+    assert _HookedFloat.invoked is False
+
+
+def test_judge_text_and_usage_boundaries_reject_runtime_subclasses() -> None:
+    class _HookedString(str):
+        invoked = False
+
+        def strip(self, *args, **kwargs):
+            type(self).invoked = True
+            return super().strip(*args, **kwargs)
+
+    class _ForgedInt(int):
+        invoked = False
+
+        def __ge__(self, other):
+            type(self).invoked = True
+            return True
+
+    with pytest.raises(ValueError, match="task must be"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task=_HookedString("task"),
+            answer="answer",
+            criteria=CRITERIA,
+        )
+    assert _HookedString.invoked is False
+
+    forged = _ForgedInt(7)
+    result = _CompletionOrchestrator({
+        "mode": "route",
+        "answer": _payload(),
+        "trace": [{
+            "usage": {
+                "prompt_tokens": forged,
+                "completion_tokens": forged,
+                "total_tokens": forged,
+            }
+        }],
+    })
+    judged = ContextualOrchestratorJudge(result).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    assert dict(judged.usage) == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    assert _ForgedInt.invoked is False
 
 
 def test_judge_rejects_missing_or_malformed_model_fields() -> None:
@@ -320,6 +552,25 @@ def test_judge_criteria_reject_invalid_runtime_types() -> None:
     assert _HookedFloat.invoked is False
 
 
+def test_judge_rejects_unhashable_criterion_id_before_category_template() -> None:
+    class _UnhashableStr(str):
+        __hash__ = None
+
+    with pytest.raises(ValueError, match="criterion_id must be a string"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=[
+                {
+                    "criterion_id": _UnhashableStr("task_alignment"),
+                    "description": "ok",
+                },
+                CRITERIA[1],
+            ],
+            category_count=3,
+        )
+
+
 def test_judge_criteria_reject_non_contract_values_with_value_error() -> None:
     """Arbitrary criterion elements must fail through the stable benign error contract."""
     with pytest.raises(ValueError, match="JudgeCriterion or mapping"):
@@ -372,4 +623,3 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
-

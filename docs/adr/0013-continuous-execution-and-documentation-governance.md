@@ -65,6 +65,15 @@ A substantive contract change is documentation-complete only when every applicab
 
 Documentation does not replace implementation. Conversely, unresolved architecture ambiguity is a product defect and may be selected as the next executable work item when product branches are blocked.
 
+## Current review finding and remediation
+
+An active review found that the documentation matrix called the Proposed
+canonical PyO3/public-export registry the native-entrypoint source of truth
+while protected main still used separate initializers and package export
+paths. The matrix must state target architecture and protected-main behavior
+separately until ADR-0011 is implemented; the active PR applies that wording
+correction.
+
 ## Consequences
 
 ### Positive
