@@ -66,7 +66,7 @@ def _error_metrics(
     return (
         float(np.mean(residual)),
         float(np.mean(np.abs(residual))),
-        float(np.sqrt(np.mean(np.square(residual)))),
+        float(np.sqrt(np.dot(residual, residual) / residual.size)),
     )
 
 
