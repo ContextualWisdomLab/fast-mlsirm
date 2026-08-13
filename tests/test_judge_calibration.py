@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import threading
+import time
+from types import SimpleNamespace
+
 import pytest
 from fast_mlsirm import (
+    ContextualOrchestratorJudge,
     JudgeCalibrationCase,
     JudgeCriterion,
     JudgeFormatError,
@@ -97,6 +103,48 @@ class _ScriptedJudge:
         )
 
 
+class _ConcurrentOrchestrator:
+    def __init__(self) -> None:
+        self.client = SimpleNamespace(local_concurrency=2)
+        self._lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def complete(self, messages, mode="auto"):
+        del messages, mode
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            time.sleep(0.02)
+            return {
+                "mode": "route",
+                "answer": json.dumps(
+                    {
+                        "score": 0.75,
+                        "accepted": True,
+                        "rationale": "scripted",
+                        "criterion_categories": {
+                            "evidence_quality": 2,
+                            "risk_awareness": 1,
+                        },
+                    }
+                ),
+                "trace": [
+                    {
+                        "usage": {
+                            "prompt_tokens": 1,
+                            "completion_tokens": 1,
+                            "total_tokens": 2,
+                        }
+                    }
+                ],
+            }
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
 def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> None:
     judge = _ScriptedJudge()
     report = evaluate_paired_calibration(
@@ -127,6 +175,28 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
     assert effects["shuffled_options"]["score_delta"] == pytest.approx(0.0)
     assert effects["replaced_distractor"]["control_status"] == "judge_failed"
     assert "score_delta" not in effects["replaced_distractor"]
+
+
+def test_direct_paired_calibration_reuses_gateway_concurrency_and_order() -> None:
+    orchestrator = _ConcurrentOrchestrator()
+    judge = ContextualOrchestratorJudge(orchestrator)
+    report = evaluate_paired_calibration(
+        judge,
+        _cases(),
+        criteria=CRITERIA,
+        category_count=3,
+        category_method="direct",
+    )
+
+    assert [outcome.case.variant for outcome in report.outcomes] == [
+        "baseline",
+        "option_only",
+        "shuffled_options",
+        "replaced_distractor",
+    ]
+    assert report.status_counts() == {"passed": 4}
+    assert [outcome.irt_row for outcome in report.outcomes] == [(2, 1)] * 4
+    assert orchestrator.peak == 2
 
 
 def test_calibration_requires_multiple_items_and_a_baseline_pair() -> None:

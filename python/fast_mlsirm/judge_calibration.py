@@ -10,6 +10,7 @@ from __future__ import annotations
 import random
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
@@ -473,6 +474,23 @@ def _validate_case_groups(cases: tuple[JudgeCalibrationCase, ...]) -> None:
             raise ValueError(f"case {case_id!r} must use one contamination_status")
 
 
+def _calibration_concurrency(
+    judge: Any, case_count: int, category_method: str | None
+) -> int:
+    """Reuse the gateway limit for one-call methods without multiplying nested calls."""
+    if category_method not in {"direct", "cumulative_threshold"}:
+        # The implicit/default polytomous method is binary_threshold, which
+        # already uses this same capability for its per-boundary calls.
+        return 1
+    try:
+        configured = getattr(judge, "_binary_threshold_concurrency")(case_count)
+    except Exception:  # noqa: BLE001 - optional capability discovery is fail-closed
+        return 1
+    if type(configured) is not int or configured < 1:
+        return 1
+    return min(configured, case_count)
+
+
 def evaluate_paired_calibration(
     judge: ContextualOrchestratorJudge,
     cases: Iterable[JudgeCalibrationCase],
@@ -520,8 +538,7 @@ def evaluate_paired_calibration(
             for criterion_id in criterion_ids
         )
 
-    outcomes: list[JudgeCalibrationOutcome] = []
-    for case in normalized_cases:
+    def evaluate_case(case: JudgeCalibrationCase) -> JudgeCalibrationOutcome:
         try:
             result = judge.judge(
                 task=case.task,
@@ -535,16 +552,13 @@ def evaluate_paired_calibration(
                 raise TypeError("judge.judge(...) must return an LLMJudgeResult")
         except Exception as exc:  # noqa: BLE001 - preserve provider/parse failures in denominator
             message = str(exc) or type(exc).__name__
-            outcomes.append(
-                JudgeCalibrationOutcome(
-                    case=case,
-                    status="judge_failed",
-                    error_type=type(exc).__name__,
-                    error=message[:_MAX_ERROR_TEXT],
-                    evidence=getattr(exc, "evidence", None),
-                )
+            return JudgeCalibrationOutcome(
+                case=case,
+                status="judge_failed",
+                error_type=type(exc).__name__,
+                error=message[:_MAX_ERROR_TEXT],
+                evidence=getattr(exc, "evidence", None),
             )
-            continue
         try:
             irt_row = result.to_irt_row(
                 item_type="polytomous",
@@ -552,26 +566,30 @@ def evaluate_paired_calibration(
             )
         except Exception as exc:  # noqa: BLE001 - invalid projection is calibration evidence
             message = str(exc) or type(exc).__name__
-            outcomes.append(
-                JudgeCalibrationOutcome(
-                    case=case,
-                    status="irt_failed",
-                    result=result,
-                    error_type=type(exc).__name__,
-                    error=message[:_MAX_ERROR_TEXT],
-                )
-            )
-            continue
-        gold_row = gold_rows[(case.case_id, case.variant)]
-        outcomes.append(
-            JudgeCalibrationOutcome(
+            return JudgeCalibrationOutcome(
                 case=case,
-                status="passed",
+                status="irt_failed",
                 result=result,
-                irt_row=irt_row,
-                gold_exact=None if gold_row is None else irt_row == gold_row,
+                error_type=type(exc).__name__,
+                error=message[:_MAX_ERROR_TEXT],
             )
+        gold_row = gold_rows[(case.case_id, case.variant)]
+        return JudgeCalibrationOutcome(
+            case=case,
+            status="passed",
+            result=result,
+            irt_row=irt_row,
+            gold_exact=None if gold_row is None else irt_row == gold_row,
         )
+
+    max_workers = _calibration_concurrency(judge, len(normalized_cases), category_method)
+    if max_workers == 1:
+        outcomes = [evaluate_case(case) for case in normalized_cases]
+    else:
+        # executor.map preserves the caller's case order even when provider
+        # completions finish out of order; failures remain one-for-one.
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            outcomes = list(pool.map(evaluate_case, normalized_cases))
     return JudgeCalibrationReport(category_count, criterion_ids, tuple(outcomes))
 
 
