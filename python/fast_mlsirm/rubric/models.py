@@ -89,10 +89,20 @@ def _bounded_values(
         raise ValueError(f"{name} must be a collection")
     try:
         iterator = iter(values)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be a collection") from exc
+    except MemoryError:
+        raise
+    except Exception:
+        raise ValueError(f"{name} must be a collection") from None
     materialized: list[Any] = []
-    for index, value in enumerate(iterator):
+    for index in range(maximum + 1):
+        try:
+            value = next(iterator)
+        except StopIteration:
+            break
+        except MemoryError:
+            raise
+        except Exception:
+            raise ValueError(f"{name} iteration failed") from None
         if index >= maximum:
             raise ValueError(f"{name} must contain at most {maximum} values")
         materialized.append(value)

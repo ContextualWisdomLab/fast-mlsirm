@@ -563,6 +563,10 @@
 
 - Dense finite-difference `observed_information` preflights package-owned objective-call and fixed-width workspace budgets before the first objective evaluation and replaces the dense identity workspace with a reusable trial vector.
 
+#### Rubric hostile iterable error redaction
+
+- Rubric collection materialization fails closed on hostile iterable setup and iteration exceptions with package-owned messages, while preserving `MemoryError` resource signals.
+
 #### Model-comparison hostile input redaction
 
 - Model-comparison parameter counts and casewise iterables redact hostile conversion and iteration callback failures into stable package-owned `ValueError` messages while preserving `MemoryError`.
