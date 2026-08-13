@@ -332,6 +332,7 @@ class ItemBankRelease(CanonicalContract):
 def build_item_bank_entry(**values: Any) -> ItemBankEntry:
     """Build one validated immutable item-bank entry."""
     normalized = dict(values)
+    normalized.setdefault("approval_decision_fingerprint", None)
     normalized.setdefault("retirement_decision_fingerprint", None)
     normalized.setdefault("predecessor_entry_fingerprint", None)
     return ItemBankEntry(**normalized, _token=_ENTRY_TOKEN)
