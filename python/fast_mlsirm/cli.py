@@ -17,6 +17,7 @@ from .diagnostics import (
     response_process_fit_diagnostics,
 )
 from .fit import fit
+from .irt_contract import fit_irt_experiment
 from .io import (
     _atomic_write_text,
     _load_json_bounded,
@@ -667,8 +668,11 @@ def _main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        result = fit(
-            responses=responses,
+        result = fit_irt_experiment(
+            fit,
+            responses,
+            "dichotomous",
+            factor_ids=factors,
             factor_id=factors,
             config=FitConfig(
                 model=args.model,

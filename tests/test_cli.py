@@ -50,7 +50,7 @@ def test_cli_fit_success(tmp_path):
     fit_dir = tmp_path / "fit_out"
 
     # Run simulation to get files
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
 
     args = ["fit", "--responses", str(sim_dir / "responses.npy"), "--factors", str(sim_dir / "item_factor.csv"), "--model", "MLS2PLM", "--max-iter", "1", "--out", str(fit_dir)]
@@ -65,7 +65,7 @@ def test_cli_fit_json_output(tmp_path, capsys):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
     capsys.readouterr()
 
@@ -104,7 +104,7 @@ def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
     capsys.readouterr()
 
@@ -138,7 +138,7 @@ def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
     capsys.readouterr()
 
@@ -277,7 +277,7 @@ def test_cli_diagnose_fit_success(tmp_path):
     fit_dir = tmp_path / "fit_out"
     diag_dir = tmp_path / "diag_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
 
     with patch.object(sys, 'argv', ['fast-mlsirm', 'fit', '--responses', str(sim_dir / "responses.npy"), '--factors', str(sim_dir / "item_factor.csv"), '--model', 'MLS2PLM', '--max-iter', '1', '--out', str(fit_dir)]):

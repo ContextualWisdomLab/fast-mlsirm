@@ -44,6 +44,7 @@ from .irt_contract import (
     MIN_OBSERVED_PER_ITEM as MIN_OBSERVED_PER_ITEM,
     MIN_ITEM_DISTINCT_VALUES as MIN_ITEM_DISTINCT_VALUES,
     MIN_FACTOR_ANCHOR_ITEMS as MIN_FACTOR_ANCHOR_ITEMS,
+    fit_irt_experiment as fit_irt_experiment,
     validate_irt_response_matrix as validate_irt_response_matrix,
     validate_irt_experiment_readiness as validate_irt_experiment_readiness,
 )
@@ -78,6 +79,7 @@ __all__ = list(_legacy_init.__all__) + [
     "LLMJudgeResult",
     "MAX_JUDGE_CATEGORIES",
     "IRTItemType",
+    "fit_irt_experiment",
     "MIN_IRT_ITEMS",
     "validate_irt_response_matrix",
     "MIN_IRT_PERSONS",

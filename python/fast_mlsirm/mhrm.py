@@ -137,12 +137,6 @@ def fit_mhrm(
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
             Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_mhrm"):
-        raise RuntimeError("fit_mhrm requires the compiled Rust core")
-
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -198,11 +192,18 @@ def fit_mhrm(
                 raise ValueError(
                     f"responses must be integer categories in 0..{n_cat_int}, or NaN (missing)"
                 )
+    validation_y = np.where(observed, y, np.nan)
     validate_irt_response_matrix(
-        np.where(observed, y, np.nan),
+        validation_y,
         "dichotomous" if fam == "2pl" else "polytomous",
         n_categories=None if fam == "2pl" else n_cat_int,
     )
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mhrm"):
+        raise RuntimeError("fit_mhrm requires the compiled Rust core")
+
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
     res = core.fit_mhrm(

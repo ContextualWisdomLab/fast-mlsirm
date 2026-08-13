@@ -105,12 +105,6 @@ def fit_nominal(
     # Fail closed on hostile node_rule before any core import or coercion.
     node_rule = normalize_node_rule(node_rule)
 
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_nominal_model"):
-        raise RuntimeError("fit_nominal requires the compiled Rust core")
-
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -170,11 +164,18 @@ def fit_nominal(
             raise ValueError(
                 "responses must be integer categories in 0..n_cat-1 where observed"
             )
+    validation_y = np.where(observed, y, np.nan)
     validate_irt_response_matrix(
-        np.where(observed, y, np.nan),
+        validation_y,
         "polytomous",
         n_categories=n_cat_int,
     )
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_nominal_model"):
+        raise RuntimeError("fit_nominal requires the compiled Rust core")
+
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
     res = core.fit_nominal_model(

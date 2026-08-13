@@ -190,8 +190,9 @@ def fit_polytomous(
         raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
+    validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
-        np.where(observed, y_int, np.nan),
+        validation_y,
         "polytomous",
         n_categories=int(n_cat),
     )
@@ -423,8 +424,9 @@ def fit_lsirm_polytomous(
         raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
+    validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
-        np.where(observed, y_int, np.nan),
+        validation_y,
         "polytomous",
         n_categories=int(n_cat),
     )
@@ -780,8 +782,9 @@ def fit_nominal_polytomous(
         raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
+    validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
-        np.where(observed, y_int, np.nan),
+        validation_y,
         "polytomous",
         n_categories=int(n_cat),
     )

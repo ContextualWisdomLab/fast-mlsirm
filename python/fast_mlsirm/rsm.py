@@ -57,12 +57,6 @@ def fit_rsm(
         Andrich, D. (1978). A rating formulation for ordered response categories.
             *Psychometrika, 43*(4), 561-573. https://doi.org/10.1007/BF02293814
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_rsm"):
-        raise RuntimeError("fit_rsm requires the compiled Rust core")
-
     if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
         raise ValueError("n_cat must be an integer >= 2")
     if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
@@ -111,6 +105,12 @@ def fit_rsm(
     if missing_items.size:
         raise ValueError(f"item {int(missing_items[0])} has no observed responses")
     validate_irt_response_matrix(y, "polytomous", n_categories=int(n_cat))
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rsm"):
+        raise RuntimeError("fit_rsm requires the compiled Rust core")
+
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.fit_rsm(
         yy,

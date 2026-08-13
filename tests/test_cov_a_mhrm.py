@@ -9,6 +9,7 @@ import pytest
 
 from fast_mlsirm.mhrm import MhrmFit, fit_mhrm
 from fast_mlsirm.models import confirmatory
+from fast_mlsirm.irt_contract import fit_irt_experiment
 
 
 def _binary(seed=0, n_persons=60, n_items=6):
@@ -53,9 +54,16 @@ def test_fit_mhrm_gpcm_without_standard_errors():
     assert fit.se_loading.size == 0
 
 
-def test_fit_mhrm_all_missing_skips_category_check():
-    fit = fit_mhrm(np.full((10, 4), np.nan), 1, **_short(max_cycles=20, burn_in=5))
-    assert isinstance(fit, MhrmFit)
+def test_fit_mhrm_all_missing_is_not_experiment_ready():
+    with pytest.raises(ValueError, match="non-missing"):
+        fit_irt_experiment(
+            fit_mhrm,
+            np.full((10, 4), np.nan),
+            "dichotomous",
+            factor_ids=(0, 0, 0, 0),
+            model=1,
+            **_short(max_cycles=20, burn_in=5),
+        )
 
 
 def test_fit_mhrm_requires_rust_core():

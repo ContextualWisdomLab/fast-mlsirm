@@ -112,7 +112,8 @@ def fit(
         raise ValueError("factor_id length must match number of items")
     if factors.dtype.kind not in {"i", "u"}:
         raise ValueError("factor_id must contain integer values")
-    validate_irt_response_matrix(y, "dichotomous")
+    validation_y = np.where(observed, y, np.nan)
+    validate_irt_response_matrix(validation_y, "dichotomous")
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")
@@ -120,7 +121,6 @@ def fit(
     if model in {"ULS2PLM", "ULSRM"}:
         factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
-
     if group_id is not None and cluster_id is not None:
         raise ValueError("group_id and cluster_id are mutually exclusive")
     if (group_id is not None or cluster_id is not None) and config.estimator != "mmle":

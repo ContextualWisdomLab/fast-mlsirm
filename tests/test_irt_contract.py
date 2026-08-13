@@ -13,7 +13,9 @@ from fast_mlsirm.grm import fit_grm
 from fast_mlsirm.polytomous import fit_polytomous
 from fast_mlsirm.rsm import fit_rsm
 from fast_mlsirm.twopl import fit_2pl
+from fast_mlsirm.models import confirmatory
 from fast_mlsirm.irt_contract import (
+    fit_irt_experiment,
     validate_irt_experiment_readiness,
     validate_irt_response_matrix,
 )
@@ -117,6 +119,50 @@ def test_irt_experiment_readiness_checks_factor_coverage() -> None:
         )
 
 
+def test_fit_irt_experiment_blocks_before_call_and_passes_ready_matrix() -> None:
+    called: list[np.ndarray] = []
+
+    def fake_fit(responses, **kwargs):
+        called.append(responses)
+        return kwargs["result"]
+
+    with pytest.raises(ValueError, match="constant"):
+        fit_irt_experiment(
+            fake_fit,
+            np.zeros((5, 2)),
+            "dichotomous",
+            factor_ids=(0, 0),
+            result="unreachable",
+        )
+    assert called == []
+
+    ready = np.array([[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]])
+    assert (
+        fit_irt_experiment(
+            fake_fit,
+            ready,
+            "dichotomous",
+            factor_ids=(0, 0),
+            result="ready",
+        )
+        == "ready"
+    )
+    assert len(called) == 1
+    np.testing.assert_array_equal(called[0], ready)
+
+
+def test_fit_irt_experiment_supports_polytomous_multi_item_results() -> None:
+    ready = np.array([[0, 1], [1, 2], [2, 0], [0, 2], [1, 0]])
+    result = fit_irt_experiment(
+        lambda responses, **_: responses.shape,
+        ready,
+        "polytomous",
+        n_categories=3,
+        factor_ids=((0,), (0,)),
+    )
+    assert result == (5, 2)
+
+
 def test_irt_experiment_readiness_rejects_unsafe_controls_and_factor_shapes() -> None:
     matrix = [[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]]
     with pytest.raises(ValueError, match="min_items_per_factor"):
@@ -141,6 +187,61 @@ def test_irt_experiment_readiness_rejects_unsafe_controls_and_factor_shapes() ->
             n_categories=2,
             min_persons=5,
             min_item_distinct_values=3,
+        )
+
+
+def test_loading_pattern_memberships_are_checked_before_native_fit(monkeypatch) -> None:
+    def native_must_not_run():
+        raise AssertionError("native core must not run for an unready experiment")
+
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", native_must_not_run)
+    binary = np.array(
+        [[0, 1], [1, 0], [0, 1], [1, 0]],
+        dtype=float,
+    )
+    with pytest.raises(ValueError, match="at least .* persons"):
+        fit_irt_experiment(
+            fit_2pl,
+            binary,
+            "dichotomous",
+            factor_ids=(0, 0),
+            q=7,
+        )
+
+    binary_with_undercovered_factor = np.tile(
+        np.array([[0, 1, 0, 1], [1, 0, 1, 0]], dtype=float), (3, 1)
+    )
+    pattern = confirmatory(
+        np.array(
+            [[1, 0], [1, 0], [1, 0], [0, 1]],
+            dtype=np.int64,
+        )
+    )
+    with pytest.raises(ValueError, match="under-covered"):
+        fit_irt_experiment(
+            fit_2pl,
+            binary_with_undercovered_factor,
+            "dichotomous",
+            factor_ids=((0,), (0,), (0,), (1,)),
+            model=pattern,
+            q=7,
+        )
+
+
+def test_mlsirm_readiness_uses_missing_mask_before_fit() -> None:
+    responses = np.array(
+        [[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]],
+        dtype=float,
+    )
+    responses[:3, 0] = np.nan
+    with pytest.raises(ValueError, match="non-missing"):
+        fit_irt_experiment(
+            fit_binary,
+            responses,
+            "dichotomous",
+            factor_ids=(0, 0),
+            factor_id=np.array([0, 0], dtype=np.int64),
+            config=FitConfig(backend="numpy", max_iter=1),
         )
 
 

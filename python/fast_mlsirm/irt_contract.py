@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Sequence
-from typing import Literal
+from collections.abc import Callable, Iterable, Sequence
+from typing import Literal, TypeVar
 
 import numpy as np
 
@@ -16,6 +16,7 @@ MIN_IRT_PERSONS = 5
 MIN_OBSERVED_PER_ITEM = 3
 MIN_ITEM_DISTINCT_VALUES = 2
 MIN_FACTOR_ANCHOR_ITEMS = 2
+_FitResultT = TypeVar("_FitResultT")
 
 
 def validate_irt_response_matrix(
@@ -163,7 +164,9 @@ def validate_irt_experiment_readiness(
         if isinstance(factor_ids, (str, bytes)) or not isinstance(
             factor_ids, (Sequence, np.ndarray)
         ):
-            raise ValueError("factor_ids must be a sequence of hashable factor labels")
+            raise ValueError(
+                "factor_ids must be a sequence of hashable factor labels or memberships"
+            )
         if isinstance(factor_ids, np.ndarray) and factor_ids.ndim != 1:
             raise ValueError("factor_ids must be a one-dimensional sequence")
         if len(factor_ids) != n_items:
@@ -174,10 +177,34 @@ def validate_irt_experiment_readiness(
             min_items_per_factor, "min_items_per_factor", 1
         )
         labels = factor_ids.tolist() if isinstance(factor_ids, np.ndarray) else factor_ids
+
+        def _memberships(label: object) -> tuple[object, ...]:
+            if isinstance(label, np.ndarray):
+                if label.ndim == 0:
+                    values = (label.item(),)
+                elif label.ndim == 1:
+                    values = tuple(label.tolist())
+                else:
+                    raise ValueError(
+                        "factor memberships must be one-dimensional sequences"
+                    )
+            elif isinstance(label, (list, tuple)) and not isinstance(label, (str, bytes)):
+                values = tuple(label)
+            else:
+                values = (label,)
+            if not values:
+                raise ValueError("each item must have at least one factor membership")
+            return tuple(dict.fromkeys(values))
+
         try:
-            counts = Counter(labels)
+            memberships = [_memberships(label) for label in labels]
+            counts = Counter(
+                factor for item_memberships in memberships for factor in item_memberships
+            )
         except TypeError as exc:
-            raise ValueError("factor_ids must contain hashable factor labels") from exc
+            raise ValueError(
+                "factor_ids must contain hashable factor labels or memberships"
+            ) from exc
         low_coverage_factors = [
             str(factor)
             for factor, count in counts.items()
@@ -192,6 +219,32 @@ def validate_irt_experiment_readiness(
     return matrix
 
 
+def fit_irt_experiment(
+    fit_callable: Callable[..., _FitResultT],
+    responses: Iterable[Iterable[float]] | np.ndarray,
+    item_type: IRTItemType,
+    *,
+    n_categories: int | None = None,
+    factor_ids: Sequence[object] | None = None,
+    **fit_kwargs: object,
+) -> _FitResultT:
+    """Run a production IRT fit only after the readiness gate passes.
+
+    Public numerical fitters intentionally remain usable for small or
+    degenerate diagnostic fixtures. Production and benchmark callers must use
+    this boundary so unstable estimates cannot be presented as experiment
+    evidence. The callable receives the validated persons-by-items matrix as
+    its first positional argument.
+    """
+    matrix = validate_irt_experiment_readiness(
+        responses,
+        item_type,
+        n_categories=n_categories,
+        factor_ids=factor_ids,
+    )
+    return fit_callable(matrix, **fit_kwargs)
+
+
 __all__ = [
     "MIN_FACTOR_ANCHOR_ITEMS",
     "MIN_IRT_ITEMS",
@@ -199,6 +252,7 @@ __all__ = [
     "MIN_ITEM_DISTINCT_VALUES",
     "MIN_OBSERVED_PER_ITEM",
     "IRTItemType",
+    "fit_irt_experiment",
     "validate_irt_response_matrix",
     "validate_irt_experiment_readiness",
 ]
