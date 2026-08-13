@@ -156,8 +156,9 @@ def validate_irt_experiment_readiness(
         unique_values = np.unique(observed_col)
         if unique_values.size < min_item_distinct_values:
             raise ValueError(
-                "each IRT item must show at least two observed category values "
-                f"(item {item_index} is constant)"
+                "each IRT item must show at least "
+                f"{min_item_distinct_values} distinct observed category values; "
+                f"item {item_index} has {unique_values.size}"
             )
         if item_type == "polytomous":
             observed_categories = {int(value) for value in unique_values}
@@ -247,8 +248,10 @@ def fit_irt_experiment(
     evidence. The callable receives the validated persons-by-items matrix as
     its first positional argument.
     """
+    mask = fit_kwargs.get("mask")
+    normalized = _normalize_experiment_responses(responses, item_type, mask)
     matrix = validate_irt_experiment_readiness(
-        responses,
+        normalized,
         item_type,
         n_categories=n_categories,
         factor_ids=factor_ids,
@@ -256,14 +259,37 @@ def fit_irt_experiment(
     return fit_callable(matrix, **fit_kwargs)
 
 
+def _normalize_experiment_responses(
+    responses: Iterable[Iterable[float]] | np.ndarray,
+    item_type: IRTItemType,
+    mask: object | None,
+) -> np.ndarray:
+    """Apply public fitter missing-response semantics before readiness checks."""
+    try:
+        matrix = np.asarray(responses, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("responses must be numeric") from exc
+    if mask is None:
+        active = np.ones(matrix.shape, dtype=bool)
+    else:
+        active = np.asarray(mask, dtype=bool)
+        if active.shape != matrix.shape:
+            raise ValueError("mask shape must match responses")
+    if item_type == "dichotomous":
+        observed = active & np.isfinite(matrix) & (matrix != -1)
+    else:
+        observed = active & np.isfinite(matrix) & (matrix >= 0)
+    return np.where(observed, matrix, np.nan)
+
+
 __all__ = [
+    "IRTItemType",
     "MIN_FACTOR_ANCHOR_ITEMS",
     "MIN_IRT_ITEMS",
     "MIN_IRT_PERSONS",
     "MIN_ITEM_DISTINCT_VALUES",
     "MIN_OBSERVED_PER_ITEM",
-    "IRTItemType",
     "fit_irt_experiment",
-    "validate_irt_response_matrix",
     "validate_irt_experiment_readiness",
+    "validate_irt_response_matrix",
 ]

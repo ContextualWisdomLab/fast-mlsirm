@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
-from .irt_contract import validate_irt_response_matrix
+from .irt_contract import MIN_IRT_ITEMS, validate_irt_response_matrix
 
 
 @dataclass
@@ -50,8 +50,9 @@ def fit_rsm(
     sum to zero.
 
     ``responses`` is a persons x items array of integer category indices
-    ``0..n_cat-1`` (``NaN`` marks a missing cell, dropped under a missing-at-random
-    assumption). ``n_cat`` defaults to ``max(responses) + 1``.
+    ``0..n_cat-1`` with at least two item columns (``NaN`` marks a missing cell,
+    dropped under a missing-at-random assumption). ``n_cat`` defaults to
+    ``max(responses) + 1``.
 
     References (APA 7th ed.):
         Andrich, D. (1978). A rating formulation for ordered response categories.
@@ -76,8 +77,10 @@ def fit_rsm(
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
-    if n_persons < 1 or n_items < 1:
-        raise ValueError("responses must contain at least one person and one item")
+    if n_persons < 1 or n_items < MIN_IRT_ITEMS:
+        raise ValueError(
+            "responses must contain at least one person and at least two item columns"
+        )
     missing = np.isnan(y)
     if np.any(~missing & ~np.isfinite(y)):
         raise ValueError("observed responses must be finite integer categories")

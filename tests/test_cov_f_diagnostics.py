@@ -376,7 +376,7 @@ def test_dimensionality_diagnostics_readiness_blocks_before_folds(monkeypatch):
         raise AssertionError("fit must not run for an unready experiment")
 
     monkeypatch.setattr(import_module("fast_mlsirm.fit"), "fit", native_must_not_run)
-    with pytest.raises(ValueError, match="at least .* persons"):
+    with pytest.raises(ValueError, match=r"at least .* persons"):
         dimensionality_diagnostics(
             np.zeros((4, 2)),
             np.zeros(2, dtype=int),

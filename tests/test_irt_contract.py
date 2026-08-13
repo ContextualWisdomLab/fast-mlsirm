@@ -86,13 +86,13 @@ def test_irt_experiment_readiness_enforces_min_persons_items_and_variation() -> 
         5,
         2,
     )
-    with pytest.raises(ValueError, match="at least .* persons"):
+    with pytest.raises(ValueError, match=r"at least .* persons"):
         validate_irt_experiment_readiness(
             [[0, 1], [1, 0]],
             "dichotomous",
             min_persons=5,
         )
-    with pytest.raises(ValueError, match="at least .* non-missing"):
+    with pytest.raises(ValueError, match=r"at least .* non-missing"):
         validate_irt_experiment_readiness(
             [[np.nan, 1], [np.nan, 0], [1, 1], [np.nan, np.nan], [0, 1]],
             "dichotomous",
@@ -101,7 +101,7 @@ def test_irt_experiment_readiness_enforces_min_persons_items_and_variation() -> 
 
 
 def test_irt_experiment_readiness_requires_observed_item_variation() -> None:
-    with pytest.raises(ValueError, match="constant"):
+    with pytest.raises(ValueError, match="distinct observed"):
         validate_irt_experiment_readiness(
             [[0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],
             "dichotomous",
@@ -160,7 +160,7 @@ def test_fit_irt_experiment_blocks_before_call_and_passes_ready_matrix() -> None
         called.append(responses)
         return kwargs["result"]
 
-    with pytest.raises(ValueError, match="constant"):
+    with pytest.raises(ValueError, match="distinct observed"):
         fit_irt_experiment(
             fake_fit,
             np.zeros((5, 2)),
@@ -195,6 +195,49 @@ def test_fit_irt_experiment_supports_polytomous_multi_item_results() -> None:
         factor_ids=((0,), (0,)),
     )
     assert result == (5, 2)
+
+
+def test_fit_irt_experiment_normalizes_missing_semantics_before_readiness() -> None:
+    called: list[np.ndarray] = []
+
+    def fake_fit(responses, **kwargs):
+        called.append(responses)
+        return kwargs["result"]
+
+    raw = np.array(
+        [[0, 1], [1, 0], [0, 1], [-1, 0], [1, 1]],
+        dtype=float,
+    )
+    mask = np.array(
+        [[True, True], [True, True], [True, True], [True, True], [False, True]],
+        dtype=bool,
+    )
+    assert (
+        fit_irt_experiment(
+            fake_fit,
+            raw,
+            "dichotomous",
+            factor_ids=(0, 0),
+            mask=mask,
+            result="normalized",
+        )
+        == "normalized"
+    )
+    expected = np.array([[0, 1], [1, 0], [0, 1], [np.nan, 0], [np.nan, 1]])
+    np.testing.assert_array_equal(np.isnan(called[0]), np.isnan(expected))
+    np.testing.assert_array_equal(
+        np.nan_to_num(called[0], nan=0), np.nan_to_num(expected, nan=0)
+    )
+
+
+def test_fit_irt_experiment_reports_configured_distinct_value_threshold() -> None:
+    with pytest.raises(ValueError, match="at least 3 distinct observed"):
+        validate_irt_experiment_readiness(
+            [[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]],
+            "dichotomous",
+            min_persons=5,
+            min_item_distinct_values=3,
+        )
 
 
 def test_irt_experiment_readiness_rejects_unsafe_controls_and_factor_shapes() -> None:
@@ -233,7 +276,7 @@ def test_loading_pattern_memberships_are_checked_before_native_fit(monkeypatch) 
         [[0, 1], [1, 0], [0, 1], [1, 0]],
         dtype=float,
     )
-    with pytest.raises(ValueError, match="at least .* persons"):
+    with pytest.raises(ValueError, match=r"at least .* persons"):
         fit_irt_experiment(
             fit_2pl,
             binary,

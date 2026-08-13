@@ -54,6 +54,16 @@ without this gate.
    booleans, malformed arrays, and unhashable labels fail closed.
    The shared item-type and category-count controls accept only exact built-in
    strings/integers before set membership or range comparisons.
+   These exact numeric defaults are package-owned conservative evidence gates,
+   not universal sample-size or identification guarantees. Samejima (1969)
+   and Muraki (1992) motivate retaining observed variation and declared
+   category support for graded/GPCM item parameters; Cai (2010b) and Reckase
+   (2009) motivate explicit factor anchors for confirmatory multidimensional
+   identification; Jones and Loe (2013) and Iannario et al. (2022) motivate
+   treating category-count choices as calibration questions rather than
+   assuming that more categories improve measurement. No cited primary study
+   mandates the exact `5`, `3`, `2`, or `2` cutoffs, so they must be reported as
+   conservative package controls and revalidated with simulation/gold data.
 5. A failed shape or readiness gate is retained as a failed comparison and
    cannot be repaired by keyword matching, positional category repair, silent
    item dropping, or a blind retry. `LLMJudgeResult.to_irt_row` continues to
@@ -131,6 +141,12 @@ format changes, and violates the fail-closed judge contract.
 | The fast-mlsirm default-branch ruleset allowed zero approvals, stale reviews to survive a push, and unresolved review threads | Require one independent approval, dismiss stale approvals on every push, require approval after the last push, and require resolved review threads while preserving the existing merge methods and no-force-push rules | Protected ruleset updated on 2026-08-13; exact-head CI/review evidence remains required |
 | Local `cargo fmt --all -- --check` reports Rust formatting drift already present on `origin/main`, while this branch's implementation diff contains no Rust files and no required CI format context exists | Keep this IRT PR scoped; open a separate formatting-only maintenance PR if the repository adopts a format gate, and do not conceal the baseline drift in a quality report | Observed 2026-08-13; separate cleanup direction recorded |
 | fast-mlsirm PR #816 Strix run `31695131004` completed with a green job, but its uploaded artifact contained three `run.json` files with `status: failed`, no head/commit metadata or structured report, and provider failures including NVIDIA NIM `429`, GitHub Models `410` brownout, and context-window exhaustion | Treat the green job as inconclusive pre-fix evidence, never as a clean security scan; keep the PR blocked until the trusted central workflow at its current head rejects metadata-less/failed reports and a later exact-head run produces a validated structured binding after provider recovery | Observed 2026-08-13; central fail-closed fix is on the linked PR and rescan remains required |
+| The linked central PR #965 exact head `b8695c534cf15a2227d92f942dcce3c653276393` produced Strix run `31696985802`/job `94436969831` with a green job but no provenance-validation step or `evidence-binding.json`; one completed report lacked head metadata, three reports failed, and provider logs contained NVIDIA NIM `429`, GitHub Models `410`, fail-closed, and no-report markers | Treat the status as inconclusive trusted-base evidence from `pull_request_target`, not as a clean scan for fast-mlsirm. Require the central workflow to be integrated and then emit exact-head structured evidence from a default-branch dispatch before this PR can pass the security gate | Goal expanded 2026-08-13; central doctoring/ADR update and exact-head rescan remain required |
+| The production readiness boundary validated raw responses before applying the public fitters' `-1`/negative/non-finite and optional mask missing semantics | Normalize the same missing conventions to NaN before readiness counting, retain the callable's mask for the actual fit, and add regressions proving masked and `-1`-coded cells cannot be counted as observations; the CLI inherits the corrected boundary | Implemented on current head; exact-head review follow-up required |
+| MH-RM's Python GPCM wrapper accepted `n_cat > 64` although the Rust core contract is `2..=64`, and its docs/error text described categories through `n_cat` instead of `n_cat-1` | Enforce the shared upper bound before native loading, correct the category range documentation and error, and cover the rejected upper boundary | Implemented on current head; exact-head review follow-up required |
+| IRT item-variation errors hardcoded two categories and called an item constant even when a caller configured another distinct-value threshold | Report the configured threshold and observed distinct count, describe the actual insufficiency, and update regex tests without changing model behavior | Implemented on current head; exact-head review follow-up required |
+| The low-level all-missing MH-RM path was not directly covered while the production boundary correctly rejects it as unready | Preserve the diagnostic fitter's existing low-level behavior with a stub-core regression, while keeping `fit_irt_experiment` fail-closed on insufficient observations | Implemented on current head; exact-head review follow-up required |
+| Exact-head review found raw-regex lint warnings, an unsorted `__all__`, and a missing citation paragraph boundary | Fix the minimal documentation/test hygiene issues, keep the public export set unchanged, and rerun the targeted suite before the next review cycle | Implemented on current head; exact-head review follow-up required |
 
 ## References
 
@@ -144,3 +160,9 @@ format changes, and violates the fail-closed judge contract.
 - Jones, W. P., & Loe, S. A. (2013), *Optimal Number of Questionnaire Response
   Categories: More May Not Be Better*,
   https://doi.org/10.1177/2158244013489691.
+- Muraki, E. (1992), *A generalized partial credit model: Application of an EM
+  algorithm*, https://doi.org/10.1177/014662169201600206.
+- Cai, L. (2010), *Metropolis-Hastings Robbins-Monro algorithm for confirmatory
+  item factor analysis*, https://doi.org/10.3102/1076998609353115.
+- Iannario, M., Monti, A. C., & Scalera, P. (2022), *The number of response
+  categories in ordered response models*, https://doi.org/10.1515/ijb-2021-0013.
