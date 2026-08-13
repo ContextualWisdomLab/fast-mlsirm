@@ -218,3 +218,124 @@ def test_sensitive_metadata_is_rejected() -> None:
         "sensitive_metadata_field",
         lambda: build_entry(metadata={"response_text": "secret"}),
     )
+
+
+def test_transition_validator_accepts_linear_progress_and_suspension_reactivation() -> None:
+    """Governed item state advances only through declared lifecycle edges."""
+    draft = build_entry(
+        lifecycle_state="draft",
+        audit_evidence_fingerprints=(),
+        screening_result_fingerprints=(),
+        pilot_assignment_fingerprints=(),
+        calibration_evidence_fingerprints=(),
+        approval_decision_fingerprint=None,
+    )
+    audited = build_entry(
+        lifecycle_state="audited",
+        audit_evidence_fingerprints=(fp("5"),),
+        screening_result_fingerprints=(),
+        pilot_assignment_fingerprints=(),
+        calibration_evidence_fingerprints=(),
+        approval_decision_fingerprint=None,
+        predecessor_entry_fingerprint=draft.entry_fingerprint,
+    )
+    item_bank.validate_item_bank_transition(draft, audited)
+
+    active = build_entry(predecessor_entry_fingerprint=fp("a"))
+    suspended = build_entry(
+        lifecycle_state="suspended",
+        predecessor_entry_fingerprint=active.entry_fingerprint,
+    )
+    item_bank.validate_item_bank_transition(active, suspended)
+    reactivated = build_entry(
+        lifecycle_state="active",
+        predecessor_entry_fingerprint=suspended.entry_fingerprint,
+    )
+    item_bank.validate_item_bank_transition(suspended, reactivated)
+
+
+def test_transition_validator_rejects_skipped_state_and_wrong_predecessor() -> None:
+    """A valid standalone snapshot cannot bypass the lifecycle state machine."""
+    draft = build_entry(
+        lifecycle_state="draft",
+        audit_evidence_fingerprints=(),
+        screening_result_fingerprints=(),
+        pilot_assignment_fingerprints=(),
+        calibration_evidence_fingerprints=(),
+        approval_decision_fingerprint=None,
+    )
+    screened = build_entry(
+        lifecycle_state="screened",
+        predecessor_entry_fingerprint=draft.entry_fingerprint,
+    )
+    assert_error(
+        "invalid_item_bank_transition",
+        lambda: item_bank.validate_item_bank_transition(draft, screened),
+    )
+    audited = build_entry(
+        lifecycle_state="audited",
+        screening_result_fingerprints=(),
+        pilot_assignment_fingerprints=(),
+        calibration_evidence_fingerprints=(),
+        approval_decision_fingerprint=None,
+        predecessor_entry_fingerprint=fp("f"),
+    )
+    assert_error(
+        "transition_predecessor_mismatch",
+        lambda: item_bank.validate_item_bank_transition(draft, audited),
+    )
+
+
+def test_transition_validator_rejects_identity_and_evidence_rewrites() -> None:
+    """Lifecycle advancement cannot rewrite content provenance or discard evidence."""
+    active = build_entry(calibration_evidence_fingerprints=(fp("8"), fp("b")))
+    changed = build_entry(
+        lifecycle_state="suspended",
+        item_content_fingerprint=fp("c"),
+        calibration_evidence_fingerprints=(fp("8"), fp("b")),
+        predecessor_entry_fingerprint=active.entry_fingerprint,
+    )
+    assert_error(
+        "transition_provenance_changed",
+        lambda: item_bank.validate_item_bank_transition(active, changed),
+    )
+    regressed = build_entry(
+        lifecycle_state="suspended",
+        calibration_evidence_fingerprints=(fp("8"),),
+        predecessor_entry_fingerprint=active.entry_fingerprint,
+    )
+    assert_error(
+        "transition_evidence_regression",
+        lambda: item_bank.validate_item_bank_transition(active, regressed),
+    )
+
+
+def test_retired_state_is_terminal_and_decisions_cannot_be_rewritten() -> None:
+    """Historical approval/retirement decisions are append-only governance evidence."""
+    active = build_entry()
+    retired = build_entry(
+        lifecycle_state="retired",
+        retirement_decision_fingerprint=fp("a"),
+        predecessor_entry_fingerprint=active.entry_fingerprint,
+    )
+    item_bank.validate_item_bank_transition(active, retired)
+
+    rewritten = build_entry(
+        lifecycle_state="active",
+        approval_decision_fingerprint=fp("c"),
+        predecessor_entry_fingerprint=retired.entry_fingerprint,
+    )
+    assert_error(
+        "invalid_item_bank_transition",
+        lambda: item_bank.validate_item_bank_transition(retired, rewritten),
+    )
+
+    suspended = build_entry(
+        lifecycle_state="suspended",
+        approval_decision_fingerprint=fp("c"),
+        predecessor_entry_fingerprint=active.entry_fingerprint,
+    )
+    assert_error(
+        "transition_decision_changed",
+        lambda: item_bank.validate_item_bank_transition(active, suspended),
+    )
