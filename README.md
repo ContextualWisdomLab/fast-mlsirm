@@ -104,6 +104,9 @@ print(fixed_item_calibration.best)
   When the injected contextual-orchestrator exposes its bounded
   `client.local_concurrency`, those independent boundary calls reuse that limit;
   generic injected orchestrators remain sequential by default.
+  A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
+  containing call/parse status, partial trace-step counts, usage, and ordered
+  boundary records; callers must retain that failure in calibration results.
   Category-count and prompt-perturbation calibration remain required for all
   methods. See
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),

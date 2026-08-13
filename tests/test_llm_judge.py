@@ -446,7 +446,7 @@ def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
             json.dumps({"meets_threshold": True, "rationale": "unsupported jump"}),
         ]
     )
-    with pytest.raises(JudgeFormatError, match="monotone"):
+    with pytest.raises(JudgeFormatError, match="monotone") as exc_info:
         ContextualOrchestratorJudge(orchestrator).judge(
             task="task",
             answer="answer",
@@ -454,6 +454,56 @@ def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
             category_count=3,
             category_method="binary_threshold",
         )
+    evidence = exc_info.value.evidence
+    assert evidence["parse_status"] == "passed"
+    assert evidence["semantic_status"] == "non_monotone"
+    assert evidence["call_count"] == 2
+    assert evidence["completed_call_count"] == 2
+    assert evidence["trace_step_count"] == 2
+    assert evidence["usage"] == {
+        "prompt_tokens": 2,
+        "completion_tokens": 2,
+        "total_tokens": 4,
+    }
+    assert [record["parse_status"] for record in evidence["records"]] == [
+        "passed",
+        "passed",
+    ]
+
+
+def test_binary_threshold_failure_exposes_bounded_failure_evidence() -> None:
+    orchestrator = _SequencedOrchestrator(
+        [
+            json.dumps({"meets_threshold": True, "rationale": "supported"}),
+            "not json",
+        ]
+    )
+    with pytest.raises(JudgeFormatError, match="failed closed") as exc_info:
+        ContextualOrchestratorJudge(orchestrator).judge(
+            task="task",
+            answer="answer",
+            criteria=[CRITERIA[0]],
+            category_count=3,
+            category_method="binary_threshold",
+        )
+    evidence = exc_info.value.evidence
+    assert evidence["category_method"] == "binary_threshold"
+    assert evidence["category_count"] == 3
+    assert evidence["call_count"] == 2
+    assert evidence["completed_call_count"] == 2
+    assert evidence["failed_call_count"] == 0
+    assert evidence["parse_status"] == "failed"
+    assert evidence["semantic_status"] == "boundary_failure"
+    assert evidence["trace_step_count"] == 2
+    assert evidence["usage"] == {
+        "prompt_tokens": 2,
+        "completion_tokens": 2,
+        "total_tokens": 4,
+    }
+    assert evidence["records"][0]["parse_status"] == "passed"
+    assert evidence["records"][1]["parse_status"] == "failed"
+    assert evidence["records"][1]["error_type"] == "JudgeFormatError"
+    assert len(evidence["records"][1]["output_preview"]) <= 2_000
 
 
 def test_binary_threshold_judgment_has_a_bounded_call_budget() -> None:

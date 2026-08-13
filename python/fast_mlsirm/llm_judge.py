@@ -22,11 +22,18 @@ MAX_JUDGE_CRITERIA = 32
 MAX_JUDGE_CATEGORIES = MAX_POLYTOMOUS_CATEGORIES
 MAX_JUDGE_JSON_DEPTH = 32
 MAX_BINARY_THRESHOLD_CALLS = 64
+_MAX_FAILURE_MESSAGE_CHARACTERS = 512
+_MAX_FAILURE_OUTPUT_PREVIEW_CHARACTERS = 2_000
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 
 
+# ADR-0015: failed binary comparisons expose bounded evidence to the caller.
 class JudgeFormatError(ValueError):
     """Raised when a judge response is not a bounded, interpretable decision."""
+
+    def __init__(self, message: str, *, evidence: Mapping[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = dict(evidence or {})
 
 
 class _DuplicateJsonKeyError(ValueError):
@@ -391,8 +398,23 @@ class ContextualOrchestratorJudge:
             for threshold_index in range(category_count - 1)
         ]
 
-        def judge_boundary(request: tuple[JudgeCriterion, int]) -> tuple[str, int, bool, str, str, Any, str]:
+        def judge_boundary(request: tuple[JudgeCriterion, int]) -> dict[str, Any]:
             criterion, threshold_index = request
+            record: dict[str, Any] = {
+                "criterion_id": criterion.criterion_id,
+                "threshold_index": threshold_index + 1,
+                "call_status": "not_started",
+                "parse_status": "not_attempted",
+                "trace_step_count": 0,
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+            }
+            trace: Any = []
+            raw: str | None = None
+            completion_mode = self.mode
             payload = {
                 "task": task,
                 "answer": answer,
@@ -424,41 +446,109 @@ class ContextualOrchestratorJudge:
                     ),
                 },
             ]
-            completion = self.orchestrator.complete(messages, mode=self.mode)
-            if not isinstance(completion, Mapping):
-                raise JudgeFormatError("orchestrator completion must be a mapping")
             try:
+                record["call_status"] = "started"
+                completion = self.orchestrator.complete(messages, mode=self.mode)
+                record["call_status"] = "completed"
+                if isinstance(completion, Mapping):
+                    trace = completion.get("trace", [])
+                    completion_mode = str(completion.get("mode", self.mode))
+                    if type(trace) is list:
+                        record["trace_step_count"] = len(trace)
+                        record["usage"] = _usage(trace)
+                if not isinstance(completion, Mapping):
+                    raise JudgeFormatError("orchestrator completion must be a mapping")
                 raw = _bounded_text(completion.get("answer"), "judge answer")
-            except ValueError as exc:
-                raise JudgeFormatError(str(exc)) from exc
-            parsed = _response_object(
-                raw,
-                required_fields={"meets_threshold", "rationale"},
-            )
-            if type(parsed["meets_threshold"]) is not bool:
-                raise JudgeFormatError("meets_threshold must be a boolean")
-            try:
+                record["output_preview"] = raw[:_MAX_FAILURE_OUTPUT_PREVIEW_CHARACTERS]
+                parsed = _response_object(
+                    raw,
+                    required_fields={"meets_threshold", "rationale"},
+                )
+                if type(parsed["meets_threshold"]) is not bool:
+                    raise JudgeFormatError("meets_threshold must be a boolean")
                 rationale = _bounded_text(parsed["rationale"], "rationale")
-            except ValueError as exc:
-                raise JudgeFormatError(str(exc)) from exc
-            return (
-                criterion.criterion_id,
-                threshold_index + 1,
-                parsed["meets_threshold"],
-                raw,
-                rationale,
-                completion.get("trace", []),
-                str(completion.get("mode", self.mode)),
-            )
+                record["parse_status"] = "passed"
+                return {
+                    "ok": True,
+                    "judgment": (
+                        criterion.criterion_id,
+                        threshold_index + 1,
+                        parsed["meets_threshold"],
+                        raw,
+                        rationale,
+                        trace,
+                        completion_mode,
+                    ),
+                    "record": record,
+                    "trace": trace,
+                }
+            except Exception as exc:  # noqa: BLE001 - retain every bounded failed comparison
+                if record["call_status"] == "started":
+                    record["call_status"] = "failed"
+                record["parse_status"] = (
+                    "failed" if record["call_status"] == "completed" else "not_attempted"
+                )
+                record["error_type"] = type(exc).__name__
+                record["error"] = str(exc)[:_MAX_FAILURE_MESSAGE_CHARACTERS]
+                if raw is not None:
+                    record["output_preview"] = raw[:_MAX_FAILURE_OUTPUT_PREVIEW_CHARACTERS]
+                return {
+                    "ok": False,
+                    "record": record,
+                    "trace": trace,
+                }
+
+        def failure_evidence(
+            outcomes: list[dict[str, Any]],
+            *,
+            semantic_status: str,
+        ) -> dict[str, Any]:
+            usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+            records = []
+            for outcome in outcomes:
+                record = dict(outcome["record"])
+                records.append(record)
+                for key in usage:
+                    usage[key] += record["usage"].get(key, 0)
+            return {
+                "category_method": "binary_threshold",
+                "category_count": category_count,
+                "call_count": len(outcomes),
+                "completed_call_count": sum(
+                    record["call_status"] == "completed" for record in records
+                ),
+                "failed_call_count": sum(
+                    record["call_status"] == "failed" for record in records
+                ),
+                "parse_status": "failed"
+                if any(record["parse_status"] != "passed" for record in records)
+                else "passed",
+                "semantic_status": semantic_status,
+                "trace_step_count": sum(record["trace_step_count"] for record in records),
+                "usage": usage,
+                "records": records,
+            }
 
         max_workers = self._binary_threshold_concurrency(len(requests))
         if max_workers == 1:
-            judgments = [judge_boundary(request) for request in requests]
+            outcomes = [judge_boundary(request) for request in requests]
         else:
             # Reuse contextual-orchestrator's already-bounded local setting;
             # generic injected orchestrators remain sequential by default.
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                judgments = list(pool.map(judge_boundary, requests))
+                outcomes = list(pool.map(judge_boundary, requests))
+
+        if any(not outcome["ok"] for outcome in outcomes):
+            raise JudgeFormatError(
+                "binary threshold boundary failed closed",
+                evidence=failure_evidence(outcomes, semantic_status="boundary_failure"),
+            )
+
+        judgments = [outcome["judgment"] for outcome in outcomes]
 
         thresholds = {criterion.criterion_id: [] for criterion in criteria}
         raw_records: list[dict[str, Any]] = []
@@ -481,11 +571,17 @@ class ContextualOrchestratorJudge:
                 not criterion_thresholds[index] and criterion_thresholds[index + 1]
                 for index in range(len(criterion_thresholds) - 1)
             ):
-                raise JudgeFormatError("criterion thresholds must be monotone")
+                raise JudgeFormatError(
+                    "criterion thresholds must be monotone",
+                    evidence=failure_evidence(outcomes, semantic_status="non_monotone"),
+                )
         combined_rationale = " | ".join(rationales)
         raw_output = json.dumps(raw_records, ensure_ascii=False)
         if len(combined_rationale) > MAX_JUDGE_TEXT_CHARACTERS or len(raw_output) > MAX_JUDGE_TEXT_CHARACTERS:
-            raise JudgeFormatError("binary threshold judge evidence exceeds the maximum size")
+            raise JudgeFormatError(
+                "binary threshold judge evidence exceeds the maximum size",
+                evidence=failure_evidence(outcomes, semantic_status="evidence_oversize"),
+            )
         return thresholds, raw_records, trace, combined_rationale, orchestration_mode
 
     def _binary_threshold_concurrency(self, call_count: int) -> int:
