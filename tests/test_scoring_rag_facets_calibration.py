@@ -31,49 +31,64 @@ rubric = _FIXTURES["rubric"]
 automated_engine = _FIXTURES["automated_engine"]
 criterion_request = _FIXTURES["criterion_request"]
 
-QUERY_FP = hashlib.sha256(b"rag-calibration-query").hexdigest()
+QUERY_REVISION_FPS = tuple(
+    hashlib.sha256(f"rag-calibration-query-revision-{index:03d}".encode()).hexdigest()
+    for index in (1, 2)
+)
 SYSTEM_FP = hashlib.sha256(b"rag-calibration-system").hexdigest()
-RETRIEVAL_FP = hashlib.sha256(b"rag-calibration-retrieval").hexdigest()
-RESPONSE_FP = hashlib.sha256(b"rag-calibration-response").hexdigest()
 
 
-def _execution(run_index: int = 1):
+def _execution(
+    respondent_index: int = 1,
+    task_index: int = 1,
+    engine_id: str = "fixture_engine",
+):
     """Return one deterministic governed RAG request/result/engine execution."""
-    run_suffix = f"{run_index:03d}"
+    respondent_suffix = f"{respondent_index:03d}"
+    task_suffix = f"{task_index:03d}"
+    scenario_index = (respondent_index - 1) * 2 + (task_index - 1)
+    grounded_scores = (2, 1, 0, 2)
+    relevance_scores = (1, 2, 0, 1)
     request = build_rag_scoring_request(
-        request_id=f"rag_calibration_request_{run_suffix}",
+        request_id=(
+            f"rag_calibration_request_{respondent_suffix}_{task_suffix}"
+        ),
         assessment=assessment(),
         rubric=rubric(),
         query_id="refund_policy_query",
-        query_revision_fingerprint=QUERY_FP,
+        query_revision_fingerprint=QUERY_REVISION_FPS[task_index - 1],
         query_testlet_id="evidence_review",
         evidence_regime="retrieved_context",
         candidate_visibility="candidate_blind",
         system_configuration_id="retrieval_stack_a",
         system_configuration_fingerprint=SYSTEM_FP,
-        system_run_id=f"retrieval_stack_a_run_{run_suffix}",
-        response_id=f"generated_response_{run_suffix}",
-        retrieval_run_fingerprint=RETRIEVAL_FP,
-        response_content_fingerprint=RESPONSE_FP,
+        system_run_id=f"retrieval_stack_a_run_{respondent_suffix}",
+        response_id=f"generated_response_{respondent_suffix}_{task_suffix}",
+        retrieval_run_fingerprint=hashlib.sha256(
+            f"rag-calibration-retrieval-{respondent_suffix}-{task_suffix}".encode()
+        ).hexdigest(),
+        response_content_fingerprint=hashlib.sha256(
+            f"rag-calibration-response-{respondent_suffix}-{task_suffix}".encode()
+        ).hexdigest(),
         occasion_id="evaluation_wave_001",
         criterion_ids=("grounded_generation", "answer_relevance"),
-        response_character_count=412,
+        response_character_count=412 + scenario_index,
         response_unit_count=7,
         metadata={"evaluation_split": "offline_holdout"},
     )
-    engine = automated_engine()
+    engine = automated_engine(engine_id=engine_id)
     fixture = StaticFixtureEngine(
         descriptor=engine,
         outcomes=(
             FixtureOutcome(
                 criterion_id="grounded_generation",
                 status=ObservationStatus.SCORED,
-                score_category=2,
+                score_category=grounded_scores[scenario_index],
             ),
             FixtureOutcome(
                 criterion_id="answer_relevance",
                 status=ObservationStatus.SCORED,
-                score_category=1,
+                score_category=relevance_scores[scenario_index],
             ),
         ),
     )
@@ -106,24 +121,41 @@ def test_rag_facets_projection_reuses_shared_calibration_contracts() -> None:
 
 
 def test_rag_facets_bundle_delegates_to_shared_many_facet_design() -> None:
-    """RAG orchestration returns the existing criterion-separated bundle."""
-    executions = (_execution(1), _execution(2))
+    """RAG orchestration returns one connected shared many-facet design."""
+    executions = (
+        _execution(1, 1, "fixture_engine"),
+        _execution(1, 2, "alternate_engine"),
+        _execution(2, 1, "alternate_engine"),
+        _execution(2, 2, "fixture_engine"),
+    )
 
     bundle = build_rag_facets_calibration_bundle(executions)
 
     assert type(bundle) is ScoringFacetsCalibrationBundle
     assert bundle.criterion_ids == ("answer_relevance", "grounded_generation")
-    assert all(
-        design.respondent_ids
-        == ("retrieval_stack_a_run_001", "retrieval_stack_a_run_002")
-        for design in bundle.designs
-    )
-    assert all(
-        design.task_ids == ("refund_policy_query",) for design in bundle.designs
-    )
-    assert all(
-        design.rater_engine_ids == ("fixture_engine",) for design in bundle.designs
-    )
+    expected_revisions = tuple(sorted(QUERY_REVISION_FPS))
+    for design in bundle.designs:
+        assert design.respondent_ids == (
+            "retrieval_stack_a_run_001",
+            "retrieval_stack_a_run_002",
+        )
+        assert design.task_revision_fingerprints == expected_revisions
+        assert design.task_ids == (
+            "refund_policy_query",
+            "refund_policy_query",
+        )
+        assert set(design.rater_engine_ids) == {
+            "alternate_engine",
+            "fixture_engine",
+        }
+        assert design.respondent_task_connected
+        assert design.task_rater_connected
+        assert design.connected
+        assert {
+            record.score_category
+            for record in design.rating_records
+            if record.status is ObservationStatus.SCORED
+        } == {0, 1, 2}
 
 
 def test_rag_facets_projection_rejects_non_rag_request() -> None:
