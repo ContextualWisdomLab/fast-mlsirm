@@ -54,7 +54,7 @@ def test_public_spatial_mmle_fails_closed_before_numpy_reference(
 
     monkeypatch.setattr(marginal_module, "fit_marginal_numpy", reject_numpy_reference)
 
-    with pytest.raises(RuntimeError, match="compiled Rust core.*marginal"):
+    with pytest.raises(RuntimeError, match=r"compiled Rust core.*marginal"):
         fit_module.fit(
             responses,
             factor_id,
