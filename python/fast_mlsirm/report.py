@@ -17,6 +17,8 @@ def render_diagnostics_report(
     title: str | None = None,
 ) -> Path:
     """Render saved diagnostics JSON as a standalone HTML report."""
+    if ".." in str(diagnostics_path) or ".." in str(output_path):
+        raise ValueError("path traversal detected: paths must not contain '..'")
 
     source = Path(diagnostics_path)
     # 🛡️ Sentinel: Prevent JSON DoS via unbounded recursion or memory exhaustion by using bounded loader
