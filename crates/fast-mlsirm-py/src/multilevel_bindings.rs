@@ -13,6 +13,24 @@ use pyo3::prelude::*;
 use pyo3::types::PyModule;
 use pyo3::wrap_pyfunction;
 
+// Keep the raw extension boundary aligned with the canonical Python design
+// contract. The regression tests import the Python constant so drift fails CI.
+const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
+const MAX_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
+
+fn checked_usize_values(values: &[u64], name: &str) -> PyResult<Vec<usize>> {
+    values
+        .iter()
+        .map(|&value| {
+            usize::try_from(value).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "{name} contains a value outside the platform index range"
+                ))
+            })
+        })
+        .collect()
+}
+
 /// Compute each observation's weighted contextual random-effect contribution
 /// for a sparse CSR-style cross-classified multiple-membership design.
 ///
@@ -43,16 +61,21 @@ fn py_weighted_contextual_effect<'py>(
     effects: PyReadonlyArray1<'_, f64>,
     worker_count: usize,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let row_offsets: Vec<usize> = row_offsets
-        .as_slice()?
-        .iter()
-        .map(|&v| v as usize)
-        .collect();
-    let context_indices: Vec<usize> = context_indices
-        .as_slice()?
-        .iter()
-        .map(|&v| v as usize)
-        .collect();
+    let row_offsets = row_offsets.as_slice()?;
+    let context_indices = context_indices.as_slice()?;
+    if row_offsets.len() > MAX_ROW_OFFSETS {
+        return Err(PyValueError::new_err(format!(
+            "row_offsets exceeds maximum supported length of {MAX_ROW_OFFSETS}"
+        )));
+    }
+    if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
+        return Err(PyValueError::new_err(format!(
+            "context_indices exceeds maximum supported length of {MAX_CONTEXT_MEMBERSHIPS}"
+        )));
+    }
+
+    let row_offsets = checked_usize_values(row_offsets, "row_offsets")?;
+    let context_indices = checked_usize_values(context_indices, "context_indices")?;
     let result = core_weighted_contextual_effect(
         &row_offsets,
         &context_indices,
