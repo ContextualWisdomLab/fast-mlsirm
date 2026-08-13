@@ -165,6 +165,10 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
     assert serialized["outcome_count"] == 4
     assert serialized["gold_scored_count"] == 3
     assert serialized["gold_exact_agreement"] == pytest.approx(2 / 3)
+    assert serialized["category_occupancy"] == {
+        "evidence_quality": {"0": 0, "1": 1, "2": 2},
+        "risk_awareness": {"0": 0, "1": 3, "2": 0},
+    }
     assert all("raw_output" not in outcome for outcome in serialized["outcomes"])
     failure = next(outcome for outcome in serialized["outcomes"] if outcome["status"] == "judge_failed")
     assert failure["evidence"] == {

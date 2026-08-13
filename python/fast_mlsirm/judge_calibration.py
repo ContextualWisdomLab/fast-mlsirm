@@ -409,6 +409,26 @@ class JudgeCalibrationReport:
     def status_counts(self) -> dict[str, int]:
         return dict(sorted(Counter(outcome.status for outcome in self.outcomes).items()))
 
+    def category_occupancy(self) -> dict[str, dict[str, int]]:
+        """Count each observed category without hiding ceiling/floor saturation."""
+        occupancy = {
+            criterion_id: {
+                str(category): 0 for category in range(self.category_count)
+            }
+            for criterion_id in self.criterion_ids
+        }
+        for outcome in self.outcomes:
+            if outcome.status != "passed" or outcome.result is None:
+                continue
+            categories = outcome.result.criterion_categories
+            if categories is None:
+                continue
+            for criterion_id in self.criterion_ids:
+                category = categories.get(criterion_id)
+                if type(category) is int and 0 <= category < self.category_count:
+                    occupancy[criterion_id][str(category)] += 1
+        return occupancy
+
     def paired_effects(self) -> tuple[dict[str, Any], ...]:
         grouped: dict[str, list[JudgeCalibrationOutcome]] = {}
         for outcome in self.outcomes:
@@ -448,6 +468,7 @@ class JudgeCalibrationReport:
             "case_count": len({outcome.case.case_id for outcome in self.outcomes}),
             "outcome_count": len(self.outcomes),
             "status_counts": self.status_counts(),
+            "category_occupancy": self.category_occupancy(),
             "gold_scored_count": len(gold_scored),
             "gold_exact_agreement": (
                 sum(outcome.gold_exact is True for outcome in gold_scored) / len(gold_scored)
