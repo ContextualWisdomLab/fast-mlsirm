@@ -36,11 +36,14 @@ def test_public_cmle_m2_fails_closed_without_rust_core(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The public conditional-Rasch path must not execute Python M2 arithmetic."""
-    responses, _factor_id, params = _complete_rasch_fixture()
+    responses, factor_id, params = _complete_rasch_fixture()
     monkeypatch.setattr(fitstats, "_core_module", lambda: None)
 
     with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
         fitstats.m2_cmle_rasch(responses, params.b)
+
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        fitstats.m2(responses, factor_id, params, "MIRT", estimator="cmle")
 
 
 def test_public_cmle_m2_delegates_every_result_field_to_rust(
