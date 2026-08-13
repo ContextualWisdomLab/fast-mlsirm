@@ -330,6 +330,9 @@ def test_category_anchors_are_bound_to_each_binary_threshold() -> None:
     ]
     assert first_payload["category_anchor"] == "some alignment"
     assert "authoritative definition" in first_messages[0]["content"]
+    assert "not an exact-category classification" in first_messages[0]["content"]
+    assert "exceeds this boundary" in first_messages[0]["content"]
+    assert "relevance is required" in first_messages[0]["content"]
 
 
 def test_category_anchors_require_a_complete_polytomous_contract() -> None:

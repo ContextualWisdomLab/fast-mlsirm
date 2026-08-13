@@ -481,10 +481,16 @@ class ContextualOrchestratorJudge:
                         f"Decide only whether the answer meets at least ordered category {threshold_index + 1} "
                         f"of {category_count}. Category 0 means no credible evidence and category "
                         f"{category_count - 1} means full satisfaction. This is one binary boundary question, "
-                        "not a K-way choice. If category_anchor is present in the JSON data, it is the "
+                        "not an exact-category classification or a K-way choice: a response that exceeds this "
+                        "boundary is still a true result. If it meets a higher category, it necessarily meets every lower boundary; "
+                        "judge the requested minimum standard directly and do not reject an answer because it is "
+                        "stronger than the requested category. If category_anchor is present in the JSON data, it is the "
                         "authoritative definition of the requested category; do not infer that definition from "
                         "the category number alone. Do not reward answer length, agreement, or the existence of "
-                        "more categories. Do not infer a missing threshold from another threshold."
+                        "more categories. Evaluate evidence for this criterion and task, not whether the answer merely "
+                        "mentions a related topic: relevance is required, and a generic intention, an admission that "
+                        "a control is missing, unrelated detail, or a repeated rubric phrase is not proof that the "
+                        "criterion is satisfied. Do not infer a missing threshold from another threshold."
                     ),
                 },
                 {

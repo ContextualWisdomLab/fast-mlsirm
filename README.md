@@ -112,7 +112,10 @@ print(fixed_item_calibration.best)
   those definitions are carried as rubric data to each binary boundary. Mixed,
   incomplete, or mismatched anchor sets are rejected. Omitted anchors remain a
   backwards-compatible exploratory mode and must not be treated as gold
-  calibration evidence.
+  calibration evidence. Each binary prompt asks whether the answer meets at
+  least the requested boundary (not exactly that category), requires
+  criterion/task relevance, and rejects generic intent, unrelated detail,
+  missing-control admissions, or rubric repetition as evidence.
   Category-count and prompt-perturbation calibration remain required for all
   methods. See
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),
