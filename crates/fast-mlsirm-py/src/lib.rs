@@ -15,8 +15,8 @@ use mlsirm_core::equating::{
 use mlsirm_core::fitstats::{
     benjamini_hochberg as core_benjamini_hochberg, chi2_sf as core_chi2_sf,
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
-    m2_rmsea2 as core_m2, person_fit as core_person_fit, poly_local_dependence as core_poly_ld,
-    poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
+    m2_cmle_rasch as core_m2_cmle_rasch, m2_rmsea2 as core_m2, person_fit as core_person_fit,
+    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
 use mlsirm_core::linking::{
     irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
@@ -7033,6 +7033,42 @@ fn m2_stat(
     Ok(out.into())
 }
 
+
+/// Conditional-Rasch M2 (CMLE ownership path).
+#[pyfunction]
+#[pyo3(signature = (y, observed, n_persons, item_easiness))]
+fn m2_cmle_rasch_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    item_easiness: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_m2_cmle_rasch(
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        item_easiness.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("m2", res.m2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rmsea2", res.rmsea2)?;
+    out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
+    out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
+    out.set_item("srmsr", res.srmsr)?;
+    out.set_item("null_m2", res.null_m2)?;
+    out.set_item("null_df", res.null_df)?;
+    out.set_item("cfi", res.cfi)?;
+    out.set_item("tli", res.tli)?;
+    out.set_item("n_moments", res.n_moments)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_complete", res.n_complete)?;
+    Ok(out.into())
+}
+
 /// Polytomous M2 limited-information goodness-of-fit (Rust compute path) for a
 /// fitted unidimensional GRM/GPCM. Returns m2, df, p_value, rmsea2 (+90% CI),
 /// srmsr, null-model M2/df, CFI/TLIRT, and the bookkeeping counts.
@@ -9132,6 +9168,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(leniency_residuals_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(m2_cmle_rasch_stat, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
