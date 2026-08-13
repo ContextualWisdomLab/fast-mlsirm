@@ -61,7 +61,18 @@ def load_rust_core() -> ModuleType:
 
 
 def _load_core() -> ModuleType | None:
-    """Import ``fast_mlsirm._core`` if it is installed, else return ``None``."""
+    """Import the Rust core or normalize native loader failures.
+
+    A missing extension is represented as ``None`` so the public resolver can
+    retain its existing missing-core messages. If discovery succeeds but the
+    native module cannot be loaded, fail closed with a package-owned error and
+    preserve the loader exception as the cause for operator diagnostics.
+    """
     if importlib.util.find_spec(CORE_MODULE) is None:
         return None
-    return importlib.import_module(CORE_MODULE)
+    try:
+        return importlib.import_module(CORE_MODULE)
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(
+            "compiled Rust core is present but could not be imported"
+        ) from exc
