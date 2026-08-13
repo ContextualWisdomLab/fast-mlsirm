@@ -169,6 +169,7 @@ def collect_workflow_registry(
         raise ValueError("per_page must be between 1 and 100")
 
     workflows: list[dict[str, Any]] = []
+    seen_workflow_ids: set[int] = set()
     receipts: list[dict[str, int]] = []
     expected_total: int | None = None
     page = 1
@@ -193,6 +194,13 @@ def collect_workflow_registry(
         receipts.append({"page": page, "count": len(batch)})
         if not batch and len(workflows) < expected_total:
             raise RuntimeError("partial workflow registry pagination")
+
+        for workflow in batch:
+            workflow_id = workflow.get("id")
+            if type(workflow_id) is int:
+                if workflow_id in seen_workflow_ids:
+                    raise RuntimeError("workflow registry contains duplicate workflow id")
+                seen_workflow_ids.add(workflow_id)
         workflows.extend(batch)
 
         if len(workflows) > expected_total:
@@ -260,12 +268,15 @@ def classify_workflows(
             classification = "unresolved"
         elif not isinstance(path, str) or not path:
             classification = "unresolved"
-        elif state != "active":
+        elif state == "active":
+            if path.startswith(_DYNAMIC_PREFIX):
+                classification = "dynamic"
+            elif path.startswith(_WORKFLOW_PREFIX):
+                classification = "present" if path in present_paths else "orphan"
+            else:
+                classification = "unresolved"
+        elif isinstance(state, str) and state.startswith("disabled_"):
             classification = "disabled"
-        elif path.startswith(_DYNAMIC_PREFIX):
-            classification = "dynamic"
-        elif path.startswith(_WORKFLOW_PREFIX):
-            classification = "present" if path in present_paths else "orphan"
         else:
             classification = "unresolved"
 
