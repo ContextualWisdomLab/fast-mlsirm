@@ -38,6 +38,15 @@ from .llm_judge import (
     MAX_BINARY_THRESHOLD_CALLS as MAX_BINARY_THRESHOLD_CALLS,
     MAX_JUDGE_CATEGORIES as MAX_JUDGE_CATEGORIES,
 )
+from .judge_calibration import (
+    CALIBRATION_VARIANTS as CALIBRATION_VARIANTS,
+    CONTAMINATION_STATUSES as CONTAMINATION_STATUSES,
+    JudgeCalibrationCase as JudgeCalibrationCase,
+    JudgeCalibrationOutcome as JudgeCalibrationOutcome,
+    JudgeCalibrationReport as JudgeCalibrationReport,
+    build_multiple_choice_calibration_cases as build_multiple_choice_calibration_cases,
+    evaluate_paired_calibration as evaluate_paired_calibration,
+)
 from .irt_contract import (
     IRTItemType as IRTItemType,
     MIN_IRT_ITEMS as MIN_IRT_ITEMS,
@@ -80,6 +89,13 @@ __all__ = list(_legacy_init.__all__) + [
     "LLMJudgeResult",
     "MAX_BINARY_THRESHOLD_CALLS",
     "MAX_JUDGE_CATEGORIES",
+    "CALIBRATION_VARIANTS",
+    "CONTAMINATION_STATUSES",
+    "JudgeCalibrationCase",
+    "JudgeCalibrationOutcome",
+    "JudgeCalibrationReport",
+    "build_multiple_choice_calibration_cases",
+    "evaluate_paired_calibration",
     "IRTItemType",
     "fit_irt_experiment",
     "MIN_IRT_ITEMS",

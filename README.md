@@ -124,6 +124,18 @@ print(fixed_item_calibration.best)
   Production and benchmark IRT readiness additionally requires every declared
   polytomous category to be observed at least once for every item; low-level
   diagnostic fitters remain available for partial-occupancy fixtures.
+  `build_multiple_choice_calibration_cases()` and
+  `evaluate_paired_calibration()` provide bounded paired controls for
+  baseline, option-only/no-question, shuffled-option, and
+  distractor-replacement variants. They accept an existing
+  `ContextualOrchestratorJudge`, so every calibration call uses the
+  contextual-orchestrator route; provider, parse, semantic, and IRT failures
+  remain in the denominator, with no retry, repair, keyword matching, or
+  positional category inference. Gold categories and contamination status are
+  caller-supplied, and every successful result must project to multiple
+  criterion columns before it can be used as a polytomous row. Paired score
+  deltas are diagnostic sensitivity evidence, not a causal positive-option-
+  count law or a claim of judge debiasing.
   Cross-repository exact-head review, structured Strix evidence, and merge
   policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0004-pr-review-merge-loop.md) and
   [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
