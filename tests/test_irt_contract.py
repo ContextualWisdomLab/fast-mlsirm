@@ -63,6 +63,22 @@ def test_polytomous_contract_rejects_invalid_categories_and_shape() -> None:
     with pytest.raises(ValueError, match="finite"):
         validate_irt_response_matrix([[0, np.inf]], "polytomous", n_categories=3)
 
+    class _ForgedInt(int):
+        def __le__(self, other):
+            return True
+
+        def __ge__(self, other):
+            return True
+
+    with pytest.raises(ValueError, match="n_categories"):
+        validate_irt_response_matrix(
+            [[0, 1], [1, 0]],
+            "polytomous",
+            n_categories=_ForgedInt(10**100),
+        )
+    with pytest.raises(ValueError, match="item_type"):
+        validate_irt_response_matrix([[0, 1], [1, 0]], [], n_categories=2)
+
 
 def test_irt_experiment_readiness_enforces_min_persons_items_and_variation() -> None:
     matrix = [[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]]
@@ -91,6 +107,24 @@ def test_irt_experiment_readiness_requires_observed_item_variation() -> None:
             "dichotomous",
             min_persons=5,
         )
+
+
+def test_polytomous_readiness_requires_declared_category_occupancy() -> None:
+    with pytest.raises(ValueError, match=r"missing categories \[2\]"):
+        validate_irt_experiment_readiness(
+            [[0, 0], [1, 1], [0, 2], [1, 0], [0, 1]],
+            "polytomous",
+            n_categories=3,
+            min_persons=5,
+        )
+
+    ready = [[0, 0], [1, 1], [2, 2], [0, 1], [1, 0]]
+    assert validate_irt_experiment_readiness(
+        ready,
+        "polytomous",
+        n_categories=3,
+        min_persons=5,
+    ).shape == (5, 2)
 
 
 def test_irt_experiment_readiness_checks_factor_coverage() -> None:

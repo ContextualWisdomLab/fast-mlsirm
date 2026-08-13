@@ -37,13 +37,12 @@ def validate_irt_response_matrix(
     polytomous observations are integer category indices in
     0..n_categories-1.
     """
-    if item_type not in {"dichotomous", "polytomous"}:
+    if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
         raise ValueError("item_type must be 'dichotomous' or 'polytomous'")
     if item_type == "dichotomous" and n_categories is not None:
         raise ValueError("n_categories is only valid for polytomous responses")
     if item_type == "polytomous" and (
-        not isinstance(n_categories, int)
-        or isinstance(n_categories, bool)
+        type(n_categories) is not int
         or not 2 <= n_categories <= MAX_POLYTOMOUS_CATEGORIES
     ):
         raise ValueError(
@@ -160,6 +159,18 @@ def validate_irt_experiment_readiness(
                 "each IRT item must show at least two observed category values "
                 f"(item {item_index} is constant)"
             )
+        if item_type == "polytomous":
+            observed_categories = {int(value) for value in unique_values}
+            missing_categories = [
+                category
+                for category in range(int(n_categories))
+                if category not in observed_categories
+            ]
+            if missing_categories:
+                raise ValueError(
+                    "each polytomous item must observe every declared category; "
+                    f"item {item_index} is missing categories {missing_categories}"
+                )
     if factor_ids is not None:
         if isinstance(factor_ids, (str, bytes)) or not isinstance(
             factor_ids, (Sequence, np.ndarray)

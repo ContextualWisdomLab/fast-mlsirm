@@ -47,10 +47,13 @@ without this gate.
    evidence.
 4. `validate_irt_experiment_readiness` is the pre-interpretation gate. Its
    defaults require at least five persons, three observed responses per item,
-   two observed values per item, and, when factor labels are supplied, two
-   items per factor anchor. Controls and factor containers are validated
-   before counting; strings, booleans, malformed arrays, and unhashable labels
-   fail closed.
+   two observed values per item, and, for polytomous inputs, at least one
+   observed response in every declared category for every item. When factor
+   labels are supplied, it also requires two items per factor anchor.
+   Controls and factor containers are validated before counting; strings,
+   booleans, malformed arrays, and unhashable labels fail closed.
+   The shared item-type and category-count controls accept only exact built-in
+   strings/integers before set membership or range comparisons.
 5. A failed shape or readiness gate is retained as a failed comparison and
    cannot be repaired by keyword matching, positional category repair, silent
    item dropping, or a blind retry. `LLMJudgeResult.to_irt_row` continues to
@@ -116,7 +119,8 @@ format changes, and violates the fail-closed judge contract.
 | Older callers may pass one item to a public fitter | Build a real multi-item matrix or use an explicitly diagnostic API; do not pad or duplicate a column | Implemented on this branch |
 | Shape validation could pass a matrix too small for stable interpretation because the readiness helper had no production call site | Add `fit_irt_experiment` as the production/benchmark gate, preserve missing cells as NaN, accept factor memberships for confirmatory coverage, and keep the numerical fitter behind the gate | Implemented on current head; exact-head review follow-up required |
 | `diagnose-dimensions` could bypass the production gate inside its cross-validation loop | Validate the source matrix before fold construction and pass every NaN-preserving training fold through `fit_irt_experiment`; keep the default low-level diagnostic mode explicit | Implemented on current head; exact-head review follow-up required |
-| A declared polytomous category can be absent or severely imbalanced | Preserve per-item category occupancy and fail or mark the fit non-interpretable before model comparison | Required next |
+| A declared polytomous category can be absent or severely imbalanced | Require every declared category to be observed at least once per item at the production/benchmark readiness boundary; retain detailed frequency imbalance for calibration reports and keep low-level diagnostic fitters available | Implemented on current head; exact-head review follow-up required |
+| Runtime subclasses or unhashable values could reach IRT item-type/category-count checks before package-owned validation | Reject non-built-in item types and category counts before membership or range comparisons, with regression coverage | Implemented on current head; exact-head review follow-up required |
 | Factor labels may not provide two anchors per dimension | Pass scalar factor IDs or per-item factor memberships through `fit_irt_experiment` and require an explicit design exception for exploratory diagnostics | Implemented on current head; exact-head review follow-up required |
 | K/order/framing perturbations can change judge scores | Use randomized paired perturbations, human/gold anchors, category occupancy, and parse/provider denominators; never infer a universal positive-K law | Required next |
 | A small local judge model returned a near-schema direct response with `rationale` as an object and criterion scores nested under it, so strict parsing rejected an otherwise usable judgment | Include a complete direct JSON schema example with criterion IDs and explicitly type `rationale` as a string; keep exact-schema parsing and fail-closed behavior | Implemented on current local head; exact-head review follow-up required |
