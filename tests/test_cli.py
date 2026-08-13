@@ -357,7 +357,7 @@ def test_cli_diagnose_dimensions_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     diag_dir = tmp_path / "dim_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
 
     args = [

@@ -40,8 +40,11 @@ without this gate.
    `validate_irt_experiment_readiness`, accepts scalar factor IDs or per-item
    factor memberships for anchor coverage, and invokes the selected numerical
    fitter only after the gate passes. The CLI `fit` command uses this boundary;
-   direct numerical fitters remain available for explicitly diagnostic and
-   low-level work and must not be presented as stable experiment evidence.
+   the CLI `diagnose-dimensions` command validates its source matrix and every
+   cross-validation training fold through the same boundary. Direct numerical
+   fitters and the default low-level diagnostic mode remain available for
+   explicitly diagnostic work and must not be presented as stable experiment
+   evidence.
 4. `validate_irt_experiment_readiness` is the pre-interpretation gate. Its
    defaults require at least five persons, three observed responses per item,
    two observed values per item, and, when factor labels are supplied, two
@@ -63,6 +66,8 @@ without this gate.
   multi-item response shape before native-core loading; the production-boundary
   missing-mask regression proves that zero-filled missing cells cannot satisfy
   the observation minimum.
+- Production dimension diagnostics reject an unready source matrix before fold
+  construction and reject an unready training fold before invoking `fit`.
 - The targeted IRT/judge/security suite passes with the CLI production path
   behind `fit_irt_experiment`.
 - Each benchmark records item count, category count, person count, observed
@@ -110,6 +115,7 @@ format changes, and violates the fail-closed judge contract.
 | --- | --- | --- |
 | Older callers may pass one item to a public fitter | Build a real multi-item matrix or use an explicitly diagnostic API; do not pad or duplicate a column | Implemented on this branch |
 | Shape validation could pass a matrix too small for stable interpretation because the readiness helper had no production call site | Add `fit_irt_experiment` as the production/benchmark gate, preserve missing cells as NaN, accept factor memberships for confirmatory coverage, and keep the numerical fitter behind the gate | Implemented on current head; exact-head review follow-up required |
+| `diagnose-dimensions` could bypass the production gate inside its cross-validation loop | Validate the source matrix before fold construction and pass every NaN-preserving training fold through `fit_irt_experiment`; keep the default low-level diagnostic mode explicit | Implemented on current head; exact-head review follow-up required |
 | A declared polytomous category can be absent or severely imbalanced | Preserve per-item category occupancy and fail or mark the fit non-interpretable before model comparison | Required next |
 | Factor labels may not provide two anchors per dimension | Pass scalar factor IDs or per-item factor memberships through `fit_irt_experiment` and require an explicit design exception for exploratory diagnostics | Implemented on current head; exact-head review follow-up required |
 | K/order/framing perturbations can change judge scores | Use randomized paired perturbations, human/gold anchors, category occupancy, and parse/provider denominators; never infer a universal positive-K law | Required next |

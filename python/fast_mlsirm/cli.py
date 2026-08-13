@@ -462,6 +462,7 @@ def _main(argv: list[str] | None = None) -> int:
             model=args.model,
             k_folds=args.folds,
             seed=args.seed,
+            require_experiment_readiness=True,
             config=FitConfig(
                 model=args.model,
                 optimizer=args.optimizer,
