@@ -104,6 +104,11 @@ print(fixed_item_calibration.best)
   When the injected contextual-orchestrator exposes its bounded
   `client.local_concurrency`, those independent boundary calls reuse that limit;
   generic injected orchestrators remain sequential by default.
+  `ContextualOrchestratorJudge` accepts only an adapter declaring
+  `contextual_orchestrator_contract == "contextual-orchestrator-contract-v1"`;
+  an arbitrary direct provider transport fails at construction. This is an
+  architectural provenance marker, not a security credential; production
+  adapters must still route, trace, and validate through contextual-orchestrator.
   A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
   containing call/parse status, partial trace-step counts, usage, and ordered
   boundary records; callers must retain that failure in calibration results.

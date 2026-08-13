@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from fast_mlsirm import (
+    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     ContextualOrchestratorJudge,
     JudgeCalibrationCase,
     JudgeCriterion,
@@ -104,6 +105,8 @@ class _ScriptedJudge:
 
 
 class _ConcurrentOrchestrator:
+    contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
+
     def __init__(self) -> None:
         self.client = SimpleNamespace(local_concurrency=2)
         self._lock = threading.Lock()

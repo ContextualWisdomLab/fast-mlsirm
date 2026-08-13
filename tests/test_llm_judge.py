@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
+    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     MAX_BINARY_THRESHOLD_CALLS,
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -18,6 +19,8 @@ from fast_mlsirm.llm_judge import (
 
 
 class _FakeOrchestrator:
+    contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
+
     def __init__(self, answer: str) -> None:
         self.answer = answer
         self.calls = []
@@ -32,6 +35,8 @@ class _FakeOrchestrator:
 
 
 class _CompletionOrchestrator:
+    contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
+
     def __init__(self, completion):
         self.completion = completion
 
@@ -40,6 +45,8 @@ class _CompletionOrchestrator:
 
 
 class _SequencedOrchestrator:
+    contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
+
     def __init__(self, answers):
         self.answers = iter(answers)
         self.calls = []
@@ -121,6 +128,16 @@ def _threshold_payload(thresholds=None):
             "factual_support": [True, False, False, False],
         },
     })
+
+
+def test_judge_rejects_an_unmarked_transport() -> None:
+    class _Unmarked:
+        def complete(self, messages, mode="auto"):
+            del messages, mode
+            return {}
+
+    with pytest.raises(TypeError, match="contextual-orchestrator-contract-v1"):
+        ContextualOrchestratorJudge(_Unmarked())
 
 
 def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:

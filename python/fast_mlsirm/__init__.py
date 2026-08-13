@@ -31,6 +31,7 @@ from .rotation import (
     rotation_criterion_value_gradient as rotation_criterion_value_gradient,
 )
 from .llm_judge import (
+    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 as CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     ContextualOrchestratorJudge as ContextualOrchestratorJudge,
     JudgeCriterion as JudgeCriterion,
     JudgeFormatError as JudgeFormatError,
@@ -84,6 +85,7 @@ __all__ = list(_legacy_init.__all__) + [
     "rotate_factor_loadings",
     "rotation_criterion_value_gradient",
     "ContextualOrchestratorJudge",
+    "CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1",
     "JudgeCriterion",
     "JudgeFormatError",
     "LLMJudgeResult",
