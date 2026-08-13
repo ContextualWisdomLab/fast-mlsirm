@@ -47,6 +47,15 @@ sycophancy in language models*. arXiv:2310.13548.
 <https://arxiv.org/abs/2310.13548>. CC BY 4.0. The original PDF is preserved as
 [`papers/sharma-2023-sycophancy.pdf`](papers/sharma-2023-sycophancy.pdf).
 
+Cao, B., Pan, R., Lin, H., Han, X., & Sun, L. (2026). *Does Question Really
+Matter? The Attribution of Answer Bias in LLM Evaluation*. *Proceedings of the
+AAAI Conference on Artificial Intelligence, 40*(36), 30130–30138.
+<https://doi.org/10.1609/aaai.v40i36.40262>. The official PDF is
+<https://ojs.aaai.org/index.php/AAAI/article/view/40262/44223>; it states
+all-rights-reserved, so this repository keeps it citation-only. The paper's
+option-only and contamination controls motivate paired no-question,
+shuffle, and distractor-replacement calibration.
+
 Jones, W. P., & Loe, S. A. (2013). *Optimal Number of Questionnaire Response
 Categories: More May Not Be Better*. SAGE Open, 3(2).
 <https://doi.org/10.1177/2158244013489691>. OpenAlex, Unpaywall, and the
