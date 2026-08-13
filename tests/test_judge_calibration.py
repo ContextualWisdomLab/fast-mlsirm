@@ -68,6 +68,11 @@ class _ScriptedJudge:
                     "records": [
                         {"meets_threshold": False, "output_preview": "secret"}
                     ],
+                    "usage": {
+                        "prompt_tokens": 2,
+                        "completion_tokens": 3,
+                        "total_tokens": 5,
+                    },
                 },
             )
         option_only = "Question:" not in task
@@ -114,6 +119,7 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
     assert failure["evidence"] == {
         "call_count": 1,
         "records": [{"meets_threshold": False}],
+        "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
     }
 
     effects = {effect["variant"]: effect for effect in report.paired_effects()}
