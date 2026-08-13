@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 
 _RETRYABLE_HTTP_RE = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
+_REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _MAX_ATTEMPTS = 3
 _RETRY_SLEEP_SECONDS = 0.5
 _GH_TIMEOUT_SECONDS = 20
@@ -42,6 +43,13 @@ class GitHubApiError(RuntimeError):
 FetchJson = Callable[[str], Any]
 
 
+def _repo_slug(value: str) -> str:
+    """Validate one unambiguous GitHub ``owner/name`` repository slug."""
+    if _REPO_SLUG_RE.fullmatch(value) is None:
+        raise argparse.ArgumentTypeError("repo must be in owner/name form")
+    return value
+
+
 def _utc_timestamp(value: datetime | None = None) -> str:
     """Return one RFC-3339 UTC observation timestamp."""
     observed = value or datetime.now(UTC)
@@ -56,7 +64,7 @@ def _run_gh_api(
     max_attempts: int = _MAX_ATTEMPTS,
     retry_sleep_seconds: float = _RETRY_SLEEP_SECONDS,
 ) -> Any:
-    """Fetch one GitHub REST payload, retrying only bounded gateway failures."""
+    """Fetch one GitHub REST payload, retrying bounded transient failures."""
     attempts = max(1, int(max_attempts))
     last_error: GitHubApiError | None = None
     for attempt in range(1, attempts + 1):
@@ -68,11 +76,16 @@ def _run_gh_api(
                 timeout=_GH_TIMEOUT_SECONDS,
             )
         except subprocess.TimeoutExpired as exc:
-            raise GitHubApiError(
+            last_error = GitHubApiError(
                 endpoint=endpoint,
                 returncode=124,
                 stderr="GitHub API request timed out",
-            ) from exc
+            )
+            if attempt >= attempts:
+                raise last_error from exc
+            if retry_sleep_seconds > 0:
+                time.sleep(retry_sleep_seconds)
+            continue
         if completed.returncode == 0:
             try:
                 return json.loads(completed.stdout)
@@ -312,15 +325,15 @@ def _summary(records: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
-def audit_workflow_registry(
+def _audit_workflow_registry_snapshot(
     fetch_json: FetchJson,
     repo: str,
+    branch: str,
     *,
     observed_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Build a SHA-bound, read-only Actions workflow-registry audit."""
+    """Build one exact branch-bound registry snapshot and detect movement."""
     timestamp = _utc_timestamp(observed_at)
-    branch = _default_branch(fetch_json, repo)
     start_sha = _branch_sha(fetch_json, repo, branch)
     present_paths = _workflow_paths(fetch_json, repo, start_sha)
     workflows, pagination = collect_workflow_registry(fetch_json, repo)
@@ -359,11 +372,53 @@ def audit_workflow_registry(
     }
 
 
+def audit_workflow_registry(
+    fetch_json: FetchJson,
+    repo: str,
+    *,
+    observed_at: datetime | None = None,
+    max_snapshot_attempts: int = 1,
+) -> dict[str, Any]:
+    """Build a SHA-bound audit, retrying a moving branch when requested."""
+    branch = _default_branch(fetch_json, repo)
+    attempts = max(1, int(max_snapshot_attempts))
+    receipts: list[dict[str, Any]] = []
+    audit: dict[str, Any] | None = None
+
+    for attempt in range(1, attempts + 1):
+        audit = _audit_workflow_registry_snapshot(
+            fetch_json,
+            repo,
+            branch,
+            observed_at=observed_at,
+        )
+        receipts.append(
+            {
+                "attempt": attempt,
+                "start_sha": audit["default_branch_sha"],
+                "end_sha": audit["end_default_branch_sha"],
+                "stable": audit["snapshot_stable"],
+            }
+        )
+        audit["snapshot_attempts"] = list(receipts)
+        if audit["snapshot_stable"]:
+            return audit
+
+    if audit is None:
+        raise RuntimeError("workflow registry audit produced no snapshot")
+    return audit
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Audit GitHub Actions registry drift against protected default branch."
     )
-    parser.add_argument("--repo", required=True, help="Repository in owner/name form.")
+    parser.add_argument(
+        "--repo",
+        required=True,
+        type=_repo_slug,
+        help="Repository in owner/name form.",
+    )
     parser.add_argument("--out", required=True, type=Path, help="Output JSON path.")
     return parser.parse_args()
 
@@ -372,7 +427,11 @@ def main() -> int:
     """Run the live read-only workflow-registry audit."""
     args = _parse_args()
     try:
-        audit = audit_workflow_registry(_run_gh_api, args.repo)
+        audit = audit_workflow_registry(
+            _run_gh_api,
+            args.repo,
+            max_snapshot_attempts=_MAX_ATTEMPTS,
+        )
     except (GitHubApiError, RuntimeError, ValueError) as exc:
         audit = {
             "schema_version": 1,
