@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
+from .irt_contract import validate_irt_response_matrix
 
 
 @dataclass
@@ -109,6 +110,7 @@ def fit_rsm(
     missing_items = np.flatnonzero(~observed.any(axis=0))
     if missing_items.size:
         raise ValueError(f"item {int(missing_items[0])} has no observed responses")
+    validate_irt_response_matrix(y, "polytomous", n_categories=int(n_cat))
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.fit_rsm(
         yy,

@@ -90,6 +90,20 @@ def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     assert payload["answer"] == "Use a staged release with rollback."
 
 
+def test_direct_judgment_prompt_includes_complete_schema_example() -> None:
+    orchestrator = _FakeOrchestrator(_payload())
+    ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+    )
+    prompt = orchestrator.calls[0][0][0]["content"]
+    assert '"rationale": "brief evidence-based reason"' in prompt
+    assert '"criterion_scores": {"task_alignment": 0.0, "factual_support": 0.0}' in prompt
+    assert "keeping every key" in prompt
+    assert "never an object" in prompt
+
+
 def test_judge_rejects_malformed_decisions_and_derives_acceptance() -> None:
     with pytest.raises(JudgeFormatError):
         ContextualOrchestratorJudge(_FakeOrchestrator("not json")).judge(

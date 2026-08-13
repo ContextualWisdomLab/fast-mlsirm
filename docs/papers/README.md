@@ -47,6 +47,13 @@ sycophancy in language models*. arXiv:2310.13548.
 <https://arxiv.org/abs/2310.13548>. CC BY 4.0. The original PDF is preserved as
 [`papers/sharma-2023-sycophancy.pdf`](papers/sharma-2023-sycophancy.pdf).
 
+Jones, W. P., & Loe, S. A. (2013). *Optimal Number of Questionnaire Response
+Categories: More May Not Be Better*. SAGE Open, 3(2).
+<https://doi.org/10.1177/2158244013489691>. The SAGE Open record is open
+access, but the official PDF endpoint returned an anti-bot 403 in the current
+environment. No HTML page, regenerated file, or unauthorised mirror is stored
+as the original PDF; retry through an authorized Zotero 10+ local-write route.
+
 Zheng, C., Zhou, H., Meng, F., Zhou, J., & Huang, M. (2024). *Large language
 models are not robust multiple choice selectors*. ICLR 2024.
 <https://proceedings.iclr.cc/paper_files/paper/2024/hash/54dd9e0cff6d9214e20d97eb2a3bae49-Abstract-Conference.html>.
@@ -60,3 +67,9 @@ graded scores*. *Psychometrika, 34*(Suppl. 1), 1–97.
 <https://doi.org/10.1007/BF03372160>. The Psychometric Society reproduction is
 linked from ADR-0014 but remains citation-only because its accessible PDF does
 not state a redistribution license.
+
+Iannario, M., Monti, A. C., & Scalera, P. (2022). *The number of response
+categories in ordered response models*. *The International Journal of
+Biostatistics, 18*(2), 593–611. <https://doi.org/10.1515/ijb-2021-0013>.
+The publisher/aggregator record currently reports restricted full text, so it
+is citation-only rather than an OA-PDF attachment candidate.

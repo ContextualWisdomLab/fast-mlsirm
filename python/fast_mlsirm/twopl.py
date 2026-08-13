@@ -15,6 +15,7 @@ import numpy as np
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
+from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
@@ -183,6 +184,7 @@ def fit_2pl(
         raise ValueError("xi_seed must be in [0, 2**64)")
 
     observed = ~np.isnan(y)
+    validate_irt_response_matrix(np.where(observed, y, np.nan), "dichotomous")
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_2pl(
         yy,

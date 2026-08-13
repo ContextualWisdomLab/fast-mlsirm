@@ -453,8 +453,17 @@ class ContextualOrchestratorJudge:
                     "merely because more categories exist."
                 )
         else:
+            score_template = {
+                "score": 0.0,
+                "accepted": False,
+                "rationale": "brief evidence-based reason",
+                "criterion_scores": {criterion_id: 0.0 for criterion_id in expected_ids},
+            }
             category_instruction = (
-                " Include criterion_scores as a JSON object with exactly one number "
+                " Return exactly this JSON shape, replacing the example values and keeping every key: "
+                f"{json.dumps(score_template, ensure_ascii=False)}. "
+                "rationale MUST be one short plain JSON string, never an object and never a map of criterion explanations. "
+                "Put only numeric criterion values in criterion_scores, which must contain exactly one number "
                 "from 0 to 1 for each rubric criterion."
             )
         evaluation_payload = {

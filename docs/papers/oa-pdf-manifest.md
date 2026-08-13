@@ -12,7 +12,9 @@ are local provenance only; they are not credentials and are not required by CI.
 
 ## Citation-only records
 
+- Jones and Loe (2013), [SAGE Open page](https://journals.sagepub.com/doi/10.1177/2158244013489691): the article is open access and the official page is readable, but the publisher PDF endpoint returned HTTP 403 in the current environment. No substitute or regenerated PDF is counted as the original; retry through an authorized write-capable Zotero route.
 - Zheng et al. (2024), [ICLR page](https://proceedings.iclr.cc/paper_files/paper/2024/hash/54dd9e0cff6d9214e20d97eb2a3bae49-Abstract-Conference.html): the local arXiv record grants a non-exclusive distribution license to arXiv, and the ICLR policy describes a license granted to ICLR; neither is an explicit third-party repository redistribution license.
+- Iannario, Monti, and Scalera (2022), [publisher page](https://www.degruyterbrill.com/document/doi/10.1515/ijb-2021-0013/html): the publisher/aggregator record currently reports restricted full text, so it is not treated as an OA-PDF attachment candidate.
 - Samejima (1969), [Psychometric Society reproduction](https://www.psychometricsociety.org/sites/main/files/file-attachments/mn17.pdf): publicly accessible and preserved in Zotero for local research, but no redistribution license is asserted here.
 
 ## Interpretation boundary

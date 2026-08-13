@@ -40,7 +40,12 @@ from .llm_judge import (
 from .irt_contract import (
     IRTItemType as IRTItemType,
     MIN_IRT_ITEMS as MIN_IRT_ITEMS,
+    MIN_IRT_PERSONS as MIN_IRT_PERSONS,
+    MIN_OBSERVED_PER_ITEM as MIN_OBSERVED_PER_ITEM,
+    MIN_ITEM_DISTINCT_VALUES as MIN_ITEM_DISTINCT_VALUES,
+    MIN_FACTOR_ANCHOR_ITEMS as MIN_FACTOR_ANCHOR_ITEMS,
     validate_irt_response_matrix as validate_irt_response_matrix,
+    validate_irt_experiment_readiness as validate_irt_experiment_readiness,
 )
 
 # Bind the rating-range API on the historical validation namespace without
@@ -75,6 +80,11 @@ __all__ = list(_legacy_init.__all__) + [
     "IRTItemType",
     "MIN_IRT_ITEMS",
     "validate_irt_response_matrix",
+    "MIN_IRT_PERSONS",
+    "MIN_OBSERVED_PER_ITEM",
+    "MIN_ITEM_DISTINCT_VALUES",
+    "MIN_FACTOR_ANCHOR_ITEMS",
+    "validate_irt_experiment_readiness",
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
 ]

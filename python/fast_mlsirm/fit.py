@@ -6,6 +6,7 @@ import numpy as np
 
 from .backend import normalize_device, resolve_backend
 from .config import FitConfig, PenaltyConfig
+from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
 from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
                         validate_factor_id)
@@ -111,6 +112,7 @@ def fit(
         raise ValueError("factor_id length must match number of items")
     if factors.dtype.kind not in {"i", "u"}:
         raise ValueError("factor_id must contain integer values")
+    validate_irt_response_matrix(y, "dichotomous")
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")

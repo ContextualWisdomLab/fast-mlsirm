@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
+from .irt_contract import validate_irt_response_matrix
 
 _MAX_DIMS = 64
 
@@ -197,6 +198,11 @@ def fit_mhrm(
                 raise ValueError(
                     f"responses must be integer categories in 0..{n_cat_int}, or NaN (missing)"
                 )
+    validate_irt_response_matrix(
+        np.where(observed, y, np.nan),
+        "dichotomous" if fam == "2pl" else "polytomous",
+        n_categories=None if fam == "2pl" else n_cat_int,
+    )
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
     res = core.fit_mhrm(

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections import Counter
+from collections.abc import Iterable, Sequence
 from typing import Literal
 
 import numpy as np
@@ -11,6 +12,10 @@ from .config import MAX_POLYTOMOUS_CATEGORIES
 
 IRTItemType = Literal["dichotomous", "polytomous"]
 MIN_IRT_ITEMS = 2
+MIN_IRT_PERSONS = 5
+MIN_OBSERVED_PER_ITEM = 3
+MIN_ITEM_DISTINCT_VALUES = 2
+MIN_FACTOR_ANCHOR_ITEMS = 2
 
 
 def validate_irt_response_matrix(
@@ -76,4 +81,124 @@ def validate_irt_response_matrix(
     return matrix
 
 
-__all__ = ["MIN_IRT_ITEMS", "IRTItemType", "validate_irt_response_matrix"]
+def validate_irt_experiment_readiness(
+    responses: Iterable[Iterable[float]] | np.ndarray,
+    item_type: IRTItemType,
+    *,
+    n_categories: int | None = None,
+    min_persons: int = MIN_IRT_PERSONS,
+    min_observed_per_item: int = MIN_OBSERVED_PER_ITEM,
+    min_item_distinct_values: int = MIN_ITEM_DISTINCT_VALUES,
+    factor_ids: Sequence[object] | None = None,
+    min_items_per_factor: int = MIN_FACTOR_ANCHOR_ITEMS,
+) -> np.ndarray:
+    """Validate response volume and information before IRT interpretation.
+
+    This does not replace the shape contract in
+    :func:`validate_irt_response_matrix`; it adds experiment-readiness checks
+    used for production claims where tiny or one-dimensional response sets can
+    produce unstable IRT estimates.
+    """
+    matrix = validate_irt_response_matrix(
+        responses,
+        item_type,
+        n_categories=n_categories,
+    )
+    n_persons, n_items = matrix.shape
+
+    def _validate_integer(value: object, name: str, minimum: int) -> int:
+        if not isinstance(value, (int, np.integer)) or isinstance(
+            value, (bool, np.bool_)
+        ):
+            raise ValueError(f"{name} must be an integer >= {minimum}")
+        normalized = int(value)
+        if normalized < minimum:
+            raise ValueError(f"{name} must be at least {minimum}")
+        return normalized
+
+    min_persons = _validate_integer(min_persons, "min_persons", 1)
+    if n_persons < min_persons:
+        raise ValueError(
+            f"IRT experiment requires at least {min_persons} persons; "
+            f"received {n_persons}"
+        )
+
+    min_observed_per_item = _validate_integer(
+        min_observed_per_item, "min_observed_per_item", 1
+    )
+    if min_observed_per_item > n_persons:
+        raise ValueError(
+            f"min_observed_per_item cannot exceed the number of persons ({n_persons})"
+        )
+
+    min_item_distinct_values = _validate_integer(
+        min_item_distinct_values, "min_item_distinct_values", 2
+    )
+    if item_type == "polytomous" and min_item_distinct_values > int(n_categories):
+        raise ValueError(
+            "min_item_distinct_values cannot exceed n_categories for polytomous responses"
+        )
+
+    observed = ~np.isnan(matrix)
+    item_observed = np.asarray(observed.sum(axis=0), dtype=np.int64)
+    weakly_observed_items = np.nonzero(item_observed < min_observed_per_item)[0].tolist()
+    if weakly_observed_items:
+        raise ValueError(
+            "each IRT item must retain at least min_observed_per_item non-missing responses; "
+            f"missing items: {weakly_observed_items}"
+        )
+
+    for item_index in range(n_items):
+        col = matrix[:, item_index]
+        observed_col = col[observed[:, item_index]]
+        if observed_col.size == 0:
+            raise ValueError("each item must have at least one observed response")
+        unique_values = np.unique(observed_col)
+        if unique_values.size < min_item_distinct_values:
+            raise ValueError(
+                "each IRT item must show at least two observed category values "
+                f"(item {item_index} is constant)"
+            )
+    if factor_ids is not None:
+        if isinstance(factor_ids, (str, bytes)) or not isinstance(
+            factor_ids, (Sequence, np.ndarray)
+        ):
+            raise ValueError("factor_ids must be a sequence of hashable factor labels")
+        if isinstance(factor_ids, np.ndarray) and factor_ids.ndim != 1:
+            raise ValueError("factor_ids must be a one-dimensional sequence")
+        if len(factor_ids) != n_items:
+            raise ValueError(
+                "factor_ids must contain one factor label for each item"
+            )
+        min_items_per_factor = _validate_integer(
+            min_items_per_factor, "min_items_per_factor", 1
+        )
+        labels = factor_ids.tolist() if isinstance(factor_ids, np.ndarray) else factor_ids
+        try:
+            counts = Counter(labels)
+        except TypeError as exc:
+            raise ValueError("factor_ids must contain hashable factor labels") from exc
+        low_coverage_factors = [
+            str(factor)
+            for factor, count in counts.items()
+            if count < min_items_per_factor
+        ]
+        if low_coverage_factors:
+            raise ValueError(
+                "each factor anchor must appear on at least min_items_per_factor items; "
+                f"under-covered factors: {', '.join(low_coverage_factors)}"
+            )
+
+    return matrix
+
+
+__all__ = [
+    "MIN_FACTOR_ANCHOR_ITEMS",
+    "MIN_IRT_ITEMS",
+    "MIN_IRT_PERSONS",
+    "MIN_ITEM_DISTINCT_VALUES",
+    "MIN_OBSERVED_PER_ITEM",
+    "IRTItemType",
+    "validate_irt_response_matrix",
+    "validate_irt_experiment_readiness",
+]

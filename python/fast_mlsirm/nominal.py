@@ -13,6 +13,7 @@ import numpy as np
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
+from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
@@ -169,6 +170,11 @@ def fit_nominal(
             raise ValueError(
                 "responses must be integer categories in 0..n_cat-1 where observed"
             )
+    validate_irt_response_matrix(
+        np.where(observed, y, np.nan),
+        "polytomous",
+        n_categories=n_cat_int,
+    )
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
     res = core.fit_nominal_model(
