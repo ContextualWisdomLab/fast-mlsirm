@@ -8,8 +8,8 @@ import pytest
 import fast_mlsirm.fitstats as fitstats
 
 
-def test_multigroup_m2_rejects_missing_core_before_reference_projection(monkeypatch):
-    """Public multigroup M2 must not enter private NumPy projection arithmetic."""
+def _multigroup_case():
+    """Return a small connected two-group MIRT case for ownership tests."""
     rng = np.random.default_rng(627)
     n_persons = 120
     n_items = 6
@@ -21,16 +21,84 @@ def test_multigroup_m2_rejects_missing_core_before_reference_projection(monkeypa
     intercept = np.linspace(-0.9, 0.9, n_items)
     probability = 1.0 / (1.0 + np.exp(-(theta[:, None] + intercept[None, :])))
     responses = (rng.random((n_persons, n_items)) < probability).astype(np.float64)
-    params = SimpleNamespace(alpha=np.zeros(n_items), b=intercept, zeta=np.zeros((n_items, 1)), tau=-30.0)
+    params = SimpleNamespace(
+        alpha=np.zeros(n_items),
+        b=intercept,
+        zeta=np.zeros((n_items, 1)),
+        tau=-30.0,
+    )
+    return responses, factor_id, params, group_id, group_mean, group_sd
 
+
+def _reject_reference_projection(*_args, **_kwargs):
+    """Fail if a public ownership test reaches the NumPy reference kernel."""
+    raise AssertionError("public multigroup M2 entered NumPy projection arithmetic")
+
+
+def _run_multigroup(case):
+    """Call the public multigroup M2 path with bounded quadrature."""
+    responses, factor_id, params, group_id, group_mean, group_sd = case
+    return fitstats.m2_multigroup(
+        responses,
+        factor_id,
+        params,
+        "MIRT",
+        group_id,
+        group_mean,
+        group_sd,
+        q_theta=7,
+        q_xi=7,
+    )
+
+
+def test_multigroup_m2_rejects_missing_core_before_reference_projection(monkeypatch):
+    """Public multigroup M2 must fail closed when the compiled core is absent."""
     monkeypatch.setattr(fitstats, "_core_module", lambda: None)
-
-    def reject_reference_projection(*_args, **_kwargs):
-        raise AssertionError("public multigroup M2 entered NumPy projection arithmetic")
-
-    monkeypatch.setattr(fitstats, "_projected_m2_numpy", reject_reference_projection)
+    monkeypatch.setattr(fitstats, "_projected_m2_numpy", _reject_reference_projection)
 
     with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
-        fitstats.m2_multigroup(
-            responses, factor_id, params, "MIRT", group_id, group_mean, group_sd, q_theta=7, q_xi=7
-        )
+        _run_multigroup(_multigroup_case())
+
+
+def test_multigroup_m2_requires_rust_projection_entrypoint(monkeypatch):
+    """A compiled core without the projection entrypoint is still non-passing."""
+    core_without_projection = SimpleNamespace(chi2_sf=lambda _x, _df: 0.5)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core_without_projection)
+    monkeypatch.setattr(fitstats, "_projected_m2_numpy", _reject_reference_projection)
+
+    with pytest.raises(RuntimeError, match="fit statistics require the compiled Rust core"):
+        _run_multigroup(_multigroup_case())
+
+
+def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch):
+    """Both public multigroup projection calls must cross the Rust boundary."""
+    calls = []
+
+    class ProjectionCore:
+        @staticmethod
+        def projected_m2(residual, delta, xi, n):
+            residual = np.asarray(residual)
+            delta = np.asarray(delta)
+            xi = np.asarray(xi)
+            calls.append((residual.shape, delta.shape, xi.shape, float(n)))
+            # Keep target/null finite and distinct while exercising downstream indices.
+            return 8.0 if len(calls) == 1 else 12.0
+
+        @staticmethod
+        def chi2_sf(_x, _df):
+            return 0.5
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: ProjectionCore())
+    monkeypatch.setattr(fitstats, "_projected_m2_numpy", _reject_reference_projection)
+
+    result = _run_multigroup(_multigroup_case())
+
+    assert np.isfinite(result.m2)
+    assert result.m2 == 8.0
+    assert result.null_m2 == 12.0
+    assert len(calls) == 2
+    for residual_shape, delta_shape, xi_shape, n in calls:
+        assert residual_shape == (42,)
+        assert delta_shape[0] == residual_shape[0]
+        assert xi_shape == (42, 42)
+        assert n == 1.0
