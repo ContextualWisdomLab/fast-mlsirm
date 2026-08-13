@@ -135,7 +135,10 @@ print(fixed_item_calibration.best)
   caller-supplied, and every successful result must project to multiple
   criterion columns before it can be used as a polytomous row. Paired score
   deltas are diagnostic sensitivity evidence, not a causal positive-option-
-  count law or a claim of judge debiasing.
+  count law or a claim of judge debiasing. When a binary judge raises a
+  `JudgeFormatError`, the report retains its bounded `.evidence` (boundary
+  statuses, parse state, trace counts, and usage) while excluding source text
+  and raw model output.
   Cross-repository exact-head review, structured Strix evidence, and merge
   policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0004-pr-review-merge-loop.md) and
   [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).

@@ -33,7 +33,29 @@ MAX_CALIBRATION_CASES = 256
 _MAX_METADATA_ENTRIES = 32
 _MAX_METADATA_TEXT = 256
 _MAX_ERROR_TEXT = 512
+_MAX_EVIDENCE_ENTRIES = 64
+_MAX_EVIDENCE_DEPTH = 6
 _CALIBRATION_STATUSES = frozenset({"passed", "judge_failed", "irt_failed"})
+_ALLOWED_EVIDENCE_KEYS = frozenset(
+    {
+        "call_count",
+        "call_status",
+        "category_count",
+        "category_method",
+        "completed_call_count",
+        "criterion_id",
+        "error",
+        "error_type",
+        "failed_call_count",
+        "meets_threshold",
+        "parse_status",
+        "records",
+        "semantic_status",
+        "threshold_index",
+        "trace_step_count",
+        "usage",
+    }
+)
 
 
 def _text(value: Any, name: str, *, maximum: int = MAX_JUDGE_TEXT_CHARACTERS) -> str:
@@ -59,6 +81,37 @@ def _metadata(value: Mapping[str, str]) -> Mapping[str, str]:
             member, "metadata value", maximum=_MAX_METADATA_TEXT
         )
     return MappingProxyType(normalized)
+
+
+def _bounded_evidence(value: Any, *, depth: int = 0) -> dict[str, Any] | None:
+    """Keep structured failure evidence while excluding source/model text."""
+    if not isinstance(value, Mapping) or depth > _MAX_EVIDENCE_DEPTH:
+        return None
+    result: dict[str, Any] = {}
+    for key, member in list(value.items())[:_MAX_EVIDENCE_ENTRIES]:
+        if type(key) is not str or key not in _ALLOWED_EVIDENCE_KEYS:
+            continue
+        if isinstance(member, Mapping):
+            nested = _bounded_evidence(member, depth=depth + 1)
+            if nested is not None:
+                result[key] = nested
+        elif isinstance(member, (list, tuple)):
+            nested_items: list[Any] = []
+            for item in list(member)[:_MAX_EVIDENCE_ENTRIES]:
+                if isinstance(item, Mapping):
+                    nested = _bounded_evidence(item, depth=depth + 1)
+                    if nested is not None:
+                        nested_items.append(nested)
+                elif type(item) in (bool, int, float) or item is None:
+                    nested_items.append(item)
+                elif type(item) is str:
+                    nested_items.append(item[:_MAX_ERROR_TEXT])
+            result[key] = nested_items
+        elif type(member) in (bool, int, float) or member is None:
+            result[key] = member
+        elif type(member) is str:
+            result[key] = member[:_MAX_ERROR_TEXT]
+    return result
 
 
 @dataclass(frozen=True)
@@ -284,6 +337,7 @@ class JudgeCalibrationOutcome:
     gold_exact: bool | None = None
     error_type: str | None = None
     error: str | None = None
+    evidence: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if type(self.status) is not str or self.status not in _CALIBRATION_STATUSES:
@@ -305,6 +359,11 @@ class JudgeCalibrationOutcome:
             object.__setattr__(self, "error_type", _text(self.error_type, "error_type", maximum=128))
         if self.error is not None:
             object.__setattr__(self, "error", _text(self.error, "error", maximum=_MAX_ERROR_TEXT))
+        if self.evidence is not None:
+            sanitized = _bounded_evidence(self.evidence)
+            if sanitized is None:
+                raise ValueError("evidence must be a bounded object")
+            object.__setattr__(self, "evidence", sanitized)
 
     def to_dict(self) -> dict[str, Any]:
         result = None
@@ -331,6 +390,7 @@ class JudgeCalibrationOutcome:
             "gold_exact": self.gold_exact,
             "error_type": self.error_type,
             "error": self.error,
+            "evidence": dict(self.evidence) if self.evidence is not None else None,
         }
 
 
@@ -478,6 +538,7 @@ def evaluate_paired_calibration(
                     status="judge_failed",
                     error_type=type(exc).__name__,
                     error=message[:_MAX_ERROR_TEXT],
+                    evidence=getattr(exc, "evidence", None),
                 )
             )
             continue

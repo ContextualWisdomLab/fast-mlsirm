@@ -60,7 +60,16 @@ class _ScriptedJudge:
         task = kwargs["task"]
         self.calls.append(task)
         if "unreviewed_rollout" in task:
-            raise JudgeFormatError("provider parse failure")
+            raise JudgeFormatError(
+                "provider parse failure",
+                evidence={
+                    "call_count": 1,
+                    "answer": "must not be retained",
+                    "records": [
+                        {"meets_threshold": False, "output_preview": "secret"}
+                    ],
+                },
+            )
         option_only = "Question:" not in task
         categories = (
             {"evidence_quality": 1, "risk_awareness": 1}
@@ -101,6 +110,11 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
     assert serialized["gold_scored_count"] == 3
     assert serialized["gold_exact_agreement"] == pytest.approx(2 / 3)
     assert all("raw_output" not in outcome for outcome in serialized["outcomes"])
+    failure = next(outcome for outcome in serialized["outcomes"] if outcome["status"] == "judge_failed")
+    assert failure["evidence"] == {
+        "call_count": 1,
+        "records": [{"meets_threshold": False}],
+    }
 
     effects = {effect["variant"]: effect for effect in report.paired_effects()}
     assert effects["option_only"]["score_delta"] == pytest.approx(-0.25)
