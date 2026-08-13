@@ -116,4 +116,3 @@ def test_public_infit_outfit_dispatches_to_core(monkeypatch: pytest.MonkeyPatch)
     result = fitstats.infit_outfit(responses, factor_id, params, "mlsirm", mask=observed)
     assert core.calls == 1
     np.testing.assert_array_equal(result["infit"], np.full(n_items, 0.9))
-

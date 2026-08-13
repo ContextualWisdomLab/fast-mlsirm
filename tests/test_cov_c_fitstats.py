@@ -1,10 +1,9 @@
 """Coverage tests (batch C) for ``fast_mlsirm.fitstats``.
 
-These target NumPy-fallback bodies (reached by forcing ``_core_module`` to
-return ``None``), input-validation guards, and edge branches in the
-fit-statistics core. They assert real behaviour (the exact exception types the
-guards raise, and NumPy/native structural agreement) rather than merely
-executing lines.
+These target fit-statistics validation and the fail-closed Rust ownership
+boundary, input-validation guards, and edge branches in the fit-statistics
+core. They assert real behaviour (the exact exception types the guards raise,
+and native structural agreement) rather than merely executing lines.
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ def _pure_bh(p_values, q: float = 0.05):
 
 
 class _CoreWithFitStatsOnly:
-    """Stub core exposing only fit-statistics entrypoints for unrelated fallback tests."""
+    """Stub core without the native S-X²/person-fit entrypoints."""
 
     def chi2_sf(self, x, df):
         return _pure_chi2_sf(float(x), float(df))
@@ -184,7 +183,7 @@ def test_icc_grid_and_factorized_guards():
 
 
 # ---------------------------------------------------------------------------
-# S-X2 NumPy fallback body (core forced absent)
+# S-X2 native ownership (incomplete core fails closed)
 # ---------------------------------------------------------------------------
 
 
@@ -214,7 +213,7 @@ def test_sx2_numpy_fallback_spatial_and_dim_floors(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# person-fit / infit-outfit NumPy fallbacks (core forced absent)
+# person-fit Rust ownership (incomplete core fails closed)
 # ---------------------------------------------------------------------------
 
 
