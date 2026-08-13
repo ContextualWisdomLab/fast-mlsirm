@@ -79,6 +79,19 @@ CRITERIA = [
     JudgeCriterion("factual_support", "The answer avoids unsupported claims."),
 ]
 
+ANCHORED_CRITERIA = [
+    JudgeCriterion(
+        "task_alignment",
+        "The answer directly addresses the task.",
+        category_anchors=("no alignment", "some alignment", "clear alignment"),
+    ),
+    JudgeCriterion(
+        "factual_support",
+        "The answer avoids unsupported claims.",
+        category_anchors=("no support", "some support", "fully supported"),
+    ),
+]
+
 
 def _payload(score=0.8, accepted=True):
     return json.dumps({
@@ -295,6 +308,62 @@ def test_category_judgment_defaults_to_binary_threshold_for_polytomous_output() 
     assert result.to_irt_row() == (2, 2)
     assert len(orchestrator.calls) == 4
     assert all("binary" in call[0][0]["content"] for call in orchestrator.calls)
+
+
+def test_category_anchors_are_bound_to_each_binary_threshold() -> None:
+    payload = json.dumps({"meets_threshold": True, "rationale": "supported"})
+    orchestrator = _SequencedOrchestrator([payload] * 4)
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=ANCHORED_CRITERIA,
+        category_count=3,
+    )
+    assert result.category_anchors_provided is True
+    assert result.to_dict()["category_anchors_provided"] is True
+    first_messages = orchestrator.calls[0][0]
+    first_payload = json.loads(first_messages[1]["content"].split("\n", 1)[1])
+    assert first_payload["criterion"]["category_anchors"] == [
+        "no alignment",
+        "some alignment",
+        "clear alignment",
+    ]
+    assert first_payload["category_anchor"] == "some alignment"
+    assert "authoritative definition" in first_messages[0]["content"]
+
+
+def test_category_anchors_require_a_complete_polytomous_contract() -> None:
+    with pytest.raises(ValueError, match="explicit category_count"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=ANCHORED_CRITERIA,
+        )
+    with pytest.raises(ValueError, match="match category_count"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=[
+                JudgeCriterion(
+                    "task_alignment",
+                    "The answer directly addresses the task.",
+                    category_anchors=("none", "some"),
+                ),
+                JudgeCriterion(
+                    "factual_support",
+                    "The answer avoids unsupported claims.",
+                    category_anchors=("none", "some"),
+                ),
+            ],
+            category_count=3,
+        )
+    with pytest.raises(ValueError, match="for every criterion"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=[ANCHORED_CRITERIA[0], CRITERIA[1]],
+            category_count=3,
+        )
 
 
 def test_category_judgment_direct_method_remains_explicit_calibration_only() -> None:
@@ -717,6 +786,12 @@ def test_judge_criteria_reject_invalid_runtime_types() -> None:
         JudgeCriterion("task_alignment", 1)
     with pytest.raises(ValueError, match="criterion weight must be a number"):
         JudgeCriterion("task_alignment", "description", "1")
+    with pytest.raises(ValueError, match="category_anchors must be a tuple"):
+        JudgeCriterion(
+            "task_alignment",
+            "description",
+            category_anchors=["none", "some"],
+        )
     with pytest.raises(ValueError, match="criterion weight must be a number"):
         ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
             task="task",

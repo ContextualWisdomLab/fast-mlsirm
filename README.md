@@ -107,6 +107,12 @@ print(fixed_item_calibration.best)
   A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
   containing call/parse status, partial trace-step counts, usage, and ordered
   boundary records; callers must retain that failure in calibration results.
+  For semantically interpretable polytomous calibration, callers may provide a
+  `category_anchors` tuple of exactly K definitions on every `JudgeCriterion`;
+  those definitions are carried as rubric data to each binary boundary. Mixed,
+  incomplete, or mismatched anchor sets are rejected. Omitted anchors remain a
+  backwards-compatible exploratory mode and must not be treated as gold
+  calibration evidence.
   Category-count and prompt-perturbation calibration remain required for all
   methods. See
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),

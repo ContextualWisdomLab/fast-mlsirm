@@ -89,6 +89,7 @@ class JudgeCriterion:
     criterion_id: str
     description: str
     weight: float = 1.0
+    category_anchors: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if type(self.criterion_id) is not str:
@@ -99,6 +100,18 @@ class JudgeCriterion:
             raise ValueError("criterion description must be a string")
         if not self.description.strip() or len(self.description) > 2_000:
             raise ValueError("criterion description must be non-empty and <= 2000 characters")
+        if self.category_anchors is not None:
+            if type(self.category_anchors) is not tuple:
+                raise ValueError("criterion category_anchors must be a tuple of strings")
+            if not 2 <= len(self.category_anchors) <= MAX_JUDGE_CATEGORIES:
+                raise ValueError(
+                    f"criterion category_anchors must contain 2..{MAX_JUDGE_CATEGORIES} values"
+                )
+            for index, anchor in enumerate(self.category_anchors):
+                if type(anchor) is not str or not anchor.strip() or len(anchor) > 2_000:
+                    raise ValueError(
+                        f"criterion category_anchors[{index}] must be a non-empty string <= 2000 characters"
+                    )
         if type(self.weight) not in (int, float):
             raise ValueError("criterion weight must be a number")
         try:
@@ -110,11 +123,14 @@ class JudgeCriterion:
 
     def to_dict(self) -> dict[str, Any]:
         """Return the prompt-safe criterion payload."""
-        return {
+        result = {
             "criterion_id": self.criterion_id,
             "description": self.description.strip(),
             "weight": self.weight,
         }
+        if self.category_anchors is not None:
+            result["category_anchors"] = [anchor.strip() for anchor in self.category_anchors]
+        return result
 
 
 @dataclass(frozen=True)
@@ -132,6 +148,7 @@ class LLMJudgeResult:
     criterion_categories: Mapping[str, int] | None = None
     category_count: int | None = None
     category_method: str = "direct"
+    category_anchors_provided: bool = False
 
     def to_irt_row(
         self,
@@ -261,6 +278,7 @@ class LLMJudgeResult:
             ),
             "category_count": self.category_count,
             "category_method": self.category_method,
+            "category_anchors_provided": self.category_anchors_provided,
         }
 
 
@@ -281,10 +299,14 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
         if isinstance(value, JudgeCriterion):
             criterion = value
         elif isinstance(value, Mapping):
+            category_anchors = value.get("category_anchors")
+            if type(category_anchors) is list:
+                category_anchors = tuple(category_anchors)
             criterion = JudgeCriterion(
                 criterion_id=value.get("criterion_id", value.get("id", "")),
                 description=value.get("description", ""),
                 weight=value.get("weight", 1.0),
+                category_anchors=category_anchors,
             )
         else:
             # The public criterion contract deliberately normalizes malformed
@@ -298,6 +320,26 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
     if len({criterion.criterion_id for criterion in normalized}) != len(normalized):
         raise ValueError("criteria must have unique criterion_id values")
     return tuple(normalized)
+
+
+def _validate_category_anchors(
+    criteria: tuple[JudgeCriterion, ...], category_count: int | None
+) -> bool:
+    """Validate one complete ordinal anchor set when callers provide it."""
+    provided = [criterion.category_anchors is not None for criterion in criteria]
+    if not any(provided):
+        return False
+    if category_count is None:
+        raise ValueError("criterion category_anchors require an explicit category_count")
+    if not all(provided):
+        raise ValueError("criterion category_anchors must be provided for every criterion")
+    for criterion in criteria:
+        assert criterion.category_anchors is not None
+        if len(criterion.category_anchors) != category_count:
+            raise ValueError(
+                f"criterion {criterion.criterion_id} category_anchors must match category_count"
+            )
+    return True
 
 
 def _validate_raw_json_depth(content: str) -> None:
@@ -422,6 +464,11 @@ class ContextualOrchestratorJudge:
                 "criterion": criterion.to_dict(),
                 "category_count": category_count,
                 "threshold_index": threshold_index + 1,
+                "category_anchor": (
+                    criterion.category_anchors[threshold_index + 1]
+                    if criterion.category_anchors is not None
+                    else None
+                ),
             }
             messages = [
                 {
@@ -434,7 +481,9 @@ class ContextualOrchestratorJudge:
                         f"Decide only whether the answer meets at least ordered category {threshold_index + 1} "
                         f"of {category_count}. Category 0 means no credible evidence and category "
                         f"{category_count - 1} means full satisfaction. This is one binary boundary question, "
-                        "not a K-way choice. Do not reward answer length, agreement, or the existence of "
+                        "not a K-way choice. If category_anchor is present in the JSON data, it is the "
+                        "authoritative definition of the requested category; do not infer that definition from "
+                        "the category number alone. Do not reward answer length, agreement, or the existence of "
                         "more categories. Do not infer a missing threshold from another threshold."
                     ),
                 },
@@ -613,6 +662,9 @@ class ContextualOrchestratorJudge:
         expected_ids = [criterion.criterion_id for criterion in normalized_criteria]
         if category_count is not None:
             category_count = _category_count(category_count)
+        category_anchors_provided = _validate_category_anchors(
+            normalized_criteria, category_count
+        )
         if category_method is None:
             # K-way category selection is vulnerable to score-option effects;
             # use independent Boolean boundaries for implicit polytomous calls.
@@ -680,6 +732,7 @@ class ContextualOrchestratorJudge:
                 criterion_categories=criterion_categories,
                 category_count=category_count,
                 category_method=category_method,
+                category_anchors_provided=category_anchors_provided,
             )
         category_instruction = ""
         if category_count is not None:
@@ -705,7 +758,9 @@ class ContextualOrchestratorJudge:
                     "Replace the example values and keep every key unchanged. Category 0 means no credible "
                     "evidence or complete failure; the highest category means fully satisfies the criterion "
                     "with accurate evidence. Derive the overall score from the number of true thresholds. "
-                    "Do not reward answer length, agreement, or the presence of more categories."
+                    "Do not reward answer length, agreement, or the presence of more categories. If a criterion "
+                    "provides category_anchors in the JSON data, treat them as the authoritative definitions "
+                    "and do not invent intermediate meanings."
                 )
             else:
                 category_template = {
@@ -728,7 +783,8 @@ class ContextualOrchestratorJudge:
                     "Intermediate categories are ordered levels between those anchors. A strong answer that fully "
                     f"satisfies a criterion must use category {category_count - 1}. More categories add "
                     "resolution; they do not reverse the meaning of the anchors. Do not choose a higher category "
-                    "merely because more categories exist."
+                    "merely because more categories exist. If a criterion provides category_anchors in the JSON "
+                    "data, treat them as the authoritative definitions and do not invent intermediate meanings."
                 )
         else:
             score_template = {
@@ -879,6 +935,7 @@ class ContextualOrchestratorJudge:
             criterion_categories=criterion_categories,
             category_count=category_count,
             category_method=category_method,
+            category_anchors_provided=category_anchors_provided,
         )
 
 

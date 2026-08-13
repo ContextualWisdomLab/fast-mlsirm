@@ -85,18 +85,27 @@ without this gate.
    `.evidence` containing ordered boundary records, call/parse status, partial
    trace-step counts, and aggregated usage; callers must retain that evidence
    as a failed calibration comparison rather than discarding the exception.
+   Callers may provide exactly K `category_anchors` on every criterion. When
+   present, each requested boundary receives its matching anchor as rubric data;
+   mixed, incomplete, or mismatched anchor sets fail before provider calls.
+   Omitted anchors remain an exploratory compatibility mode and are not gold
+   calibration evidence.
 
 ## Implementation Plan
 
 - `python/fast_mlsirm/llm_judge.py`: keep direct and cumulative methods
   compatible, make the bounded binary-threshold method the safe implicit
   polytomous default, and derive only from strict Boolean boundary responses.
+  Validate complete per-criterion `category_anchors` when supplied and bind the
+  current anchor to each Boolean boundary without putting rubric text in the
+  system message.
   Reuse an exposed contextual-orchestrator local-concurrency bound for
   independent boundary calls without adding a provider client or a fallback
   transport.
 - `tests/test_llm_judge.py`: cover call decomposition, weighted category/IRT
-  projection, malformed/non-monotone responses, bounded gateway concurrency,
-  failure evidence retention, and the 64-call resource cap.
+  projection, anchor validation/binding, malformed/non-monotone responses,
+  bounded gateway concurrency, failure evidence retention, and the 64-call
+  resource cap.
 - `README.md` and this ADR: document the method as calibration-only and retain
   the no-keyword/no-positional-repair boundary.
 - `contextual-orchestrator/docs/benchmarks/` and ADR 0006/0008: record paired
@@ -130,6 +139,10 @@ without this gate.
   retain request order in the success or failure evidence record. A failed
   boundary record is bounded and contains no source answer copy beyond a
   short output preview.
+- If category anchors are supplied, every criterion has exactly K non-empty
+  definitions and the boundary prompt carries only the matching anchor as
+  untrusted rubric data; anchor presence is recorded in the result. Missing
+  anchors are explicit exploratory evidence, never silently inferred labels.
 
 ## Consequences and trade-offs
 
@@ -182,6 +195,8 @@ format changes, and violates the fail-closed judge contract.
 | After this default hardening, PR #816 is exact head `608cfbd39983f485cebe76518c80375e7ff636dd`; all non-skipped required checks are queued, the repository runner API reports `0 total / 0 online / 0 busy`, and no independent current-head approval exists | Keep the PR ready for review but unmergeable. Preserve the exact head and queued/no-runner evidence, request a fresh authorized review, and require terminal exact-head checks plus structured same-head Strix evidence before normal protected merge; local full-suite success cannot substitute for these gates | Goal/ADR expanded 2026-08-14; active infrastructure/review follow-up |
 | The real integrated adapter smoke at K=5 with no explicit method used fast-mlsirm `9d18f53` and contextual-orchestrator `a0a354a`: the unsafe answer returned a valid rejected `(0,0)` result after 8 calls, but the safe answer failed closed on non-monotone thresholds after 8 calls | Preserve the default-selection and contextual-routing contract while retaining the safe failure as calibration evidence; never coerce, keyword-match, or retry blindly, and require held-out semantic gold/recall before treating the method as IRT-ready | Observed 2026-08-14; exact integration verified, semantic calibration remains open |
 | Binary-threshold failures raised only an exception, so callers could not reliably retain per-boundary parse status, completed-call count, partial trace metadata, or usage for malformed/non-monotone comparisons | Attach bounded `.evidence` to `JudgeFormatError` for binary failures, preserving deterministic boundary order, call/parse status, trace-step counts, usage, and a short output preview; keep source answers out of the evidence and do not retry or repair | Implemented in current follow-up; focused regression required |
+| A 3B MLX binary-threshold sweep produced a safe semantic false negative in 6/6 repeated runs at K=5, while generic criteria omitted definitions for intermediate ordinal levels; one anchored probe improved some boundary decisions but still exposed non-monotone outputs | Add optional complete per-criterion `category_anchors`, bind each requested boundary to its explicit rubric definition, record anchor presence, and keep omitted-anchor runs exploratory. Do not coerce non-monotone results, infer missing labels, or claim IRT validity without held-out gold recall | Observed 2026-08-14; anchor contract implemented, live semantic calibration remains required |
+| On the same anchored K=5 integrated MLX case, Gemma 4 e4b returned strict `(4,4)` with score `1.0` in `3,031` tokens/`11.96 s`, Llama 3B remained semantically unstable, and Llama 1B failed structured JSON on all eight boundaries | Keep model selection quality/latency evidence based: use the Gemma 4B result only as a candidate, retain 3B false negatives and 1B parse failures in the denominator, and require balanced held-out gold recall before changing a verifier priority or declaring IRT readiness | Observed 2026-08-14; model comparison is exploratory and routed through contextual-orchestrator |
 | The real MLX integrated safe-case failure previously exposed only the text `criterion thresholds must be monotone`; the new bounded evidence capture shows all 8 boundaries completed and parsed, 8 trace steps, `2,639` provider tokens, and `semantic_status=non_monotone` | Preserve this structured failure record in the calibration denominator and distinguish semantic non-monotonicity from provider/parse failure; do not turn a complete but invalid comparison into an IRT row | Observed 2026-08-14; live evidence capture verified |
 | Binary-threshold boundaries were independent but were previously issued sequentially, making K=7 two-criterion calibration a long serial path | Reuse the injected contextual-orchestrator `client.local_concurrency` as a bounded executor limit; preserve deterministic request order, aggregate trace/usage, and fail closed after complete validation. Keep generic injected orchestrators sequential. | Implemented on current exact follow-up; targeted `58 passed`, full `3630 passed` after native extension build; live K=5/K=7 MLX probe retained with parse/failure and latency evidence |
 | The actual contextual-orchestrator `_FastMLSIJudgeAdapter` did not expose its existing gateway client, so the bounded binary executor was discoverable in direct injection tests but not on the integrated judge path. | Keep the fast judge transport-neutral and consume the adapter's exposed `client.local_concurrency` capability when present; retain sequential behavior for generic injected transports and add an integrated adapter smoke before claiming the optimization is active. | Fixed in contextual-orchestrator `d82e592`; exact-source integration smoke reached peak concurrency `2` across `4` boundary calls; linked PR review/check follow-up required |
