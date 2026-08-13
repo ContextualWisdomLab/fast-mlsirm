@@ -58,9 +58,14 @@ def _registry_payload(path: str):
 def test_audit_retries_whole_snapshot_after_default_branch_movement():
     path = ".github/workflows/ci.yml"
     endpoint = f"repos/{REPO}/actions/workflows?per_page=100&page=1"
+    repo_endpoint = f"repos/{REPO}"
     api = FakeApi(
         {
-            f"repos/{REPO}": {"default_branch": "main"},
+            repo_endpoint: [
+                {"default_branch": "main"},
+                {"default_branch": "main"},
+                {"default_branch": "main"},
+            ],
             f"repos/{REPO}/git/ref/heads/main": [
                 _ref_payload(SHA_A),
                 _ref_payload(SHA_B),
@@ -82,11 +87,14 @@ def test_audit_retries_whole_snapshot_after_default_branch_movement():
 
     assert audit["status"] == "ok"
     assert audit["snapshot_stable"] is True
+    assert audit["default_branch"] == "main"
+    assert audit["end_default_branch"] == "main"
     assert audit["default_branch_sha"] == SHA_B
     assert audit["snapshot_attempts"] == [
         {"attempt": 1, "start_sha": SHA_A, "end_sha": SHA_B, "stable": False},
         {"attempt": 2, "start_sha": SHA_B, "end_sha": SHA_B, "stable": True},
     ]
+    assert api.calls.count(repo_endpoint) == 3
     assert api.calls.count(endpoint) == 2
 
 
