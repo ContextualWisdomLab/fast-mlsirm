@@ -68,26 +68,28 @@ without this gate.
    cannot be repaired by keyword matching, positional category repair, silent
    item dropping, or a blind retry. `LLMJudgeResult.to_irt_row` continues to
    require multiple criteria.
-6. `category_method="binary_threshold"` is an opt-in calibration method for
-   polytomous judge output. It asks one strict Boolean question per ordered
-   boundary and criterion, derives categories only from validated monotone
-   thresholds, and fails the complete comparison on malformed or
-   non-monotone output. The method is bounded at 64 provider calls per result,
-   is not the default, and must record its call count, latency, usage, parse
-   status, and category row alongside direct/cumulative results. When the
-   injected contextual-orchestrator exposes its already-bounded
-   `client.local_concurrency`, independent boundary calls may run concurrently
-   through that limit; otherwise the adapter remains sequential. Output order
-   is deterministic and monotonicity is validated only after all returned
-   boundaries are assembled.
+6. `category_method="binary_threshold"` is the default for an explicit
+   polytomous `category_count` when callers omit `category_method`. It asks one
+   strict Boolean question per ordered boundary and criterion, derives
+   categories only from validated monotone thresholds, and fails the complete
+   comparison on malformed or non-monotone output. The method is bounded at 64
+   provider calls per result and must record its call count, latency, usage,
+   parse status, and category row. Equal-width K-way `direct` output remains
+   available only when explicitly requested for calibration; cumulative
+   thresholds are also explicit. When the injected contextual-orchestrator
+   exposes its already-bounded `client.local_concurrency`, independent
+   boundary calls may run concurrently through that limit; otherwise the
+   adapter remains sequential. Output order is deterministic and monotonicity
+   is validated only after all returned boundaries are assembled.
 
 ## Implementation Plan
 
 - `python/fast_mlsirm/llm_judge.py`: keep direct and cumulative methods
-  compatible, add the bounded binary-threshold method, and derive only from
-  strict Boolean boundary responses. Reuse an exposed contextual-orchestrator
-  local-concurrency bound for independent boundary calls without adding a
-  provider client or a fallback transport.
+  compatible, make the bounded binary-threshold method the safe implicit
+  polytomous default, and derive only from strict Boolean boundary responses.
+  Reuse an exposed contextual-orchestrator local-concurrency bound for
+  independent boundary calls without adding a provider client or a fallback
+  transport.
 - `tests/test_llm_judge.py`: cover call decomposition, weighted category/IRT
   projection, malformed/non-monotone responses, bounded gateway concurrency,
   and the 64-call resource cap.
@@ -169,6 +171,8 @@ format changes, and violates the fail-closed judge contract.
 | A fresh 2026-08-13 contextual-orchestrator/MLX K sweep produced valid two-item rows but changed criterion categories as K increased (`(1,0)`, `(2,0)`, `(4,0)`, `(6,2)` for K `2,3,5,7`) from one person | Retain the complete paired observation as calibration evidence, require multiple persons and declared-category occupancy before readiness/IRT interpretation, and do not infer a positive-bias law from the one-person shape smoke | Observed; calibration remains required |
 | A fresh two-case 3B MLX probe through contextual-orchestrator produced direct scores of `0.5 -> 1.0 -> 1.0` for the safe case and `0.0 -> 0.0 -> 0.3333` for the unsafe case at K `2,5,7`; cumulative thresholds parsed only at K=5 and failed JSON/monotonicity at K=2/7 | Retain every result and failure in the calibration denominator; do not promote direct or cumulative to an unbiased default. Add an opt-in bounded binary-threshold decomposition, compare its extra calls/tokens against paired human/gold anchors, and keep production IRT claims blocked until replicated. | Observed 2026-08-14; binary-threshold method implemented as experimental, calibration remains required |
 | The binary-threshold follow-up made each boundary a Boolean call, but the safe case still failed monotonicity at K=5/7 while the unsafe case parsed at score `0.0` with 8/12 calls and `2,606/3,940` tokens | Keep the method fail-closed and experimental; treat its higher call/latency budget and semantic under-recognition as measured trade-offs, not as bias removal. Do not short-circuit or synthesize higher categories without an explicit ordinal measurement design and held-out gold evidence. | Observed 2026-08-14; follow-up calibration required |
+| A fresh same-route direct K-way probe returned the unsafe case at scores `0.0`, `0.5`, and `0.8333` for K=`2,5,7`, while a partial-evidence case returned `0.0`, `1.0`, and `0.0` | Do not let callers silently select among more score identifiers for production polytomous rows. Resolve an omitted method to bounded binary thresholds when `category_count` is present; keep direct K-way output explicit and calibration-only, and retain binary semantic false negatives as failed calibration observations | Implemented in current follow-up; exact-head review required |
+| The same binary-threshold probe was stable at score `0.0` for both safe and unsafe cases at K=`5,7`, but under-recognized the safe answer | Treat the safer default as fail-closed measurement protection, not proof of judge quality. Require held-out human/gold recall, category occupancy, and provider/parse denominators before accepting a model or prompt for IRT production | Observed 2026-08-14; calibration gate remains open |
 | Binary-threshold boundaries were independent but were previously issued sequentially, making K=7 two-criterion calibration a long serial path | Reuse the injected contextual-orchestrator `client.local_concurrency` as a bounded executor limit; preserve deterministic request order, aggregate trace/usage, and fail closed after complete validation. Keep generic injected orchestrators sequential. | Implemented on current exact follow-up; targeted `58 passed`, full `3630 passed` after native extension build; live K=5/K=7 MLX probe retained with parse/failure and latency evidence |
 | The actual contextual-orchestrator `_FastMLSIJudgeAdapter` did not expose its existing gateway client, so the bounded binary executor was discoverable in direct injection tests but not on the integrated judge path. | Keep the fast judge transport-neutral and consume the adapter's exposed `client.local_concurrency` capability when present; retain sequential behavior for generic injected transports and add an integrated adapter smoke before claiming the optimization is active. | Fixed in contextual-orchestrator `d82e592`; exact-source integration smoke reached peak concurrency `2` across `4` boundary calls; linked PR review/check follow-up required |
 | K/order/framing perturbations can change judge scores | Use randomized paired perturbations, human/gold anchors, category occupancy, and parse/provider denominators; never infer a universal positive-K law | Required next |

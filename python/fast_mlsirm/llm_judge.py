@@ -506,16 +506,9 @@ class ContextualOrchestratorJudge:
         criteria: Iterable[JudgeCriterion | Mapping[str, Any]],
         reference_answer: str | None = None,
         category_count: int | None = None,
-        category_method: str = "direct",
+        category_method: str | None = None,
     ) -> LLMJudgeResult:
         """Return a strict JSON decision from the orchestrator-backed judge."""
-        if (
-            type(category_method) is not str
-            or category_method not in {"direct", "cumulative_threshold", "binary_threshold"}
-        ):
-            raise ValueError(
-                "category_method must be direct, cumulative_threshold, or binary_threshold"
-            )
         task = _bounded_text(task, "task")
         answer = _bounded_text(answer, "answer")
         if reference_answer is not None:
@@ -524,6 +517,17 @@ class ContextualOrchestratorJudge:
         expected_ids = [criterion.criterion_id for criterion in normalized_criteria]
         if category_count is not None:
             category_count = _category_count(category_count)
+        if category_method is None:
+            # K-way category selection is vulnerable to score-option effects;
+            # use independent Boolean boundaries for implicit polytomous calls.
+            category_method = "binary_threshold" if category_count is not None else "direct"
+        elif (
+            type(category_method) is not str
+            or category_method not in {"direct", "cumulative_threshold", "binary_threshold"}
+        ):
+            raise ValueError(
+                "category_method must be direct, cumulative_threshold, or binary_threshold"
+            )
         if category_method == "cumulative_threshold" and category_count is None:
             raise ValueError(
                 "cumulative_threshold requires an explicit category_count"

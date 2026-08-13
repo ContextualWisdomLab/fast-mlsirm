@@ -93,12 +93,14 @@ print(fixed_item_calibration.best)
   strict structured parsing. A judge result becomes an IRT row only through
   LLMJudgeResult.to_irt_row() with at least two criteria, followed by
   validate_irt_response_matrix() for a multi-item dichotomous or explicitly
-  categorized polytomous matrix. Equal-width direct K-way projection is
-  experimental; opt-in `category_method="cumulative_threshold"` evaluates each
-  ordered boundary with a strict Boolean vector and derives the category in the
-  adapter. Opt-in `category_method="binary_threshold"` decomposes each ordered
-  boundary into bounded binary calls; it is also experimental, has a maximum of
-  64 calls per result, and fails closed on malformed or non-monotone evidence.
+  categorized polytomous matrix. When `category_count` is supplied without an
+  explicit method, the adapter defaults to `category_method="binary_threshold"`:
+  each ordered boundary is a bounded Boolean call, and malformed or
+  non-monotone evidence fails closed. Equal-width direct K-way projection is
+  calibration-only and requires explicit `category_method="direct"`;
+  `category_method="cumulative_threshold"` remains an explicit alternative
+  that asks for one strict Boolean vector. Binary threshold judging has a
+  maximum of 64 calls per result.
   When the injected contextual-orchestrator exposes its bounded
   `client.local_concurrency`, those independent boundary calls reuse that limit;
   generic injected orchestrators remain sequential by default.

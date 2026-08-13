@@ -282,13 +282,29 @@ def test_criteria_limit_is_enforced_during_iteration() -> None:
     assert yielded == 33
 
 
-def test_category_judgment_derives_ordered_scores_and_irt_items() -> None:
+def test_category_judgment_defaults_to_binary_threshold_for_polytomous_output() -> None:
+    payload = json.dumps({"meets_threshold": True, "rationale": "supported"})
+    orchestrator = _SequencedOrchestrator([payload] * 4)
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=3,
+    )
+    assert result.category_method == "binary_threshold"
+    assert result.to_irt_row() == (2, 2)
+    assert len(orchestrator.calls) == 4
+    assert all("binary" in call[0][0]["content"] for call in orchestrator.calls)
+
+
+def test_category_judgment_direct_method_remains_explicit_calibration_only() -> None:
     orchestrator = _FakeOrchestrator(_category_payload())
     result = ContextualOrchestratorJudge(orchestrator).judge(
         task="task",
         answer="answer",
         criteria=CRITERIA,
         category_count=5,
+        category_method="direct",
     )
     assert result.category_count == 5
     assert dict(result.criterion_categories) == {
@@ -480,6 +496,7 @@ def test_category_judgment_rejects_non_integral_categories() -> None:
             answer="answer",
             criteria=CRITERIA,
             category_count=3,
+            category_method="direct",
         )
 
 
@@ -506,6 +523,7 @@ def test_category_count_and_category_values_reject_runtime_subclasses() -> None:
         answer="answer",
         criteria=CRITERIA,
         category_count=5,
+        category_method="direct",
     )
     with pytest.raises(JudgeFormatError, match="criterion_categories"):
         replace(
@@ -530,6 +548,7 @@ def test_category_judgment_rejects_malformed_top_level_score() -> None:
             answer="answer",
             criteria=CRITERIA,
             category_count=2,
+            category_method="direct",
         )
 
 
@@ -713,7 +732,7 @@ if __name__ == "__main__":
     test_judge_result_projects_only_multiple_criteria_to_irt_items()
     test_irt_projection_rejects_malformed_result_mappings()
     test_criteria_limit_is_enforced_during_iteration()
-    test_category_judgment_derives_ordered_scores_and_irt_items()
+    test_category_judgment_direct_method_remains_explicit_calibration_only()
     test_category_judgment_rejects_non_integral_categories()
     test_judge_rejects_missing_or_malformed_model_fields()
     test_judge_criteria_reject_invalid_runtime_types()
