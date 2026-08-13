@@ -252,7 +252,7 @@ def _fit_mmle_marginal(
     anchors: dict | None = None,
     covariate: dict | None = None,
 ) -> FitResult:
-    """Marginal EM for the latent-space family (Rust core, NumPy fallback).
+    """Marginal EM for the latent-space family with explicit backend ownership.
 
     Person latents are integrated out by Gauss-Hermite quadrature; item-side
     parameters carry the LSIRM priors of Jeon et al. (2021) as MAP penalties
@@ -349,6 +349,11 @@ def _fit_mmle_marginal(
             rust = getattr(_core, "fit_marginal", None)
         except Exception:  # pragma: no cover
             rust = None
+
+    if backend == "rust" and rust is None:
+        raise RuntimeError(
+            "compiled Rust core marginal estimator is required for marginal MMLE"
+        )
 
     y_filled = np.where(observed, y, 0.0).astype(np.float64)
     if rust is not None:  # pragma: no cover - exercised only with the extension
