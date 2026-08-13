@@ -49,10 +49,14 @@ sycophancy in language models*. arXiv:2310.13548.
 
 Jones, W. P., & Loe, S. A. (2013). *Optimal Number of Questionnaire Response
 Categories: More May Not Be Better*. SAGE Open, 3(2).
-<https://doi.org/10.1177/2158244013489691>. The SAGE Open record is open
-access, but the official PDF endpoint returned an anti-bot 403 in the current
-environment. No HTML page, regenerated file, or unauthorised mirror is stored
-as the original PDF; retry through an authorized Zotero 10+ local-write route.
+<https://doi.org/10.1177/2158244013489691>. OpenAlex, Unpaywall, and the
+publisher record identify this as gold OA with a CC BY licence. The official
+SAGE PDF and the author-uploaded ResearchGate copy
+<https://www.researchgate.net/publication/258187383_Optimal_Number_of_Questionnaire_Response_Categories_More_May_Not_Be_Better>
+returned anti-bot responses to the current environment, and the Zotero Local
+API record `CWY355RP` has no child attachment. No HTML page, regenerated file,
+or unauthorised mirror is stored as the original PDF; retry through an
+authorized Zotero write-capable route.
 
 Zheng, C., Zhou, H., Meng, F., Zhou, J., & Huang, M. (2024). *Large language
 models are not robust multiple choice selectors*. ICLR 2024.
