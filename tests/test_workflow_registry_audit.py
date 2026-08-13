@@ -109,6 +109,27 @@ def test_registry_pagination_fails_closed_on_partial_empty_page():
         collect_workflow_registry(api, REPO)
 
 
+def test_registry_pagination_rejects_duplicate_ids_even_when_payload_matches():
+    """Page drift cannot hide missing identities behind duplicate registry IDs."""
+    first = [_workflow(i, f".github/workflows/w{i}.yml") for i in range(100)]
+    second = [first[-2], first[-1]]
+    api = FakeApi(
+        {
+            f"repos/{REPO}/actions/workflows?per_page=100&page=1": {
+                "total_count": 102,
+                "workflows": first,
+            },
+            f"repos/{REPO}/actions/workflows?per_page=100&page=2": {
+                "total_count": 102,
+                "workflows": second,
+            },
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate workflow id"):
+        collect_workflow_registry(api, REPO)
+
+
 def test_classification_uses_exact_paths_not_name_heuristics():
     present_snapshot = ".github/workflows/dev-legitimate-snapshot.yml"
     workflows = [
@@ -132,6 +153,18 @@ def test_classification_uses_exact_paths_not_name_heuristics():
     assert by_id[3]["classification"] == "unresolved"
     assert by_id[4]["classification"] == "dynamic"
     assert by_id[5]["classification"] == "disabled"
+
+
+def test_classification_does_not_treat_unknown_state_as_disabled():
+    """Only explicit disabled registry states are accepted as disabled evidence."""
+    records = classify_workflows(
+        [_workflow(9, ".github/workflows/unknown.yml", state="mystery_state")],
+        present_paths=set(),
+        default_branch_sha=SHA,
+        observed_at=OBSERVED,
+    )
+
+    assert records[0]["classification"] == "unresolved"
 
 
 def test_classification_marks_reused_id_and_duplicate_active_path_unresolved():
