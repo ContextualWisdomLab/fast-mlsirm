@@ -50,6 +50,13 @@ def _repo_slug(value: str) -> str:
     return value
 
 
+def _integer_argument(value: Any, *, name: str) -> int:
+    """Return an exact integer or normalize invalid input to ``ValueError``."""
+    if type(value) is not int:
+        raise ValueError(f"{name} must be an integer")
+    return value
+
+
 def _utc_timestamp(value: datetime | None = None) -> str:
     """Return one RFC-3339 UTC observation timestamp."""
     observed = value or datetime.now(UTC)
@@ -65,7 +72,7 @@ def _run_gh_api(
     retry_sleep_seconds: float = _RETRY_SLEEP_SECONDS,
 ) -> Any:
     """Fetch one GitHub REST payload, retrying bounded transient failures."""
-    attempts = max(1, int(max_attempts))
+    attempts = max(1, _integer_argument(max_attempts, name="max_attempts"))
     last_error: GitHubApiError | None = None
     for attempt in range(1, attempts + 1):
         try:
@@ -177,7 +184,7 @@ def collect_workflow_registry(
     per_page: int = 100,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Collect every Actions workflow-registry page with pagination receipts."""
-    page_size = int(per_page)
+    page_size = _integer_argument(per_page, name="per_page")
     if page_size <= 0 or page_size > 100:
         raise ValueError("per_page must be between 1 and 100")
 
@@ -344,10 +351,15 @@ def _audit_workflow_registry_snapshot(
         observed_at=observed_at,
     )
     end_sha = _branch_sha(fetch_json, repo, branch)
-    stable = end_sha == start_sha
+    end_branch = _default_branch(fetch_json, repo)
+    branch_stable = end_branch == branch
+    sha_stable = end_sha == start_sha
+    stable = branch_stable and sha_stable
 
     errors: list[str] = []
-    if not stable:
+    if not branch_stable:
+        errors.append("default branch changed during workflow registry audit")
+    elif not sha_stable:
         errors.append("default branch moved during workflow registry audit")
     if any(record["classification"] == "unresolved" for record in records):
         errors.append("workflow registry contains unresolved identities")
@@ -358,6 +370,7 @@ def _audit_workflow_registry_snapshot(
         "repository": repo,
         "default_branch": branch,
         "default_branch_sha": start_sha,
+        "end_default_branch": end_branch,
         "end_default_branch_sha": end_sha,
         "snapshot_stable": stable,
         "observed_at": timestamp,
@@ -379,9 +392,12 @@ def audit_workflow_registry(
     observed_at: datetime | None = None,
     max_snapshot_attempts: int = 1,
 ) -> dict[str, Any]:
-    """Build a SHA-bound audit, retrying a moving branch when requested."""
+    """Build a SHA-bound audit, retrying moving or renamed defaults when requested."""
+    attempts = max(
+        1,
+        _integer_argument(max_snapshot_attempts, name="max_snapshot_attempts"),
+    )
     branch = _default_branch(fetch_json, repo)
-    attempts = max(1, int(max_snapshot_attempts))
     receipts: list[dict[str, Any]] = []
     audit: dict[str, Any] | None = None
 
@@ -403,6 +419,7 @@ def audit_workflow_registry(
         audit["snapshot_attempts"] = list(receipts)
         if audit["snapshot_stable"]:
             return audit
+        branch = audit["end_default_branch"]
 
     if audit is None:
         raise RuntimeError("workflow registry audit produced no snapshot")
