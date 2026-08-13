@@ -67,6 +67,7 @@ from .item_bank import ItemBankRelease as ItemBankRelease
 from .item_bank import ItemLifecycleState as ItemLifecycleState
 from .item_bank import build_item_bank_entry as build_item_bank_entry
 from .item_bank import build_item_bank_release as build_item_bank_release
+from .item_bank import validate_item_bank_transition as validate_item_bank_transition
 
 # Preserve the pinned star-import contract. Execution, authorization,
 # calibration, and item-bank contracts remain explicit package attributes
