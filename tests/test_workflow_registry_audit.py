@@ -190,7 +190,7 @@ def test_audit_binds_tree_and_registry_to_unchanged_default_branch_sha():
     orphan = ".github/workflows/old-repair.yml"
     api = FakeApi(
         {
-            f"repos/{REPO}": _repo_payload(),
+            f"repos/{REPO}": [_repo_payload(), _repo_payload()],
             f"repos/{REPO}/git/ref/heads/main": [_ref_payload(), _ref_payload()],
             f"repos/{REPO}/git/trees/{SHA}?recursive=1": _tree_payload(present),
             f"repos/{REPO}/actions/workflows?per_page=100&page=1": {
@@ -204,6 +204,7 @@ def test_audit_binds_tree_and_registry_to_unchanged_default_branch_sha():
 
     assert audit["status"] == "ok"
     assert audit["default_branch"] == "main"
+    assert audit["end_default_branch"] == "main"
     assert audit["default_branch_sha"] == SHA
     assert audit["snapshot_stable"] is True
     assert audit["summary"]["active_orphan"] == 1
@@ -218,7 +219,7 @@ def test_audit_fails_closed_when_default_branch_moves_mid_snapshot():
     moved = "b" * 40
     api = FakeApi(
         {
-            f"repos/{REPO}": _repo_payload(),
+            f"repos/{REPO}": [_repo_payload(), _repo_payload()],
             f"repos/{REPO}/git/ref/heads/main": [_ref_payload(), _ref_payload(moved)],
             f"repos/{REPO}/git/trees/{SHA}?recursive=1": _tree_payload(
                 ".github/workflows/ci.yml"
@@ -234,6 +235,7 @@ def test_audit_fails_closed_when_default_branch_moves_mid_snapshot():
 
     assert audit["status"] == "failed"
     assert audit["snapshot_stable"] is False
+    assert audit["end_default_branch"] == "main"
     assert audit["end_default_branch_sha"] == moved
     assert audit["errors"] == ["default branch moved during workflow registry audit"]
 
