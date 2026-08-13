@@ -37,10 +37,11 @@ RETRIEVAL_FP = hashlib.sha256(b"rag-calibration-retrieval").hexdigest()
 RESPONSE_FP = hashlib.sha256(b"rag-calibration-response").hexdigest()
 
 
-def _execution():
+def _execution(run_index: int = 1):
     """Return one deterministic governed RAG request/result/engine execution."""
+    run_suffix = f"{run_index:03d}"
     request = build_rag_scoring_request(
-        request_id="rag_calibration_request",
+        request_id=f"rag_calibration_request_{run_suffix}",
         assessment=assessment(),
         rubric=rubric(),
         query_id="refund_policy_query",
@@ -50,8 +51,8 @@ def _execution():
         candidate_visibility="candidate_blind",
         system_configuration_id="retrieval_stack_a",
         system_configuration_fingerprint=SYSTEM_FP,
-        system_run_id="retrieval_stack_a_run_001",
-        response_id="generated_response_001",
+        system_run_id=f"retrieval_stack_a_run_{run_suffix}",
+        response_id=f"generated_response_{run_suffix}",
         retrieval_run_fingerprint=RETRIEVAL_FP,
         response_content_fingerprint=RESPONSE_FP,
         occasion_id="evaluation_wave_001",
@@ -106,14 +107,15 @@ def test_rag_facets_projection_reuses_shared_calibration_contracts() -> None:
 
 def test_rag_facets_bundle_delegates_to_shared_many_facet_design() -> None:
     """RAG orchestration returns the existing criterion-separated bundle."""
-    execution = _execution()
+    executions = (_execution(1), _execution(2))
 
-    bundle = build_rag_facets_calibration_bundle((execution,))
+    bundle = build_rag_facets_calibration_bundle(executions)
 
     assert type(bundle) is ScoringFacetsCalibrationBundle
     assert bundle.criterion_ids == ("answer_relevance", "grounded_generation")
     assert all(
-        design.respondent_ids == ("retrieval_stack_a_run_001",)
+        design.respondent_ids
+        == ("retrieval_stack_a_run_001", "retrieval_stack_a_run_002")
         for design in bundle.designs
     )
     assert all(
