@@ -62,16 +62,11 @@ from .contracts import build_scoring_request as build_scoring_request
 from .contracts import build_scoring_result as build_scoring_result
 from .contracts import canonical_json as canonical_json
 from .contracts import migrate_scoring_request_v1 as migrate_scoring_request_v1
-from .item_bank import ItemBankEntry as ItemBankEntry
-from .item_bank import ItemBankRelease as ItemBankRelease
-from .item_bank import ItemLifecycleState as ItemLifecycleState
-from .item_bank import build_item_bank_entry as build_item_bank_entry
-from .item_bank import build_item_bank_release as build_item_bank_release
 
-# Preserve the pinned star-import contract. Execution, authorization,
-# calibration, and item-bank contracts remain explicit package attributes
-# imported by their documented names, but are not added to ``__all__`` until
-# the next public-surface version bump.
+# Preserve the pinned star-import contract. Execution, authorization, and
+# calibration contracts remain explicit package attributes imported by their
+# documented names, but are not added to ``__all__`` until the next
+# public-surface version bump.
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",
