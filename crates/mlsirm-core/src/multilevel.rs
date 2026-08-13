@@ -14,12 +14,10 @@ use std::collections::HashSet;
 #[path = "multilevel_kernel.rs"]
 mod kernel;
 
-type MultilevelResult<T> = Result<T, String>;
-
 fn validate_unique_context_indices_per_row(
     row_offsets: &[usize],
     context_indices: &[usize],
-) -> MultilevelResult<()> {
+) -> Result<(), String> {
     if row_offsets.first() != Some(&0)
         || row_offsets.last().copied() != Some(context_indices.len())
         || row_offsets.windows(2).any(|window| window[1] < window[0])
@@ -51,7 +49,7 @@ pub fn weighted_contextual_effect(
     weights: &[f64],
     effects: &[f64],
     worker_count: usize,
-) -> MultilevelResult<Vec<f64>> {
+) -> Result<Vec<f64>, String> {
     validate_unique_context_indices_per_row(row_offsets, context_indices)?;
     kernel::weighted_contextual_effect(
         row_offsets,
