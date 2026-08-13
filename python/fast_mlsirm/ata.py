@@ -42,6 +42,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._ata_core_loader import ata_core
 from .test_design import item_information
 from .types import MLSIRMParams
 
@@ -340,6 +341,7 @@ def assemble_to_target(
     selected: list[int] = []
     counts: dict[str, int] = {}
     accum = np.zeros(n_points, dtype=np.float64)
+    core = ata_core()
 
     for _ in range(length):
         # Eligibility mask independent of the current partial selection.
@@ -373,8 +375,9 @@ def assemble_to_target(
             raise ValueError("could not assemble a form that satisfies the constraints")
 
         cand = np.asarray(candidates, dtype=np.int64)
-        gain = np.array(
-            [float(np.sum(np.minimum(target, accum + matrix[:, i]) - np.minimum(target, accum))) for i in cand]
+        gain = np.asarray(
+            core.target_information_gains(matrix, cand, target, accum),
+            dtype=np.float64,
         )
         best_gain = float(np.max(gain))
         tied = cand[gain >= best_gain - _TIE_EPS]
