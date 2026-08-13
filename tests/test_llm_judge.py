@@ -541,6 +541,10 @@ def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
         "passed",
         "passed",
     ]
+    assert [record["meets_threshold"] for record in evidence["records"]] == [
+        False,
+        True,
+    ]
 
 
 def test_binary_threshold_failure_exposes_bounded_failure_evidence() -> None:

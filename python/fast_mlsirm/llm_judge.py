@@ -521,6 +521,10 @@ class ContextualOrchestratorJudge:
                 )
                 if type(parsed["meets_threshold"]) is not bool:
                     raise JudgeFormatError("meets_threshold must be a boolean")
+                # Keep the parsed ordinal signal in bounded failure evidence so
+                # a non-monotone comparison can be audited without retaining
+                # the full model response.
+                record["meets_threshold"] = parsed["meets_threshold"]
                 rationale = _bounded_text(parsed["rationale"], "rationale")
                 record["parse_status"] = "passed"
                 return {
