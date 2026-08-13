@@ -1954,46 +1954,118 @@ def m2_cmle_rasch(
     observed = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
     if observed.shape != y0.shape:
         raise ValueError("mask must match responses")
+    complete = np.all(observed, axis=1)
+    y = y0[complete]
+    if y.shape[0] == 0 or np.any((y != 0.0) & (y != 1.0)):
+        raise ValueError("CMLE M2 needs complete binary response rows")
     b = np.asarray(item_easiness, dtype=float)
-    if b.ndim != 1 or b.shape[0] != y0.shape[1]:
+    n_items = y.shape[1]
+    if b.shape != (n_items,) or np.any(~np.isfinite(b)):
+        raise ValueError(f"item_easiness must be a finite vector of length {n_items}")
+    if n_items < 5:
         raise ValueError(
-            f"item_easiness must be a finite vector of length {y0.shape[1]}"
-        )
-    if np.any(~np.isfinite(b)):
-        raise ValueError(
-            f"item_easiness must be a finite vector of length {y0.shape[1]}"
+            "CMLE M2 needs at least 5 items for positive degrees of freedom"
         )
 
-    core = _core_module()
-    if core is None or not hasattr(core, "m2_cmle_rasch_stat"):
-        raise RuntimeError("fit statistics require the compiled Rust core")
-    y_flat = np.ascontiguousarray(np.where(observed, y0, 0.0), dtype=np.float64).ravel()
-    observed_flat = np.ascontiguousarray(observed.astype(bool)).ravel()
-    res = core.m2_cmle_rasch_stat(
-        y_flat,
-        observed_flat,
-        int(y0.shape[0]),
-        np.ascontiguousarray(b, dtype=np.float64),
+    scores = y.sum(axis=1).astype(np.int64)
+    score_counts = np.bincount(scores, minlength=n_items + 1)
+    if np.any(score_counts == 0):
+        missing = np.flatnonzero(score_counts == 0).tolist()
+        raise ValueError(
+            "CMLE M2 needs every raw-score category represented; missing scores "
+            f"{missing}"
+        )
+    n = y.shape[0]
+    score_prob = score_counts.astype(float) / n
+    pairs = [(i, j) for i in range(n_items) for j in range(i + 1, n_items)]
+    moment_items = [[i] for i in range(n_items)] + [[i, j] for i, j in pairs]
+    s = len(moment_items)
+    z_rows = np.empty((n, s), dtype=float)
+    z_rows[:, :n_items] = y
+    for index, (i, j) in enumerate(pairs):
+        z_rows[:, n_items + index] = y[:, i] * y[:, j]
+    p_obs = z_rows.mean(axis=0)
+
+    conditional = _rasch_conditional_set_probabilities(b, moment_items)
+    model_moments = score_prob @ conditional
+    p_item = n_items - 1
+    p_score = n_items
+    delta = np.zeros((s, p_item + p_score), dtype=float)
+    for col in range(p_item):
+        h = 1e-4 * (1.0 + abs(b[col]) + abs(b[-1]))
+        plus, minus = b.copy(), b.copy()
+        plus[col] += h
+        plus[-1] -= h
+        minus[col] -= h
+        minus[-1] += h
+        delta[:, col] = (
+            score_prob @ _rasch_conditional_set_probabilities(plus, moment_items)
+            - score_prob @ _rasch_conditional_set_probabilities(minus, moment_items)
+        ) * (0.5 / h)
+    reference_score = n_items
+    for score in range(n_items):
+        delta[:, p_item + score] = conditional[score] - conditional[reference_score]
+
+    cache: dict[tuple[int, ...], float] = {}
+
+    def set_probability(item_set):
+        """Return the (cached) score-marginal joint pass probability for an item set."""
+        key = tuple(sorted(item_set))
+        if key not in cache:
+            values = _rasch_conditional_set_probabilities(b, [list(key)])[:, 0]
+            cache[key] = float(score_prob @ values)
+        return cache[key]
+
+    xi = np.empty((s, s), dtype=float)
+    for a_i in range(s):
+        for b_i in range(a_i, s):
+            union = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
+            cov = set_probability(union) - model_moments[a_i] * model_moments[b_i]
+            xi[a_i, b_i] = xi[b_i, a_i] = cov
+    p = delta.shape[1]
+    if s <= p or n < p + 2:
+        raise ValueError(
+            f"CMLE M2 needs more moments/cases than parameters ({s}, {n}, {p})"
+        )
+    m2_value = _projected_m2_numpy(p_obs - model_moments, delta, xi, float(n))
+
+    null_mom, null_delta, null_xi = _m2_null_components(p_obs, moment_items)
+    null_m2 = _projected_m2_numpy(p_obs - null_mom, null_delta, null_xi, float(n))
+    df = float(s - p)
+    null_df = float(s - n_items)
+    p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
+        m2_value, df, null_m2, null_df, n
     )
+    ss = 0.0
+    count = 0
+    for index, (i, j) in enumerate(pairs):
+        pi, pj, pij = p_obs[i], p_obs[j], p_obs[n_items + index]
+        mi, mj, mij = model_moments[i], model_moments[j], model_moments[n_items + index]
+        dobs = pi * (1.0 - pi) * pj * (1.0 - pj)
+        dmod = mi * (1.0 - mi) * mj * (1.0 - mj)
+        if dobs > 1e-12 and dmod > 1e-12:
+            ss += (
+                (pij - pi * pj) / math.sqrt(dobs) - (mij - mi * mj) / math.sqrt(dmod)
+            ) ** 2
+            count += 1
     return M2Result(
-        m2=float(res["m2"]),
-        df=float(res["df"]),
-        p_value=float(res["p_value"]),
-        rmsea2=float(res["rmsea2"]),
-        rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
-        rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
-        srmsr=float(res["srmsr"]),
-        null_m2=float(res["null_m2"]),
-        null_df=float(res["null_df"]),
-        cfi=float(res["cfi"]),
-        tli=float(res["tli"]),
-        n_moments=int(res["n_moments"]),
-        n_parameters=int(res["n_parameters"]),
-        n_complete=int(res["n_complete"]),
+        m2=m2_value,
+        df=df,
+        p_value=p_value,
+        rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower,
+        rmsea2_ci_upper=ci_upper,
+        srmsr=math.sqrt(ss / count) if count else float("nan"),
+        null_m2=null_m2,
+        null_df=null_df,
+        cfi=cfi,
+        tli=tli,
+        n_moments=s,
+        n_parameters=p,
+        n_complete=n,
         estimator="cmle",
         inference_note="conditional Rasch M2 with empirical raw-score nuisance distribution",
     )
-
 
 
 def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
