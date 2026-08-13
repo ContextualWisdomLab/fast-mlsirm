@@ -1917,7 +1917,7 @@ fn chol_solve(l: &[f64], n: usize, b: &[f64]) -> Vec<f64> {
 }
 
 /// Evaluate the M2 projected quadratic form without forming either inverse.
-fn projected_m2(
+pub fn projected_m2(
     e: &[f64],
     delta: &[f64],
     mut xi: Vec<f64>,
