@@ -8,11 +8,14 @@ on:
     branches: [main]
     paths:
       - .github/workflows/hourly-pr-governance.yml
+      - scripts/audit_workflow_registry.py
       - scripts/build_pr_queue_governance.py
       - tests/test_hourly_pr_governance_workflow.py
       - tests/test_pr_queue_governance.py
+      - tests/test_workflow_registry_audit.py
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -133,6 +136,13 @@ jobs:
             sleep "$delay"
             attempt=$((attempt + 1))
           done
+      - name: Build live workflow registry drift evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/audit_workflow_registry.py \
+            --repo ContextualWisdomLab/fast-mlsirm \
+            --out hourly-pr-queue-governance/workflow_registry_audit.json
       - name: Publish hourly governance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -141,5 +151,6 @@ jobs:
           path: |
             hourly-pr-queue-governance/pr_queue_governance_manifest.json
             hourly-pr-queue-governance/pr_queue_governance_report.html
+            hourly-pr-queue-governance/workflow_registry_audit.json
           if-no-files-found: error
           retention-days: 30
