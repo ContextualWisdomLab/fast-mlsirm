@@ -62,6 +62,17 @@ Downstream systems remain responsible for purpose-bound access, tenant isolation
 
 Provider/model output cannot create calibration, approval, activation, suspension, retirement, repository, merge, release, or deployment authority by identity alone.
 
+## Cross-version comparability (item-bank release)
+
+The `ItemBankEntry` contract (`python/fast_mlsirm/scoring/item_bank.py`) accumulates lifecycle evidence for a single item version through immutable state transitions. An `ItemBankRelease` bundles exact entry fingerprints into a versioned manifest and declares whether scores across successive releases can be meaningfully compared.
+
+Cross-version comparability is a psychometric claim, not a technical default. When `ItemBankRelease.cross_version_comparable` is `True`, the contract requires both:
+
+- a `predecessor_release_fingerprint` identifying the exact prior release; and
+- non-empty `linking_evidence_fingerprints` referencing IRT scale-linking or equating evidence (e.g., common-item Haebara or Stocking-Lord coefficients, moment-method transformations, observed-score concordance tables).
+
+These requirements enforce that comparability claims rest on verifiable psychometric evidence rather than assertion alone. A release without linking evidence or predecessor provenance may still be valid for operational use but must not claim cross-version score comparability.
+
 ## Verification requirements
 
 The implementation requires deterministic tests for:
@@ -88,6 +99,12 @@ American Educational Research Association, American Psychological Association, &
 
 Gierl, M. J., & Lai, H. (2012). The role of item models in automatic item generation. *International Journal of Testing, 12*(3), 273–298. https://doi.org/10.1080/15305058.2011.635830
 
+Haebara, T. (1980). Equating logistic ability scales by a weighted least squares method. *Japanese Psychological Research, 22*(3), 144–149. https://doi.org/10.4992/psycholres1954.22.144
+
+Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and linking: Methods and practices* (3rd ed.). Springer. https://doi.org/10.1007/978-1-4939-0317-7
+
 Mislevy, R. J., Almond, R. G., & Lukas, J. F. (2003). A brief introduction to evidence-centered design. *ETS Research Report Series, 2003*(1), i–29. https://doi.org/10.1002/j.2333-8504.2003.tb01908.x
+
+Stocking, M. L., & Lord, F. M. (1983). Developing a common metric in item response theory. *Applied Psychological Measurement, 7*(2), 201–210. https://doi.org/10.1177/014662168300700208
 
 Williamson, D. M., Xi, X., & Breyer, F. J. (2012). A framework for evaluation and use of automated scoring. *Educational Measurement: Issues and Practice, 31*(1), 2–13. https://doi.org/10.1111/j.1745-3992.2011.00223.x
