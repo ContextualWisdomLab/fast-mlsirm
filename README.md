@@ -96,8 +96,11 @@ print(fixed_item_calibration.best)
   categorized polytomous matrix. Equal-width direct K-way projection is
   experimental; opt-in `category_method="cumulative_threshold"` evaluates each
   ordered boundary with a strict Boolean vector and derives the category in the
-  adapter. Category-count and prompt-perturbation calibration remain required
-  for both methods. See
+  adapter. Opt-in `category_method="binary_threshold"` decomposes each ordered
+  boundary into bounded binary calls; it is also experimental, has a maximum of
+  64 calls per result, and fails closed on malformed or non-monotone evidence.
+  Category-count and prompt-perturbation calibration remain required for all
+  methods. See
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),
   [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md), and
   [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0008-fast-judge-review-hardening.md).

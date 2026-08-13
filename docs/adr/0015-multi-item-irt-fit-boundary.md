@@ -68,6 +68,28 @@ without this gate.
    cannot be repaired by keyword matching, positional category repair, silent
    item dropping, or a blind retry. `LLMJudgeResult.to_irt_row` continues to
    require multiple criteria.
+6. `category_method="binary_threshold"` is an opt-in calibration method for
+   polytomous judge output. It asks one strict Boolean question per ordered
+   boundary and criterion, derives categories only from validated monotone
+   thresholds, and fails the complete comparison on malformed or
+   non-monotone output. The method is bounded at 64 provider calls per result,
+   is not the default, and must record its call count, latency, usage, parse
+   status, and category row alongside direct/cumulative results.
+
+## Implementation Plan
+
+- `python/fast_mlsirm/llm_judge.py`: keep direct and cumulative methods
+  compatible, add the bounded binary-threshold method, and derive only from
+  strict Boolean boundary responses.
+- `tests/test_llm_judge.py`: cover call decomposition, weighted category/IRT
+  projection, malformed/non-monotone responses, and the 64-call resource cap.
+- `README.md` and this ADR: document the method as calibration-only and retain
+  the no-keyword/no-positional-repair boundary.
+- `contextual-orchestrator/docs/benchmarks/` and ADR 0006/0008: record paired
+  MLX evidence with parse failures, calls, latency, usage, and semantic limits.
+- Verification: run the focused judge/IRT tests, the complete Python suite with
+  the current PyO3 extension materialized, and a live MLX smoke through the
+  contextual-orchestrator route.
 
 ## Invariants and acceptance evidence
 
@@ -88,6 +110,8 @@ without this gate.
   trace metadata before reporting fit or bias.
 - A polytomous K-sweep uses explicit K values and preserves category occupancy;
   it does not infer a positive bias from a single K or from keyword matches.
+- Binary-threshold calibration never uses keywords, category positions, or
+  silent output repair; an unparseable boundary invalidates that comparison.
 
 ## Consequences and trade-offs
 
@@ -133,6 +157,8 @@ format changes, and violates the fail-closed judge contract.
 | Runtime subclasses or unhashable values could reach IRT item-type/category-count checks before package-owned validation | Reject non-built-in item types and category counts before membership or range comparisons, with regression coverage | Implemented on current head; exact-head review follow-up required |
 | Factor labels may not provide two anchors per dimension | Pass scalar factor IDs or per-item factor memberships through `fit_irt_experiment` and require an explicit design exception for exploratory diagnostics | Implemented on current head; exact-head review follow-up required |
 | A fresh 2026-08-13 contextual-orchestrator/MLX K sweep produced valid two-item rows but changed criterion categories as K increased (`(1,0)`, `(2,0)`, `(4,0)`, `(6,2)` for K `2,3,5,7`) from one person | Retain the complete paired observation as calibration evidence, require multiple persons and declared-category occupancy before readiness/IRT interpretation, and do not infer a positive-bias law from the one-person shape smoke | Observed; calibration remains required |
+| A fresh two-case 3B MLX probe through contextual-orchestrator produced direct scores of `0.5 -> 1.0 -> 1.0` for the safe case and `0.0 -> 0.0 -> 0.3333` for the unsafe case at K `2,5,7`; cumulative thresholds parsed only at K=5 and failed JSON/monotonicity at K=2/7 | Retain every result and failure in the calibration denominator; do not promote direct or cumulative to an unbiased default. Add an opt-in bounded binary-threshold decomposition, compare its extra calls/tokens against paired human/gold anchors, and keep production IRT claims blocked until replicated. | Observed 2026-08-14; binary-threshold method implemented as experimental, calibration remains required |
+| The binary-threshold follow-up made each boundary a Boolean call, but the safe case still failed monotonicity at K=5/7 while the unsafe case parsed at score `0.0` with 8/12 calls and `2,606/3,940` tokens | Keep the method fail-closed and experimental; treat its higher call/latency budget and semantic under-recognition as measured trade-offs, not as bias removal. Do not short-circuit or synthesize higher categories without an explicit ordinal measurement design and held-out gold evidence. | Observed 2026-08-14; follow-up calibration required |
 | K/order/framing perturbations can change judge scores | Use randomized paired perturbations, human/gold anchors, category occupancy, and parse/provider denominators; never infer a universal positive-K law | Required next |
 | A live cumulative-threshold call through contextual-orchestrator parsed into the valid two-item row `(4,0)` but assigned `risk_awareness=0` despite explicit rollback-rehearsal evidence in the answer, while `evidence_quality=4` | Treat valid schema and semantic item accuracy as separate outcomes; retain the miss with trace/usage metadata, add item-level human/gold anchors and balanced held-out recall checks, and do not keyword-match or coerce a replacement category | Observed 2026-08-13; semantic calibration remains required |
 | Fast PR #816 was moved from Draft to Ready, then updated with base `origin/main` commit `3d1eab5` in merge head `b3bbeb0431453b07df948714aa08415b031f88af`; the exact merge head passed the full suite (`3630 passed, 2 warnings`) after supplying the current compiled PyO3 extension in the detached verification tree | Keep the base-update evidence separate from remote CI: preserve the native-extension build/preflight contract, rerun exact-head checks after the docs follow-up, and do not treat local full-suite success as independent approval or Strix evidence | Observed 2026-08-13; remote checks and independent review remain required |

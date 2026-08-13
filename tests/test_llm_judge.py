@@ -8,6 +8,7 @@ from dataclasses import replace
 import pytest
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
+    MAX_BINARY_THRESHOLD_CALLS,
     ContextualOrchestratorJudge,
     JudgeCriterion,
     JudgeFormatError,
@@ -34,6 +35,20 @@ class _CompletionOrchestrator:
 
     def complete(self, messages, mode="auto"):
         return self.completion
+
+
+class _SequencedOrchestrator:
+    def __init__(self, answers):
+        self.answers = iter(answers)
+        self.calls = []
+
+    def complete(self, messages, mode="auto"):
+        self.calls.append((messages, mode))
+        return {
+            "mode": "route",
+            "answer": next(self.answers),
+            "trace": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}],
+        }
 
 
 CRITERIA = [
@@ -336,6 +351,66 @@ def test_cumulative_threshold_requires_explicit_category_count() -> None:
             answer="answer",
             criteria=CRITERIA,
             category_method="cumulative_threshold",
+        )
+
+
+def test_binary_threshold_judgment_uses_independent_boolean_boundaries() -> None:
+    orchestrator = _SequencedOrchestrator(
+        [
+            json.dumps({"meets_threshold": True, "rationale": "supported"}),
+            json.dumps({"meets_threshold": True, "rationale": "supported"}),
+            json.dumps({"meets_threshold": True, "rationale": "supported"}),
+            json.dumps({"meets_threshold": False, "rationale": "not established"}),
+        ]
+    )
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=3,
+        category_method="binary_threshold",
+    )
+    assert result.category_method == "binary_threshold"
+    assert dict(result.criterion_categories) == {
+        "factual_support": 1,
+        "task_alignment": 2,
+    }
+    assert result.score == 0.75
+    assert result.to_irt_row() == (1, 2)
+    assert len(orchestrator.calls) == 4
+    assert all("binary" in call[0][0]["content"] for call in orchestrator.calls)
+    assert dict(result.usage) == {
+        "prompt_tokens": 4,
+        "completion_tokens": 4,
+        "total_tokens": 8,
+    }
+
+
+def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
+    orchestrator = _SequencedOrchestrator(
+        [
+            json.dumps({"meets_threshold": False, "rationale": "not established"}),
+            json.dumps({"meets_threshold": True, "rationale": "unsupported jump"}),
+        ]
+    )
+    with pytest.raises(JudgeFormatError, match="monotone"):
+        ContextualOrchestratorJudge(orchestrator).judge(
+            task="task",
+            answer="answer",
+            criteria=[CRITERIA[0]],
+            category_count=3,
+            category_method="binary_threshold",
+        )
+
+
+def test_binary_threshold_judgment_has_a_bounded_call_budget() -> None:
+    with pytest.raises(ValueError, match="too many judge calls"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=MAX_BINARY_THRESHOLD_CALLS,
+            category_method="binary_threshold",
         )
 
 
