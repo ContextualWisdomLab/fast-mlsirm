@@ -38,10 +38,12 @@ _REGIME_LIMITATIONS = MappingProxyType(
         RAGEvidenceRegime.AUTHORITATIVE_CORPUS: (
             "authority_scope_requires_external_validation",
             "corpus_completeness_not_implied",
+            "world_correctness_not_identified",
         ),
         RAGEvidenceRegime.HUMAN_ANCHOR: (
             "absolute_retrieval_recall_not_identified_without_corpus_design",
             "human_anchor_is_fallible_observation",
+            "world_correctness_not_identified",
         ),
     }
 )
@@ -99,10 +101,11 @@ def rag_evidence_regime_limitations(
     """Return package-owned reporting limitations for one RAG evidence regime.
 
     The returned codes state what the evidence label alone cannot establish.
-    In particular, target-retriever context cannot identify absolute retrieval
-    recall or world correctness. Authoritative-corpus and human-anchor labels
-    also remain bounded claims: the caller must validate authority scope,
-    completeness, and human measurement quality outside this adapter.
+    No regime label by itself identifies world correctness. Target-retriever
+    context also cannot identify absolute retrieval recall. Authoritative-corpus
+    and human-anchor labels remain bounded claims: the caller must validate
+    authority scope, completeness, and human measurement quality outside this
+    adapter.
     """
     normalized_regime = enum_value(
         regime,
