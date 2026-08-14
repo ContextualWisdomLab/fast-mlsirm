@@ -8,9 +8,12 @@ from pathlib import Path
 import pytest
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def _load_release_acceptance():
     """Load the release-acceptance script as an importable module."""
-    script = Path(__file__).resolve().parents[1] / "scripts" / "release_acceptance.py"
+    script = ROOT / "scripts" / "release_acceptance.py"
     spec = importlib.util.spec_from_file_location(
         "release_acceptance_backend_authority", script
     )
@@ -79,3 +82,12 @@ def test_release_acceptance_rejects_cli_summary_backend_mismatch(
         module._run_acceptance(args)
 
     assert calls == ["simulate", "fit_auto"]
+
+
+def test_release_acceptance_guide_does_not_promise_rustless_auto_mode() -> None:
+    """Canonical release guidance must preserve fail-closed automatic ownership."""
+    guide = (ROOT / "docs" / "release_acceptance.md").read_text(encoding="utf-8")
+
+    assert "If Rust backend is unavailable" not in guide
+    assert "the script validates the default `auto` path only" not in guide
+    assert "`--backend auto` requires the compiled Rust core" in guide
