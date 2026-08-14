@@ -16,6 +16,14 @@ _request = _FIXTURES["_request"]
 _SECRET = _FIXTURES["_SECRET"]
 
 
+class _HostileString(str):
+    """Raise caller-controlled text from a string validation callback."""
+
+    def strip(self, chars: str | None = None) -> str:
+        del chars
+        raise RuntimeError(_SECRET)
+
+
 class _LatePackageErrorKeyTrap(Mapping[str, Any]):
     """Forge a package error after yielding one authorized key."""
 
@@ -53,6 +61,20 @@ class _PackageErrorValueTrap(Mapping[str, Any]):
         return 1
 
 
+class _HostileStringKeyTrap(Mapping[str, Any]):
+    """Expose one string subclass whose validator callback fails."""
+
+    def __getitem__(self, key: str) -> Any:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter((_HostileString("evaluation_split"),))
+
+    def __len__(self) -> int:
+        return 1
+
+
 def test_late_caller_package_error_does_not_escape_key_iteration() -> None:
     """Caller-originated package errors remain untrusted callback failures."""
     try:
@@ -73,3 +95,14 @@ def test_caller_package_error_does_not_escape_value_capture() -> None:
         assert _SECRET not in str(caught)
     else:  # pragma: no cover - fail-first assertion aid
         raise AssertionError("hostile value capture unexpectedly succeeded")
+
+
+def test_string_subclass_callback_does_not_escape_key_validation() -> None:
+    """A hostile string subclass cannot reflect text from key validation."""
+    try:
+        _request(_HostileStringKeyTrap())
+    except AssessmentSpecError as caught:
+        assert caught.code == "invalid_rag_metadata"
+        assert _SECRET not in str(caught)
+    else:  # pragma: no cover - fail-first assertion aid
+        raise AssertionError("hostile string key unexpectedly succeeded")
