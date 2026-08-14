@@ -36,6 +36,7 @@ from .llm_judge import (
     JudgeCriterion as JudgeCriterion,
     JudgeFormatError as JudgeFormatError,
     LLMJudgeResult as LLMJudgeResult,
+    MAX_BINARY_THRESHOLD_CALLS as MAX_BINARY_THRESHOLD_CALLS,
     MAX_JUDGE_CATEGORIES as MAX_JUDGE_CATEGORIES,
 )
 from .irt_contract import (
@@ -79,6 +80,7 @@ __all__ = list(_legacy_init.__all__) + [
     "JudgeCriterion",
     "JudgeFormatError",
     "LLMJudgeResult",
+    "MAX_BINARY_THRESHOLD_CALLS",
     "MAX_JUDGE_CATEGORIES",
     "IRTItemType",
     "fit_irt_experiment",
