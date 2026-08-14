@@ -1,4 +1,4 @@
-"""Fail-first callback-safety contracts for caller-provided RAG metadata."""
+"""Callback-safety contracts for caller-provided RAG metadata."""
 
 from __future__ import annotations
 
@@ -28,6 +28,17 @@ SYSTEM_FP = hashlib.sha256(b"rag-callback-system").hexdigest()
 RETRIEVAL_FP = hashlib.sha256(b"rag-callback-retrieval").hexdigest()
 RESPONSE_FP = hashlib.sha256(b"rag-response-content").hexdigest()
 _SECRET = "raw_sensitive_callback_payload"
+
+
+class _HostileIdentifier(str):
+    """Expose valid identifier content while rejecting ordinary callbacks."""
+
+    def __str__(self) -> str:
+        raise RuntimeError(_SECRET)
+
+    def strip(self, chars: str | None = None) -> str:
+        del chars
+        raise RuntimeError(_SECRET)
 
 
 class _ContainsTrap(Mapping[str, Any]):
@@ -62,56 +73,49 @@ class _IterationTrap(Mapping[str, Any]):
     def __len__(self) -> int:
         return 1
 
-    def __contains__(self, key: object) -> bool:
-        del key
-        return False
-
 
 class _LateIterationTrap(Mapping[str, Any]):
     """Yield one valid key before key iteration fails."""
 
     def __getitem__(self, key: str) -> Any:
         del key
-        raise RuntimeError(_SECRET)
+        return "offline_holdout"
 
     def __iter__(self) -> Iterator[str]:
         yield "evaluation_split"
-        raise RuntimeError(_SECRET)
+        raise AssessmentSpecError(
+            "caller_callback_failure",
+            "$.metadata",
+            _SECRET,
+        )
 
     def __len__(self) -> int:
         return 2
 
 
-class _UnsupportedValueTrap(Mapping[str, Any]):
-    """Expose one rejected key whose value callback must never be invoked."""
+class _ValueTrap(Mapping[str, Any]):
+    """Expose one key whose caller-controlled value callback fails."""
+
+    def __init__(self, key: str = "evaluation_split") -> None:
+        self._key = key
 
     def __getitem__(self, key: str) -> Any:
         del key
-        raise RuntimeError(_SECRET)
+        raise AssessmentSpecError(
+            "caller_callback_failure",
+            "$.metadata",
+            _SECRET,
+        )
 
     def __iter__(self) -> Iterator[str]:
-        return iter(("unapproved_metadata",))
-
-    def __len__(self) -> int:
-        return 1
-
-
-class _AllowedValueTrap(Mapping[str, Any]):
-    """Expose one approved key whose value callback fails."""
-
-    def __getitem__(self, key: str) -> Any:
-        del key
-        raise RuntimeError(_SECRET)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(("evaluation_split",))
+        return iter((self._key,))
 
     def __len__(self) -> int:
         return 1
 
 
 class _DuplicateKeyTrap(Mapping[str, Any]):
-    """Yield one approved key twice before any value materialization."""
+    """Yield the one supported caller key twice."""
 
     def __getitem__(self, key: str) -> Any:
         del key
@@ -125,7 +129,7 @@ class _DuplicateKeyTrap(Mapping[str, Any]):
 
 
 class _NonStringKeyTrap(Mapping[Any, Any]):
-    """Expose a non-string key whose value callback must remain unreachable."""
+    """Expose a non-string key whose value must remain unreachable."""
 
     def __getitem__(self, key: Any) -> Any:
         del key
@@ -133,6 +137,41 @@ class _NonStringKeyTrap(Mapping[Any, Any]):
 
     def __iter__(self) -> Iterator[Any]:
         return iter((7,))
+
+    def __len__(self) -> int:
+        return 1
+
+
+class _NestedTraversalTrap(Mapping[str, Any]):
+    """Reveal whether an invalid identifier value is traversed as metadata."""
+
+    def __getitem__(self, key: str) -> Any:
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        raise RuntimeError(_SECRET)
+
+    def __len__(self) -> int:
+        return 1
+
+
+class _SinglePassMapping(Mapping[str, Any]):
+    """Reject any second enumeration of the caller key authority."""
+
+    def __init__(self) -> None:
+        self.iteration_count = 0
+        self.value_count = 0
+
+    def __getitem__(self, key: str) -> Any:
+        assert key == "evaluation_split"
+        self.value_count += 1
+        return "offline_holdout"
+
+    def __iter__(self) -> Iterator[str]:
+        self.iteration_count += 1
+        if self.iteration_count > 1:
+            raise RuntimeError(_SECRET)
+        return iter(("evaluation_split",))
 
     def __len__(self) -> int:
         return 1
@@ -163,87 +202,80 @@ def _request(metadata: Any) -> ScoringRequest:
     )
 
 
+def _assert_error(metadata: Any, code: str) -> None:
+    """Assert one stable non-reflective request-construction error."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(metadata)
+
+    assert caught.value.code == code
+    assert _SECRET not in str(caught.value)
+
+
 def test_rag_metadata_does_not_invoke_alien_membership_callbacks() -> None:
-    """Valid mappings must be inspected through bounded keys, not ``__contains__``."""
+    """Valid mappings are inspected through iteration, not ``__contains__``."""
     request = _request(_ContainsTrap())
 
     assert request.to_dict()["metadata"]["evaluation_split"] == "offline_holdout"
 
 
-def test_rag_metadata_iteration_failure_is_package_owned_and_non_reflective() -> None:
-    """Hostile key iteration must not leak arbitrary exceptions or caller text."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(_IterationTrap())
+def test_rag_metadata_normalizes_hostile_string_subclasses() -> None:
+    """Base-string content is accepted without invoking subclass callbacks."""
+    request = _request(
+        {_HostileIdentifier("evaluation_split"): _HostileIdentifier("offline_holdout")}
+    )
 
-    assert caught.value.code == "invalid_rag_metadata"
-    assert _SECRET not in str(caught.value)
-
-
-def test_rag_metadata_late_iteration_failure_is_non_reflective() -> None:
-    """A key iterator that fails after yielding data remains inside the boundary."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(_LateIterationTrap())
-
-    assert caught.value.code == "invalid_rag_metadata"
-    assert _SECRET not in str(caught.value)
+    assert request.to_dict()["metadata"]["evaluation_split"] == "offline_holdout"
 
 
-def test_rag_metadata_rejects_unknown_keys_before_reading_values() -> None:
-    """A disallowed key must not authorize its caller-controlled value callback."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(_UnsupportedValueTrap())
+def test_rag_metadata_enumerates_keys_and_reads_values_once() -> None:
+    """Authorization and value capture use one stable caller snapshot."""
+    metadata = _SinglePassMapping()
 
-    assert caught.value.code == "unsupported_rag_metadata"
-    assert _SECRET not in str(caught.value)
+    request = _request(metadata)
 
-
-def test_rag_metadata_allowed_value_failure_is_non_reflective() -> None:
-    """A failing approved value callback becomes stable package evidence."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(_AllowedValueTrap())
-
-    assert caught.value.code == "invalid_rag_metadata"
-    assert _SECRET not in str(caught.value)
+    assert request.to_dict()["metadata"]["evaluation_split"] == "offline_holdout"
+    assert metadata.iteration_count == 1
+    assert metadata.value_count == 1
 
 
-def test_rag_metadata_rejects_duplicate_keys_before_reading_values() -> None:
-    """Duplicate key iteration cannot trigger repeated value callbacks."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(_DuplicateKeyTrap())
-
-    assert caught.value.code == "duplicate_metadata_key"
+def test_rag_metadata_iteration_failures_are_non_reflective() -> None:
+    """First-step and late iterator failures remain package-owned."""
+    _assert_error(_IterationTrap(), "invalid_rag_metadata")
+    _assert_error(_LateIterationTrap(), "invalid_rag_metadata")
 
 
-def test_rag_metadata_rejects_non_string_keys_before_reading_values() -> None:
-    """Non-string key validation precedes any caller-controlled value callback."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(_NonStringKeyTrap())
-
-    assert caught.value.code == "invalid_metadata_key"
-    assert _SECRET not in str(caught.value)
+def test_rag_metadata_rejects_unknown_and_reserved_keys_before_values() -> None:
+    """Disallowed key classes never authorize a caller value callback."""
+    _assert_error(_ValueTrap("unapproved_metadata"), "unsupported_rag_metadata")
+    _assert_error(_ValueTrap("rag_evidence_regime"), "reserved_rag_metadata")
 
 
-def test_rag_metadata_non_mapping_preserves_public_type_validation() -> None:
-    """The preflight leaves non-mappings for the established public type guard."""
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request(object())
-
-    assert caught.value.code == "invalid_rag_metadata"
+def test_rag_metadata_value_failure_is_non_reflective() -> None:
+    """An authorized value callback cannot forge trusted package evidence."""
+    _assert_error(_ValueTrap(), "invalid_rag_metadata")
 
 
-def test_rag_metadata_preserves_nested_preflight_errors() -> None:
-    """Non-callback metadata violations retain their specific package error codes."""
-    cyclic_value: list[Any] = []
-    cyclic_value.append(cyclic_value)
-
-    with pytest.raises(AssessmentSpecError) as caught:
-        _request({"evaluation_split": cyclic_value})
-
-    assert caught.value.code == "cyclic_metadata_reference"
+def test_rag_metadata_rejects_duplicate_and_non_string_keys() -> None:
+    """Malformed key streams fail before any unsafe value access."""
+    _assert_error(_DuplicateKeyTrap(), "duplicate_metadata_key")
+    _assert_error(_NonStringKeyTrap(), "invalid_metadata_key")
 
 
-def test_rag_metadata_none_preserves_the_empty_caller_contract() -> None:
-    """The callback-safe preflight retains the established optional metadata path."""
+def test_rag_metadata_rejects_non_mapping_input() -> None:
+    """The established public mapping contract remains fail closed."""
+    _assert_error(object(), "invalid_rag_metadata")
+
+
+def test_rag_metadata_rejects_invalid_split_without_nested_traversal() -> None:
+    """The only caller field is an identifier, not arbitrary nested JSON."""
+    _assert_error(
+        {"evaluation_split": _NestedTraversalTrap()},
+        "invalid_evaluation_split",
+    )
+
+
+def test_rag_metadata_none_preserves_package_managed_provenance() -> None:
+    """The optional caller path retains established managed RAG metadata."""
     payload = _request(None).to_dict()["metadata"]
 
     assert "evaluation_split" not in payload
