@@ -103,6 +103,19 @@ def weighted_contextual_effect(
     )
 
 
+def _observed_value(values: Mapping[str, float], occasion_id: str) -> float:
+    """Return one caller observation as a real float, or NaN when absent."""
+    try:
+        raw = values.get(occasion_id, np.nan)
+    except Exception as exc:
+        raise ValueError("values must be a plain read-only mapping") from exc
+    if isinstance(raw, (bool, np.bool_)) or not isinstance(
+        raw, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError(f"values[{occasion_id!r}] must be a real number")
+    return float(raw)
+
+
 def fit_longitudinal_state(
     design: LongitudinalDesign,
     values: Mapping[str, float],
@@ -117,6 +130,12 @@ def fit_longitudinal_state(
     returned state is aligned with ``design.occasions`` sorted by respondent
     and sequence, and includes package-independent diagnostics suitable for a
     persisted analysis artifact.
+
+    Raises
+    ------
+    ValueError
+        If the execution controls, sealed design, caller observation mapping,
+        or Rust-side state contract is invalid.
     """
     if worker_count < 1:
         raise ValueError("worker_count must be at least one")
@@ -124,20 +143,21 @@ def fit_longitudinal_state(
         raise ValueError("design must be an exact LongitudinalDesign")
     _ = design.design_fingerprint
     occasions = list(design.occasions)
+    grouped: dict[str, list] = {
+        respondent_id: [] for respondent_id in design.respondent_ids
+    }
+    for occasion in occasions:
+        grouped[occasion.respondent_id].append(occasion)
+
     row_offsets = [0]
     sequence_indices: list[int] = []
     time_offsets: list[int] = []
     observations: list[float] = []
     for respondent_id in design.respondent_ids:
-        respondent_occasions = [
-            occasion
-            for occasion in occasions
-            if occasion.respondent_id == respondent_id
-        ]
-        for occasion in respondent_occasions:
+        for occasion in grouped[respondent_id]:
             sequence_indices.append(occasion.sequence_index)
             time_offsets.append(occasion.time_offset_milliseconds)
-            observations.append(float(values.get(occasion.occasion_id, np.nan)))
+            observations.append(_observed_value(values, occasion.occasion_id))
         row_offsets.append(len(time_offsets))
     state_kind = design.state_spec.state_kind
     ar_coefficient = design.state_spec.autoregressive_coefficient
