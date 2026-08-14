@@ -32,6 +32,13 @@ def test_every_evidence_regime_has_explicit_nonempty_limitations() -> None:
         assert tuple(sorted(limits.limitation_codes)) == limits.limitation_codes
 
 
+def test_evidence_regime_label_alone_never_identifies_world_correctness() -> None:
+    """No regime enum value by itself is sufficient evidence of world correctness."""
+    for regime in RAGEvidenceRegime:
+        limits = rag_evidence_regime_limitations(regime)
+        assert "world_correctness_not_identified" in limits.limitation_codes
+
+
 def test_authoritative_corpus_still_requires_scope_and_completeness_evidence() -> None:
     """The regime label alone cannot prove its authority scope or exhaustiveness."""
     limits = rag_evidence_regime_limitations(RAGEvidenceRegime.AUTHORITATIVE_CORPUS)
