@@ -23,3 +23,11 @@ fn second_order_accepts_zero_tolerance_for_strict_positive_definiteness() {
     assert_eq!(min_eigenvalue, 1.0);
     assert_eq!(eigenvalues, vec![1.0, 2.0]);
 }
+
+#[test]
+fn second_order_rejects_dimension_product_overflow() {
+    let error = second_order_test(&[], usize::MAX, 0.0)
+        .expect_err("dimension arithmetic must fail closed instead of overflowing");
+
+    assert_eq!(error, "hessian dimension exceeds supported size");
+}
