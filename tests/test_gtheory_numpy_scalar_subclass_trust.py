@@ -116,3 +116,28 @@ def test_phi_lambda_rejects_hostile_scalar_metaclass_hash_before_callback(
         gtheory.phi_lambda(_pi_data(), HostileNumpyFloat(0.5), n_i_prime=[2])
 
     assert calls == []
+
+
+def test_phi_lambda_rejects_hostile_scalar_metaclass_equality_before_callback(
+    monkeypatch,
+) -> None:
+    """Float admission must not compare a caller-controlled metaclass for equality."""
+
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        __hash__ = type.__hash__
+
+        def __eq__(cls, other: object) -> bool:
+            calls.append("type-__eq__")
+            raise AssertionError("type equality callback executed")
+
+    class HostileNumpyFloat(np.float64, metaclass=HostileMeta):
+        pass
+
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"cut must be a finite real scalar"):
+        gtheory.phi_lambda(_pi_data(), HostileNumpyFloat(0.5), n_i_prime=[2])
+
+    assert calls == []
