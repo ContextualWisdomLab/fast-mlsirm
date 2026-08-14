@@ -67,14 +67,16 @@ def validate_group_partition(
     group_ids: Sequence[str],
     fold_ids: Sequence[str],
 ) -> None:
-    """Reject a holdout/bootstrap partition that leaks a group across folds.
+    """Reject a degenerate or leakage-prone grouped validation partition.
 
     ``group_ids`` and ``fold_ids`` are parallel observation-level identity
     vectors. Repeated observations from one declared scientific group may occur
-    within one fold, but the same group cannot appear in two folds. Scalar
-    strings are rejected rather than being misread as sequences of one-character
-    identities. The function validates identities only; it performs no scoring,
-    estimation, resampling, or model-selection arithmetic.
+    within one fold, but the same group cannot appear in two folds. A usable
+    holdout/bootstrap partition must contain at least two scientific groups and
+    at least two folds; otherwise no out-of-group validation contrast exists.
+    Scalar strings are rejected rather than being misread as sequences of
+    one-character identities. The function validates identities only; it
+    performs no scoring, estimation, resampling, or model-selection arithmetic.
 
     Args:
         group_ids: Declared scientific group identity for each observation.
@@ -82,8 +84,8 @@ def validate_group_partition(
 
     Raises:
         TypeError: If either identity vector is supplied as a scalar string.
-        ValueError: If vectors are malformed or one group crosses fold
-            boundaries.
+        ValueError: If vectors are malformed, degenerate, or one group crosses
+            fold boundaries.
     """
     if isinstance(group_ids, (str, bytes)) or isinstance(fold_ids, (str, bytes)):
         raise TypeError(
@@ -97,6 +99,12 @@ def validate_group_partition(
         raise ValueError("group_ids entries must be non-empty strings")
     if any(not isinstance(fold_id, str) or not fold_id for fold_id in fold_ids):
         raise ValueError("fold_ids entries must be non-empty strings")
+    if len(set(group_ids)) < 2:
+        raise ValueError(
+            "group partition requires at least two generalization groups"
+        )
+    if len(set(fold_ids)) < 2:
+        raise ValueError("group partition requires at least two folds")
 
     group_fold: dict[str, str] = {}
     for group_id, fold_id in zip(group_ids, fold_ids, strict=True):
