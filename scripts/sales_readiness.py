@@ -505,11 +505,12 @@ def _validate_acceptance_summary(
         )
     )
 
-    fit_backends = [
-        step.get("backend")
+    fit_steps = [
+        step
         for step in steps
         if isinstance(step, dict) and step.get("command") == "fit"
     ]
+    fit_backends = [step.get("backend") for step in fit_steps]
     checks.append(
         _check(
             "acceptance:fit_backend_record",
@@ -517,6 +518,71 @@ def _validate_acceptance_summary(
             and bool(fit_backends),
             "fit steps record resolved backend",
             backends=fit_backends,
+        )
+    )
+
+    auto_fit_steps = [
+        step
+        for step in fit_steps
+        if Path(str(step.get("out", ""))).name == "fit_auto"
+    ]
+    auto_fit_backend = (
+        auto_fit_steps[0].get("backend") if len(auto_fit_steps) == 1 else None
+    )
+    checks.append(
+        _check(
+            "acceptance:auto_fit_backend_authority",
+            len(auto_fit_steps) == 1 and auto_fit_backend == "rust",
+            "canonical automatic acceptance fit resolves exactly once to Rust",
+            count=len(auto_fit_steps),
+            backend=auto_fit_backend,
+        )
+    )
+
+    auto_summary_ok = False
+    auto_summary_backend: object = None
+    auto_summary_path: Path | None = None
+    expected_auto_summary_path: Path | None = None
+    auto_summary_error: str | None = None
+    if len(auto_fit_steps) == 1:
+        auto_fit = auto_fit_steps[0]
+        out_value = auto_fit.get("out")
+        files = auto_fit.get("files")
+        summary_value = files.get("summary") if isinstance(files, dict) else None
+        if isinstance(out_value, str) and out_value and isinstance(summary_value, str) and summary_value:
+            auto_summary_path = Path(summary_value)
+            expected_auto_summary_path = Path(out_value) / "fit_summary.json"
+            if auto_summary_path.resolve(strict=False) != expected_auto_summary_path.resolve(strict=False):
+                auto_summary_error = "summary path is not bound to fit_auto output"
+            elif not auto_summary_path.is_file():
+                auto_summary_error = "fit_auto summary is missing"
+            else:
+                try:
+                    auto_summary = _read_json(auto_summary_path)
+                except (RuntimeError, ValueError) as exc:
+                    auto_summary_error = str(exc)
+                else:
+                    auto_summary_backend = auto_summary.get("backend")
+                    auto_summary_ok = auto_summary_backend == "rust"
+                    if not auto_summary_ok:
+                        auto_summary_error = "persisted fit_auto backend is not rust"
+        else:
+            auto_summary_error = "fit_auto summary path is missing"
+    else:
+        auto_summary_error = "canonical fit_auto step is not unique"
+    checks.append(
+        _check(
+            "acceptance:auto_fit_summary_backend_authority",
+            auto_summary_ok,
+            "persisted canonical fit_auto summary is path-bound and Rust-owned",
+            backend=auto_summary_backend,
+            summary=(str(auto_summary_path) if auto_summary_path is not None else None),
+            expected_summary=(
+                str(expected_auto_summary_path)
+                if expected_auto_summary_path is not None
+                else None
+            ),
+            error=auto_summary_error,
         )
     )
 
