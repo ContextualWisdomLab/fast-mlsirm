@@ -146,12 +146,12 @@ def test_irt_link_rejects_unsupported_builtin_method_before_core(monkeypatch) ->
 
 
 @pytest.mark.parametrize(
-    "q_theta",
-    [_HostileQuadrature(7), _HostileNumpyQuadrature(7)],
+    "q_theta_type",
+    [_HostileQuadrature, _HostileNumpyQuadrature],
 )
 def test_irt_link_rejects_integer_subclasses_before_core_loader(
     monkeypatch,
-    q_theta: object,
+    q_theta_type: type,
 ) -> None:
     """Quadrature subclasses fail closed before native-loader or coercion hooks."""
     loader_calls = 0
@@ -162,6 +162,7 @@ def test_irt_link_rejects_integer_subclasses_before_core_loader(
         raise AssertionError("CORE_LOADER_MUST_NOT_RUN")
 
     monkeypatch.setattr(fitstats, "_core_module", forbidden_loader)
+    q_theta = q_theta_type(7)
 
     with pytest.raises(ValueError, match="q_theta"):
         irt_link(*_anchors(), method="stocking_lord", q_theta=q_theta)
