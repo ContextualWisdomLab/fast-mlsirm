@@ -310,6 +310,8 @@ format changes, and violates the fail-closed judge contract.
 
 | After the latest ADR-only follow-up, verified local/remote/PR identities are fast-mlsirm `b4121d2e2071a02b1f497b7228b0ecde061fbb45` and linked contextual-orchestrator `aeae379f63a2544fc5269bc47b3f4aff094f2915`; fast has `7` skipped plus `11` queued check-runs. The PR remains Draft, `REVIEW_REQUIRED`, `BLOCKED`, and has no independent formal approval; review-bot comments are not approvals. | Keep the IRT/Judge boundary fail-closed and keep the PR on the normal protected loop. Require terminal exact-head checks, structured same-head Strix evidence, independent current-head approval, zero unresolved threads, and final rules/refetch before normal Merge; do not promote local tests or bot comments. | Observed 2026-08-15; hosted capacity, exact-head review, and protected Merge remain open |
 
+| A 2026-08-15 re-poll before the next documentation push verified fast-mlsirm `26e5404d7da00f4c652957a5e41ba586d0b5925e` and linked contextual-orchestrator `efc4b5f11e77bd3c5061da4c3faa29b83f55110e`; fast had `7` skipped plus `17` queued check-runs and remained Draft, `REVIEW_REQUIRED`, `BLOCKED`, without an independent formal approval. | Keep this as hosted queue/review evidence only. Re-fetch the exact head after every push and require terminal checks, structured same-head Strix, an independent current-head approval, zero unresolved threads, and final rules/refetch before normal Merge; do not promote local or bot evidence. | Observed 2026-08-15; recorded as historical protected-gate evidence |
+
 ## References
 
 - Samejima, F. (1969), *Estimation of latent ability using a response pattern
