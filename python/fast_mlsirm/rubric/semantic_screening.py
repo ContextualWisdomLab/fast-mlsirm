@@ -72,7 +72,9 @@ class ScreeningEvaluatorKind(str, Enum):
 def _fingerprint(value: Any, name: str) -> str:
     """Normalize one complete lower-hexadecimal SHA-256 fingerprint."""
     normalized = _text(value, name, maximum=_MAX_FINGERPRINT_CHARACTERS)
-    if len(normalized) != 64 or any(ch not in "0123456789abcdef" for ch in normalized):
+    if len(normalized) != 64 or any(
+        ch not in "0123456789abcdef" for ch in normalized
+    ):
         raise ValueError(f"{name} must be 64 lower hexadecimal characters")
     return normalized
 
@@ -131,7 +133,11 @@ class SemanticScreeningCheck:
                 "limitation_decision_fingerprint is allowed only for "
                 "accepted_limitation"
             )
-        object.__setattr__(self, "_check_fingerprint", _sha256_hex(self._content_dict()))
+        object.__setattr__(
+            self,
+            "_check_fingerprint",
+            _sha256_hex(self._content_dict()),
+        )
 
     def _content_dict(self) -> dict[str, str | None]:
         """Return canonical decision content without derived identity."""
@@ -220,14 +226,24 @@ class CandidateScreeningResult:
             "audit_report_fingerprint",
         ):
             object.__setattr__(self, name, _fingerprint(getattr(self, name), name))
-        object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
-
-        raw_checks = _bounded_values(
-            self.checks,
-            "checks",
-            minimum=len(REQUIRED_SCREENING_DIMENSIONS),
-            maximum=len(REQUIRED_SCREENING_DIMENSIONS),
+        object.__setattr__(
+            self,
+            "schema_version",
+            _schema_version(self.schema_version),
         )
+
+        try:
+            raw_checks = _bounded_values(
+                self.checks,
+                "checks",
+                minimum=len(REQUIRED_SCREENING_DIMENSIONS),
+                maximum=len(REQUIRED_SCREENING_DIMENSIONS),
+            )
+        except ValueError:
+            raise ValueError(
+                "checks must contain exactly one decision for every required "
+                "screening dimension"
+            ) from None
         by_dimension: dict[ScreeningDimension, SemanticScreeningCheck] = {}
         for index, check in enumerate(raw_checks):
             if type(check) is not SemanticScreeningCheck:
@@ -249,7 +265,10 @@ class CandidateScreeningResult:
         object.__setattr__(
             self,
             "checks",
-            tuple(by_dimension[dimension] for dimension in REQUIRED_SCREENING_DIMENSIONS),
+            tuple(
+                by_dimension[dimension]
+                for dimension in REQUIRED_SCREENING_DIMENSIONS
+            ),
         )
         object.__setattr__(
             self,
@@ -325,18 +344,29 @@ def build_candidate_screening_result(
 
     candidate_fingerprint = candidate.candidate_fingerprint
     if audit_report.candidate_fingerprint != candidate_fingerprint:
-        raise ValueError("audit report candidate does not match the exact candidate")
+        raise ValueError(
+            "audit report candidate does not match the exact candidate"
+        )
     if (
         audit_report.audit_policy_id != audit_policy.AUDIT_POLICY_ID
         or audit_report.audit_policy_version != audit_policy.AUDIT_POLICY_VERSION
     ):
-        raise ValueError("audit report policy is not the current package audit policy")
+        raise ValueError(
+            "audit report policy is not the current package audit policy"
+        )
 
     expected_audit = audit_policy.audit_generated_item_candidate(candidate)
-    if audit_report.audit_report_fingerprint != expected_audit.audit_report_fingerprint:
-        raise ValueError("audit report is not a verified replay of the current audit")
+    if (
+        audit_report.audit_report_fingerprint
+        != expected_audit.audit_report_fingerprint
+    ):
+        raise ValueError(
+            "audit report is not a verified replay of the current audit"
+        )
     if not audit_report.is_pilot_eligible:
-        raise ValueError("candidate must be audited and pilot-eligible before screening")
+        raise ValueError(
+            "candidate must be audited and pilot-eligible before screening"
+        )
 
     return CandidateScreeningResult(
         screening_policy_id=screening_policy_id,
