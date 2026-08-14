@@ -114,6 +114,24 @@ class _ValueTrap(Mapping[str, Any]):
         return 1
 
 
+class _LateUnauthorizedKeyTrap(Mapping[str, Any]):
+    """Expose an allowed key before a later unauthorized key."""
+
+    def __init__(self) -> None:
+        self.value_count = 0
+
+    def __getitem__(self, key: str) -> Any:
+        del key
+        self.value_count += 1
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("evaluation_split", "unapproved_metadata"))
+
+    def __len__(self) -> int:
+        return 2
+
+
 class _DuplicateKeyTrap(Mapping[str, Any]):
     """Yield the one supported caller key twice."""
 
@@ -248,6 +266,15 @@ def test_rag_metadata_rejects_unknown_and_reserved_keys_before_values() -> None:
     """Disallowed key classes never authorize a caller value callback."""
     _assert_error(_ValueTrap("unapproved_metadata"), "unsupported_rag_metadata")
     _assert_error(_ValueTrap("rag_evidence_regime"), "reserved_rag_metadata")
+
+
+def test_rag_metadata_authorizes_entire_key_stream_before_values() -> None:
+    """A late unauthorized key fails before any earlier allowed value is read."""
+    metadata = _LateUnauthorizedKeyTrap()
+
+    _assert_error(metadata, "unsupported_rag_metadata")
+
+    assert metadata.value_count == 0
 
 
 def test_rag_metadata_value_failure_is_non_reflective() -> None:
