@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 from fast_mlsirm.rubric import audit_policy
@@ -79,6 +81,22 @@ def audited_candidate() -> tuple[GeneratedItemCandidate, object]:
     return item, report
 
 
+def test_required_dimensions_match_governed_item_bank_contract() -> None:
+    """The screening boundary covers every semantic gate named by issue #609."""
+    assert tuple(dimension.value for dimension in screening.REQUIRED_SCREENING_DIMENSIONS) == (
+        "answerability",
+        "ambiguity_multiple_answer_risk",
+        "factual_source_entailment",
+        "distractor_quality",
+        "duplication_semantic_redundancy",
+        "leakage_memorization_risk",
+        "bias_stereotype_fairness_risk",
+        "adversarial_prompt_instruction_data",
+        "expected_perturbation_anchor_direction",
+        "cost_runtime_suitability",
+    )
+
+
 def test_screening_result_is_content_addressed_and_complete() -> None:
     """All semantic dimensions are bound to one exact candidate/audit decision."""
     item, audit_report = audited_candidate()
@@ -127,6 +145,23 @@ def test_screening_result_rejects_missing_or_duplicate_dimensions() -> None:
             evaluator_kind="human",
             evaluator_fingerprint=fp("f"),
             checks=(*checks, checks[0]),
+        )
+
+
+def test_screening_check_collection_is_bounded_before_materialization() -> None:
+    """An unbounded caller iterator must fail closed without unbounded copying."""
+    item, audit_report = audited_candidate()
+    check = all_checks()[0]
+
+    with pytest.raises(ValueError, match="exactly one decision|at most"):
+        screening.build_candidate_screening_result(
+            item,
+            audit_report,
+            screening_policy_id="semantic_screening_policy",
+            screening_policy_version="1.0.0",
+            evaluator_kind="human",
+            evaluator_fingerprint=fp("f"),
+            checks=itertools.repeat(check),
         )
 
 
@@ -184,6 +219,24 @@ def test_accepted_limitation_requires_separate_governance_evidence() -> None:
     )
     assert check.status is screening.ScreeningStatus.ACCEPTED_LIMITATION
 
+    with pytest.raises(ValueError, match="limitation_decision_fingerprint"):
+        screening.build_semantic_screening_check(
+            dimension="answerability",
+            status="pass",
+            decision_evidence_fingerprint=fp("a"),
+            limitation_decision_fingerprint=fp("b"),
+        )
+
+
+def test_check_direct_construction_cannot_bypass_factory_validation() -> None:
+    """Callers cannot forge a screened decision by constructing the record directly."""
+    with pytest.raises(ValueError, match="build_semantic_screening_check"):
+        screening.SemanticScreeningCheck(
+            dimension="answerability",
+            status="pass",
+            decision_evidence_fingerprint=fp("a"),
+        )
+
 
 def test_result_rejects_candidate_or_audit_mismatch_and_unapproved_audit() -> None:
     """Semantic screening cannot detach from current exact audit provenance."""
@@ -211,6 +264,23 @@ def test_result_rejects_candidate_or_audit_mismatch_and_unapproved_audit() -> No
         screening.build_candidate_screening_result(
             blocked_item,
             blocked_audit,
+            screening_policy_id="semantic_screening_policy",
+            screening_policy_version="1.0.0",
+            evaluator_kind="human",
+            evaluator_fingerprint=fp("f"),
+            checks=all_checks(),
+        )
+
+
+def test_result_rejects_non_current_audit_policy_identity() -> None:
+    """A previously shaped audit object cannot be rebound to a stale policy identity."""
+    item, audit_report = audited_candidate()
+    object.__setattr__(audit_report, "audit_policy_version", "9.9.9")
+
+    with pytest.raises(ValueError, match="audit|policy|current"):
+        screening.build_candidate_screening_result(
+            item,
+            audit_report,
             screening_policy_id="semantic_screening_policy",
             screening_policy_version="1.0.0",
             evaluator_kind="human",
