@@ -38,8 +38,10 @@ pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f6
 /// Positive-definiteness diagnostic for an observed-information / Hessian matrix.
 ///
 /// Symmetrises the matrix, computes eigenvalues via Jacobi, and reports whether
-/// every eigenvalue exceeds `tol`. Used by public second-order tests so
-/// uncertainty diagnostics stay single-sourced on the numeric core.
+/// every eigenvalue exceeds a finite, non-negative `tol`. Used by public
+/// second-order tests so uncertainty diagnostics stay single-sourced on the
+/// numeric core without letting a negative tolerance redefine positive
+/// definiteness.
 pub fn second_order_test(
     hessian: &[f64],
     n: usize,
@@ -48,8 +50,8 @@ pub fn second_order_test(
     if n == 0 || hessian.len() != n * n {
         return Err("hessian must be a square matrix".into());
     }
-    if !tol.is_finite() {
-        return Err("tol must be finite".into());
+    if !tol.is_finite() || tol < 0.0 {
+        return Err("tol must be a finite non-negative float".into());
     }
     if hessian.iter().any(|v| !v.is_finite()) {
         return Err("hessian entries must be finite".into());
