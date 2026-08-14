@@ -28,42 +28,45 @@ _REFERENCES = """References (APA 7th ed.):
             A primer*. Sage. (As cited in Huebner & Lucht, 2019; not read.)
     """
 
-_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
-    {
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.intp,
-        np.longlong,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-        np.uintp,
-        np.ulonglong,
-    }
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
 )
-_NUMPY_FLOAT_SCALAR_TYPES = frozenset(
-    {
-        np.float16,
-        np.float32,
-        np.float64,
-        np.longdouble,
-    }
+_NUMPY_FLOAT_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
 )
+
+
+def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value`` has one exact trusted type without callbacks."""
+
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
 
 
 def _trusted_numpy_integer(value: object) -> bool:
     """Return whether ``value`` has an exact package-trusted NumPy integer type."""
 
-    return type(value) in _NUMPY_INTEGER_SCALAR_TYPES
+    return _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES)
 
 
 def _trusted_numpy_float(value: object) -> bool:
     """Return whether ``value`` has an exact package-trusted NumPy float type."""
 
-    return type(value) in _NUMPY_FLOAT_SCALAR_TYPES
+    return _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES)
 
 
 def _positive_integer_control(value: object, message: str) -> int:
@@ -87,7 +90,8 @@ def _finite_real_control(value: object, message: str) -> float:
 
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(message)
-    if type(value) in (int, float):
+    value_type = type(value)
+    if value_type is int or value_type is float:
         parsed = float(value)
     elif _trusted_numpy_integer(value) or _trusted_numpy_float(value):
         parsed = float(value)
