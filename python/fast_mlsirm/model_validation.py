@@ -71,21 +71,27 @@ def validate_group_partition(
 
     ``group_ids`` and ``fold_ids`` are parallel observation-level identity
     vectors. Repeated observations from one declared scientific group may occur
-    within one fold, but the same group cannot appear in two folds. The function
-    validates identities only; it performs no scoring, estimation, resampling,
-    or model-selection arithmetic.
+    within one fold, but the same group cannot appear in two folds. Scalar
+    strings are rejected rather than being misread as sequences of one-character
+    identities. The function validates identities only; it performs no scoring,
+    estimation, resampling, or model-selection arithmetic.
 
     Args:
         group_ids: Declared scientific group identity for each observation.
         fold_ids: Fold or resample-block identity for each observation.
 
     Raises:
+        TypeError: If either identity vector is supplied as a scalar string.
         ValueError: If vectors are malformed or one group crosses fold
             boundaries.
     """
+    if isinstance(group_ids, (str, bytes)) or isinstance(fold_ids, (str, bytes)):
+        raise TypeError(
+            "group_ids and fold_ids must be identity sequences, not strings"
+        )
     if len(group_ids) != len(fold_ids):
         raise ValueError("group_ids and fold_ids must have equal length")
-    if not group_ids:
+    if len(group_ids) == 0:
         raise ValueError("group_ids must not be empty")
     if any(not isinstance(group_id, str) or not group_id for group_id in group_ids):
         raise ValueError("group_ids entries must be non-empty strings")
