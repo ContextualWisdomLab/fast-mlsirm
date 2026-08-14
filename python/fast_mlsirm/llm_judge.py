@@ -412,11 +412,21 @@ def _usage(trace: Any) -> dict[str, int]:
 
 
 class ContextualOrchestratorJudge:
-    """Evaluate one answer through an injected contextual-orchestrator."""
+    """Evaluate one answer through a marked contextual-orchestrator adapter."""
 
     def __init__(self, orchestrator: Any, *, mode: str = "route", accept_threshold: float = 0.7) -> None:
         if not callable(getattr(orchestrator, "complete", None)):
             raise TypeError("orchestrator must provide complete(messages, mode=...)")
+        try:
+            contract = getattr(orchestrator, "contextual_orchestrator_contract", None)
+        except Exception as exc:  # an untrusted adapter must fail closed
+            raise TypeError(
+                "orchestrator must declare contextual-orchestrator-contract-v1"
+            ) from exc
+        if type(contract) is not str or contract != CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1:
+            raise TypeError(
+                "orchestrator must declare contextual-orchestrator-contract-v1"
+            )
         if type(mode) is not str or mode not in {"auto", "route", "conduct"}:
             raise ValueError("mode must be auto, route, or conduct")
         self.orchestrator = orchestrator

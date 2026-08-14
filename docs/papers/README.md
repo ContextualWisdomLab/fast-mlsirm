@@ -47,16 +47,30 @@ sycophancy in language models*. arXiv:2310.13548.
 <https://arxiv.org/abs/2310.13548>. CC BY 4.0. The original PDF is preserved as
 [`papers/sharma-2023-sycophancy.pdf`](papers/sharma-2023-sycophancy.pdf).
 
+Cao, B., Pan, R., Lin, H., Han, X., & Sun, L. (2026). *Does Question Really
+Matter? The Attribution of Answer Bias in LLM Evaluation*. *Proceedings of the
+AAAI Conference on Artificial Intelligence, 40*(36), 30130–30138.
+<https://doi.org/10.1609/aaai.v40i36.40262>. The official PDF is
+<https://ojs.aaai.org/index.php/AAAI/article/view/40262/44223>; it states
+all-rights-reserved, so this repository keeps it citation-only. The paper's
+option-only and contamination controls motivate paired no-question,
+shuffle, and distractor-replacement calibration. The citation was added to the
+local Zotero library through its Connector API as item `393S5NXZ` on 2026-08-14;
+no PDF was imported because the official terms do not permit repository
+redistribution.
+
 Jones, W. P., & Loe, S. A. (2013). *Optimal Number of Questionnaire Response
 Categories: More May Not Be Better*. SAGE Open, 3(2).
-<https://doi.org/10.1177/2158244013489691>. OpenAlex, Unpaywall, and the
-publisher record identify this as gold OA with a CC BY licence. The official
-SAGE PDF and the author-uploaded ResearchGate copy
+<https://doi.org/10.1177/2158244013489691>. OpenAlex and Unpaywall identify the
+published version as gold OA with CC BY metadata, and the author-uploaded
+ResearchGate record labels the copy CC BY 3.0. The official SAGE PDF and the
+author-uploaded ResearchGate copy
 <https://www.researchgate.net/publication/258187383_Optimal_Number_of_Questionnaire_Response_Categories_More_May_Not_Be_Better>
-returned anti-bot responses to the current environment, and the Zotero Local
-API record `CWY355RP` has no child attachment. No HTML page, regenerated file,
-or unauthorised mirror is stored as the original PDF; retry through an
-authorized Zotero write-capable route.
+returned anti-bot responses to the current environment. The Zotero Local API
+record `CWY355RP` confirms `rights=Open access` but has no child attachment;
+Zotero 9.0.6 also exposes no local write endpoint. No HTML page, regenerated
+file, or unauthorised mirror is stored as the original PDF. The original PDF
+remains an OA retrieval task for an authorized Zotero/Web API or GUI session.
 
 Zheng, C., Zhou, H., Meng, F., Zhou, J., & Huang, M. (2024). *Large language
 models are not robust multiple choice selectors*. ICLR 2024.
@@ -75,5 +89,9 @@ not state a redistribution license.
 Iannario, M., Monti, A. C., & Scalera, P. (2022). *The number of response
 categories in ordered response models*. *The International Journal of
 Biostatistics, 18*(2), 593–611. <https://doi.org/10.1515/ijb-2021-0013>.
-The publisher/aggregator record currently reports restricted full text, so it
-is citation-only rather than an OA-PDF attachment candidate.
+The publisher record and Crossref/OpenAlex metadata identify the published
+version as CC BY 4.0. The Zotero Local API record `MYPNHHWJ` confirms the
+license, but the official De Gruyter PDF endpoint returned a WAF challenge in
+this environment and no child attachment exists. It is therefore an OA-PDF
+candidate whose original binary is not yet vendored; no substitute or
+regenerated PDF is counted as the source.
