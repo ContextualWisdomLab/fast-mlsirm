@@ -81,7 +81,49 @@ class _UnsupportedValueTrap(Mapping[str, Any]):
         return 1
 
 
-def _request(metadata: Mapping[str, Any] | None) -> ScoringRequest:
+class _AllowedValueTrap(Mapping[str, Any]):
+    """Expose one approved key whose value callback fails."""
+
+    def __getitem__(self, key: str) -> Any:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("evaluation_split",))
+
+    def __len__(self) -> int:
+        return 1
+
+
+class _DuplicateKeyTrap(Mapping[str, Any]):
+    """Yield one approved key twice before any value materialization."""
+
+    def __getitem__(self, key: str) -> Any:
+        del key
+        return "offline_holdout"
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("evaluation_split", "evaluation_split"))
+
+    def __len__(self) -> int:
+        return 2
+
+
+class _NonStringKeyTrap(Mapping[Any, Any]):
+    """Expose a non-string key whose value callback must remain unreachable."""
+
+    def __getitem__(self, key: Any) -> Any:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter((7,))
+
+    def __len__(self) -> int:
+        return 1
+
+
+def _request(metadata: Any) -> ScoringRequest:
     """Build one deterministic request around caller-controlled metadata."""
     return build_rag_scoring_request(
         request_id="rag_callback_request",
@@ -129,6 +171,40 @@ def test_rag_metadata_rejects_unknown_keys_before_reading_values() -> None:
 
     assert caught.value.code == "unsupported_rag_metadata"
     assert _SECRET not in str(caught.value)
+
+
+def test_rag_metadata_allowed_value_failure_is_non_reflective() -> None:
+    """A failing approved value callback becomes stable package evidence."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(_AllowedValueTrap())
+
+    assert caught.value.code == "invalid_rag_metadata"
+    assert _SECRET not in str(caught.value)
+
+
+def test_rag_metadata_rejects_duplicate_keys_before_reading_values() -> None:
+    """Duplicate key iteration cannot trigger repeated value callbacks."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(_DuplicateKeyTrap())
+
+    assert caught.value.code == "duplicate_metadata_key"
+
+
+def test_rag_metadata_rejects_non_string_keys_before_reading_values() -> None:
+    """Non-string key validation precedes any caller-controlled value callback."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(_NonStringKeyTrap())
+
+    assert caught.value.code == "invalid_metadata_key"
+    assert _SECRET not in str(caught.value)
+
+
+def test_rag_metadata_non_mapping_preserves_public_type_validation() -> None:
+    """The preflight leaves non-mappings for the established public type guard."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(object())
+
+    assert caught.value.code == "invalid_rag_metadata"
 
 
 def test_rag_metadata_preserves_nested_preflight_errors() -> None:
