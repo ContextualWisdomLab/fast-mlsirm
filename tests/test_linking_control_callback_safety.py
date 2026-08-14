@@ -172,6 +172,34 @@ def test_irt_link_rejects_integer_subclasses_before_core_loader(
         assert q_theta.int_calls == 0
 
 
+def test_irt_link_rejects_hostile_type_hash_before_core_loader(monkeypatch) -> None:
+    """Quadrature admission must not hash a caller-controlled scalar type."""
+
+    calls: list[str] = []
+    loader_calls = 0
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            calls.append("type-__hash__")
+            raise AssertionError("type hash callback executed")
+
+    class HostileNumpyQuadrature(np.int64, metaclass=HostileMeta):
+        pass
+
+    def forbidden_loader():
+        nonlocal loader_calls
+        loader_calls += 1
+        raise AssertionError("CORE_LOADER_MUST_NOT_RUN")
+
+    monkeypatch.setattr(fitstats, "_core_module", forbidden_loader)
+
+    with pytest.raises(ValueError, match="q_theta"):
+        irt_link(*_anchors(), method="stocking_lord", q_theta=HostileNumpyQuadrature(7))
+
+    assert calls == []
+    assert loader_calls == 0
+
+
 def test_irt_link_preserves_supported_alias_without_restringifying(monkeypatch) -> None:
     """A trusted Rust-supported alias crosses the boundary unchanged."""
     calls: list[str] = []
