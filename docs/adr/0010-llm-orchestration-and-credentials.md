@@ -27,6 +27,17 @@ is an integration failure, not an available integration. A regression test must
 cover the package-root export before a live MLX judge result is treated as
 cross-repository evidence.
 
+### Failure-evidence boundary
+
+Failed binary-threshold calls may expose bounded operational evidence, but they
+must not retain raw provider output or exception text: either can contain task,
+answer, reference, rubric, or provider diagnostics. Evidence is therefore an
+allowlisted record of criterion/threshold identity, call/parse status, stable
+failure code, exception type, validated Boolean values, trace count, and usage.
+This redaction boundary applies before callers persist or publish
+`JudgeFormatError.evidence`; it is not a keyword, positional, or silent-repair
+mechanism.
+
 ### Credentials
 
 - Model-backed GitHub tests/agents use the existing GitHub Secret `NVIDIA_NIM_API_KEY` when the model call requires NVIDIA NIM.

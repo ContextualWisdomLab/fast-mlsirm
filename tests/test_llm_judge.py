@@ -45,6 +45,16 @@ class _CompletionOrchestrator:
         return self.completion
 
 
+class _RaisingOrchestrator:
+    contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+    def complete(self, messages, mode="auto"):
+        raise RuntimeError(self.message)
+
+
 class _SequencedOrchestrator:
     contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
 
@@ -601,7 +611,40 @@ def test_binary_threshold_failure_exposes_bounded_failure_evidence() -> None:
     assert evidence["records"][0]["parse_status"] == "passed"
     assert evidence["records"][1]["parse_status"] == "failed"
     assert evidence["records"][1]["error_type"] == "JudgeFormatError"
-    assert len(evidence["records"][1]["output_preview"]) <= 2_000
+    assert evidence["records"][1]["failure_code"] == "binary_boundary_call_failed"
+    assert "output_preview" not in evidence["records"][1]
+    assert "error" not in evidence["records"][1]
+
+
+def _assert_binary_failure_evidence_redacted(orchestrator, sentinel: str) -> None:
+    with pytest.raises(JudgeFormatError) as exc_info:
+        ContextualOrchestratorJudge(orchestrator).judge(
+            task="task",
+            answer="answer",
+            criteria=[CRITERIA[0]],
+            category_count=3,
+            category_method="binary_threshold",
+        )
+    evidence = exc_info.value.evidence
+    serialized = json.dumps(evidence, ensure_ascii=False)
+    assert sentinel not in serialized
+    for record in evidence["records"]:
+        assert "output_preview" not in record
+        assert "error" not in record
+        assert record["failure_code"] == "binary_boundary_call_failed"
+
+
+def test_binary_threshold_failure_evidence_redacts_provider_output() -> None:
+    sentinel = "provider-output-secret"
+    _assert_binary_failure_evidence_redacted(
+        _SequencedOrchestrator([sentinel, sentinel]),
+        sentinel,
+    )
+
+
+def test_binary_threshold_failure_evidence_redacts_exception_text() -> None:
+    sentinel = "exception-text-secret"
+    _assert_binary_failure_evidence_redacted(_RaisingOrchestrator(sentinel), sentinel)
 
 
 def test_binary_threshold_judgment_has_a_bounded_call_budget() -> None:

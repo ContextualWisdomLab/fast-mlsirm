@@ -23,8 +23,6 @@ MAX_JUDGE_CATEGORIES = MAX_POLYTOMOUS_CATEGORIES
 MAX_JUDGE_JSON_DEPTH = 32
 CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 = "contextual-orchestrator-contract-v1"
 MAX_BINARY_THRESHOLD_CALLS = 64
-_MAX_FAILURE_MESSAGE_CHARACTERS = 512
-_MAX_FAILURE_OUTPUT_PREVIEW_CHARACTERS = 2_000
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 
 
@@ -525,7 +523,6 @@ class ContextualOrchestratorJudge:
                 if not isinstance(completion, Mapping):
                     raise JudgeFormatError("orchestrator completion must be a mapping")
                 raw = _bounded_text(completion.get("answer"), "judge answer")
-                record["output_preview"] = raw[:_MAX_FAILURE_OUTPUT_PREVIEW_CHARACTERS]
                 parsed = _response_object(
                     raw,
                     required_fields={"meets_threshold", "rationale"},
@@ -559,9 +556,7 @@ class ContextualOrchestratorJudge:
                     "failed" if record["call_status"] == "completed" else "not_attempted"
                 )
                 record["error_type"] = type(exc).__name__
-                record["error"] = str(exc)[:_MAX_FAILURE_MESSAGE_CHARACTERS]
-                if raw is not None:
-                    record["output_preview"] = raw[:_MAX_FAILURE_OUTPUT_PREVIEW_CHARACTERS]
+                record["failure_code"] = "binary_boundary_call_failed"
                 return {
                     "ok": False,
                     "record": record,
