@@ -145,6 +145,54 @@ def test_fit_testlet_rejects_control_subclasses_before_callbacks(
     _assert_rejected_without_callback(keyword, value, cls)
 
 
+def test_fit_testlet_rejects_hostile_scalar_metaclass_hash_before_callback() -> None:
+    """NumPy scalar admission must not hash a caller-controlled metaclass."""
+
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            calls.append("type-__hash__")
+            raise AssertionError("type hash callback executed")
+
+    class HostileNumpyInt(np.int64, metaclass=HostileMeta):
+        pass
+
+    with patch(
+        "fast_mlsirm.fitstats._core_module",
+        side_effect=AssertionError("native core discovery must not run"),
+    ):
+        with pytest.raises(ValueError, match="max_iter must be an integer"):
+            fit_testlet(_binary(), _tid(), max_iter=HostileNumpyInt(3), q_gamma=7)
+
+    assert calls == []
+
+
+def test_fit_testlet_rejects_hostile_scalar_metaclass_equality_before_callback() -> None:
+    """Built-in scalar admission must not compare caller types for equality."""
+
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        __hash__ = type.__hash__
+
+        def __eq__(cls, other: object) -> bool:
+            calls.append("type-__eq__")
+            raise AssertionError("type equality callback executed")
+
+    class HostileNumpyFloat(np.float64, metaclass=HostileMeta):
+        pass
+
+    with patch(
+        "fast_mlsirm.fitstats._core_module",
+        side_effect=AssertionError("native core discovery must not run"),
+    ):
+        with pytest.raises(ValueError, match="tol must be a finite non-negative number"):
+            fit_testlet(_binary(), _tid(), tol=HostileNumpyFloat(1e-6), q_gamma=7)
+
+    assert calls == []
+
+
 def test_fit_testlet_preserves_genuine_numpy_scalars() -> None:
     """Exact NumPy scalar classes remain valid public controls."""
 
