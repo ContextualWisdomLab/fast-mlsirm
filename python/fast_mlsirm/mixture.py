@@ -48,14 +48,17 @@ def _finite_nonnegative_real(value: object, name: str) -> float:
     """Return a trusted finite non-negative real without subclass coercion."""
 
     value_type = type(value)
-    if value_type is int or value_type is float:
-        result = float(value)
-    elif _is_exact_type(value_type, _NUMPY_INTEGER_TYPES) or _is_exact_type(
-        value_type, _NUMPY_FLOAT_TYPES
+    if not (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_TYPES)
     ):
-        result = float(value)
-    else:
         raise ValueError(f"{name} must be a finite non-negative number")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite non-negative number") from exc
     if not np.isfinite(result) or result < 0.0:
         raise ValueError(f"{name} must be a finite non-negative number")
     return result
