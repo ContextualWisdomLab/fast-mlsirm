@@ -55,6 +55,13 @@ class _LookupTrap(Mapping[tuple[str, str], float]):
         return True
 
 
+class _FloatTrap:
+    """Raise caller-controlled text from numeric coercion."""
+
+    def __float__(self) -> float:
+        raise RuntimeError(_SECRET)
+
+
 def _single_context_design():
     edge = build_context_membership(
         observation_id="person_one",
@@ -88,6 +95,20 @@ def test_public_predictor_normalizes_hostile_effect_lookup_failures() -> None:
     """Caller callback text must not escape the Python marshalling boundary."""
     with pytest.raises(ValueError, match="context_effects could not be read safely") as caught:
         weighted_contextual_effect(_single_context_design(), _LookupTrap())
+
+    assert _SECRET not in str(caught.value)
+
+
+def test_public_predictor_normalizes_hostile_effect_coercion_failures() -> None:
+    """Numeric-conversion callbacks must not reflect caller exception text."""
+    with pytest.raises(
+        ValueError,
+        match="context_effects values could not be converted safely",
+    ) as caught:
+        weighted_contextual_effect(
+            _single_context_design(),
+            {_CONTEXT_KEY: _FloatTrap()},  # type: ignore[dict-item]
+        )
 
     assert _SECRET not in str(caught.value)
 
