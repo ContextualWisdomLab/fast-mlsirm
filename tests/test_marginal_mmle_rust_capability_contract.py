@@ -1,4 +1,4 @@
-"""Fail-first ABI compatibility contract for Rust marginal MMLE dispatch."""
+"""ABI compatibility contract for Rust marginal MMLE dispatch."""
 
 from __future__ import annotations
 
@@ -14,22 +14,35 @@ from fast_mlsirm.config import FitConfig
 
 fit_module = importlib.import_module("fast_mlsirm.fit")
 marginal_module = importlib.import_module("fast_mlsirm.estimators.marginal")
+_MISSING = object()
 
 
-def test_public_spatial_mmle_rejects_stale_rust_marginal_capability(
+@pytest.mark.parametrize(
+    "capability",
+    [
+        pytest.param(_MISSING, id="absent"),
+        pytest.param(None, id="none"),
+        pytest.param(False, id="boolean"),
+        pytest.param("1", id="string"),
+        pytest.param(0, id="stale"),
+        pytest.param(2, id="unsupported-future"),
+    ],
+)
+def test_public_spatial_mmle_rejects_incompatible_rust_marginal_capability(
     monkeypatch: pytest.MonkeyPatch,
+    capability: object,
 ) -> None:
-    """A callable from an older marginal ABI must fail before dispatch."""
+    """Absent, malformed, stale, and unsupported ABIs fail before dispatch."""
     responses = np.array(
         [
-            [1.0, 1.0, 0.0, 0.0],
-            [1.0, 0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [1.0, 0.0, 0.0, 1.0],
-            [0.0, 1.0, 1.0, 0.0],
-            [1.0, 1.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+  [1.0, 1.0, 0.0, 0.0],
+  [1.0, 0.0, 1.0, 0.0],
+  [0.0, 1.0, 0.0, 1.0],
+  [0.0, 0.0, 1.0, 1.0],
+  [1.0, 0.0, 0.0, 1.0],
+  [0.0, 1.0, 1.0, 0.0],
+  [1.0, 1.0, 1.0, 0.0],
+  [0.0, 0.0, 0.0, 1.0],
         ],
         dtype=np.float64,
     )
@@ -49,44 +62,63 @@ def test_public_spatial_mmle_rejects_stale_rust_marginal_capability(
         eps_distance: object,
     ) -> None:
         stale_calls.append(
-            (
-                y,
-                observed,
-                factors,
-                n_persons,
-                n_items,
-                n_dims,
-                latent_dim,
-                model,
-                eps_distance,
-            )
+  (
+      y,
+      observed,
+      factors,
+      n_persons,
+      n_items,
+      n_dims,
+      latent_dim,
+      model,
+      eps_distance,
+  )
         )
 
-    def reject_numpy_reference(*args: object, **_kwargs: object) -> dict[str, object]:
+    def reject_numpy_reference(
+        *args: object, **_kwargs: object
+    ) -> dict[str, object]:
         numpy_calls.append(args)
-        raise AssertionError("public marginal MMLE entered NumPy production arithmetic")
+        raise AssertionError(
+  "public marginal MMLE entered NumPy production arithmetic"
+        )
 
-    stale_core = SimpleNamespace(
-        fit_marginal=stale_fit_marginal,
-        MARGINAL_CAPABILITY_VERSION=0,
-    )
+    core_attributes: dict[str, object] = {
+        "fit_marginal": stale_fit_marginal,
+    }
+    if capability is not _MISSING:
+        core_attributes["MARGINAL_CAPABILITY_VERSION"] = capability
+    stale_core = SimpleNamespace(**core_attributes)
     monkeypatch.setattr(fast_mlsirm, "_core", stale_core, raising=False)
     monkeypatch.setattr(fit_module, "resolve_backend", lambda _backend: "rust")
-    monkeypatch.setattr(marginal_module, "fit_marginal_numpy", reject_numpy_reference)
+    monkeypatch.setattr(
+        marginal_module, "fit_marginal_numpy", reject_numpy_reference
+    )
 
-    with pytest.raises(RuntimeError, match=r"compiled Rust core.*marginal"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"compiled Rust core marginal ABI capability",
+    ):
         fit_module.fit(
-            responses,
-            factor_id,
-            FitConfig(
-                estimator="mmle",
-                model="MLS2PLM",
-                backend="rust",
-                latent_dim=1,
-                max_iter=1,
-                n_restarts=1,
-            ),
+  responses,
+  factor_id,
+  FitConfig(
+      estimator="mmle",
+      model="MLS2PLM",
+      backend="rust",
+      latent_dim=1,
+      max_iter=1,
+      n_restarts=1,
+  ),
         )
 
     assert stale_calls == []
     assert numpy_calls == []
+
+
+def test_compiled_rust_core_exports_current_marginal_capability() -> None:
+    """The native module publishes the exact Python-supported ABI version."""
+    core = importlib.import_module("fast_mlsirm._core")
+    capability = core.MARGINAL_CAPABILITY_VERSION
+    assert type(capability) is int
+    assert capability == 1

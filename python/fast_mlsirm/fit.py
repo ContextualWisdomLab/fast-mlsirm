@@ -12,6 +12,9 @@ from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
 from .types import FitResult, MLSIRMParams
 
 
+_MARGINAL_CAPABILITY_VERSION = 1
+
+
 def _compact_population_labels(raw, n_persons: int, name: str):
     """Validate and compact caller-supplied population labels to contiguous
     ``0..k-1`` ids. Rejects non-1-D, wrong-length, non-finite, non-integer, or
@@ -345,15 +348,24 @@ def _fit_mmle_marginal(
     if backend == "rust":
         try:  # pragma: no cover - depends on the compiled extension
             from . import _core  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "compiled Rust core marginal estimator is required for marginal MMLE"
+            ) from exc
 
-            rust = getattr(_core, "fit_marginal", None)
-        except Exception:  # pragma: no cover
-            rust = None
-
-    if backend == "rust" and rust is None:
-        raise RuntimeError(
-            "compiled Rust core marginal estimator is required for marginal MMLE"
-        )
+        capability = getattr(_core, "MARGINAL_CAPABILITY_VERSION", None)
+        if (
+            type(capability) is not int
+            or capability != _MARGINAL_CAPABILITY_VERSION
+        ):
+            raise RuntimeError(
+                "compiled Rust core marginal ABI capability is missing or unsupported"
+            )
+        rust = getattr(_core, "fit_marginal", None)
+        if not callable(rust):
+            raise RuntimeError(
+                "compiled Rust core marginal estimator is required for marginal MMLE"
+            )
 
     y_filled = np.where(observed, y, 0.0).astype(np.float64)
     if rust is not None:  # pragma: no cover - exercised only with the extension
