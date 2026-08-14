@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Sequence
+from typing import Sequence, TypeVar
+
+
+_T = TypeVar("_T")
 
 
 class GeneralizationUnit(str, Enum):
@@ -62,6 +65,16 @@ class ModelValidationPlan:
             )
 
 
+def _snapshot_sequence(value: Sequence[_T], *, name: str) -> tuple[_T, ...]:
+    """Read caller-controlled validation metadata exactly once and fail closed."""
+    try:
+        iterator = iter(value)
+        snapshot = tuple(item for item in iterator)
+    except Exception:
+        raise ValueError(f"{name} could not be read safely") from None
+    return snapshot
+
+
 def validate_group_partition(
     *,
     group_ids: Sequence[str],
@@ -70,7 +83,9 @@ def validate_group_partition(
     """Reject a degenerate or leakage-prone grouped validation partition.
 
     ``group_ids`` and ``fold_ids`` are parallel observation-level identity
-    vectors. Repeated observations from one declared scientific group may occur
+    vectors. Each caller sequence is snapshotted once before validation so a
+    mutable or callback-backed sequence cannot change identity authority between
+    checks. Repeated observations from one declared scientific group may occur
     within one fold, but the same group cannot appear in two folds. A usable
     holdout/bootstrap partition must contain at least two scientific groups and
     at least two folds; otherwise no out-of-group validation contrast exists.
@@ -87,40 +102,43 @@ def validate_group_partition(
 
     Raises:
         TypeError: If either identity vector is supplied as a scalar string.
-        ValueError: If vectors are malformed, degenerate, contain ambiguous
-            padded identities, or one group crosses fold boundaries.
+        ValueError: If vectors cannot be snapshotted safely, are malformed,
+            degenerate, contain ambiguous padded identities, or one group crosses
+            fold boundaries.
     """
     if isinstance(group_ids, (str, bytes)) or isinstance(fold_ids, (str, bytes)):
         raise TypeError(
             "group_ids and fold_ids must be identity sequences, not strings"
         )
-    if len(group_ids) != len(fold_ids):
+    groups = _snapshot_sequence(group_ids, name="group_ids")
+    folds = _snapshot_sequence(fold_ids, name="fold_ids")
+    if len(groups) != len(folds):
         raise ValueError("group_ids and fold_ids must have equal length")
-    if len(group_ids) == 0:
+    if len(groups) == 0:
         raise ValueError("group_ids must not be empty")
     if any(
         not isinstance(group_id, str) or not group_id.strip()
-        for group_id in group_ids
+        for group_id in groups
     ):
         raise ValueError("group_ids entries must be non-empty strings")
-    if any(group_id != group_id.strip() for group_id in group_ids):
+    if any(group_id != group_id.strip() for group_id in groups):
         raise ValueError("group_ids entries must not contain surrounding whitespace")
     if any(
         not isinstance(fold_id, str) or not fold_id.strip()
-        for fold_id in fold_ids
+        for fold_id in folds
     ):
         raise ValueError("fold_ids entries must be non-empty strings")
-    if any(fold_id != fold_id.strip() for fold_id in fold_ids):
+    if any(fold_id != fold_id.strip() for fold_id in folds):
         raise ValueError("fold_ids entries must not contain surrounding whitespace")
-    if len(set(group_ids)) < 2:
+    if len(set(groups)) < 2:
         raise ValueError(
             "group partition requires at least two generalization groups"
         )
-    if len(set(fold_ids)) < 2:
+    if len(set(folds)) < 2:
         raise ValueError("group partition requires at least two folds")
 
     group_fold: dict[str, str] = {}
-    for group_id, fold_id in zip(group_ids, fold_ids, strict=True):
+    for group_id, fold_id in zip(groups, folds, strict=True):
         prior_fold = group_fold.get(group_id)
         if prior_fold is not None and prior_fold != fold_id:
             raise ValueError(
@@ -136,9 +154,11 @@ def validate_temporal_forward_window(
 ) -> None:
     """Reject temporal validation windows with look-ahead or period overlap.
 
-    Periods are caller-defined integer ordinals. The contract deliberately does
-    not infer calendar semantics: it only requires every training period to
-    strictly precede every validation period. This keeps chronology validation
+    Periods are caller-defined integer ordinals. Each caller sequence is
+    snapshotted once before validation so chronology is evaluated against one
+    stable observation of caller metadata. The contract deliberately does not
+    infer calendar semantics: it only requires every training period to strictly
+    precede every validation period. This keeps chronology validation
     deterministic and separate from scoring, estimation, or model-selection
     arithmetic.
 
@@ -148,8 +168,8 @@ def validate_temporal_forward_window(
 
     Raises:
         TypeError: If either period vector is supplied as a scalar string.
-        ValueError: If vectors are empty, contain non-integers, or overlap in
-            temporal order.
+        ValueError: If vectors cannot be snapshotted safely, are empty, contain
+            non-integers, or overlap in temporal order.
     """
     if isinstance(training_periods, (str, bytes)) or isinstance(
         validation_periods, (str, bytes)
@@ -157,15 +177,17 @@ def validate_temporal_forward_window(
         raise TypeError(
             "training_periods and validation_periods must be integer sequences"
         )
-    if len(training_periods) == 0:
+    training = _snapshot_sequence(training_periods, name="training_periods")
+    validation = _snapshot_sequence(validation_periods, name="validation_periods")
+    if len(training) == 0:
         raise ValueError("training_periods must not be empty")
-    if len(validation_periods) == 0:
+    if len(validation) == 0:
         raise ValueError("validation_periods must not be empty")
-    if any(type(period) is not int for period in training_periods):
+    if any(type(period) is not int for period in training):
         raise ValueError("training_periods entries must be integers")
-    if any(type(period) is not int for period in validation_periods):
+    if any(type(period) is not int for period in validation):
         raise ValueError("validation_periods entries must be integers")
-    if max(training_periods) >= min(validation_periods):
+    if max(training) >= min(validation):
         raise ValueError("training periods must strictly precede validation periods")
 
 
