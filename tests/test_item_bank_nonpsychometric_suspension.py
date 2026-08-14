@@ -141,6 +141,62 @@ def test_reactivation_must_address_the_suspended_concern_class() -> None:
     assert "security_privacy" in caught.value.message
 
 
+@pytest.mark.parametrize(
+    ("reused_kind", "reused_character", "replacement_suffix"),
+    (
+        (ItemBankEvidenceKind.APPROVAL, "e", "replacement_approval"),
+        (
+            ItemBankEvidenceKind.SECURITY_PRIVACY,
+            "5",
+            "replacement_security_recheck",
+        ),
+    ),
+)
+def test_reactivation_rejects_historical_fingerprint_under_new_identity(
+    reused_kind: ItemBankEvidenceKind,
+    reused_character: str,
+    replacement_suffix: str,
+) -> None:
+    """A new evidence identifier cannot disguise a historical reactivation artifact."""
+    suspended = transition_item_bank_record(
+        _active_record(),
+        ItemBankLifecycleState.SUSPENDED,
+        evidence_references=(
+            _evidence(ItemBankEvidenceKind.SUSPENSION, "security_quarantine", "4"),
+            _evidence(ItemBankEvidenceKind.SECURITY_PRIVACY, "security_finding", "5"),
+        ),
+        transition_reason_id="security_privacy_quarantine",
+    )
+    additions = {
+        ItemBankEvidenceKind.APPROVAL: _evidence(
+            ItemBankEvidenceKind.APPROVAL,
+            "fresh_approval",
+            "6",
+        ),
+        ItemBankEvidenceKind.SECURITY_PRIVACY: _evidence(
+            ItemBankEvidenceKind.SECURITY_PRIVACY,
+            "fresh_security_recheck",
+            "7",
+        ),
+    }
+    additions[reused_kind] = _evidence(
+        reused_kind,
+        replacement_suffix,
+        reused_character,
+    )
+
+    with pytest.raises(ItemBankLifecycleError) as caught:
+        transition_item_bank_record(
+            suspended,
+            ItemBankLifecycleState.ACTIVE,
+            evidence_references=tuple(additions.values()),
+            transition_reason_id="security_privacy_cleared",
+        )
+
+    assert caught.value.code == "reused_transition_evidence"
+    assert "fresh evidence fingerprints" in caught.value.message
+
+
 def test_suspension_concern_metadata_fails_closed_when_factory_invariants_break() -> None:
     """Factory-sealed records cannot omit, misclassify, or leak suspension concerns."""
     active = _active_record()
