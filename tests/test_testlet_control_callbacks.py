@@ -120,29 +120,30 @@ def _assert_rejected_without_callback(keyword: str, value: object, cls: type) ->
 
 
 @pytest.mark.parametrize(
-    ("keyword", "value", "cls"),
+    ("keyword", "constructor", "args"),
     [
-        ("max_iter", _HostileInt(7), _HostileInt),
-        ("max_iter", _HostileNpInt(7), _HostileNpInt),
-        ("q_gamma", _HostileInt(7), _HostileInt),
-        ("q_gamma", _HostileNpInt(7), _HostileNpInt),
-        ("tol", _HostileFloat(1e-6), _HostileFloat),
-        ("tol", _HostileNpFloat(1e-6), _HostileNpFloat),
-        ("init_sigma2", _HostileFloat(0.5), _HostileFloat),
-        ("init_sigma2", _HostileNpFloat(0.5), _HostileNpFloat),
-        ("model", _HostileStr("rasch"), _HostileStr),
-        ("estimate_sigma", _HostileBool(), _HostileBool),
-        ("require_convergence", _HostileBool(), _HostileBool),
+        ("max_iter", _HostileInt, (7,)),
+        ("max_iter", _HostileNpInt, (7,)),
+        ("q_gamma", _HostileInt, (7,)),
+        ("q_gamma", _HostileNpInt, (7,)),
+        ("tol", _HostileFloat, (1e-6,)),
+        ("tol", _HostileNpFloat, (1e-6,)),
+        ("init_sigma2", _HostileFloat, (0.5,)),
+        ("init_sigma2", _HostileNpFloat, (0.5,)),
+        ("model", _HostileStr, ("rasch",)),
+        ("estimate_sigma", _HostileBool, ()),
+        ("require_convergence", _HostileBool, ()),
     ],
 )
 def test_fit_testlet_rejects_control_subclasses_before_callbacks(
     keyword: str,
-    value: object,
-    cls: type,
+    constructor: type,
+    args: tuple[object, ...],
 ) -> None:
     """Rejected public controls must not execute caller conversion callbacks."""
 
-    _assert_rejected_without_callback(keyword, value, cls)
+    value = constructor(*args)
+    _assert_rejected_without_callback(keyword, value, constructor)
 
 
 def test_fit_testlet_rejects_hostile_scalar_metaclass_hash_before_callback() -> None:
