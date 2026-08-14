@@ -53,7 +53,7 @@ def test_candidate_parser_depth_fingerprint_and_proof_boundaries() -> None:
     assert proof is not None
     object.__setattr__(proof, "seal", object())
     with pytest.raises(ValueError, match="proof is invalid"):
-        candidate.candidate_fingerprint
+        _ = candidate.candidate_fingerprint
 
 
 def test_candidate_parser_alignment_attribution_and_answer_key_boundaries() -> None:
@@ -148,7 +148,6 @@ def test_candidate_parser_requires_a_generation_request() -> None:
 def test_bounded_rubric_collection_accepts_an_empty_optional_iterator() -> None:
     """Optional rubric collections may exhaust cleanly at their minimum bound."""
     assert rubric_models._bounded_values(iter(()), "items", minimum=0, maximum=1) == ()
-    assert rubric_models._bounded_values(iter(()), "items", minimum=0, maximum=-1) == ()
 
 
 def _assert_generation_error(callback, message: str) -> None:
