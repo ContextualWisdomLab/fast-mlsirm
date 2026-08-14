@@ -87,6 +87,26 @@ def test_group_partition_rejects_malformed_identity_vectors() -> None:
         validate_group_partition(group_ids=("query-a",), fold_ids=("",))
 
 
+def test_group_partition_rejects_degenerate_single_group_or_fold() -> None:
+    with pytest.raises(
+        ValueError,
+        match="group partition requires at least two generalization groups",
+    ):
+        validate_group_partition(
+            group_ids=("query-a", "query-a"),
+            fold_ids=("fold-1", "fold-1"),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="group partition requires at least two folds",
+    ):
+        validate_group_partition(
+            group_ids=("query-a", "query-b"),
+            fold_ids=("fold-1", "fold-1"),
+        )
+
+
 def test_group_partition_rejects_scalar_strings_as_identity_vectors() -> None:
     with pytest.raises(
         TypeError,
