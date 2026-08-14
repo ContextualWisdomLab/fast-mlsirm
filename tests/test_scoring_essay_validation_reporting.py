@@ -378,6 +378,18 @@ def test_factory_propagates_label_validation_failures() -> None:
         build_report(automated_labels=np.zeros((2, 2), dtype=np.int64))
 
 
+def test_validation_rejects_engine_identity_collision(monkeypatch) -> None:
+    """Automated and human evidence must retain distinct engine identities."""
+    monkeypatch.setattr(
+        validation_reporting.EngineDescriptor,
+        "engine_fingerprint",
+        property(lambda _engine: "same_engine_identity"),
+    )
+    with pytest.raises(AssessmentSpecError) as captured:
+        build_report()
+    assert captured.value.code == "essay_validation_engine_identity_collision"
+
+
 def test_metric_and_report_constructors_are_factory_sealed() -> None:
     """Public dataclasses cannot be forged through direct construction."""
     with pytest.raises(AssessmentSpecError) as metric_error:

@@ -33,6 +33,44 @@ def test_validate_judge_accepts_human_human_baseline():
     assert any(g["name"] == "degradation" for g in verdict.gates)
 
 
+def test_validation_policy_rejects_empty_identity_and_invalid_thresholds():
+    """Policy metadata and every threshold remain bounded before Rust dispatch."""
+    for field, value, message in (
+        ("policy_id", "", "policy_id"),
+        ("policy_version", "", "policy_version"),
+        ("qwk_min", "bad", "qwk_min"),
+        ("min_subgroup_n", 1, "min_subgroup_n"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            validation.ValidationPolicy(**{field: value})
+
+
+def test_validate_judge_rejects_an_untyped_policy():
+    """The public gate requires a validated ValidationPolicy instance."""
+    with pytest.raises(TypeError, match="policy must be a ValidationPolicy"):
+        validation.validate_judge(np.array([0, 1]), np.array([0, 1]), policy=object())
+
+
+def test_agreement_validates_object_float_and_text_rating_payloads():
+    """Fleiss and Light adapters reject payloads that could truncate or wrap."""
+    fleiss = validation.fleiss_kappa(
+        np.array([[0, 1, 0], [1, 0, 1]], dtype=object),
+        k=2,
+    )
+    assert isinstance(fleiss, validation.FleissKappaResult)
+    with pytest.raises(ValueError, match="dtype .* is not numeric"):
+        validation.fleiss_kappa(np.array([["a", "b"]]))
+    with pytest.raises(ValueError, match="exact float64 integer range"):
+        validation.fleiss_kappa(np.array([[2.0**53 + 2, 0.0]]), k=2)
+
+    light = validation.light_kappa(np.array([[0, 1], [1, 0]], dtype=np.int64))
+    assert isinstance(light, validation.LightKappaResult)
+    with pytest.raises(ValueError, match="dtype .* is not numeric"):
+        validation.light_kappa(np.array([["a", "b"]]))
+    with pytest.raises(ValueError, match=r"<= 2\^32"):
+        validation.light_kappa(np.array([[2.0**32 + 1, 0.0]]))
+
+
 # -- preprocessing -----------------------------------------------------------
 
 

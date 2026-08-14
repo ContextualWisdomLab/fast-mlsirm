@@ -16,6 +16,7 @@ import pytest
 from fast_mlsirm.cat import (
     AbilityEstimate,
     AdaptiveTestResult,
+    _query_params,
     ability_standard_error,
     administer_adaptive_test,
     estimate_ability_eap,
@@ -238,3 +239,41 @@ def test_administer_rejects_bad_arguments():
         administer_adaptive_test(bank, fid, lambda i: 0, model=MODEL, max_items=99)
     with pytest.raises(ValueError):
         administer_adaptive_test(bank, fid, lambda i: 2, model=MODEL, max_items=3)
+
+
+def test_cat_contract_rejects_bad_shapes_and_administrations():
+    """Reject malformed CAT inputs before they cross the Rust boundary."""
+    bank, fid = _bank(n_items=4)
+    with pytest.raises(ValueError, match="theta_rows"):
+        _query_params(bank, np.zeros((1, 2)))
+    with pytest.raises(ValueError, match="equal length"):
+        estimate_ability_eap(bank, fid, np.array([[0]]), np.array([1.0]), model=MODEL)
+    with pytest.raises(ValueError, match="out of range"):
+        estimate_ability_eap(bank, fid, np.array([4]), np.array([1.0]), model=MODEL)
+    with pytest.raises(ValueError, match="unique"):
+        estimate_ability_eap(bank, fid, np.array([0, 0]), np.array([1.0, 0.0]), model=MODEL)
+    with pytest.raises(ValueError, match="0 or 1"):
+        estimate_ability_eap(bank, fid, np.array([0]), np.array([2.0]), model=MODEL)
+    with pytest.raises(ValueError, match="prior_sd"):
+        estimate_ability_eap(bank, fid, np.array([0]), np.array([1.0]), prior_sd=0.0)
+
+
+def test_cat_standard_error_and_administration_boundary_contracts():
+    """Exercise all-item information, index bounds, defaults, and MLE policy."""
+    bank, fid = _bank(n_items=2)
+    all_item_se = ability_standard_error(bank, fid, np.array([0.0]), model=MODEL)
+    assert np.all(np.isfinite(all_item_se))
+    with pytest.raises(ValueError, match="out of range"):
+        ability_standard_error(bank, fid, np.array([0.0]), administered=np.array([2]), model=MODEL)
+    with pytest.raises(ValueError, match="min_items"):
+        administer_adaptive_test(bank, fid, lambda _item: 0, min_items=0)
+    with pytest.raises(ValueError, match="se_threshold"):
+        administer_adaptive_test(bank, fid, lambda _item: 0, se_threshold=0.0)
+
+    fixed = administer_adaptive_test(bank, fid, lambda _item: 0, max_items=None, model=MODEL)
+    assert fixed.n_items == 2
+    mle = administer_adaptive_test(
+        bank, fid, lambda _item: 1, model=MODEL, ability_method="mle", max_items=1
+    )
+    assert mle.method == "mle"
+    assert mle.n_items == 1

@@ -131,7 +131,7 @@ def test_bifactor_fit_kwargs_pin_the_existing_rust_backed_model_contract():
     assert design.to_fit_kwargs(custom)["config"] is custom
 
 
-def test_bifactor_fit_kwargs_reject_mislabeled_or_incompatible_configs():
+def test_bifactor_fit_kwargs_reject_mislabeled_or_incompatible_configs(monkeypatch):
     """A bifactor audit artifact cannot silently select another fit family."""
     design = build_bifactor_pilot_design(_bifactor_records())
 
@@ -142,6 +142,7 @@ def test_bifactor_fit_kwargs_reject_mislabeled_or_incompatible_configs():
             FitConfig(model="MIRT", estimator="mmle", latent_dim=1)
         )
     with pytest.raises(ValueError, match="estimator"):
+        monkeypatch.setattr(FitConfig, "validate", lambda _self: None)
         design.to_fit_kwargs(
             FitConfig(model="BIFAC2PLM", estimator="jmle", latent_dim=1)
         )

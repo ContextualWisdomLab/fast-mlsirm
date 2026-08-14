@@ -159,6 +159,15 @@ def test_gammainc_and_chi2_edges():
     assert math.isnan(fm.chi2_sf(1.0, -3.0))
     # continued-fraction regime (x >= a + 1)
     assert fm.chi2_sf(20.0, 2.0) == pytest.approx(4.5399929e-05, abs=1e-9)
+    # Exercise both stable zero-limit and incomplete-gamma convergence paths.
+    assert fm._xlogx_over_y(0.0, 2.0) == 0.0
+    assert 0.0 <= fm._gammainc_upper_reg(2.0, 0.5) <= 1.0
+    assert 0.0 <= fm._gammainc_upper_reg(2.0, 5.0) <= 1.0
+    assert fm._gammainc_upper_reg(2.0, 1.0e-10) == pytest.approx(1.0)
+    assert fm._gammainc_upper_reg(2.0, 0.0) == 1.0
+    # A large-shape series reaches its bounded iteration ceiling without an
+    # early delta-convergence break.
+    assert math.isfinite(fm._gammainc_upper_reg(250000.0, 250000.0))
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +625,8 @@ def test_m2_cmle_rasch_guards():
         fm.m2_cmle_rasch(nonbinary, b5)
     with pytest.raises(ValueError, match="finite vector of length 5"):
         fm.m2_cmle_rasch(np.zeros((6, 5)), np.zeros(4))
+    with pytest.raises(ValueError, match="finite vector of length 5"):
+        fm.m2_cmle_rasch(np.zeros((6, 5)), np.full(5, np.nan))
     with pytest.raises(ValueError, match="at least 5 items"):
         fm.m2_cmle_rasch(np.zeros((6, 4)), np.zeros(4))
     # complete binary data missing a raw-score category (score 3 absent).
@@ -632,6 +643,20 @@ def test_m2_cmle_rasch_guards():
     responses = np.repeat(patterns, 3, axis=0)
     with pytest.raises(ValueError, match="every raw-score category represented"):
         fm.m2_cmle_rasch(responses, np.linspace(-1.0, 1.0, 5))
+
+
+def test_sx2_prior_mean_and_rasch_conditional_probability_contracts():
+    """Prior vectors and conditional Rasch probabilities retain bounded domains."""
+    y, fid, params = _mirt_params(4, 6, seed=8)
+    with pytest.raises(ValueError, match="length-n_dims"):
+        fm.s_x2(y, fid, params, "MIRT", prior_mean=np.zeros(2))
+    with pytest.raises(ValueError, match="prior_mean must be finite"):
+        fm.s_x2(y, fid, params, "MIRT", prior_mean=np.array([np.nan]))
+    probabilities = fm._rasch_conditional_set_probabilities(
+        np.array([-0.5, 0.0, 0.7]), [[0, 1], []]
+    )
+    assert probabilities.shape == (4, 2)
+    assert np.all(np.isfinite(probabilities))
 
 
 # ---------------------------------------------------------------------------

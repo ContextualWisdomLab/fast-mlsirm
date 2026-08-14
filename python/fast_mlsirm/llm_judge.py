@@ -32,6 +32,7 @@ class _DuplicateJsonKeyError(ValueError):
 
 
 def _duplicate_free_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object while rejecting duplicate member names."""
     value: dict[str, Any] = {}
     for key, member in pairs:
         if key in value:
@@ -41,6 +42,7 @@ def _duplicate_free_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _category_count(value: Any) -> int:
+    """Validate the bounded number of ordinal categories in a rubric."""
     if (
         type(value) is not int
         or not 2 <= value <= MAX_JUDGE_CATEGORIES
@@ -82,6 +84,7 @@ class JudgeCriterion:
     weight: float = 1.0
 
     def __post_init__(self) -> None:
+        """Validate identity, description, and positive finite weight."""
         if type(self.criterion_id) is not str:
             raise ValueError("criterion_id must be a string")
         if not _IDENTIFIER.fullmatch(self.criterion_id):
@@ -256,6 +259,7 @@ class LLMJudgeResult:
 
 
 def _bounded_text(value: Any, name: str) -> str:
+    """Normalize one non-empty judge text field under the size limit."""
     if type(value) is not str or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     normalized = value.strip()
@@ -265,6 +269,7 @@ def _bounded_text(value: Any, name: str) -> str:
 
 
 def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[JudgeCriterion, ...]:
+    """Normalize and deduplicate the bounded criterion collection."""
     normalized: list[JudgeCriterion] = []
     for value in values:
         if len(normalized) >= MAX_JUDGE_CRITERIA:
@@ -292,6 +297,7 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
 
 
 def _validate_raw_json_depth(content: str) -> None:
+    """Reject raw JSON whose bracket nesting exceeds the parser budget."""
     depth = 0
     in_string = False
     escaped = False
@@ -315,6 +321,7 @@ def _validate_raw_json_depth(content: str) -> None:
 
 
 def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
+    """Parse one strict judge response object with the required field set."""
     text = raw.strip()
     _validate_raw_json_depth(text)
     try:
@@ -333,6 +340,7 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
 
 
 def _score(value: Any, name: str) -> float:
+    """Normalize one finite score constrained to the closed unit interval."""
     if type(value) not in (int, float):
         raise JudgeFormatError(f"{name} must be a number between 0 and 1")
     try:
@@ -345,6 +353,7 @@ def _score(value: Any, name: str) -> float:
 
 
 def _usage(trace: Any) -> dict[str, int]:
+    """Aggregate nonnegative token counters from an orchestration trace."""
     totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     if type(trace) is not list:
         return totals
@@ -363,6 +372,7 @@ class ContextualOrchestratorJudge:
     """Evaluate one answer through an injected contextual-orchestrator."""
 
     def __init__(self, orchestrator: Any, *, mode: str = "route", accept_threshold: float = 0.7) -> None:
+        """Validate the injected transport and configure its routing policy."""
         if not callable(getattr(orchestrator, "complete", None)):
             raise TypeError("orchestrator must provide complete(messages, mode=...)")
         if type(mode) is not str or mode not in {"auto", "route", "conduct"}:

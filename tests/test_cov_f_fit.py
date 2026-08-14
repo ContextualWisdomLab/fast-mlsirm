@@ -15,7 +15,7 @@ import pytest
 import fast_mlsirm._core as _core
 from fast_mlsirm import MLS2PLMConfig, fit, simulate
 from fast_mlsirm.config import FitConfig, PenaltyConfig
-from fast_mlsirm.fit import _lbfgs
+from fast_mlsirm.fit import _lbfgs, _rust_optimize
 
 
 def _small_data():
@@ -56,6 +56,101 @@ def test_fit_rejects_covariate_without_mmle():
             config=FitConfig(estimator="jmle"),
             covariate={"w": np.zeros(4)},
         )
+
+
+def test_fit_rejects_bifactor_jmle_after_public_config_boundary():
+    """The driver retains a fail-closed bifactor guard even for adapter configs."""
+    data = _small_data()
+
+    class _AdapterConfig:
+        """Minimal validated adapter that reaches the fit-driver guard."""
+
+        estimator = "jmle"
+        model = "BIFAC2PLM"
+        backend = "numpy"
+        rust_device = "cpu"
+
+        def validate(self):
+            """Represent an already validated external configuration."""
+
+        def normalized_model(self):
+            """Return the canonical model token."""
+            return self.model
+
+    with pytest.raises(NotImplementedError, match="bifactor"):
+        fit(data.Y, data.factor_id, config=_AdapterConfig())
+
+
+def test_fit_rejects_reserved_em_estimator():
+    """Reserved EM/Bayes estimator names fail closed rather than guessing a path."""
+    data = _small_data()
+
+    class _AdapterConfig:
+        """Minimal adapter configuration that reaches the reserved branch."""
+
+        estimator = "em"
+        model = "MLS2PLM"
+        backend = "numpy"
+        rust_device = "cpu"
+
+        def validate(self):
+            """Represent an already validated external configuration."""
+
+        def normalized_model(self):
+            """Return the canonical model token."""
+            return self.model
+
+    with pytest.raises(NotImplementedError, match="reserved"):
+        fit(data.Y, data.factor_id, config=_AdapterConfig())
+
+
+def test_rust_optimizer_requires_the_compiled_entrypoint(monkeypatch):
+    """Rust optimization cannot silently fall back when its entrypoint is absent."""
+    monkeypatch.setattr(_core, "jmle_optimize", None, raising=False)
+    with pytest.raises(RuntimeError, match="core.jmle_optimize"):
+        _rust_optimize(
+            np.zeros(1),
+            lambda values: (0.0, np.zeros_like(values), 0.0),
+            FitConfig(backend="rust"),
+        )
+
+
+def test_numpy_adam_path_is_available_without_lbfgs():
+    """The NumPy Adam-only branch remains a supported lightweight fallback."""
+    data = _small_data()
+    result = fit(
+        data.Y,
+        data.factor_id,
+        config=FitConfig(
+            estimator="jmle",
+            model="MLSRM",
+            backend="numpy",
+            optimizer="adam",
+            latent_dim=1,
+            max_iter=1,
+            n_restarts=1,
+        ),
+    )
+    assert result.optimizer == "adam"
+
+
+def test_numpy_lbfgs_path_runs_after_adam_branch_is_skipped():
+    """The NumPy L-BFGS-only path remains independently executable."""
+    data = _small_data()
+    result = fit(
+        data.Y,
+        data.factor_id,
+        config=FitConfig(
+            estimator="jmle",
+            model="MLSRM",
+            backend="numpy",
+            optimizer="lbfgs",
+            latent_dim=1,
+            max_iter=1,
+            n_restarts=1,
+        ),
+    )
+    assert result.optimizer == "lbfgs"
 
 
 # --- _fit_mmle NumPy fallback (core absent) ---------------------------------

@@ -82,6 +82,13 @@ def test_select_cat_item_administered_out_of_range():
         select_cat_item(params, fid, administered=np.array([-1]))
 
 
+def test_select_cat_item_rejects_factor_id_shape_before_native_call():
+    """Item selection validates the factor vector against the item bank."""
+    params = _params()
+    with pytest.raises(ValueError, match="factor_id length"):
+        select_cat_item(params, np.zeros(3, dtype=np.int64))
+
+
 def test_select_cat_item_no_candidates_remaining():
     params = _params()
     fid = np.zeros(params.alpha.shape[0], dtype=np.int64)

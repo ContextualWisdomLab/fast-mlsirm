@@ -218,3 +218,32 @@ def test_python_rejects_oversized_work_before_loading_the_rust_module(monkeypatc
 def test_loader_caches_the_secondary_extension_module():
     """Repeated calls reuse one initialized `_bifactor_core` module."""
     assert bifactor_core() is bifactor_core()
+
+
+def test_bifactor_shape_validation_rejects_bad_advertised_dimensions() -> None:
+    """Advertised shapes are checked before NumPy can allocate or coerce data."""
+    module = importlib.import_module("fast_mlsirm.bifactor_scoreability")
+
+    class BadShape:
+        """Expose a non-integer dimension through the array-like boundary."""
+
+        shape = ("not_an_integer", 2)
+
+    with pytest.raises(ValueError, match="finite integer dimensions"):
+        bifactor_scoreability(BadShape(), np.ones(1))
+    with pytest.raises(ValueError, match="between 2"):
+        bifactor_scoreability(np.ones((1, 2)), np.ones(1))
+
+    valid_loadings = _loadings()
+    valid_uniquenesses = _uniquenesses()
+    assert isinstance(
+        bifactor_scoreability(valid_loadings.tolist(), valid_uniquenesses.tolist()),
+        BifactorScoreabilityResult,
+    )
+    with pytest.raises(ValueError, match="1-D item vector"):
+        bifactor_scoreability(valid_loadings, [[0.35, 0.42, 0.26, 0.15]])
+    with pytest.raises(ValueError, match="length must equal"):
+        bifactor_scoreability(valid_loadings.tolist(), [0.35, 0.42, 0.26])
+
+    with pytest.raises(RuntimeError, match="must be 1-D"):
+        module._readonly_vector(np.zeros((1, 2)), "ecv_ss")

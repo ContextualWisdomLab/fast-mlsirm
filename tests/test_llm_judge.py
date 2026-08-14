@@ -623,3 +623,189 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+
+def test_judge_covers_json_string_escapes_and_non_object_responses() -> None:
+    """Escaped JSON text is accepted, while an array response is rejected."""
+    escaped = json.loads(_payload())
+    escaped["rationale"] = 'quoted "evidence" and a \\path'
+    result = ContextualOrchestratorJudge(
+        _FakeOrchestrator(json.dumps(escaped))
+    ).judge(task="task", answer="answer", criteria=CRITERIA)
+    assert 'quoted "evidence"' in result.rationale
+
+    with pytest.raises(JudgeFormatError, match="JSON object"):
+        ContextualOrchestratorJudge(_FakeOrchestrator("[]")).judge(
+            task="task", answer="answer", criteria=CRITERIA
+        )
+
+
+def test_judge_rejects_score_and_category_domain_errors() -> None:
+    """Scores and ordinal categories remain finite and within their domains."""
+    for score in (-0.1, 1.1):
+        payload = json.loads(_payload())
+        payload["score"] = score
+        with pytest.raises(JudgeFormatError, match="number between 0 and 1"):
+            ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(payload))).judge(
+                task="task", answer="answer", criteria=CRITERIA
+            )
+
+    huge = 10**1000
+    payload = json.loads(_category_payload())
+    payload["criterion_categories"]["task_alignment"] = huge
+    with pytest.raises(JudgeFormatError, match="criterion_categories"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(payload))).judge(
+            task="task", answer="answer", criteria=CRITERIA, category_count=5
+        )
+
+    payload["criterion_categories"]["task_alignment"] = 5
+    with pytest.raises(JudgeFormatError, match="criterion_categories"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(payload))).judge(
+            task="task", answer="answer", criteria=CRITERIA, category_count=5
+        )
+
+
+def test_judge_criterion_and_constructor_boundaries_are_explicit() -> None:
+    """Malformed rubric metadata and transport objects fail before prompting."""
+    with pytest.raises(ValueError, match="criterion_id"):
+        JudgeCriterion("bad", "description")
+    with pytest.raises(ValueError, match="description"):
+        JudgeCriterion("task_alignment", " ")
+    with pytest.raises(ValueError, match="finite"):
+        JudgeCriterion("task_alignment", "description", 0.0)
+    with pytest.raises(ValueError, match="finite"):
+        JudgeCriterion("task_alignment", "description", 10**1000)
+    with pytest.raises(TypeError, match="complete"):
+        ContextualOrchestratorJudge(object())
+
+
+def test_judge_rejects_empty_or_duplicate_criteria_and_long_text() -> None:
+    """Rubrics and prompt fields are bounded before the orchestrator is called."""
+    judge = ContextualOrchestratorJudge(_FakeOrchestrator(_payload()))
+    with pytest.raises(ValueError, match="1..32"):
+        judge.judge(task="task", answer="answer", criteria=[])
+    with pytest.raises(ValueError, match="unique"):
+        judge.judge(task="task", answer="answer", criteria=[CRITERIA[0], CRITERIA[0]])
+    with pytest.raises(ValueError, match="reference_answer"):
+        judge.judge(
+            task="task",
+            answer="answer",
+            reference_answer="x" * 200_001,
+            criteria=CRITERIA,
+        )
+
+
+def test_irt_projection_covers_category_mapping_and_parameter_guards() -> None:
+    """The judge-to-IRT bridge rejects mismatched category metadata explicitly."""
+    direct = ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
+        task="task", answer="answer", criteria=CRITERIA
+    )
+    with pytest.raises(JudgeFormatError, match="criterion_scores must be an object"):
+        replace(direct, criterion_scores=[]).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="only valid"):
+        direct.to_irt_row(item_type="dichotomous", n_categories=2)
+    with pytest.raises(JudgeFormatError, match="polytomous"):
+        direct.to_irt_row(item_type="polytomous")
+    with pytest.raises(JudgeFormatError, match="require category_count"):
+        replace(direct, criterion_categories={"task_alignment": 1, "factual_support": 1}).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="require category_count"):
+        replace(
+            direct,
+            criterion_categories={"task_alignment": 1, "factual_support": 1},
+            category_count=None,
+        ).to_irt_row()
+
+    categorical = ContextualOrchestratorJudge(_FakeOrchestrator(_category_payload())).judge(
+        task="task", answer="answer", criteria=CRITERIA, category_count=5
+    )
+    with pytest.raises(JudgeFormatError, match="category_count"):
+        replace(categorical, category_count=1).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="keys must be strings"):
+        replace(
+            categorical,
+            criterion_categories={1: 2, "factual_support": 2},
+        ).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="exactly the rubric"):
+        replace(
+            categorical,
+            criterion_categories={"task_alignment": 2},
+        ).to_irt_row()
+    with pytest.raises(JudgeFormatError, match="two-category"):
+        categorical.to_irt_row(item_type="dichotomous")
+    two_category = replace(
+        categorical,
+        category_count=2,
+        criterion_categories={"task_alignment": 1, "factual_support": 0},
+    )
+    assert two_category.to_irt_row(item_type="dichotomous") == (0, 1)
+    with pytest.raises(JudgeFormatError, match="2.."):
+        categorical.to_irt_row(item_type="polytomous", n_categories=1)
+    with pytest.raises(JudgeFormatError, match="must match"):
+        categorical.to_irt_row(item_type="polytomous", n_categories=3)
+    with pytest.raises(JudgeFormatError, match="integer"):
+        replace(
+            categorical,
+            criterion_categories={"task_alignment": 1.5, "factual_support": 2},
+        ).to_irt_row()
+
+
+def test_judge_rejects_malformed_criterion_payloads_and_usage_metadata() -> None:
+    """Malformed response maps, rationales, and usage metadata do not leak through."""
+    payload = json.loads(_payload())
+    payload["criterion_scores"] = []
+    with pytest.raises(JudgeFormatError, match="criterion_scores must be an object"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(payload))).judge(
+            task="task", answer="answer", criteria=CRITERIA
+        )
+
+    payload = json.loads(_payload())
+    payload["criterion_scores"] = {"task_alignment": 0.8}
+    with pytest.raises(JudgeFormatError, match="exactly"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(payload))).judge(
+            task="task", answer="answer", criteria=CRITERIA
+        )
+
+    payload = json.loads(_payload())
+    payload["rationale"] = ""
+    with pytest.raises(JudgeFormatError, match="rationale"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(payload))).judge(
+            task="task", answer="answer", criteria=CRITERIA
+        )
+
+    completion = {
+        "answer": _payload(),
+        "trace": ["not a step", {"usage": []}, {"usage": {"prompt_tokens": True}}],
+    }
+    judged = ContextualOrchestratorJudge(_CompletionOrchestrator(completion)).judge(
+        task="task", answer="answer", criteria=CRITERIA
+    )
+    assert dict(judged.usage) == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    no_trace = ContextualOrchestratorJudge(
+        _CompletionOrchestrator({"answer": _payload(), "trace": {}})
+    ).judge(task="task", answer="answer", criteria=CRITERIA)
+    assert no_trace.trace_step_count == 0
+
+
+def test_judge_rejects_category_mapping_key_mismatches() -> None:
+    """Direct and cumulative category maps must use the complete rubric key set."""
+    direct = json.loads(_category_payload())
+    direct["criterion_categories"] = {"task_alignment": 2}
+    with pytest.raises(JudgeFormatError, match="criterion_categories"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(direct))).judge(
+            task="task", answer="answer", criteria=CRITERIA, category_count=5
+        )
+
+    cumulative = json.loads(_threshold_payload())
+    cumulative["criterion_thresholds"] = {"task_alignment": [True] * 4}
+    with pytest.raises(JudgeFormatError, match="criterion_thresholds"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(json.dumps(cumulative))).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=5,
+            category_method="cumulative_threshold",
+        )

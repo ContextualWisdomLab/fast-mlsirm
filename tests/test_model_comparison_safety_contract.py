@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import math
 
+import numpy as np
 import pytest
 
 import fast_mlsirm.model_comparison as comparison_module
@@ -185,6 +186,16 @@ def test_untrusted_numeric_values_fail_with_stable_public_errors():
                 1,
                 relation=ModelRelation.STRICTLY_NON_NESTED,
             )
+
+
+def test_real_scalar_boundary_accepts_numpy_numbers_and_rejects_booleans():
+    """Threshold validation accepts NumPy real scalars without custom coercion."""
+    assert comparison_module._trusted_real_scalar(np.float64(0.25), "threshold") == 0.25
+    assert comparison_module._trusted_real_scalar(np.int64(2), "threshold") == 2.0
+    with pytest.raises(ValueError, match="threshold"):
+        comparison_module._trusted_real_scalar(True, "threshold")
+    with pytest.raises(ValueError, match="threshold"):
+        comparison_module._trusted_real_scalar(np.bool_(True), "threshold")
 
 
 @pytest.mark.parametrize(

@@ -464,6 +464,39 @@ def test_legacy_migration_rejects_authorization_rebinding() -> None:
     assert caught.path == "$.metadata"
 
 
+@pytest.mark.parametrize(
+    ("field_name", "code"),
+    (
+        ("assessment_fingerprint", "assessment_request_mismatch"),
+        ("rubric_id", "rubric_request_mismatch"),
+        ("rubric_fingerprint", "rubric_request_mismatch"),
+    ),
+)
+def test_legacy_migration_rejects_assessment_and_rubric_rebinding(
+    field_name: str,
+    code: str,
+) -> None:
+    """A signed legacy request cannot be rebound to another governed artifact."""
+    artifact = _legacy_request_artifact()
+    artifact[field_name] = (
+        "alternate_rubric"
+        if field_name == "rubric_id"
+        else "f" * 64
+    )
+    _sign_legacy_artifact(artifact)
+
+    caught = _assert_error(
+        code,
+        lambda: migrate_scoring_request_v1(
+            artifact,
+            assessment=assessment(),
+            rubric=rubric(),
+            task_revision_fingerprint="e" * 64,
+        ),
+    )
+    assert caught.path == f"$.{field_name}"
+
+
 def test_legacy_request_migration_rejects_payload_and_identity_tampering() -> None:
     """Migration verifies canonical content identity and public handle."""
     changed_payload = _legacy_request_artifact()
@@ -547,6 +580,18 @@ def test_legacy_migration_rejects_unknown_or_incomplete_artifact_shapes() -> Non
         "invalid_legacy_scoring_request",
         lambda: migrate_scoring_request_v1(
             extended,
+            assessment=assessment(),
+            rubric=rubric(),
+            task_revision_fingerprint="e" * 64,
+        ),
+    )
+
+    malformed_metadata = _legacy_request_artifact()
+    malformed_metadata["metadata"] = []
+    _assert_error(
+        "invalid_legacy_scoring_request",
+        lambda: migrate_scoring_request_v1(
+            malformed_metadata,
             assessment=assessment(),
             rubric=rubric(),
             task_revision_fingerprint="e" * 64,

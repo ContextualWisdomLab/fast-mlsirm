@@ -114,3 +114,35 @@ def test_pairwise_peak_equal_to_limit_is_accepted(
     assert result.shape == (12, 10)
     assert result.dtype == np.float64
     np.testing.assert_allclose(result, np.sqrt(1e-8))
+
+
+def test_distance_preflight_rejects_output_validation_peak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The output-plus-validation-mask phase has its own explicit ceiling."""
+    values = iter((100, 200, 1, 1))
+    monkeypatch.setattr(
+        marginal,
+        "_checked_marginal_workspace_bytes",
+        lambda *args, **kwargs: next(values),
+    )
+    monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 250)
+
+    with pytest.raises(ValueError, match="pairwise distance workspace"):
+        marginal._validate_pairwise_distance_workspace(1, 1, 1)
+
+
+def test_distance_preflight_rejects_input_mask_peak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The largest input finiteness mask cannot exceed the same workspace ceiling."""
+    values = iter((100, 50, 300, 1))
+    monkeypatch.setattr(
+        marginal,
+        "_checked_marginal_workspace_bytes",
+        lambda *args, **kwargs: next(values),
+    )
+    monkeypatch.setattr(marginal, "MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES", 250)
+
+    with pytest.raises(ValueError, match="pairwise distance workspace"):
+        marginal._validate_pairwise_distance_workspace(1, 1, 1)

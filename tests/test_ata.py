@@ -16,7 +16,12 @@ import pytest
 
 import fast_mlsirm.ata as ata_module
 from fast_mlsirm._ata_core_loader import ata_core
-from fast_mlsirm.ata import AssembledForm, assemble_to_target, item_information_matrix
+from fast_mlsirm.ata import (
+    AssembledForm,
+    _target_theta_rows,
+    assemble_to_target,
+    item_information_matrix,
+)
 from fast_mlsirm.types import MLSIRMParams
 
 MODEL = "MIRT"  # simple-structure 2PL with no latent-space distance term
@@ -210,4 +215,115 @@ def test_invalid_arguments_raise():
         assemble_to_target(
             bank, fid, thetas, np.array([1.0]), length=2, model=MODEL,
             content=np.array(["A"] * 10), min_per_content={"B": 1},
+        )
+
+
+@pytest.mark.parametrize(
+    ("thetas", "n_dims", "message"),
+    [
+        (np.array([0.0, 1.0]), 2, None),
+        (np.array([0.0, 1.0, 2.0]), 2, "target_thetas must have shape"),
+        (np.empty((1, 3)), 2, "target_thetas must have shape"),
+        (np.empty((0, 2)), 2, "at least one target theta"),
+        (np.array([[0.0, np.inf]]), 2, "target_thetas must be finite"),
+    ],
+)
+def test_target_theta_shape_and_finiteness_contracts(thetas, n_dims, message):
+    """Target points are normalized only when their dimensionality is exact."""
+    if message is None:
+        assert _target_theta_rows(thetas, n_dims).shape == (1, n_dims)
+    else:
+        with pytest.raises(ValueError, match=message):
+            _target_theta_rows(thetas, n_dims)
+
+
+def test_assembly_rejects_non_mapping_or_missing_content_constraints():
+    """Constraint maps cannot be applied without a typed content domain."""
+    bank, fid = _bank(n_items=4)
+    target = np.array([1.0])
+    content = np.array(["A", "A", "B", "B"])
+    with pytest.raises(ValueError, match="content constraints must be mappings"):
+        assemble_to_target(
+            bank, fid, np.array([0.0]), target, 1, model=MODEL,
+            content=content, min_per_content=[],
+        )
+    with pytest.raises(ValueError, match="content labels are required"):
+        assemble_to_target(
+            bank, fid, np.array([0.0]), target, 1, model=MODEL,
+            min_per_content={"A": 1},
+        )
+
+
+def test_assembly_rejects_non_mapping_and_non_integer_exposure_counts():
+    """Exposure state is validated before the first information calculation."""
+    bank, fid = _bank(n_items=4)
+    with pytest.raises(ValueError, match="exposure_counts must be a mapping"):
+        assemble_to_target(
+            bank, fid, np.array([0.0]), np.array([1.0]), 1, model=MODEL,
+            exposure_counts=[],
+        )
+    with pytest.raises(ValueError, match="keys and values must be integers"):
+        assemble_to_target(
+            bank, fid, np.array([0.0]), np.array([1.0]), 1, model=MODEL,
+            exposure_counts={0: object()},
+        )
+
+
+def test_assembly_rejects_scalar_controls_before_scoring():
+    """Length, exposure caps, and exclusions use exact finite-domain types."""
+    bank, fid = _bank(n_items=4)
+    call = dict(
+        bank=bank,
+        factor_id=fid,
+        target_thetas=np.array([0.0]),
+        target_info=np.array([1.0]),
+        model=MODEL,
+    )
+    with pytest.raises(ValueError, match="length must be an integer"):
+        assemble_to_target(**call, length=1.5)
+    with pytest.raises(ValueError, match="exposure_max must be non-negative"):
+        assemble_to_target(**call, length=1, exposure_max=-1)
+    with pytest.raises(ValueError, match="exclude must contain integer"):
+        assemble_to_target(**call, length=1, exclude={1})
+
+
+def test_assembly_rejects_information_shape_and_target_value_errors(monkeypatch):
+    """The numerical matrix and target vector must agree before Rust dispatch."""
+    bank, fid = _bank(n_items=4)
+    kwargs = dict(
+        bank=bank,
+        factor_id=fid,
+        target_thetas=np.array([0.0]),
+        length=1,
+        model=MODEL,
+    )
+    monkeypatch.setattr(ata_module, "item_information_matrix", lambda *_args, **_kwargs: np.zeros((1, 1)))
+    with pytest.raises(ValueError, match="matrix must match"):
+        assemble_to_target(**kwargs, target_info=np.array([1.0]))
+
+    monkeypatch.undo()
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        assemble_to_target(**kwargs, target_info=np.array([-1.0]))
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        assemble_to_target(**kwargs, target_info=np.array([np.nan]))
+
+
+def test_assembly_enforces_max_content_before_candidate_selection():
+    """A zero maximum makes a content domain ineligible, not silently ignored."""
+    bank, fid = _bank(n_items=4)
+    with pytest.raises(ValueError, match="could not assemble"):
+        assemble_to_target(
+            bank, fid, np.array([0.0]), np.array([1.0]), 1, model=MODEL,
+            content=np.array(["A"] * 4), max_per_content={"A": 0},
+        )
+
+
+def test_assembly_checks_minimum_content_after_selection(monkeypatch):
+    """The final content audit remains fail-closed if feasibility is bypassed."""
+    bank, fid = _bank(n_items=4)
+    monkeypatch.setattr(ata_module, "_content_feasible", lambda *_args, **_kwargs: True)
+    with pytest.raises(ValueError, match="minimum content constraint not met"):
+        assemble_to_target(
+            bank, fid, np.array([0.0]), np.array([1.0]), 1, model=MODEL,
+            content=np.array(["A"] * 4), min_per_content={"B": 1},
         )

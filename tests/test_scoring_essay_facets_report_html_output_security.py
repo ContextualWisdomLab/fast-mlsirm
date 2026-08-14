@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from fast_mlsirm.scoring.essay import render_essay_facets_calibration_report_html
+import fast_mlsirm.scoring.essay.calibration_report_html as report_html
 
 _FIXTURES = runpy.run_path(
     str(Path(__file__).with_name("test_scoring_essay_facets_reporting.py"))
@@ -103,4 +104,18 @@ def test_renderer_rejects_non_directory_output_root(tmp_path: Path) -> None:
             build_report(),
             "calibration_report.html",
             output_root=output_root,
+        )
+
+
+def test_parent_recheck_rejects_a_parent_outside_the_approved_root(tmp_path: Path) -> None:
+    """The post-create containment check fails closed on an escaped parent."""
+    approved_root = tmp_path / "approved_reports"
+    outside_root = tmp_path / "outside_reports"
+    approved_root.mkdir()
+    outside_root.mkdir()
+
+    with pytest.raises(ValueError, match="approved output directory"):
+        report_html._verify_output_parent(
+            outside_root / "escaped_report.html",
+            approved_root.resolve(),
         )

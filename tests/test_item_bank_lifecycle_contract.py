@@ -210,6 +210,18 @@ def test_release_rejects_duplicate_entries_and_unverified_construction() -> None
             metadata={},
         ),
     )
+    assert_error(
+        "invalid_cross_version_comparable",
+        lambda: item_bank.build_item_bank_release(
+            release_id="bank_release",
+            release_version="1.0.0",
+            entry_fingerprints=(entry.entry_fingerprint,),
+            predecessor_release_fingerprint=None,
+            cross_version_comparable=1,
+            linking_evidence_fingerprints=(),
+            metadata={},
+        ),
+    )
 
 
 def test_sensitive_metadata_is_rejected() -> None:

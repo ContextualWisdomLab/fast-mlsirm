@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fast_mlsirm.multilevel import (
     LongitudinalStateKind,
@@ -77,3 +78,21 @@ def test_rust_state_fit_preserves_discrete_ar_and_irregular_time() -> None:
     # The third declared occasion is sequence three steps after the second;
     # the discrete-step AR(1) therefore predicts 0.5**3 * 0.5 = 0.0625.
     np.testing.assert_allclose(result["state"], [1.0, 0.5, 0.0625], atol=1e-12)
+
+
+def test_state_fit_rejects_invalid_worker_count_and_foreign_design() -> None:
+    """The public estimator validates execution controls before Rust dispatch."""
+    design = build_longitudinal_design(
+        occasions=[_occasion("respondent_a", "guard", 0, 0)],
+        state_spec=build_longitudinal_state_spec(
+            state_kind=LongitudinalStateKind.RANDOM_INTERCEPT_SLOPE,
+        ),
+    )
+    with pytest.raises(ValueError, match="worker_count"):
+        fit_longitudinal_state(design, {}, worker_count=0)
+
+    class ForeignDesign:
+        """Represent an object that was not produced by the package factory."""
+
+    with pytest.raises(ValueError, match="LongitudinalDesign"):
+        fit_longitudinal_state(ForeignDesign(), {})  # type: ignore[arg-type]

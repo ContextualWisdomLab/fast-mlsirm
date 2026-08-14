@@ -46,6 +46,8 @@ def test_normalize_models_rejects_length_and_unknown():
         _normalize_models(["2pl", "2pl"], 4)
     with pytest.raises(ValueError):
         _normalize_models("totally-bogus", 2)
+    with pytest.raises(ValueError, match="model string or iterable"):
+        _normalize_models(3, 2)
 
 
 def test_categories_inference_and_validation():

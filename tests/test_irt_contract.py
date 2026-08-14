@@ -52,6 +52,24 @@ def test_polytomous_contract_rejects_invalid_categories_and_shape() -> None:
         validate_irt_response_matrix([[0, np.inf]], "polytomous", n_categories=3)
 
 
+def test_response_contract_rejects_unknown_item_type() -> None:
+    """The integration boundary does not silently choose an IRT model."""
+    with pytest.raises(ValueError, match="item_type"):
+        validate_irt_response_matrix([[0, 1]], "essay")
+
+
+def test_response_contract_normalizes_non_numeric_input_error() -> None:
+    """A malformed LLM payload receives a package-owned validation error."""
+    with pytest.raises(ValueError, match="responses must be numeric"):
+        validate_irt_response_matrix([[object(), 1]], "dichotomous")
+
+
+def test_response_contract_rejects_an_empty_person_axis() -> None:
+    """An empty experiment cannot produce an interpretable IRT contract."""
+    with pytest.raises(ValueError, match="at least one person"):
+        validate_irt_response_matrix(np.empty((0, 2)), "dichotomous")
+
+
 if __name__ == "__main__":
     test_dichotomous_contract_requires_multiple_items()
     test_dichotomous_contract_rejects_non_binary_observations()

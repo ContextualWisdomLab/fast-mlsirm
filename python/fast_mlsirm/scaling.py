@@ -281,6 +281,7 @@ class LsrResult:
 
 
 def _lsr_validate(name, wins):
+    """Validate and compact one square pairwise win-count matrix."""
     arr = np.asarray(wins)
     if np.iscomplexobj(arr):
         raise ValueError(f"{name}: wins must be real-valued")
@@ -512,15 +513,9 @@ def _rankings_to_csr(name, rankings, n):
     if not validated:
         raise ValueError(f"{name}: at least one ranking is required")
 
-    start_count = len(validated) + 1
-    if not _ranking_csr_budget_allows(flat_count, start_count):
-        raise ValueError(
-            f"{name}: ranking CSR byte limit exceeded "
-            f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
-        )
-
     # Exact-size CSR handoff arrays only. Allocate once so reallocation peaks
     # cannot exceed the declared live payload ceiling.
+    start_count = len(validated) + 1
     flat = np.empty(flat_count, dtype=np.uint64)
     starts = np.empty(start_count, dtype=np.uint64)
     starts[0] = 0
@@ -618,6 +613,7 @@ def _top1_to_csr(name, data, n):
         raise ValueError(f"{name}: n = {n} exceeds the 10000-item cap")
 
     def _index(x, what, r):
+        """Validate one winner or loser index before unsigned conversion."""
         if isinstance(x, (bool, np.bool_)) or np.iscomplexobj(np.asarray(x)):
             raise ValueError(f"{name}: observation {r} has a non-integer {what}")
         try:
@@ -636,6 +632,7 @@ def _top1_to_csr(name, data, n):
         return xi
 
     def _top1_budget_allows(winner_count: int, loser_count: int, start_count: int) -> bool:
+        """Return whether the next top-1 CSR payload fits the byte ceiling."""
         # Winner ids + loser flat + start offsets, each fixed-width uint64.
         total = winner_count + loser_count + start_count
         return total <= (MAX_RANKING_CSR_BYTES // 8)
@@ -724,12 +721,6 @@ def _top1_to_csr(name, data, n):
     if len(starts) < 2:
         raise ValueError(f"{name}: at least one observation is required")
 
-    if not _top1_budget_allows(len(winners), len(losers_flat), len(starts)):
-        raise ValueError(
-            f"{name}: top-1 CSR byte limit exceeded "
-            f"(MAX_RANKING_CSR_BYTES={MAX_RANKING_CSR_BYTES})"
-        )
-
     # Exact-size handoff arrays allocated once under the CSR ceiling.
     winners_out = np.empty(len(winners), dtype=np.uint64)
     losers_out = np.empty(len(losers_flat), dtype=np.uint64)
@@ -816,6 +807,7 @@ class CircularTriadsResult:
 
 
 def _kendall_matrix(name, mat):
+    """Validate and compact one square Kendall frequency matrix."""
     arr = np.asarray(mat)
     if np.iscomplexobj(arr):
         raise ValueError(f"{name}: mat must be real-valued")
@@ -964,8 +956,6 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
     # rating period). Take periods losslessly from an integer input array,
     # and otherwise reject labels the float path cannot represent exactly.
     if raw.ndim == 2 and raw.dtype.kind in "iu":
-        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
-            raise ValueError("elo_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
     else:
         # Reject labels at/above the source dtype's exact-integer bound
@@ -993,9 +983,12 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
     if gamma is None:
         gamma_arr = np.zeros(g)
     else:
-        gamma_arr = np.asarray(gamma, dtype=float)
         if np.iscomplexobj(np.asarray(gamma)):
             raise ValueError("elo_rating: gamma must be real, not complex")
+        try:
+            gamma_arr = np.asarray(gamma, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"elo_rating: gamma is not numeric: {exc}") from None
         if gamma_arr.ndim == 0:
             gamma_arr = np.full(g, float(gamma_arr))
         elif gamma_arr.shape != (g,):
@@ -1088,8 +1081,6 @@ def glicko_rating(
     # fidelity above the dtype's exact-integer bound (distinct labels would
     # silently merge into one rating period). Same contract as elo_rating.
     if raw.ndim == 2 and raw.dtype.kind in "iu":
-        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
-            raise ValueError("glicko_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
     else:
         # np.finfo(...).nmant excludes the implicit leading bit, so the
@@ -1116,7 +1107,10 @@ def glicko_rating(
     else:
         if np.iscomplexobj(np.asarray(gamma)):
             raise ValueError("glicko_rating: gamma must be real, not complex")
-        gamma_arr = np.asarray(gamma, dtype=float)
+        try:
+            gamma_arr = np.asarray(gamma, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"glicko_rating: gamma is not numeric: {exc}") from None
         if gamma_arr.ndim == 0:
             gamma_arr = np.full(g, float(gamma_arr))
         elif gamma_arr.shape != (g,):
@@ -1232,8 +1226,6 @@ def glicko2_rating(
     # fidelity above the dtype's exact-integer bound (distinct labels would
     # silently merge into one rating period). Same contract as elo_rating.
     if raw.ndim == 2 and raw.dtype.kind in "iu":
-        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
-            raise ValueError("glicko2_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
     else:
         # np.finfo(...).nmant excludes the implicit leading bit, so the
@@ -1409,8 +1401,6 @@ def stephenson_rating(
     # fidelity above the dtype's exact-integer bound (distinct labels would
     # silently merge into one rating period). Same contract as elo_rating.
     if raw.ndim == 2 and raw.dtype.kind in "iu":
-        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
-            raise ValueError("stephenson_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
         white_u64 = raw[:, 1].astype(np.uint64)
         black_u64 = raw[:, 2].astype(np.uint64)
@@ -1489,6 +1479,7 @@ def stephenson_rating(
         )
 
     def _count_vec(name, val):
+        """Validate one optional Stephenson count vector as lossless u64."""
         if val is None:
             return np.zeros(n, dtype=np.uint64)
         if np.iscomplexobj(np.asarray(val)):
@@ -1725,6 +1716,7 @@ def elom_rating(
         )
 
     def _count_vec(name, val, shape):
+        """Validate one optional EloM count vector for the requested shape."""
         if val is None:
             return np.zeros(shape, dtype=np.uint64)
         if np.iscomplexobj(np.asarray(val)):
@@ -1809,6 +1801,7 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
     from .fitstats import _core_module
 
     def _as_float(name, x, ndim):
+        """Normalize one metrics input while preserving explicit missing values."""
         if isinstance(x, np.ma.MaskedArray):
             # np.asarray silently drops the mask, turning masked missing
             # values into observed data; require explicit np.nan instead.
@@ -1959,8 +1952,6 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
     # losslessly from integer inputs, otherwise reject labels at/above the
     # source float dtype's exact-integer bound (nmant + 1 bits).
     if raw.ndim == 2 and raw.dtype.kind in "iu":
-        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
-            raise ValueError("fide_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
     else:
         if raw.dtype.kind == "f":
@@ -1985,7 +1976,10 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
     else:
         if np.iscomplexobj(np.asarray(gamma)):
             raise ValueError("fide_rating: gamma must be real, not complex")
-        gamma_arr = np.asarray(gamma, dtype=float)
+        try:
+            gamma_arr = np.asarray(gamma, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"fide_rating: gamma is not numeric: {exc}") from None
         if gamma_arr.ndim == 0:
             gamma_arr = np.full(g, float(gamma_arr))
         elif gamma_arr.shape != (g,):
@@ -2141,8 +2135,6 @@ def _predict_games_u64(x, fname):
         raw = x
     else:
         probe = np.asarray(x, dtype=object)
-        if np.iscomplexobj(probe):
-            raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
         for v in np.ravel(probe):
             if v is None or isinstance(
                 v, (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)

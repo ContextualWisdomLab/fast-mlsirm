@@ -199,3 +199,33 @@ def test_version_falls_back_when_metadata_absent(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(fast_mlsirm)
+
+
+def test_legacy_surface_version_falls_back_when_metadata_absent(monkeypatch):
+    """The compatibility export module has the same source-checkout fallback."""
+    import fast_mlsirm._legacy_init as legacy_init
+
+    def _raise(name):
+        raise importlib_metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib_metadata, "version", _raise)
+    try:
+        reloaded = importlib.reload(legacy_init)
+        assert reloaded.__version__ == "0+unknown"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(legacy_init)
+
+
+def test_package_root_skips_stale_legacy_exports(monkeypatch):
+    """A stale compatibility name must not be copied into the public root."""
+    import fast_mlsirm._legacy_init as legacy_init
+
+    original = list(legacy_init.__all__)
+    monkeypatch.setattr(legacy_init, "__all__", original + ["stale_export"])
+    try:
+        reloaded = importlib.reload(fast_mlsirm)
+        assert not hasattr(reloaded, "stale_export")
+    finally:
+        monkeypatch.undo()
+        importlib.reload(fast_mlsirm)

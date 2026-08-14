@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 import fast_mlsirm.scoring.essay as essay
+import fast_mlsirm.scoring.essay.contracts as essay_contracts
 from fast_mlsirm.scoring import (
     AssessmentSpecError,
     EvidenceReference,
@@ -513,6 +514,39 @@ def test_direct_essay_request_construction_is_rejected() -> None:
             prompt_fingerprint=valid.prompt_fingerprint,
             submission_fingerprint=valid.submission_fingerprint,
             essay_evidence=valid.essay_evidence,
+        ),
+    )
+
+
+def test_verified_essay_request_rejects_a_non_shared_request() -> None:
+    """Even the internal token cannot wrap an arbitrary scoring object."""
+    valid = essay_request()
+    assert_error(
+        "invalid_scoring_request",
+        lambda: EssayScoringRequest(
+            scoring_request=object(),  # type: ignore[arg-type]
+            prompt_fingerprint=valid.prompt_fingerprint,
+            submission_fingerprint=valid.submission_fingerprint,
+            essay_evidence=valid.essay_evidence,
+            _request_token=essay_contracts._ESSAY_REQUEST_TOKEN,
+        ),
+    )
+
+
+def test_verified_essay_evidence_rejects_empty_spans() -> None:
+    """The internal evidence token still enforces strict half-open spans."""
+    valid = essay_evidence()
+    assert_error(
+        "invalid_evidence_offsets",
+        lambda: EssayResponseEvidence(
+            evidence_reference=valid.evidence_reference,
+            prompt_fingerprint=valid.prompt_fingerprint,
+            submission_fingerprint=valid.submission_fingerprint,
+            evidence_kind=valid.evidence_kind,
+            start_offset=10,
+            end_offset=10,
+            metadata=valid.metadata,
+            _evidence_token=essay_contracts._ESSAY_EVIDENCE_TOKEN,
         ),
     )
 

@@ -573,6 +573,64 @@ def test_malformed_issue_and_counterevidence_records_fail_closed() -> None:
     )
 
 
+def test_provider_record_reconstruction_converts_constructor_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Untrusted record reconstruction failures become stable boundary errors."""
+    source = _source()
+    issue = _issue(source)
+    span = issue.evidence_spans[0]
+
+    class RejectingSpan(EvidenceSpanRecord):
+        """Synthetic provider record whose canonical constructor rejects input."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("provider span constructor failed")
+
+    rejected_span = object.__new__(RejectingSpan)
+    for name in (
+        "source_id",
+        "source_record_fingerprint",
+        "span_id",
+        "span_content_fingerprint",
+        "assertion_kind",
+        "start_offset",
+        "end_offset",
+        "metadata",
+        "schema_version",
+    ):
+        object.__setattr__(rejected_span, name, getattr(span, name))
+    object.__setattr__(issue, "evidence_spans", (rejected_span,) + issue.evidence_spans[1:])
+    monkeypatch.setattr(semantic_module, "EvidenceSpanRecord", RejectingSpan)
+    _assert_error("invalid_semantic_issue_extractor_output", lambda: _extract_with(source, issue))
+
+    issue = _issue(source)
+    counter = issue.counterevidence_records[0]
+    monkeypatch.setattr(semantic_module, "EvidenceSpanRecord", EvidenceSpanRecord)
+
+    class RejectingCounterevidence(CounterevidenceRecord):
+        """Synthetic provider record whose canonical constructor rejects input."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("provider counterevidence constructor failed")
+
+    rejected_counter = object.__new__(RejectingCounterevidence)
+    for name in (
+        "counterevidence_id",
+        "issue_content_fingerprint",
+        "evidence_span",
+        "metadata",
+        "schema_version",
+    ):
+        object.__setattr__(rejected_counter, name, getattr(counter, name))
+    object.__setattr__(issue, "counterevidence_records", (rejected_counter,))
+    monkeypatch.setattr(
+        semantic_module,
+        "CounterevidenceRecord",
+        RejectingCounterevidence,
+    )
+    _assert_error("invalid_semantic_issue_extractor_output", lambda: _extract_with(source, issue))
+
 def _extract_with(source: EnterpriseSourceRecord, issue: AtomicIssueRecord):
     """Run one mutated issue through an unrestricted provider fixture."""
     return extract_enterprise_atomic_issues(
