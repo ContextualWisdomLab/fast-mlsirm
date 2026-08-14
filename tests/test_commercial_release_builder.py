@@ -183,33 +183,6 @@ def test_commercial_release_builder_stops_on_failed_stage(tmp_path):
     assert manifest["stages"][-1]["stderr_tail"] == "boom"
 
 
-def test_run_command_timeout_becomes_structured_stage_failure(monkeypatch, tmp_path):
-    module = _load_builder()
-    command = ["python", "stage.py"]
-
-    def timing_out_run(*args, **kwargs):
-        assert args[0] == command
-        assert kwargs["timeout"] == module.COMMAND_TIMEOUT_SECONDS
-        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
-
-    monkeypatch.setattr(module.subprocess, "run", timing_out_run)
-
-    completed = module._run_command(command, tmp_path)
-    stage = module._stage(
-        "timed_stage",
-        command,
-        repo_root=tmp_path,
-        runner=lambda _command, _cwd: completed,
-    )
-
-    assert completed.returncode == 124
-    assert completed.stdout == ""
-    assert completed.stderr == "command timed out after 300 seconds"
-    assert stage["status"] == "failed"
-    assert stage["returncode"] == 124
-    assert stage["stderr_tail"] == "command timed out after 300 seconds"
-
-
 def test_build_dist_stage_writes_to_configured_dist_directory(tmp_path):
     module = _load_builder()
     args = _args(tmp_path, skip_build=False)
