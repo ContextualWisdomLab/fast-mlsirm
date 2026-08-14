@@ -67,6 +67,20 @@ class _IterationTrap(Mapping[str, Any]):
         return False
 
 
+class _UnsupportedValueTrap(Mapping[str, Any]):
+    """Expose one rejected key whose value callback must never be invoked."""
+
+    def __getitem__(self, key: str) -> Any:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("unapproved_metadata",))
+
+    def __len__(self) -> int:
+        return 1
+
+
 def _request(metadata: Mapping[str, Any] | None) -> ScoringRequest:
     """Build one deterministic request around caller-controlled metadata."""
     return build_rag_scoring_request(
@@ -105,6 +119,15 @@ def test_rag_metadata_iteration_failure_is_package_owned_and_non_reflective() ->
         _request(_IterationTrap())
 
     assert caught.value.code == "invalid_rag_metadata"
+    assert _SECRET not in str(caught.value)
+
+
+def test_rag_metadata_rejects_unknown_keys_before_reading_values() -> None:
+    """A disallowed key must not authorize its caller-controlled value callback."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(_UnsupportedValueTrap())
+
+    assert caught.value.code == "unsupported_rag_metadata"
     assert _SECRET not in str(caught.value)
 
 
