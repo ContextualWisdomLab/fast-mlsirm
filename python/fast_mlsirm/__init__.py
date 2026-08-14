@@ -86,7 +86,6 @@ __all__ = list(_legacy_init.__all__) + [
     "rotate_factor_loadings",
     "rotation_criterion_value_gradient",
     "ContextualOrchestratorJudge",
-    "CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1",
     "JudgeCriterion",
     "JudgeFormatError",
     "LLMJudgeResult",
