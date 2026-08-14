@@ -14,13 +14,19 @@ from .config import MAX_MAX_ITER
 
 MAX_TESTLET_RESPONSE_CELLS = 20_000_000
 _SUPPORTED_Q_GAMMA = (7, 11, 15, 21, 31, 41)
-_NUMPY_INTEGER_TYPES = frozenset(
+_NUMPY_INTEGER_TYPES = tuple(
     np.dtype(name).type
     for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
 )
-_NUMPY_FLOAT_TYPES = frozenset(
+_NUMPY_FLOAT_TYPES = tuple(
     np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
 )
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted type without invoking callbacks."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
 
 
 @dataclass
@@ -130,7 +136,7 @@ def fit_testlet(
     max_iter_type = type(max_iter)
     if max_iter_type is int:
         max_iter_value = max_iter
-    elif max_iter_type in _NUMPY_INTEGER_TYPES:
+    elif _is_exact_type(max_iter_type, _NUMPY_INTEGER_TYPES):
         max_iter_value = int(max_iter)
     else:
         raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
@@ -138,10 +144,11 @@ def fit_testlet(
         raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
 
     tol_type = type(tol)
-    if (
-        tol_type not in (int, float)
-        and tol_type not in _NUMPY_INTEGER_TYPES
-        and tol_type not in _NUMPY_FLOAT_TYPES
+    if not (
+        tol_type is int
+        or tol_type is float
+        or _is_exact_type(tol_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(tol_type, _NUMPY_FLOAT_TYPES)
     ):
         raise ValueError("tol must be a finite non-negative number")
     tol_value = float(tol)
@@ -151,7 +158,7 @@ def fit_testlet(
     q_gamma_type = type(q_gamma)
     if q_gamma_type is int:
         q_gamma_value = q_gamma
-    elif q_gamma_type in _NUMPY_INTEGER_TYPES:
+    elif _is_exact_type(q_gamma_type, _NUMPY_INTEGER_TYPES):
         q_gamma_value = int(q_gamma)
     else:
         raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
@@ -159,20 +166,23 @@ def fit_testlet(
         raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
 
     init_sigma2_type = type(init_sigma2)
-    if (
-        init_sigma2_type not in (int, float)
-        and init_sigma2_type not in _NUMPY_INTEGER_TYPES
-        and init_sigma2_type not in _NUMPY_FLOAT_TYPES
+    if not (
+        init_sigma2_type is int
+        or init_sigma2_type is float
+        or _is_exact_type(init_sigma2_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(init_sigma2_type, _NUMPY_FLOAT_TYPES)
     ):
         raise ValueError("init_sigma2 must be a finite non-negative number")
     init_sigma2_value = float(init_sigma2)
     if not np.isfinite(init_sigma2_value) or init_sigma2_value < 0.0:
         raise ValueError("init_sigma2 must be a finite non-negative number")
 
-    if type(estimate_sigma) not in (bool, np.bool_):
+    estimate_sigma_type = type(estimate_sigma)
+    if estimate_sigma_type is not bool and estimate_sigma_type is not np.bool_:
         raise ValueError("estimate_sigma must be a Boolean")
     estimate_sigma_value = bool(estimate_sigma)
-    if type(require_convergence) not in (bool, np.bool_):
+    require_convergence_type = type(require_convergence)
+    if require_convergence_type is not bool and require_convergence_type is not np.bool_:
         raise ValueError("require_convergence must be a Boolean")
     require_convergence_value = bool(require_convergence)
 
