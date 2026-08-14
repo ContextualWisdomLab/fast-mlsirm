@@ -8,8 +8,7 @@ import pytest
 
 from fast_mlsirm.rubric import audit_policy
 from fast_mlsirm.rubric import semantic_screening as screening
-from fast_mlsirm.rubric.candidates import GeneratedItemCandidate
-from fast_mlsirm.rubric.generation import parse_generated_item_candidate
+from fast_mlsirm.rubric.candidates import GeneratedItemCandidate, parse_generated_item_candidate
 
 
 def fp(char: str) -> str:
