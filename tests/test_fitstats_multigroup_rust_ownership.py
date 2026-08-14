@@ -102,3 +102,27 @@ def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
         assert delta_shape[0] == residual_shape[0]
         assert xi_shape == (42, 42)
         assert n == 1.0
+
+
+@pytest.mark.parametrize("target", ["residual", "delta", "xi", "n"])
+def test_projected_m2_native_rejects_nonfinite_inputs(target):
+    """The PyO3 boundary must reject non-finite values before Rust arithmetic."""
+    core = fitstats._core_module()
+    if core is None:
+        pytest.skip("compiled Rust core is unavailable in this test environment")
+
+    residual = np.array([0.25, -0.25], dtype=np.float64)
+    delta = np.array([[1.0], [0.5]], dtype=np.float64)
+    xi = np.eye(2, dtype=np.float64)
+    n = 100.0
+    if target == "residual":
+        residual[0] = np.nan
+    elif target == "delta":
+        delta[0, 0] = np.inf
+    elif target == "xi":
+        xi[0, 0] = np.nan
+    else:
+        n = np.inf
+
+    with pytest.raises(ValueError, match="finite"):
+        core.projected_m2(residual, delta, xi, n)
