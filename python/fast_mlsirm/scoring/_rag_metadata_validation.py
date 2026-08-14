@@ -179,7 +179,9 @@ def _snapshot_rag_value(
                         f"{path}.entries[{index}]",
                         "metadata mapping entries must contain one key and value",
                     ) from None
-                safe_key = str.__str__(raw_key) if isinstance(raw_key, str) else raw_key
+                safe_key = (
+                    str.__str__(raw_key) if isinstance(raw_key, str) else raw_key
+                )
                 key = _metadata_key(safe_key, f"{path}.keys[{index}]")
                 if key in output:
                     raise assessment_error(
@@ -288,8 +290,8 @@ def _preflight_rag_metadata(value: Any) -> Any:
         return raw_metadata
     keys = _rag_metadata_keys(raw_metadata)
     authorized_values = _authorized_metadata_values(raw_metadata, keys)
-    safe_values = _snapshot_rag_value(authorized_values, "$.metadata")
     try:
+        safe_values = _snapshot_rag_value(authorized_values, "$.metadata")
         return freeze_metadata(safe_values)
     except AssessmentSpecError as exc:
         if exc.code == "invalid_metadata_mapping":
