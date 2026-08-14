@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import tomllib
 
@@ -26,3 +27,16 @@ def test_claude_auto_backend_matches_fail_closed_runtime() -> None:
 
     assert "`auto` fails closed when the compiled Rust core is unavailable" in normalized
     assert "otherwise the numerically-identical NumPy reference" not in normalized
+
+
+def test_marginal_reference_module_does_not_claim_runtime_fallback() -> None:
+    """Reference-module documentation must preserve fail-closed production ownership."""
+    source = (
+        ROOT / "python" / "fast_mlsirm" / "estimators" / "marginal.py"
+    ).read_text(encoding="utf-8")
+    module_doc = ast.get_docstring(ast.parse(source)) or ""
+    normalized = " ".join(module_doc.split())
+
+    assert "fallback when the compiled core is unavailable" not in normalized
+    assert "explicit reference" in normalized
+    assert "production runtime must fail closed" in normalized
