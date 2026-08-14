@@ -2,4 +2,4 @@
 
 ## Fixed
 
-- Preflight caller-provided RAG metadata through the package's bounded callback-safe contract before allowlist checks, avoiding alien membership callbacks and converting hostile key iteration into non-reflective package errors.
+- Validate caller-provided RAG metadata keys exactly once before reading any values, then freeze only the captured allowlisted values. Hostile membership, key/value, duplicate-key, and key-reiteration callbacks now fail through non-reflective package errors without granting new metadata authority.
