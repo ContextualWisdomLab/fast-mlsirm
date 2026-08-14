@@ -74,9 +74,12 @@ def validate_group_partition(
     within one fold, but the same group cannot appear in two folds. A usable
     holdout/bootstrap partition must contain at least two scientific groups and
     at least two folds; otherwise no out-of-group validation contrast exists.
-    Scalar strings and blank identities are rejected rather than being treated
-    as usable grouping metadata. The function validates identities only; it
-    performs no scoring, estimation, resampling, or model-selection arithmetic.
+    Scalar strings, blank identities, and identities with surrounding
+    whitespace are rejected rather than normalized because silent trimming can
+    merge caller-declared identities while accepting raw padded values can split
+    one scientific identity into artificial groups/folds. The function validates
+    identities only; it performs no scoring, estimation, resampling, or
+    model-selection arithmetic.
 
     Args:
         group_ids: Declared scientific group identity for each observation.
@@ -84,8 +87,8 @@ def validate_group_partition(
 
     Raises:
         TypeError: If either identity vector is supplied as a scalar string.
-        ValueError: If vectors are malformed, degenerate, or one group crosses
-            fold boundaries.
+        ValueError: If vectors are malformed, degenerate, contain ambiguous
+            padded identities, or one group crosses fold boundaries.
     """
     if isinstance(group_ids, (str, bytes)) or isinstance(fold_ids, (str, bytes)):
         raise TypeError(
@@ -100,11 +103,15 @@ def validate_group_partition(
         for group_id in group_ids
     ):
         raise ValueError("group_ids entries must be non-empty strings")
+    if any(group_id != group_id.strip() for group_id in group_ids):
+        raise ValueError("group_ids entries must not contain surrounding whitespace")
     if any(
         not isinstance(fold_id, str) or not fold_id.strip()
         for fold_id in fold_ids
     ):
         raise ValueError("fold_ids entries must be non-empty strings")
+    if any(fold_id != fold_id.strip() for fold_id in fold_ids):
+        raise ValueError("fold_ids entries must not contain surrounding whitespace")
     if len(set(group_ids)) < 2:
         raise ValueError(
             "group partition requires at least two generalization groups"
