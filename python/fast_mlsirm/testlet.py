@@ -14,6 +14,13 @@ from .config import MAX_MAX_ITER
 
 MAX_TESTLET_RESPONSE_CELLS = 20_000_000
 _SUPPORTED_Q_GAMMA = (7, 11, 15, 21, 31, 41)
+_NUMPY_INTEGER_TYPES = frozenset(
+    np.dtype(name).type
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
+)
+_NUMPY_FLOAT_TYPES = frozenset(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
 
 
 @dataclass
@@ -115,32 +122,59 @@ def fit_testlet(
         raise ValueError("testlet_id entries must be between 0 and n_items - 1")
     tid = raw_tid.astype(np.int64, copy=False)
     n_testlets = int(tid.max()) + 1
-    if (
-        isinstance(max_iter, (bool, np.bool_))
-        or not isinstance(max_iter, (int, np.integer))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
+
+    if type(model) is not str:
+        raise ValueError("model must be a built-in string")
+    model_value = model
+
+    max_iter_type = type(max_iter)
+    if max_iter_type is int:
+        max_iter_value = max_iter
+    elif max_iter_type in _NUMPY_INTEGER_TYPES:
+        max_iter_value = int(max_iter)
+    else:
         raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if isinstance(tol, (bool, np.bool_)) or not isinstance(
-        tol, (int, float, np.integer, np.floating)
+    if not 1 <= max_iter_value <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
+
+    tol_type = type(tol)
+    if (
+        tol_type not in (int, float)
+        and tol_type not in _NUMPY_INTEGER_TYPES
+        and tol_type not in _NUMPY_FLOAT_TYPES
     ):
         raise ValueError("tol must be a finite non-negative number")
     tol_value = float(tol)
     if not np.isfinite(tol_value) or tol_value < 0.0:
         raise ValueError("tol must be a finite non-negative number")
-    if (
-        isinstance(q_gamma, (bool, np.bool_))
-        or not isinstance(q_gamma, (int, np.integer))
-        or int(q_gamma) not in _SUPPORTED_Q_GAMMA
-    ):
+
+    q_gamma_type = type(q_gamma)
+    if q_gamma_type is int:
+        q_gamma_value = q_gamma
+    elif q_gamma_type in _NUMPY_INTEGER_TYPES:
+        q_gamma_value = int(q_gamma)
+    else:
         raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
-    if isinstance(init_sigma2, (bool, np.bool_)) or not isinstance(
-        init_sigma2, (int, float, np.integer, np.floating)
+    if q_gamma_value not in _SUPPORTED_Q_GAMMA:
+        raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
+
+    init_sigma2_type = type(init_sigma2)
+    if (
+        init_sigma2_type not in (int, float)
+        and init_sigma2_type not in _NUMPY_INTEGER_TYPES
+        and init_sigma2_type not in _NUMPY_FLOAT_TYPES
     ):
         raise ValueError("init_sigma2 must be a finite non-negative number")
     init_sigma2_value = float(init_sigma2)
     if not np.isfinite(init_sigma2_value) or init_sigma2_value < 0.0:
         raise ValueError("init_sigma2 must be a finite non-negative number")
+
+    if type(estimate_sigma) not in (bool, np.bool_):
+        raise ValueError("estimate_sigma must be a Boolean")
+    estimate_sigma_value = bool(estimate_sigma)
+    if type(require_convergence) not in (bool, np.bool_):
+        raise ValueError("require_convergence must be a Boolean")
+    require_convergence_value = bool(require_convergence)
 
     from .fitstats import _core_module
 
@@ -157,11 +191,11 @@ def fit_testlet(
         int(n_persons),
         int(n_items),
         int(n_testlets),
-        str(model),
-        int(max_iter),
+        model_value,
+        max_iter_value,
         tol_value,
-        int(q_gamma),
-        bool(estimate_sigma),
+        q_gamma_value,
+        estimate_sigma_value,
         init_sigma2_value,
     )
     fit = TestletFit(
@@ -181,11 +215,11 @@ def fit_testlet(
     if not fit.converged:
         message = (
             "testlet calibration did not converge: "
-            f"reason={fit.termination_reason}, iterations={fit.n_iter}/{max_iter}, "
+            f"reason={fit.termination_reason}, iterations={fit.n_iter}/{max_iter_value}, "
             "final_loglik_change="
             f"{fit.final_loglik_change:.12g}, tolerance={tol_value:.12g}"
         )
-        if require_convergence:
+        if require_convergence_value:
             raise RuntimeError(message)
         warnings.warn(message, RuntimeWarning, stacklevel=2)
     return fit
