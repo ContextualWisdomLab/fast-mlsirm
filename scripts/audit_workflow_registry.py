@@ -16,7 +16,7 @@ from typing import Any, Callable
 from urllib.parse import quote
 
 
-_RETRYABLE_HTTP_RE = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
+_RETRYABLE_HTTP_RE = re.compile(r"\bHTTP (?:403|404|429|5\d\d)\b", re.IGNORECASE)
 _REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _MAX_ATTEMPTS = 3
 _RETRY_SLEEP_SECONDS = 0.5
