@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
+from typing import TypeVar, overload
+
 import pytest
 
 from fast_mlsirm.model_validation import (
@@ -9,6 +12,35 @@ from fast_mlsirm.model_validation import (
     validate_group_partition,
     validate_temporal_forward_window,
 )
+
+
+_T = TypeVar("_T")
+
+
+class _SinglePassSequence(Sequence[_T]):
+    """Expose stable data once and fail if validation re-enumerates caller state."""
+
+    def __init__(self, values: tuple[_T, ...]) -> None:
+        self._values = values
+        self.iteration_count = 0
+
+    @overload
+    def __getitem__(self, index: int) -> _T: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[_T]: ...
+
+    def __getitem__(self, index: int | slice) -> _T | Sequence[_T]:
+        return self._values[index]
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __iter__(self) -> Iterator[_T]:
+        self.iteration_count += 1
+        if self.iteration_count > 1:
+            raise RuntimeError("caller sequence was re-enumerated")
+        return iter(self._values)
 
 
 def test_group_holdout_requires_a_declared_noncell_generalization_unit() -> None:
@@ -68,6 +100,17 @@ def test_group_partition_accepts_repeated_groups_within_one_fold() -> None:
         group_ids=("query-a", "query-a", "query-b", "query-c", "query-c"),
         fold_ids=("fold-1", "fold-1", "fold-2", "fold-3", "fold-3"),
     )
+
+
+def test_group_partition_snapshots_caller_sequences_once() -> None:
+    """Leakage checks operate on one stable caller snapshot, not live callbacks."""
+    group_ids = _SinglePassSequence(("query-a", "query-b"))
+    fold_ids = _SinglePassSequence(("fold-1", "fold-2"))
+
+    validate_group_partition(group_ids=group_ids, fold_ids=fold_ids)
+
+    assert group_ids.iteration_count == 1
+    assert fold_ids.iteration_count == 1
 
 
 def test_group_partition_rejects_malformed_identity_vectors() -> None:
@@ -174,6 +217,20 @@ def test_temporal_forward_window_requires_strictly_future_validation_periods() -
             training_periods=(202601, 202604),
             validation_periods=(202604, 202605),
         )
+
+
+def test_temporal_forward_window_snapshots_period_sequences_once() -> None:
+    """Temporal ordering is evaluated against one stable caller snapshot."""
+    training = _SinglePassSequence((202601, 202602))
+    validation = _SinglePassSequence((202603, 202604))
+
+    validate_temporal_forward_window(
+        training_periods=training,
+        validation_periods=validation,
+    )
+
+    assert training.iteration_count == 1
+    assert validation.iteration_count == 1
 
 
 def test_temporal_forward_window_rejects_malformed_period_vectors() -> None:
