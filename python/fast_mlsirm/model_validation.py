@@ -89,12 +89,12 @@ def validate_group_partition(
     within one fold, but the same group cannot appear in two folds. A usable
     holdout/bootstrap partition must contain at least two scientific groups and
     at least two folds; otherwise no out-of-group validation contrast exists.
-    Scalar strings, blank identities, and identities with surrounding
-    whitespace are rejected rather than normalized because silent trimming can
-    merge caller-declared identities while accepting raw padded values can split
-    one scientific identity into artificial groups/folds. The function validates
-    identities only; it performs no scoring, estimation, resampling, or
-    model-selection arithmetic.
+    Scalar strings, blank identities, string subclasses, and identities with
+    surrounding whitespace are rejected rather than normalized. Exact built-in
+    strings keep identity validation free of caller-defined normalization
+    callbacks, while rejecting padding avoids silently merging or splitting
+    caller-declared scientific groups. The function validates identities only;
+    it performs no scoring, estimation, resampling, or model-selection arithmetic.
 
     Args:
         group_ids: Declared scientific group identity for each observation.
@@ -116,17 +116,11 @@ def validate_group_partition(
         raise ValueError("group_ids and fold_ids must have equal length")
     if len(groups) == 0:
         raise ValueError("group_ids must not be empty")
-    if any(
-        not isinstance(group_id, str) or not group_id.strip()
-        for group_id in groups
-    ):
+    if any(type(group_id) is not str or not group_id.strip() for group_id in groups):
         raise ValueError("group_ids entries must be non-empty strings")
     if any(group_id != group_id.strip() for group_id in groups):
         raise ValueError("group_ids entries must not contain surrounding whitespace")
-    if any(
-        not isinstance(fold_id, str) or not fold_id.strip()
-        for fold_id in folds
-    ):
+    if any(type(fold_id) is not str or not fold_id.strip() for fold_id in folds):
         raise ValueError("fold_ids entries must be non-empty strings")
     if any(fold_id != fold_id.strip() for fold_id in folds):
         raise ValueError("fold_ids entries must not contain surrounding whitespace")
