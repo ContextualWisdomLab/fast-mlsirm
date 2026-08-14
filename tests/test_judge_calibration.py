@@ -57,6 +57,7 @@ def test_multiple_choice_controls_change_only_declared_presentation_factor() -> 
     assert by_variant["shuffled_options"].task != by_variant["baseline"].task
     assert "unreviewed_rollout" in by_variant["replaced_distractor"].task
     assert all(case.contamination_status == "held_out" for case in cases)
+    assert all(case.option_count == 3 for case in cases)
 
 
 class _ScriptedJudge:
@@ -169,6 +170,16 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
         "evidence_quality": {"0": 0, "1": 1, "2": 2},
         "risk_awareness": {"0": 0, "1": 3, "2": 0},
     }
+    assert serialized["option_count_unstratified_count"] == 0
+    assert [
+        (group["option_count"], group["variant"], group["passed_count"])
+        for group in serialized["option_count_summary"]
+    ] == [
+        (3, "baseline", 1),
+        (3, "option_only", 1),
+        (3, "replaced_distractor", 0),
+        (3, "shuffled_options", 1),
+    ]
     assert all("raw_output" not in outcome for outcome in serialized["outcomes"])
     failure = next(outcome for outcome in serialized["outcomes"] if outcome["status"] == "judge_failed")
     assert failure["evidence"] == {
@@ -182,6 +193,91 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
     assert effects["shuffled_options"]["score_delta"] == pytest.approx(0.0)
     assert effects["replaced_distractor"]["control_status"] == "judge_failed"
     assert "score_delta" not in effects["replaced_distractor"]
+
+
+def test_option_count_summary_preserves_unstratified_rows() -> None:
+    cases = (
+        JudgeCalibrationCase(
+            case_id="unstratified",
+            variant=variant,
+            task="Question: q\n\nOptions:\n1. a\n2. b"
+            if variant == "baseline"
+            else "Options:\n1. a\n2. b",
+            answer="a",
+        )
+        for variant in ("baseline", "option_only")
+    )
+    report = evaluate_paired_calibration(
+        _ScriptedJudge(), cases, criteria=CRITERIA, category_count=3
+    )
+    serialized = report.to_dict()
+    assert serialized["option_count_summary"] == []
+    assert serialized["option_count_unstratified_count"] == 2
+
+
+def test_option_count_summary_separates_multiple_k_strata() -> None:
+    five_option_cases = build_multiple_choice_calibration_cases(
+        case_id="release_case_k5",
+        question="Which rollout plan is safest?",
+        options=("canary", "big_bang", "rollback_only", "shadow", "manual"),
+        answer="canary",
+        correct_option_index=0,
+        replacement_distractor="unreviewed_rollout",
+        reference_answer="canary",
+        contamination_status="held_out",
+        shuffle_seed=7,
+        gold_categories={"evidence_quality": 2, "risk_awareness": 1},
+    )
+    report = evaluate_paired_calibration(
+        _ScriptedJudge(), _cases() + five_option_cases, criteria=CRITERIA, category_count=3
+    )
+    summary = report.to_dict()["option_count_summary"]
+    assert {(group["option_count"], group["variant"]) for group in summary} == {
+        (3, "baseline"),
+        (3, "option_only"),
+        (3, "shuffled_options"),
+        (3, "replaced_distractor"),
+        (5, "baseline"),
+        (5, "option_only"),
+        (5, "shuffled_options"),
+        (5, "replaced_distractor"),
+    }
+    assert all(group["outcome_count"] == 1 for group in summary)
+
+
+@pytest.mark.parametrize("option_count", [True, 1, 65, 1.5])
+def test_option_count_rejects_invalid_values(option_count: object) -> None:
+    with pytest.raises(ValueError, match="option_count"):
+        JudgeCalibrationCase(
+            case_id="bad_k",
+            variant="baseline",
+            task="task",
+            answer="answer",
+            option_count=option_count,
+        )
+
+
+def test_option_count_rejects_conflicting_reserved_metadata() -> None:
+    with pytest.raises(ValueError, match="agree with metadata"):
+        JudgeCalibrationCase(
+            case_id="conflict",
+            variant="baseline",
+            task="task",
+            answer="answer",
+            option_count=3,
+            metadata={"option_count": "5"},
+        )
+
+
+def test_legacy_option_count_metadata_is_promoted_and_validated() -> None:
+    case = JudgeCalibrationCase(
+        case_id="legacy",
+        variant="baseline",
+        task="task",
+        answer="answer",
+        metadata={"option_count": "3"},
+    )
+    assert case.option_count == 3
 
 
 def test_direct_paired_calibration_reuses_gateway_concurrency_and_order() -> None:

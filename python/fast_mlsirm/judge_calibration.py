@@ -135,6 +135,7 @@ class JudgeCalibrationCase:
     contamination_status: str = "unknown"
     gold_categories: Mapping[str, int] | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
+    option_count: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "case_id", _text(self.case_id, "case_id", maximum=256))
@@ -156,6 +157,13 @@ class JudgeCalibrationCase:
                 f"contamination_status must be one of {sorted(CONTAMINATION_STATUSES)}"
             )
         object.__setattr__(self, "contamination_status", status)
+        if self.option_count is not None and (
+            type(self.option_count) is not int
+            or not 2 <= self.option_count <= MAX_JUDGE_CATEGORIES
+        ):
+            raise ValueError(
+                f"option_count must be an integer in 2..{MAX_JUDGE_CATEGORIES}"
+            )
         if self.gold_categories is not None:
             if not isinstance(self.gold_categories, Mapping) or not self.gold_categories:
                 raise ValueError("gold_categories must be a non-empty object")
@@ -170,13 +178,30 @@ class JudgeCalibrationCase:
                     )
                 gold[normalized_key] = value
             object.__setattr__(self, "gold_categories", MappingProxyType(gold))
-        object.__setattr__(self, "metadata", _metadata(self.metadata))
+        normalized_metadata = _metadata(self.metadata)
+        metadata_option_count = normalized_metadata.get("option_count")
+        if metadata_option_count is not None:
+            if not metadata_option_count.isascii() or not metadata_option_count.isdigit():
+                raise ValueError("metadata option_count must be a canonical integer")
+            parsed_option_count = int(metadata_option_count)
+            if not 2 <= parsed_option_count <= MAX_JUDGE_CATEGORIES:
+                raise ValueError(
+                    f"metadata option_count must be in 2..{MAX_JUDGE_CATEGORIES}"
+                )
+            if str(parsed_option_count) != metadata_option_count:
+                raise ValueError("metadata option_count must be canonical")
+            if self.option_count is None:
+                object.__setattr__(self, "option_count", parsed_option_count)
+            elif self.option_count != parsed_option_count:
+                raise ValueError("option_count must agree with metadata option_count")
+        object.__setattr__(self, "metadata", normalized_metadata)
 
     def to_dict(self) -> dict[str, Any]:
         """Return bounded metadata without copying task, answer, or source text."""
         return {
             "case_id": self.case_id,
             "variant": self.variant,
+            "option_count": self.option_count,
             "contamination_status": self.contamination_status,
             "metadata": dict(self.metadata),
             "gold_categories_provided": self.gold_categories is not None,
@@ -280,6 +305,7 @@ def build_multiple_choice_calibration_cases(
         "reference_answer": reference_answer,
         "contamination_status": contamination_status,
         "gold_categories": gold_categories,
+        "option_count": len(normalized_options),
     }
     return (
         JudgeCalibrationCase(
@@ -429,6 +455,58 @@ class JudgeCalibrationReport:
                     occupancy[criterion_id][str(category)] += 1
         return occupancy
 
+    def option_count_summary(self) -> tuple[dict[str, Any], ...]:
+        """Return descriptive K/variant strata without claiming a causal effect."""
+        grouped: dict[tuple[int, str], list[JudgeCalibrationOutcome]] = {}
+        for outcome in self.outcomes:
+            option_count = outcome.case.option_count
+            if option_count is None:
+                continue
+            grouped.setdefault((option_count, outcome.case.variant), []).append(outcome)
+
+        summaries: list[dict[str, Any]] = []
+        for (option_count, variant), outcomes in sorted(grouped.items()):
+            passed = [
+                outcome
+                for outcome in outcomes
+                if outcome.status == "passed" and outcome.result is not None
+            ]
+            occupancy = {
+                criterion_id: {str(category): 0 for category in range(self.category_count)}
+                for criterion_id in self.criterion_ids
+            }
+            scores: list[float] = []
+            gold_scored = [outcome for outcome in outcomes if outcome.gold_exact is not None]
+            for outcome in passed:
+                assert outcome.result is not None
+                scores.append(outcome.result.score)
+                categories = outcome.result.criterion_categories or {}
+                for criterion_id in self.criterion_ids:
+                    category = categories.get(criterion_id)
+                    if type(category) is int and 0 <= category < self.category_count:
+                        occupancy[criterion_id][str(category)] += 1
+            summaries.append(
+                {
+                    "option_count": option_count,
+                    "variant": variant,
+                    "outcome_count": len(outcomes),
+                    "status_counts": dict(
+                        sorted(Counter(outcome.status for outcome in outcomes).items())
+                    ),
+                    "passed_count": len(passed),
+                    "mean_score": sum(scores) / len(scores) if scores else None,
+                    "category_occupancy": occupancy,
+                    "gold_scored_count": len(gold_scored),
+                    "gold_exact_agreement": (
+                        sum(outcome.gold_exact is True for outcome in gold_scored)
+                        / len(gold_scored)
+                        if gold_scored
+                        else None
+                    ),
+                }
+            )
+        return tuple(summaries)
+
     def paired_effects(self) -> tuple[dict[str, Any], ...]:
         grouped: dict[str, list[JudgeCalibrationOutcome]] = {}
         for outcome in self.outcomes:
@@ -442,6 +520,7 @@ class JudgeCalibrationReport:
                 effect: dict[str, Any] = {
                     "case_id": case_id,
                     "variant": control.case.variant,
+                    "option_count": control.case.option_count,
                     "contamination_status": control.case.contamination_status,
                     "baseline_status": baseline.status,
                     "control_status": control.status,
@@ -469,6 +548,10 @@ class JudgeCalibrationReport:
             "outcome_count": len(self.outcomes),
             "status_counts": self.status_counts(),
             "category_occupancy": self.category_occupancy(),
+            "option_count_summary": list(self.option_count_summary()),
+            "option_count_unstratified_count": sum(
+                outcome.case.option_count is None for outcome in self.outcomes
+            ),
             "gold_scored_count": len(gold_scored),
             "gold_exact_agreement": (
                 sum(outcome.gold_exact is True for outcome in gold_scored) / len(gold_scored)
