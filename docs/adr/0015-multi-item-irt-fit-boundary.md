@@ -323,6 +323,8 @@ format changes, and violates the fail-closed judge contract.
 
 ## References
 
+| Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
+
 - Samejima, F. (1969), *Estimation of latent ability using a response pattern
   of graded scores*, https://doi.org/10.1007/BF03372160.
 - Li, Q., et al. (2025), *Evaluating Scoring Bias in LLM-as-a-Judge*,
