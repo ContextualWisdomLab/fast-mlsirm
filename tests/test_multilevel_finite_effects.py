@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import sys
 
 import pytest
 
@@ -32,4 +33,34 @@ def test_public_predictor_rejects_non_finite_context_effects(effect: float) -> N
         weighted_contextual_effect(
             design,
             {("team_membership", "team_alpha"): effect},
+        )
+
+
+def test_public_predictor_rejects_finite_inputs_that_overflow_weighted_sum() -> None:
+    design = build_context_membership_design(
+        [
+            build_context_membership(
+                observation_id="person_one",
+                context_dimension_id="team_membership",
+                context_id="team_alpha",
+                membership_weight=1.0,
+                membership_revision_fingerprint="b".rjust(64, "0"),
+            ),
+            build_context_membership(
+                observation_id="person_one",
+                context_dimension_id="site_membership",
+                context_id="site_alpha",
+                membership_weight=1.0,
+                membership_revision_fingerprint="c".rjust(64, "0"),
+            ),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="weighted contextual effects must be finite"):
+        weighted_contextual_effect(
+            design,
+            {
+                ("team_membership", "team_alpha"): sys.float_info.max,
+                ("site_membership", "site_alpha"): sys.float_info.max,
+            },
         )
