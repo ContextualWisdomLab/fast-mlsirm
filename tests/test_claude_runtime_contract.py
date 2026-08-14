@@ -22,6 +22,7 @@ def test_claude_python_floor_matches_package_metadata() -> None:
 def test_claude_auto_backend_matches_fail_closed_runtime() -> None:
     """Canonical guidance must not advertise a silent NumPy production fallback."""
     guidance = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    normalized = " ".join(guidance.split())
 
-    assert "`auto` fails closed when the compiled Rust core is unavailable" in guidance
-    assert "otherwise the numerically-identical NumPy reference" not in guidance
+    assert "`auto` fails closed when the compiled Rust core is unavailable" in normalized
+    assert "otherwise the numerically-identical NumPy reference" not in normalized
