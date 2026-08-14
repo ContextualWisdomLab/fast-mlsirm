@@ -50,7 +50,7 @@ A low-information safety-critical criterion may therefore remain operationally r
 
 ## Suspension and retirement
 
-Suspension is reversible but requires both a governance suspension reference and newly supplied concern evidence. Governed concern classes include DIF, drift, exposure, linking, evidence validity, content validity, and security/privacy, so a non-psychometric quarantine does not need fabricated DIF or drift evidence. Reactivation requires newly supplied approval plus newly supplied evidence from a governed suspension-concern class. These gates establish evidence presence and provenance only; downstream governance remains responsible for deciding whether the referenced evidence actually resolves the operational concern. Retirement is terminal for new operational use, while historical evidence remains content-addressed for audit reconstruction.
+Suspension is reversible but requires both a governance suspension reference and newly supplied concern evidence. Governed concern classes include DIF, drift, exposure, linking, evidence validity, content validity, and security/privacy, so a non-psychometric quarantine does not need fabricated DIF or drift evidence. The suspended record binds the exact newly asserted concern classes in its content-addressed identity. Reactivation requires a newly supplied approval plus newly supplied evidence for every concern class bound by that suspension; unrelated evidence cannot clear a different quarantine (for example, a fresh DIF artifact cannot reactivate an item suspended for security/privacy). These gates establish evidence presence and provenance only; downstream governance remains responsible for deciding whether the referenced evidence actually resolves the operational concern. Retirement is terminal for new operational use, while historical evidence remains content-addressed for audit reconstruction.
 
 The contract does not authorize physical deletion, retention exceptions, or erasure behavior. Those controls belong to the downstream persistence and governance system.
 
@@ -82,6 +82,7 @@ The implementation requires deterministic tests for:
 - transition graph enforcement;
 - required evidence classes;
 - non-psychometric suspension and reactivation without fabricated DIF/drift evidence;
+- suspension-to-reactivation concern-class continuity;
 - use-specific approval;
 - cumulative evidence and previous-record linkage;
 - evidence-order invariance;
