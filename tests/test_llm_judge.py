@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 
 import pytest
@@ -221,7 +222,7 @@ def test_criteria_limit_is_enforced_during_iteration() -> None:
             yielded += 1
             yield JudgeCriterion(f"criterion_{index}", "observable evidence")
 
-    with pytest.raises(ValueError, match="1..32"):
+    with pytest.raises(ValueError, match=re.escape("1..32")):
         ContextualOrchestratorJudge(_FakeOrchestrator(_payload())).judge(
             task="task",
             answer="answer",
@@ -682,7 +683,7 @@ def test_judge_criterion_and_constructor_boundaries_are_explicit() -> None:
 def test_judge_rejects_empty_or_duplicate_criteria_and_long_text() -> None:
     """Rubrics and prompt fields are bounded before the orchestrator is called."""
     judge = ContextualOrchestratorJudge(_FakeOrchestrator(_payload()))
-    with pytest.raises(ValueError, match="1..32"):
+    with pytest.raises(ValueError, match=re.escape("1..32")):
         judge.judge(task="task", answer="answer", criteria=[])
     with pytest.raises(ValueError, match="unique"):
         judge.judge(task="task", answer="answer", criteria=[CRITERIA[0], CRITERIA[0]])
@@ -738,7 +739,7 @@ def test_irt_projection_covers_category_mapping_and_parameter_guards() -> None:
         criterion_categories={"task_alignment": 1, "factual_support": 0},
     )
     assert two_category.to_irt_row(item_type="dichotomous") == (0, 1)
-    with pytest.raises(JudgeFormatError, match="2.."):
+    with pytest.raises(JudgeFormatError, match=re.escape("2..")):
         categorical.to_irt_row(item_type="polytomous", n_categories=1)
     with pytest.raises(JudgeFormatError, match="must match"):
         categorical.to_irt_row(item_type="polytomous", n_categories=3)

@@ -1,14 +1,15 @@
 //! Rust-owned longitudinal state estimation for repeated psychometric observations.
 //!
-//! The estimator is intentionally small and explicit. A random
-//! intercept/slope state is fitted independently for each respondent by
-//! ordinary least squares on the respondent's exact time offsets. A stationary
-//! AR(1) state uses the caller-supplied discrete-occasion coefficient and
-//! produces one-step latent predictions. Respondents are independent, so the
-//! CPU path shards them across scoped threads and reduces diagnostics in
-//! respondent order for deterministic results. The item/factor likelihood
-//! remains in the existing CPU/GPU Rust kernels; this module owns only the
-//! repeated-measurement state layer described by the multilevel RFC.
+//! The estimator is intentionally small and explicit. The compatibility wire
+//! label `random_intercept_slope` denotes an independent per-respondent
+//! ordinary-least-squares trend; it does not estimate a population random-
+//! effects distribution or apply shrinkage. A stationary AR(1) state uses the
+//! caller-supplied discrete-occasion coefficient and produces one-step latent
+//! predictions. Respondents are independent, so the CPU path shards them
+//! across scoped threads and reduces diagnostics in respondent order for
+//! deterministic results. The item/factor likelihood remains in the existing
+//! CPU/GPU Rust kernels; this module owns only the repeated-measurement state
+//! layer described by the multilevel RFC.
 //!
 //! Missing observations are represented by `NaN` and are excluded from fitting
 //! while retaining a predicted state at every declared occasion. Time offsets
@@ -22,7 +23,7 @@ const MILLIS_PER_DAY: f64 = 86_400_000.0;
 const MAX_ABS_TIME_DAYS: f64 = 10_000_000.0;
 const MAX_AR_SEQUENCE_GAP: usize = i32::MAX as usize;
 
-/// Result of a validated random-intercept/slope or stationary-AR state fit.
+/// Result of a validated independent-OLS-trend or stationary-AR state fit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LongitudinalStateFit {
     /// Predicted latent state aligned with the flattened occasion input.
@@ -43,7 +44,7 @@ pub struct LongitudinalStateFit {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StateKind {
-    RandomInterceptSlope,
+    IndependentRespondentOlsTrend,
     StationaryAutoregressive,
 }
 
@@ -59,7 +60,7 @@ struct RespondentFit {
 
 fn parse_state_kind(value: &str) -> Result<StateKind, String> {
     match value {
-        "random_intercept_slope" => Ok(StateKind::RandomInterceptSlope),
+        "random_intercept_slope" => Ok(StateKind::IndependentRespondentOlsTrend),
         "stationary_autoregressive" => Ok(StateKind::StationaryAutoregressive),
         _ => Err(
             "state_kind must be random_intercept_slope or stationary_autoregressive".to_string(),
@@ -115,7 +116,7 @@ fn validate_inputs(
         }
     }
     let phi = match state_kind {
-        StateKind::RandomInterceptSlope => {
+        StateKind::IndependentRespondentOlsTrend => {
             if ar_coefficient.is_some() {
                 return Err("random_intercept_slope does not accept an AR coefficient".to_string());
             }
@@ -313,7 +314,7 @@ pub fn fit_longitudinal_state(
                             let times = &time_offsets_milliseconds[value_start..value_end];
                             let row_values = &values[value_start..value_end];
                             let fit = match kind {
-                                StateKind::RandomInterceptSlope => {
+                                StateKind::IndependentRespondentOlsTrend => {
                                     Ok(fit_intercept_slope(times, row_values))
                                 }
                                 StateKind::StationaryAutoregressive => {

@@ -269,7 +269,7 @@ def _bounded_text(value: Any, name: str) -> str:
 
 
 def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[JudgeCriterion, ...]:
-    """Normalize and deduplicate the bounded criterion collection."""
+    """Normalize the bounded criterion collection and reject duplicate ids."""
     normalized: list[JudgeCriterion] = []
     for value in values:
         if len(normalized) >= MAX_JUDGE_CRITERIA:

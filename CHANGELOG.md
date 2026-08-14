@@ -59,30 +59,6 @@
 - Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
 - Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
 
-#### Relation-safe structural model comparison contract
-
-- Added a typed structural measurement-model relation contract that keeps factor
-  retention separate from structural model choice and classifies model pairs
-  from explicit parameter-space, boundary, constraint, overlap, and formal
-  distinguishability facts rather than model names.
-- Restricted regular likelihood-ratio procedures to regular nesting, routed
-  boundary/unidentified/nonlinear restrictions to conservative bootstrap LR,
-  required formal Vuong distinguishability before non-nested selection, and
-  returned explicit no-selection or unknown states instead of forcing a winner.
-- Added fail-closed contradiction, exact-Boolean, boundary-precedence, and
-  procedure-routing tests plus APA 7 doctoring; no comparison statistic or
-  estimator is introduced by this contract slice.
-
-#### Governed post-pilot item-bank lifecycle
-
-- Add a factory-sealed, content-addressed post-pilot item-bank lifecycle that requires exact calibration, item-fit, DIF, information, approval, drift, suspension, and retirement evidence before an item can advance through `piloting`, `calibrated`, `approved`, `active`, `suspended`, reactivated, or terminal `retired` states.
-- Preserve policy criticality independently of psychometric discrimination, require use-specific approval, link every successor to the exact previous record fingerprint, and retain only source-text-free evidence identities while leaving numerical calibration and item-bank arithmetic Rust-owned.
-- Keep tenancy, authorization, identity mapping, persistence, encryption, retention, deletion, human governance, provider SDKs, new estimators, version bumps, and releases outside this reusable-core slice.
-
-#### Governed item-bank lifecycle contracts
-
-- Add immutable, content-addressed item-bank lifecycle and release contracts that bind generated items to exact rubric, blueprint, generation, audit, screening, pilot, calibration, approval, retirement, and linking evidence without adding hosted persistence or new numerical ownership.
-
 #### Governed RAG scoring request
 
 - Reference-free RAG scoring request adapter with privacy-preserving identity channels and fail-closed rejection of raw system configuration content.
@@ -95,17 +71,6 @@
   overall/subgroup SMD, `min_subgroup_n`) into the Rust `validate_scoring`
   decision owner instead of hard-coding Williamson high-stakes cutoffs only in
   Python.
-
-#### Governed RAG perturbation anchors
-
-- Added source-free, content-addressed reference-free RAG perturbation anchors with finite preregistered construct/direction semantics for unsupported claims, contradictions, irrelevant context, required-evidence removal, citation swaps, semantic paraphrases, style-only rewrites, and unanswerable queries.
-- Require canonical governed baseline and perturbed `ScoringRequest` values, reject unrelated or mixed-axis pairs, and bind each anchor to exact perturbation specification/run fingerprints while serializing only source-free identities.
-- Distinguish literature-aligned constructs from package-owned model-design hypotheses. Every expected direction remains a validation hypothesis, not a claim that the cited papers established the exact perturbation, that an observed system actually changed, or that an evaluator is ground truth.
-
-#### Essay facets synthetic recovery evidence
-
-- Deterministic governed synthetic recovery coverage for scoring-facets MFRM/RSM
-  recovery against true injected rater/item effects (issue #397).
 
 #### Rust longitudinal state layer
 
@@ -318,18 +283,6 @@
   activation, immutable reusable-workflow source, failure behavior, rollback,
   and the NVIDIA NIM control-plane boundary.
 
-#### Governed RAG facets calibration
-
-- Added the governed RAG facets calibration adapter.
-- The adapter reuses the existing MFRM rater-severity/threshold calibration
-  machinery (Linacre, 1989; Eckes, 2015; Bock & Aitkin, 1981; Andrich, 1978)
-  for RAG evaluation executions. It does not introduce a new psychometric
-  estimator or rely on legacy evaluation package implementations (e.g.
-  RAGAS-style tooling) as the source of psychometric validity; all
-  likelihood/threshold arithmetic is delegated to the existing Rust-backed MFRM
-  fit grounded in the primary many-facet Rasch measurement literature. Full
-  citations are in `docs/scoring_facets_calibration_handoff.md`.
-
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
@@ -432,24 +385,6 @@
 
 - Default policy remains `williamson_high_stakes` v1.0 with the published
   high-stakes thresholds; invalid threshold ranges fail closed before Rust work.
-
-#### ATA target-gain Rust ownership
-
-- Moved result-affecting capped-shortfall target-information gains for automated
-  test assembly from Python/NumPy into a bounded Rust PyO3 kernel.
-- Kept Python responsible for validated candidate/content/exposure orchestration
-  and deterministic tie breaking while the compiled path owns candidate gain
-  arithmetic without candidate-by-point broadcast temporaries.
-- Made the public PyO3 boundary reject wrong-dtype, non-array, non-contiguous,
-  empty-matrix and overlong candidate-set inputs with stable package-owned
-  `ValueError` messages before candidate/output allocation.
-- Bounded candidate inputs to the item count represented by the information
-  matrix and converted both candidate and result vectors with fallible reserve.
-- Added direct Rust and installed-extension parity/ownership regression evidence.
-
-#### Conditional Rasch M2 Rust ownership
-
-- Public `m2_cmle_rasch()` and `m2(..., estimator="cmle")` fail closed without the compiled Rust core and delegate every result field to `m2_cmle_rasch_stat`.
 
 #### MMLE theta calculation memory optimization
 
@@ -671,15 +606,6 @@
 - Serving-bundle validation fails closed when exported redundant slope/distance-weight
   fields contradict canonical log-scale parameters, and admits only exact built-in
   numeric scalars so hostile conversion hooks cannot execute during load/score.
-
-#### Factor-retention iterable error redaction
-
-- Governed factor-retention evidence now converts hostile iterator-construction
-  and iteration callback failures into stable package-owned validation errors
-  without exposing caller-controlled exception text or chained causes.
-- Explicit `MemoryError`, duplicate-method precedence, deterministic ordering,
-  decision semantics, and the bounded closed-method evidence contract remain
-  unchanged.
 
 #### Diagnostics-report focus and contrast preservation
 

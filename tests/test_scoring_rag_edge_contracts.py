@@ -115,8 +115,9 @@ def test_relationship_validation_exposes_unhandled_kind_and_metadata_boundaries(
     """RAG metadata remains allowlisted and unknown relationship kinds fail closed."""
     baseline = _request()
     perturbed = _request(request_id="unknown_kind_request")
-    with pytest.raises(AssertionError, match="unhandled RAG perturbation kind"):
+    with pytest.raises(AssessmentSpecError) as captured:
         rag._validate_perturbation_relationship(baseline, perturbed, object())
+    assert captured.value.code == "invalid_rag_perturbation_relationship"
 
     assert _error(lambda: _request(metadata=[])).code == "invalid_rag_metadata"
     monkeypatch.setattr(rag, "freeze_metadata", lambda _value: object())

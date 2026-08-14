@@ -473,7 +473,7 @@ def _validate_perturbation_relationship(
             )
         return
 
-    raise AssertionError(f"unhandled RAG perturbation kind: {kind}")
+    _raise_relationship_error("unsupported RAG perturbation kind")
 
 
 def build_rag_perturbation_anchor(

@@ -29,8 +29,19 @@ def _legacy_module():
         raise AssertionError("legacy calibration module spec is unavailable")
     module = importlib.util.module_from_spec(spec)
     sys.modules[_LEGACY_MODULE_NAME] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(_LEGACY_MODULE_NAME, None)
+        raise
     return module
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _remove_legacy_module_after_tests():
+    """Remove the isolated legacy module after this coverage module finishes."""
+    yield
+    sys.modules.pop(_LEGACY_MODULE_NAME, None)
 
 
 def _error(action):

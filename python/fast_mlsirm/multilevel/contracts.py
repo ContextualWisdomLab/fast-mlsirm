@@ -35,7 +35,12 @@ _LONGITUDINAL_DESIGN_TOKEN = object()
 
 
 class LongitudinalStateKind(str, Enum):
-    """Supported initial latent-state structures for repeated measurement."""
+    """Supported repeated-measurement states and their compatibility labels.
+
+    ``RANDOM_INTERCEPT_SLOPE`` is retained as a wire-compatible input label,
+    while the current implementation reports its estimand as an independent
+    respondent OLS trend rather than a population random-effects fit.
+    """
 
     RANDOM_INTERCEPT_SLOPE = "random_intercept_slope"
     STATIONARY_AUTOREGRESSIVE = "stationary_autoregressive"
