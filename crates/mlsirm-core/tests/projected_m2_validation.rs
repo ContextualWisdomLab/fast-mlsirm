@@ -1,4 +1,4 @@
-//! Fail-first validation contracts for the public projected-M2 Rust boundary.
+//! Validation contracts for the public projected-M2 Rust boundary.
 
 use mlsirm_core::fitstats::projected_m2;
 
@@ -42,4 +42,24 @@ fn projected_m2_rejects_short_covariance_without_panicking() {
     );
 
     assert!(result.is_err(), "short covariance must return Err");
+}
+
+#[test]
+fn projected_m2_rejects_dimension_overflow_without_allocating() {
+    let result = projected_m2(&[], &[], Vec::new(), usize::MAX, 2, 1.0);
+
+    assert!(
+        matches!(result, Err(message) if message.contains("overflow")),
+        "overflowing dimensions must fail before indexing or allocation"
+    );
+}
+
+#[test]
+fn projected_m2_rejects_nonfinite_sample_size_before_arithmetic() {
+    let result = projected_m2(&[0.25], &[1.0], vec![1.0], 1, 1, f64::INFINITY);
+
+    assert!(
+        matches!(result, Err(message) if message.contains("n must be finite")),
+        "non-finite n must fail before numerical execution"
+    );
 }
