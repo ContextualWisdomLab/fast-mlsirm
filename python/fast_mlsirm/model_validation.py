@@ -74,8 +74,8 @@ def validate_group_partition(
     within one fold, but the same group cannot appear in two folds. A usable
     holdout/bootstrap partition must contain at least two scientific groups and
     at least two folds; otherwise no out-of-group validation contrast exists.
-    Scalar strings are rejected rather than being misread as sequences of
-    one-character identities. The function validates identities only; it
+    Scalar strings and blank identities are rejected rather than being treated
+    as usable grouping metadata. The function validates identities only; it
     performs no scoring, estimation, resampling, or model-selection arithmetic.
 
     Args:
@@ -95,9 +95,15 @@ def validate_group_partition(
         raise ValueError("group_ids and fold_ids must have equal length")
     if len(group_ids) == 0:
         raise ValueError("group_ids must not be empty")
-    if any(not isinstance(group_id, str) or not group_id for group_id in group_ids):
+    if any(
+        not isinstance(group_id, str) or not group_id.strip()
+        for group_id in group_ids
+    ):
         raise ValueError("group_ids entries must be non-empty strings")
-    if any(not isinstance(fold_id, str) or not fold_id for fold_id in fold_ids):
+    if any(
+        not isinstance(fold_id, str) or not fold_id.strip()
+        for fold_id in fold_ids
+    ):
         raise ValueError("fold_ids entries must be non-empty strings")
     if len(set(group_ids)) < 2:
         raise ValueError(
