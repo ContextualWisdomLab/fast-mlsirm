@@ -15,16 +15,20 @@ CORE_MODULE = "fast_mlsirm._core"
 
 
 def normalize_backend(name: str) -> str:
-    """Lower-case and validate a backend name against ``{numpy, rust, auto}``."""
-    backend = str(name).strip().lower()
+    """Lower-case and validate an exact built-in backend control string."""
+    if type(name) is not str:
+        raise ValueError("backend must be an exact built-in string")
+    backend = name.strip().lower()
     if backend not in VALID_BACKENDS:
         raise ValueError(f"backend must be one of {sorted(VALID_BACKENDS)}")
     return backend
 
 
 def normalize_device(name: str) -> str:
-    """Lower-case and validate a Rust-backend device against ``{cpu, gpu, auto}``."""
-    device = str(name).strip().lower()
+    """Lower-case and validate an exact built-in Rust-device control string."""
+    if type(name) is not str:
+        raise ValueError("rust_device must be an exact built-in string")
+    device = name.strip().lower()
     if device not in VALID_DEVICES:
         raise ValueError(f"rust_device must be one of {sorted(VALID_DEVICES)}")
     return device
