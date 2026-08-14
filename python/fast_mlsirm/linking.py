@@ -49,12 +49,14 @@ def _require_irt_link_quadrature_size(value, *, name: str = "q_theta") -> int:
 
     Plain Python integers and genuine NumPy integer scalar classes retain the
     established public contract. Integer subclasses are rejected before
-    ``int()`` so caller-defined ``__int__`` or representation hooks cannot run.
-    Range/support validation remains owned by the established quadrature helper.
+    ``int()`` so caller-defined ``__int__``, type hashing, equality, or
+    representation hooks cannot run. Range/support validation remains owned by
+    the established quadrature helper.
     """
-    if type(value) is int:
+    value_type = type(value)
+    if value_type is int:
         return value
-    if type(value) in _NUMPY_INTEGER_SCALAR_TYPES:
+    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return int(value)
     raise ValueError(f"{name} must be an integer quadrature size")
 
