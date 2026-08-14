@@ -16,6 +16,17 @@ Some `fast-mlsirm` features and validation studies may use LLMs for item generat
 - Treat all model output as untrusted; schema/provenance/semantic validation remains inside the calling workflow.
 - Deterministic tests/gates that do not require a model call shall remain executable without model credentials.
 
+### Cross-repository judge contract
+
+The versioned boundary is also a public package contract: fast-mlsirm exports
+`CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1` from both `fast_mlsirm.llm_judge` and the
+package root with the value `contextual-orchestrator-contract-v1`. The
+contextual-orchestrator same-interpreter preflight is authoritative for live
+judge readiness; a working injected judge with a missing public contract symbol
+is an integration failure, not an available integration. A regression test must
+cover the package-root export before a live MLX judge result is treated as
+cross-repository evidence.
+
 ### Credentials
 
 - Model-backed GitHub tests/agents use the existing GitHub Secret `NVIDIA_NIM_API_KEY` when the model call requires NVIDIA NIM.

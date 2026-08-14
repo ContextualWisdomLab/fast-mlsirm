@@ -31,6 +31,7 @@ from .rotation import (
     rotation_criterion_value_gradient as rotation_criterion_value_gradient,
 )
 from .llm_judge import (
+    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 as CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     ContextualOrchestratorJudge as ContextualOrchestratorJudge,
     JudgeCriterion as JudgeCriterion,
     JudgeFormatError as JudgeFormatError,
@@ -65,6 +66,7 @@ except _PackageNotFoundError:
     __version__ = "0+unknown"
 
 __all__ = list(_legacy_init.__all__) + [
+    "CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1",
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",

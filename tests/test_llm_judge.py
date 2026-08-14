@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 
 import pytest
+from fast_mlsirm import CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
     ContextualOrchestratorJudge,
@@ -40,6 +41,10 @@ CRITERIA = [
     JudgeCriterion("task_alignment", "The answer directly addresses the task."),
     JudgeCriterion("factual_support", "The answer avoids unsupported claims."),
 ]
+
+
+def test_contextual_orchestrator_contract_is_public_and_versioned() -> None:
+    assert CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 == "contextual-orchestrator-contract-v1"
 
 
 def _payload(score=0.8, accepted=True):
