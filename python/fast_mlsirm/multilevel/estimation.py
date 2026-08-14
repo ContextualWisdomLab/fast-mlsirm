@@ -17,7 +17,7 @@ from collections.abc import Mapping
 import numpy as np
 
 from .._multilevel_core_loader import multilevel_core
-from .contracts import ContextMembershipDesign
+from .contracts import ContextMembershipDesign, LongitudinalDesign, LongitudinalStateKind
 
 ContextKey = tuple[str, str]
 
@@ -103,4 +103,80 @@ def weighted_contextual_effect(
     )
 
 
-__all__ = ["ContextKey", "weighted_contextual_effect"]
+def fit_longitudinal_state(
+    design: LongitudinalDesign,
+    values: Mapping[str, float],
+    *,
+    worker_count: int = 1,
+) -> dict[str, object]:
+    """Fit the Rust-owned respondent state model for a sealed design.
+
+    ``values`` maps exact occasion identifiers to observed factor scores. A
+    missing identifier is represented as ``NaN`` so the design remains intact
+    while the Rust fitter excludes that observation from estimation. The
+    returned state is aligned with ``design.occasions`` sorted by respondent
+    and sequence, and includes package-independent diagnostics suitable for a
+    persisted analysis artifact.
+    """
+    if worker_count < 1:
+        raise ValueError("worker_count must be at least one")
+    if type(design) is not LongitudinalDesign:
+        raise ValueError("design must be an exact LongitudinalDesign")
+    _ = design.design_fingerprint
+    occasions = list(design.occasions)
+    row_offsets = [0]
+    sequence_indices: list[int] = []
+    time_offsets: list[int] = []
+    observations: list[float] = []
+    for respondent_id in design.respondent_ids:
+        respondent_occasions = [
+            occasion
+            for occasion in occasions
+            if occasion.respondent_id == respondent_id
+        ]
+        for occasion in respondent_occasions:
+            sequence_indices.append(occasion.sequence_index)
+            time_offsets.append(occasion.time_offset_milliseconds)
+            observations.append(float(values.get(occasion.occasion_id, np.nan)))
+        row_offsets.append(len(time_offsets))
+    state_kind = design.state_spec.state_kind
+    ar_coefficient = design.state_spec.autoregressive_coefficient
+    if state_kind is LongitudinalStateKind.RANDOM_INTERCEPT_SLOPE:
+        ar_coefficient = None
+    core = multilevel_core()
+    result = core.fit_longitudinal_state(
+        np.asarray(row_offsets, dtype=np.uint64),
+        np.asarray(sequence_indices, dtype=np.uint64),
+        np.asarray(time_offsets, dtype=np.int64),
+        np.asarray(observations, dtype=np.float64),
+        state_kind.value,
+        ar_coefficient,
+        worker_count,
+    )
+    return {
+        "state_kind": state_kind.value,
+        "state_spec_fingerprint": design.state_spec.state_spec_fingerprint,
+        "design_fingerprint": design.design_fingerprint,
+        "state": np.asarray(result["state"], dtype=np.float64),
+        "intercepts": np.asarray(result["intercepts"], dtype=np.float64),
+        "slopes": np.asarray(result["slopes"], dtype=np.float64),
+        "ar_coefficient": float(result["ar_coefficient"]),
+        "rmse": float(result["rmse"]),
+        "observed_count": int(result["observed_count"]),
+        "transition_count": int(result["transition_count"]),
+        "engine": str(result["engine"]),
+        "respondent_ids": list(design.respondent_ids),
+        "occasion_ids": [occasion.occasion_id for occasion in occasions],
+        "occasion_records": [
+            {
+                "occasion_id": occasion.occasion_id,
+                "respondent_id": occasion.respondent_id,
+                "sequence_index": occasion.sequence_index,
+                "time_offset_milliseconds": occasion.time_offset_milliseconds,
+            }
+            for occasion in occasions
+        ],
+    }
+
+
+__all__ = ["ContextKey", "fit_longitudinal_state", "weighted_contextual_effect"]

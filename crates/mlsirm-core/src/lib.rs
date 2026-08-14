@@ -25,6 +25,7 @@ pub mod mixture;
 pub mod mmle;
 pub mod mokken;
 pub mod multilevel;
+pub mod longitudinal;
 pub mod nodes;
 pub mod nominal;
 pub mod oakes;

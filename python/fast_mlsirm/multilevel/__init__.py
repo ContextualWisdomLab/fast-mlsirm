@@ -14,7 +14,7 @@ from .contracts import (
     build_longitudinal_state_spec,
     build_temporal_occasion,
 )
-from .estimation import weighted_contextual_effect
+from .estimation import fit_longitudinal_state, weighted_contextual_effect
 
 __all__ = [
     "ContextMembership",
@@ -29,5 +29,6 @@ __all__ = [
     "build_longitudinal_design",
     "build_longitudinal_state_spec",
     "build_temporal_occasion",
+    "fit_longitudinal_state",
     "weighted_contextual_effect",
 ]

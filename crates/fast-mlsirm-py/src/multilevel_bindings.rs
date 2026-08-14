@@ -6,10 +6,12 @@
 //! counts, and its input validation are owned by
 //! `mlsirm_core::multilevel::weighted_contextual_effect`.
 
+use mlsirm_core::longitudinal::fit_longitudinal_state as core_fit_longitudinal_state;
 use mlsirm_core::multilevel::weighted_contextual_effect as core_weighted_contextual_effect;
 use numpy::{PyArray1, PyReadonlyArray1, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3::types::PyModule;
 use pyo3::wrap_pyfunction;
 
@@ -87,9 +89,46 @@ fn py_weighted_contextual_effect<'py>(
     Ok(result.to_pyarray(py))
 }
 
+/// Fit the Rust-owned repeated-measurement state layer.
+#[pyfunction(name = "fit_longitudinal_state")]
+fn py_fit_longitudinal_state<'py>(
+    py: Python<'py>,
+    row_offsets: PyReadonlyArray1<'_, u64>,
+    sequence_indices: PyReadonlyArray1<'_, u64>,
+    time_offsets_milliseconds: PyReadonlyArray1<'_, i64>,
+    values: PyReadonlyArray1<'_, f64>,
+    state_kind: &str,
+    ar_coefficient: Option<f64>,
+    worker_count: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
+    let sequence_indices = checked_usize_values(sequence_indices.as_slice()?, "sequence_indices")?;
+    let fit = core_fit_longitudinal_state(
+        &row_offsets,
+        &sequence_indices,
+        time_offsets_milliseconds.as_slice()?,
+        values.as_slice()?,
+        state_kind,
+        ar_coefficient,
+        worker_count,
+    )
+    .map_err(PyValueError::new_err)?;
+    let result = PyDict::new(py);
+    result.set_item("state", fit.state.to_pyarray(py))?;
+    result.set_item("intercepts", fit.intercepts.to_pyarray(py))?;
+    result.set_item("slopes", fit.slopes.to_pyarray(py))?;
+    result.set_item("ar_coefficient", fit.ar_coefficient)?;
+    result.set_item("rmse", fit.rmse)?;
+    result.set_item("observed_count", fit.observed_count)?;
+    result.set_item("transition_count", fit.transition_count)?;
+    result.set_item("engine", "rust_cpu_multithreaded")?;
+    Ok(result)
+}
+
 #[pymodule]
 #[pyo3(name = "_multilevel_core")]
 fn fast_mlsirm_multilevel_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_weighted_contextual_effect, m)?)?;
+    m.add_function(wrap_pyfunction!(py_fit_longitudinal_state, m)?)?;
     Ok(())
 }

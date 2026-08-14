@@ -2,9 +2,11 @@
 
 ## Status
 
-This RFC defines the provider-neutral contract boundary delivered by issue #565.
-It does not yet add a numerical estimator. All future psychometric arithmetic
-remains a Rust-core responsibility.
+This RFC defines the provider-neutral contract boundary delivered by issue #565
+and the first Rust-owned repeated-measurement state layer. The state layer is a
+small, identified handoff for respondent intercept/slope and discrete-step AR(1)
+states; it is not a claim that the full multilevel IRT likelihood, Bayesian
+random-effect estimation, uncertainty, or GPU state recurrence is complete.
 
 ## Product outcome
 
@@ -69,8 +71,9 @@ and weight. Reusing it for another assignment fails closed. Duplicate cells are
 scoped by `(observation_id, context_dimension_id, context_id)`.
 
 The design exposes deterministic dimension IDs, dimension-scoped context keys,
-and per-observation/per-dimension counts and exact weights. These are audit and
-future Rust-marshalling contracts, not variance-component estimates.
+and per-observation/per-dimension counts and exact weights. The Rust predictor
+evaluates the weighted contextual term, but estimating contextual random effects
+and their uncertainty remains a separate release boundary.
 
 ## Temporal contract
 
@@ -116,16 +119,18 @@ use `NVIDIA_NIM_API_KEY` rather than `COPILOT_GITHUB_TOKEN`.
 ## Numerical boundary
 
 Python performs validation, canonicalization, hashing, sparse design marshalling,
-and serialization. Future Rust PRs own:
+and serialization. Rust owns:
 
-- multilevel and cross-classified predictors;
-- random-effect integration;
-- multiple-membership weighting;
-- longitudinal state transitions;
-- likelihood and gradients;
-- optimization and uncertainty;
-- CPU multithreading and justified GPU batching;
-- true-parameter recovery.
+- the multilevel and cross-classified weighted predictor;
+- respondent-level random-intercept/slope OLS state estimates;
+- discrete-step stationary AR(1) state prediction;
+- deterministic CPU respondent sharding and diagnostics for those state paths.
+
+The following remain explicit future boundaries: full multilevel IRT random-effect
+integration and estimation, uncertainty/intervals, joint item/context/state
+likelihood and gradients, GPU batching for the recurrent state path, continuous
+time transitions, and true-parameter recovery for the full joint model. A Python
+fallback estimator is explicitly out of scope.
 
 A Python fallback estimator is explicitly out of scope.
 

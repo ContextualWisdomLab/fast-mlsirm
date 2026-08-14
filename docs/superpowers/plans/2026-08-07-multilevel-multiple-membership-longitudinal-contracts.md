@@ -2,9 +2,9 @@
 
 > **Execution:** Use Superpowers test-driven development and verification-before-completion. Keep the pull request Draft until all contracts, release records, and exact-head gates are GREEN.
 
-**Goal:** Add reusable, immutable contracts for nested, cross-classified, weighted multiple-membership, and longitudinal measurement without implementing psychometric arithmetic outside Rust.
+**Goal:** Add reusable, immutable contracts for nested, cross-classified, weighted multiple-membership, and longitudinal measurement; keep any numerical psychometric arithmetic in Rust.
 
-**Architecture:** `fast_mlsirm.multilevel` owns bounded validation, child replay, canonical serialization, content identity, and sparse design marshalling. Future Rust PRs own likelihood, integration, optimization, uncertainty, multithreading/GPU, and true-parameter recovery.
+**Architecture:** `fast_mlsirm.multilevel` owns bounded validation, child replay, canonical serialization, content identity, and sparse design marshalling. The follow-on Rust state layer owns respondent intercept/slope and discrete-step AR state arithmetic; full likelihood, integration, optimization, uncertainty, GPU recurrent-state parity, and true-parameter recovery remain separately gated.
 
 ## Global constraints
 
@@ -136,4 +136,11 @@ Fix genuine contract/coverage failures only. Do not restore an inferred/default 
 
 ## Deferred estimator boundary
 
-No recovery simulation specification or placeholder estimator is needed in this contract PR. The next Rust estimator PR must begin with objective/gradient parity, identification failures, and scale-aligned true-parameter recovery for nested, crossed, weighted multiple-membership, multiple-classification, balanced/unbalanced longitudinal, missing-data, and discrete-step AR conditions. A later PR must define continuous-time/interval-adjusted transitions explicitly before elapsed gaps enter the likelihood.
+The state-layer PR supplies a narrow estimator for respondent-level growth and
+discrete-step AR predictions, with recovery fixtures and deterministic worker
+checks. It does not replace the next joint estimator PR, which must begin with
+objective/gradient parity, identification failures, and scale-aligned
+true-parameter recovery for nested, crossed, weighted multiple-membership,
+multiple-classification, balanced/unbalanced longitudinal, missing-data, and
+discrete-step AR conditions. A later PR must define continuous-time/interval-
+adjusted transitions explicitly before elapsed gaps enter a likelihood.
