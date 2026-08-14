@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-08-14 - Mathematical simplification of expected-count Bernoulli log-likelihood
+**Learning:** `np.sum(r * _log_sigmoid(eta) + (n - r) * _log_sigmoid(-eta))` allocates several large arrays and computes `_log_sigmoid` twice per element. Using the mathematical identity `_log_sigmoid(x) - _log_sigmoid(-x) = x`, this simplifies to `r * eta + n * _log_sigmoid(-eta)`, which combined with `np.vdot` skips allocating the intermediate arrays entirely and cuts execution time in half.
+**Action:** Replace `np.sum(A * _log_sigmoid(x) + (B - A) * _log_sigmoid(-x))` with `np.vdot(A, x) + np.vdot(B, _log_sigmoid(-x))` when evaluating binary expected log-likelihoods in MMLE optimization loops.

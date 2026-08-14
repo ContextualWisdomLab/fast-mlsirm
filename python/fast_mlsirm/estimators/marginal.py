@@ -671,7 +671,9 @@ def _item_q(
     for item ``i`` and subtracts the MAP ridge penalties on its active
     parameters. This is the per-item M-step objective the ascent maximizes.
     """
-    q = float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))
+    # Optimized: r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)
+    # mathematically simplifies to r_i * eta + n_i * _log_sigmoid(-eta)
+    q = float(np.vdot(r_i, eta) + np.vdot(n_i, _log_sigmoid(-eta)))
     q -= 0.5 * pen["lambda_b"] * b_i * b_i
     if free_alpha:
         da = alpha_i - pen["mu_alpha"]
@@ -1041,7 +1043,7 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        dist = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -1115,8 +1117,9 @@ def fit_marginal_numpy(
                         + off_all
                         - np.exp(tau_c) * dist[None, :, None, :]
                     )
+                    # Optimized: mathematically simplifies, avoids temporary allocation
                     qv = float(
-                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
+                        np.vdot(rbar, e) + np.vdot(n_all, _log_sigmoid(-e))
                     )
                     qv -= 0.5 * pen["lambda_b"] * float(b @ b)
                     if free_alpha:
@@ -1177,8 +1180,9 @@ def fit_marginal_numpy(
                 def q_of_delta(delta_c: float) -> float:
                     """Expected-count objective as a function of covariate slope ``delta_c``."""
                     e = eta_delta(delta_c)
+                    # Optimized: mathematically simplifies, avoids temporary allocation
                     return float(
-                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
+                        np.vdot(rbar, e) + np.vdot(n_all, _log_sigmoid(-e))
                     )
 
                 cur = q_of_delta(delta)
