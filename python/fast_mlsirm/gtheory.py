@@ -28,17 +28,42 @@ _REFERENCES = """References (APA 7th ed.):
             A primer*. Sage. (As cited in Huebner & Lucht, 2019; not read.)
     """
 
+_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
+    {
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.intp,
+        np.longlong,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.uintp,
+        np.ulonglong,
+    }
+)
+_NUMPY_FLOAT_SCALAR_TYPES = frozenset(
+    {
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
 
-def _trusted_numpy_scalar(value: object, scalar_type: type[np.generic]) -> bool:
-    """Return whether ``value`` is a package-trusted NumPy scalar family.
 
-    Validation must not execute arbitrary caller conversion hooks. Restricting
-    NumPy acceptance to scalar classes defined by NumPy keeps later ``int`` or
-    ``float`` conversion inside a known implementation instead of accepting an
-    unrelated user subclass that only imitates the numeric protocol.
-    """
+def _trusted_numpy_integer(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy integer type."""
 
-    return isinstance(value, scalar_type) and type(value).__module__.startswith("numpy")
+    return type(value) in _NUMPY_INTEGER_SCALAR_TYPES
+
+
+def _trusted_numpy_float(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy float type."""
+
+    return type(value) in _NUMPY_FLOAT_SCALAR_TYPES
 
 
 def _positive_integer_control(value: object, message: str) -> int:
@@ -48,7 +73,7 @@ def _positive_integer_control(value: object, message: str) -> int:
         raise ValueError(message)
     if type(value) is int:
         parsed = value
-    elif _trusted_numpy_scalar(value, np.integer):
+    elif _trusted_numpy_integer(value):
         parsed = int(value)
     else:
         raise ValueError(message)
@@ -64,9 +89,7 @@ def _finite_real_control(value: object, message: str) -> float:
         raise ValueError(message)
     if type(value) in (int, float):
         parsed = float(value)
-    elif _trusted_numpy_scalar(value, np.integer) or _trusted_numpy_scalar(
-        value, np.floating
-    ):
+    elif _trusted_numpy_integer(value) or _trusted_numpy_float(value):
         parsed = float(value)
     else:
         raise ValueError(message)
