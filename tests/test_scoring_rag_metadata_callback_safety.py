@@ -67,7 +67,7 @@ class _IterationTrap(Mapping[str, Any]):
         return False
 
 
-def _request(metadata: Mapping[str, Any]) -> ScoringRequest:
+def _request(metadata: Mapping[str, Any] | None) -> ScoringRequest:
     """Build one deterministic request around caller-controlled metadata."""
     return build_rag_scoring_request(
         request_id="rag_callback_request",
@@ -106,3 +106,22 @@ def test_rag_metadata_iteration_failure_is_package_owned_and_non_reflective() ->
 
     assert caught.value.code == "invalid_rag_metadata"
     assert _SECRET not in str(caught.value)
+
+
+def test_rag_metadata_preserves_nested_preflight_errors() -> None:
+    """Non-callback metadata violations retain their specific package error codes."""
+    cyclic_value: list[Any] = []
+    cyclic_value.append(cyclic_value)
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request({"evaluation_split": cyclic_value})
+
+    assert caught.value.code == "cyclic_metadata_reference"
+
+
+def test_rag_metadata_none_preserves_the_empty_caller_contract() -> None:
+    """The callback-safe preflight retains the established optional metadata path."""
+    payload = _request(None).to_dict()["metadata"]
+
+    assert "evaluation_split" not in payload
+    assert payload["rag_evidence_regime"] == "retrieved_context"
