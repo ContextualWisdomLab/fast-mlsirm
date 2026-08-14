@@ -108,9 +108,50 @@ def validate_group_partition(
         group_fold[group_id] = fold_id
 
 
+def validate_temporal_forward_window(
+    *,
+    training_periods: Sequence[int],
+    validation_periods: Sequence[int],
+) -> None:
+    """Reject temporal validation windows with look-ahead or period overlap.
+
+    Periods are caller-defined integer ordinals. The contract deliberately does
+    not infer calendar semantics: it only requires every training period to
+    strictly precede every validation period. This keeps chronology validation
+    deterministic and separate from scoring, estimation, or model-selection
+    arithmetic.
+
+    Args:
+        training_periods: Integer period ordinals used for fitting.
+        validation_periods: Integer period ordinals used for validation.
+
+    Raises:
+        TypeError: If either period vector is supplied as a scalar string.
+        ValueError: If vectors are empty, contain non-integers, or overlap in
+            temporal order.
+    """
+    if isinstance(training_periods, (str, bytes)) or isinstance(
+        validation_periods, (str, bytes)
+    ):
+        raise TypeError(
+            "training_periods and validation_periods must be integer sequences"
+        )
+    if len(training_periods) == 0:
+        raise ValueError("training_periods must not be empty")
+    if len(validation_periods) == 0:
+        raise ValueError("validation_periods must not be empty")
+    if any(type(period) is not int for period in training_periods):
+        raise ValueError("training_periods entries must be integers")
+    if any(type(period) is not int for period in validation_periods):
+        raise ValueError("validation_periods entries must be integers")
+    if max(training_periods) >= min(validation_periods):
+        raise ValueError("training periods must strictly precede validation periods")
+
+
 __all__ = [
     "GeneralizationUnit",
     "ModelValidationPlan",
     "ValidationStrategy",
     "validate_group_partition",
+    "validate_temporal_forward_window",
 ]
