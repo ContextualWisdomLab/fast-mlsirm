@@ -126,3 +126,19 @@ def test_projected_m2_native_rejects_nonfinite_inputs(target):
 
     with pytest.raises(ValueError, match="finite"):
         core.projected_m2(residual, delta, xi, n)
+
+
+def test_projected_m2_native_rejects_oversized_broadcast_before_copy():
+    """Logical broadcast shapes must hit the resource guard before materialization."""
+    core = fitstats._core_module()
+    if core is None:
+        pytest.skip("compiled Rust core is unavailable in this test environment")
+
+    size = 2049
+    residual = np.zeros(size, dtype=np.float64)
+    delta = np.broadcast_to(np.array([[1.0]], dtype=np.float64), (size, 1))
+    xi = np.broadcast_to(np.array([[1.0]], dtype=np.float64), (size, size))
+
+    assert not xi.flags.owndata
+    with pytest.raises(ValueError, match="workspace.*supported element budget"):
+        core.projected_m2(residual, delta, xi, 1.0)
