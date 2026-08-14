@@ -27,6 +27,16 @@ is an integration failure, not an available integration. A regression test must
 cover the package-root export before a live MLX judge result is treated as
 cross-repository evidence.
 
+The two repositories remain separately installable and do not acquire a reverse
+source dependency. That boundary is easy to misconfigure: isolated project
+virtual environments cannot import the other checkout. A live source checkout
+therefore MUST use one interpreter with both packages installed (prefer editable
+installs), or explicitly expose both source roots with `PYTHONPATH`, and MUST
+run `python -m contextual_orchestrator check-fast-mlsirm` with that interpreter
+before judging. A missing cross-import is a fail-closed integration error; it
+must not be hidden by a second interpreter, keyword/positional repair, or direct
+provider fallback.
+
 ### Failure-evidence boundary
 
 Failed binary-threshold calls may expose bounded operational evidence, but they
