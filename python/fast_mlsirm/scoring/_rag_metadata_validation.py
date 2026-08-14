@@ -25,50 +25,59 @@ def _rag_metadata_keys(value: Mapping[Any, Any]) -> tuple[str, ...]:
 
     output: list[str] = []
     seen: set[str] = set()
-    try:
-        for index, raw_key in enumerate(iterator):
-            try:
-                validated_key = _metadata_key(
-                    raw_key,
-                    f"$.metadata.keys[{index}]",
-                )
-            except AssessmentSpecError as exc:
-                if exc.code == "sensitive_metadata_field":
-                    raise assessment_error(
-                        "unsupported_rag_metadata",
-                        "$.metadata",
-                        "metadata key is not allowed for RAG scoring requests",
-                    ) from None
-                raise
-            key = str.__str__(validated_key)
-            if key in seen:
-                raise assessment_error(
-                    "duplicate_metadata_key",
-                    f"$.metadata.keys[{index}]",
-                    "metadata keys must be unique",
-                )
-            seen.add(key)
-            if key in _base._MANAGED_METADATA_KEYS:
-                raise assessment_error(
-                    "reserved_rag_metadata",
-                    "$.metadata",
-                    "RAG provenance metadata is package-managed",
-                )
-            if key not in _base._ALLOWED_CALLER_METADATA_KEYS:
+    index = 0
+    while True:
+        try:
+            raw_key = next(iterator)
+        except StopIteration:
+            break
+        except Exception:
+            raise assessment_error(
+                "invalid_rag_metadata",
+                "$.metadata",
+                "metadata keys could not be materialized safely",
+            ) from None
+        try:
+            validated_key = _metadata_key(
+                raw_key,
+                f"$.metadata.keys[{index}]",
+            )
+        except AssessmentSpecError as exc:
+            if exc.code == "sensitive_metadata_field":
                 raise assessment_error(
                     "unsupported_rag_metadata",
                     "$.metadata",
                     "metadata key is not allowed for RAG scoring requests",
-                )
-            output.append(key)
-    except AssessmentSpecError:
-        raise
-    except Exception:
-        raise assessment_error(
-            "invalid_rag_metadata",
-            "$.metadata",
-            "metadata keys could not be materialized safely",
-        ) from None
+                ) from None
+            raise
+        except Exception:
+            raise assessment_error(
+                "invalid_rag_metadata",
+                "$.metadata",
+                "metadata key could not be inspected safely",
+            ) from None
+        key = str.__str__(validated_key)
+        if key in seen:
+            raise assessment_error(
+                "duplicate_metadata_key",
+                f"$.metadata.keys[{index}]",
+                "metadata keys must be unique",
+            )
+        seen.add(key)
+        if key in _base._MANAGED_METADATA_KEYS:
+            raise assessment_error(
+                "reserved_rag_metadata",
+                "$.metadata",
+                "RAG provenance metadata is package-managed",
+            )
+        if key not in _base._ALLOWED_CALLER_METADATA_KEYS:
+            raise assessment_error(
+                "unsupported_rag_metadata",
+                "$.metadata",
+                "metadata key is not allowed for RAG scoring requests",
+            )
+        output.append(key)
+        index += 1
     return tuple(output)
 
 
@@ -81,8 +90,6 @@ def _authorized_metadata_values(
     for key in keys:
         try:
             output[key] = value[key]
-        except AssessmentSpecError:
-            raise
         except Exception:
             raise assessment_error(
                 "invalid_rag_metadata",
