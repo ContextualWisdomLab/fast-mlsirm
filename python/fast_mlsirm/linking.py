@@ -5,6 +5,29 @@ import numpy as np
 from .types import MLSIRMParams
 
 
+_IRT_LINK_METHOD_ALIASES = frozenset(
+    {"meanmean", "mm", "meansigma", "ms", "haebara", "hb", "stockinglord", "sl"}
+)
+
+
+def _require_irt_link_method(method, *, name: str = "method") -> str:
+    """Return a trusted IRT-link method without caller-controlled callbacks.
+
+    The Rust parser accepts case-insensitive method names and ignores ``-`` and
+    ``_`` separators. Accept only exact built-in strings before applying that
+    normalization so hostile string subclasses or arbitrary objects cannot run
+    representation or normalization hooks at the Python-to-Rust boundary.
+    """
+    if type(method) is not str:
+        raise ValueError(f"{name} must be a str method identity")
+    normalized = method.lower().replace("-", "").replace("_", "")
+    if normalized not in _IRT_LINK_METHOD_ALIASES:
+        raise ValueError(
+            f"{name} must be one of mean_mean, mean_sigma, haebara, or stocking_lord"
+        )
+    return method
+
+
 def link_fixed_item_parameters(
     source: MLSIRMParams,
     target: MLSIRMParams,
@@ -149,6 +172,8 @@ def irt_link(
     response theory. *Applied Psychological Measurement, 7*(2), 201–210.
     https://doi.org/10.1177/014662168300700208
     """
+    method = _require_irt_link_method(method)
+
     from .fitstats import _core_module
     from .estimators.marginal import _gh
 
@@ -176,12 +201,12 @@ def irt_link(
         bn,
         np.asarray(nodes, dtype=np.float64),
         np.asarray(weights, dtype=np.float64),
-        method=str(method),
+        method=method,
     )
     return IrtLinkResult(
         slope=float(res["slope"]), intercept=float(res["intercept"]),
         criterion=float(res["criterion"]), n_iter=int(res["n_iter"]),
-        method=str(method),
+        method=method,
         converged=bool(res["converged"]),
         termination_reason=str(res["termination_reason"]),
         max_iter=int(res["max_iter"]),
