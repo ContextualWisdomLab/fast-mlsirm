@@ -1,4 +1,4 @@
-//! Regression coverage for finite contextual-effect inputs.
+//! Regression coverage for finite contextual-effect inputs and outputs.
 
 use mlsirm_core::multilevel::weighted_contextual_effect;
 
@@ -10,4 +10,18 @@ fn rejects_non_finite_context_effects_before_weighted_sum() {
 
         assert_eq!(error, "effects must be finite");
     }
+}
+
+#[test]
+fn rejects_overflowing_weighted_contextual_output() {
+    let error = weighted_contextual_effect(
+        &[0, 2],
+        &[0, 1],
+        &[1.0, 1.0],
+        &[f64::MAX, f64::MAX],
+        1,
+    )
+    .expect_err("finite inputs that overflow the weighted sum must fail closed");
+
+    assert_eq!(error, "weighted contextual effects must be finite");
 }
