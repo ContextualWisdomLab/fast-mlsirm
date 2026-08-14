@@ -7,6 +7,7 @@ from fast_mlsirm.model_validation import (
     ModelValidationPlan,
     ValidationStrategy,
     validate_group_partition,
+    validate_temporal_forward_window,
 )
 
 
@@ -104,3 +105,54 @@ def test_group_partition_is_order_invariant() -> None:
         group_ids=tuple(groups[index] for index in order),
         fold_ids=tuple(folds[index] for index in order),
     )
+
+
+def test_temporal_forward_window_requires_strictly_future_validation_periods() -> None:
+    validate_temporal_forward_window(
+        training_periods=(202601, 202602, 202603),
+        validation_periods=(202604, 202605),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="training periods must strictly precede validation periods",
+    ):
+        validate_temporal_forward_window(
+            training_periods=(202601, 202604),
+            validation_periods=(202604, 202605),
+        )
+
+
+def test_temporal_forward_window_rejects_malformed_period_vectors() -> None:
+    with pytest.raises(ValueError, match="training_periods must not be empty"):
+        validate_temporal_forward_window(
+            training_periods=(),
+            validation_periods=(202604,),
+        )
+
+    with pytest.raises(ValueError, match="validation_periods must not be empty"):
+        validate_temporal_forward_window(
+            training_periods=(202603,),
+            validation_periods=(),
+        )
+
+    with pytest.raises(ValueError, match="training_periods entries must be integers"):
+        validate_temporal_forward_window(
+            training_periods=(True,),
+            validation_periods=(202604,),
+        )
+
+    with pytest.raises(ValueError, match="validation_periods entries must be integers"):
+        validate_temporal_forward_window(
+            training_periods=(202603,),
+            validation_periods=(202604.0,),  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="training_periods and validation_periods must be integer sequences",
+    ):
+        validate_temporal_forward_window(
+            training_periods="202603",  # type: ignore[arg-type]
+            validation_periods=(202604,),
+        )
