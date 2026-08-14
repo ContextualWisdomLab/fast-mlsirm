@@ -3,13 +3,22 @@
 //! Python wrappers must marshal only; inversion/pseudoinverse and SE extraction
 //! stay on the Rust numeric path so inference contracts stay single-sourced.
 
+fn checked_square_len(n: usize, matrix_name: &str) -> Result<usize, String> {
+    n.checked_mul(n)
+        .ok_or_else(|| format!("{matrix_name} dimension exceeds supported size"))
+}
+
 /// Invert a square observed-information / Hessian matrix.
 ///
 /// Attempts a partial-pivot Gauss–Jordan inverse; on singularity falls back to
 /// a Moore–Penrose pseudoinverse via Jacobi eigen-decomposition with eigenvalue
 /// cutoff `rcond * max(|λ|)`. The returned matrix is symmetrised.
 pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f64>, String> {
-    if n == 0 || hessian.len() != n * n {
+    if n == 0 {
+        return Err("hessian must be a square matrix".into());
+    }
+    let expected_len = checked_square_len(n, "hessian")?;
+    if hessian.len() != expected_len {
         return Err("hessian must be a square matrix".into());
     }
     if !rcond.is_finite() || rcond < 0.0 {
@@ -50,9 +59,7 @@ pub fn second_order_test(
     if n == 0 {
         return Err("hessian must be a square matrix".into());
     }
-    let expected_len = n
-        .checked_mul(n)
-        .ok_or_else(|| "hessian dimension exceeds supported size".to_string())?;
+    let expected_len = checked_square_len(n, "hessian")?;
     if hessian.len() != expected_len {
         return Err("hessian must be a square matrix".into());
     }
@@ -100,6 +107,7 @@ pub fn finite_difference_hessian(
     if n == 0 {
         return Err("hessian dimension must be positive".into());
     }
+    let matrix_len = checked_square_len(n, "hessian")?;
     if !step.is_finite() || step <= 0.0 {
         return Err("step must be > 0 and finite".into());
     }
@@ -122,7 +130,7 @@ pub fn finite_difference_hessian(
         }
     }
     let h2 = step * step;
-    let mut hessian = vec![0.0_f64; n * n];
+    let mut hessian = vec![0.0_f64; matrix_len];
     for i in 0..n {
         hessian[i * n + i] = (diag_plus[i] - 2.0 * base + diag_minus[i]) / h2;
     }
@@ -153,7 +161,11 @@ pub fn finite_difference_hessian(
 /// diagonals (`NaN`, `±∞`) are preserved so undefined or unbounded uncertainty
 /// is never misrepresented as zero.
 pub fn standard_errors_from_vcov(vcov: &[f64], n: usize) -> Result<Vec<f64>, String> {
-    if n == 0 || vcov.len() != n * n {
+    if n == 0 {
+        return Err("vcov must be a square matrix".into());
+    }
+    let expected_len = checked_square_len(n, "vcov")?;
+    if vcov.len() != expected_len {
         return Err("vcov must be a square matrix".into());
     }
     let mut out = vec![0.0_f64; n];
