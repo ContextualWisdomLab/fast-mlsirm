@@ -1,0 +1,279 @@
+name: Repair PR 842 suspension concern identity
+
+on:
+  push:
+    branches:
+      - test/item-bank-suspension-concerns-609
+    paths:
+      - .github/workflows/repair-pr-842-suspension-concern.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-pr-842-suspension-concern
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.repository == 'ContextualWisdomLab/fast-mlsirm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact repair head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Bind reactivation to the exact suspended concern classes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("python/fast_mlsirm/rubric/item_bank.py")
+          source = source_path.read_text(encoding="utf-8")
+
+          replacements = (
+              (
+                  "from typing import Any, Iterable\n",
+                  "from typing import Any, Iterable, cast\n",
+              ),
+              (
+                  "    transition_reason_id: str\n    schema_version: str = SCHEMA_VERSION\n",
+                  "    transition_reason_id: str\n"
+                  "    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...] = ()\n"
+                  "    schema_version: str = SCHEMA_VERSION\n",
+              ),
+              (
+                  "        object.__setattr__(\n"
+                  "            self,\n"
+                  "            \"evidence_references\",\n"
+                  "            _normalize_evidence_references(self.evidence_references),\n"
+                  "        )\n"
+                  "        if self.previous_record_fingerprint is not None:\n",
+                  "        object.__setattr__(\n"
+                  "            self,\n"
+                  "            \"evidence_references\",\n"
+                  "            _normalize_evidence_references(self.evidence_references),\n"
+                  "        )\n"
+                  "        object.__setattr__(\n"
+                  "            self,\n"
+                  "            \"suspension_concern_kinds\",\n"
+                  "            tuple(\n"
+                  "                sorted(\n"
+                  "                    (\n"
+                  "                        cast(\n"
+                  "                            ItemBankEvidenceKind,\n"
+                  "                            _enum_value(\n"
+                  "                                kind,\n"
+                  "                                ItemBankEvidenceKind,\n"
+                  "                                \"suspension_concern_kinds\",\n"
+                  "                            ),\n"
+                  "                        )\n"
+                  "                        for kind in self.suspension_concern_kinds\n"
+                  "                    ),\n"
+                  "                    key=lambda kind: kind.value,\n"
+                  "                )\n"
+                  "            ),\n"
+                  "        )\n"
+                  "        if self.previous_record_fingerprint is not None:\n",
+              ),
+              (
+                  "            \"evidence_references\": [\n"
+                  "                reference.to_dict() for reference in self.evidence_references\n"
+                  "            ],\n"
+                  "            \"previous_record_fingerprint\": self.previous_record_fingerprint,\n",
+                  "            \"evidence_references\": [\n"
+                  "                reference.to_dict() for reference in self.evidence_references\n"
+                  "            ],\n"
+                  "            \"suspension_concern_kinds\": [\n"
+                  "                kind.value for kind in self.suspension_concern_kinds\n"
+                  "            ],\n"
+                  "            \"previous_record_fingerprint\": self.previous_record_fingerprint,\n",
+              ),
+              (
+                  "    evidence_references: tuple[ItemBankEvidenceReference, ...],\n"
+                  "    previous_record_fingerprint: str | None,\n",
+                  "    evidence_references: tuple[ItemBankEvidenceReference, ...],\n"
+                  "    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...],\n"
+                  "    previous_record_fingerprint: str | None,\n",
+              ),
+              (
+                  "        evidence_references=evidence_references,\n"
+                  "        previous_record_fingerprint=previous_record_fingerprint,\n",
+                  "        evidence_references=evidence_references,\n"
+                  "        suspension_concern_kinds=suspension_concern_kinds,\n"
+                  "        previous_record_fingerprint=previous_record_fingerprint,\n",
+              ),
+              (
+                  "        evidence_references=(),\n"
+                  "        previous_record_fingerprint=None,\n",
+                  "        evidence_references=(),\n"
+                  "        suspension_concern_kinds=(),\n"
+                  "        previous_record_fingerprint=None,\n",
+              ),
+              (
+                  "    supplied_kinds: set[ItemBankEvidenceKind],\n"
+                  ") -> tuple[str, ...]:\n",
+                  "    supplied_kinds: set[ItemBankEvidenceKind],\n"
+                  "    suspension_concern_kinds: frozenset[ItemBankEvidenceKind],\n"
+                  ") -> tuple[str, ...]:\n",
+              ),
+              (
+                  "        missing = [kind.value for kind in required - supplied_kinds]\n"
+                  "        if not supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS):\n"
+                  "            missing.append(\"suspension_resolution_evidence\")\n"
+                  "        return tuple(sorted(missing))\n",
+                  "        missing = [kind.value for kind in required - supplied_kinds]\n"
+                  "        missing.extend(\n"
+                  "            kind.value\n"
+                  "            for kind in suspension_concern_kinds - supplied_kinds\n"
+                  "        )\n"
+                  "        return tuple(sorted(missing))\n",
+              ),
+              (
+                  "        supplied_kinds,\n"
+                  "    )\n",
+                  "        supplied_kinds,\n"
+                  "        frozenset(current.suspension_concern_kinds),\n"
+                  "    )\n",
+              ),
+              (
+                  "    return _create_record(\n"
+                  "        item_id=current.item_id,\n",
+                  "    next_suspension_concern_kinds = (\n"
+                  "        tuple(\n"
+                  "            sorted(\n"
+                  "                supplied_kinds.intersection(\n"
+                  "                    _SUSPENSION_CONCERN_EVIDENCE_KINDS\n"
+                  "                ),\n"
+                  "                key=lambda kind: kind.value,\n"
+                  "            )\n"
+                  "        )\n"
+                  "        if target is ItemBankLifecycleState.SUSPENDED\n"
+                  "        else ()\n"
+                  "    )\n\n"
+                  "    return _create_record(\n"
+                  "        item_id=current.item_id,\n",
+              ),
+              (
+                  "        evidence_references=combined,\n"
+                  "        previous_record_fingerprint=current.record_fingerprint,\n",
+                  "        evidence_references=combined,\n"
+                  "        suspension_concern_kinds=next_suspension_concern_kinds,\n"
+                  "        previous_record_fingerprint=current.record_fingerprint,\n",
+              ),
+          )
+          for old, new in replacements:
+              if source.count(old) != 1:
+                  raise RuntimeError(f"unexpected item-bank source anchor: {old!r}")
+              source = source.replace(old, new)
+          source_path.write_text(source, encoding="utf-8")
+
+          test_path = Path("tests/test_item_bank_nonpsychometric_suspension.py")
+          tests = test_path.read_text(encoding="utf-8")
+          test_anchor = (
+              "    suspended = transition_item_bank_record(\n"
+              "        active,\n"
+              "        ItemBankLifecycleState.SUSPENDED,\n"
+              "        evidence_references=(\n"
+              "            _evidence(ItemBankEvidenceKind.SUSPENSION, \"security_quarantine\", \"4\"),\n"
+              "            _evidence(ItemBankEvidenceKind.SECURITY_PRIVACY, \"security_finding\", \"5\"),\n"
+              "        ),\n"
+              "        transition_reason_id=\"security_privacy_quarantine\",\n"
+              "    )\n\n"
+              "    with pytest.raises(ItemBankLifecycleError) as caught:\n"
+          )
+          test_replacement = (
+              "    suspended = transition_item_bank_record(\n"
+              "        active,\n"
+              "        ItemBankLifecycleState.SUSPENDED,\n"
+              "        evidence_references=(\n"
+              "            _evidence(ItemBankEvidenceKind.SUSPENSION, \"security_quarantine\", \"4\"),\n"
+              "            _evidence(ItemBankEvidenceKind.SECURITY_PRIVACY, \"security_finding\", \"5\"),\n"
+              "        ),\n"
+              "        transition_reason_id=\"security_privacy_quarantine\",\n"
+              "    )\n"
+              "    assert suspended.suspension_concern_kinds == (\n"
+              "        ItemBankEvidenceKind.SECURITY_PRIVACY,\n"
+              "    )\n"
+              "    assert suspended.to_dict()[\"suspension_concern_kinds\"] == [\n"
+              "        \"security_privacy\"\n"
+              "    ]\n\n"
+              "    with pytest.raises(ItemBankLifecycleError) as caught:\n"
+          )
+          if tests.count(test_anchor) != 1:
+              raise RuntimeError("unexpected suspension test anchor")
+          test_path.write_text(tests.replace(test_anchor, test_replacement), encoding="utf-8")
+
+          doctoring_path = Path("docs/doctoring/governed_item_bank_lifecycle.md")
+          doctoring = doctoring_path.read_text(encoding="utf-8")
+          doctoring_old = (
+              "Reactivation requires newly supplied approval plus newly supplied evidence "
+              "from a governed suspension-concern class."
+          )
+          doctoring_new = (
+              "Reactivation requires newly supplied approval plus newly supplied evidence "
+              "for every exact concern class recorded by the suspension transition."
+          )
+          if doctoring.count(doctoring_old) != 1:
+              raise RuntimeError("unexpected doctoring suspension anchor")
+          doctoring_path.write_text(
+              doctoring.replace(doctoring_old, doctoring_new),
+              encoding="utf-8",
+          )
+
+          changelog_path = Path("docs/changelog.d/609-item-bank-suspension-concerns.md")
+          changelog = changelog_path.read_text(encoding="utf-8")
+          changelog_old = (
+              "- Governed item-bank suspension and reactivation can now bind exact "
+              "non-psychometric concern evidence for evidence/content validity and "
+              "security/privacy findings, alongside existing DIF, drift, exposure, and "
+              "linking evidence, without fabricating psychometric drift evidence."
+          )
+          changelog_new = (
+              changelog_old
+              + " Reactivation must address every concern class recorded by the exact "
+              "suspension transition; unrelated evidence cannot clear a quarantine."
+          )
+          if changelog.count(changelog_old) != 1:
+              raise RuntimeError("unexpected changelog suspension anchor")
+          changelog_path.write_text(
+              changelog.replace(changelog_old, changelog_new),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Verify the repaired source contract
+        run: |
+          python -m compileall -q \
+            python/fast_mlsirm/rubric/item_bank.py \
+            tests/test_item_bank_nonpsychometric_suspension.py
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("python/fast_mlsirm/rubric/item_bank.py").read_text(encoding="utf-8")
+          tests = Path("tests/test_item_bank_nonpsychometric_suspension.py").read_text(encoding="utf-8")
+          assert "suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...]" in source
+          assert "frozenset(current.suspension_concern_kinds)" in source
+          assert "for kind in suspension_concern_kinds - supplied_kinds" in source
+          assert "unrelated evidence cannot clear a quarantine" in Path(
+              "docs/changelog.d/609-item-bank-suspension-concerns.md"
+          ).read_text(encoding="utf-8")
+          assert "suspended.suspension_concern_kinds" in tests
+          PY
+          git diff --check
+
+      - name: Commit repaired source and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/repair-pr-842-suspension-concern.yml
+          git add \
+            python/fast_mlsirm/rubric/item_bank.py \
+            tests/test_item_bank_nonpsychometric_suspension.py \
+            docs/doctoring/governed_item_bank_lifecycle.md \
+            docs/changelog.d/609-item-bank-suspension-concerns.md
+          git commit -m "fix(item-bank): bind reactivation to suspended concerns"
+          git push origin HEAD:test/item-bank-suspension-concerns-609
