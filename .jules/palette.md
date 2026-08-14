@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-08-14 - Bar Chart Row Hover Accessibility
+**Learning:** Adding hover states to dense elements like bar chart rows improves visual tracking and usability for pointer users, similar to tabular data. However, using opacity dimming violates peer contrast accessibility.
+**Action:** When adding hover states to tabular data or chart rows (e.g., `.bar-row`), apply background color changes (like `var(--hover-bg)`) rather than opacity dimming to maintain contrast accessibility, and avoid CSS `transition:` properties to ensure compliance with numeric motion accessibility contracts.
