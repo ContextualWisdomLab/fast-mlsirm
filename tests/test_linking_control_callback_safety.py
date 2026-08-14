@@ -1,4 +1,4 @@
-"""Fail-first validation contracts for public IRT-linking method controls."""
+"""Fail-first validation contracts for public IRT-linking controls."""
 
 from __future__ import annotations
 
@@ -36,6 +36,32 @@ class _HostileString(str):
 
     def __repr__(self) -> str:
         raise RuntimeError("METHOD_REPR_SENTINEL")
+
+
+class _HostileQuadrature(int):
+    """Integer subclass whose coercion callback must never execute."""
+
+    def __new__(cls, value: int):
+        instance = super().__new__(cls, value)
+        instance.int_calls = 0
+        return instance
+
+    def __int__(self) -> int:
+        self.int_calls += 1
+        raise RuntimeError("Q_THETA_INT_SENTINEL")
+
+    def __repr__(self) -> str:
+        raise RuntimeError("Q_THETA_REPR_SENTINEL")
+
+
+class _HostileNumpyQuadrature(np.int64):
+    """NumPy-integer subclass whose coercion callback must never execute."""
+
+    def __int__(self) -> int:
+        raise RuntimeError("Q_THETA_NUMPY_INT_SENTINEL")
+
+    def __repr__(self) -> str:
+        raise RuntimeError("Q_THETA_NUMPY_REPR_SENTINEL")
 
 
 def _anchors() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -119,6 +145,32 @@ def test_irt_link_rejects_unsupported_builtin_method_before_core(monkeypatch) ->
     assert loader_calls == 0
 
 
+@pytest.mark.parametrize(
+    "q_theta",
+    [_HostileQuadrature(7), _HostileNumpyQuadrature(7)],
+)
+def test_irt_link_rejects_integer_subclasses_before_core_loader(
+    monkeypatch,
+    q_theta: object,
+) -> None:
+    """Quadrature subclasses fail closed before native-loader or coercion hooks."""
+    loader_calls = 0
+
+    def forbidden_loader():
+        nonlocal loader_calls
+        loader_calls += 1
+        raise AssertionError("CORE_LOADER_MUST_NOT_RUN")
+
+    monkeypatch.setattr(fitstats, "_core_module", forbidden_loader)
+
+    with pytest.raises(ValueError, match="q_theta"):
+        irt_link(*_anchors(), method="stocking_lord", q_theta=q_theta)
+
+    assert loader_calls == 0
+    if isinstance(q_theta, _HostileQuadrature):
+        assert q_theta.int_calls == 0
+
+
 def test_irt_link_preserves_supported_alias_without_restringifying(monkeypatch) -> None:
     """A trusted Rust-supported alias crosses the boundary unchanged."""
     calls: list[str] = []
@@ -137,3 +189,22 @@ def test_irt_link_preserves_supported_alias_without_restringifying(monkeypatch) 
     assert isinstance(result, IrtLinkResult)
     assert calls == ["SL"]
     assert result.method == "SL"
+
+
+def test_irt_link_preserves_genuine_numpy_quadrature_scalar(monkeypatch) -> None:
+    """A genuine NumPy integer retains the established quadrature contract."""
+    calls: list[str] = []
+
+    class Core:
+        """Stub core that records successful dispatch after trusted coercion."""
+
+        def irt_link(self, *args, method):
+            calls.append(method)
+            return _result_payload()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
+
+    result = irt_link(*_anchors(), method="mean_mean", q_theta=np.int64(7))
+
+    assert isinstance(result, IrtLinkResult)
+    assert calls == ["mean_mean"]
