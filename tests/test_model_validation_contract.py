@@ -99,6 +99,27 @@ def test_group_partition_rejects_malformed_identity_vectors() -> None:
         )
 
 
+def test_group_partition_rejects_surrounding_identity_whitespace() -> None:
+    """Presentation whitespace cannot manufacture distinct groups or folds."""
+    with pytest.raises(
+        ValueError,
+        match="group_ids entries must not contain surrounding whitespace",
+    ):
+        validate_group_partition(
+            group_ids=("query-a", " query-a ", "query-b"),
+            fold_ids=("fold-1", "fold-2", "fold-2"),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="fold_ids entries must not contain surrounding whitespace",
+    ):
+        validate_group_partition(
+            group_ids=("query-a", "query-b"),
+            fold_ids=("fold-1", " fold-1 "),
+        )
+
+
 def test_group_partition_rejects_degenerate_single_group_or_fold() -> None:
     with pytest.raises(
         ValueError,
