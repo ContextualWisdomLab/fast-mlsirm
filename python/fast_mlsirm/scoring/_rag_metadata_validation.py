@@ -7,27 +7,101 @@ from typing import Any
 
 from . import rag as _base
 from ._contract_safety import freeze_metadata
-from ._validation import AssessmentSpecError, assessment_error
+from ._validation import (
+    MAX_METADATA_COLLECTION_VALUES,
+    AssessmentSpecError,
+    _metadata_key,
+    assessment_error,
+)
 
 _ORIGINAL_RAG_METADATA = _base._rag_metadata
 
 
-def _preflight_rag_metadata(value: Any) -> Any:
-    """Freeze caller metadata before RAG allowlist membership is evaluated."""
+def _rag_metadata_keys(value: Mapping[Any, Any]) -> tuple[str, ...]:
+    """Validate bounded caller keys before any mapping value is requested."""
     try:
-        return freeze_metadata({} if value is None else value)
+        iterator = iter(value)
+    except AssessmentSpecError:
+        raise
+    except Exception:
+        raise assessment_error(
+            "invalid_rag_metadata",
+            "$.metadata",
+            "metadata keys could not be inspected safely",
+        ) from None
+
+    output: list[str] = []
+    seen: set[str] = set()
+    try:
+        for index, raw_key in enumerate(iterator):
+            if index >= MAX_METADATA_COLLECTION_VALUES:
+                raise assessment_error(
+                    "metadata_collection_too_large",
+                    "$.metadata",
+                    (
+                        "metadata mappings must contain at most "
+                        f"{MAX_METADATA_COLLECTION_VALUES} values"
+                    ),
+                )
+            try:
+                validated_key = _metadata_key(
+                    raw_key,
+                    f"$.metadata.keys[{index}]",
+                )
+            except AssessmentSpecError as exc:
+                if exc.code == "sensitive_metadata_field":
+                    raise assessment_error(
+                        "unsupported_rag_metadata",
+                        "$.metadata",
+                        "metadata key is not allowed for RAG scoring requests",
+                    ) from None
+                raise
+            key = str.__str__(validated_key)
+            if key in seen:
+                raise assessment_error(
+                    "duplicate_metadata_key",
+                    f"$.metadata.keys[{index}]",
+                    "metadata keys must be unique",
+                )
+            seen.add(key)
+            if key in _base._MANAGED_METADATA_KEYS:
+                raise assessment_error(
+                    "reserved_rag_metadata",
+                    "$.metadata",
+                    "RAG provenance metadata is package-managed",
+                )
+            if key not in _base._ALLOWED_CALLER_METADATA_KEYS:
+                raise assessment_error(
+                    "unsupported_rag_metadata",
+                    "$.metadata",
+                    "metadata key is not allowed for RAG scoring requests",
+                )
+            output.append(key)
+    except AssessmentSpecError:
+        raise
+    except Exception:
+        raise assessment_error(
+            "invalid_rag_metadata",
+            "$.metadata",
+            "metadata keys could not be materialized safely",
+        ) from None
+    return tuple(output)
+
+
+def _preflight_rag_metadata(value: Any) -> Any:
+    """Validate keys first, then freeze only caller-authorized metadata values."""
+    raw_metadata = {} if value is None else value
+    if not isinstance(raw_metadata, Mapping):
+        return raw_metadata
+    _rag_metadata_keys(raw_metadata)
+    try:
+        return freeze_metadata(raw_metadata)
     except AssessmentSpecError as exc:
-        if exc.code == "sensitive_metadata_field":
-            raise assessment_error(
-                "unsupported_rag_metadata",
-                "$.metadata",
-                "metadata key is not allowed for RAG scoring requests",
-            ) from None
         if exc.code == "invalid_metadata_mapping":
             raise assessment_error(
                 "invalid_rag_metadata",
                 "$.metadata",
-                "metadata keys could not be inspected safely",
+                "metadata values could not be inspected safely",
             ) from None
         raise
 
