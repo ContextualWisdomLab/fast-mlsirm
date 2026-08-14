@@ -194,6 +194,70 @@ def test_direct_judge_does_not_expose_provider_exception_text() -> None:
 
     assert sentinel not in str(exc_info.value)
     assert str(exc_info.value) == "judge call failed"
+    assert exc_info.value.evidence["semantic_status"] == "transport_failure"
+    assert exc_info.value.evidence["records"][0]["error_type"] == "RuntimeError"
+    assert sentinel not in json.dumps(exc_info.value.evidence)
+
+
+def test_direct_judge_failure_exposes_bounded_status_evidence() -> None:
+    with pytest.raises(JudgeFormatError) as exc_info:
+        ContextualOrchestratorJudge(_FakeOrchestrator("not json")).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+    evidence = exc_info.value.evidence
+    assert evidence["category_method"] == "direct"
+    assert evidence["category_count"] is None
+    assert evidence["semantic_status"] == "response_parse_failure"
+    assert evidence["records"] == [
+        {
+            "call_status": "completed",
+            "parse_status": "failed",
+            "error_type": "JudgeFormatError",
+            "failure_code": "judge_response_invalid",
+        }
+    ]
+    assert "not json" not in json.dumps(evidence)
+
+
+def test_cumulative_judge_failure_exposes_bounded_status_evidence() -> None:
+    with pytest.raises(JudgeFormatError) as exc_info:
+        ContextualOrchestratorJudge(_FakeOrchestrator("not json")).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=3,
+            category_method="cumulative_threshold",
+        )
+
+    evidence = exc_info.value.evidence
+    assert evidence["category_method"] == "cumulative_threshold"
+    assert evidence["category_count"] == 3
+    assert evidence["completed_call_count"] == 1
+    assert evidence["failed_call_count"] == 0
+    assert evidence["parse_status"] == "failed"
+
+
+def test_cumulative_validation_failure_exposes_bounded_status_evidence() -> None:
+    answer = _threshold_payload({
+        "task_alignment": [False, True],
+        "factual_support": [True, False],
+    })
+    with pytest.raises(JudgeFormatError, match="monotone") as exc_info:
+        ContextualOrchestratorJudge(_FakeOrchestrator(answer)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+            category_count=3,
+            category_method="cumulative_threshold",
+        )
+
+    evidence = exc_info.value.evidence
+    assert evidence["semantic_status"] == "response_validation_failure"
+    assert evidence["parse_status"] == "passed"
+    assert evidence["records"][0]["failure_code"] == "judge_response_invalid"
 
 
 def test_direct_judgment_prompt_includes_complete_schema_example() -> None:
@@ -379,6 +443,7 @@ def test_binary_threshold_uses_structured_contextual_transport_when_available() 
     schema = orchestrator.structured_formats[0]["json_schema"]["schema"]
     assert schema["required"] == ["meets_threshold", "rationale"]
     assert schema["additionalProperties"] is False
+    assert schema["properties"]["rationale"]["maxLength"] == 256
     assert all(fmt == orchestrator.structured_formats[0] for fmt in orchestrator.structured_formats)
 
 
