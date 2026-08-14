@@ -259,6 +259,24 @@ def _read_json(path: Path) -> dict[str, Any]:
     return read_json_object(path)
 
 
+def _resolve_cli_output_path(value: str, repo_root: Path) -> Path:
+    """Return a CLI manifest path confined to the declared repository root."""
+    root = repo_root.resolve()
+    requested = Path(value)
+    candidate = (
+        requested.resolve(strict=False)
+        if requested.is_absolute()
+        else (root / requested).resolve(strict=False)
+    )
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise ValueError("sales-readiness --out must stay within --repo-root") from None
+    if candidate == root:
+        raise ValueError("sales-readiness --out must name a file within --repo-root")
+    return candidate
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -404,7 +422,10 @@ def _validate_20b_product_evidence(
             checks.append(
                 _check(
                     "20b:roi_contract_value",
-                    (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+                    (
+                        contract_value_krw is None
+                        or payload.get("contract_value_krw") == contract_value_krw
+                    ),
                     "ROI manifest contract value matches readiness gate",
                     expected=contract_value_krw,
                     actual=payload.get("contract_value_krw"),
@@ -427,8 +448,9 @@ def _validate_20b_product_evidence(
                         isinstance(figma_url, str)
                         and figma_url.startswith("https://www.figma.com/design/"),
                         (
-                            "optional Figma artifact URL must start with https://www.figma.com/design/; "
-                            "FigJam /board/ URLs do not satisfy the design-file evidence contract"
+                            "optional Figma artifact URL must start with "
+                            "https://www.figma.com/design/; FigJam /board/ URLs "
+                            "do not satisfy the design-file evidence contract"
                         ),
                         actual=figma_url,
                     )
@@ -448,7 +470,10 @@ def _validate_20b_product_evidence(
             checks.append(
                 _check(
                     "20b:completion_contract_value",
-                    (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+                    (
+                        contract_value_krw is None
+                        or payload.get("contract_value_krw") == contract_value_krw
+                    ),
                     "completion manifest contract value matches readiness gate",
                     expected=contract_value_krw,
                     actual=payload.get("contract_value_krw"),
@@ -549,10 +574,18 @@ def _validate_acceptance_summary(
         out_value = auto_fit.get("out")
         files = auto_fit.get("files")
         summary_value = files.get("summary") if isinstance(files, dict) else None
-        if isinstance(out_value, str) and out_value and isinstance(summary_value, str) and summary_value:
+        if (
+            isinstance(out_value, str)
+            and out_value
+            and isinstance(summary_value, str)
+            and summary_value
+        ):
             auto_summary_path = Path(summary_value)
             expected_auto_summary_path = Path(out_value) / "fit_summary.json"
-            if auto_summary_path.resolve(strict=False) != expected_auto_summary_path.resolve(strict=False):
+            if (
+                auto_summary_path.resolve(strict=False)
+                != expected_auto_summary_path.resolve(strict=False)
+            ):
                 auto_summary_error = "summary path is not bound to fit_auto output"
             elif not auto_summary_path.is_file():
                 auto_summary_error = "fit_auto summary is missing"
@@ -741,7 +774,10 @@ def _validate_buyer_packet(
         ),
         _check(
             "buyer_packet:contract_value",
-            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+            (
+                contract_value_krw is None
+                or payload.get("contract_value_krw") == contract_value_krw
+            ),
             "buyer packet contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -984,7 +1020,10 @@ def _validate_release_evidence_index(
         ),
         _check(
             "release_evidence_index:contract_value",
-            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+            (
+                contract_value_krw is None
+                or payload.get("contract_value_krw") == contract_value_krw
+            ),
             "release evidence index contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1093,7 +1132,10 @@ def _validate_procurement_due_diligence(
         ),
         _check(
             "procurement_due_diligence:contract_value",
-            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+            (
+                contract_value_krw is None
+                or payload.get("contract_value_krw") == contract_value_krw
+            ),
             "procurement due-diligence contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1205,7 +1247,10 @@ def _validate_pr_queue_governance(
         ),
         _check(
             "pr_queue_governance:contract_value",
-            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+            (
+                contract_value_krw is None
+                or payload.get("contract_value_krw") == contract_value_krw
+            ),
             "PR queue governance contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1220,7 +1265,9 @@ def _validate_pr_queue_governance(
             "pr_queue_governance:category_coverage",
             REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES.issubset(ok_categories),
             "PR queue governance covers GitHub snapshot, queue state, risk classification, and release boundary evidence",
-            missing=sorted(REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES - ok_categories),
+            missing=sorted(
+                REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES - ok_categories
+            ),
         ),
         _check(
             "pr_queue_governance:open_pr_count",
@@ -1332,7 +1379,10 @@ def _validate_figma_evidence_sync(
         ),
         _check(
             "figma_evidence_sync:contract_value",
-            (contract_value_krw is None or payload.get("contract_value_krw") == contract_value_krw),
+            (
+                contract_value_krw is None
+                or payload.get("contract_value_krw") == contract_value_krw
+            ),
             "Figma evidence sync contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
@@ -1697,6 +1747,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        repo_root = Path(args.repo_root).resolve()
+        args.repo_root = str(repo_root)
+        args.out = str(_resolve_cli_output_path(args.out, repo_root))
         manifest = run_sales_readiness(args)
     except Exception as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False))
