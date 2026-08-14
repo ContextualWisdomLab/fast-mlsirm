@@ -55,9 +55,25 @@ class ItemBankEvidenceKind(str, Enum):
     LINKING = "linking"
     EXPOSURE = "exposure"
     DRIFT = "drift"
+    EVIDENCE_VALIDITY = "evidence_validity"
+    CONTENT_VALIDITY = "content_validity"
+    SECURITY_PRIVACY = "security_privacy"
     APPROVAL = "approval"
     SUSPENSION = "suspension"
     RETIREMENT = "retirement"
+
+
+_SUSPENSION_CONCERN_EVIDENCE_KINDS = frozenset(
+    {
+        ItemBankEvidenceKind.DIF,
+        ItemBankEvidenceKind.DRIFT,
+        ItemBankEvidenceKind.EXPOSURE,
+        ItemBankEvidenceKind.LINKING,
+        ItemBankEvidenceKind.EVIDENCE_VALIDITY,
+        ItemBankEvidenceKind.CONTENT_VALIDITY,
+        ItemBankEvidenceKind.SECURITY_PRIVACY,
+    }
+)
 
 
 class PolicyCriticality(str, Enum):
@@ -513,19 +529,23 @@ def _missing_required_kinds(
         ):
             missing.append("dif_or_dif_not_applicable")
         return tuple(sorted(missing))
-    elif target_state is ItemBankLifecycleState.APPROVED:
+    if target_state is ItemBankLifecycleState.APPROVED:
         required = {ItemBankEvidenceKind.APPROVAL}
     elif (
         current_state is ItemBankLifecycleState.SUSPENDED
         and target_state is ItemBankLifecycleState.ACTIVE
     ):
-        required = {ItemBankEvidenceKind.APPROVAL, ItemBankEvidenceKind.DRIFT}
+        required = {ItemBankEvidenceKind.APPROVAL}
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS):
+            missing.append("suspension_resolution_evidence")
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.SUSPENDED:
         required = {ItemBankEvidenceKind.SUSPENSION}
-        if not supplied_kinds.intersection(
-            {ItemBankEvidenceKind.DIF, ItemBankEvidenceKind.DRIFT}
-        ):
-            return ("dif_or_drift",)
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS):
+            missing.append("suspension_concern_evidence")
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.RETIRED:
         required = {ItemBankEvidenceKind.RETIREMENT}
     else:
