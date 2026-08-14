@@ -26,7 +26,7 @@ rubric = _FIXTURES["rubric"]
 QUERY_FP = hashlib.sha256(b"rag-callback-query").hexdigest()
 SYSTEM_FP = hashlib.sha256(b"rag-callback-system").hexdigest()
 RETRIEVAL_FP = hashlib.sha256(b"rag-callback-retrieval").hexdigest()
-RESPONSE_FP = hashlib.sha256(b"rag-callback-response").hexdigest()
+RESPONSE_FP = hashlib.sha256(b"rag-response-content").hexdigest()
 _SECRET = "raw_sensitive_callback_payload"
 
 
@@ -65,6 +65,21 @@ class _IterationTrap(Mapping[str, Any]):
     def __contains__(self, key: object) -> bool:
         del key
         return False
+
+
+class _LateIterationTrap(Mapping[str, Any]):
+    """Yield one valid key before key iteration fails."""
+
+    def __getitem__(self, key: str) -> Any:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[str]:
+        yield "evaluation_split"
+        raise RuntimeError(_SECRET)
+
+    def __len__(self) -> int:
+        return 2
 
 
 class _UnsupportedValueTrap(Mapping[str, Any]):
@@ -159,6 +174,15 @@ def test_rag_metadata_iteration_failure_is_package_owned_and_non_reflective() ->
     """Hostile key iteration must not leak arbitrary exceptions or caller text."""
     with pytest.raises(AssessmentSpecError) as caught:
         _request(_IterationTrap())
+
+    assert caught.value.code == "invalid_rag_metadata"
+    assert _SECRET not in str(caught.value)
+
+
+def test_rag_metadata_late_iteration_failure_is_non_reflective() -> None:
+    """A key iterator that fails after yielding data remains inside the boundary."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(_LateIterationTrap())
 
     assert caught.value.code == "invalid_rag_metadata"
     assert _SECRET not in str(caught.value)
