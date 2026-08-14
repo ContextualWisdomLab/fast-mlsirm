@@ -1,0 +1,108 @@
+"""Fail-first callback-safety contracts for caller-provided RAG metadata."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Mapping
+import hashlib
+from pathlib import Path
+import runpy
+from typing import Any
+
+import pytest
+
+from fast_mlsirm.scoring import AssessmentSpecError, ScoringRequest
+from fast_mlsirm.scoring.rag import (
+    RAGCandidateVisibility,
+    RAGEvidenceRegime,
+    build_rag_scoring_request,
+)
+
+_FIXTURES = runpy.run_path(
+    str(Path(__file__).with_name("scoring_execution_fixtures.py"))
+)
+assessment = _FIXTURES["assessment"]
+rubric = _FIXTURES["rubric"]
+
+QUERY_FP = hashlib.sha256(b"rag-callback-query").hexdigest()
+SYSTEM_FP = hashlib.sha256(b"rag-callback-system").hexdigest()
+RETRIEVAL_FP = hashlib.sha256(b"rag-callback-retrieval").hexdigest()
+RESPONSE_FP = hashlib.sha256(b"rag-callback-response").hexdigest()
+_SECRET = "raw_sensitive_callback_payload"
+
+
+class _ContainsTrap(Mapping[str, Any]):
+    """Expose valid entries while rejecting alien membership callbacks."""
+
+    def __init__(self) -> None:
+        self._values = {"evaluation_split": "offline_holdout"}
+
+    def __getitem__(self, key: str) -> Any:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __contains__(self, key: object) -> bool:
+        del key
+        raise RuntimeError(_SECRET)
+
+
+class _IterationTrap(Mapping[str, Any]):
+    """Raise sensitive caller text when metadata keys are enumerated."""
+
+    def __getitem__(self, key: str) -> Any:
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        raise RuntimeError(_SECRET)
+
+    def __len__(self) -> int:
+        return 1
+
+    def __contains__(self, key: object) -> bool:
+        del key
+        return False
+
+
+def _request(metadata: Mapping[str, Any]) -> ScoringRequest:
+    """Build one deterministic request around caller-controlled metadata."""
+    return build_rag_scoring_request(
+        request_id="rag_callback_request",
+        assessment=assessment(),
+        rubric=rubric(),
+        query_id="refund_policy_query",
+        query_revision_fingerprint=QUERY_FP,
+        query_testlet_id="evidence_review",
+        evidence_regime=RAGEvidenceRegime.RETRIEVED_CONTEXT,
+        candidate_visibility=RAGCandidateVisibility.CANDIDATE_BLIND,
+        system_configuration_id="retrieval_stack_a",
+        system_configuration_fingerprint=SYSTEM_FP,
+        system_run_id="retrieval_stack_a_run_001",
+        response_id="generated_response_001",
+        retrieval_run_fingerprint=RETRIEVAL_FP,
+        response_content_fingerprint=RESPONSE_FP,
+        occasion_id="evaluation_wave_001",
+        criterion_ids=("grounded_generation",),
+        response_character_count=120,
+        response_unit_count=3,
+        metadata=metadata,
+    )
+
+
+def test_rag_metadata_does_not_invoke_alien_membership_callbacks() -> None:
+    """Valid mappings must be inspected through bounded keys, not ``__contains__``."""
+    request = _request(_ContainsTrap())
+
+    assert request.to_dict()["metadata"]["evaluation_split"] == "offline_holdout"
+
+
+def test_rag_metadata_iteration_failure_is_package_owned_and_non_reflective() -> None:
+    """Hostile key iteration must not leak arbitrary exceptions or caller text."""
+    with pytest.raises(AssessmentSpecError) as caught:
+        _request(_IterationTrap())
+
+    assert caught.value.code == "invalid_rag_metadata"
+    assert _SECRET not in str(caught.value)
