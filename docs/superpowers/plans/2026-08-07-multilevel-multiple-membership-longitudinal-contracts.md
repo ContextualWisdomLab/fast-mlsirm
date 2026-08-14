@@ -4,7 +4,43 @@
 
 **Goal:** Add reusable, immutable contracts for nested, cross-classified, weighted multiple-membership, and longitudinal measurement; keep any numerical psychometric arithmetic in Rust.
 
-**Architecture:** `fast_mlsirm.multilevel` owns bounded validation, child replay, canonical serialization, content identity, and sparse design marshalling. The follow-on Rust state layer owns respondent intercept/slope and discrete-step AR state arithmetic; full likelihood, integration, optimization, uncertainty, GPU recurrent-state parity, and true-parameter recovery remain separately gated.
+**Architecture:** `fast_mlsirm.multilevel` owns bounded validation, child replay, canonical serialization, content identity, and sparse design marshalling. The follow-on Rust state layer owns independent per-respondent OLS trend prediction and discrete-step AR state prediction; full likelihood, population random-effect integration, coefficient estimation, optimization, uncertainty, GPU recurrent-state parity, and true-parameter recovery remain separately gated.
+
+## Primary-method basis and scope decision
+
+The state slice is deliberately narrower than the longitudinal and multilevel
+estimators in the primary literature. Laird and Ware (1982) formulate
+population random-effects models for longitudinal data, while Fox and Glas
+(2001) jointly estimate a multilevel IRT measurement model and multilevel
+regression parameters. This release does neither: its compatibility label
+`random_intercept_slope` returns an independent within-respondent least-squares
+line, with `estimand_scope="independent_respondent_ols_trend"` and
+`population_random_effects_estimated=False`.
+
+Jeon and Rabe-Hesketh (2016) demonstrate why serial dependence and initial
+conditions must be explicit in longitudinal item analysis. The shipped
+`stationary_autoregressive` path is only a deterministic discrete-occasion
+state predictor using caller-supplied \(\phi\); it does not reproduce that paper's
+item-response likelihood, estimate an autoregressive parameter, or identify
+lagged item dependence. Browne, Goldstein, and Rasbash (2001) provide the
+multiple-membership multiple-classification basis for the design contract, but
+the current weighted-context kernel likewise does not claim to estimate the
+paper's random-effects model. These differences are release boundaries, not
+implementation shortcuts to be interpreted as equivalent estimators.
+
+Primary references (APA 7):
+
+- Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership
+  multiple classification (MMMC) models. *Statistical Modelling, 1*(2),
+  103–124. https://doi.org/10.1177/1471082X0100100202
+- Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT
+  model using Gibbs sampling. *Psychometrika, 66*(2), 271–288.
+  https://doi.org/10.1007/BF02294839
+- Jeon, M., & Rabe-Hesketh, S. (2016). An autoregressive growth model for
+  longitudinal item analysis. *Psychometrika, 81*(3), 830–850.
+  https://doi.org/10.1007/s11336-015-9489-2
+- Laird, N. M., & Ware, J. H. (1982). Random-effects models for longitudinal
+  data. *Biometrics, 38*(4), 963–974. https://doi.org/10.2307/2529876
 
 ## Global constraints
 
@@ -136,11 +172,12 @@ Fix genuine contract/coverage failures only. Do not restore an inferred/default 
 
 ## Deferred estimator boundary
 
-The state-layer PR supplies a narrow estimator for respondent-level growth and
-discrete-step AR predictions, with recovery fixtures and deterministic worker
-checks. It does not replace the next joint estimator PR, which must begin with
-objective/gradient parity, identification failures, and scale-aligned
-true-parameter recovery for nested, crossed, weighted multiple-membership,
-multiple-classification, balanced/unbalanced longitudinal, missing-data, and
-discrete-step AR conditions. A later PR must define continuous-time/interval-
-adjusted transitions explicitly before elapsed gaps enter a likelihood.
+The state-layer PR supplies a narrow predictor for independent respondent-level
+OLS trends and caller-parameterized discrete-step AR states, with recovery
+fixtures and deterministic worker checks. It does not replace the next joint
+estimator PR, which must begin with objective/gradient parity, identification
+failures, and scale-aligned true-parameter recovery for nested, crossed,
+weighted multiple-membership, multiple-classification, balanced/unbalanced
+longitudinal, missing-data, and discrete-step AR conditions. A later PR must
+define continuous-time/interval-adjusted transitions explicitly before elapsed
+gaps enter a likelihood.
