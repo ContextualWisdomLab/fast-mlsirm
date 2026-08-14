@@ -195,6 +195,7 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
         dtype=np.float64,
     )
     true_thresholds = np.asarray(truth["thresholds"], dtype=np.float64)
+    estimated_thresholds = np.asarray(fit.thresholds, dtype=np.float64)
     true_theta = np.asarray(
         [
             truth["theta_by_respondent"][respondent_id]
@@ -209,8 +210,8 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
     task_bias, task_mae, task_rmse = _error_metrics(
         np.asarray(fit.item_difficulty), true_task
     )
-    threshold_bias, threshold_mae, threshold_rmse = _error_metrics(
-        np.asarray(fit.thresholds), true_thresholds
+    _, threshold_mae, threshold_rmse = _error_metrics(
+        estimated_thresholds, true_thresholds
     )
     theta_bias, theta_mae, theta_rmse = _error_metrics(
         np.asarray(fit.theta), true_theta
@@ -222,7 +223,9 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
     assert abs(task_bias) < 0.15
     assert task_mae < 0.25
     assert task_rmse < 0.30
-    assert abs(threshold_bias) < 0.05
+    assert estimated_thresholds.shape == true_thresholds.shape
+    assert abs(float(np.sum(true_thresholds))) < 1e-12
+    assert abs(float(np.sum(estimated_thresholds))) < 1e-8
     assert threshold_mae < 0.20
     assert threshold_rmse < 0.20
     assert abs(theta_bias) < 0.10
