@@ -3,37 +3,46 @@
 ## Decision
 
 Caller-supplied RAG metadata is treated as an untrusted abstract `Mapping`.
-Before package-owned provenance keys or caller allowlists are evaluated, the
-mapping is materialized through the existing bounded callback-safe metadata
-preflight. The resulting immutable built-in representation is then passed to
-the established RAG metadata builder.
+The package enumerates and validates caller keys exactly once, rejects
+package-managed, duplicate, malformed, or unsupported keys before any value is
+requested, then reads each authorized value exactly once into a built-in
+mapping. Only that built-in mapping enters the existing bounded callback-safe
+metadata freezer and established RAG provenance builder.
 
-This ordering prevents an alien `__contains__`, key iterator, item iterator, or
-value callback from controlling package logic before the governed exception
-boundary. Failures while the mapping itself is inspected become stable,
-non-reflective `AssessmentSpecError` evidence. More specific nested contract
-failures, such as cyclic containers, retain their package-owned codes.
+This ordering prevents an alien `__contains__`, repeated key iterator, item
+iterator, or value callback from controlling package logic before the governed
+exception boundary. A mapping cannot present an allowed key set during
+preflight and a different key set during value materialization. Failures while
+the mapping itself is inspected become stable, non-reflective
+`AssessmentSpecError` evidence. More specific nested contract failures, such as
+cyclic containers, retain their package-owned codes.
 
 ## Security rationale
 
-The boundary addresses two distinct failure modes:
+The boundary addresses three distinct failure modes:
 
 1. an uncaught caller callback can escape the public package API and destabilize
-   request construction; and
+   request construction;
 2. the callback's arbitrary exception text can expose caller-controlled or
-   sensitive content through error messages.
+   sensitive content through error messages; and
+3. re-enumerating a mutable or adversarial mapping after authorization creates a
+   check/use race in which unapproved keys or values can appear after the
+   allowlist decision.
 
 The implementation therefore does not copy the original exception message into
-public evidence. It emits a fixed package-owned message while preserving the
-existing allowlist, provenance, canonicalization, and no-raw-content contracts.
-It adds no retrieval, scoring, LLM, statistical, or authorization behavior.
+public evidence, does not call mapping membership callbacks, and does not
+re-enumerate caller keys after authorization. It emits fixed package-owned
+messages while preserving the existing allowlist, provenance, canonicalization,
+and no-raw-content contracts. It adds no retrieval, scoring, LLM, statistical,
+or authorization behavior.
 
-MITRE classifies unhandled exceptional conditions as CWE-248 and sensitive
-details in error messages as CWE-209. The current final NIST Secure Software
-Development Framework authority is SP 800-218 version 1.1; it requires secure
-practices to be integrated into the software lifecycle and emphasizes reducing
-recurrence by addressing vulnerability root causes. The regression suite uses
-fault-injection mappings to keep these boundary guarantees executable.
+MITRE classifies unhandled exceptional conditions as CWE-248, sensitive details
+in error messages as CWE-209, and check/use races as CWE-367. The current final
+NIST Secure Software Development Framework authority is SP 800-218 version 1.1;
+it requires secure practices to be integrated into the software lifecycle and
+emphasizes reducing recurrence by addressing vulnerability root causes. The
+regression suite uses fault-injection mappings to keep these boundary guarantees
+executable.
 
 NIST SP 800-218 Rev. 1 / SSDF version 1.2 remains an initial public draft at
 this decision date. It is tracked as prospective guidance, not used as the
@@ -45,16 +54,19 @@ Verification requires all of the following:
 
 - a valid mapping whose `__contains__` raises is accepted without invoking that
   callback;
-- failed key iteration returns `invalid_rag_metadata` without reflecting caller
-  text;
+- an authorized key iterator is consumed exactly once before its value is read;
+- rejected keys never authorize caller-controlled value callbacks;
+- failed key or authorized-value inspection returns `invalid_rag_metadata`
+  without reflecting caller text;
 - nested governed errors remain specific;
 - the `None` metadata path and package-managed RAG provenance remain unchanged;
 - production statement and branch coverage and public docstring gates remain at
   100%.
 
-Rollback must restore the same callback-safety and non-reflective error
-properties. Do not remove the preflight merely to reduce module count, and do
-not substitute broad exception text forwarding for structured package errors.
+Rollback must restore the same callback-safety, single-pass authorization, and
+non-reflective error properties. Do not remove the preflight merely to reduce
+module count, re-enumerate caller keys after authorization, or substitute broad
+exception text forwarding for structured package errors.
 
 ## APA 7th references
 
@@ -64,6 +76,10 @@ https://cwe.mitre.org/data/definitions/209.html
 
 MITRE. (2026). *CWE-248: Uncaught exception* (Version 4.20). Common Weakness
 Enumeration. https://cwe.mitre.org/data/definitions/248.html
+
+MITRE. (2026). *CWE-367: Time-of-check time-of-use (TOCTOU) race condition*
+(Version 4.20). Common Weakness Enumeration.
+https://cwe.mitre.org/data/definitions/367.html
 
 National Institute of Standards and Technology. (2022). *Secure software
 development framework (SSDF) version 1.1: Recommendations for mitigating the
