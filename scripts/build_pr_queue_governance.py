@@ -177,8 +177,9 @@ def _run_gh_json(
 ) -> tuple[Any, dict[str, Any] | None]:
     """Execute a GitHub CLI JSON command and return payload plus redacted error.
 
-    Retries only on HTTP 502/503/504. Non-transient failures fail closed on the
-    first response so real auth/query defects are not masked.
+    Retries HTTP 502/503/504 responses and subprocess transport timeouts.
+    Other failures fail closed on the first response so real auth/query defects
+    are not masked.
     """
     attempts = max(1, int(max_attempts))
     last_error: dict[str, Any] | None = None
@@ -190,16 +191,18 @@ def _run_gh_json(
                 return payload, None
             stderr = completed.stderr.strip()
             returncode = completed.returncode
+            retryable = _is_transient_gh_stderr(stderr)
         except subprocess.TimeoutExpired:
             stderr = "GitHub API request timed out"
             returncode = 124
+            retryable = True
 
         last_error = {
             "command": command[1:3],
             "stderr": stderr,
             "returncode": returncode,
         }
-        if attempt >= attempts or not _is_transient_gh_stderr(stderr):
+        if attempt >= attempts or not retryable:
             break
         if retry_sleep_seconds > 0:
             time.sleep(retry_sleep_seconds)
