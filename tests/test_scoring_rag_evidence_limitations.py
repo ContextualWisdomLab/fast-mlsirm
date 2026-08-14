@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import fast_mlsirm.scoring as scoring
 from fast_mlsirm.scoring import AssessmentSpecError
 from fast_mlsirm.scoring.rag import RAGEvidenceRegime
 from fast_mlsirm.scoring.rag_evidence import (
@@ -68,3 +69,11 @@ def test_limitations_contract_is_factory_sealed() -> None:
             regime=RAGEvidenceRegime.RETRIEVED_CONTEXT,
             limitation_codes=("world_correctness_identified",),
         )
+
+
+def test_evidence_limitations_are_explicit_scoring_package_attributes() -> None:
+    """Governed reporting callers should not need an internal-module import path."""
+    assert scoring.RAGEvidenceRegimeLimitations is RAGEvidenceRegimeLimitations
+    assert scoring.rag_evidence_regime_limitations is rag_evidence_regime_limitations
+    assert "RAGEvidenceRegimeLimitations" not in scoring.__all__
+    assert "rag_evidence_regime_limitations" not in scoring.__all__
