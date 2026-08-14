@@ -17,6 +17,7 @@ from typing import Any
 
 from .llm_judge import (
     MAX_JUDGE_CATEGORIES,
+    MAX_JUDGE_CRITERIA,
     MAX_JUDGE_TEXT_CHARACTERS,
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -431,6 +432,34 @@ class JudgeCalibrationReport:
     category_count: int
     criterion_ids: tuple[str, ...]
     outcomes: tuple[JudgeCalibrationOutcome, ...]
+
+    def __post_init__(self) -> None:
+        """Reject malformed direct construction before report methods run."""
+        category_count = _category_count(self.category_count)
+        object.__setattr__(self, "category_count", category_count)
+        if (
+            type(self.criterion_ids) is not tuple
+            or not 2 <= len(self.criterion_ids) <= MAX_JUDGE_CRITERIA
+        ):
+            raise ValueError(
+                f"criterion_ids must contain 2..{MAX_JUDGE_CRITERIA} values"
+            )
+        if any(type(criterion_id) is not str or not criterion_id.strip() for criterion_id in self.criterion_ids):
+            raise ValueError("criterion_ids must contain non-empty strings")
+        if len(set(self.criterion_ids)) != len(self.criterion_ids):
+            raise ValueError("criterion_ids must be unique")
+        if type(self.outcomes) is not tuple or not self.outcomes:
+            raise ValueError("outcomes must contain at least one value")
+        if any(not isinstance(outcome, JudgeCalibrationOutcome) for outcome in self.outcomes):
+            raise TypeError("outcomes must contain JudgeCalibrationOutcome values")
+        _validate_case_groups(tuple(outcome.case for outcome in self.outcomes))
+        for outcome in self.outcomes:
+            if outcome.status != "passed":
+                continue
+            if outcome.irt_row is None or len(outcome.irt_row) != len(self.criterion_ids):
+                raise ValueError("passed outcomes must contain one IRT item per criterion")
+            if outcome.result is None or outcome.result.category_count != category_count:
+                raise ValueError("passed outcomes must use the report category_count")
 
     def status_counts(self) -> dict[str, int]:
         return dict(sorted(Counter(outcome.status for outcome in self.outcomes).items()))

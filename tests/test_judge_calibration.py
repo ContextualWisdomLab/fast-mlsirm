@@ -12,6 +12,7 @@ from fast_mlsirm import (
     CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     ContextualOrchestratorJudge,
     JudgeCalibrationCase,
+    JudgeCalibrationReport,
     JudgeCriterion,
     JudgeFormatError,
     LLMJudgeResult,
@@ -243,6 +244,20 @@ def test_option_count_summary_separates_multiple_k_strata() -> None:
         (5, "replaced_distractor"),
     }
     assert all(group["outcome_count"] == 1 for group in summary)
+
+
+def test_report_rejects_malformed_direct_construction() -> None:
+    report = evaluate_paired_calibration(
+        _ScriptedJudge(), _cases(), criteria=CRITERIA, category_count=3
+    )
+    criterion_ids = tuple(criterion.criterion_id for criterion in CRITERIA)
+
+    with pytest.raises(ValueError, match="criterion_ids"):
+        JudgeCalibrationReport(3, (criterion_ids[0],), report.outcomes)
+    with pytest.raises(ValueError, match="baseline"):
+        JudgeCalibrationReport(3, criterion_ids, report.outcomes[:1])
+    with pytest.raises(ValueError, match="category_count"):
+        JudgeCalibrationReport(2, criterion_ids, report.outcomes)
 
 
 @pytest.mark.parametrize("option_count", [True, 1, 65, 1.5])
