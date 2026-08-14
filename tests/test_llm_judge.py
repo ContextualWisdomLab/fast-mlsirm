@@ -173,6 +173,19 @@ def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     assert payload["answer"] == "Use a staged release with rollback."
 
 
+def test_direct_judge_does_not_expose_provider_exception_text() -> None:
+    sentinel = "provider-output-secret"
+    with pytest.raises(JudgeFormatError, match="^judge call failed$") as exc_info:
+        ContextualOrchestratorJudge(_RaisingOrchestrator(sentinel)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+    assert sentinel not in str(exc_info.value)
+    assert str(exc_info.value) == "judge call failed"
+
+
 def test_direct_judgment_prompt_includes_complete_schema_example() -> None:
     orchestrator = _FakeOrchestrator(_payload())
     ContextualOrchestratorJudge(orchestrator).judge(

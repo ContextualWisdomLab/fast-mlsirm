@@ -845,7 +845,10 @@ class ContextualOrchestratorJudge:
                 ),
             },
         ]
-        completion = self.orchestrator.complete(messages, mode=self.mode)
+        try:
+            completion = self.orchestrator.complete(messages, mode=self.mode)
+        except Exception:  # noqa: BLE001 - never expose provider exception text at the judge boundary
+            raise JudgeFormatError("judge call failed") from None
         if not isinstance(completion, Mapping):
             raise JudgeFormatError("orchestrator completion must be a mapping")
         try:
