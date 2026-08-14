@@ -78,8 +78,7 @@ _OPEN_PR_JSON_FIELDS = (
 # nested ``files``/``labels`` on ``--state all --limit 100`` routinely trips
 # GitHub GraphQL HTTP 502 for this repository (see Actions run 31374029017).
 _HISTORY_PR_JSON_FIELDS = (
-    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,"
-    "mergedAt,url"
+    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,mergedAt,url"
 )
 _OPEN_PR_LIST_LIMIT = 100
 _HISTORY_PR_LIST_LIMIT = 100
@@ -184,15 +183,21 @@ def _run_gh_json(
     attempts = max(1, int(max_attempts))
     last_error: dict[str, Any] | None = None
     for attempt in range(1, attempts + 1):
-        completed = subprocess.run(command, capture_output=True, text=True)
-        payload = _json_from_completed(completed)
-        if completed.returncode == 0:
-            return payload, None
-        stderr = completed.stderr.strip()
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            payload = _json_from_completed(completed)
+            if completed.returncode == 0:
+                return payload, None
+            stderr = completed.stderr.strip()
+            returncode = completed.returncode
+        except subprocess.TimeoutExpired:
+            stderr = "GitHub API request timed out"
+            returncode = 124
+
         last_error = {
             "command": command[1:3],
             "stderr": stderr,
-            "returncode": completed.returncode,
+            "returncode": returncode,
         }
         if attempt >= attempts or not _is_transient_gh_stderr(stderr):
             break
