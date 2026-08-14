@@ -236,7 +236,7 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     if not cards:
         return None
 
-    heading_id = heading.lower().replace(" ", "-")
+    heading_id = escape(heading.lower().replace(" ", "-"), quote=True)
     return "\n".join(
         [
             f'<section class="report-section" aria-labelledby="{heading_id}">',
@@ -260,7 +260,7 @@ def _table_section(
     """
     _validate_report_rows(rows)
     chart = _bar_chart(rows, chart_value) if chart_value else ""
-    heading_id = heading.lower().replace(" ", "-")
+    heading_id = escape(heading.lower().replace(" ", "-"), quote=True)
     return "\n".join(
         [
             f'<section class="report-section" aria-labelledby="{heading_id}">',
