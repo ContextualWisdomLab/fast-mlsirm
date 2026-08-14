@@ -1362,6 +1362,7 @@ def test_cli_score_replaces_leaf_symlink_without_overwriting_target(
 ):
     import fast_mlsirm.cli as cli
 
+    monkeypatch.chdir(tmp_path)
     external = tmp_path / "external.txt"
     external.write_text("do not overwrite", encoding="utf-8")
     output = tmp_path / "scores.json"

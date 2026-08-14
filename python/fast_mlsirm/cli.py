@@ -38,6 +38,79 @@ MAX_CANDIDATE_ELEMENTS = 50_000_000
 MAX_CANDIDATE_BYTES = 512 * 1024 * 1024
 
 
+def _confine_cli_path(path: str | Path, *, kind: str) -> str:
+    """Keep a CLI path inside the caller's current working directory.
+
+    The lexical path is returned so bounded input readers can still reject a
+    leaf symlink with ``O_NOFOLLOW``.  Canonical resolution is used only for
+    the containment check, which also rejects ``..`` and symlinked parents.
+    """
+    requested = os.fspath(path)
+    if not requested.strip():
+        raise ValueError(f"{kind} path must not be empty")
+    try:
+        root = Path.cwd().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("current working directory could not be resolved safely") from exc
+    lexical = Path(os.path.abspath(requested))
+    try:
+        resolved = lexical.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"{kind} path could not be resolved safely") from exc
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        raise ValueError(
+            f"{kind} path must remain within the current working directory"
+        ) from None
+    return requested
+
+
+def _confine_candidate_specs(specs: list[str]) -> list[str]:
+    """Confine every ``label=path`` candidate while preserving its label."""
+    confined: list[str] = []
+    for spec in specs:
+        if "=" in spec:
+            label, path = spec.split("=", 1)
+            if not label:
+                raise ValueError("candidate label must not be empty")
+            confined.append(
+                f"{label}={_confine_cli_path(path, kind='candidate probability')}"
+            )
+        else:
+            confined.append(
+                _confine_cli_path(spec, kind="candidate probability")
+            )
+    return confined
+
+
+def _confine_cli_paths(args: argparse.Namespace) -> None:
+    """Apply one workspace boundary to every path accepted by the CLI."""
+    input_fields = {
+        "fit": ("responses", "factors", "group_id", "cluster_id"),
+        "score": ("bundle", "responses"),
+        "diagnose-fit": ("responses", "factors", "params", "group_id", "cluster_id"),
+        "diagnose-dimensions": ("responses", "factors"),
+        "diagnose-response-process": (
+            "responses",
+            "probabilities",
+            "group_id",
+            "cluster_id",
+        ),
+        "diagnose-response-candidates": ("responses",),
+        "diagnose-fixed-item-calibration": ("responses", "fixed_items"),
+        "render-report": ("diagnostics",),
+    }
+    for field in input_fields.get(args.command, ()):
+        value = getattr(args, field, None)
+        if value is not None:
+            setattr(args, field, _confine_cli_path(value, kind=field))
+    if hasattr(args, "candidate"):
+        args.candidate = _confine_candidate_specs(args.candidate)
+    if hasattr(args, "out") and args.out is not None:
+        args.out = _confine_cli_path(args.out, kind="output")
+
+
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     """Register the shared ``--json`` machine-readable-output flag on a parser."""
     parser.add_argument(
@@ -294,6 +367,13 @@ def _main(argv: list[str] | None = None) -> int:
         return 2
 
     args = parser.parse_args(argv)
+    try:
+        _confine_cli_paths(args)
+    except ValueError as e:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
+        print(f"❌ Error: Invalid path - {str(e)}", file=sys.stderr)
+        return 1
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
         try:

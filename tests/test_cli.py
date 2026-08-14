@@ -7,6 +7,13 @@ import pytest
 
 from fast_mlsirm.cli import main
 
+
+@pytest.fixture(autouse=True)
+def _cli_workspace(tmp_path, monkeypatch):
+    """Exercise the CLI boundary from an explicit caller-owned workspace."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_cli_empty_args(capsys):
     with patch.object(sys, 'argv', ['fast-mlsirm']):
         assert main() == 2
@@ -549,6 +556,66 @@ def test_cli_fit_missing_file(capsys):
 
     captured = capsys.readouterr()
     assert "Error: Could not find file" in captured.err
+
+
+def test_cli_rejects_paths_outside_workspace(tmp_path, capsys):
+    outside = tmp_path.parent / "outside-fast-mlsirm"
+    args = [
+        "simulate",
+        "--persons",
+        "10",
+        "--dims",
+        "1",
+        "--items-per-dim",
+        "1",
+        "--out",
+        str(outside),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "must remain within the current working directory" in capsys.readouterr().err
+    assert not outside.exists()
+
+
+def test_cli_rejects_input_paths_outside_workspace(tmp_path, capsys):
+    outside = tmp_path.parent / "outside-fast-mlsirm-input.npy"
+    args = [
+        "fit",
+        "--responses",
+        str(outside),
+        "--factors",
+        "item_factor.csv",
+        "--out",
+        "fit_out",
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "must remain within the current working directory" in capsys.readouterr().err
+
+
+def test_cli_rejects_symlinked_workspace_parent(tmp_path, capsys):
+    outside = tmp_path.parent / "outside-fast-mlsirm-parent"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+    args = [
+        "simulate",
+        "--persons",
+        "10",
+        "--dims",
+        "1",
+        "--items-per-dim",
+        "1",
+        "--out",
+        str(linked / "out"),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "must remain within the current working directory" in capsys.readouterr().err
+    assert list(outside.iterdir()) == []
 
 def test_cli_fit_bad_data(tmp_path, capsys):
     bad_npy = tmp_path / "bad.npy"
