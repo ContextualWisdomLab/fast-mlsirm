@@ -61,6 +61,27 @@ def test_exploratory_rejects_integer_subclasses_before_callbacks():
     assert calls == []
 
 
+def test_exploratory_rejects_hostile_metaclass_hash_before_callback():
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            calls.append("type-__hash__")
+            raise AssertionError("type hash callback executed")
+
+    class HostileInt(int, metaclass=HostileMeta):
+        pass
+
+    class HostileNumpyInt(np.int64, metaclass=HostileMeta):
+        pass
+
+    for value in (HostileInt(2), HostileNumpyInt(2)):
+        with pytest.raises(ValueError, match="positive integer"):
+            exploratory(value)
+
+    assert calls == []
+
+
 def test_confirmatory_happy_path_and_n_dims():
     pattern = np.array([[1, 0], [0, 1], [1, 0]])
     spec = confirmatory(pattern)
@@ -135,6 +156,27 @@ def test_resolve_model_rejects_integer_subclasses_before_callbacks():
         def __repr__(self) -> str:
             calls.append("numpy-__repr__")
             raise AssertionError("representation callback executed")
+
+    for value in (HostileInt(1), HostileNumpyInt(1)):
+        with pytest.raises(TypeError, match="factor count"):
+            _resolve_model(value, 5)
+
+    assert calls == []
+
+
+def test_resolve_model_rejects_hostile_metaclass_hash_before_callback():
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            calls.append("type-__hash__")
+            raise AssertionError("type hash callback executed")
+
+    class HostileInt(int, metaclass=HostileMeta):
+        pass
+
+    class HostileNumpyInt(np.int64, metaclass=HostileMeta):
+        pass
 
     for value in (HostileInt(1), HostileNumpyInt(1)):
         with pytest.raises(TypeError, match="factor count"):
