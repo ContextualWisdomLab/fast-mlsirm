@@ -327,6 +327,22 @@ Fresh exact-head Strix run for fast head 1d05d785a3e5c4e0eecc96b807e3a88786cb8b1
 
 Keep the result fail-closed and require a trusted same-head binding artifact containing repository, full head, outer run/job, report path, and digest. Never reconstruct or accept a binding locally, and never treat a green check or zero-finding prose as sufficient.
 
+## CLI path-boundary follow-up
+
+The exact current fast-mlsirm head before this fix (`f682e33aad483f2afafdc39e0c4bbf1b0759fb52`) produced Strix run `31840660198`, job `94896588917`, and artifact `9235116653`. The artifact contained a medium-severity path-traversal finding in the CLI: caller-controlled `--factors`/other input paths could read outside the intended workspace and `--out` paths could write outside it. The report digest was `ce95fb425431bf36d6d3b08dc442bc0a2a07556e9c8cbb72ab43e146fbf6d139`; `run.json` digest was `fc9b9693560c0dc4b7fe22583a4b38830faf7b9b18d6136425acda73063f76c3`. The artifact had no trusted `evidence-binding.json`, so it is source/provider evidence rather than a protected exact-head security pass. Its prose also claimed a path-validation fix that was absent from the inspected `f682e33` source; report remediation text is never accepted without source and runtime confirmation.
+
+### Decision extension
+
+1. The CLI is the untrusted path boundary. Before dispatch, every CLI input and output path—including optional group/cluster/fixed-item paths and `label=path` candidate specifications—is checked against the caller's resolved current working directory. `..`, absolute paths outside that root, and symlinked parents are rejected before any model or file operation. The lexical path is preserved so the existing descriptor-safe readers can still reject leaf symlinks with `O_NOFOLLOW`.
+2. The library persistence/load functions retain their caller-owned path contract; they are not silently changed to a process-global directory policy. A library integration that accepts untrusted path strings must provide its own approved root or invoke the CLI boundary. This keeps the fix compatible with programmatic use while preventing the reported CLI attack surface.
+3. The fix is implemented at `2d76d8534a9f8c1844705023d557304b73839c0b`; CLI traversal and symlink-parent regressions are covered, and the focused CLI/security suite passed `296` tests. Full-suite and a fresh exact-head structured Strix binding remain required before Merge.
+
+### Considered alternatives and consequences
+
+- **Allow arbitrary CLI paths:** rejected because it leaves the reported read/write boundary open.
+- **Confine every library function to `Path.cwd()`:** rejected because it breaks explicit programmatic artifact roots and would move a CLI trust decision into reusable APIs.
+- **Chosen CLI-only containment:** prevents the reported traversal with one shared pre-dispatch guard. The consequence is that CLI callers must run from, or place all inputs/outputs beneath, their approved workspace; this is intentional and documented rather than a silent path rewrite. No keyword matching, positional repair, retry, or silent result dropping is introduced.
+
 ## References
 
 | Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
