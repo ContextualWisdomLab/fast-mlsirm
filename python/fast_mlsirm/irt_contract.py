@@ -283,12 +283,12 @@ def _normalize_experiment_responses(
 
 
 __all__ = [
+    "IRTItemType",
     "MIN_FACTOR_ANCHOR_ITEMS",
     "MIN_IRT_ITEMS",
     "MIN_IRT_PERSONS",
     "MIN_ITEM_DISTINCT_VALUES",
     "MIN_OBSERVED_PER_ITEM",
-    "IRTItemType",
     "fit_irt_experiment",
     "validate_irt_experiment_readiness",
     "validate_irt_response_matrix",
