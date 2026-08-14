@@ -50,9 +50,15 @@ a scorer's human/AI class.
 The bounded study reports test-layer bias, MAE, and RMSE for:
 
 - rater severity;
-- task difficulty;
-- shared category thresholds; and
+- task difficulty; and
 - respondent EAP standing.
+
+For shared category thresholds it separately verifies the identified sum-zero
+constraint and reports MAE and RMSE. Mean signed threshold bias is not used as
+independent recovery evidence because both the generating and fitted threshold
+vectors are constrained to sum zero; under that identification, the mean
+signed difference is algebraically near zero even when individual thresholds
+are poorly recovered.
 
 Rater-severity and task-difficulty ordering are checked separately. Correlation
 is deliberately not used as the primary acceptance criterion because a high
