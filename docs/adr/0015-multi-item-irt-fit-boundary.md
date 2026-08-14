@@ -343,6 +343,31 @@ The exact current fast-mlsirm head before this fix (`f682e33aad483f2afafdc39e0c4
 - **Confine every library function to `Path.cwd()`:** rejected because it breaks explicit programmatic artifact roots and would move a CLI trust decision into reusable APIs.
 - **Chosen CLI-only containment:** prevents the reported traversal with one shared pre-dispatch guard. The consequence is that CLI callers must run from, or place all inputs/outputs beneath, their approved workspace; this is intentional and documented rather than a silent path rewrite. No keyword matching, positional repair, retry, or silent result dropping is introduced.
 
+## Output artifact atomicity follow-up
+
+The CLI path boundary did not by itself protect the diagnostics HTML writer:
+`render_diagnostics_report` used direct `Path.write_text`, so an existing leaf
+symlink inside an otherwise approved workspace could redirect the write to its
+target. The existing JSON/NumPy writers already had the required atomic
+replace helper, so this was a real sibling-writer inconsistency rather than a
+reason to change the library's path-root contract.
+
+Decision:
+
+1. Reuse `io._atomic_write_text` for diagnostics HTML publication. The temporary
+   file is created beside the destination and atomically replaces the leaf,
+   leaving a pre-existing symlink target unchanged.
+2. Keep the CLI containment guard and existing caller-owned library path
+   contract; atomic publication addresses leaf replacement, not authorization
+   of arbitrary library paths.
+3. Add a regression that proves a diagnostics report replaces an in-workspace
+   leaf symlink without overwriting its target. No keyword matching, positional
+   repair, retry, or silent result dropping is introduced.
+
+Implemented in the current follow-up; focused CLI/report/security validation
+passed `309` tests. Exact-head remote checks, structured Strix binding, and
+independent review remain required before Merge.
+
 ## References
 
 | Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
