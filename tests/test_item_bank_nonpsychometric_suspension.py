@@ -7,6 +7,7 @@ import runpy
 
 import pytest
 
+import fast_mlsirm.rubric.item_bank as item_bank_module
 from fast_mlsirm.rubric.item_bank import (
     ItemBankEvidenceKind,
     ItemBankEvidenceReference,
@@ -49,6 +50,32 @@ def _active_record():
     )
 
 
+def _create_internal_successor(
+    current,
+    *,
+    target_state: ItemBankLifecycleState,
+    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...],
+):
+    """Exercise factory-only concern invariants without bypassing public transitions."""
+    return item_bank_module._create_record(
+        item_id=current.item_id,
+        item_version=current.item_version,
+        candidate_fingerprint=current.candidate_fingerprint,
+        pilot_record_fingerprint=current.pilot_record_fingerprint,
+        audit_report_fingerprint=current.audit_report_fingerprint,
+        blueprint_id=current.blueprint_id,
+        rubric_id=current.rubric_id,
+        rubric_version=current.rubric_version,
+        lifecycle_state=target_state,
+        policy_criticality=current.policy_criticality,
+        approved_use_ids=current.approved_use_ids,
+        evidence_references=current.evidence_references,
+        previous_record_fingerprint=current.record_fingerprint,
+        transition_reason_id="internal_invariant_probe",
+        suspension_concern_kinds=suspension_concern_kinds,
+    )
+
+
 def test_security_privacy_concern_can_suspend_and_reactivate_without_fake_drift() -> None:
     """Security/privacy quarantine uses exact concern evidence, not invented DIF/drift."""
     active = _active_record()
@@ -63,6 +90,9 @@ def test_security_privacy_concern_can_suspend_and_reactivate_without_fake_drift(
     )
 
     assert suspended.lifecycle_state is ItemBankLifecycleState.SUSPENDED
+    assert suspended.suspension_concern_kinds == (
+        ItemBankEvidenceKind.SECURITY_PRIVACY,
+    )
     assert {reference.evidence_kind.value for reference in suspended.evidence_references} >= {
         "suspension",
         "security_privacy",
@@ -79,6 +109,7 @@ def test_security_privacy_concern_can_suspend_and_reactivate_without_fake_drift(
     )
 
     assert reactivated.lifecycle_state is ItemBankLifecycleState.ACTIVE
+    assert reactivated.suspension_concern_kinds == ()
     assert reactivated.previous_record_fingerprint == suspended.record_fingerprint
 
 
@@ -108,3 +139,43 @@ def test_reactivation_must_address_the_suspended_concern_class() -> None:
 
     assert caught.value.code == "missing_transition_evidence"
     assert "security_privacy" in caught.value.message
+
+
+def test_suspension_concern_metadata_fails_closed_when_factory_invariants_break() -> None:
+    """Factory-sealed records cannot omit, misclassify, or leak suspension concerns."""
+    active = _active_record()
+
+    with pytest.raises(ValueError, match="suspended records require suspension concern kinds"):
+        _create_internal_successor(
+            active,
+            target_state=ItemBankLifecycleState.SUSPENDED,
+            suspension_concern_kinds=(),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="suspension_concern_kinds must contain only governed concern evidence kinds",
+    ):
+        _create_internal_successor(
+            active,
+            target_state=ItemBankLifecycleState.SUSPENDED,
+            suspension_concern_kinds=(ItemBankEvidenceKind.APPROVAL,),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="only suspended records may retain suspension concern kinds",
+    ):
+        _create_internal_successor(
+            active,
+            target_state=ItemBankLifecycleState.ACTIVE,
+            suspension_concern_kinds=(ItemBankEvidenceKind.SECURITY_PRIVACY,),
+        )
+
+    missing = item_bank_module._missing_required_kinds(
+        ItemBankLifecycleState.SUSPENDED,
+        ItemBankLifecycleState.ACTIVE,
+        {ItemBankEvidenceKind.APPROVAL},
+        suspension_concern_kinds=frozenset(),
+    )
+    assert missing == ("suspension_resolution_evidence",)
