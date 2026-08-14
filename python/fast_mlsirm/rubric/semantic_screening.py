@@ -55,7 +55,7 @@ REQUIRED_SCREENING_DIMENSIONS: tuple[ScreeningDimension, ...] = tuple(
 class ScreeningStatus(str, Enum):
     """Governed decision status for one semantic screening dimension."""
 
-    PASS = "pass"
+    PASS = "pass"  # noqa: S105 - governed decision status, not a credential
     ACCEPTED_LIMITATION = "accepted_limitation"
     REVIEW_REQUIRED = "review_required"
     BLOCKING = "blocking"
@@ -276,9 +276,15 @@ class CandidateScreeningResult:
             _sha256_hex(self._content_dict()),
         )
 
+    def _verify_seal(self) -> None:
+        """Reject post-construction mutation of a screening result."""
+        if self._screening_result_fingerprint != _sha256_hex(self._content_dict()):
+            raise ValueError("screening result no longer matches its factory seal")
+
     @property
     def is_pilot_eligible(self) -> bool:
         """Return whether every dimension passed or has a governed limitation."""
+        self._verify_seal()
         return all(
             check.status
             in {ScreeningStatus.PASS, ScreeningStatus.ACCEPTED_LIMITATION}
@@ -301,17 +307,18 @@ class CandidateScreeningResult:
     @property
     def screening_result_fingerprint(self) -> str:
         """Return the SHA-256 identity of the complete screening decision."""
+        self._verify_seal()
         return self._screening_result_fingerprint
 
     @property
     def screening_result_id(self) -> str:
         """Return a descriptive 128-bit public handle for this screening result."""
-        return f"screening_result_{self.screening_result_fingerprint[:32]}"
+        self._verify_seal()
+        return f"screening_result_{self._screening_result_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
         """Return source-text-free result content plus deterministic identities."""
-        if self._screening_result_fingerprint != _sha256_hex(self._content_dict()):
-            raise ValueError("screening result no longer matches its factory seal")
+        self._verify_seal()
         return {
             **self._content_dict(),
             "screening_result_id": self.screening_result_id,
