@@ -43,6 +43,13 @@ class _SinglePassSequence(Sequence[_T]):
         return iter(self._values)
 
 
+class _HostileStripString(str):
+    """String subclass whose normalization callback must never execute."""
+
+    def strip(self, chars: str | None = None) -> str:
+        raise RuntimeError("caller-controlled identity callback leaked")
+
+
 def test_group_holdout_requires_a_declared_noncell_generalization_unit() -> None:
     plan = ModelValidationPlan(
         strategy=ValidationStrategy.GROUP_HOLDOUT,
@@ -111,6 +118,31 @@ def test_group_partition_snapshots_caller_sequences_once() -> None:
 
     assert group_ids.iteration_count == 1
     assert fold_ids.iteration_count == 1
+
+
+def test_group_partition_rejects_string_subclasses_before_callbacks() -> None:
+    """Caller-defined identity callbacks cannot cross the validation boundary."""
+    hostile_group = _HostileStripString("query-a")
+    with pytest.raises(
+        ValueError,
+        match="group_ids entries must be non-empty strings",
+    ) as group_error:
+        validate_group_partition(
+            group_ids=(hostile_group, "query-b"),
+            fold_ids=("fold-1", "fold-2"),
+        )
+    assert "caller-controlled" not in str(group_error.value)
+
+    hostile_fold = _HostileStripString("fold-1")
+    with pytest.raises(
+        ValueError,
+        match="fold_ids entries must be non-empty strings",
+    ) as fold_error:
+        validate_group_partition(
+            group_ids=("query-a", "query-b"),
+            fold_ids=(hostile_fold, "fold-2"),
+        )
+    assert "caller-controlled" not in str(fold_error.value)
 
 
 def test_group_partition_rejects_malformed_identity_vectors() -> None:
