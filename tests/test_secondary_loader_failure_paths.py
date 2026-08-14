@@ -20,6 +20,7 @@ SIMPLE_LOADERS = (
 )
 LOCKED_LOADERS = (
     ("fast_mlsirm._bifactor_core_loader", "bifactor_core"),
+    ("fast_mlsirm._multilevel_core_loader", "multilevel_core"),
     ("fast_mlsirm._rating_range_core_loader", "rating_range_core"),
 )
 ALL_LOADERS = SIMPLE_LOADERS + LOCKED_LOADERS
