@@ -107,8 +107,8 @@ def _observed_value(values: Mapping[str, float], occasion_id: str) -> float:
     """Return one caller observation as a real float, or NaN when absent."""
     try:
         raw = values.get(occasion_id, np.nan)
-    except Exception as exc:
-        raise ValueError("values must be a plain read-only mapping") from exc
+    except Exception:  # noqa: BLE001 - caller-controlled Mapping implementation
+        raise ValueError("values must be a plain read-only mapping") from None
     if isinstance(raw, (bool, np.bool_)) or not isinstance(
         raw, (int, float, np.integer, np.floating)
     ):
@@ -122,14 +122,15 @@ def fit_longitudinal_state(
     *,
     worker_count: int = 1,
 ) -> dict[str, object]:
-    """Fit the Rust-owned respondent state model for a sealed design.
+    """Fit the Rust-owned respondent state predictor for a sealed design.
 
     ``values`` maps exact occasion identifiers to observed factor scores. A
     missing identifier is represented as ``NaN`` so the design remains intact
     while the Rust fitter excludes that observation from estimation. The
     returned state is aligned with ``design.occasions`` sorted by respondent
-    and sequence, and includes package-independent diagnostics suitable for a
-    persisted analysis artifact.
+    and sequence, and includes normative estimand metadata so callers cannot
+    mistake independent respondent OLS trends for population random effects or
+    a caller-supplied AR coefficient for an estimated parameter.
 
     Raises
     ------
@@ -163,6 +164,11 @@ def fit_longitudinal_state(
     ar_coefficient = design.state_spec.autoregressive_coefficient
     if state_kind is LongitudinalStateKind.RANDOM_INTERCEPT_SLOPE:
         ar_coefficient = None
+        estimand_scope = "independent_respondent_ols_trend"
+        ar_coefficient_source = "not_applicable"
+    else:
+        estimand_scope = "discrete_ar_state_prediction"
+        ar_coefficient_source = "caller_supplied"
     core = multilevel_core()
     result = core.fit_longitudinal_state(
         np.asarray(row_offsets, dtype=np.uint64),
@@ -175,6 +181,10 @@ def fit_longitudinal_state(
     )
     return {
         "state_kind": state_kind.value,
+        "estimand_scope": estimand_scope,
+        "population_random_effects_estimated": False,
+        "ar_coefficient_estimated": False,
+        "ar_coefficient_source": ar_coefficient_source,
         "state_spec_fingerprint": design.state_spec.state_spec_fingerprint,
         "design_fingerprint": design.design_fingerprint,
         "state": np.asarray(result["state"], dtype=np.float64),
