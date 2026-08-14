@@ -151,7 +151,10 @@ def fit_testlet(
         or _is_exact_type(tol_type, _NUMPY_FLOAT_TYPES)
     ):
         raise ValueError("tol must be a finite non-negative number")
-    tol_value = float(tol)
+    try:
+        tol_value = float(tol)
+    except OverflowError as exc:
+        raise ValueError("tol must be a finite non-negative number") from exc
     if not np.isfinite(tol_value) or tol_value < 0.0:
         raise ValueError("tol must be a finite non-negative number")
 
@@ -173,7 +176,10 @@ def fit_testlet(
         or _is_exact_type(init_sigma2_type, _NUMPY_FLOAT_TYPES)
     ):
         raise ValueError("init_sigma2 must be a finite non-negative number")
-    init_sigma2_value = float(init_sigma2)
+    try:
+        init_sigma2_value = float(init_sigma2)
+    except OverflowError as exc:
+        raise ValueError("init_sigma2 must be a finite non-negative number") from exc
     if not np.isfinite(init_sigma2_value) or init_sigma2_value < 0.0:
         raise ValueError("init_sigma2 must be a finite non-negative number")
 
