@@ -110,6 +110,7 @@ def test_invalid_exact_controls_fail_before_core(monkeypatch):
         ({"tol": -1.0}, "tol"),
         ({"tol": float("nan")}, "tol"),
         ({"tol": float("inf")}, "tol"),
+        ({"tol": 10**400}, "tol"),
         ({"tol": True}, "tol"),
     )
     for kwargs, field in cases:
