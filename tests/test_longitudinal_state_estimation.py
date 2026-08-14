@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 import pytest
 
@@ -22,7 +24,20 @@ def _occasion(respondent: str, occasion: str, sequence: int, offset: int):
         occasion_id=occasion_id,
         sequence_index=sequence,
         time_offset_milliseconds=offset,
-        occasion_revision_fingerprint=(occasion_id + " revision").encode().hex().ljust(64, "0"),
+        occasion_revision_fingerprint=(occasion_id + " revision")
+        .encode()
+        .hex()
+        .ljust(64, "0")[:64],
+    )
+
+
+def _single_occasion_design():
+    """Return the smallest sealed design for public-boundary validation tests."""
+    return build_longitudinal_design(
+        occasions=[_occasion("respondent_a", "guard", 0, 0)],
+        state_spec=build_longitudinal_state_spec(
+            state_kind=LongitudinalStateKind.RANDOM_INTERCEPT_SLOPE,
+        ),
     )
 
 
@@ -44,7 +59,13 @@ def test_rust_state_fit_recovers_slopes_and_missing_values() -> None:
     )
     result = fit_longitudinal_state(
         design,
-        {"occasion_a0": 2.0, "occasion_a1": 3.5, "occasion_a2": 5.0, "occasion_b0": -1.0, "occasion_b1": -3.0},
+        {
+            "occasion_a0": 2.0,
+            "occasion_a1": 3.5,
+            "occasion_a2": 5.0,
+            "occasion_b0": -1.0,
+            "occasion_b1": -3.0,
+        },
         worker_count=4,
     )
     np.testing.assert_allclose(result["intercepts"], [2.0, -1.0], atol=1e-12)
@@ -82,12 +103,7 @@ def test_rust_state_fit_preserves_discrete_ar_and_irregular_time() -> None:
 
 def test_state_fit_rejects_invalid_worker_count_and_foreign_design() -> None:
     """The public estimator validates execution controls before Rust dispatch."""
-    design = build_longitudinal_design(
-        occasions=[_occasion("respondent_a", "guard", 0, 0)],
-        state_spec=build_longitudinal_state_spec(
-            state_kind=LongitudinalStateKind.RANDOM_INTERCEPT_SLOPE,
-        ),
-    )
+    design = _single_occasion_design()
     with pytest.raises(ValueError, match="worker_count"):
         fit_longitudinal_state(design, {}, worker_count=0)
 
@@ -96,3 +112,32 @@ def test_state_fit_rejects_invalid_worker_count_and_foreign_design() -> None:
 
     with pytest.raises(ValueError, match="LongitudinalDesign"):
         fit_longitudinal_state(ForeignDesign(), {})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [True, 1 + 2j, "not-a-number"])
+def test_state_fit_rejects_non_real_observation_values(value: object) -> None:
+    """Caller-controlled observations fail with the package-owned exception."""
+    with pytest.raises(ValueError, match="must be a real number"):
+        fit_longitudinal_state(_single_occasion_design(), {"occasion_guard": value})  # type: ignore[dict-item]
+
+
+def test_state_fit_translates_hostile_mapping_reads_to_value_error() -> None:
+    """A hostile mapping cannot leak its implementation exception."""
+
+    class ExplodingMapping(Mapping[str, float]):
+        """Raise from every read path to model an adversarial mapping."""
+
+        def __getitem__(self, key: str) -> float:
+            raise RuntimeError(f"blocked read: {key}")
+
+        def __iter__(self):
+            return iter(())
+
+        def __len__(self) -> int:
+            return 0
+
+        def get(self, key: str, default=None):
+            raise RuntimeError(f"blocked get: {key}")
+
+    with pytest.raises(ValueError, match="plain read-only mapping"):
+        fit_longitudinal_state(_single_occasion_design(), ExplodingMapping())
