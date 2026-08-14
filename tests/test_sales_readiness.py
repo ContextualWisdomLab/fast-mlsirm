@@ -18,7 +18,8 @@ def _load_sales_readiness():
 
 def _touch(path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("ok", encoding="utf-8")
+    content = json.dumps({"backend": "rust"}) if path.name == "fit_summary.json" else "ok"
+    path.write_text(content, encoding="utf-8")
     return str(path)
 
 
