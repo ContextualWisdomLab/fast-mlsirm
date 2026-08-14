@@ -92,6 +92,16 @@ class _ParallelOrchestrator(_SequencedOrchestrator):
                 self.active -= 1
 
 
+class _StructuredOrchestrator(_SequencedOrchestrator):
+    def __init__(self, answers):
+        super().__init__(answers)
+        self.structured_formats = []
+
+    def complete_structured(self, messages, mode="auto", *, response_format):
+        self.structured_formats.append(response_format)
+        return super().complete(messages, mode)
+
+
 CRITERIA = [
     JudgeCriterion("task_alignment", "The answer directly addresses the task."),
     JudgeCriterion("factual_support", "The answer avoids unsupported claims."),
@@ -353,6 +363,23 @@ def test_category_judgment_defaults_to_binary_threshold_for_polytomous_output() 
     assert result.to_irt_row() == (2, 2)
     assert len(orchestrator.calls) == 4
     assert all("binary" in call[0][0]["content"] for call in orchestrator.calls)
+
+
+def test_binary_threshold_uses_structured_contextual_transport_when_available() -> None:
+    payload = json.dumps({"meets_threshold": True, "rationale": "supported"})
+    orchestrator = _StructuredOrchestrator([payload] * 4)
+    result = ContextualOrchestratorJudge(orchestrator).judge(
+        task="task",
+        answer="answer",
+        criteria=CRITERIA,
+        category_count=3,
+    )
+    assert result.to_irt_row() == (2, 2)
+    assert len(orchestrator.structured_formats) == 4
+    schema = orchestrator.structured_formats[0]["json_schema"]["schema"]
+    assert schema["required"] == ["meets_threshold", "rationale"]
+    assert schema["additionalProperties"] is False
+    assert all(fmt == orchestrator.structured_formats[0] for fmt in orchestrator.structured_formats)
 
 
 def test_category_anchors_are_bound_to_each_binary_threshold() -> None:

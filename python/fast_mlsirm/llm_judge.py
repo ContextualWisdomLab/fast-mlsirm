@@ -431,6 +431,80 @@ class ContextualOrchestratorJudge:
         self.mode = mode
         self.accept_threshold = _score(accept_threshold, "accept_threshold")
 
+    @staticmethod
+    def _response_format(
+        category_method: str,
+        criterion_ids: list[str],
+        category_count: int | None,
+    ) -> dict[str, Any]:
+        """Describe the strict JSON contract to capable contextual transports."""
+        if category_method == "binary_threshold":
+            properties: dict[str, Any] = {
+                "meets_threshold": {"type": "boolean"},
+                "rationale": {"type": "string"},
+            }
+            required = ["meets_threshold", "rationale"]
+            name = "fast_mlsirm_binary_judge"
+        else:
+            assert category_count is not None or category_method == "direct"
+            if category_method == "cumulative_threshold":
+                assert category_count is not None
+                item_schema: dict[str, Any] = {
+                    "type": "array",
+                    "items": {"type": "boolean"},
+                    "minItems": category_count - 1,
+                    "maxItems": category_count - 1,
+                }
+                field_name = "criterion_thresholds"
+            elif category_count is not None:
+                item_schema = {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": category_count - 1,
+                }
+                field_name = "criterion_categories"
+            else:
+                item_schema = {"type": "number", "minimum": 0, "maximum": 1}
+                field_name = "criterion_scores"
+            properties = {
+                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                "accepted": {"type": "boolean"},
+                "rationale": {"type": "string"},
+                field_name: {
+                    "type": "object",
+                    "properties": {criterion_id: item_schema for criterion_id in criterion_ids},
+                    "required": criterion_ids,
+                    "additionalProperties": False,
+                },
+            }
+            required = ["score", "accepted", "rationale", field_name]
+            name = "fast_mlsirm_judge"
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": name,
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def _complete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        response_format: dict[str, Any],
+    ) -> Any:
+        """Use the structured contextual route when the adapter exposes it."""
+        structured = getattr(self.orchestrator, "complete_structured", None)
+        if callable(structured):
+            return structured(messages, mode=self.mode, response_format=response_format)
+        return self.orchestrator.complete(messages, mode=self.mode)
+
     def _binary_threshold_judgments(
         self,
         *,
@@ -448,6 +522,11 @@ class ContextualOrchestratorJudge:
             for criterion in criteria
             for threshold_index in range(category_count - 1)
         ]
+        response_format = self._response_format(
+            "binary_threshold",
+            [criterion.criterion_id for criterion in criteria],
+            category_count,
+        )
 
         def judge_boundary(request: tuple[JudgeCriterion, int]) -> dict[str, Any]:
             criterion, threshold_index = request
@@ -513,7 +592,9 @@ class ContextualOrchestratorJudge:
                         "does not satisfy that requirement. Check every requirement in the category_anchor before "
                         "returning true. "
                         "When evidence is incomplete or ambiguous, choose the lower threshold. Do not infer a "
-                        "missing threshold from another threshold."
+                        "missing threshold from another threshold. Final output contract: start with { and end "
+                        "with }; emit no markdown fences, labels, or explanation outside the object. Use exactly "
+                        "this shape: {\"meets_threshold\": true, \"rationale\": \"brief reason\"}."
                     ),
                 },
                 {
@@ -526,7 +607,7 @@ class ContextualOrchestratorJudge:
             ]
             try:
                 record["call_status"] = "started"
-                completion = self.orchestrator.complete(messages, mode=self.mode)
+                completion = self._complete(messages, response_format=response_format)
                 record["call_status"] = "completed"
                 if isinstance(completion, Mapping):
                     trace = completion.get("trace", [])
@@ -869,8 +950,13 @@ class ContextualOrchestratorJudge:
                 ),
             },
         ]
+        response_format = self._response_format(
+            category_method,
+            expected_ids,
+            category_count,
+        )
         try:
-            completion = self.orchestrator.complete(messages, mode=self.mode)
+            completion = self._complete(messages, response_format=response_format)
         except Exception:  # noqa: BLE001 - never expose provider exception text at the judge boundary
             raise JudgeFormatError("judge call failed") from None
         if not isinstance(completion, Mapping):
