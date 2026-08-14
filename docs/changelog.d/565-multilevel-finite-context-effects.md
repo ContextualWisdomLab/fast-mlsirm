@@ -1,0 +1,1 @@
+- Multilevel contextual-effect evaluation now fails closed when any supplied context random-effect value is NaN or infinite, preventing non-finite parameters from propagating into weighted predictor output.
