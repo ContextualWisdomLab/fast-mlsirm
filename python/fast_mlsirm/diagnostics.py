@@ -8,7 +8,12 @@ import numpy as np
 
 from .config import FitConfig
 from .math import sigmoid, standardize
-from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
+from .objective import (
+    linear_predictor,
+    model_flags,
+    prepare_response,
+    validate_factor_id,
+)
 from .types import (
     DimensionalityDiagnostics,
     FitDiagnostics,
@@ -45,9 +50,7 @@ def predict_proba(
     Evaluates ``sigmoid`` of the model linear predictor, optionally restricting
     to a subset of ``persons`` and/or ``items``.
     """
-    factors = validate_factor_id(
-        factor_id, len(params.b), params.theta.shape[1]
-    )
+    factors = validate_factor_id(factor_id, len(params.b), params.theta.shape[1])
     sub = _subset_params(params, persons, items)
     if items is not None:
         factors = factors[np.asarray(items, dtype=np.int64)]
@@ -55,7 +58,9 @@ def predict_proba(
     return sigmoid(eta)
 
 
-def _leniency_residuals(y: np.ndarray, observed: np.ndarray, prob: np.ndarray) -> dict[str, np.ndarray | float]:
+def _leniency_residuals(
+    y: np.ndarray, observed: np.ndarray, prob: np.ndarray
+) -> dict[str, np.ndarray | float]:
     """Compute an observed-minus-expected pass-rate proxy for response leniency.
 
     This is an adaptation inspired by the content-independent response-bias
@@ -142,7 +147,9 @@ def fit_diagnostics(
     inferential fit indices cannot be computed from an unfinished fit.
     """
     if include_m2 and estimator is None:
-        raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
+        raise ValueError(
+            "include_m2 requires the actual estimator: jmle, cmle, or mmle"
+        )
     if include_m2 and convergence_status is not None:
         status = str(convergence_status).strip().lower()
         if status != "converged":
@@ -216,8 +223,14 @@ def fit_diagnostics(
         estimator_name = str(estimator).lower()
         if group_id is not None:
             if estimator_name != "mmle":
-                raise ValueError("multiple-group M2 currently requires estimator='mmle'")
-            if population is None or "mu" not in population or "sigma" not in population:
+                raise ValueError(
+                    "multiple-group M2 currently requires estimator='mmle'"
+                )
+            if (
+                population is None
+                or "mu" not in population
+                or "sigma" not in population
+            ):
                 raise ValueError("multiple-group M2 requires population mu and sigma")
             limited = m2_multigroup(
                 responses=y,
@@ -298,7 +311,9 @@ def fit_diagnostics(
                 "m2_inference_note": limited.inference_note,
                 "m2_n_groups": float(limited.n_groups),
                 "m2_n_clusters": (
-                    float(limited.n_clusters) if limited.n_clusters is not None else float("nan")
+                    float(limited.n_clusters)
+                    if limited.n_clusters is not None
+                    else float("nan")
                 ),
             }
         )
@@ -699,11 +714,22 @@ def _axis_fit(
     outfit mean-square statistics summed over the chosen axis (``axis=0`` for
     item fit, ``axis=1`` for person fit).
     """
-    count = observed.sum(axis=axis).astype(np.float64)
-    score = (y * observed).sum(axis=axis)
-    expected = (prob * observed).sum(axis=axis)
+    # Optimized: replace element-wise multiplication (e.g. y * observed) with np.einsum
+    # to avoid allocating large intermediate arrays before summing.
+    obs_f = observed.astype(y.dtype, copy=False)
+    count = obs_f.sum(axis=axis).astype(np.float64)
+    if axis == 0:
+        score = np.einsum("ij,ij->j", y, obs_f, optimize=True)
+        expected = np.einsum("ij,ij->j", prob, obs_f, optimize=True)
+        variance_sum = np.einsum("ij,ij->j", variance, obs_f, optimize=True)
+    elif axis == 1:
+        score = np.einsum("ij,ij->i", y, obs_f, optimize=True)
+        expected = np.einsum("ij,ij->i", prob, obs_f, optimize=True)
+        variance_sum = np.einsum("ij,ij->i", variance, obs_f, optimize=True)
+    else:
+        raise ValueError(f"axis {axis} not supported")
+
     raw = residual.sum(axis=axis)
-    variance_sum = (variance * observed).sum(axis=axis)
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
@@ -736,16 +762,21 @@ def _factor_fit(
         raise ValueError("factor_id length must match number of items")
 
     rows = []
+    # Optimized: cast observed to float outside the loop to use with einsum
+    obs_f = observed.astype(y.dtype, copy=False)
     for factor in np.unique(factors):
         cols = factors == factor
+        obs_slice = obs_f[:, cols]
         rows.append(
             (
                 float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
+                float(obs_slice.sum()),
+                float(np.einsum("ij,ij->", y[:, cols], obs_slice, optimize=True)),
+                float(np.einsum("ij,ij->", prob[:, cols], obs_slice, optimize=True)),
                 float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
+                float(
+                    np.einsum("ij,ij->", variance[:, cols], obs_slice, optimize=True)
+                ),
                 float((residual[:, cols] * residual[:, cols]).sum()),
                 float(pearson_sq[:, cols].sum()),
             )
