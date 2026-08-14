@@ -7,7 +7,14 @@ from typing import Any
 
 from . import rag as _base
 from ._contract_safety import freeze_metadata
-from ._validation import AssessmentSpecError, _metadata_key, assessment_error
+from ._validation import (
+    MAX_METADATA_COLLECTION_VALUES,
+    MAX_METADATA_DEPTH,
+    MAX_METADATA_NODES,
+    AssessmentSpecError,
+    _metadata_key,
+    assessment_error,
+)
 
 _ORIGINAL_RAG_METADATA = _base._rag_metadata
 
@@ -99,15 +106,191 @@ def _authorized_metadata_values(
     return output
 
 
+def _snapshot_rag_value(
+    value: Any,
+    path: str,
+    *,
+    depth: int = 0,
+    node_count: list[int] | None = None,
+    active_containers: set[int] | None = None,
+) -> Any:
+    """Copy bounded nested metadata without trusting container callbacks."""
+    counts = [0] if node_count is None else node_count
+    active = set() if active_containers is None else active_containers
+    if depth > MAX_METADATA_DEPTH:
+        raise assessment_error(
+            "metadata_depth_exceeded",
+            path,
+            f"metadata exceeds the maximum depth of {MAX_METADATA_DEPTH}",
+        )
+    counts[0] += 1
+    if counts[0] > MAX_METADATA_NODES:
+        raise assessment_error(
+            "metadata_node_budget_exceeded",
+            path,
+            f"metadata exceeds the maximum node count of {MAX_METADATA_NODES}",
+        )
+
+    if isinstance(value, Mapping):
+        marker = id(value)
+        if marker in active:
+            raise assessment_error(
+                "cyclic_metadata_reference",
+                path,
+                "metadata cannot contain cyclic container references",
+            )
+        active.add(marker)
+        try:
+            try:
+                iterator = iter(value.items())
+            except Exception:
+                raise assessment_error(
+                    "invalid_metadata_mapping",
+                    path,
+                    "metadata mapping entries could not be inspected safely",
+                ) from None
+            output: dict[str, Any] = {}
+            index = 0
+            while True:
+                try:
+                    entry = next(iterator)
+                except StopIteration:
+                    break
+                except Exception:
+                    raise assessment_error(
+                        "invalid_metadata_mapping",
+                        path,
+                        "metadata mapping entries could not be materialized safely",
+                    ) from None
+                if index >= MAX_METADATA_COLLECTION_VALUES:
+                    raise assessment_error(
+                        "metadata_collection_too_large",
+                        path,
+                        (
+                            "metadata mappings must contain at most "
+                            f"{MAX_METADATA_COLLECTION_VALUES} values"
+                        ),
+                    )
+                try:
+                    raw_key, child = entry
+                except Exception:
+                    raise assessment_error(
+                        "invalid_metadata_mapping",
+                        f"{path}.entries[{index}]",
+                        "metadata mapping entries must contain one key and value",
+                    ) from None
+                safe_key = str.__str__(raw_key) if isinstance(raw_key, str) else raw_key
+                key = _metadata_key(safe_key, f"{path}.keys[{index}]")
+                if key in output:
+                    raise assessment_error(
+                        "duplicate_metadata_key",
+                        f"{path}.keys[{index}]",
+                        "metadata keys must be unique",
+                    )
+                output[key] = _snapshot_rag_value(
+                    child,
+                    f"{path}.values[{index}]",
+                    depth=depth + 1,
+                    node_count=counts,
+                    active_containers=active,
+                )
+                index += 1
+            return output
+        finally:
+            active.remove(marker)
+
+    if isinstance(value, (list, tuple)):
+        marker = id(value)
+        if marker in active:
+            raise assessment_error(
+                "cyclic_metadata_reference",
+                path,
+                "metadata cannot contain cyclic container references",
+            )
+        active.add(marker)
+        try:
+            try:
+                size = len(value)
+            except Exception:
+                raise assessment_error(
+                    "invalid_metadata_collection",
+                    path,
+                    "metadata collection size could not be inspected safely",
+                ) from None
+            if size > MAX_METADATA_COLLECTION_VALUES:
+                raise assessment_error(
+                    "metadata_collection_too_large",
+                    path,
+                    (
+                        "metadata collections must contain at most "
+                        f"{MAX_METADATA_COLLECTION_VALUES} values"
+                    ),
+                )
+            try:
+                iterator = iter(value)
+            except Exception:
+                raise assessment_error(
+                    "invalid_metadata_collection",
+                    path,
+                    "metadata collection could not be inspected safely",
+                ) from None
+            output: list[Any] = []
+            index = 0
+            while True:
+                try:
+                    child = next(iterator)
+                except StopIteration:
+                    break
+                except Exception:
+                    raise assessment_error(
+                        "invalid_metadata_collection",
+                        path,
+                        "metadata collection could not be materialized safely",
+                    ) from None
+                if index >= MAX_METADATA_COLLECTION_VALUES:
+                    raise assessment_error(
+                        "metadata_collection_too_large",
+                        path,
+                        (
+                            "metadata collections must contain at most "
+                            f"{MAX_METADATA_COLLECTION_VALUES} values"
+                        ),
+                    )
+                output.append(
+                    _snapshot_rag_value(
+                        child,
+                        f"{path}[{index}]",
+                        depth=depth + 1,
+                        node_count=counts,
+                        active_containers=active,
+                    )
+                )
+                index += 1
+            return tuple(output) if isinstance(value, tuple) else output
+        finally:
+            active.remove(marker)
+
+    if isinstance(value, str):
+        return str.__str__(value)
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return int.__int__(value)
+    if isinstance(value, float):
+        return float.__float__(value)
+    return value
+
+
 def _preflight_rag_metadata(value: Any) -> Any:
-    """Validate keys once, then freeze only their captured authorized values."""
+    """Validate keys once, snapshot nested values, and freeze built-in data."""
     raw_metadata = {} if value is None else value
     if not isinstance(raw_metadata, Mapping):
         return raw_metadata
     keys = _rag_metadata_keys(raw_metadata)
     authorized_values = _authorized_metadata_values(raw_metadata, keys)
+    safe_values = _snapshot_rag_value(authorized_values, "$.metadata")
     try:
-        return freeze_metadata(authorized_values)
+        return freeze_metadata(safe_values)
     except AssessmentSpecError as exc:
         if exc.code == "invalid_metadata_mapping":
             raise assessment_error(
