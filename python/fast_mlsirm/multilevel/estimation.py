@@ -5,8 +5,8 @@ This module performs marshalling only: converting a validated
 the flat CSR arrays ``mlsirm_core::multilevel::weighted_contextual_effect``
 expects, and converting the caller's per-context random-effect values into
 the matching flat vector. The additive sum, its determinism across worker
-counts, and its input validation are owned by the Rust core; see that
-module's docstring for the full linear-predictor context and the
+counts, and its numerical input validation are owned by the Rust core; see
+that module's docstring for the full linear-predictor context and the
 Browne, Goldstein, and Rasbash (2001) citation.
 """
 
@@ -20,6 +20,32 @@ from .._multilevel_core_loader import multilevel_core
 from .contracts import ContextMembershipDesign
 
 ContextKey = tuple[str, str]
+
+
+def _snapshot_context_effects(
+    context_keys: tuple[ContextKey, ...],
+    context_effects: Mapping[ContextKey, float],
+) -> np.ndarray:
+    """Read each required caller effect once without alien membership probes."""
+    missing: list[ContextKey] = []
+    values: list[float] = []
+    for key in context_keys:
+        try:
+            value = context_effects[key]
+        except KeyError:
+            missing.append(key)
+            continue
+        except Exception:
+            raise ValueError("context_effects could not be read safely") from None
+        try:
+            values.append(float(value))
+        except Exception:
+            raise ValueError(
+                "context_effects values could not be converted safely"
+            ) from None
+    if missing:
+        raise KeyError(f"context_effects is missing keys: {missing!r}")
+    return np.array(values, dtype=np.float64)
 
 
 def weighted_contextual_effect(
@@ -40,7 +66,8 @@ def weighted_contextual_effect(
     context_effects:
         Mapping from ``(context_dimension_id, context_id)`` to its current
         random-effect value ``u_h``. Must contain an entry for every context
-        key ``design`` references.
+        key ``design`` references. Required values are snapshotted exactly once
+        without invoking caller-defined membership callbacks.
     worker_count:
         Number of deterministic worker threads (``>= 1``); the result does
         not depend on this value (see the Rust core's determinism proof).
@@ -54,7 +81,9 @@ def weighted_contextual_effect(
     Raises
     ------
     ValueError
-        If ``worker_count < 1``, or the design fails integrity verification.
+        If ``worker_count < 1``, the design fails integrity verification, or a
+        caller effect cannot be read/converted safely. Numerical finiteness is
+        validated by the Rust core after marshalling.
     KeyError
         If ``context_effects`` is missing a key ``design`` references.
     """
@@ -68,13 +97,8 @@ def weighted_contextual_effect(
     _ = design.design_fingerprint
 
     context_keys = design.context_keys
-    missing = [key for key in context_keys if key not in context_effects]
-    if missing:
-        raise KeyError(f"context_effects is missing keys: {missing!r}")
     key_index = {key: index for index, key in enumerate(context_keys)}
-    effects = np.array(
-        [float(context_effects[key]) for key in context_keys], dtype=np.float64
-    )
+    effects = _snapshot_context_effects(context_keys, context_effects)
 
     by_observation: dict[str, list] = {
         observation_id: [] for observation_id in design.observation_ids
