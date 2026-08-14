@@ -2,8 +2,9 @@
 //!
 //! The private kernel retains deterministic weighted summation and worker
 //! partitioning. This boundary rejects duplicate context indices in each CSR
-//! row before any numerical work, so equal-key ordering can never affect a
-//! public result.
+//! row and non-finite contextual effects before numerical work, so invalid
+//! parameters cannot leak NaN/Inf results and equal-key ordering cannot affect
+//! a public result.
 //!
 //! Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership
 //! multiple classification (MMMC) models. *Statistical Modelling, 1*(2),
@@ -38,11 +39,19 @@ fn validate_unique_context_indices_per_row(
     Ok(())
 }
 
+fn validate_finite_effects(effects: &[f64]) -> Result<(), String> {
+    if effects.iter().any(|effect| !effect.is_finite()) {
+        return Err("effects must be finite".to_string());
+    }
+    Ok(())
+}
+
 /// Compute each observation's weighted contextual random-effect contribution.
 ///
 /// The sparse CSR rows may arrive in any edge order, but each context index
-/// must occur at most once in a row. All remaining shape, range, weight, and
-/// worker-count validation is delegated to the private deterministic kernel.
+/// must occur at most once in a row and every contextual random-effect value
+/// must be finite. All remaining shape, range, weight, and worker-count
+/// validation is delegated to the private deterministic kernel.
 pub fn weighted_contextual_effect(
     row_offsets: &[usize],
     context_indices: &[usize],
@@ -51,6 +60,7 @@ pub fn weighted_contextual_effect(
     worker_count: usize,
 ) -> Result<Vec<f64>, String> {
     validate_unique_context_indices_per_row(row_offsets, context_indices)?;
+    validate_finite_effects(effects)?;
     kernel::weighted_contextual_effect(
         row_offsets,
         context_indices,
