@@ -262,3 +262,15 @@ def test_fit_testlet_preserves_genuine_numpy_scalars() -> None:
             require_convergence=np.bool_(False),
         )
     assert fit.converged
+
+
+@pytest.mark.parametrize("model", ["", "invalid_model", "Rasch", "2PL"])
+def test_fit_testlet_rejects_unknown_builtin_model_before_native_core(model: str) -> None:
+    """Only the Rust-supported testlet model identifiers may cross the boundary."""
+
+    with patch(
+        "fast_mlsirm.fitstats._core_module",
+        side_effect=AssertionError("native core discovery must not run"),
+    ):
+        with pytest.raises(ValueError, match="model must be either 'rasch' or '2pl'"):
+            fit_testlet(_binary(), _tid(), model=model, q_gamma=7)
