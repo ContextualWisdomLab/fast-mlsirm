@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 import math
 import sys
 
@@ -12,6 +13,46 @@ from fast_mlsirm.multilevel import (
     build_context_membership_design,
     weighted_contextual_effect,
 )
+
+_CONTEXT_KEY = ("team_membership", "team_alpha")
+_SECRET = "raw_sensitive_context_effect_callback"
+
+
+class _ContainsTrap(Mapping[tuple[str, str], float]):
+    """Expose one valid effect while rejecting alien membership probes."""
+
+    def __getitem__(self, key: tuple[str, str]) -> float:
+        if key != _CONTEXT_KEY:
+            raise KeyError(key)
+        return 2.0
+
+    def __iter__(self) -> Iterator[tuple[str, str]]:
+        return iter((_CONTEXT_KEY,))
+
+    def __len__(self) -> int:
+        return 1
+
+    def __contains__(self, key: object) -> bool:
+        del key
+        raise RuntimeError(_SECRET)
+
+
+class _LookupTrap(Mapping[tuple[str, str], float]):
+    """Raise caller-controlled text when a referenced effect is read."""
+
+    def __getitem__(self, key: tuple[str, str]) -> float:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[tuple[str, str]]:
+        return iter((_CONTEXT_KEY,))
+
+    def __len__(self) -> int:
+        return 1
+
+    def __contains__(self, key: object) -> bool:
+        del key
+        return True
 
 
 def _single_context_design():
@@ -32,8 +73,23 @@ def test_public_predictor_rejects_non_finite_context_effects(effect: float) -> N
     with pytest.raises(ValueError, match="effects must be finite"):
         weighted_contextual_effect(
             design,
-            {("team_membership", "team_alpha"): effect},
+            {_CONTEXT_KEY: effect},
         )
+
+
+def test_public_predictor_does_not_invoke_alien_membership_callbacks() -> None:
+    """Required effects are read once rather than probed through ``__contains__``."""
+    result = weighted_contextual_effect(_single_context_design(), _ContainsTrap())
+
+    assert result.tolist() == [2.0]
+
+
+def test_public_predictor_normalizes_hostile_effect_lookup_failures() -> None:
+    """Caller callback text must not escape the Python marshalling boundary."""
+    with pytest.raises(ValueError, match="context_effects could not be read safely") as caught:
+        weighted_contextual_effect(_single_context_design(), _LookupTrap())
+
+    assert _SECRET not in str(caught.value)
 
 
 def test_public_predictor_rejects_finite_inputs_that_overflow_weighted_sum() -> None:
