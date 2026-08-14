@@ -66,11 +66,13 @@ published version as gold OA with CC BY metadata, and the author-uploaded
 ResearchGate record labels the copy CC BY 3.0. The official SAGE PDF and the
 author-uploaded ResearchGate copy
 <https://www.researchgate.net/publication/258187383_Optimal_Number_of_Questionnaire_Response_Categories_More_May_Not_Be_Better>
-returned anti-bot responses to the current environment. The Zotero Local API
-record `CWY355RP` confirms `rights=Open access` but has no child attachment;
-Zotero 9.0.6 also exposes no local write endpoint. No HTML page, regenerated
-file, or unauthorised mirror is stored as the original PDF. The original PDF
-remains an OA retrieval task for an authorized Zotero/Web API or GUI session.
+returned anti-bot responses to the current environment. An external official
+PDF fetch confirms the 10-page source, but the reproducible local downloader
+still receives HTTP 403 HTML. The Zotero Local API record `CWY355RP` confirms
+`rights=Open access` but has no child attachment; Zotero 9.0.6 also exposes no
+local write endpoint. No HTML page, regenerated file, or unauthorised mirror is
+stored as the original PDF. The original PDF remains an OA retrieval task for
+an authorized Zotero/Web API or GUI session.
 
 Zheng, C., Zhou, H., Meng, F., Zhou, J., & Huang, M. (2024). *Large language
 models are not robust multiple choice selectors*. ICLR 2024.
@@ -91,7 +93,9 @@ categories in ordered response models*. *The International Journal of
 Biostatistics, 18*(2), 593–611. <https://doi.org/10.1515/ijb-2021-0013>.
 The publisher record and Crossref/OpenAlex metadata identify the published
 version as CC BY 4.0. The Zotero Local API record `MYPNHHWJ` confirms the
-license, but the official De Gruyter PDF endpoint returned a WAF challenge in
-this environment and no child attachment exists. It is therefore an OA-PDF
-candidate whose original binary is not yet vendored; no substitute or
-regenerated PDF is counted as the source.
+license, but the current local redirect to the official De Gruyter PDF returns
+CloudFront WAF HTTP 202 with zero bytes and no child attachment exists. An
+external official PDF fetch confirms the 19-page source and its CC BY 4.0
+notice, but that fetch is not a reproducible local binary transfer. It is
+therefore an OA-PDF candidate whose original binary is not yet vendored; no
+substitute or regenerated PDF is counted as the source.
