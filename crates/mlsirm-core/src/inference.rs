@@ -47,7 +47,13 @@ pub fn second_order_test(
     n: usize,
     tol: f64,
 ) -> Result<(bool, f64, Vec<f64>), String> {
-    if n == 0 || hessian.len() != n * n {
+    if n == 0 {
+        return Err("hessian must be a square matrix".into());
+    }
+    let expected_len = n
+        .checked_mul(n)
+        .ok_or_else(|| "hessian dimension exceeds supported size".to_string())?;
+    if hessian.len() != expected_len {
         return Err("hessian must be a square matrix".into());
     }
     if !tol.is_finite() || tol < 0.0 {
