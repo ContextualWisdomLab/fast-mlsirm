@@ -28,22 +28,27 @@ __all__ = [
 ]
 
 
-_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
-    {
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.intp,
-        np.longlong,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-        np.uintp,
-        np.ulonglong,
-    }
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
 )
+
+
+def _is_exact_numpy_integer_scalar(value: object) -> bool:
+    """Return whether ``value`` has an exact supported NumPy integer type."""
+
+    value_type = type(value)
+    return any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES)
 
 
 def _require_exploratory_dimensions(value: object) -> int:
@@ -51,7 +56,7 @@ def _require_exploratory_dimensions(value: object) -> int:
 
     if type(value) is int:
         dimensions = value
-    elif type(value) in _NUMPY_INTEGER_SCALAR_TYPES:
+    elif _is_exact_numpy_integer_scalar(value):
         dimensions = int(value)
     else:
         raise ValueError("exploratory dimensions must be a positive integer")
@@ -141,7 +146,7 @@ def _resolve_model(
 
     if type(model) is bool:
         raise TypeError("model must be a factor count or an IRT model specification")
-    if type(model) is int or type(model) in _NUMPY_INTEGER_SCALAR_TYPES:
+    if type(model) is int or _is_exact_numpy_integer_scalar(model):
         model = ExploratoryModel(model)
     if isinstance(model, ExploratoryModel):
         if model.dimensions != 1:
