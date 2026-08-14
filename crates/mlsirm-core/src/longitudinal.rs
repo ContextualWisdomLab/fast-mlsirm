@@ -148,10 +148,10 @@ fn validate_inputs(
 }
 
 fn fit_intercept_slope(times: &[i64], values: &[f64]) -> RespondentFit {
-    let first_time = times.first().copied().unwrap_or(0) as f64;
+    let first_time = times.first().copied().unwrap_or(0);
     let x: Vec<f64> = times
         .iter()
-        .map(|value| (*value as f64 - first_time) / MILLIS_PER_DAY)
+        .map(|value| ((*value - first_time) as f64) / MILLIS_PER_DAY)
         .collect();
     let observed: Vec<(f64, f64)> = x
         .iter()
@@ -179,7 +179,11 @@ fn fit_intercept_slope(times: &[i64], values: &[f64]) -> RespondentFit {
         .iter()
         .map(|(time, value)| (time - mean_x) * (value - mean_y))
         .sum::<f64>();
-    let slope = if denominator > f64::EPSILON {
+    // Time offsets are strictly increasing before this private fitter runs. A
+    // zero centered sum of squares therefore represents an actually
+    // unidentified one-observation trend, not a scale-dependent epsilon
+    // threshold. Sub-day and millisecond intervals remain legitimate slopes.
+    let slope = if denominator > 0.0 {
         numerator / denominator
     } else {
         0.0
