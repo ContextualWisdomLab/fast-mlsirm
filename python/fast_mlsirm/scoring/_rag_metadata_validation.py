@@ -30,7 +30,7 @@ def _caller_metadata(value: Any) -> Any:
             "metadata keys could not be inspected safely",
         ) from None
 
-    output: dict[str, str] = {}
+    authorized_keys: list[str] = []
     seen: set[str] = set()
     index = 0
     while True:
@@ -74,6 +74,11 @@ def _caller_metadata(value: Any) -> Any:
                 "$.metadata",
                 "metadata key is not allowed for RAG scoring requests",
             )
+        authorized_keys.append(key)
+        index += 1
+
+    output: dict[str, str] = {}
+    for key in authorized_keys:
         try:
             raw_value = raw_metadata[key]
         except Exception:
@@ -90,7 +95,6 @@ def _caller_metadata(value: Any) -> Any:
             "evaluation_split",
             "$.metadata.evaluation_split",
         )
-        index += 1
     return output
 
 
