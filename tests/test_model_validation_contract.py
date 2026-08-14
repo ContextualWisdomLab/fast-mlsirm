@@ -83,8 +83,20 @@ def test_group_partition_rejects_malformed_identity_vectors() -> None:
     with pytest.raises(ValueError, match="group_ids entries must be non-empty strings"):
         validate_group_partition(group_ids=("",), fold_ids=("fold-1",))
 
+    with pytest.raises(ValueError, match="group_ids entries must be non-empty strings"):
+        validate_group_partition(
+            group_ids=("query-a", " \t"),
+            fold_ids=("fold-1", "fold-2"),
+        )
+
     with pytest.raises(ValueError, match="fold_ids entries must be non-empty strings"):
         validate_group_partition(group_ids=("query-a",), fold_ids=("",))
+
+    with pytest.raises(ValueError, match="fold_ids entries must be non-empty strings"):
+        validate_group_partition(
+            group_ids=("query-a", "query-b"),
+            fold_ids=("fold-1", " \t"),
+        )
 
 
 def test_group_partition_rejects_degenerate_single_group_or_fold() -> None:
