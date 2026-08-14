@@ -200,7 +200,11 @@ fn fit_intercept_slope(times: &[i64], values: &[f64]) -> RespondentFit {
     }
 }
 
-fn fit_ar(sequence_indices: &[usize], values: &[f64], phi: f64) -> RespondentFit {
+fn fit_ar(
+    sequence_indices: &[usize],
+    values: &[f64],
+    phi: f64,
+) -> Result<RespondentFit, String> {
     let mut state = vec![0.0; values.len()];
     let observed: Vec<f64> = values
         .iter()
@@ -208,14 +212,14 @@ fn fit_ar(sequence_indices: &[usize], values: &[f64], phi: f64) -> RespondentFit
         .filter(|value| value.is_finite())
         .collect();
     if observed.is_empty() {
-        return RespondentFit {
+        return Ok(RespondentFit {
             state,
             intercept: 0.0,
             slope: 0.0,
             squared_error: 0.0,
             observed_count: 0,
             transition_count: 0,
-        };
+        });
     }
     // Psychometric latent scores use the identified zero-centered origin. The
     // state specification has no free intercept, so estimating a respondent
@@ -224,15 +228,20 @@ fn fit_ar(sequence_indices: &[usize], values: &[f64], phi: f64) -> RespondentFit
     let first = values
         .iter()
         .position(|value| value.is_finite())
-        .expect("observed is non-empty");
+        .ok_or_else(|| "AR state fit has no finite observation".to_string())?;
     let mut previous_index = first;
     let mut previous_observed = values[first];
     state[first] = previous_observed;
     let mut squared_error = 0.0;
     let mut transition_count = 0;
     for index in (first + 1)..values.len() {
-        let gap = sequence_indices[index] - sequence_indices[previous_index];
-        let prediction = mean + phi.powi(gap as i32) * (previous_observed - mean);
+        let gap = sequence_indices[index]
+            .checked_sub(sequence_indices[previous_index])
+            .ok_or_else(|| "AR sequence indices must increase".to_string())?;
+        let exponent = i32::try_from(gap).map_err(|_| {
+            "accumulated AR occasion gap exceeds the supported range".to_string()
+        })?;
+        let prediction = mean + phi.powi(exponent) * (previous_observed - mean);
         state[index] = prediction;
         if values[index].is_finite() {
             squared_error += (values[index] - prediction).powi(2);
@@ -241,14 +250,14 @@ fn fit_ar(sequence_indices: &[usize], values: &[f64], phi: f64) -> RespondentFit
             previous_observed = values[index];
         }
     }
-    RespondentFit {
+    Ok(RespondentFit {
         state,
         intercept: mean,
         slope: 0.0,
         squared_error,
         observed_count: observed.len(),
         transition_count,
-    }
+    })
 }
 
 /// Fit respondent-level repeated-measurement states on the Rust CPU path.
@@ -283,7 +292,7 @@ pub fn fit_longitudinal_state(
     if respondent_count > 0 {
         let workers = worker_count.min(respondent_count);
         let chunk = respondent_count.div_ceil(workers);
-        thread::scope(|scope| {
+        let joined: Result<(), String> = thread::scope(|scope| {
             let mut handles = Vec::with_capacity(workers);
             for worker in 0..workers {
                 let start = worker * chunk;
@@ -301,23 +310,28 @@ pub fn fit_longitudinal_state(
                             let row_values = &values[value_start..value_end];
                             let fit = match kind {
                                 StateKind::RandomInterceptSlope => {
-                                    fit_intercept_slope(times, row_values)
+                                    Ok(fit_intercept_slope(times, row_values))
                                 }
                                 StateKind::StationaryAutoregressive => {
                                     fit_ar(sequences, row_values, phi)
                                 }
-                            };
-                            (row, fit)
+                            }?;
+                            Ok((row, fit))
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Result<Vec<_>, String>>()
                 }));
             }
             for handle in handles {
-                for (row, fit) in handle.join().expect("longitudinal worker panicked") {
+                let rows = handle
+                    .join()
+                    .map_err(|_| "longitudinal worker failed".to_string())??;
+                for (row, fit) in rows {
                     fits[row] = Some(fit);
                 }
             }
+            Ok(())
         });
+        joined?;
     }
     let mut state = Vec::with_capacity(values.len());
     let mut intercepts = Vec::with_capacity(respondent_count);
@@ -326,7 +340,7 @@ pub fn fit_longitudinal_state(
     let mut observed_count = 0;
     let mut transition_count = 0;
     for fit in fits {
-        let fit = fit.expect("every respondent must have one fit");
+        let fit = fit.ok_or_else(|| "a respondent state fit is missing".to_string())?;
         state.extend(fit.state);
         intercepts.push(fit.intercept);
         slopes.push(fit.slope);
