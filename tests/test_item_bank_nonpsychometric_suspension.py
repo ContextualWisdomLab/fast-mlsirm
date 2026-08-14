@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 import runpy
 
+import pytest
+
 from fast_mlsirm.rubric.item_bank import (
     ItemBankEvidenceKind,
     ItemBankEvidenceReference,
+    ItemBankLifecycleError,
     ItemBankLifecycleState,
     transition_item_bank_record,
 )
@@ -77,3 +80,31 @@ def test_security_privacy_concern_can_suspend_and_reactivate_without_fake_drift(
 
     assert reactivated.lifecycle_state is ItemBankLifecycleState.ACTIVE
     assert reactivated.previous_record_fingerprint == suspended.record_fingerprint
+
+
+def test_reactivation_must_address_the_suspended_concern_class() -> None:
+    """An unrelated concern artifact cannot clear a security/privacy quarantine."""
+    active = _active_record()
+    suspended = transition_item_bank_record(
+        active,
+        ItemBankLifecycleState.SUSPENDED,
+        evidence_references=(
+            _evidence(ItemBankEvidenceKind.SUSPENSION, "security_quarantine", "4"),
+            _evidence(ItemBankEvidenceKind.SECURITY_PRIVACY, "security_finding", "5"),
+        ),
+        transition_reason_id="security_privacy_quarantine",
+    )
+
+    with pytest.raises(ItemBankLifecycleError) as caught:
+        transition_item_bank_record(
+            suspended,
+            ItemBankLifecycleState.ACTIVE,
+            evidence_references=(
+                _evidence(ItemBankEvidenceKind.APPROVAL, "security_reactivation", "6"),
+                _evidence(ItemBankEvidenceKind.DIF, "unrelated_dif_recheck", "7"),
+            ),
+            transition_reason_id="security_privacy_cleared",
+        )
+
+    assert caught.value.code == "missing_transition_evidence"
+    assert "security_privacy" in caught.value.message
