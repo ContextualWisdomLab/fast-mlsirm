@@ -38,6 +38,21 @@ _MAX_ERROR_TEXT = 512
 _MAX_EVIDENCE_ENTRIES = 64
 _MAX_EVIDENCE_DEPTH = 6
 _CALIBRATION_STATUSES = frozenset({"passed", "judge_failed", "irt_failed"})
+_CALIBRATION_ERROR_CODES = frozenset(
+    {"judge_call_failed", "irt_projection_failed"}
+)
+_CALIBRATION_ERROR_TYPES = frozenset(
+    {
+        "ConnectionError",
+        "JudgeFormatError",
+        "OSError",
+        "RuntimeError",
+        "TimeoutError",
+        "TypeError",
+        "UnknownError",
+        "ValueError",
+    }
+)
 _ALLOWED_EVIDENCE_KEYS = frozenset(
     {
         "call_count",
@@ -46,9 +61,9 @@ _ALLOWED_EVIDENCE_KEYS = frozenset(
         "category_method",
         "completed_call_count",
         "criterion_id",
-        "error",
         "error_type",
         "failed_call_count",
+        "failure_code",
         "meets_threshold",
         "parse_status",
         "prompt_tokens",
@@ -61,6 +76,12 @@ _ALLOWED_EVIDENCE_KEYS = frozenset(
         "usage",
     }
 )
+
+
+def _safe_error_type(exc: Exception) -> str:
+    """Return an allowlisted exception class without serializing exception text."""
+    name = type(exc).__name__
+    return name if name in _CALIBRATION_ERROR_TYPES else "UnknownError"
 
 
 def _text(value: Any, name: str, *, maximum: int = MAX_JUDGE_TEXT_CHARACTERS) -> str:
@@ -387,9 +408,15 @@ class JudgeCalibrationOutcome:
         if self.gold_exact is not None and self.status != "passed":
             raise ValueError("gold_exact is only valid for passed outcomes")
         if self.error_type is not None:
-            object.__setattr__(self, "error_type", _text(self.error_type, "error_type", maximum=128))
+            error_type = _text(self.error_type, "error_type", maximum=128)
+            if error_type not in _CALIBRATION_ERROR_TYPES:
+                raise ValueError("error_type must be an allowlisted calibration error type")
+            object.__setattr__(self, "error_type", error_type)
         if self.error is not None:
-            object.__setattr__(self, "error", _text(self.error, "error", maximum=_MAX_ERROR_TEXT))
+            error = _text(self.error, "error", maximum=_MAX_ERROR_TEXT)
+            if error not in _CALIBRATION_ERROR_CODES:
+                raise ValueError("error must be a stable calibration error code")
+            object.__setattr__(self, "error", error)
         if self.evidence is not None:
             sanitized = _bounded_evidence(self.evidence)
             if sanitized is None:
@@ -684,12 +711,11 @@ def evaluate_paired_calibration(
             if not isinstance(result, LLMJudgeResult):
                 raise TypeError("judge.judge(...) must return an LLMJudgeResult")
         except Exception as exc:  # noqa: BLE001 - preserve provider/parse failures in denominator
-            message = str(exc) or type(exc).__name__
             return JudgeCalibrationOutcome(
                 case=case,
                 status="judge_failed",
-                error_type=type(exc).__name__,
-                error=message[:_MAX_ERROR_TEXT],
+                error_type=_safe_error_type(exc),
+                error="judge_call_failed",
                 evidence=getattr(exc, "evidence", None),
             )
         try:
@@ -698,13 +724,12 @@ def evaluate_paired_calibration(
                 n_categories=category_count,
             )
         except Exception as exc:  # noqa: BLE001 - invalid projection is calibration evidence
-            message = str(exc) or type(exc).__name__
             return JudgeCalibrationOutcome(
                 case=case,
                 status="irt_failed",
                 result=result,
-                error_type=type(exc).__name__,
-                error=message[:_MAX_ERROR_TEXT],
+                error_type=_safe_error_type(exc),
+                error="irt_projection_failed",
             )
         gold_row = gold_rows[(case.case_id, case.variant)]
         return JudgeCalibrationOutcome(

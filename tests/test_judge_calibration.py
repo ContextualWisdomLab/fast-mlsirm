@@ -106,6 +106,15 @@ class _ScriptedJudge:
         )
 
 
+class _RaisingJudge:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def judge(self, **kwargs) -> LLMJudgeResult:
+        del kwargs
+        raise self.error
+
+
 class _ConcurrentOrchestrator:
     contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
 
@@ -194,6 +203,43 @@ def test_paired_calibration_preserves_failures_and_reports_gold_and_deltas() -> 
     assert effects["shuffled_options"]["score_delta"] == pytest.approx(0.0)
     assert effects["replaced_distractor"]["control_status"] == "judge_failed"
     assert "score_delta" not in effects["replaced_distractor"]
+
+
+@pytest.mark.parametrize(
+    ("exception", "expected_type", "sentinels"),
+    [
+        (
+            RuntimeError("provider-output-secret"),
+            "RuntimeError",
+            ("provider-output-secret",),
+        ),
+        (
+            JudgeFormatError(
+                "parser-output-secret",
+                evidence={"error": "evidence-output-secret"},
+            ),
+            "JudgeFormatError",
+            ("parser-output-secret", "evidence-output-secret"),
+        ),
+    ],
+)
+def test_calibration_failure_serialization_redacts_exception_text(
+    exception: Exception, expected_type: str, sentinels: tuple[str, ...]
+) -> None:
+    report = evaluate_paired_calibration(
+        _RaisingJudge(exception),
+        _cases(),
+        criteria=CRITERIA,
+        category_count=3,
+    )
+
+    serialized = json.dumps(report.to_dict(), ensure_ascii=False)
+    for sentinel in sentinels:
+        assert sentinel not in serialized
+    assert report.status_counts() == {"judge_failed": 4}
+    for outcome in report.to_dict()["outcomes"]:
+        assert outcome["error"] == "judge_call_failed"
+        assert outcome["error_type"] == expected_type
 
 
 def test_option_count_summary_preserves_unstratified_rows() -> None:
