@@ -171,6 +171,34 @@ def test_screening_result_is_content_addressed_and_complete() -> None:
     assert "response_text" not in result.to_dict()
 
 
+@pytest.mark.parametrize(
+    "attribute",
+    (
+        "is_pilot_eligible",
+        "screening_result_fingerprint",
+        "screening_result_id",
+    ),
+)
+def test_result_identity_and_eligibility_reject_factory_seal_tampering(
+    attribute: str,
+) -> None:
+    """Direct property reads fail closed after post-construction mutation."""
+    item, audit_report = audited_candidate()
+    result = screening.build_candidate_screening_result(
+        item,
+        audit_report,
+        screening_policy_id="semantic_screening_policy",
+        screening_policy_version="1.0.0",
+        evaluator_kind="hybrid",
+        evaluator_fingerprint=fp("f"),
+        checks=all_checks(),
+    )
+    object.__setattr__(result, "candidate_fingerprint", fp("0"))
+
+    with pytest.raises(ValueError, match=r"factory seal"):
+        getattr(result, attribute)
+
+
 def test_screening_result_rejects_missing_or_duplicate_dimensions() -> None:
     """No candidate becomes screen-complete from a partial or duplicated checklist."""
     item, audit_report = audited_candidate()
@@ -204,7 +232,7 @@ def test_screening_check_collection_is_bounded_before_materialization() -> None:
     item, audit_report = audited_candidate()
     check = all_checks()[0]
 
-    with pytest.raises(ValueError, match="exactly one decision|at most"):
+    with pytest.raises(ValueError, match=r"exactly one decision"):
         screening.build_candidate_screening_result(
             item,
             audit_report,
@@ -291,11 +319,13 @@ def test_check_direct_construction_cannot_bypass_factory_validation() -> None:
 
 def test_result_rejects_candidate_or_audit_mismatch_and_unapproved_audit() -> None:
     """Semantic screening cannot detach from current exact audit provenance."""
-    item, audit_report = audited_candidate()
-    other = candidate()
-    object.__setattr__(other, "item_id", "different_item")
+    _, audit_report = audited_candidate()
+    other = candidate(stem="State a materially different supported conclusion.")
 
-    with pytest.raises(ValueError, match="candidate"):
+    with pytest.raises(
+        ValueError,
+        match=r"audit report candidate does not match the exact candidate",
+    ):
         screening.build_candidate_screening_result(
             other,
             audit_report,
@@ -328,7 +358,10 @@ def test_result_rejects_non_current_audit_policy_identity() -> None:
     item, audit_report = audited_candidate()
     object.__setattr__(audit_report, "audit_policy_version", "9.9.9")
 
-    with pytest.raises(ValueError, match="audit|policy|current"):
+    with pytest.raises(
+        ValueError,
+        match=r"audit report policy is not the current package",
+    ):
         screening.build_candidate_screening_result(
             item,
             audit_report,
