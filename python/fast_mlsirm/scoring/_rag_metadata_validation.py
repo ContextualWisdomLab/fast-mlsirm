@@ -72,14 +72,35 @@ def _rag_metadata_keys(value: Mapping[Any, Any]) -> tuple[str, ...]:
     return tuple(output)
 
 
+def _authorized_metadata_values(
+    value: Mapping[Any, Any],
+    keys: tuple[str, ...],
+) -> dict[str, Any]:
+    """Read each authorized value once without re-enumerating caller keys."""
+    output: dict[str, Any] = {}
+    for key in keys:
+        try:
+            output[key] = value[key]
+        except AssessmentSpecError:
+            raise
+        except Exception:
+            raise assessment_error(
+                "invalid_rag_metadata",
+                "$.metadata",
+                "metadata values could not be inspected safely",
+            ) from None
+    return output
+
+
 def _preflight_rag_metadata(value: Any) -> Any:
-    """Validate keys first, then freeze only caller-authorized metadata values."""
+    """Validate keys once, then freeze only their captured authorized values."""
     raw_metadata = {} if value is None else value
     if not isinstance(raw_metadata, Mapping):
         return raw_metadata
-    _rag_metadata_keys(raw_metadata)
+    keys = _rag_metadata_keys(raw_metadata)
+    authorized_values = _authorized_metadata_values(raw_metadata, keys)
     try:
-        return freeze_metadata(raw_metadata)
+        return freeze_metadata(authorized_values)
     except AssessmentSpecError as exc:
         if exc.code == "invalid_metadata_mapping":
             raise assessment_error(
