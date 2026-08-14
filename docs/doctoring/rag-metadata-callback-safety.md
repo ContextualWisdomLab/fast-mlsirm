@@ -29,11 +29,15 @@ existing allowlist, provenance, canonicalization, and no-raw-content contracts.
 It adds no retrieval, scoring, LLM, statistical, or authorization behavior.
 
 MITRE classifies unhandled exceptional conditions as CWE-248 and sensitive
-details in error messages as CWE-209. The NIST Secure Software Development
-Framework requires producers to identify recurring vulnerability causes and
-integrate secure practices into the development lifecycle. The regression
-suite uses fault-injection mappings to keep these boundary guarantees
-executable.
+details in error messages as CWE-209. The current final NIST Secure Software
+Development Framework authority is SP 800-218 version 1.1; it requires secure
+practices to be integrated into the software lifecycle and emphasizes reducing
+recurrence by addressing vulnerability root causes. The regression suite uses
+fault-injection mappings to keep these boundary guarantees executable.
+
+NIST SP 800-218 Rev. 1 / SSDF version 1.2 remains an initial public draft at
+this decision date. It is tracked as prospective guidance, not used as the
+normative release authority for this bounded change.
 
 ## Verification and rollback
 
@@ -61,10 +65,15 @@ https://cwe.mitre.org/data/definitions/209.html
 MITRE. (2026). *CWE-248: Uncaught exception* (Version 4.20). Common Weakness
 Enumeration. https://cwe.mitre.org/data/definitions/248.html
 
+National Institute of Standards and Technology. (2022). *Secure software
+development framework (SSDF) version 1.1: Recommendations for mitigating the
+risk of software vulnerabilities* (NIST SP 800-218).
+https://doi.org/10.6028/NIST.SP.800-218
+
 National Institute of Standards and Technology. (2025). *Secure software
 development framework (SSDF) version 1.2: Recommendations for mitigating the
-risk of software vulnerabilities* (Initial public draft, NIST SP 800-218r1).
-https://csrc.nist.gov/pubs/sp/800/218/r1/ipd
+risk of software vulnerabilities* (Initial public draft, NIST SP 800-218 Rev.
+1). https://csrc.nist.gov/pubs/sp/800/218/r1/ipd
 
 Python Software Foundation. (2026). *Collections abstract base classes*.
 Python 3 documentation.
