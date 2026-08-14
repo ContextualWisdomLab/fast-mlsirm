@@ -86,6 +86,14 @@ def test_group_partition_rejects_malformed_identity_vectors() -> None:
         validate_group_partition(group_ids=("query-a",), fold_ids=("",))
 
 
+def test_group_partition_rejects_scalar_strings_as_identity_vectors() -> None:
+    with pytest.raises(
+        TypeError,
+        match="group_ids and fold_ids must be identity sequences, not strings",
+    ):
+        validate_group_partition(group_ids="ab", fold_ids="12")  # type: ignore[arg-type]
+
+
 def test_group_partition_is_order_invariant() -> None:
     groups = ("query-a", "query-b", "query-c", "query-a")
     folds = ("fold-1", "fold-2", "fold-2", "fold-1")
