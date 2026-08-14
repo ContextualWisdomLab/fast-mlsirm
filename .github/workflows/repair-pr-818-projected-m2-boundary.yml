@@ -1,0 +1,256 @@
+name: Repair PR 818 projected M2 boundary
+
+on:
+  push:
+    branches:
+      - test/fitstats-multigroup-rust-ownership-627
+    paths:
+      - .github/workflows/repair-pr-818-projected-m2-boundary.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-pr-818-projected-m2-boundary
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.repository == 'ContextualWisdomLab/fast-mlsirm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact repair head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Harden projected M2 Rust and PyO3 boundaries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          core_path = Path("crates/mlsirm-core/src/fitstats.rs")
+          core_text = core_path.read_text(encoding="utf-8")
+          old = '''/// Evaluate the M2 projected quadratic form without forming either inverse.
+          pub fn projected_m2(
+              e: &[f64],
+              delta: &[f64],
+              mut xi: Vec<f64>,
+              n_moments: usize,
+              n_parameters: usize,
+              n: f64,
+          ) -> Result<f64, String> {
+              let s = n_moments;
+              let p = n_parameters;
+              cholesky_lower(&mut xi, s)?;
+          '''
+          new = '''/// Maximum supported dense workspace for projected M2, in `f64` elements.
+          pub const PROJECTED_M2_MAX_WORKSPACE_ELEMENTS: usize = 4_000_000;
+
+          /// Return the peak dense element budget required by projected M2.
+          pub fn projected_m2_workspace_elements(
+              n_moments: usize,
+              n_parameters: usize,
+          ) -> Result<usize, String> {
+              let xi_elements = n_moments
+                  .checked_mul(n_moments)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+              let delta_elements = n_moments
+                  .checked_mul(n_parameters)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+              let parameter_elements = n_parameters
+                  .checked_mul(n_parameters)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+              let two_moments = n_moments
+                  .checked_mul(2)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+              let two_parameters = n_parameters
+                  .checked_mul(2)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+
+              [
+                  xi_elements,
+                  delta_elements,
+                  delta_elements,
+                  parameter_elements,
+                  two_moments,
+                  two_parameters,
+              ]
+              .into_iter()
+              .try_fold(0_usize, |total, elements| {
+                  total
+                      .checked_add(elements)
+                      .ok_or_else(|| "projected M2 dimensions overflow".to_string())
+              })
+          }
+
+          /// Evaluate the M2 projected quadratic form without forming either inverse.
+          pub fn projected_m2(
+              e: &[f64],
+              delta: &[f64],
+              mut xi: Vec<f64>,
+              n_moments: usize,
+              n_parameters: usize,
+              n: f64,
+          ) -> Result<f64, String> {
+              let s = n_moments;
+              let p = n_parameters;
+              let delta_elements = s
+                  .checked_mul(p)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+              let xi_elements = s
+                  .checked_mul(s)
+                  .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+              let workspace_elements = projected_m2_workspace_elements(s, p)?;
+              if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
+                  return Err(
+                      "projected M2 workspace exceeds supported element budget".to_string(),
+                  );
+              }
+              if e.len() != s {
+                  return Err("residual length must match n_moments".to_string());
+              }
+              if delta.len() != delta_elements {
+                  return Err("delta length must equal n_moments * n_parameters".to_string());
+              }
+              if xi.len() != xi_elements {
+                  return Err("xi length must equal n_moments * n_moments".to_string());
+              }
+              if !n.is_finite() {
+                  return Err("n must be finite".to_string());
+              }
+              if e.iter().any(|value| !value.is_finite()) {
+                  return Err("residual values must be finite".to_string());
+              }
+              if delta.iter().any(|value| !value.is_finite()) {
+                  return Err("delta values must be finite".to_string());
+              }
+              if xi.iter().any(|value| !value.is_finite()) {
+                  return Err("xi values must be finite".to_string());
+              }
+              cholesky_lower(&mut xi, s)?;
+          '''
+          if core_text.count(old) != 1:
+              raise RuntimeError("unexpected projected_m2 core shape")
+          core_path.write_text(core_text.replace(old, new), encoding="utf-8")
+
+          py_path = Path("crates/fast-mlsirm-py/src/lib.rs")
+          py_text = py_path.read_text(encoding="utf-8")
+          import_old = '''    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, projected_m2 as core_projected_m2,
+              s_x2 as core_s_x2, SX2Config,
+          '''
+          import_new = '''    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2,
+              projected_m2 as core_projected_m2,
+              projected_m2_workspace_elements as core_projected_m2_workspace_elements,
+              s_x2 as core_s_x2, SX2Config, PROJECTED_M2_MAX_WORKSPACE_ELEMENTS,
+          '''
+          if py_text.count(import_old) != 1:
+              raise RuntimeError("unexpected projected_m2 import shape")
+          py_text = py_text.replace(import_old, import_new)
+
+          wrapper_old = '''fn projected_m2(
+              residual: PyReadonlyArray1<'_, f64>,
+              delta: PyReadonlyArray2<'_, f64>,
+              xi: PyReadonlyArray2<'_, f64>,
+              n: f64,
+          ) -> PyResult<f64> {
+              let residual = residual.as_slice()?;
+              let delta_arr = delta.as_array();
+              let xi_arr = xi.as_array();
+              let s = residual.len();
+              if delta_arr.shape()[0] != s {
+                  return Err(PyValueError::new_err(
+                      "delta rows must match residual length",
+                  ));
+              }
+              if xi_arr.shape() != [s, s] {
+                  return Err(PyValueError::new_err("xi must be residual_len x residual_len"));
+              }
+              let p = delta_arr.shape()[1];
+              let mut delta_flat = vec![0.0_f64; s * p];
+          '''
+          wrapper_new = '''fn projected_m2(
+              residual: PyReadonlyArray1<'_, f64>,
+              delta: PyReadonlyArray2<'_, f64>,
+              xi: PyReadonlyArray2<'_, f64>,
+              n: f64,
+          ) -> PyResult<f64> {
+              let residual_arr = residual.as_array();
+              let delta_arr = delta.as_array();
+              let xi_arr = xi.as_array();
+              let s = residual_arr.len();
+              if delta_arr.shape()[0] != s {
+                  return Err(PyValueError::new_err(
+                      "delta rows must match residual length",
+                  ));
+              }
+              if xi_arr.shape() != [s, s] {
+                  return Err(PyValueError::new_err("xi must be residual_len x residual_len"));
+              }
+              let p = delta_arr.shape()[1];
+              let workspace_elements = core_projected_m2_workspace_elements(s, p)
+                  .map_err(PyValueError::new_err)?;
+              if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
+                  return Err(PyValueError::new_err(
+                      "projected M2 workspace exceeds supported element budget",
+                  ));
+              }
+              if !n.is_finite() {
+                  return Err(PyValueError::new_err("n must be finite"));
+              }
+              if residual_arr.iter().any(|value| !value.is_finite()) {
+                  return Err(PyValueError::new_err("residual values must be finite"));
+              }
+              if delta_arr.iter().any(|value| !value.is_finite()) {
+                  return Err(PyValueError::new_err("delta values must be finite"));
+              }
+              if xi_arr.iter().any(|value| !value.is_finite()) {
+                  return Err(PyValueError::new_err("xi values must be finite"));
+              }
+              let residual = residual.as_slice()?;
+              let delta_elements = s
+                  .checked_mul(p)
+                  .ok_or_else(|| PyValueError::new_err("projected M2 dimensions overflow"))?;
+              let xi_elements = s
+                  .checked_mul(s)
+                  .ok_or_else(|| PyValueError::new_err("projected M2 dimensions overflow"))?;
+              let mut delta_flat = vec![0.0_f64; delta_elements];
+          '''
+          if py_text.count(wrapper_old) != 1:
+              raise RuntimeError("unexpected projected_m2 PyO3 wrapper shape")
+          py_text = py_text.replace(wrapper_old, wrapper_new)
+          py_text = py_text.replace(
+              "    let mut xi_flat = vec![0.0_f64; s * s];\n",
+              "    let mut xi_flat = vec![0.0_f64; xi_elements];\n",
+              1,
+          )
+          py_path.write_text(py_text, encoding="utf-8")
+          PY
+
+      - name: Verify repaired boundary contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          core = Path("crates/mlsirm-core/src/fitstats.rs").read_text(encoding="utf-8")
+          binding = Path("crates/fast-mlsirm-py/src/lib.rs").read_text(encoding="utf-8")
+          assert "pub const PROJECTED_M2_MAX_WORKSPACE_ELEMENTS" in core
+          assert "if e.len() != s" in core
+          assert "if delta.len() != delta_elements" in core
+          assert "if xi.len() != xi_elements" in core
+          assert "core_projected_m2_workspace_elements(s, p)" in binding
+          assert "residual_arr.iter().any" in binding
+          assert "delta_arr.iter().any" in binding
+          assert "xi_arr.iter().any" in binding
+          PY
+
+      - name: Commit repaired source and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/repair-pr-818-projected-m2-boundary.yml
+          git add crates/mlsirm-core/src/fitstats.rs crates/fast-mlsirm-py/src/lib.rs
+          git commit -m "fix(fitstats): bound projected M2 native workspaces"
+          git push origin HEAD:test/fitstats-multigroup-rust-ownership-627
