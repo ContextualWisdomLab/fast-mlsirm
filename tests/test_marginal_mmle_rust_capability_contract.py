@@ -35,14 +35,14 @@ def test_public_spatial_mmle_rejects_incompatible_rust_marginal_capability(
     """Absent, malformed, stale, and unsupported ABIs fail before dispatch."""
     responses = np.array(
         [
-  [1.0, 1.0, 0.0, 0.0],
-  [1.0, 0.0, 1.0, 0.0],
-  [0.0, 1.0, 0.0, 1.0],
-  [0.0, 0.0, 1.0, 1.0],
-  [1.0, 0.0, 0.0, 1.0],
-  [0.0, 1.0, 1.0, 0.0],
-  [1.0, 1.0, 1.0, 0.0],
-  [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
         ],
         dtype=np.float64,
     )
@@ -62,17 +62,17 @@ def test_public_spatial_mmle_rejects_incompatible_rust_marginal_capability(
         eps_distance: object,
     ) -> None:
         stale_calls.append(
-  (
-      y,
-      observed,
-      factors,
-      n_persons,
-      n_items,
-      n_dims,
-      latent_dim,
-      model,
-      eps_distance,
-  )
+            (
+                y,
+                observed,
+                factors,
+                n_persons,
+                n_items,
+                n_dims,
+                latent_dim,
+                model,
+                eps_distance,
+            )
         )
 
     def reject_numpy_reference(
@@ -80,7 +80,7 @@ def test_public_spatial_mmle_rejects_incompatible_rust_marginal_capability(
     ) -> dict[str, object]:
         numpy_calls.append(args)
         raise AssertionError(
-  "public marginal MMLE entered NumPy production arithmetic"
+            "public marginal MMLE entered NumPy production arithmetic"
         )
 
     core_attributes: dict[str, object] = {
@@ -100,16 +100,16 @@ def test_public_spatial_mmle_rejects_incompatible_rust_marginal_capability(
         match=r"compiled Rust core marginal ABI capability",
     ):
         fit_module.fit(
-  responses,
-  factor_id,
-  FitConfig(
-      estimator="mmle",
-      model="MLS2PLM",
-      backend="rust",
-      latent_dim=1,
-      max_iter=1,
-      n_restarts=1,
-  ),
+            responses,
+            factor_id,
+            FitConfig(
+                estimator="mmle",
+                model="MLS2PLM",
+                backend="rust",
+                latent_dim=1,
+                max_iter=1,
+                n_restarts=1,
+            ),
         )
 
     assert stale_calls == []
