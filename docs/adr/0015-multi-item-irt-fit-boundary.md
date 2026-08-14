@@ -368,6 +368,21 @@ Implemented in the current follow-up; focused CLI/report/security validation
 passed `309` tests. Exact-head remote checks, structured Strix binding, and
 independent review remain required before Merge.
 
+## Current exact-head Strix follow-up
+
+Fast PR #816 exact head `da8dea5ace04ba80d46fc9ecee5a6413a58dd26b` produced
+terminal Strix run `31846532057`, job `94914082995`, and artifact `9237230042`.
+The report had zero findings; its SHA-256 is
+`31a385aba34e11303ce91d6efada9046b591e4a1c5e4e3a365c714d629ad5be2`, and the
+run metadata SHA-256 is
+`3061e46fa61da237c7d4be73e1fdc2321d3290e4706a9de8d97a7184d71b8bbe`. The
+gate log recorded a completed zero-vulnerability run without fail-closed or
+provider-outage markers. This remains provider/content evidence only: the
+artifact has no `evidence-binding.json`, and `run.json` has null repository,
+commit, and head metadata. Do not promote it to a clean IRT/Judge security or
+Merge gate; require trusted same-head binding, independent approval, and the
+normal protected Merge checks.
+
 ## References
 
 | Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
