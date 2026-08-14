@@ -131,6 +131,8 @@ def fit_testlet(
 
     if type(model) is not str:
         raise ValueError("model must be a built-in string")
+    if model not in ("rasch", "2pl"):
+        raise ValueError("model must be either 'rasch' or '2pl'")
     model_value = model
 
     max_iter_type = type(max_iter)
