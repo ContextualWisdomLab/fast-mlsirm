@@ -73,6 +73,10 @@ def test_rust_state_fit_recovers_slopes_and_missing_values() -> None:
     assert result["observed_count"] == 5
     assert result["engine"] == "rust_cpu_multithreaded"
     assert result["state_kind"] == "random_intercept_slope"
+    assert result["estimand_scope"] == "independent_respondent_ols_trend"
+    assert result["population_random_effects_estimated"] is False
+    assert result["ar_coefficient_estimated"] is False
+    assert result["ar_coefficient_source"] == "not_applicable"
     assert len(result["design_fingerprint"]) == 64
     assert result["occasion_records"][0]["sequence_index"] == 0
 
@@ -96,6 +100,10 @@ def test_rust_state_fit_preserves_discrete_ar_and_irregular_time() -> None:
     )
     assert result["ar_coefficient"] == 0.5
     assert result["transition_count"] == 2
+    assert result["estimand_scope"] == "discrete_ar_state_prediction"
+    assert result["population_random_effects_estimated"] is False
+    assert result["ar_coefficient_estimated"] is False
+    assert result["ar_coefficient_source"] == "caller_supplied"
     # The third declared occasion is sequence three steps after the second;
     # the discrete-step AR(1) therefore predicts 0.5**3 * 0.5 = 0.0625.
     np.testing.assert_allclose(result["state"], [1.0, 0.5, 0.0625], atol=1e-12)
@@ -118,7 +126,10 @@ def test_state_fit_rejects_invalid_worker_count_and_foreign_design() -> None:
 def test_state_fit_rejects_non_real_observation_values(value: object) -> None:
     """Caller-controlled observations fail with the package-owned exception."""
     with pytest.raises(ValueError, match="must be a real number"):
-        fit_longitudinal_state(_single_occasion_design(), {"occasion_guard": value})  # type: ignore[dict-item]
+        fit_longitudinal_state(
+            _single_occasion_design(),
+            {"occasion_guard": value},  # type: ignore[dict-item]
+        )
 
 
 def test_state_fit_translates_hostile_mapping_reads_to_value_error() -> None:
