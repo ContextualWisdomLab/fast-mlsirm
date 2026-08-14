@@ -7,22 +7,15 @@ from typing import Any
 
 from . import rag as _base
 from ._contract_safety import freeze_metadata
-from ._validation import (
-    MAX_METADATA_COLLECTION_VALUES,
-    AssessmentSpecError,
-    _metadata_key,
-    assessment_error,
-)
+from ._validation import AssessmentSpecError, _metadata_key, assessment_error
 
 _ORIGINAL_RAG_METADATA = _base._rag_metadata
 
 
 def _rag_metadata_keys(value: Mapping[Any, Any]) -> tuple[str, ...]:
-    """Validate bounded caller keys before any mapping value is requested."""
+    """Validate caller keys before any mapping value is requested."""
     try:
         iterator = iter(value)
-    except AssessmentSpecError:
-        raise
     except Exception:
         raise assessment_error(
             "invalid_rag_metadata",
@@ -34,15 +27,6 @@ def _rag_metadata_keys(value: Mapping[Any, Any]) -> tuple[str, ...]:
     seen: set[str] = set()
     try:
         for index, raw_key in enumerate(iterator):
-            if index >= MAX_METADATA_COLLECTION_VALUES:
-                raise assessment_error(
-                    "metadata_collection_too_large",
-                    "$.metadata",
-                    (
-                        "metadata mappings must contain at most "
-                        f"{MAX_METADATA_COLLECTION_VALUES} values"
-                    ),
-                )
             try:
                 validated_key = _metadata_key(
                     raw_key,
