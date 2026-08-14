@@ -6,7 +6,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from . import rag as _base
-from ._validation import _metadata_key, assessment_error, descriptive_identifier
+from ._validation import (
+    AssessmentSpecError,
+    _metadata_key,
+    assessment_error,
+    descriptive_identifier,
+)
 
 _ORIGINAL_RAG_METADATA = _base._rag_metadata
 
@@ -40,7 +45,16 @@ def _caller_metadata(value: Any) -> Any:
                 "metadata keys could not be materialized safely",
             ) from None
         safe_key = str.__str__(raw_key) if isinstance(raw_key, str) else raw_key
-        key = _metadata_key(safe_key, f"$.metadata.keys[{index}]")
+        try:
+            key = _metadata_key(safe_key, f"$.metadata.keys[{index}]")
+        except AssessmentSpecError as exc:
+            if exc.code == "sensitive_metadata_field":
+                raise assessment_error(
+                    "unsupported_rag_metadata",
+                    "$.metadata",
+                    "metadata key is not allowed for RAG scoring requests",
+                ) from None
+            raise
         if key in seen:
             raise assessment_error(
                 "duplicate_metadata_key",
