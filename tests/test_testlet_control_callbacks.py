@@ -63,7 +63,7 @@ class _HostileNpFloat(np.float64):
 
     def __repr__(self):
         type(self).calls += 1
-        raise AssertionError("hostile numpy __repr__ executed")
+        raise AssertionError("hostile __repr__ executed")
 
 
 class _HostileStr(str):
@@ -110,12 +110,14 @@ def _assert_rejected_without_callback(keyword: str, value: object, cls: type) ->
     """Require rejection before caller conversion and before native discovery."""
 
     cls.calls = 0
+    controls: dict[str, object] = {"q_gamma": 7}
+    controls[keyword] = value
     with patch(
         "fast_mlsirm.fitstats._core_module",
         side_effect=AssertionError("native core discovery must not run"),
     ):
         with pytest.raises(ValueError):
-            fit_testlet(_binary(), _tid(), q_gamma=7, **{keyword: value})
+            fit_testlet(_binary(), _tid(), **controls)
     assert cls.calls == 0
 
 
@@ -144,6 +146,27 @@ def test_fit_testlet_rejects_control_subclasses_before_callbacks(
 
     value = constructor(*args)
     _assert_rejected_without_callback(keyword, value, constructor)
+
+
+@pytest.mark.parametrize(
+    ("keyword", "message"),
+    [
+        ("tol", "tol must be a finite non-negative number"),
+        ("init_sigma2", "init_sigma2 must be a finite non-negative number"),
+    ],
+)
+def test_fit_testlet_normalizes_oversized_integer_float_controls(
+    keyword: str,
+    message: str,
+) -> None:
+    """Trusted integers that cannot become floats fail with package-owned errors."""
+
+    with patch(
+        "fast_mlsirm.fitstats._core_module",
+        side_effect=AssertionError("native core discovery must not run"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            fit_testlet(_binary(), _tid(), q_gamma=7, **{keyword: 10**10_000})
 
 
 def test_fit_testlet_rejects_hostile_scalar_metaclass_hash_before_callback() -> None:
