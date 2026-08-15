@@ -94,6 +94,32 @@ def test_plausible_values_rejects_hostile_seed_before_core(monkeypatch):
     assert coercions == []
 
 
+def test_plausible_values_rejects_scalar_type_metaclass_callbacks(monkeypatch):
+    """Trusted-type admission must not hash or compare a caller metaclass."""
+    callbacks: list[str] = []
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            callbacks.append("hash")
+            return type.__hash__(cls)
+
+        def __eq__(cls, other: object) -> bool:
+            callbacks.append("eq")
+            return type.__eq__(cls, other)
+
+    class HostileSeed(int, metaclass=HostileMeta):
+        pass
+
+    hostile_seed = HostileSeed(7)
+    callbacks.clear()
+    _assert_rejected_before_core(
+        monkeypatch,
+        expected="seed must be an integer",
+        seed=hostile_seed,
+    )
+    assert callbacks == []
+
+
 def test_plausible_values_rejects_hostile_device_before_core(monkeypatch):
     """Device marshalling must not execute a caller-controlled ``__str__``."""
     coercions: list[bool] = []
