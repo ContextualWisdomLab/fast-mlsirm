@@ -9,7 +9,7 @@ from fast_mlsirm.rubric import BlueprintPlan, RubricLevel
 
 
 class _ExecutableIndex:
-    """Expose an index protocol whose execution is observable to the test."""
+    """Expose integer-like callbacks whose execution is observable to the test."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -18,19 +18,117 @@ class _ExecutableIndex:
         self.calls.append("__index__")
         return 1
 
+    def __repr__(self) -> str:
+        self.calls.append("__repr__")
+        return "1"
+
+    def __eq__(self, other: object) -> bool:
+        self.calls.append("__eq__")
+        return False
+
+    def __hash__(self) -> int:
+        self.calls.append("__hash__")
+        return 1
+
+    def __lt__(self, other: object) -> bool:
+        self.calls.append("__lt__")
+        return False
+
+    def __le__(self, other: object) -> bool:
+        self.calls.append("__le__")
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        self.calls.append("__gt__")
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        self.calls.append("__ge__")
+        return False
+
 
 class _ExecutableInt(int):
-    """Represent a caller-defined Python integer subclass."""
-
-
-class _ExecutableNumpyInt(np.int64):
-    """Expose a NumPy integer subclass with an observable index callback."""
+    """Caller-defined Python integer subclass with observable numeric hooks."""
 
     calls: list[str] = []
+
+    def __int__(self) -> int:
+        type(self).calls.append("__int__")
+        return 1
 
     def __index__(self) -> int:
         type(self).calls.append("__index__")
         return 1
+
+    def __repr__(self) -> str:
+        type(self).calls.append("__repr__")
+        return "1"
+
+    def __eq__(self, other: object) -> bool:
+        type(self).calls.append("__eq__")
+        return False
+
+    def __hash__(self) -> int:
+        type(self).calls.append("__hash__")
+        return 1
+
+    def __lt__(self, other: object) -> bool:
+        type(self).calls.append("__lt__")
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).calls.append("__le__")
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).calls.append("__gt__")
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).calls.append("__ge__")
+        return False
+
+
+class _ExecutableNumpyInt(np.int64):
+    """Caller-defined NumPy integer subclass with observable numeric hooks."""
+
+    calls: list[str] = []
+
+    def __int__(self) -> int:
+        type(self).calls.append("__int__")
+        return 1
+
+    def __index__(self) -> int:
+        type(self).calls.append("__index__")
+        return 1
+
+    def __repr__(self) -> str:
+        type(self).calls.append("__repr__")
+        return "1"
+
+    def __eq__(self, other: object) -> bool:
+        type(self).calls.append("__eq__")
+        return False
+
+    def __hash__(self) -> int:
+        type(self).calls.append("__hash__")
+        return 1
+
+    def __lt__(self, other: object) -> bool:
+        type(self).calls.append("__lt__")
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).calls.append("__le__")
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).calls.append("__gt__")
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).calls.append("__ge__")
+        return False
 
 
 def _level(score: object) -> RubricLevel:
@@ -48,14 +146,19 @@ def test_rubric_level_rejects_index_provider_before_callback() -> None:
     assert value.calls == []
 
 
-def test_rubric_level_rejects_python_integer_subclasses() -> None:
-    """Caller-defined Python integer subclasses are not trusted controls."""
+def test_rubric_level_rejects_python_integer_subclasses_before_callback() -> None:
+    """Python integer subclasses fail before any caller numeric hook executes."""
+    _ExecutableInt.calls.clear()
+    value = _ExecutableInt(1)
+
     with pytest.raises(ValueError, match="score must be an integer"):
-        _level(_ExecutableInt(1))
+        _level(value)
+
+    assert _ExecutableInt.calls == []
 
 
 def test_blueprint_plan_rejects_numpy_integer_subclass_before_callback() -> None:
-    """Shared integer controls reject NumPy subclasses before index dispatch."""
+    """Shared integer controls reject NumPy subclasses before numeric dispatch."""
     _ExecutableNumpyInt.calls.clear()
     value = _ExecutableNumpyInt(2)
 
