@@ -31,6 +31,25 @@ class _HostileNumpyInt(np.int64):
         raise RuntimeError("ATA_HOSTILE_NUMPY_INT_CALLBACK")
 
 
+class _HostileIntegerMeta(type):
+    """Metaclass proving integer admission cannot dispatch caller equality."""
+
+    calls: list[str] = []
+    __hash__ = type.__hash__
+
+    def __eq__(cls, other: object) -> bool:
+        cls.calls.append("type-__eq__")
+        raise RuntimeError("ATA_HOSTILE_TYPE_EQUALITY_CALLBACK")
+
+
+class _HostileMetaInt(int, metaclass=_HostileIntegerMeta):
+    """Integer subclass whose type equality callback must never execute."""
+
+
+class _HostileMetaNumpyInt(np.int64, metaclass=_HostileIntegerMeta):
+    """NumPy integer subclass whose type equality callback must never execute."""
+
+
 def _bank() -> tuple[MLSIRMParams, np.ndarray]:
     """Return a small valid calibrated bank for public ATA preflight tests."""
     bank = MLSIRMParams(
@@ -105,6 +124,22 @@ def test_scalar_integer_subclasses_fail_before_conversion_or_information(
     assert str(failure) == expected_message
     assert _HostileInt.calls == 0
     assert _HostileNumpyInt.calls == 0
+
+
+@pytest.mark.parametrize("value", [_HostileMetaInt(0), _HostileMetaNumpyInt(0)])
+def test_scalar_integer_subclasses_fail_before_type_equality_or_information(
+    monkeypatch: pytest.MonkeyPatch,
+    value: object,
+) -> None:
+    """Exact-type admission must not invoke caller-controlled metaclass equality."""
+    _HostileIntegerMeta.calls = []
+
+    calls, failure = _invoke(monkeypatch, lambda kwargs: kwargs.__setitem__("seed", value))
+
+    assert calls == 0
+    assert isinstance(failure, ValueError)
+    assert str(failure) == "seed must be an integer"
+    assert _HostileIntegerMeta.calls == []
 
 
 @pytest.mark.parametrize(
