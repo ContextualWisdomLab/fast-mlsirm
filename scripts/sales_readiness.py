@@ -518,6 +518,24 @@ def _validate_acceptance_summary(
         )
     )
 
+    declared_root_value = summary.get("out")
+    declared_root = (
+        Path(declared_root_value).resolve(strict=False)
+        if isinstance(declared_root_value, str) and declared_root_value
+        else None
+    )
+    acceptance_root = acceptance_path.resolve(strict=False).parent
+    evidence_root_ok = declared_root == acceptance_root
+    checks.append(
+        _check(
+            "acceptance:evidence_root_authority",
+            evidence_root_ok,
+            "acceptance summary is bound to its containing evidence root",
+            declared_root=(str(declared_root) if declared_root is not None else None),
+            expected_root=str(acceptance_root),
+        )
+    )
+
     steps = summary.get("steps", [])
     commands = {step.get("command") for step in steps if isinstance(step, dict)}
     missing_commands = sorted(REQUIRED_ACCEPTANCE_COMMANDS - commands)
@@ -580,18 +598,33 @@ def _validate_acceptance_summary(
             and isinstance(summary_value, str)
             and summary_value
         ):
+            auto_fit_path = Path(out_value).resolve(strict=False)
             auto_summary_path = Path(summary_value)
-            expected_auto_summary_path = Path(out_value) / "fit_summary.json"
-            if (
-                auto_summary_path.resolve(strict=False)
-                != expected_auto_summary_path.resolve(strict=False)
-            ):
+            auto_summary_resolved = auto_summary_path.resolve(strict=False)
+            expected_auto_summary_path = auto_fit_path / "fit_summary.json"
+            auto_fit_within_root = (
+                evidence_root_ok
+                and auto_fit_path != acceptance_root
+                and auto_fit_path.is_relative_to(acceptance_root)
+            )
+            auto_summary_within_root = (
+                evidence_root_ok
+                and auto_summary_resolved != acceptance_root
+                and auto_summary_resolved.is_relative_to(acceptance_root)
+            )
+            if not evidence_root_ok:
+                auto_summary_error = "acceptance evidence root is not authoritative"
+            elif not auto_fit_within_root:
+                auto_summary_error = "fit_auto output is outside acceptance evidence root"
+            elif not auto_summary_within_root:
+                auto_summary_error = "fit_auto summary is outside acceptance evidence root"
+            elif auto_summary_resolved != expected_auto_summary_path:
                 auto_summary_error = "summary path is not bound to fit_auto output"
-            elif not auto_summary_path.is_file():
+            elif not auto_summary_resolved.is_file():
                 auto_summary_error = "fit_auto summary is missing"
             else:
                 try:
-                    auto_summary = _read_json(auto_summary_path)
+                    auto_summary = _read_json(auto_summary_resolved)
                 except (RuntimeError, ValueError) as exc:
                     auto_summary_error = str(exc)
                 else:
@@ -607,8 +640,9 @@ def _validate_acceptance_summary(
         _check(
             "acceptance:auto_fit_summary_backend_authority",
             auto_summary_ok,
-            "persisted canonical fit_auto summary is path-bound and Rust-owned",
+            "persisted canonical fit_auto summary is root-bound, path-bound, and Rust-owned",
             backend=auto_summary_backend,
+            evidence_root=str(acceptance_root),
             summary=(str(auto_summary_path) if auto_summary_path is not None else None),
             expected_summary=(
                 str(expected_auto_summary_path)
