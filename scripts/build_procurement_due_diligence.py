@@ -18,9 +18,9 @@ from typing import Any
 GIT_METADATA_TIMEOUT_SECONDS = 5
 
 try:
-    from scripts._bounded_json import read_json_object
+    from scripts._bounded_json import parse_json_bounded, read_json_object
 except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    from _bounded_json import parse_json_bounded, read_json_object
 
 
 POLICY_FILES = [
@@ -308,7 +308,7 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         snapshot[name] = {
             "ok": completed.returncode == 0,
             "returncode": completed.returncode,
-            "data": json.loads(completed.stdout)
+            "data": parse_json_bounded(completed.stdout)
             if completed.returncode == 0 and completed.stdout.strip()
             else None,
             "stderr": completed.stderr.strip(),
