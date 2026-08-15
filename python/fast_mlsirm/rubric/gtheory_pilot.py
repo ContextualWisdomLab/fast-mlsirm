@@ -28,30 +28,36 @@ _GTHEORY_PI_DESIGN_TOKEN = object()
 MAX_GTHEORY_D_STUDY_ROWS = 64
 MAX_GTHEORY_PRIME_SIZE = 1_000_000
 _DEFAULT_N_I_PRIME = (5, 10, 15, 20)
-_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
-    {
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.intp,
-        np.longlong,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-        np.uintp,
-        np.ulonglong,
-    }
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
 )
-_NUMPY_FLOATING_SCALAR_TYPES = frozenset(
-    {
-        np.float16,
-        np.float32,
-        np.float64,
-        np.longdouble,
-    }
+_NUMPY_FLOATING_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
 )
+
+
+def _is_exact_numpy_integer_scalar(value_type: type[Any]) -> bool:
+    """Return whether ``value_type`` is one package-supported NumPy integer class."""
+    return any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES)
+
+
+def _is_exact_numpy_floating_scalar(value_type: type[Any]) -> bool:
+    """Return whether ``value_type`` is one package-supported NumPy float class."""
+    return any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES)
 
 
 def _positive_design_size(value: Any, name: str) -> int:
@@ -59,7 +65,7 @@ def _positive_design_size(value: Any, name: str) -> int:
     value_type = type(value)
     if value_type is int:
         normalized = value
-    elif value_type in _NUMPY_INTEGER_SCALAR_TYPES:
+    elif _is_exact_numpy_integer_scalar(value_type):
         normalized = int(value)
     else:
         raise ValueError(f"{name} must be an integer")
@@ -85,10 +91,10 @@ def _normalized_n_i_prime(values: Sequence[int] | Iterable[int]) -> tuple[int, .
 def _finite_cut(value: Any) -> float:
     """Return one finite trusted mastery cut without caller conversion hooks."""
     value_type = type(value)
-    if value_type in (int, float):
+    if value_type is int or value_type is float:
         normalized = float(value)
-    elif value_type in _NUMPY_INTEGER_SCALAR_TYPES or value_type in (
-        _NUMPY_FLOATING_SCALAR_TYPES
+    elif _is_exact_numpy_integer_scalar(value_type) or _is_exact_numpy_floating_scalar(
+        value_type
     ):
         normalized = float(value)
     else:
