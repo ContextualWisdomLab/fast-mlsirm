@@ -117,9 +117,7 @@ def parallel_analysis(
     accept exact built-in and supported concrete NumPy integer scalars while
     rejecting booleans, subclasses, and implicit conversion providers before
     compiled-core discovery. The random-eigenvalue benchmark workspace is
-    bounded to 128 MiB before compiled dispatch. In LLM-as-a-Judge quality
-    management this estimates how many latent dimensions the judge rubric
-    actually measures.
+    bounded to 128 MiB before compiled dispatch.
 
     """
     explicit_iterations = (
@@ -130,7 +128,7 @@ def parallel_analysis(
     centile_value = _integer_control("centile", centile, minimum=0, maximum=99)
     seed_value = _integer_control("seed", seed, minimum=0, maximum=_U64_MAX)
 
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    x = np.ascontiguousarray(data, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_persons, n_items = x.shape
