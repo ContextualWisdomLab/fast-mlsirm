@@ -399,6 +399,20 @@ the central trusted binding workflow and a protected current-head review are
 still required. No zero-finding line, local test, or keyword match can promote
 it to an IRT/Judge security or Merge gate.
 
+The current fast PR #816 head `82d20e57730a028e6d765a7f66e1083dabb69f70`
+produced Strix run `31857573524`/job `94945113817`, artifact `9239683349`,
+and a zero-finding report (SHA-256
+`c667f10e816cc13d2855d958fd407b03245b2af8f9ffdc0bca788c6926c433de`). The
+run metadata SHA-256 is
+`ab1ccd1b881cc17863ef932e265dc4c1d35478bb7877b2ba580b57daf1a41e1a`, the
+gate-console SHA-256 is
+`7fc1dbd47447a0c259fa9b8c58c7eb7cdb784bd547d0c637a8e2b9b9873b2011`, and the
+artifact has no `evidence-binding.json`. Preserve it as bounded
+provider/content evidence only; require trusted repository/head/run/job/report
+binding and a formal current-head review before IRT/Judge security or Merge
+acceptance. No keyword matching, positional repair, retry-as-repair, or silent
+drop is permitted.
+
 ## References
 
 | Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
