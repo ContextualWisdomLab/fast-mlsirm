@@ -103,3 +103,49 @@ def test_acceptance_requires_persisted_auto_fit_summary_to_report_rust(tmp_path:
     )
 
     assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
+
+
+def test_acceptance_rejects_auto_fit_evidence_outside_summary_root(tmp_path: Path) -> None:
+    """A manifest cannot borrow an unrelated Rust summary outside its own output root."""
+
+    module = _load_sales_readiness()
+    acceptance_root = tmp_path / "acceptance"
+    unrelated_fit = tmp_path / "unrelated" / "fit_auto"
+    acceptance_root.mkdir()
+    unrelated_fit.mkdir(parents=True)
+    unrelated_summary = unrelated_fit / "fit_summary.json"
+    unrelated_summary.write_text(json.dumps({"backend": "rust"}), encoding="utf-8")
+    acceptance = acceptance_root / "acceptance_summary.json"
+    acceptance.write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "out": str(acceptance_root),
+                "total_duration_seconds": 0.25,
+                "steps": [
+                    {"command": "simulate", "duration_seconds": 0.01},
+                    {
+                        "command": "fit",
+                        "backend": "rust",
+                        "out": str(unrelated_fit),
+                        "files": {"summary": str(unrelated_summary)},
+                        "duration_seconds": 0.02,
+                    },
+                    {"command": "diagnose-fit", "duration_seconds": 0.03},
+                    {"command": "diagnose-dimensions", "duration_seconds": 0.04},
+                    {"command": "render-report", "duration_seconds": 0.05},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checks = _checks_by_name(
+        module._validate_acceptance_summary(
+            acceptance,
+            require_rust=False,
+            max_acceptance_seconds=None,
+        )
+    )
+
+    assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
