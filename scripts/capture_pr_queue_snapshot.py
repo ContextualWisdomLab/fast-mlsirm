@@ -38,6 +38,7 @@ OPEN_PR_DETAIL_FIELDS: Final = (
     "mergeStateStatus,reviewDecision,state,updatedAt,closedAt,mergedAt,"
     "url,labels,files"
 )
+OPEN_PR_DETAIL_REQUIRED_FIELDS: Final = frozenset(OPEN_PR_DETAIL_FIELDS.split(","))
 HISTORY_PR_FIELDS: Final = (
     "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,"
     "mergedAt,url"
@@ -47,12 +48,14 @@ OPEN_PR_CAP: Final = 100
 OPEN_PR_IDENTITY_LIMIT: Final = OPEN_PR_CAP + 1
 HISTORY_PR_LIMIT: Final = 100
 COMMAND_TIMEOUT_SECONDS: Final = 30
+CAPTURE_BUDGET_SECONDS: Final = 420
 MAX_ATTEMPTS: Final = 3
 RETRY_SLEEP_SECONDS: Final = 0.5
 _TRANSIENT_STATUS_RE: Final = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
 _REPOSITORY_RE: Final = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 JsonRunner = Callable[[Sequence[str]], tuple[Any, dict[str, Any] | None]]
+Clock = Callable[[], float]
 
 
 def _command_identity(command: Sequence[str]) -> list[str]:
@@ -189,25 +192,66 @@ def _malformed_payload_error(command: Sequence[str], detail: str) -> dict[str, A
     return _command_error(command, stderr=detail, returncode=65)
 
 
+def _capture_budget_error(
+    command: Sequence[str],
+    capture_budget_seconds: float,
+) -> dict[str, Any]:
+    """Return a fail-closed error when cumulative live capture is exhausted."""
+    return _command_error(
+        command,
+        stderr=(
+            "PR queue capture exceeded the cumulative capture budget of "
+            f"{capture_budget_seconds:g} seconds"
+        ),
+        returncode=124,
+    )
+
+
+def _incomplete_detail_error(
+    command: Sequence[str],
+    detail: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return an error when required queue classification evidence is incomplete."""
+    missing = sorted(OPEN_PR_DETAIL_REQUIRED_FIELDS.difference(detail))
+    if missing:
+        return _malformed_payload_error(
+            command,
+            f"open PR detail omitted required fields: {', '.join(missing)}",
+        )
+    if not isinstance(detail.get("labels"), list) or not isinstance(detail.get("files"), list):
+        return _malformed_payload_error(
+            command,
+            "open PR detail labels and files must be lists",
+        )
+    return None
+
+
 def capture_pr_queue_snapshot(
     repo: str,
     *,
     run_json: JsonRunner = _run_gh_json,
+    monotonic: Clock = time.monotonic,
+    capture_budget_seconds: float = CAPTURE_BUDGET_SECONDS,
 ) -> dict[str, Any]:
     """Capture one bounded PR queue snapshot without a large nested query.
 
     Args:
         repo: GitHub repository in ``owner/name`` form.
         run_json: Injectable command runner used by focused tests.
+        monotonic: Monotonic clock used to enforce the cumulative capture budget.
+        capture_budget_seconds: Positive wall-clock budget for live capture.
 
     Returns:
         Snapshot compatible with ``build_pr_queue_governance.py``.
 
     Raises:
-        ValueError: If ``repo`` is not a canonical ``owner/name`` identifier.
+        ValueError: If ``repo`` or the cumulative capture budget is invalid.
     """
     if _REPOSITORY_RE.fullmatch(repo) is None:
         raise ValueError("repository must use canonical owner/name syntax")
+    if isinstance(capture_budget_seconds, bool) or capture_budget_seconds <= 0:
+        raise ValueError("capture_budget_seconds must be positive")
+    deadline = monotonic() + capture_budget_seconds
 
     repo_command = [
         "gh",
@@ -264,6 +308,7 @@ def capture_pr_queue_snapshot(
 
     open_prs: list[dict[str, Any]] = []
     seen_numbers: set[int] = set()
+    budget_exhausted = False
     for identity in identities:
         number = _positive_pr_number(identity.get("number"))
         if number is None or number in seen_numbers:
@@ -276,6 +321,10 @@ def capture_pr_queue_snapshot(
             continue
         seen_numbers.add(number)
         detail_command = _pr_view_command(repo, number)
+        if monotonic() >= deadline:
+            errors.append(_capture_budget_error(detail_command, capture_budget_seconds))
+            budget_exhausted = True
+            break
         detail, detail_error = run_json(detail_command)
         if detail_error is not None:
             errors.append(detail_error)
@@ -291,6 +340,10 @@ def capture_pr_queue_snapshot(
             )
             continue
         if str(detail.get("state") or "").upper() != "OPEN":
+            continue
+        incomplete_error = _incomplete_detail_error(detail_command, detail)
+        if incomplete_error is not None:
+            errors.append(incomplete_error)
             continue
         open_prs.append(detail)
 
@@ -309,21 +362,26 @@ def capture_pr_queue_snapshot(
             "--jq",
             '{"sha": .sha}',
         ]
-        base_payload, base_error = run_json(base_command)
-        if base_error is not None:
-            errors.append(base_error)
-        elif isinstance(base_payload, dict):
-            candidate = str(base_payload.get("sha") or "")
-            if re.fullmatch(r"[0-9a-fA-F]{40}", candidate):
-                base_sha = candidate.lower()
+        if budget_exhausted:
+            pass
+        elif monotonic() >= deadline:
+            errors.append(_capture_budget_error(base_command, capture_budget_seconds))
+        else:
+            base_payload, base_error = run_json(base_command)
+            if base_error is not None:
+                errors.append(base_error)
+            elif isinstance(base_payload, dict):
+                candidate = str(base_payload.get("sha") or "")
+                if re.fullmatch(r"[0-9a-fA-F]{40}", candidate):
+                    base_sha = candidate.lower()
+                else:
+                    errors.append(
+                        _malformed_payload_error(base_command, "default-branch SHA was invalid")
+                    )
             else:
                 errors.append(
-                    _malformed_payload_error(base_command, "default-branch SHA was invalid")
+                    _malformed_payload_error(base_command, "default-branch payload was not an object")
                 )
-        else:
-            errors.append(
-                _malformed_payload_error(base_command, "default-branch payload was not an object")
-            )
 
     return {
         "mode": "live-split-enrichment",
