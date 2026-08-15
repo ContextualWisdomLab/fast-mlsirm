@@ -1,0 +1,65 @@
+name: Repair PR 890 cumulative capture budget
+
+on:
+  push:
+    branches: [fix/hourly-pr-query-bounds-889]
+    paths:
+      - .github/workflows/repair-890-capture-budget.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-pr-890-capture-budget
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/hourly-pr-query-bounds-889
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Apply cumulative capture budget patch
+        run: |
+          cat > "$RUNNER_TEMP/repair-890.py.b64" <<'B64'
+          ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGhhc2hsaWIKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpST09UID0gUGF0aCgnLicpCgpFWFBFQ1RFRCA9IHsKICAgICdzY3JpcHRzL2NhcHR1cmVfcHJfcXVldWVfc25hcHNob3QucHknOiAnY2MzMzUxYmM4ZDk5ZjFhMmFkYWRhMzA4NTg3YjdlMzNmNTkxYWRhNTI1ODFhZGNkOWQwZDE4MzRlYWVlYWJjZCcsCiAgICAndGVzdHMvdGVzdF9jYXB0dXJlX3ByX3F1ZXVlX3NuYXBzaG90LnB5JzogJ2VkZjlhYTRjM2ZjMzRmODM1OWUzNWFjMTNiYzY0Y2EyNDliODk5NTZiY2Q4NTM4NjZkYWQ5OWU0ZjkyNDYxYTUnLAogICAgJ3Rlc3RzL3Rlc3RfaG91cmx5X3NuYXBzaG90X3NwbGl0X3dvcmtmbG93LnB5JzogJzljNjMwMjU1MTZmNDBmOTk0ZjEyNDhjNGJmZmJmNDY4ZDNmMjI1Nzc1ODc1OWVmZWI4N2MxZjI1ZTFhYTVlZTgnLAogICAgJy5naXRodWIvd29ya2Zsb3dzL2hvdXJseS1wci1nb3Zlcm5hbmNlLnltbCc6ICdmMTg2NTg1NmE3YzBhMDUxYWEyMjcwODY3ZWE4NmYwNGJhZTgwOTNhNTM1NTYzYWZmZjQ4MWNlYWM1NGJlZjMxJywKICAgICdkb2NzL2NoYW5nZWxvZy5kLzg4OS1ob3VybHktcHItcXVlcnktYm91bmRzLm1kJzogJ2ZlN2JhMGFiYTA1MzA1ODAwZjNjY2FhYWVhNDllNGI5MmJiMjZiNzU4NWRkOTcwY2JjZTcyYTliOTMxYjlkZTYnLAogICAgJ2RvY3MvZG9jdG9yaW5nLzg4OS1naXRodWItZ3JhcGhxbC1xdWVyeS1ib3VuZHMubWQnOiAnOWE5MDA2NDY5MjQwZTRkMzcwODFhMTQ3N2Y4YzFkM2YwMjE1YmU0ZDJhZmY5OWZlNWNmZGI3M2E1NDdlMzkzOCcsCn0KCgpkZWYgcmVwbGFjZV9vbmNlKHBhdGg6IHN0ciwgb2xkOiBzdHIsIG5ldzogc3RyKSAtPiBOb25lOgogICAgdGFyZ2V0ID0gUk9PVCAvIHBhdGgKICAgIHRleHQgPSB0YXJnZXQucmVhZF90ZXh0KGVuY29kaW5nPSd1dGYtOCcpCiAgICBpZiBuZXcgaW4gdGV4dCBhbmQgb2xkIG5vdCBpbiB0ZXh0OgogICAgICAgIHJldHVybgogICAgaWYgdGV4dC5jb3VudChvbGQpICE9IDE6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmJ3twYXRofTogZXhwZWN0ZWQgb25lIHJlcGxhY2VtZW50IGFuY2hvciwgZm91bmQge3RleHQuY291bnQob2xkKX0nKQogICAgdGFyZ2V0LndyaXRlX3RleHQodGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKSwgZW5jb2Rpbmc9J3V0Zi04JykKCgpkZWYgYXBwZW5kX29uY2UocGF0aDogc3RyLCBtYXJrZXI6IHN0ciwgYmxvY2s6IHN0cikgLT4gTm9uZToKICAgIHRhcmdldCA9IFJPT1QgLyBwYXRoCiAgICB0ZXh0ID0gdGFyZ2V0LnJlYWRfdGV4dChlbmNvZGluZz0ndXRmLTgnKQogICAgaWYgbWFya2VyIGluIHRleHQ6CiAgICAgICAgcmV0dXJuCiAgICBpZiBub3QgdGV4dC5lbmRzd2l0aCgnXG4nKToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYne3BhdGh9OiBleHBlY3RlZCB0ZXJtaW5hbCBuZXdsaW5lJykKICAgIHRhcmdldC53cml0ZV90ZXh0KHRleHQgKyBibG9jaywgZW5jb2Rpbmc9J3V0Zi04JykKCgpyZXBsYWNlX29uY2UoCiAgICAnc2NyaXB0cy9jYXB0dXJlX3ByX3F1ZXVlX3NuYXBzaG90LnB5JywKICAgICdDT01NQU5EX1RJTUVPVVRfU0VDT05EUzogRmluYWwgPSAzMFxuTUFYX0FUVEVNUFRTOiBGaW5hbCA9IDNcbicsCiAgICAnQ09NTUFORF9USU1FT1VUX1NFQ09ORFM6IEZpbmFsID0gMzBcbkNBUFRVUkVfQlVER0VUX1NFQ09ORFM6IEZpbmFsID0gNDIwXG5NQVhfQVRURU1QVFM6IEZpbmFsID0gM1xuJywKKQoKcmVwbGFjZV9vbmNlKAogICAgJ3NjcmlwdHMvY2FwdHVyZV9wcl9xdWV1ZV9zbmFwc2hvdC5weScsCiAgICAnJydkZWYgX21hbGZvcm1lZF9wYXlsb2FkX2Vycm9yKGNvbW1hbmQ6IFNlcXVlbmNlW3N0cl0sIGRldGFpbDogc3RyKSAtPiBkaWN0W3N0ciwgQW55XToKICAgICIiIlJldHVybiBhIGZhaWwtY2xvc2VkIGVycm9yIGZvciBhIHN1Y2Nlc3NmdWwgYnV0IG1hbGZvcm1lZCBwYXlsb2FkLiIiIgogICAgcmV0dXJuIF9jb21tYW5kX2Vycm9yKGNvbW1hbmQsIHN0ZGVycj1kZXRhaWwsIHJldHVybmNvZGU9NjUpCgoKZGVmIGNhcHR1cmVfcHJfcXVldWVfc25hcHNob3QoCiAgICByZXBvOiBzdHIsCiAgICAqLAogICAgcnVuX2pzb246IEpzb25SdW5uZXIgPSBfcnVuX2doX2pzb24sCikgLT4gZGljdFtzdHIsIEFueV06CiAgICAiIiJDYXB0dXJlIG9uZSBib3VuZGVkIFBSIHF1ZXVlIHNuYXBzaG90IHdpdGhvdXQgYSBsYXJnZSBuZXN0ZWQgcXVlcnkuCgogICAgQXJnczoKICAgICAgICByZXBvOiBHaXRIdWIgcmVwb3NpdG9yeSBpbiBgYG93bmVyL25hbWVgYCBmb3JtLgogICAgICAgIHJ1bl9qc29uOiBJbmplY3RhYmxlIGNvbW1hbmQgcnVubmVyIHVzZWQgYnkgZm9jdXNlZCB0ZXN0cy4KCiAgICBSZXR1cm5zOgogICAgICAgIFNuYXBzaG90IGNvbXBhdGlibGUgd2l0aCBgYGJ1aWxkX3ByX3F1ZXVlX2dvdmVybmFuY2UucHlgYC4KCiAgICBSYWlzZXM6CiAgICAgICAgVmFsdWVFcnJvcjogSWYgYGByZXBvYGAgaXMgbm90IGEgY2Fub25pY2FsIGBgb3duZXIvbmFtZWBgIGlkZW50aWZpZXIuCiAgICAiIiIKICAgIGlmIF9SRVBPU0lUT1JZX1JFLmZ1bGxtYXRjaChyZXBvKSBpcyBOb25lOgogICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoInJlcG9zaXRvcnkgbXVzdCB1c2UgY2Fub25pY2FsIG93bmVyL25hbWUgc3ludGF4IikKJycnLAogICAgJycnZGVmIF9tYWxmb3JtZWRfcGF5bG9hZF9lcnJvcihjb21tYW5kOiBTZXF1ZW5jZVtzdHJdLCBkZXRhaWw6IHN0cikgLT4gZGljdFtzdHIsIEFueV06CiAgICAiIiJSZXR1cm4gYSBmYWlsLWNsb3NlZCBlcnJvciBmb3IgYSBzdWNjZXNzZnVsIGJ1dCBtYWxmb3JtZWQgcGF5bG9hZC4iIiIKICAgIHJldHVybiBfY29tbWFuZF9lcnJvcihjb21tYW5kLCBzdGRlcnI9ZGV0YWlsLCByZXR1cm5jb2RlPTY1KQoKCmRlZiBfY2FwdHVyZV9idWRnZXRfZXJyb3IoCiAgICBjb21tYW5kOiBTZXF1ZW5jZVtzdHJdLCBjYXB0dXJlX2J1ZGdldF9zZWNvbmRzOiBpbnQKKSAtPiBkaWN0W3N0ciwgQW55XToKICAgICIiIlJldHVybiBhIGZhaWwtY2xvc2VkIGVycm9yIHdoZW4gY3VtdWxhdGl2ZSBsaXZlIGNhcHR1cmUgaXMgZXhoYXVzdGVkLiIiIgogICAgcmV0dXJuIF9jb21tYW5kX2Vycm9yKAogICAgICAgIGNvbW1hbmQsCiAgICAgICAgc3RkZXJyPSgKICAgICAgICAgICAgIlBSIHF1ZXVlIGNhcHR1cmUgZXhjZWVkZWQgdGhlIGN1bXVsYXRpdmUgY2FwdHVyZSBidWRnZXQgb2YgIgogICAgICAgICAgICBmIntjYXB0dXJlX2J1ZGdldF9zZWNvbmRzfSBzZWNvbmRzIgogICAgICAgICksCiAgICAgICAgcmV0dXJuY29kZT0xMjQsCiAgICApCgoKZGVmIGNhcHR1cmVfcHJfcXVldWVfc25hcHNob3QoCiAgICByZXBvOiBzdHIsCiAgICAqLAogICAgcnVuX2pzb246IEpzb25SdW5uZXIgPSBfcnVuX2doX2pzb24sCiAgICBtb25vdG9uaWM6IENhbGxhYmxlW1tdLCBmbG9hdF0gPSB0aW1lLm1vbm90b25pYywKICAgIGNhcHR1cmVfYnVkZ2V0X3NlY29uZHM6IGludCA9IENBUFRVUkVfQlVER0VUX1NFQ09ORFMsCikgLT4gZGljdFtzdHIsIEFueV06CiAgICAiIiJDYXB0dXJlIG9uZSBib3VuZGVkIFBSIHF1ZXVlIHNuYXBzaG90IHdpdGhvdXQgYSBsYXJnZSBuZXN0ZWQgcXVlcnkuCgogICAgQXJnczoKICAgICAgICByZXBvOiBHaXRIdWIgcmVwb3NpdG9yeSBpbiBgYG93bmVyL25hbWVgYCBmb3JtLgogICAgICAgIHJ1bl9qc29uOiBJbmplY3RhYmxlIGNvbW1hbmQgcnVubmVyIHVzZWQgYnkgZm9jdXNlZCB0ZXN0cy4KICAgICAgICBtb25vdG9uaWM6IE1vbm90b25pYyBjbG9jayB1c2VkIHRvIGVuZm9yY2UgdGhlIGN1bXVsYXRpdmUgZGVhZGxpbmUuCiAgICAgICAgY2FwdHVyZV9idWRnZXRfc2Vjb25kczogUG9zaXRpdmUgY3VtdWxhdGl2ZSBsaXZlLWNhcHR1cmUgYnVkZ2V0LgoKICAgIFJldHVybnM6CiAgICAgICAgU25hcHNob3QgY29tcGF0aWJsZSB3aXRoIGBgYnVpbGRfcHJfcXVldWVfZ292ZXJuYW5jZS5weWBgLgoKICAgIFJhaXNlczoKICAgICAgICBWYWx1ZUVycm9yOiBJZiBgYHJlcG9gYCBvciBgYGNhcHR1cmVfYnVkZ2V0X3NlY29uZHNgYCBpcyBpbnZhbGlkLgogICAgIiIiCiAgICBpZiBfUkVQT1NJVE9SWV9SRS5mdWxsbWF0Y2gocmVwbykgaXMgTm9uZToKICAgICAgICByYWlzZSBWYWx1ZUVycm9yKCJyZXBvc2l0b3J5IG11c3QgdXNlIGNhbm9uaWNhbCBvd25lci9uYW1lIHN5bnRheCIpCiAgICBpZiAoCiAgICAgICAgaXNpbnN0YW5jZShjYXB0dXJlX2J1ZGdldF9zZWNvbmRzLCBib29sKQogICAgICAgIG9yIG5vdCBpc2luc3RhbmNlKGNhcHR1cmVfYnVkZ2V0X3NlY29uZHMsIGludCkKICAgICAgICBvciBjYXB0dXJlX2J1ZGdldF9zZWNvbmRzIDw9IDAKICAgICk6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcihjYXB0dXJlIGJ1ZGdldCBtdXN0IGJlIGEgcG9zaXRpdmUgaW50ZWdlcikKICAgIGNhcHR1cmVfc3RhcnRlZCA9IG1vbm90b25pYygpCiAgICBjYXB0dXJlX2RlYWRsaW5lID0gY2FwdHVyZV9zdGFydGVkICsgY2FwdHVyZV9idWRnZXRfc2Vjb25kcwogICAgY2FwdHVyZV9idWRnZXRfZXhoYXVzdGVkID0gRmFsc2UKJycnLAogICAgXQK          B64
+          base64 --decode "$RUNNER_TEMP/repair-890.py.b64" > "$RUNNER_TEMP/repair-890.py"
+          python "$RUNNER_TEMP/repair-890.py"
+      - name: Install hash-locked CI dependencies
+        run: python -m pip install --disable-pip-version-check --require-hashes -r requirements/ci.txt
+      - name: Verify focused tests and exact coverage
+        run: |
+          python -m coverage erase
+          python -m coverage run --branch -m pytest \
+            tests/test_capture_pr_queue_snapshot.py \
+            tests/test_hourly_snapshot_split_workflow.py \
+            -q
+          python -m coverage report \
+            --include=scripts/capture_pr_queue_snapshot.py \
+            --fail-under=100
+          python -m compileall -q scripts/capture_pr_queue_snapshot.py tests/test_capture_pr_queue_snapshot.py tests/test_hourly_snapshot_split_workflow.py
+      - name: Commit validated repair and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name "seonghobae"
+          git config user.email "me@seonghobae.me"
+          git rm .github/workflows/repair-890-capture-budget.yml
+          git add \
+            .github/workflows/hourly-pr-governance.yml \
+            docs/changelog.d/889-hourly-pr-query-bounds.md \
+            docs/doctoring/889-github-graphql-query-bounds.md \
+            scripts/capture_pr_queue_snapshot.py \
+            tests/test_capture_pr_queue_snapshot.py \
+            tests/test_hourly_snapshot_split_workflow.py
+          git diff --cached --check
+          git commit -m "fix(ops): cap cumulative queue capture time"
+          git push origin HEAD:fix/hourly-pr-query-bounds-889
