@@ -327,8 +327,14 @@ def test_exact_numpy_iteration_controls_reach_native_boundary(monkeypatch, numpy
     assert calls == 1
 
 
-@pytest.mark.parametrize("numpy_type", (*_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES))
-def test_exact_numpy_tolerance_controls_reach_native_boundary(monkeypatch, numpy_type):
+@pytest.mark.parametrize(
+    ("numpy_type", "value"),
+    tuple((numpy_type, 1) for numpy_type in _NUMPY_INTEGER_TYPES)
+    + tuple((numpy_type, 1e-4) for numpy_type in _NUMPY_FLOAT_TYPES),
+)
+def test_exact_numpy_tolerance_controls_reach_native_boundary(
+    monkeypatch, numpy_type, value
+):
     """Supported exact NumPy real scalars retain tolerance compatibility."""
     calls = 0
 
@@ -341,7 +347,7 @@ def test_exact_numpy_tolerance_controls_reach_native_boundary(monkeypatch, numpy
     responses, q_matrix = _binary_inputs()
 
     with pytest.raises(RuntimeError, match="fit_gdina requires the compiled Rust core"):
-        fit_gdina(responses, q_matrix, tol=numpy_type(1e-4))
+        fit_gdina(responses, q_matrix, tol=numpy_type(value))
 
     assert calls == 1
 
