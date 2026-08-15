@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-20 - M-step Category Counts Matrix Multiplication
+**Learning:** In the GPCM M-step, generating the expected category count matrix via list comprehension and boolean indexing (`np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)`) is highly inefficient because it dynamically allocates multiple intermediate boolean and numeric arrays across iterations.
+**Action:** Precompute a complete boolean category mask for all items and categories before the EM loop `y_mask = (y[:, :, None] == scores).astype(np.float64)` and replace the list comprehension inside the loop with matrix multiplication against the transposed posteriors: `r = post.T @ y_mask[:, i, :]`. This dramatically speeds up calculation and minimizes dynamic allocations per iteration.
