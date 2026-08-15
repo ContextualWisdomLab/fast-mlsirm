@@ -32,6 +32,24 @@ class _HostileNumpyInt(np.int64):
         return 2
 
 
+class _HostileScalarMeta(type):
+    """Metaclass proving scalar-type admission cannot hash caller types."""
+
+    calls = 0
+
+    def __hash__(cls) -> int:
+        type(cls).calls += 1
+        return type.__hash__(np.int64)
+
+    def __eq__(cls, other: object) -> bool:
+        type(cls).calls += 1
+        return type.__eq__(cls, other)
+
+
+class _MetaclassHostileNumpyInt(np.int64, metaclass=_HostileScalarMeta):
+    """NumPy scalar subclass with caller-controlled type hash/equality hooks."""
+
+
 class _IntegerProtocolProvider:
     """Arbitrary integer protocol provider that must never be invoked."""
 
@@ -76,6 +94,25 @@ def test_validate_judge_rejects_executable_integer_controls_without_callbacks(
         validation.validate_judge(np.array([0, 1]), np.array([0, 1]), k=value)
 
     assert control_type.calls == 0
+    assert rust_calls == []
+
+
+def test_validate_judge_rejects_hostile_scalar_metaclass_without_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scalar-type admission cannot dispatch caller metaclass hash/equality hooks."""
+    _HostileScalarMeta.calls = 0
+    rust_calls: list[tuple[int, type[int]]] = []
+    monkeypatch.setattr(fast_mlsirm, "_core", _fake_core(rust_calls), raising=False)
+
+    with pytest.raises(ValueError):
+        validation.validate_judge(
+            np.array([0, 1]),
+            np.array([0, 1]),
+            k=_MetaclassHostileNumpyInt(2),
+        )
+
+    assert _HostileScalarMeta.calls == 0
     assert rust_calls == []
 
 
