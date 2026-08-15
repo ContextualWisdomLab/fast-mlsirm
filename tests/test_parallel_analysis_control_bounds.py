@@ -18,12 +18,20 @@ _DATA = np.array(
     dtype=np.float64,
 )
 
-
-class _TrapCore:
-    """Fail if an invalid public control reaches compiled numerical dispatch."""
-
-    def parallel_analysis(self, *args, **kwargs):
-        raise AssertionError("invalid control reached Rust dispatch")
+_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
 
 
 class _RecordingCore:
@@ -70,6 +78,16 @@ def _install_core(monkeypatch: pytest.MonkeyPatch, core: object) -> None:
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
 
 
+def _forbid_core_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail if public validation crosses the native-loader boundary."""
+    import fast_mlsirm.fitstats as fitstats
+
+    def unexpected_core_discovery() -> object:
+        raise AssertionError("native core discovery executed")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core_discovery)
+
+
 @pytest.mark.parametrize(
     ("name", "bad_value"),
     [
@@ -84,13 +102,13 @@ def _install_core(monkeypatch: pytest.MonkeyPatch, core: object) -> None:
         ("seed", "1"),
     ],
 )
-def test_noninteger_controls_fail_before_rust_dispatch(
+def test_noninteger_controls_fail_before_native_discovery(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
     bad_value: object,
 ) -> None:
-    """Booleans, floats, and strings cannot be silently coerced to controls."""
-    _install_core(monkeypatch, _TrapCore())
+    """Booleans, floats, and strings fail before native-core discovery."""
+    _forbid_core_discovery(monkeypatch)
     kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
     kwargs[name] = bad_value
 
@@ -100,7 +118,7 @@ def test_noninteger_controls_fail_before_rust_dispatch(
 
 def test_hostile_integer_conversion_is_not_executed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Control validation must use admitted types rather than caller conversion hooks."""
-    _install_core(monkeypatch, _TrapCore())
+    _forbid_core_discovery(monkeypatch)
 
     class HostileInt:
         def __int__(self) -> int:
@@ -111,28 +129,33 @@ def test_hostile_integer_conversion_is_not_executed(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize(
-    ("name", "bad_value"),
+    ("name", "hostile_type", "raw_value"),
     [
-        ("n_iterations", _HostilePythonInt(2)),
-        ("n_iterations", _HostileNumpyInt(2)),
-        ("centile", _HostilePythonInt(50)),
-        ("centile", _HostileNumpyInt(50)),
-        ("seed", _HostilePythonInt(7)),
-        ("seed", _HostileNumpyInt(7)),
+        ("n_iterations", _HostilePythonInt, 2),
+        ("n_iterations", _HostileNumpyInt, 2),
+        ("centile", _HostilePythonInt, 50),
+        ("centile", _HostileNumpyInt, 50),
+        ("seed", _HostilePythonInt, 7),
+        ("seed", _HostileNumpyInt, 7),
+    ],
+    ids=[
+        "iterations-python-subclass",
+        "iterations-numpy-subclass",
+        "centile-python-subclass",
+        "centile-numpy-subclass",
+        "seed-python-subclass",
+        "seed-numpy-subclass",
     ],
 )
 def test_integer_subclasses_fail_before_native_discovery(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
-    bad_value: object,
+    hostile_type: type,
+    raw_value: int,
 ) -> None:
     """Untrusted integer subclasses fail before callbacks or native discovery."""
-    import fast_mlsirm.fitstats as fitstats
-
-    def unexpected_core_discovery() -> object:
-        raise AssertionError("native core discovery executed")
-
-    monkeypatch.setattr(fitstats, "_core_module", unexpected_core_discovery)
+    _forbid_core_discovery(monkeypatch)
+    bad_value = hostile_type(raw_value)
     kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
     kwargs[name] = bad_value
 
@@ -140,34 +163,40 @@ def test_integer_subclasses_fail_before_native_discovery(
         parallel_analysis(_DATA, **kwargs)
 
 
-def test_oversized_random_benchmark_workspace_fails_before_rust_dispatch(
+def test_oversized_random_benchmark_workspace_fails_before_native_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Caller-controlled iteration counts cannot request unbounded simulation storage."""
-    _install_core(monkeypatch, _TrapCore())
+    """Oversized simulation storage is rejected before native-core discovery."""
+    _forbid_core_discovery(monkeypatch)
 
     with pytest.raises(ValueError, match="workspace"):
         parallel_analysis(_DATA, n_iterations=2**62)
 
 
-def test_seed_must_fit_rust_u64_before_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Python validates the PyO3 integer transport range with a stable package error."""
-    _install_core(monkeypatch, _TrapCore())
+def test_seed_must_fit_rust_u64_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The PyO3 integer transport range is validated before core discovery."""
+    _forbid_core_discovery(monkeypatch)
 
     with pytest.raises(ValueError, match=r"^seed "):
         parallel_analysis(_DATA, n_iterations=2, seed=2**64)
 
 
-def test_numpy_integer_controls_remain_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Exact NumPy integer scalars retain the documented public contract."""
+@pytest.mark.parametrize("scalar_type", _NUMPY_INTEGER_TYPES)
+def test_numpy_integer_controls_remain_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+    scalar_type: type[np.integer],
+) -> None:
+    """Every genuine supported NumPy integer scalar retains the public contract."""
     core = _RecordingCore()
     _install_core(monkeypatch, core)
 
     result = parallel_analysis(
         _DATA,
-        n_iterations=np.int64(2),
-        centile=np.int64(50),
-        seed=np.int64(7),
+        n_iterations=scalar_type(2),
+        centile=scalar_type(50),
+        seed=scalar_type(7),
     )
 
     assert result.retained == 1
