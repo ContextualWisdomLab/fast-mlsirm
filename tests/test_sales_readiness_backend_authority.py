@@ -20,11 +20,10 @@ def _load_sales_readiness():
 
 
 def _write_acceptance(tmp_path: Path, *, auto_backend: str) -> Path:
-    """Write acceptance evidence with separate automatic and explicit Rust fits."""
+    """Write producer-shaped acceptance evidence with automatic and explicit Rust fits."""
 
-    artifacts = tmp_path / "artifacts"
-    fit_auto = artifacts / "fit_auto"
-    fit_rust = artifacts / "fit_rust"
+    fit_auto = tmp_path / "fit_auto"
+    fit_rust = tmp_path / "fit_rust"
     fit_auto.mkdir(parents=True)
     fit_rust.mkdir(parents=True)
     (fit_auto / "fit_summary.json").write_text(
@@ -243,4 +242,5 @@ def test_acceptance_rejects_nested_fit_auto_directory(tmp_path: Path) -> None:
         )
     )
 
+    assert checks["acceptance:auto_fit_backend_authority"]["ok"] is False
     assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
