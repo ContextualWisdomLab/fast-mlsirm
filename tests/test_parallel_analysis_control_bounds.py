@@ -33,6 +33,8 @@ class _RecordingCore:
         self.calls: list[tuple[object, ...]] = []
 
     def parallel_analysis(self, *args):
+        controls = args[-3:]
+        assert all(type(value) is int for value in controls)
         self.calls.append(args)
         return {
             "retained": 1,
@@ -50,6 +52,20 @@ def _install_core(monkeypatch: pytest.MonkeyPatch, core: object) -> None:
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
 
 
+def _reject_core_discovery(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Make native-core discovery itself observable and forbidden."""
+    import fast_mlsirm.fitstats as fitstats
+
+    calls: list[bool] = []
+
+    def discover_core() -> object:
+        calls.append(True)
+        raise AssertionError("native core discovered before control validation")
+
+    monkeypatch.setattr(fitstats, "_core_module", discover_core)
+    return calls
+
+
 @pytest.mark.parametrize(
     ("name", "bad_value"),
     [
@@ -64,30 +80,107 @@ def _install_core(monkeypatch: pytest.MonkeyPatch, core: object) -> None:
         ("seed", "1"),
     ],
 )
-def test_noninteger_controls_fail_before_rust_dispatch(
+def test_noninteger_controls_fail_before_core_discovery(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
     bad_value: object,
 ) -> None:
-    """Booleans, floats, and strings cannot be silently coerced to controls."""
-    _install_core(monkeypatch, _TrapCore())
+    """Rejected scalar controls cannot cross the native-loader boundary."""
+    discovery_calls = _reject_core_discovery(monkeypatch)
     kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
     kwargs[name] = bad_value
 
     with pytest.raises(ValueError, match=rf"^{name} "):
         parallel_analysis(_DATA, **kwargs)
 
+    assert discovery_calls == []
 
-def test_hostile_integer_conversion_is_not_executed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Control validation must use admitted types rather than caller conversion hooks."""
-    _install_core(monkeypatch, _TrapCore())
 
-    class HostileInt:
+@pytest.mark.parametrize("kind", ["python", "numpy"])
+def test_integer_subclasses_fail_without_callbacks_or_core_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    """Caller-defined integer subclasses cannot authorize executable coercion."""
+    discovery_calls = _reject_core_discovery(monkeypatch)
+    callbacks: list[str] = []
+
+    class HostilePythonInt(int):
         def __int__(self) -> int:
-            raise RuntimeError("caller-controlled conversion executed")
+            callbacks.append("int")
+            raise AssertionError("caller-controlled __int__ executed")
 
-    with pytest.raises(ValueError, match=r"^n_iterations "):
-        parallel_analysis(_DATA, n_iterations=HostileInt())  # type: ignore[arg-type]
+        def __repr__(self) -> str:
+            callbacks.append("repr")
+            raise AssertionError("caller-controlled __repr__ executed")
+
+    class HostileNumpyInt(np.int64):
+        def __int__(self) -> int:
+            callbacks.append("int")
+            raise AssertionError("caller-controlled NumPy __int__ executed")
+
+        def __repr__(self) -> str:
+            callbacks.append("repr")
+            raise AssertionError("caller-controlled NumPy __repr__ executed")
+
+    value = HostilePythonInt(2) if kind == "python" else HostileNumpyInt(2)
+
+    with pytest.raises(ValueError, match=r"^n_iterations must be an integer$"):
+        parallel_analysis(_DATA, n_iterations=value)
+
+    assert callbacks == []
+    assert discovery_calls == []
+
+
+def test_arbitrary_integer_protocol_is_not_executed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An arbitrary integer protocol provider is data, not control authority."""
+    discovery_calls = _reject_core_discovery(monkeypatch)
+    callbacks: list[str] = []
+
+    class IntegerProvider:
+        def __int__(self) -> int:
+            callbacks.append("int")
+            raise AssertionError("arbitrary __int__ executed")
+
+        def __index__(self) -> int:
+            callbacks.append("index")
+            raise AssertionError("arbitrary __index__ executed")
+
+        def __repr__(self) -> str:
+            callbacks.append("repr")
+            raise AssertionError("arbitrary __repr__ executed")
+
+    with pytest.raises(ValueError, match=r"^n_iterations must be an integer$"):
+        parallel_analysis(_DATA, n_iterations=IntegerProvider())
+
+    assert callbacks == []
+    assert discovery_calls == []
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"n_iterations": 0}, r"^n_iterations must be >= 1$"),
+        ({"centile": -1}, r"^centile must be >= 0$"),
+        ({"centile": 100}, r"^centile must be <= 99$"),
+        ({"seed": -1}, r"^seed must be >= 0$"),
+        ({"seed": 2**64}, r"^seed must be <= 18446744073709551615$"),
+    ],
+)
+def test_invalid_domains_fail_before_core_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, int],
+    message: str,
+) -> None:
+    """Established control domains are enforced before native discovery."""
+    discovery_calls = _reject_core_discovery(monkeypatch)
+
+    with pytest.raises(ValueError, match=message):
+        parallel_analysis(_DATA, n_iterations=2, **kwargs)
+
+    assert discovery_calls == []
 
 
 def test_oversized_random_benchmark_workspace_fails_before_rust_dispatch(
@@ -108,16 +201,32 @@ def test_seed_must_fit_rust_u64_before_dispatch(monkeypatch: pytest.MonkeyPatch)
         parallel_analysis(_DATA, n_iterations=2, seed=2**64)
 
 
-def test_numpy_integer_controls_remain_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Exact NumPy integer scalars retain the documented public contract."""
+@pytest.mark.parametrize(
+    "scalar_type",
+    [
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+    ],
+)
+def test_numpy_integer_controls_remain_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+    scalar_type: type[np.integer],
+) -> None:
+    """Exact supported NumPy integers normalize to built-ins at the Rust boundary."""
     core = _RecordingCore()
     _install_core(monkeypatch, core)
 
     result = parallel_analysis(
         _DATA,
-        n_iterations=np.int64(2),
-        centile=np.int64(50),
-        seed=np.int64(7),
+        n_iterations=scalar_type(2),
+        centile=scalar_type(50),
+        seed=scalar_type(7),
     )
 
     assert result.retained == 1
