@@ -24,29 +24,131 @@ fixture_engine = _FIXTURES["fixture_engine"]
 
 
 class _IndexCallback:
-    """Integer-like caller value whose conversion is executable code."""
+    """Integer-like caller value whose numeric hooks are executable code."""
 
     def __init__(self, value: int) -> None:
         self.value = value
         self.callback_count = 0
 
+    def __int__(self) -> int:
+        self.callback_count += 1
+        return self.value
+
     def __index__(self) -> int:
         self.callback_count += 1
         return self.value
 
+    def __repr__(self) -> str:
+        self.callback_count += 1
+        return str(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        self.callback_count += 1
+        return False
+
+    def __hash__(self) -> int:
+        self.callback_count += 1
+        return self.value
+
+    def __lt__(self, other: object) -> bool:
+        self.callback_count += 1
+        return False
+
+    def __le__(self, other: object) -> bool:
+        self.callback_count += 1
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        self.callback_count += 1
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        self.callback_count += 1
+        return False
+
 
 class _CallerInt(int):
-    """Caller-defined built-in integer subclass that must not cross the boundary."""
+    """Caller-defined built-in integer subclass with executable numeric hooks."""
+
+    callback_count = 0
+
+    def __int__(self) -> int:
+        type(self).callback_count += 1
+        return 1
+
+    def __index__(self) -> int:
+        type(self).callback_count += 1
+        return 1
+
+    def __repr__(self) -> str:
+        type(self).callback_count += 1
+        return "1"
+
+    def __eq__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __hash__(self) -> int:
+        type(self).callback_count += 1
+        return 1
+
+    def __lt__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
 
 
 class _CallerNumpyInt(np.int64):
-    """Caller-defined NumPy integer subclass with an executable index hook."""
+    """Caller-defined NumPy integer subclass with executable numeric hooks."""
 
     callback_count = 0
+
+    def __int__(self) -> int:
+        type(self).callback_count += 1
+        return 2
 
     def __index__(self) -> int:
         type(self).callback_count += 1
         return 2
+
+    def __repr__(self) -> str:
+        type(self).callback_count += 1
+        return "2"
+
+    def __eq__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __hash__(self) -> int:
+        type(self).callback_count += 1
+        return 2
+
+    def __lt__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).callback_count += 1
+        return False
 
 
 def _scored_observations():
@@ -56,7 +158,7 @@ def _scored_observations():
 
 
 def test_request_integer_controls_reject_index_callbacks_without_execution() -> None:
-    """Request size controls reject arbitrary integer protocols before callbacks."""
+    """Request controls fail before conversion, comparison, equality, or hashing."""
     hostile = _IndexCallback(128)
 
     with pytest.raises(AssessmentSpecError) as captured:
@@ -67,7 +169,7 @@ def test_request_integer_controls_reject_index_callbacks_without_execution() -> 
 
 
 def test_score_category_rejects_numpy_subclasses_without_execution() -> None:
-    """Score categories accept genuine NumPy scalars, not caller subclasses."""
+    """Score categories reject NumPy subclasses before any numeric callback."""
     request = criterion_request()
     engine = automated_engine()
     _CallerNumpyInt.callback_count = 0
@@ -86,9 +188,10 @@ def test_score_category_rejects_numpy_subclasses_without_execution() -> None:
     assert _CallerNumpyInt.callback_count == 0
 
 
-def test_execution_attempt_rejects_python_integer_subclasses() -> None:
-    """Result attempt counters require trusted scalar identities."""
+def test_execution_attempt_rejects_python_integer_subclasses_without_execution() -> None:
+    """Result attempt counters reject Python subclasses before numeric callbacks."""
     request, observations = _scored_observations()
+    _CallerInt.callback_count = 0
 
     with pytest.raises(AssessmentSpecError) as captured:
         build_scoring_result(
@@ -100,6 +203,7 @@ def test_execution_attempt_rejects_python_integer_subclasses() -> None:
         )
 
     assert captured.value.code == "invalid_execution_attempt"
+    assert _CallerInt.callback_count == 0
 
 
 def test_genuine_numpy_integer_scalars_remain_supported() -> None:
