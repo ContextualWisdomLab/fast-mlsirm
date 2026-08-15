@@ -289,7 +289,7 @@ def test_iteration_bounds_fail_before_native_discovery(monkeypatch, bad):
         fit_gdina(responses, q_matrix, max_iter=bad)
 
 
-@pytest.mark.parametrize("bad", [0.0, -1.0, np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("bad", [0.0, -1.0, np.nan, np.inf, -np.inf, 10**1000])
 def test_tolerance_domain_fails_before_native_discovery(monkeypatch, bad):
     """Tolerance must be finite and strictly positive before native discovery."""
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
