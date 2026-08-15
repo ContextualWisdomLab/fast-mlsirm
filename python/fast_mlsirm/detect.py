@@ -78,6 +78,8 @@ def detect_analysis(
         raise ValueError("responses needs at least 2 persons and 2 items")
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
+    if not np.all(np.isin(y, (0.0, 1.0))):
+        raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
     c = np.asarray(cluster).reshape(-1)
     if c.shape[0] != n_items:
