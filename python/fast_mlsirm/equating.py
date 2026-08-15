@@ -6,6 +6,7 @@ equating, all computed in the Rust core."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import numpy as np
 
@@ -13,6 +14,61 @@ import numpy as np
 _EG_METHOD_ALIASES = frozenset(
     {"mean", "m", "linear", "lin", "l", "equipercentile", "equip", "ep"}
 )
+_NEAT_METHOD_ALIASES = frozenset(
+    {"chained", "chain", "ce", "frequencyestimation", "fe"}
+)
+_NEAT_LINEAR_METHOD_ALIASES = frozenset({"tucker", "t", "levine", "l"})
+_ANCHOR_KIND_ALIASES = frozenset(
+    {"internal", "int", "i", "external", "ext", "e"}
+)
+_CONTINUIZATION_ALIASES = frozenset(
+    {"uniform", "u", "gaussian", "gauss", "normal", "g"}
+)
+_SEE_ROUTE_ALIASES = frozenset({"bootstrap", "analytic"})
+_NUMPY_INTEGER_SCALAR_TYPES = tuple(
+    np.dtype(name).type
+    for name in (
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    )
+)
+_NUMPY_FLOAT_SCALAR_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+_U64_MAX = (1 << 64) - 1
+
+
+def _is_exact_numpy_scalar(value: object, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value`` has one exact trusted NumPy scalar identity.
+
+    Identity checks intentionally avoid ``isinstance`` so caller-defined NumPy
+    subclasses cannot become executable conversion providers at the Python/Rust
+    trust boundary.
+    """
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _require_string_control(
+    value: object,
+    *,
+    name: str,
+    aliases: frozenset[str],
+    description: str,
+) -> str:
+    """Return an exact built-in string whose normalized identity is allow-listed."""
+    if type(value) is not str:
+        raise ValueError(f"{name} must be a str {description}")
+    normalized = value.lower().replace("-", "").replace("_", "")
+    if normalized not in aliases:
+        raise ValueError(f"{name} must be a supported {description}")
+    return value
 
 
 def _require_equating_method(method, *, name: str = "method") -> str:
@@ -22,34 +78,96 @@ def _require_equating_method(method, *, name: str = "method") -> str:
     denial-of-service; accept only exact ``str`` identities so validation never
     executes those callbacks before the Rust core is reached.
     """
-    if type(method) is not str:
-        raise ValueError(f"{name} must be a str method identity")
-    normalized = method.lower().replace("-", "").replace("_", "")
-    if normalized not in _EG_METHOD_ALIASES:
-        raise ValueError(
-            f"{name} must be one of mean, linear, or equipercentile"
+    return _require_string_control(
+        method,
+        name=name,
+        aliases=_EG_METHOD_ALIASES,
+        description="equating method identity",
+    )
+
+
+def _require_integer_control(value: object, name: str) -> int:
+    """Normalize one exact Python/NumPy integer without executable coercion."""
+    if type(value) is int:
+        return value
+    if _is_exact_numpy_scalar(value, _NUMPY_INTEGER_SCALAR_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer control")
+
+
+def _require_positive_integer_control(value: object, name: str) -> int:
+    """Return a trusted integer greater than or equal to one."""
+    normalized = _require_integer_control(value, name)
+    if normalized < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return normalized
+
+
+def _require_seed(value: object, name: str = "seed") -> int:
+    """Return a trusted Rust ``u64`` seed without caller-controlled coercion."""
+    normalized = _require_integer_control(value, name)
+    if normalized < 0 or normalized > _U64_MAX:
+        raise ValueError(f"{name} must be in the unsigned 64-bit integer range")
+    return normalized
+
+
+def _require_real_control(value: object, name: str) -> float:
+    """Normalize one exact Python/NumPy real scalar and require finiteness."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        trusted = True
+    else:
+        trusted = _is_exact_numpy_scalar(
+            value,
+            _NUMPY_INTEGER_SCALAR_TYPES + _NUMPY_FLOAT_SCALAR_TYPES,
         )
-    return method
+    if not trusted:
+        raise ValueError(f"{name} must be a real numeric control")
+    try:
+        normalized = float(value)
+    except OverflowError:
+        raise ValueError(f"{name} must be a finite real numeric control") from None
+    if not math.isfinite(normalized):
+        raise ValueError(f"{name} must be a finite real numeric control")
+    return normalized
+
+
+def _require_weight(value: object, name: str = "w1") -> float:
+    """Return a finite synthetic-population weight in the closed unit interval."""
+    normalized = _require_real_control(value, name)
+    if normalized < 0.0 or normalized > 1.0:
+        raise ValueError(f"{name} must be between 0 and 1 inclusive")
+    return normalized
+
+
+def _require_optional_bandwidth(value: object, name: str) -> float | None:
+    """Return ``None`` or a finite strictly positive kernel bandwidth."""
+    if value is None:
+        return None
+    normalized = _require_real_control(value, name)
+    if normalized <= 0.0:
+        raise ValueError(f"{name} must be > 0")
+    return normalized
+
+
+def _require_ci_level(value: object, name: str = "ci_level") -> float:
+    """Return a finite confidence level strictly between zero and one."""
+    normalized = _require_real_control(value, name)
+    if normalized <= 0.0 or normalized >= 1.0:
+        raise ValueError(f"{name} must be strictly between 0 and 1")
+    return normalized
 
 
 def _require_optional_score_ceiling(value, name: str) -> int | None:
     """Return a trusted optional score ceiling without caller-controlled int().
 
-    Accept plain ``int`` and NumPy integer scalars only. Arbitrary objects that
-    implement ``__int__`` / ``__index__`` are rejected before conversion so
-    validation cannot be hijacked by hostile callables.
+    Accept exact plain ``int`` and genuine NumPy integer scalar identities only.
+    Arbitrary protocol providers and Python/NumPy subclasses are rejected before
+    conversion so validation cannot execute caller code.
     """
     if value is None:
         return None
-    if type(value) is int:
-        normalized = value
-    elif isinstance(value, np.integer):
-        normalized = int(value)
-    else:
-        raise ValueError(f"{name} must be an integer score ceiling")
-    if normalized <= 0:
-        raise ValueError(f"{name} must be a positive integer score ceiling")
-    return normalized
+    return _require_positive_integer_control(value, name)
 
 
 @dataclass
@@ -190,6 +308,16 @@ def equate_neat(
     """
     from .fitstats import _core_module
 
+    method = _require_string_control(
+        method,
+        name="method",
+        aliases=_NEAT_METHOD_ALIASES,
+        description="NEAT equating method",
+    )
+    k_x = _require_optional_score_ceiling(k_x, "k_x")
+    k_y = _require_optional_score_ceiling(k_y, "k_y")
+    k_v = _require_optional_score_ceiling(k_v, "k_v")
+    w1 = _require_weight(w1)
     core = _core_module()
     if core is None or not hasattr(core, "equate_neat"):
         raise RuntimeError("equate_neat requires the compiled Rust core")
@@ -201,9 +329,9 @@ def equate_neat(
     ky = _infer_k(yt, k_y, "k_y")
     kv = _infer_k(np.concatenate([xa, ya]), k_v, "k_v")
     res = core.equate_neat(
-        xt, xa, yt, ya, int(kx), int(ky), int(kv), method=str(method), w1=float(w1)
+        xt, xa, yt, ya, int(kx), int(ky), int(kv), method=method, w1=w1
     )
-    return _build(res, str(method), "NEAT")
+    return _build(res, method, "NEAT")
 
 
 def equate_neat_linear(
@@ -239,6 +367,21 @@ def equate_neat_linear(
     """
     from .fitstats import _core_module
 
+    method = _require_string_control(
+        method,
+        name="method",
+        aliases=_NEAT_LINEAR_METHOD_ALIASES,
+        description="linear NEAT method",
+    )
+    anchor_kind = _require_string_control(
+        anchor_kind,
+        name="anchor_kind",
+        aliases=_ANCHOR_KIND_ALIASES,
+        description="anchor kind",
+    )
+    k_x = _require_optional_score_ceiling(k_x, "k_x")
+    k_y = _require_optional_score_ceiling(k_y, "k_y")
+    w1 = _require_weight(w1)
     core = _core_module()
     if core is None or not hasattr(core, "equate_neat_linear"):
         raise RuntimeError("equate_neat_linear requires the compiled Rust core")
@@ -250,7 +393,7 @@ def equate_neat_linear(
     ky = _infer_k(yt, k_y, "k_y")
     res = core.equate_neat_linear(
         xt, xa, yt, ya, int(kx), int(ky),
-        method=str(method), anchor_kind=str(anchor_kind), w1=float(w1),
+        method=method, anchor_kind=anchor_kind, w1=w1,
     )
     return _build(res, f"{method}-{anchor_kind}", "NEAT")
 
@@ -275,13 +418,14 @@ def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
     """
     from .fitstats import _core_module
 
+    degree = _require_positive_integer_control(degree, "degree")
     core = _core_module()
     if core is None or not hasattr(core, "loglinear_smooth"):
         raise RuntimeError("loglinear_smooth requires the compiled Rust core")
     c = np.asarray(counts, dtype=np.float64).ravel()
     # the model preserves at most k = len(counts)-1 moments; clamp so the default
     # degree works on short forms (k < 6) instead of erroring
-    deg = max(1, min(int(degree), c.size - 1))
+    deg = max(1, min(degree, c.size - 1))
     res = core.loglinear_smooth(c, deg)
     return {
         "probs": np.asarray(res["probs"], dtype=np.float64),
@@ -330,23 +474,34 @@ def equate_observed_scores_kernel(
     """
     from .fitstats import _core_module
 
+    continuization = _require_string_control(
+        continuization,
+        name="continuization",
+        aliases=_CONTINUIZATION_ALIASES,
+        description="continuization method",
+    )
+    k_x = _require_optional_score_ceiling(k_x, "k_x")
+    k_y = _require_optional_score_ceiling(k_y, "k_y")
+    if smooth_x is not None:
+        smooth_x = _require_positive_integer_control(smooth_x, "smooth_x")
+    if smooth_y is not None:
+        smooth_y = _require_positive_integer_control(smooth_y, "smooth_y")
+    bandwidth_x = _require_optional_bandwidth(bandwidth_x, "bandwidth_x")
+    bandwidth_y = _require_optional_bandwidth(bandwidth_y, "bandwidth_y")
     core = _core_module()
     if core is None or not hasattr(core, "equate_observed_scores_ext"):
         raise RuntimeError("equate_observed_scores_kernel requires the compiled Rust core")
     xs = np.asarray(x_scores, dtype=np.float64).ravel()
     ys = np.asarray(y_scores, dtype=np.float64).ravel()
-    for nm, sv in (("smooth_x", smooth_x), ("smooth_y", smooth_y)):
-        if sv is not None and int(sv) < 1:
-            raise ValueError(f"{nm} must be >= 1")
     kx = _infer_k(xs, k_x, "k_x")
     ky = _infer_k(ys, k_y, "k_y")
     res = core.equate_observed_scores_ext(
         xs, ys, int(kx), int(ky),
-        continuization=str(continuization),
-        smooth_degree_x=None if smooth_x is None else int(smooth_x),
-        smooth_degree_y=None if smooth_y is None else int(smooth_y),
-        bandwidth_x=None if bandwidth_x is None else float(bandwidth_x),
-        bandwidth_y=None if bandwidth_y is None else float(bandwidth_y),
+        continuization=continuization,
+        smooth_degree_x=smooth_x,
+        smooth_degree_y=smooth_y,
+        bandwidth_x=bandwidth_x,
+        bandwidth_y=bandwidth_y,
     )
     return _build(res, f"{continuization}-kernel", "EG")
 
@@ -382,6 +537,18 @@ def equating_standard_errors(
     """
     from .fitstats import _core_module
 
+    method = _require_equating_method(method)
+    route = _require_string_control(
+        route,
+        name="route",
+        aliases=_SEE_ROUTE_ALIASES,
+        description="standard-error route",
+    )
+    k_x = _require_optional_score_ceiling(k_x, "k_x")
+    k_y = _require_optional_score_ceiling(k_y, "k_y")
+    n_boot = _require_positive_integer_control(n_boot, "n_boot")
+    ci_level = _require_ci_level(ci_level)
+    seed = _require_seed(seed)
     core = _core_module()
     if core is None:
         raise RuntimeError("equating_standard_errors requires the compiled Rust core")
@@ -394,14 +561,14 @@ def equating_standard_errors(
             raise RuntimeError("bootstrap SEE requires the compiled Rust core")
         res = core.bootstrap_see(
             xs, ys, int(kx), int(ky),
-            method=str(method), n_boot=int(n_boot), ci_level=float(ci_level), seed=int(seed),
+            method=method, n_boot=n_boot, ci_level=ci_level, seed=seed,
         )
-    elif route == "analytic":
+    else:
         if not hasattr(core, "analytic_see"):
             raise RuntimeError("analytic SEE requires the compiled Rust core")
-        res = core.analytic_see(xs, ys, int(kx), int(ky), method=str(method), ci_level=float(ci_level))
-    else:
-        raise ValueError("route must be 'bootstrap' or 'analytic'")
+        res = core.analytic_see(
+            xs, ys, int(kx), int(ky), method=method, ci_level=ci_level
+        )
     return {
         "x_scores": np.asarray(res["x_scores"], dtype=np.float64),
         "y_equivalents": np.asarray(res["y_equivalents"], dtype=np.float64),
