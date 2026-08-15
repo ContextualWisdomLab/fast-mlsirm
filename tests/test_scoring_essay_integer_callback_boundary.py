@@ -30,9 +30,33 @@ class _HostileIndex:
         type(self).callbacks.append("__repr__")
         return "10"
 
+    def __eq__(self, other: object) -> bool:
+        type(self).callbacks.append("__eq__")
+        return False
+
+    def __hash__(self) -> int:
+        type(self).callbacks.append("__hash__")
+        return 10
+
+    def __lt__(self, other: object) -> bool:
+        type(self).callbacks.append("__lt__")
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).callbacks.append("__le__")
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).callbacks.append("__gt__")
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).callbacks.append("__ge__")
+        return False
+
 
 class _HostileInt(int):
-    """Caller-defined Python integer subclass with executable conversion hooks."""
+    """Caller-defined Python integer subclass with executable numeric hooks."""
 
     callbacks: list[str] = []
 
@@ -47,10 +71,34 @@ class _HostileInt(int):
     def __repr__(self) -> str:
         type(self).callbacks.append("__repr__")
         return "10"
+
+    def __eq__(self, other: object) -> bool:
+        type(self).callbacks.append("__eq__")
+        return False
+
+    def __hash__(self) -> int:
+        type(self).callbacks.append("__hash__")
+        return 10
+
+    def __lt__(self, other: object) -> bool:
+        type(self).callbacks.append("__lt__")
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).callbacks.append("__le__")
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).callbacks.append("__gt__")
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).callbacks.append("__ge__")
+        return False
 
 
 class _HostileNumpyInt(np.int64):
-    """Caller-defined NumPy integer subclass with executable conversion hooks."""
+    """Caller-defined NumPy integer subclass with executable numeric hooks."""
 
     callbacks: list[str] = []
 
@@ -65,6 +113,30 @@ class _HostileNumpyInt(np.int64):
     def __repr__(self) -> str:
         type(self).callbacks.append("__repr__")
         return "10"
+
+    def __eq__(self, other: object) -> bool:
+        type(self).callbacks.append("__eq__")
+        return False
+
+    def __hash__(self) -> int:
+        type(self).callbacks.append("__hash__")
+        return 10
+
+    def __lt__(self, other: object) -> bool:
+        type(self).callbacks.append("__lt__")
+        return False
+
+    def __le__(self, other: object) -> bool:
+        type(self).callbacks.append("__le__")
+        return False
+
+    def __gt__(self, other: object) -> bool:
+        type(self).callbacks.append("__gt__")
+        return False
+
+    def __ge__(self, other: object) -> bool:
+        type(self).callbacks.append("__ge__")
+        return False
 
 
 def _prompt(**overrides: Any):
@@ -152,7 +224,7 @@ def test_essay_integer_controls_reject_caller_callbacks(
     control_name: str,
     hostile_factory: Callable[[], Any],
 ) -> None:
-    """Rejected integer-like controls execute no caller conversion callbacks."""
+    """Reject controls before caller conversion, comparison, equality, or hashing."""
     hostile = hostile_factory()
     hostile_type = type(hostile)
     hostile_type.callbacks.clear()
