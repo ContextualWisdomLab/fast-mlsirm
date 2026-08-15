@@ -198,3 +198,49 @@ def test_acceptance_rejects_rebound_declared_evidence_root(tmp_path: Path) -> No
 
     assert checks["acceptance:evidence_root_authority"]["ok"] is False
     assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
+
+
+def test_acceptance_rejects_nested_fit_auto_directory(tmp_path: Path) -> None:
+    """The canonical automatic fit must be the direct fit_auto child of the evidence root."""
+
+    module = _load_sales_readiness()
+    acceptance_root = tmp_path / "acceptance"
+    nested_fit = acceptance_root / "borrowed" / "fit_auto"
+    acceptance_root.mkdir()
+    nested_fit.mkdir(parents=True)
+    nested_summary = nested_fit / "fit_summary.json"
+    nested_summary.write_text(json.dumps({"backend": "rust"}), encoding="utf-8")
+    acceptance = acceptance_root / "acceptance_summary.json"
+    acceptance.write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "out": str(acceptance_root),
+                "total_duration_seconds": 0.25,
+                "steps": [
+                    {"command": "simulate", "duration_seconds": 0.01},
+                    {
+                        "command": "fit",
+                        "backend": "rust",
+                        "out": str(nested_fit),
+                        "files": {"summary": str(nested_summary)},
+                        "duration_seconds": 0.02,
+                    },
+                    {"command": "diagnose-fit", "duration_seconds": 0.03},
+                    {"command": "diagnose-dimensions", "duration_seconds": 0.04},
+                    {"command": "render-report", "duration_seconds": 0.05},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checks = _checks_by_name(
+        module._validate_acceptance_summary(
+            acceptance,
+            require_rust=False,
+            max_acceptance_seconds=None,
+        )
+    )
+
+    assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
