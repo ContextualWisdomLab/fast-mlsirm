@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-08-16 - Advanced NumPy tensor contraction over masking and loops
+**Learning:** In highly mathematical Python operations like those in `fast_mlsirm/estimators/marginal.py`, looping over distinct factors (like `d in range(n_dims)` or `k in range(k_cat)`) and performing masked aggregations (`post[y == k].sum()`) or slices (`logp0[:, factor_id == d].sum()`) forces Python evaluation at each step and allocates temporary arrays, hurting performance.
+**Action:** Replace `for` loops combined with `.sum(axis=...)` over boolean masks with explicitly casted numeric masks (e.g., `(factor_id[:, None] == np.arange(n_dims)).astype(dtype)`) followed by dense tensor contraction using `np.tensordot` or matrix multiplication (`@`). This pushes operations entirely into optimized BLAS/C routines and yields major speedups.

@@ -503,10 +503,10 @@ def _build_tables(
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
     logp1 = _log_sigmoid(eta)
     logp0 = _log_sigmoid(-eta)
-    n_ctx, n_items = eta.shape[0], eta.shape[1]
-    c0 = np.zeros((n_ctx, n_dims, eta.shape[2], eta.shape[3]))
-    for d in range(n_dims):
-        c0[:, d] = logp0[:, factor_id == d].sum(axis=1)
+    # Optimized: avoid python loops and boolean indexing by casting the boolean mask
+    # to the target numeric type and using dense tensor contraction via tensordot
+    casted_mask = (factor_id[:, None] == np.arange(n_dims)).astype(logp0.dtype)
+    c0 = np.tensordot(logp0, casted_mask, axes=([1], [0])).transpose((0, 3, 1, 2))
     return logp1, logp0, c0
 
 
@@ -1722,7 +1722,9 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     stopping_tolerance = float(tol * (1.0 + abs(ll)))
     for it in range(1, max_iter + 1):
         for i in range(n_items):
-            r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
+            # Optimized: replacing boolean-masked slices with dense matrix multiplication
+            mask = (y[:, i][:, None] == np.arange(k_cat)).astype(post.dtype)
+            r = post.T @ mask
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
         next_ll, post = estep(params)
         if not np.isfinite(next_ll):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
