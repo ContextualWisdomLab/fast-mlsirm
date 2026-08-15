@@ -1,0 +1,98 @@
+name: Apply adaptive contextual-orchestrator default
+
+on:
+  push:
+    branches:
+      - agent/adaptive-orchestrator-default
+    paths:
+      - scripts/apply_adaptive_orchestrator_default.py
+      - .github/workflows/apply-adaptive-orchestrator-default.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-adaptive-orchestrator-default-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Apply bounded source transformation
+        run: python scripts/apply_adaptive_orchestrator_default.py
+
+      - name: Compile changed Python
+        run: PYTHONPATH=python python -m compileall -q python/fast_mlsirm tests/test_llm_judge.py
+
+      - name: Verify adaptive default and explicit override
+        env:
+          PYTHONPATH: python
+        run: |
+          python - <<'PY'
+          import json
+          from fast_mlsirm.llm_judge import ContextualOrchestratorJudge, JudgeCriterion
+
+          class FakeOrchestrator:
+              def __init__(self):
+                  self.modes = []
+
+              def complete(self, messages, mode="auto"):
+                  self.modes.append(mode)
+                  return {
+                      "mode": "route",
+                      "answer": json.dumps({
+                          "score": 0.8,
+                          "accepted": True,
+                          "rationale": "supported",
+                          "criterion_scores": {
+                              "task_alignment": 0.8,
+                              "factual_support": 0.8,
+                          },
+                      }),
+                      "trace": [],
+                  }
+
+          criteria = [
+              JudgeCriterion("task_alignment", "The answer addresses the task."),
+              JudgeCriterion("factual_support", "The answer is supported."),
+          ]
+          adaptive = FakeOrchestrator()
+          ContextualOrchestratorJudge(adaptive).judge(
+              task="Evaluate the answer.", answer="Supported answer.", criteria=criteria
+          )
+          assert adaptive.modes == ["auto"]
+
+          explicit = FakeOrchestrator()
+          ContextualOrchestratorJudge(explicit, mode="route").judge(
+              task="Evaluate the answer.", answer="Supported answer.", criteria=criteria
+          )
+          assert explicit.modes == ["route"]
+          PY
+
+      - name: Inspect patch
+        run: git diff --check
+
+      - name: Publish verified implementation commit
+        env:
+          TARGET_BRANCH: agent/adaptive-orchestrator-default
+        run: |
+          rm scripts/apply_adaptive_orchestrator_default.py
+          rm .github/workflows/apply-adaptive-orchestrator-default.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "fix(judge): default to adaptive contextual orchestration"
+          git push origin "HEAD:${TARGET_BRANCH}"
