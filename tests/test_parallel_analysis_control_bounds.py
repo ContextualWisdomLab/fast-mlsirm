@@ -160,7 +160,7 @@ def test_arbitrary_integer_protocol_is_not_executed(
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "message"),
+    ("updates", "message"),
     [
         ({"n_iterations": 0}, r"^n_iterations must be >= 1$"),
         ({"centile": -1}, r"^centile must be >= 0$"),
@@ -171,14 +171,16 @@ def test_arbitrary_integer_protocol_is_not_executed(
 )
 def test_invalid_domains_fail_before_core_discovery(
     monkeypatch: pytest.MonkeyPatch,
-    kwargs: dict[str, int],
+    updates: dict[str, int],
     message: str,
 ) -> None:
     """Established control domains are enforced before native discovery."""
     discovery_calls = _reject_core_discovery(monkeypatch)
+    kwargs: dict[str, int] = {"n_iterations": 2, "centile": 0, "seed": 1}
+    kwargs.update(updates)
 
     with pytest.raises(ValueError, match=message):
-        parallel_analysis(_DATA, n_iterations=2, **kwargs)
+        parallel_analysis(_DATA, **kwargs)
 
     assert discovery_calls == []
 
