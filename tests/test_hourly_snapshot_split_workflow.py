@@ -15,9 +15,13 @@ def test_hourly_workflow_captures_split_snapshot_before_building_governance():
     assert "--offline-snapshot" in text
     assert "github_snapshot.json" in text
     assert text.index(capture) < text.index(builder)
-    assert "scripts/capture_pr_queue_snapshot.py" in text
-    assert "tests/test_capture_pr_queue_snapshot.py" in text
-    assert "tests/test_hourly_snapshot_split_workflow.py" in text
+
+    push_start = text.index("  push:\n")
+    push_end = text.index("\n\npermissions:", push_start)
+    push_trigger = text[push_start:push_end]
+    assert "scripts/capture_pr_queue_snapshot.py" in push_trigger
+    assert "tests/test_capture_pr_queue_snapshot.py" in push_trigger
+    assert "tests/test_hourly_snapshot_split_workflow.py" in push_trigger
 
 
 def test_hourly_workflow_publishes_raw_snapshot_with_derived_evidence():
