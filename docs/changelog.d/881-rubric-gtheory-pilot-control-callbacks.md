@@ -1,3 +1,6 @@
-### Security
+# G-theory pilot control callback boundary
 
-- Harden the generated-item G-theory pilot handoff so D-study sizes and mastery-cut controls accept only exact built-in or genuine supported NumPy scalar identities. Caller-defined numeric/protocol subclasses are rejected before conversion or representation callbacks can execute, while existing bounds and Rust-owned G-theory arithmetic remain unchanged.
+## Fixed
+
+- Hardened the generated-item G-theory pilot handoff so D-study sizes and mastery-cut controls accept only exact built-in or genuine supported NumPy scalar identities.
+- Rejected caller-defined numeric and protocol subclasses before conversion, representation, hashing, or equality callbacks while preserving existing bounds and Rust-owned G-theory arithmetic.
