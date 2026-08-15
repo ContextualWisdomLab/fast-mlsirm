@@ -54,15 +54,19 @@ def _validate_stopping_controls(max_iter: int, tol: float) -> tuple[int, float]:
         raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
 
     tol_type = type(tol)
-    if tol_type is int or tol_type is float:
-        tolerance = float(tol)
-    elif any(
-        tol_type is scalar_type
-        for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
+    if not (
+        tol_type is int
+        or tol_type is float
+        or any(
+            tol_type is scalar_type
+            for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
+        )
     ):
-        tolerance = float(tol)
-    else:
         raise ValueError("tol must be a finite number > 0")
+    try:
+        tolerance = float(tol)
+    except OverflowError as exc:
+        raise ValueError("tol must be a finite number > 0") from exc
     if not np.isfinite(tolerance) or tolerance <= 0:
         raise ValueError("tol must be a finite number > 0")
     return iteration_cap, tolerance
