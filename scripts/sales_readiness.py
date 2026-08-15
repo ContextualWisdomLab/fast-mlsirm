@@ -526,6 +526,7 @@ def _validate_acceptance_summary(
     )
     acceptance_root = acceptance_path.resolve(strict=False).parent
     evidence_root_ok = declared_root == acceptance_root
+    expected_auto_fit_path = acceptance_root / "fit_auto"
     checks.append(
         _check(
             "acceptance:evidence_root_authority",
@@ -564,11 +565,15 @@ def _validate_acceptance_summary(
         )
     )
 
-    auto_fit_steps = [
-        step
-        for step in fit_steps
-        if Path(str(step.get("out", ""))).name == "fit_auto"
-    ]
+    auto_fit_steps = []
+    for step in fit_steps:
+        out_value = step.get("out")
+        if (
+            isinstance(out_value, str)
+            and out_value
+            and Path(out_value).resolve(strict=False) == expected_auto_fit_path
+        ):
+            auto_fit_steps.append(step)
     auto_fit_backend = (
         auto_fit_steps[0].get("backend") if len(auto_fit_steps) == 1 else None
     )
@@ -579,47 +584,26 @@ def _validate_acceptance_summary(
             "canonical automatic acceptance fit resolves exactly once to Rust",
             count=len(auto_fit_steps),
             backend=auto_fit_backend,
+            expected_out=str(expected_auto_fit_path),
         )
     )
 
     auto_summary_ok = False
     auto_summary_backend: object = None
     auto_summary_path: Path | None = None
-    expected_auto_summary_path: Path | None = None
+    expected_auto_summary_path: Path | None = expected_auto_fit_path / "fit_summary.json"
     auto_summary_error: str | None = None
     if len(auto_fit_steps) == 1:
         auto_fit = auto_fit_steps[0]
-        out_value = auto_fit.get("out")
         files = auto_fit.get("files")
         summary_value = files.get("summary") if isinstance(files, dict) else None
-        if (
-            isinstance(out_value, str)
-            and out_value
-            and isinstance(summary_value, str)
-            and summary_value
-        ):
-            auto_fit_path = Path(out_value).resolve(strict=False)
+        if isinstance(summary_value, str) and summary_value:
             auto_summary_path = Path(summary_value)
             auto_summary_resolved = auto_summary_path.resolve(strict=False)
-            expected_auto_summary_path = auto_fit_path / "fit_summary.json"
-            auto_fit_within_root = (
-                evidence_root_ok
-                and auto_fit_path != acceptance_root
-                and auto_fit_path.is_relative_to(acceptance_root)
-            )
-            auto_summary_within_root = (
-                evidence_root_ok
-                and auto_summary_resolved != acceptance_root
-                and auto_summary_resolved.is_relative_to(acceptance_root)
-            )
             if not evidence_root_ok:
                 auto_summary_error = "acceptance evidence root is not authoritative"
-            elif not auto_fit_within_root:
-                auto_summary_error = "fit_auto output is outside acceptance evidence root"
-            elif not auto_summary_within_root:
-                auto_summary_error = "fit_auto summary is outside acceptance evidence root"
             elif auto_summary_resolved != expected_auto_summary_path:
-                auto_summary_error = "summary path is not bound to fit_auto output"
+                auto_summary_error = "summary path is not bound to canonical fit_auto output"
             elif not auto_summary_resolved.is_file():
                 auto_summary_error = "fit_auto summary is missing"
             else:
@@ -1170,7 +1154,7 @@ def _validate_procurement_due_diligence(
                 contract_value_krw is None
                 or payload.get("contract_value_krw") == contract_value_krw
             ),
-            "procurement due-diligence contract value matches readiness gate",
+            "procurement due-diligence manifest contract value matches readiness gate",
             expected=contract_value_krw,
             actual=payload.get("contract_value_krw"),
         ),
