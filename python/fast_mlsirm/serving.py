@@ -747,17 +747,15 @@ def cat_next_item(
     return res
 
 
-_TRUSTED_NUMPY_INTEGER_TYPES = frozenset(
-    {
-        np.dtype(np.int8).type,
-        np.dtype(np.int16).type,
-        np.dtype(np.int32).type,
-        np.dtype(np.int64).type,
-        np.dtype(np.uint8).type,
-        np.dtype(np.uint16).type,
-        np.dtype(np.uint32).type,
-        np.dtype(np.uint64).type,
-    }
+_TRUSTED_NUMPY_INTEGER_TYPES = (
+    np.dtype(np.int8).type,
+    np.dtype(np.int16).type,
+    np.dtype(np.int32).type,
+    np.dtype(np.int64).type,
+    np.dtype(np.uint8).type,
+    np.dtype(np.uint16).type,
+    np.dtype(np.uint32).type,
+    np.dtype(np.uint64).type,
 )
 
 
@@ -772,7 +770,9 @@ def _serving_integer_control(
     value_type = type(value)
     if value_type is int:
         normalized = value
-    elif value_type in _TRUSTED_NUMPY_INTEGER_TYPES:
+    elif any(
+        value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_TYPES
+    ):
         normalized = int(value)
     else:
         raise ValueError(f"{name} must be an integer")
