@@ -8,8 +8,9 @@ from fast_mlsirm.cli import main
 from fast_mlsirm.config import MLS2PLMConfig
 
 
-def test_cli_simulate_rejects_excessive_person_count(tmp_path, capsys):
+def test_cli_simulate_rejects_excessive_person_count(tmp_path, capsys, monkeypatch):
     """Reject oversized CLI simulations before allocating their matrices."""
+    monkeypatch.chdir(tmp_path)
     out_dir = tmp_path / "oversized"
 
     rc = main(
