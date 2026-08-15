@@ -17,12 +17,20 @@ import numpy as np
 
 
 MAX_JUDGE_CATEGORIES = 1_000
-_TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
-    {
-        np.dtype(code).type
-        for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
-    }
+_TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = tuple(
+    np.dtype(code).type
+    for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
 )
+
+
+def _is_exact_numpy_integer_scalar_type(value_type: type) -> bool:
+    """Return whether ``value_type`` is a package-trusted NumPy integer type.
+
+    Identity comparisons deliberately avoid hashing or equality on a
+    caller-controlled metaclass. This keeps type admission inert even for a
+    NumPy scalar subclass that overrides metaclass ``__hash__`` or ``__eq__``.
+    """
+    return any(value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES)
 
 
 def _trusted_judge_category_count(value: object) -> int:
@@ -37,7 +45,7 @@ def _trusted_judge_category_count(value: object) -> int:
     value_type = type(value)
     if value_type is int:
         normalized = value
-    elif value_type in _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES:
+    elif _is_exact_numpy_integer_scalar_type(value_type):
         normalized = int(value)
     else:
         raise ValueError("k (number of categories) must be an integer")
