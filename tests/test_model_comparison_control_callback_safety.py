@@ -130,6 +130,22 @@ def test_real_controls_reject_numpy_subclasses_without_float_callback(
     assert _HostileNumpyFloat.calls == 0
 
 
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("alpha", "alpha must be finite and in \\(0, 1\\)"),
+        ("omega_tol", "omega_tol must be finite and non-negative"),
+    ],
+)
+def test_real_controls_normalize_builtin_integer_overflow_to_value_error(
+    field: str,
+    message: str,
+) -> None:
+    """Huge trusted integers retain the public field-specific error contract."""
+    with pytest.raises(ValueError, match=message):
+        _compare(**{field: 10**10000})
+
+
 def test_genuine_numpy_scalars_remain_supported() -> None:
     """Trusted NumPy scalar compatibility remains part of the public contract."""
     result = _compare(
