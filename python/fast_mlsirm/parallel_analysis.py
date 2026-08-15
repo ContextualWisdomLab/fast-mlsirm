@@ -11,6 +11,20 @@ import numpy as np
 
 _MAX_PARALLEL_RANDOM_WORKSPACE_BYTES = 128 * 1024 * 1024
 _U64_MAX = (1 << 64) - 1
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
 
 
 @dataclass
@@ -41,6 +55,12 @@ _REFERENCES = """References (APA 7th ed.):
     """
 
 
+def _trusted_numpy_integer(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy integer type."""
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES)
+
+
 def _integer_control(
     name: str,
     value: object,
@@ -49,9 +69,15 @@ def _integer_control(
     maximum: int | None = None,
 ) -> int:
     """Validate an integer control without invoking caller conversion hooks."""
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+    value_type = type(value)
+    if value_type is bool or value_type is np.bool_:
         raise ValueError(f"{name} must be an integer")
-    parsed = int(value)
+    if value_type is int:
+        parsed = value
+    elif _trusted_numpy_integer(value):
+        parsed = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer")
     if parsed < minimum:
         raise ValueError(f"{name} must be >= {minimum}")
     if maximum is not None and parsed > maximum:
@@ -91,18 +117,14 @@ def parallel_analysis(
     ``n_iterations`` defaults to ``30 * n_items`` (paran's default). The
     random stream is this crate's deterministic LCG — results are
     paran-inspired but not bit-identical to any R run. Integer controls
-    accept Python and NumPy integer scalars but reject booleans and implicit
-    conversion hooks. The random-eigenvalue benchmark workspace is bounded
-    to 128 MiB before compiled dispatch. In LLM-as-a-Judge quality management
-    this estimates how many latent dimensions the judge rubric actually
-    measures.
+    accept exact Python integers and genuine supported NumPy integer scalars,
+    reject subclasses and implicit conversion hooks, and are validated before
+    compiled-core discovery. The random-eigenvalue benchmark workspace is
+    bounded to 128 MiB before compiled dispatch. In LLM-as-a-Judge quality
+    management this estimates how many latent dimensions the judge rubric
+    actually measures.
 
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "parallel_analysis"):
-        raise RuntimeError("parallel_analysis requires the compiled Rust core")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
@@ -115,6 +137,12 @@ def parallel_analysis(
     centile_value = _integer_control("centile", centile, minimum=0, maximum=99)
     seed_value = _integer_control("seed", seed, minimum=0, maximum=_U64_MAX)
     _validate_random_workspace(iters, n_items)
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        raise RuntimeError("parallel_analysis requires the compiled Rust core")
     res = core.parallel_analysis(
         x.reshape(-1),
         int(n_persons),
