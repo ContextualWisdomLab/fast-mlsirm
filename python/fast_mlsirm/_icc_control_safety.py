@@ -46,14 +46,17 @@ def _choice(value: Any, name: str, allowed: tuple[str, ...]) -> str:
 def _real(value: Any, name: str) -> float:
     """Normalize one exact trusted real scalar without caller-owned coercion."""
     value_type = builtins.type(value)
-    if value_type is int:
-        normalized = float(value)
-    elif value_type is float:
-        normalized = value
-    elif any(value_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES):
-        normalized = float(value)
-    else:
-        raise ValueError(f"{name} must be a real number")
+    try:
+        if value_type is int:
+            normalized = float(value)
+        elif value_type is float:
+            normalized = value
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES):
+            normalized = float(value)
+        else:
+            raise ValueError(f"{name} must be a real number")
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite") from exc
     if not np.isfinite(normalized):
         raise ValueError(f"{name} must be finite")
     return normalized
