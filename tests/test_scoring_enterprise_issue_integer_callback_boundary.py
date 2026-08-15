@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
@@ -19,7 +19,7 @@ from fast_mlsirm.scoring.enterprise_issue import (
 class _HostileIndex:
     """Integer protocol provider that records any caller callback execution."""
 
-    callbacks: list[str] = []
+    callbacks: ClassVar[list[str]] = []
 
     def __index__(self) -> int:
         type(self).callbacks.append("__index__")
@@ -57,7 +57,7 @@ class _HostileIndex:
 class _HostileInt(int):
     """Caller-defined Python integer subclass with executable numeric hooks."""
 
-    callbacks: list[str] = []
+    callbacks: ClassVar[list[str]] = []
 
     def __int__(self) -> int:
         type(self).callbacks.append("__int__")
@@ -99,7 +99,7 @@ class _HostileInt(int):
 class _HostileNumpyInt(np.int64):
     """Caller-defined NumPy integer subclass with executable numeric hooks."""
 
-    callbacks: list[str] = []
+    callbacks: ClassVar[list[str]] = []
 
     def __int__(self) -> int:
         type(self).callbacks.append("__int__")
