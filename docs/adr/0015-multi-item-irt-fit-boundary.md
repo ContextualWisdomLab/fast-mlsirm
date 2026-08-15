@@ -413,6 +413,21 @@ binding and a formal current-head review before IRT/Judge security or Merge
 acceptance. No keyword matching, positional repair, retry-as-repair, or silent
 drop is permitted.
 
+The follow-up exact-head Strix run for `a8182f6bec5439f48dfa81928463d0e5814ad1df`
+(`31859274416`/job `94949598180`, artifact `9240127858`) did not produce a
+penetration-test report. The agent runtime failed with
+`agents.exceptions.ModelBehaviorError: Tool exec_cmd not found in agent strix`
+after 32 requests/1.2M input tokens; the run metadata SHA-256 is
+`ab61d21a7c798fdd7713ff2e4e6118c5e313ef27362bea6d8cdf6206326bd5d1` and the
+gate-console SHA-256 is
+`27b804d1b59f16c313e0d7e34142bc92536d97b5939f1d57faa56c449af80f3b`.
+The gate correctly failed closed because no vulnerability report was
+available. Treat this as provider/tool-contract infrastructure evidence, not
+as a source finding and not as a zero-vulnerability result; repair or pin the
+trusted Strix tool contract before retrying, and never bypass it with an
+unbound report, keyword match, positional repair, retry-as-repair, or silent
+drop.
+
 ## References
 
 | Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
