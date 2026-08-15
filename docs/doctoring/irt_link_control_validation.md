@@ -14,7 +14,7 @@ Protected main previously used `str(method)` immediately before the PyO3 call an
 
 The same boundary used `isinstance(q_theta, (int, np.integer))` followed by `int(q_theta)`. That accepts subclasses whose `__int__` method is caller-controlled, so a value can pass the nominal type check and still execute arbitrary conversion behavior. Both defects are marshalling/trust-boundary defects, not defects in Haebara, Stocking-Lord, mean/mean, mean/sigma, or Gauss-Hermite mathematics.
 
-The fix applies allowlisted type and lexical validation at the earliest public-control boundary. This follows the specified-type validation principle in CWE-1287 and prevents caller exceptions from escaping as the package's control-flow contract (CWE-248). OWASP ASVS 5.0.0 likewise treats input validation as an explicit application-security verification area. Final NIST SP 800-218 SSDF 1.1 remains the released SSDF authority used by this repository; NIST SP 800-218 Rev. 1 / SSDF 1.2 is tracked separately as an initial public draft published December 17, 2025 rather than represented as final guidance.
+The fix applies allowlisted type and lexical validation at the earliest public-control boundary. This follows the specified-type validation principle in CWE-1287 and prevents caller exceptions from escaping as the package's control-flow contract (CWE-248). OWASP ASVS 5.0.0 likewise treats input validation as an explicit application-security verification area. Final NIST SP 800-218 SSDF 1.1 remains the released SSDF authority used by this repository; NIST SP 800-218 Rev. 1 / SSDF 1.2 is tracked separately as an initial public draft published December 17, 2025, rather than represented as final guidance.
 
 ## Test-first evidence
 
