@@ -6,7 +6,7 @@ Issue #912 hardens only the Python validation/marshalling boundary for the publi
 
 Protected `main` previously imported the compiled core before validating `k` and repeatedly invoked `int(k)`. Because Python integer subclasses and arbitrary integer-protocol objects may supply executable conversion methods, that order allowed caller-controlled conversion code to run while establishing a security- and fairness-relevant control.
 
-The bounded correction admits only an exact built-in `int` or an exact concrete NumPy integer scalar identity, normalizes a trusted NumPy scalar once, enforces the existing `2..=1000` domain, completes label/policy marshalling, and only then imports the Rust core. Booleans, Python/NumPy subclasses, and arbitrary conversion-protocol providers fail before conversion callbacks or Rust dispatch.
+The bounded correction admits only an exact built-in `int` or an exact concrete NumPy integer scalar identity, normalizes a trusted NumPy scalar once, enforces the existing `2..=1000` domain, completes label/policy marshalling, and only then imports the Rust core. Booleans, Python/NumPy subclasses, and arbitrary conversion-protocol providers fail before conversion callbacks or Rust dispatch. NumPy scalar-type admission uses identity comparisons rather than set membership so a caller-controlled scalar metaclass cannot inject `__hash__` or `__eq__` execution into the trust decision.
 
 ## Verification contract
 
@@ -15,11 +15,12 @@ The regression suite must prove all of the following on the exact PR head:
 - hostile Python integer subclasses execute zero `__int__` callbacks;
 - hostile NumPy integer subclasses execute zero `__int__` callbacks;
 - arbitrary integer-protocol providers execute zero callbacks;
+- caller-controlled NumPy scalar metaclasses execute zero hashing/equality callbacks during type admission;
 - invalid exact category counts fail before compiled-core import;
 - genuine concrete NumPy integer scalars remain compatible and arrive at the Rust boundary as an exact built-in integer; and
 - no judge-validation numerical formula or policy threshold changes.
 
-The initial test commit `7cf9eb6c2937020b5e755b5ae0a6cc2380fc068d` records the RED contract. The implementation commit `db0cb5848d317d39f197933043e289e00cdf522b` supplies the bounded validation-order correction. Hosted exact-head evidence remains authoritative over these remembered identities and must be refetched before lifecycle or integration decisions.
+The initial test commit `7cf9eb6c2937020b5e755b5ae0a6cc2380fc068d` records the conversion/native-discovery RED contract, and `db0cb5848d317d39f197933043e289e00cdf522b` supplies its first bounded GREEN. A second RED at `3979f064b3e32fe44892cab369f8ffc1e3af4d73` demonstrates that hashed type-container membership would still execute caller-controlled metaclass hooks; `54fe33b2dd9d2a287c04635f2acba7bfc94f10fa` replaces that admission with identity-only comparisons. Hosted exact-head evidence remains authoritative over these remembered identities and must be refetched before lifecycle or integration decisions.
 
 ## Standards and research basis
 
