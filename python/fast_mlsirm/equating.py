@@ -86,6 +86,19 @@ def _require_equating_method(method, *, name: str = "method") -> str:
     )
 
 
+def _require_see_route(route: object) -> str:
+    """Return one exact legacy SEE route identity without caller callbacks.
+
+    ``equating_standard_errors`` historically accepted only the two exact
+    lowercase route names because Python selected the implementation before
+    native dispatch. Keep that public identity contract while rejecting
+    subclasses and arbitrary protocol providers before Rust discovery.
+    """
+    if type(route) is not str or route not in _SEE_ROUTE_ALIASES:
+        raise ValueError("route must be 'bootstrap' or 'analytic'")
+    return route
+
+
 def _require_integer_control(value: object, name: str) -> int:
     """Normalize one exact Python/NumPy integer without executable coercion."""
     if type(value) is int:
@@ -538,12 +551,7 @@ def equating_standard_errors(
     from .fitstats import _core_module
 
     method = _require_equating_method(method)
-    route = _require_string_control(
-        route,
-        name="route",
-        aliases=_SEE_ROUTE_ALIASES,
-        description="standard-error route",
-    )
+    route = _require_see_route(route)
     k_x = _require_optional_score_ceiling(k_x, "k_x")
     k_y = _require_optional_score_ceiling(k_y, "k_y")
     n_boot = _require_positive_integer_control(n_boot, "n_boot")
