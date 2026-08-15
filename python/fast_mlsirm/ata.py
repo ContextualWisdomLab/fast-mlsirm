@@ -183,7 +183,9 @@ def _validated_content_labels(content: np.ndarray | None, n_items: int) -> np.nd
 def _is_exact_public_integer(value: object) -> bool:
     """Return whether ``value`` has one package-trusted integer scalar identity."""
     value_type = type(value)
-    return value_type is int or value_type in _NUMPY_INTEGER_SCALAR_TYPES
+    return value_type is int or any(
+        value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+    )
 
 
 def _exact_public_integer(value: object, name: str) -> int:
