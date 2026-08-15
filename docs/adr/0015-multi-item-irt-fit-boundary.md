@@ -386,6 +386,19 @@ commit, and head metadata. Do not promote it to a clean IRT/Judge security or
 Merge gate; require trusted same-head binding, independent approval, and the
 normal protected Merge checks.
 
+Fast PR #816 predecessor head `693d78fa9b8a57594835c3b2c0ab4e5a80111566`
+produced Strix run `31856874050`/job `94943245723`, artifact `9239417689`, and
+a zero-finding report (SHA-256
+`8b545f2bb8a912c24b3eb50c0e5cfedb332683e60e4852a511e5e97299e2b095`). Its
+`run.json` digest is
+`a1a510fb4099a62d9be7bd1deadd2cdef3fe7e546f814e20e23087c2b94efabe`, the gate
+console digest is
+`b729baf3ed1970fbb9f45c75b76b4eab1f203106e635eff901066492e0b882b9`, and no
+`evidence-binding.json` exists. Retain it as provider/content evidence only;
+the central trusted binding workflow and a protected current-head review are
+still required. No zero-finding line, local test, or keyword match can promote
+it to an IRT/Judge security or Merge gate.
+
 ## References
 
 | Follow-up to the symlink finding: fast head `8195434de6eb166a44dbda1f8bd4f2ca5086240a` contains the descriptor-safe bounded readers and leaf-symlink regressions; focused IO/security validation passed `305` tests and the full suite passed `3726` tests with 2 warnings. | Keep exact-head Strix and structured repository/head/run/job/report/digest provenance as independent gates; the local suite does not replace them. | Verified 2026-08-15; hosted security/review/Merge remain open |
