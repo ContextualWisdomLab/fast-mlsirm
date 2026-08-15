@@ -35,6 +35,7 @@ def _write_acceptance(tmp_path: Path, *, auto_backend: str) -> Path:
     )
     summary = {
         "status": "ok",
+        "out": str(tmp_path),
         "total_duration_seconds": 0.25,
         "steps": [
             {"command": "simulate", "duration_seconds": 0.01},
@@ -148,4 +149,52 @@ def test_acceptance_rejects_auto_fit_evidence_outside_summary_root(tmp_path: Pat
         )
     )
 
+    assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
+
+
+def test_acceptance_rejects_rebound_declared_evidence_root(tmp_path: Path) -> None:
+    """A copied manifest cannot redefine its root to a borrowed Rust evidence tree."""
+
+    module = _load_sales_readiness()
+    acceptance_root = tmp_path / "acceptance"
+    borrowed_root = tmp_path / "borrowed"
+    borrowed_fit = borrowed_root / "fit_auto"
+    acceptance_root.mkdir()
+    borrowed_fit.mkdir(parents=True)
+    borrowed_summary = borrowed_fit / "fit_summary.json"
+    borrowed_summary.write_text(json.dumps({"backend": "rust"}), encoding="utf-8")
+    acceptance = acceptance_root / "acceptance_summary.json"
+    acceptance.write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "out": str(borrowed_root),
+                "total_duration_seconds": 0.25,
+                "steps": [
+                    {"command": "simulate", "duration_seconds": 0.01},
+                    {
+                        "command": "fit",
+                        "backend": "rust",
+                        "out": str(borrowed_fit),
+                        "files": {"summary": str(borrowed_summary)},
+                        "duration_seconds": 0.02,
+                    },
+                    {"command": "diagnose-fit", "duration_seconds": 0.03},
+                    {"command": "diagnose-dimensions", "duration_seconds": 0.04},
+                    {"command": "render-report", "duration_seconds": 0.05},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checks = _checks_by_name(
+        module._validate_acceptance_summary(
+            acceptance,
+            require_rust=False,
+            max_acceptance_seconds=None,
+        )
+    )
+
+    assert checks["acceptance:evidence_root_authority"]["ok"] is False
     assert checks["acceptance:auto_fit_summary_backend_authority"]["ok"] is False
