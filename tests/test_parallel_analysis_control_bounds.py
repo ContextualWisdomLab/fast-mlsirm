@@ -43,6 +43,26 @@ class _RecordingCore:
         }
 
 
+class _HostilePythonInt(int):
+    """Integer subclass whose conversion/representation hooks must stay inert."""
+
+    def __int__(self) -> int:
+        raise AssertionError("caller-controlled integer conversion executed")
+
+    def __repr__(self) -> str:
+        raise AssertionError("caller-controlled representation executed")
+
+
+class _HostileNumpyInt(np.int64):
+    """NumPy integer subclass whose callbacks must never authorize a control."""
+
+    def __int__(self) -> int:
+        raise AssertionError("caller-controlled integer conversion executed")
+
+    def __repr__(self) -> str:
+        raise AssertionError("caller-controlled representation executed")
+
+
 def _install_core(monkeypatch: pytest.MonkeyPatch, core: object) -> None:
     """Replace the package core loader used by the public wrapper."""
     import fast_mlsirm.fitstats as fitstats
@@ -88,6 +108,36 @@ def test_hostile_integer_conversion_is_not_executed(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(ValueError, match=r"^n_iterations "):
         parallel_analysis(_DATA, n_iterations=HostileInt())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("name", "bad_value"),
+    [
+        ("n_iterations", _HostilePythonInt(2)),
+        ("n_iterations", _HostileNumpyInt(2)),
+        ("centile", _HostilePythonInt(50)),
+        ("centile", _HostileNumpyInt(50)),
+        ("seed", _HostilePythonInt(7)),
+        ("seed", _HostileNumpyInt(7)),
+    ],
+)
+def test_integer_subclasses_fail_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    bad_value: object,
+) -> None:
+    """Untrusted integer subclasses fail before callbacks or native discovery."""
+    import fast_mlsirm.fitstats as fitstats
+
+    def unexpected_core_discovery() -> object:
+        raise AssertionError("native core discovery executed")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core_discovery)
+    kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
+    kwargs[name] = bad_value
+
+    with pytest.raises(ValueError, match=rf"^{name} "):
+        parallel_analysis(_DATA, **kwargs)
 
 
 def test_oversized_random_benchmark_workspace_fails_before_rust_dispatch(
