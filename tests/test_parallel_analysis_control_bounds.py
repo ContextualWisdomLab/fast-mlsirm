@@ -43,6 +43,30 @@ class _RecordingCore:
         }
 
 
+class _HostilePythonInt(int):
+    """Integer subclass whose conversion and representation hooks are hostile."""
+
+    def __int__(self) -> int:
+        """Raise if package validation executes caller conversion code."""
+        raise RuntimeError("caller-controlled Python integer conversion executed")
+
+    def __repr__(self) -> str:
+        """Raise if an error path reflects the caller-provided control."""
+        raise RuntimeError("caller-controlled Python integer representation executed")
+
+
+class _HostileNumpyInt(np.int64):
+    """NumPy integer subclass whose conversion and representation are hostile."""
+
+    def __int__(self) -> int:
+        """Raise if package validation executes caller conversion code."""
+        raise RuntimeError("caller-controlled NumPy integer conversion executed")
+
+    def __repr__(self) -> str:
+        """Raise if an error path reflects the caller-provided control."""
+        raise RuntimeError("caller-controlled NumPy integer representation executed")
+
+
 def _install_core(monkeypatch: pytest.MonkeyPatch, core: object) -> None:
     """Replace the package core loader used by the public wrapper."""
     import fast_mlsirm.fitstats as fitstats
@@ -71,6 +95,52 @@ def test_noninteger_controls_fail_before_rust_dispatch(
 ) -> None:
     """Booleans, floats, and strings cannot be silently coerced to controls."""
     _install_core(monkeypatch, _TrapCore())
+    kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
+    kwargs[name] = bad_value
+
+    with pytest.raises(ValueError, match=rf"^{name} "):
+        parallel_analysis(_DATA, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "value_type",
+    [_HostilePythonInt, _HostileNumpyInt],
+)
+@pytest.mark.parametrize("name", ["n_iterations", "centile", "seed"])
+def test_integer_subclasses_fail_without_caller_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value_type: type[int],
+) -> None:
+    """Nominal integer subclasses are rejected before conversion or reflection."""
+    _install_core(monkeypatch, _TrapCore())
+    kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
+    kwargs[name] = value_type(2)
+
+    with pytest.raises(ValueError, match=rf"^{name} "):
+        parallel_analysis(_DATA, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("name", "bad_value"),
+    [
+        ("n_iterations", 2.5),
+        ("centile", 50.5),
+        ("seed", 1.5),
+    ],
+)
+def test_invalid_controls_fail_before_native_core_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    bad_value: object,
+) -> None:
+    """An invalid explicit control cannot cross the native-loader boundary."""
+    import fast_mlsirm.fitstats as fitstats
+
+    def reject_core_discovery() -> object:
+        raise AssertionError("invalid control reached native core discovery")
+
+    monkeypatch.setattr(fitstats, "_core_module", reject_core_discovery)
     kwargs: dict[str, object] = {"n_iterations": 2, "centile": 0, "seed": 1}
     kwargs[name] = bad_value
 
