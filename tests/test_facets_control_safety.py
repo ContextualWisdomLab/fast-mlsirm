@@ -36,6 +36,7 @@ def _hostile_int(counter: _CallbackCounter) -> int:
 
         def __index__(self):
             counter.hit()
+            return 0
 
         def __repr__(self):
             counter.hit()
@@ -51,6 +52,7 @@ def _hostile_int(counter: _CallbackCounter) -> int:
 
         def __hash__(self):
             counter.hit()
+            return 0
 
     return HostileInt(41)
 
@@ -64,6 +66,7 @@ def _hostile_numpy_int(counter: _CallbackCounter) -> np.int64:
 
         def __index__(self):
             counter.hit()
+            return 0
 
         def __repr__(self):
             counter.hit()
@@ -79,6 +82,7 @@ def _hostile_numpy_int(counter: _CallbackCounter) -> np.int64:
 
         def __hash__(self):
             counter.hit()
+            return 0
 
     return HostileNumpyInt(41)
 
@@ -126,6 +130,7 @@ class _IndexProvider:
 
     def __index__(self) -> int:
         self._counter.hit()
+        return 0
 
     def __int__(self) -> int:
         self._counter.hit()
