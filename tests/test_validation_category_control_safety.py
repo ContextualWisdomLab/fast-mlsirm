@@ -123,12 +123,12 @@ def test_validate_judge_rejects_invalid_k_before_core_import(
     real_import = builtins.__import__
     core_import_calls = 0
 
-    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    def guarded_import(name, globals_=None, locals_=None, fromlist=(), level=0):
         nonlocal core_import_calls
         if "_core" in fromlist:
             core_import_calls += 1
             raise AssertionError("compiled core discovered before k validation")
-        return real_import(name, globals, locals, fromlist, level)
+        return real_import(name, globals_, locals_, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
