@@ -8,7 +8,7 @@ The change preserves existing nonnegative bounds, nonempty evidence-span semanti
 
 ## Security basis
 
-OWASP ASVS 5.0.0 V2.2.1 requires positive validation of input against expected values, structures, and logical limits, while V2.2.2 places security validation at a trusted service layer. Exact scalar identity is the allowlist boundary here; Python's executable integer protocol is not treated as authority.
+OWASP ASVS 5.0.0 V2.2.1 permits positive allowlist validation against expected values, patterns, and ranges or comparison with an expected structure and logical limits under predefined rules. V2.2.2 requires input validation at a trusted service layer and states that client-side validation must not be relied upon as a security control. Exact scalar identity is the allowlist boundary here; Python's executable integer protocol is not treated as authority.
 
 The correction also follows the NIST Secure Software Development Framework's defect-prevention and root-cause-remediation intent. NIST SP 800-218 (SSDF 1.1) remains final; SP 800-218 Rev. 1 (SSDF 1.2) is newer but remains an Initial Public Draft and is not represented as final guidance.
 
