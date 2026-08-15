@@ -159,13 +159,18 @@ def _parameter_count(value: Any, name: str) -> int:
 def _trusted_real_scalar(value: Any, message: str) -> float:
     """Return an exact built-in or genuine NumPy real scalar."""
     value_type = type(value)
-    if value_type is int or value_type is float:
+    trusted = (
+        value_type is int
+        or value_type is float
+        or any(value_type is candidate for candidate in _NUMPY_INTEGER_SCALAR_TYPES)
+        or any(value_type is candidate for candidate in _NUMPY_FLOAT_SCALAR_TYPES)
+    )
+    if not trusted:
+        raise ValueError(message)
+    try:
         return float(value)
-    if any(value_type is trusted for trusted in _NUMPY_INTEGER_SCALAR_TYPES):
-        return float(value)
-    if any(value_type is trusted for trusted in _NUMPY_FLOAT_SCALAR_TYPES):
-        return float(value)
-    raise ValueError(message)
+    except OverflowError:
+        raise ValueError(message) from None
 
 
 def _alpha_value(value: Any) -> float:
