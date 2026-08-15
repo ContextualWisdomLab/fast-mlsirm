@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import InitVar, dataclass
 import math
-import operator
 from typing import Any, Iterable, Sequence
 
 import numpy as np
@@ -29,19 +28,44 @@ _GTHEORY_PI_DESIGN_TOKEN = object()
 MAX_GTHEORY_D_STUDY_ROWS = 64
 MAX_GTHEORY_PRIME_SIZE = 1_000_000
 _DEFAULT_N_I_PRIME = (5, 10, 15, 20)
+_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
+    {
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.intp,
+        np.longlong,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.uintp,
+        np.ulonglong,
+    }
+)
+_NUMPY_FLOATING_SCALAR_TYPES = frozenset(
+    {
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
 
 
 def _positive_design_size(value: Any, name: str) -> int:
-    """Return one bounded positive integer while rejecting bools and fractions."""
-    if isinstance(value, (bool, np.bool_)):
+    """Return one bounded trusted integer without caller protocol dispatch."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif value_type in _NUMPY_INTEGER_SCALAR_TYPES:
+        normalized = int(value)
+    else:
         raise ValueError(f"{name} must be an integer")
-    try:
-        normalized = operator.index(value)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be an integer") from exc
     if not 1 <= normalized <= MAX_GTHEORY_PRIME_SIZE:
         raise ValueError(f"{name} must be between 1 and {MAX_GTHEORY_PRIME_SIZE}")
-    return int(normalized)
+    return normalized
 
 
 def _normalized_n_i_prime(values: Sequence[int] | Iterable[int]) -> tuple[int, ...]:
@@ -59,12 +83,16 @@ def _normalized_n_i_prime(values: Sequence[int] | Iterable[int]) -> tuple[int, .
 
 
 def _finite_cut(value: Any) -> float:
-    """Return one finite numeric mastery cut while rejecting booleans."""
-    if isinstance(value, (bool, np.bool_)) or not isinstance(
-        value, (int, float, np.integer, np.floating)
+    """Return one finite trusted mastery cut without caller conversion hooks."""
+    value_type = type(value)
+    if value_type in (int, float):
+        normalized = float(value)
+    elif value_type in _NUMPY_INTEGER_SCALAR_TYPES or value_type in (
+        _NUMPY_FLOATING_SCALAR_TYPES
     ):
+        normalized = float(value)
+    else:
         raise ValueError("cut must be a finite number")
-    normalized = float(value)
     if not math.isfinite(normalized):
         raise ValueError("cut must be a finite number")
     return normalized
