@@ -75,7 +75,7 @@ def _write_acceptance(tmp_path: Path, *, include_rust: bool = True) -> Path:
                 "files": {"summary": _touch(artifacts / "fit_rust" / "fit_summary.json")},
             }
         )
-    path = tmp_path / "acceptance_summary.json"
+    path = artifacts / "acceptance_summary.json"
     path.write_text(module.json.dumps(summary), encoding="utf-8")
     return path
 
