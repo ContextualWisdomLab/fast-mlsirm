@@ -73,6 +73,9 @@ class _NumpyIntSubclassProbe(np.int64):
 
     callbacks: list[str] = []
 
+    def __new__(cls):
+        return np.int64.__new__(cls, 2)
+
     def __int__(self) -> int:
         type(self).callbacks.append("__int__")
         return 2
