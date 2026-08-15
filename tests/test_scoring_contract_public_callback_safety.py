@@ -165,7 +165,7 @@ def test_construct_fingerprint_iterable_callback_failure_is_redacted() -> None:
 
     assert captured.value.code == "invalid_rubric_fingerprints"
     assert captured.value.path == "$.rubric_fingerprints"
-    assert "private fingerprint callback payload" not in str(captured.value)
+    assert "private fingerprint iterator payload" not in str(captured.value)
 
 
 def test_assessment_version_callback_failure_is_redacted() -> None:
