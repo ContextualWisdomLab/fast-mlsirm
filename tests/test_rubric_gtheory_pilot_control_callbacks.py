@@ -120,6 +120,31 @@ class _NumpyFloatSubclassProbe(np.float64):
         return "numpy_float_subclass_probe"
 
 
+class _HostileScalarMeta(type):
+    """Metaclass whose hashing/equality must never run during type admission."""
+
+    callbacks: list[str] = []
+
+    def __hash__(cls) -> int:
+        type(cls).callbacks.append("__hash__")
+        return hash(np.int64)
+
+    def __eq__(cls, other: object) -> bool:
+        type(cls).callbacks.append("__eq__")
+        return False
+
+
+class _MetaclassIntProbe(int, metaclass=_HostileScalarMeta):
+    """Integer subclass with caller-controlled type hashing/equality."""
+
+    def __new__(cls):
+        return int.__new__(cls, 2)
+
+    def __repr__(self) -> str:
+        _HostileScalarMeta.callbacks.append("__repr__")
+        return "metaclass_int_probe"
+
+
 @pytest.mark.parametrize(
     "probe_type",
     (_IndexProbe, _IntSubclassProbe, _NumpyIntSubclassProbe),
@@ -150,6 +175,22 @@ def test_mastery_cut_rejects_callback_capable_numeric_subclasses(probe_type):
         design.to_phi_lambda_kwargs(value)
 
     assert probe_type.callbacks == []
+
+
+@pytest.mark.parametrize("handoff", ("d_study", "mastery_cut"))
+def test_type_admission_rejects_metaclass_callbacks(handoff):
+    """Type admission never hashes or compares a caller-controlled metaclass."""
+    design = _design()
+    _HostileScalarMeta.callbacks = []
+    value = _MetaclassIntProbe()
+
+    with pytest.raises(ValueError):
+        if handoff == "d_study":
+            design.to_gtheory_pi_kwargs((value,))
+        else:
+            design.to_phi_lambda_kwargs(value)
+
+    assert _HostileScalarMeta.callbacks == []
 
 
 def test_genuine_numpy_scalar_controls_remain_supported():
