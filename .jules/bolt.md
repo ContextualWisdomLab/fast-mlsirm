@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-08-15 - np.sum instead of np.vdot for multi-dimensional broadcasts
+**Learning:** During M-step mathematical optimizations (like expanding \`r_i * log_sig(eta) + ...\` into \`r_i * eta\`), using \`np.vdot(r_i, eta)\` to avoid intermediate arrays will crash if \`eta\` relies on broadcasting along implicit dimensions (e.g., if \`r_i\` is (N, K, Nx) and \`eta\` is (N, K, 1)). \`np.vdot\` strictly enforces identical size and flattened length.
+**Action:** Always prefer \`np.sum(A * B)\` or \`np.einsum\` over \`np.vdot\` when resolving reductions where the arrays are multi-dimensional and structurally rely on broadcasting.
