@@ -24,6 +24,16 @@ def test_detect_rejects_invalid_response_shape_before_core_discovery(monkeypatch
         detect_analysis(np.zeros(6), np.array([0, 1]))
 
 
+def test_detect_rejects_nonbinary_responses_before_core_discovery(monkeypatch):
+    """Out-of-domain DETECT responses fail before native discovery."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[0.0, 2.0], [1.0, 0.0]], dtype=np.float64)
+
+    with pytest.raises(ValueError, match="exactly 0 or 1"):
+        detect_analysis(responses, np.array([0, 1]))
+
+
 def test_dimtest_rejects_invalid_partition_before_core_discovery(monkeypatch):
     """Malformed DIMTEST item indices fail locally before touching the native loader."""
 
