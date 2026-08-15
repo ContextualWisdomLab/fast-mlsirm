@@ -125,6 +125,31 @@ class _StringSubclassProbe(str):
         return "string_subclass_probe"
 
 
+class _HostileScalarMeta(type):
+    """Metaclass whose hashing/equality must never run during type admission."""
+
+    callbacks: list[str] = []
+
+    def __hash__(cls) -> int:
+        type(cls).callbacks.append("__hash__")
+        return hash(np.int64)
+
+    def __eq__(cls, other: object) -> bool:
+        type(cls).callbacks.append("__eq__")
+        return False
+
+
+class _MetaclassIntProbe(int, metaclass=_HostileScalarMeta):
+    """Integer subclass with caller-controlled type hashing/equality."""
+
+    def __new__(cls):
+        return int.__new__(cls, 21)
+
+    def __repr__(self) -> str:
+        _HostileScalarMeta.callbacks.append("__repr__")
+        return "metaclass_int_probe"
+
+
 @pytest.mark.parametrize(
     "probe_type",
     (_IndexProbe, _IntSubclassProbe, _NumpyIntSubclassProbe),
@@ -165,6 +190,18 @@ def test_model_rejects_string_subclass_before_normalization_callback():
         design.to_fit_testlet_kwargs(model=_StringSubclassProbe())
 
     assert _StringSubclassProbe.callbacks == []
+
+
+@pytest.mark.parametrize("field", ("max_iter", "q_gamma", "tol", "init_sigma2"))
+def test_type_admission_rejects_metaclass_callbacks(field):
+    """Type admission never hashes or compares a caller-controlled metaclass."""
+    design = _design()
+    _HostileScalarMeta.callbacks = []
+
+    with pytest.raises(ValueError, match=field):
+        design.to_fit_testlet_kwargs(**{field: _MetaclassIntProbe()})
+
+    assert _HostileScalarMeta.callbacks == []
 
 
 def test_genuine_numpy_scalar_controls_remain_supported():
