@@ -14,7 +14,7 @@ The installed wrapper runs before the historical `scaling.bradley_terry_mm` impl
 
 The RED regression commit introduces executable hostile float/integer subclasses and protocol providers, a win-matrix materialization sentinel, and a native-core discovery sentinel. GREEN requires all rejected controls to fail before every sentinel and with zero callback invocations. Separate dispatch evidence verifies supported NumPy scalars reach the native seam as exact Python `float`/`int` values. Hosted exact-head CI, security, coverage, package, provenance, and review evidence remains mandatory before integration.
 
-This evidence is intentionally about trust-boundary behavior, not statistical validity. Existing Rust tests and scientific references continue to own the Bradley-Terry MM formula and convergence behavior.
+This evidence is intentionally about trust-boundary behavior, not statistical validity. The Bradley–Terry paired-comparison model is traced to Bradley and Terry (1952), and the MM algorithm family used for generalized Bradley–Terry estimation is traced to Hunter (2004). These method sources document the unchanged statistical computation; this slice does not claim new estimation or validity properties.
 
 ## Standards trace
 
@@ -22,7 +22,11 @@ The boundary follows MITRE CWE-1287's allow-known-good recommendation for inputs
 
 ### References (APA 7th ed.)
 
+Bradley, R. A., & Terry, M. E. (1952). Rank analysis of incomplete block designs: I. The method of paired comparisons. *Biometrika, 39*(3/4), 324–345. https://doi.org/10.1093/biomet/39.3-4.324
+
 CWE Content Team. (2026). *CWE-1287: Improper validation of specified type of input* (CWE Version 4.20). MITRE. https://cwe.mitre.org/data/definitions/1287.html
+
+Hunter, D. R. (2004). MM algorithms for generalized Bradley-Terry models. *The Annals of Statistics, 32*(1), 384–406. https://doi.org/10.1214/aos/1079120141
 
 OWASP Foundation. (2025). *OWASP Application Security Verification Standard* (Version 5.0.0). https://owasp.org/www-project-application-security-verification-standard/
 
