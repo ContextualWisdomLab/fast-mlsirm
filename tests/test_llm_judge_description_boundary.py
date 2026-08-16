@@ -4,7 +4,11 @@ import json
 
 import pytest
 
-from fast_mlsirm.llm_judge import ContextualOrchestratorJudge, JudgeCriterion
+from fast_mlsirm.llm_judge import (
+    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
+    ContextualOrchestratorJudge,
+    JudgeCriterion,
+)
 
 
 def test_criterion_description_rejects_runtime_string_subclass_before_hooks() -> None:
@@ -49,6 +53,8 @@ def test_trace_rejects_runtime_list_subclass_before_hooks() -> None:
     )
 
     class _Orchestrator:
+        contextual_orchestrator_contract = CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
+
         def complete(self, messages, mode="auto"):
             return {"mode": "route", "answer": answer, "trace": trace}
 
