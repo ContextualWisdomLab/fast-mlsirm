@@ -14,7 +14,7 @@ The package exposes a stable, non-reflective error for an unavailable automatic 
 
 ## Falsification and acceptance
 
-This decision is falsified if any ordinary `backend="auto"` call can select NumPy because the Rust extension is missing or incompatible. Acceptance requires tests proving that automatic resolution selects Rust when available, fails closed when absent, and explicit NumPy resolution remains an explicit caller decision. Installed-wheel/package evidence must continue to prove the Rust extension is present in supported production artifacts.
+This decision is falsified if any ordinary `backend="auto"` call can select NumPy because the Rust extension is missing or incompatible. It is also falsified if a purchaser-facing demo, layout, sales-import help, or release-acceptance gate still treats Rust as optional acceleration or treats NumPy as a valid automatic outcome. Acceptance requires tests proving that automatic resolution selects Rust when available, fails closed when absent, and explicit NumPy resolution remains an explicit caller decision. Installed-wheel/package evidence must continue to prove the Rust extension is present in supported production artifacts. Buyer demo copy, repository-layout copy, sales `--check-import` help, and the `fit --backend auto` acceptance check must name the same next action: install `fast_mlsirm._core`, or pass `backend="numpy"` only for the explicit reference/parity path.
 
 ## References
 

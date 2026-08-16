@@ -412,7 +412,7 @@ repeated blank-looking report sections or placeholder-only columns.
 ```text
 python/fast_mlsirm/       Python public API and reference backend
 crates/mlsirm-core/       Rust likelihood and gradient core
-crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
+crates/fast-mlsirm-py/    PyO3 binding for the compiled Rust backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
 examples/enterprise_demo/ Synthetic procurement evidence manifests

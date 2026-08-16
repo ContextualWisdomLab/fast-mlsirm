@@ -23,12 +23,19 @@ _STALE_NUMPY_DEFAULT = "NumPy reference backend as the default runtime path"
 _STALE_CLI_AUTO_FALLBACK = "falls back to NumPy otherwise"
 _STALE_CLI_HELP_FALLBACK = "numpy reference fallback"
 _STALE_WHEEL_NUMPY_DEFAULT = "Installed wheels can use the NumPy backend by default"
+_STALE_OPTIONAL_RUST_BACKEND = "optional Rust backend"
+_STALE_OPTIONAL_ACCELERATION = "Rust/PyO3 is optional"
+_STALE_OPTIONAL_RUST_CORE = "optional Rust core"
+_STALE_AUTO_ACCEPTS_NUMPY = "fit auto backend is not numpy or rust"
 _BUYER_FACING_SURFACES = (
     ROOT / "README.md",
     ROOT / "docs" / "commercial_readiness.md",
+    ROOT / "docs" / "buyer_demo_storyboard.md",
     ROOT / "python" / "fast_mlsirm" / "cli.py",
     ROOT / "python" / "fast_mlsirm" / "config.py",
     ROOT / "python" / "fast_mlsirm" / "backend.py",
+    ROOT / "scripts" / "release_acceptance.py",
+    ROOT / "scripts" / "sales_readiness.py",
 )
 
 
@@ -149,6 +156,10 @@ def test_buyer_facing_surfaces_do_not_advertise_auto_numpy_fallback() -> None:
         _STALE_CLI_AUTO_FALLBACK,
         _STALE_CLI_HELP_FALLBACK,
         _STALE_WHEEL_NUMPY_DEFAULT,
+        _STALE_OPTIONAL_RUST_BACKEND,
+        _STALE_OPTIONAL_ACCELERATION,
+        _STALE_OPTIONAL_RUST_CORE,
+        _STALE_AUTO_ACCEPTS_NUMPY,
     )
     for path in _BUYER_FACING_SURFACES:
         text = path.read_text(encoding="utf-8")
@@ -178,3 +189,38 @@ def test_fit_cli_help_names_fail_closed_auto_backend(capsys) -> None:
     assert _STALE_CLI_HELP_FALLBACK not in help_text
     assert "fails closed otherwise" in help_text
     assert "pass numpy only for the explicit reference/parity path" in help_text
+
+
+def test_buyer_demo_storyboard_names_fail_closed_rust_owner() -> None:
+    """A purchaser walkthrough must not treat Rust as optional acceleration."""
+    storyboard = (ROOT / "docs" / "buyer_demo_storyboard.md").read_text(encoding="utf-8")
+
+    assert _STALE_OPTIONAL_ACCELERATION not in storyboard
+    assert "NumPy is the reference backend" not in storyboard
+    assert "fails closed without `fast_mlsirm._core`" in storyboard
+    assert 'Pass `backend=numpy` only for' in storyboard
+
+
+def test_readme_layout_names_compiled_rust_binding() -> None:
+    """Repository layout copy must not call the compiled core optional."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert _STALE_OPTIONAL_RUST_BACKEND not in readme
+    assert "PyO3 binding for the compiled Rust backend" in readme
+
+
+def test_sales_check_import_help_does_not_call_rust_optional() -> None:
+    """Sales import help must name the compiled core as a require-rust action."""
+    source = (ROOT / "scripts" / "sales_readiness.py").read_text(encoding="utf-8")
+
+    assert _STALE_OPTIONAL_RUST_CORE not in source
+    assert "also import fast_mlsirm._core when --require-rust is set" in source
+
+
+def test_release_acceptance_auto_fit_requires_rust_owner() -> None:
+    """Release acceptance must reject NumPy as an automatic fit outcome."""
+    source = (ROOT / "scripts" / "release_acceptance.py").read_text(encoding="utf-8")
+
+    assert _STALE_AUTO_ACCEPTS_NUMPY not in source
+    assert "fit auto backend must resolve to rust" in source
+    assert "def _require_auto_fit_resolved_to_rust(" in source
