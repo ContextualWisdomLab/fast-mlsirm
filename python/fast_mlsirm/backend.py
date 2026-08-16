@@ -12,6 +12,13 @@ VALID_BACKENDS = {"numpy", "rust", "auto"}
 # when a GPU is present and fall back to the identical Rust CPU path otherwise.
 VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
+# Stable, non-reflective auto-resolution error. Do not interpolate paths,
+# ABI details, environment data, or import exception text into this text.
+AUTO_BACKEND_UNAVAILABLE_MESSAGE = (
+    "compiled Rust core is required for automatic backend resolution; "
+    "install a wheel or editable build that provides fast_mlsirm._core, "
+    "or pass backend='numpy' only for the explicit reference/parity path"
+)
 
 
 def normalize_backend(name: str) -> str:
@@ -48,7 +55,7 @@ def resolve_backend(name: str) -> str:
             raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
         return "rust"
     if core is None:
-        raise RuntimeError("compiled Rust core is required for automatic backend resolution")
+        raise RuntimeError(AUTO_BACKEND_UNAVAILABLE_MESSAGE)
     return "rust"
 
 

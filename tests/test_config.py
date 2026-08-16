@@ -11,7 +11,7 @@ def test_fitconfig_valid():
     config = FitConfig()
     config.validate()  # Should not raise any exception
     # Rust is the primary numeric path; the default backend is "auto" which
-    # resolves to the Rust core when available and falls back to numpy.
+    # resolves to the Rust core when available and fails closed otherwise.
     assert config.backend == "auto"
     assert config.rust_device == "auto"
 

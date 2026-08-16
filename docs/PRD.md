@@ -53,7 +53,7 @@ Raw scores, RAGAS values, LLM judgments, or human ratings are observations, not 
 
 ### PRD-PRN-002 Rust owns production psychometric arithmetic
 
-Likelihoods, gradients, Hessians, optimization, information, psychometric scoring/ranking, and other production mathematical kernels are Rust-owned. Python may orchestrate, validate, marshal, report, and retain transparent reference implementations for parity/fallback where explicitly governed.
+Likelihoods, gradients, Hessians, optimization, information, psychometric scoring/ranking, and other production mathematical kernels are Rust-owned. Python may orchestrate, validate, marshal, report, and retain explicit reference implementations for parity testing where governed.
 
 ### PRD-PRN-003 Correlation is not accuracy
 

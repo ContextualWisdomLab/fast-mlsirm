@@ -3,6 +3,17 @@ import pytest
 from fast_mlsirm import backend
 
 
+def test_auto_unavailable_message_names_purchaser_next_action() -> None:
+    """The fail-closed auto error must tell a purchaser what to install or pass."""
+    message = backend.AUTO_BACKEND_UNAVAILABLE_MESSAGE
+
+    assert message.startswith("compiled Rust core is required for automatic backend resolution")
+    assert "fast_mlsirm._core" in message
+    assert "backend='numpy'" in message
+    assert "/" not in message
+    assert "\\" not in message
+
+
 def test_load_core_surfaces_import_errors(monkeypatch):
     monkeypatch.setattr(backend.importlib.util, "find_spec", lambda name: object())
 
@@ -19,8 +30,11 @@ def test_auto_backend_fails_closed_when_rust_core_is_unavailable(monkeypatch):
     """Automatic production resolution must not silently select NumPy."""
     monkeypatch.setattr(backend, "_load_core", lambda: None)
 
-    with pytest.raises(RuntimeError, match="compiled Rust core is required"):
+    with pytest.raises(RuntimeError, match="compiled Rust core is required") as exc_info:
         backend.resolve_backend("auto")
+
+    assert str(exc_info.value) == backend.AUTO_BACKEND_UNAVAILABLE_MESSAGE
+    assert "backend='numpy'" in str(exc_info.value)
 
 
 def test_auto_backend_resolves_to_rust_when_core_is_available(monkeypatch):

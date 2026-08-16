@@ -160,7 +160,9 @@ r_pi = sqrt(sum_k (xi_pk - zeta_ik)^2 + eps)
 
 - Source and editable installs require a Rust toolchain because maturin builds
   `fast_mlsirm._core`.
-- Installed wheels can use the NumPy backend by default.
+- Installed wheels ship the compiled Rust core. `auto` uses that core and
+  fails closed if it is missing. Pass `backend="numpy"` only for the explicit
+  reference/parity path.
 - The Rust backend is a dense-matrix backend. It is not a sparse storage layer.
 - Real assessment data should be handled under the buyer's own privacy,
   governance, retention, and audit policies.

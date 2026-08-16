@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import inspect
 import re
 import tomllib
+
+from fast_mlsirm.backend import AUTO_BACKEND_UNAVAILABLE_MESSAGE, resolve_backend
+from fast_mlsirm.cli import main
+from fast_mlsirm.config import FitConfig
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +20,16 @@ _STALE_AUTO_NUMPY_FALLBACK = (
 )
 _STALE_PARITY_AND_FALLBACK = "parity testing and fallback"
 _STALE_NUMPY_DEFAULT = "NumPy reference backend as the default runtime path"
+_STALE_CLI_AUTO_FALLBACK = "falls back to NumPy otherwise"
+_STALE_CLI_HELP_FALLBACK = "numpy reference fallback"
+_STALE_WHEEL_NUMPY_DEFAULT = "Installed wheels can use the NumPy backend by default"
+_BUYER_FACING_SURFACES = (
+    ROOT / "README.md",
+    ROOT / "docs" / "commercial_readiness.md",
+    ROOT / "python" / "fast_mlsirm" / "cli.py",
+    ROOT / "python" / "fast_mlsirm" / "config.py",
+    ROOT / "python" / "fast_mlsirm" / "backend.py",
+)
 
 
 def _runtime_contract(guidance: str) -> dict[str, str]:
@@ -42,12 +57,18 @@ def test_claude_machine_runtime_contract_matches_shipped_policy() -> None:
     """Canonical machine guidance must pin package and backend ownership policy."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     guidance = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    contract = _runtime_contract(guidance)
 
-    assert _runtime_contract(guidance) == {
+    assert contract == {
         "requires_python": project["project"]["requires-python"],
         "auto_backend": "rust_required",
         "numpy_role": "reference_parity_only",
     }
+    assert contract["auto_backend"] == "rust_required"
+    assert "fails closed" in (resolve_backend.__doc__ or "")
+    assert "never silently" in (resolve_backend.__doc__ or "")
+    assert "fast_mlsirm._core" in AUTO_BACKEND_UNAVAILABLE_MESSAGE
+    assert "backend='numpy'" in AUTO_BACKEND_UNAVAILABLE_MESSAGE
 
 
 def test_claude_python_floor_matches_package_metadata() -> None:
@@ -70,14 +91,16 @@ def test_claude_auto_backend_matches_fail_closed_runtime() -> None:
 
 
 def test_readme_auto_backend_matches_fail_closed_runtime() -> None:
-    """Buyer-facing install guidance must match shipped auto-backend ownership."""
+    """Buyer-facing install and CLI guidance must match shipped auto-backend ownership."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     normalized = " ".join(readme.split())
 
     assert _STALE_AUTO_NUMPY_FALLBACK not in normalized
     assert _STALE_PARITY_AND_FALLBACK not in normalized
+    assert _STALE_CLI_AUTO_FALLBACK not in normalized
     assert "fails closed when that extension is unavailable" in normalized
     assert "Automatic resolution never silently selects NumPy" in normalized
+    assert "fails closed otherwise" in normalized
 
 
 def test_commercial_readiness_names_rust_as_default_auto_path() -> None:
@@ -85,8 +108,10 @@ def test_commercial_readiness_names_rust_as_default_auto_path() -> None:
     readiness = (ROOT / "docs" / "commercial_readiness.md").read_text(encoding="utf-8")
 
     assert _STALE_NUMPY_DEFAULT not in readiness
+    assert _STALE_WHEEL_NUMPY_DEFAULT not in readiness
     assert "Rust/PyO3 backend as the default `auto` runtime path" in readiness
     assert "Explicit NumPy reference backend for parity testing only" in readiness
+    assert "Installed wheels ship the compiled Rust core" in readiness
 
 
 def test_prd_current_capabilities_keep_numpy_as_explicit_parity() -> None:
@@ -96,6 +121,7 @@ def test_prd_current_capabilities_keep_numpy_as_explicit_parity() -> None:
     assert "NumPy reference/fallback paths and parity tests" not in prd
     assert "explicit NumPy reference/parity path" in prd
     assert "`auto` fails closed without the compiled Rust core" in prd
+    assert "parity/fallback where explicitly governed" not in prd
 
 
 def test_architecture_summaries_do_not_call_auto_a_transparent_fallback() -> None:
@@ -110,3 +136,45 @@ def test_architecture_summaries_do_not_call_auto_a_transparent_fallback() -> Non
     assert "governed reference/parity paths" in trd
     assert "transparent governed reference/fallback paths" not in summary
     assert "fails closed otherwise; it never silently selects NumPy" in adr
+    assert "controlled fallback" not in adr
+    assert "reference/fallback calculations" not in adr
+
+
+def test_buyer_facing_surfaces_do_not_advertise_auto_numpy_fallback() -> None:
+    """Purchaser-visible install, CLI, API, and sales copy must stay fail-closed."""
+    stale_claims = (
+        _STALE_AUTO_NUMPY_FALLBACK,
+        _STALE_PARITY_AND_FALLBACK,
+        _STALE_NUMPY_DEFAULT,
+        _STALE_CLI_AUTO_FALLBACK,
+        _STALE_CLI_HELP_FALLBACK,
+        _STALE_WHEEL_NUMPY_DEFAULT,
+    )
+    for path in _BUYER_FACING_SURFACES:
+        text = path.read_text(encoding="utf-8")
+        for claim in stale_claims:
+            assert claim not in text, f"{path} still contains {claim!r}"
+
+
+def test_fitconfig_source_matches_fail_closed_auto_policy() -> None:
+    """Public FitConfig comments must not describe silent NumPy auto fallback."""
+    source = inspect.getsource(FitConfig)
+
+    assert _STALE_AUTO_NUMPY_FALLBACK not in source
+    assert "fails closed" in source
+    assert "never silently selects NumPy" in source
+
+
+def test_fit_cli_help_names_fail_closed_auto_backend(capsys) -> None:
+    """`fast-mlsirm fit --help` must tell a purchaser that auto fails closed."""
+    try:
+        main(["fit", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    else:
+        raise AssertionError("fit --help must exit through argparse SystemExit")
+
+    help_text = capsys.readouterr().out
+    assert _STALE_CLI_HELP_FALLBACK not in help_text
+    assert "fails closed otherwise" in help_text
+    assert "pass numpy only for the explicit reference/parity path" in help_text

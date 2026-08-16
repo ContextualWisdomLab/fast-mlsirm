@@ -10,7 +10,7 @@ The explicit `backend="numpy"` surface is retained in this bounded migration as 
 
 Python's import machinery provides a direct capability probe: `importlib.util.find_spec()` returns `None` when no module specification is found and importing the module is a separate operation. The package uses that boundary to distinguish an unavailable extension from an available compiled module. The PyO3 and maturin primary documentation describe the native extension as the Python-importable compiled module produced and distributed with the package. Those mechanics support a fail-closed contract when the package's required production extension is missing; they do not justify substituting a different numerical implementation.
 
-The package exposes a stable, non-reflective error for an unavailable automatic production backend rather than reflecting local paths, ABI details, environment data, or import exception text into the fallback decision. Actual import/ABI failures remain diagnostic failures rather than being reclassified as permission to run NumPy arithmetic.
+The package exposes a stable, non-reflective error for an unavailable automatic production backend rather than reflecting local paths, ABI details, environment data, or import exception text into the resolution decision. The message tells the purchaser the next action: install a wheel or editable build that provides `fast_mlsirm._core`, or pass `backend="numpy"` only for the explicit reference/parity path. Actual import/ABI failures remain diagnostic failures rather than being reclassified as permission to run NumPy arithmetic.
 
 ## Falsification and acceptance
 

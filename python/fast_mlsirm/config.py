@@ -163,8 +163,9 @@ class FitConfig:
     lbfgs_history: int = 10
     verbose: int = 0
     # Rust is the primary numeric path: "auto" resolves to the compiled
-    # ``fast_mlsirm._core`` (Rust/PyO3) kernel when available and transparently
-    # falls back to the pure-numpy reference implementation otherwise.
+    # ``fast_mlsirm._core`` (Rust/PyO3) kernel when available and fails closed
+    # otherwise. Automatic resolution never silently selects NumPy. Pass
+    # backend="numpy" only for the explicit reference/parity path.
     backend: str = "auto"
     # Device for the Rust backend: "cpu", "gpu", or "auto". A sub-option of the
     # rust backend, not a separate compute-backend axis. "auto" (default) uses

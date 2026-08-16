@@ -252,7 +252,7 @@ def _fit_mmle_marginal(
     anchors: dict | None = None,
     covariate: dict | None = None,
 ) -> FitResult:
-    """Marginal EM for the latent-space family (Rust core, NumPy fallback).
+    """Marginal EM for the latent-space family (Rust core, or explicit NumPy reference).
 
     Person latents are integrated out by Gauss-Hermite quadrature; item-side
     parameters carry the LSIRM priors of Jeon et al. (2021) as MAP penalties

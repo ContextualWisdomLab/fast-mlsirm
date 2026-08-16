@@ -377,8 +377,9 @@ calibration set.
 
 `fit --backend numpy` uses the Python reference objective. `fit --backend rust`
 requires the installed `fast_mlsirm._core` extension and fails clearly if it is
-unavailable. `fit --backend auto` uses the Rust objective when available and
-falls back to NumPy otherwise.
+unavailable. `fit --backend auto` uses the Rust objective when the compiled
+core is available and fails closed otherwise. Automatic resolution never
+silently selects NumPy.
 
 The backend axis stays `{numpy, rust, auto}`. GPU acceleration is a *device*
 sub-option of the Rust backend rather than a separate backend, selected with
