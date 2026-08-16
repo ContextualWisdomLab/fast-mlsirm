@@ -23,10 +23,3 @@
 ## 2026-08-04 - Status Semantics and Numeric Alignment for Reports
 **Learning:** Explicit status semantics can make conditionally rendered empty states easier to discover with assistive technology, while tabular numerals improve visual comparison of metric columns. Focus-reveal behavior must not depend only on `:focus-visible`, and hover styling must not reduce the contrast of unrelated rows.
 **Action:** Use `role="status"` for genuine conditionally rendered status messages, apply `font-variant-numeric: tabular-nums` to numeric report tables, reveal skip links on `:focus`, retain a visible `:focus-visible` indicator, and avoid opacity-based dimming of non-hovered content.
-## 2026-08-05 - Fail-Safe Pointer Focus Outline Suppression
-**Learning:** Globally suppressing focus outlines for mouse users with `:focus { outline: none; }` destroys keyboard accessibility on user agents that do not support `:focus-visible`. A fail-safe selector approach uses `:focus:not(:focus-visible)` to explicitly target non-keyboard interaction, preserving the user agent default when `:focus-visible` is unsupported. Pointer-only ring suppression is a visual polish feature, not a complete solution for whole-product WCAG conformance; pointer users may still benefit from focus indication.
-**Action:** When suppressing pointer focus rings, always use `:focus:not(:focus-visible) { outline: none; }`.
-References:
-- W3C. (2025). *Understanding Success Criterion 2.4.7: Focus Visible*.
-- W3C. (2025). *C45: Using CSS :focus-visible to provide keyboard focus indication*.
-- W3C. (2025). *Selectors Level 4*.
