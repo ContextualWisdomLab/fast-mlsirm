@@ -223,3 +223,4 @@ def test_genuine_numpy_controls_dispatch_as_exact_builtins(monkeypatch):
 def test_top_level_export_uses_the_hardened_scaling_wrapper():
     """The public package export must not retain the pre-install legacy callable."""
     assert fast_mlsirm.bradley_terry_mm is bradley_terry_mm
+    assert getattr(bradley_terry_mm, "__fast_mlsirm_control_hardened__", False)
