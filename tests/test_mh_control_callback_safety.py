@@ -43,6 +43,21 @@ class _HostileFloat(float):
         return float.__lt__(self, other)
 
 
+class _HostileFloatProvider:
+    """Arbitrary float protocol provider whose callback must stay inert."""
+
+    calls = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the callback counter."""
+        cls.calls = 0
+
+    def __float__(self) -> float:
+        type(self).calls += 1
+        return 0.05
+
+
 class _HostileBool(int):
     """Integer disguised as a matching-score flag; ``bool()`` must stay inert."""
 
@@ -62,6 +77,7 @@ class _HostileBool(int):
     ("field", "value", "message"),
     (
         ("fdr_q", _HostileFloat(0.05), "fdr_q must be a real number"),
+        ("fdr_q", _HostileFloatProvider(), "fdr_q must be a real number"),
         ("exclude_studied_item", _HostileBool(1), "exclude_studied_item must be an exact bool"),
     ),
 )
