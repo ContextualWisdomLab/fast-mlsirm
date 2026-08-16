@@ -12,6 +12,7 @@ on:
       - scripts/build_pr_queue_governance.py
       - scripts/capture_pr_queue_snapshot.py
       - tests/test_capture_pr_queue_snapshot.py
+      - tests/test_capture_pr_queue_snapshot_missing_branch.py
       - tests/test_hourly_pr_governance_workflow.py
       - tests/test_hourly_snapshot_split_workflow.py
       - tests/test_pr_queue_governance.py
