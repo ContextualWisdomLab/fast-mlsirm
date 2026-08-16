@@ -1,0 +1,99 @@
+name: Apply adaptive contextual-orchestrator Judge default
+
+on:
+  push:
+    branches:
+      - agent/adaptive-orchestrator-default
+    paths:
+      - scripts/stage_adaptive_judge_default_test.py
+      - scripts/apply_adaptive_judge_default.py
+      - .github/workflows/apply-adaptive-judge-default.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-adaptive-judge-default-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  red-green-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # actions/setup-python
+        with:
+          python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+
+      - name: Install locked test dependencies and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Stage the default-mode regression
+        run: python scripts/stage_adaptive_judge_default_test.py
+
+      - name: Establish red state or recognize an already-applied implementation
+        id: red
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python -m pytest -q tests/test_llm_judge_adaptive_default.py > /tmp/adaptive-judge-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/adaptive-judge-red.log
+          if [ "$status" -eq 0 ]; then
+            echo "already_applied=true" >> "$GITHUB_OUTPUT"
+          else
+            grep -Eq "FAILED|ERROR" /tmp/adaptive-judge-red.log
+            echo "already_applied=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply the implementation after the failing regression
+        if: steps.red.outputs.already_applied != 'true'
+        run: python scripts/apply_adaptive_judge_default.py
+
+      - name: Ensure documentation and changelog are present
+        if: steps.red.outputs.already_applied == 'true'
+        run: python scripts/apply_adaptive_judge_default.py
+
+      - name: Prove the adaptive default regression is green
+        run: python -m pytest -q tests/test_llm_judge_adaptive_default.py
+
+      - name: Run the complete Python suite
+        run: python -m pytest -q
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
+      - name: Verify patch integrity
+        run: git diff --check
+
+      - name: Publish the verified source commit
+        env:
+          TARGET_BRANCH: agent/adaptive-orchestrator-default
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/stage_adaptive_judge_default_test.py
+          rm scripts/apply_adaptive_judge_default.py
+          rm .github/workflows/apply-adaptive-judge-default.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "feat(judge): delegate default execution to adaptive orchestration"
+          git push origin "HEAD:${TARGET_BRANCH}"
