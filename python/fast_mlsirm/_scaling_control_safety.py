@@ -52,12 +52,15 @@ def _exact_integer(value: object, name: str) -> int:
 def _exact_real(value: object, name: str) -> float:
     """Return one trusted real scalar without invoking caller conversion hooks."""
     value_type = type(value)
-    if value_type is int or value_type is float:
-        return float(value)
-    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        return float(value)
-    if any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES):
-        return float(value)
+    try:
+        if value_type is int or value_type is float:
+            return float(value)
+        if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+            return float(value)
+        if any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES):
+            return float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite") from exc
     raise ValueError(f"{name} must be a real number")
 
 
