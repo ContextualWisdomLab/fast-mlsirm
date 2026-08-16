@@ -155,8 +155,10 @@ def test_rejects_untrusted_max_iter_before_callbacks_or_data(monkeypatch, factor
         ({"max_iter": np.bool_(True)}, "max_iter must be an integer"),
         ({"alpha": -1.0}, "alpha must be finite and nonnegative"),
         ({"alpha": float("inf")}, "alpha must be finite and nonnegative"),
+        ({"alpha": 10**10000}, "alpha must be finite"),
         ({"tol": 0.0}, "tol must be finite and positive"),
         ({"tol": float("nan")}, "tol must be finite and positive"),
+        ({"tol": 10**10000}, "tol must be finite"),
         ({"max_iter": 0}, f"max_iter must be between 1 and {MAX_MAX_ITER}"),
         (
             {"max_iter": MAX_MAX_ITER + 1},
