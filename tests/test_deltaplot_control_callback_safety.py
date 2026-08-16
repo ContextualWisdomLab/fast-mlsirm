@@ -149,12 +149,15 @@ def test_rejects_tuple_subclass_before_indexing_data_or_core(monkeypatch):
         ({"threshold": "other"}, "threshold must be 'norm' or 'fixed'"),
         ({"extreme": "other"}, "extreme must be 'constraint' or 'add'"),
         ({"purify": "other"}, "purify must be None, 'IPP1', 'IPP2', or 'IPP3'"),
-        ({"alpha": 0.0}, "alpha must be finite and in \(0, 1\)"),
-        ({"alpha": float("nan")}, "alpha must be finite and in \(0, 1\)"),
+        ({"alpha": 0.0}, "alpha must be finite and in \\(0, 1\\)"),
+        ({"alpha": 1.0}, "alpha must be finite and in \\(0, 1\\)"),
+        ({"alpha": float("nan")}, "alpha must be finite and in \\(0, 1\\)"),
         ({"threshold": "fixed", "fixed_threshold": float("inf")}, "fixed_threshold must be finite"),
         ({"extreme": "add", "nr_add": 0}, "nr_add must be a positive integer >= 1"),
         ({"max_iter": 0}, f"max_iter must be between 1 and {MAX_MAX_ITER}"),
         ({"max_iter": MAX_MAX_ITER + 1}, f"max_iter must be between 1 and {MAX_MAX_ITER}"),
+        ({"const_range": (0.1,)}, "const_range must be an exact 2-tuple"),
+        ({"const_range": (0.1, 0.2, 0.3)}, "const_range must be an exact 2-tuple"),
         ({"const_range": (-0.1, 0.9)}, "constraint range must satisfy 0 <= lo < hi <= 1"),
         ({"const_range": (0.9, 0.1)}, "constraint range must satisfy 0 <= lo < hi <= 1"),
         ({"const_range": (0.1, float("inf"))}, "constraint range must satisfy 0 <= lo < hi <= 1"),
@@ -181,6 +184,64 @@ def test_invalid_exact_controls_fail_before_data_and_core(monkeypatch, kwargs, m
 )
 def test_boolean_numeric_controls_fail_before_data_and_core(monkeypatch, kwargs):
     """Boolean scalar identities are not numeric control identities."""
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError):
+        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "hostile", "message"),
+    (
+        ({}, _HostileInt(1), "nr_add must be an integer"),
+        ({"extreme": "add", "nr_add": 1}, _RangeTuple((0.001, 0.999)), "const_range must be an exact 2-tuple"),
+        ({"threshold": "fixed"}, _HostileFloat(0.05), "alpha must be a real number"),
+        ({}, _HostileFloat(1.5), "fixed_threshold must be a real number"),
+    ),
+)
+def test_unused_branch_hostiles_fail_before_data_and_core(
+    monkeypatch, kwargs, hostile, message
+):
+    """Inactive-branch controls are still type-admitted before data or Rust."""
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    type(hostile).reset()
+    field = {
+        "nr_add must be an integer": "nr_add",
+        "const_range must be an exact 2-tuple": "const_range",
+        "alpha must be a real number": "alpha",
+        "fixed_threshold must be a real number": "fixed_threshold",
+    }[message]
+    kwargs = {**kwargs, field: hostile}
+
+    with pytest.raises(ValueError, match=message):
+        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+
+    assert type(hostile).calls == 0
+
+
+def test_hostile_const_range_element_fails_before_indexing_callback(monkeypatch):
+    """Exact tuples still reject hostile element identities before data work."""
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    hostile = _HostileFloat(0.001)
+    hostile.reset()
+
+    with pytest.raises(ValueError, match="const_range\\[0\\] must be a real number"):
+        delta_plot(_DataSentinel(), _DataSentinel(), const_range=(hostile, 0.999))
+
+    assert hostile.calls == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {"extreme": "add", "nr_add": 10**10000},
+        {"alpha": 10**10000},
+        {"const_range": (10**10000, 10**10001)},
+        {"threshold": "fixed", "fixed_threshold": 10**10000},
+    ),
+)
+def test_huge_builtin_integer_controls_fail_as_value_errors(monkeypatch, kwargs):
+    """Overflowing exact integers become package ValueError before data or Rust."""
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
 
     with pytest.raises(ValueError):
@@ -250,3 +311,58 @@ def test_genuine_numpy_controls_dispatch_as_exact_builtins(monkeypatch):
     assert type(purify) is str
     assert type(max_iter) is int
     assert (n, ni, extreme, threshold, purify, max_iter) == (2, 2, "constraint", "norm", "IPP1", 20)
+    assert ea == pytest.approx(0.001, rel=0, abs=1e-6)
+    assert eb == pytest.approx(0.999, rel=0, abs=1e-6)
+    assert tv == pytest.approx(0.05, rel=0, abs=1e-6)
+
+
+def test_unused_poison_const_range_fails_on_add_branch(monkeypatch):
+    """A hosted options blob cannot smuggle a non-tuple unused range past the gate."""
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="const_range must be an exact 2-tuple"):
+        delta_plot(
+            _DataSentinel(),
+            _DataSentinel(),
+            extreme="add",
+            nr_add=1,
+            const_range="poison",
+        )
+
+
+def test_add_and_fixed_numpy_controls_dispatch_as_exact_builtins(monkeypatch):
+    """Additive and fixed-threshold NumPy scalars normalize on the used branch."""
+    core = _FakeCore()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    result = delta_plot(
+        _responses(),
+        _group(),
+        threshold="fixed",
+        alpha=np.float32(0.05),
+        fixed_threshold=np.float64(1.5),
+        extreme="add",
+        const_range=(np.float32(0.001), np.float64(0.999)),
+        nr_add=np.int32(3),
+        purify=None,
+        max_iter=np.int64(5),
+    )
+
+    assert result.n_iter == 1
+    assert len(core.calls) == 1
+    (_xf, _gu, n, ni, extreme, ea, eb, threshold, tv, purify, max_iter) = core.calls[0]
+    assert type(ea) is float
+    assert type(eb) is float
+    assert type(tv) is float
+    assert type(max_iter) is int
+    assert (n, ni, extreme, ea, eb, threshold, tv, purify, max_iter) == (
+        2,
+        2,
+        "add",
+        3.0,
+        0.0,
+        "fixed",
+        1.5,
+        None,
+        5,
+    )

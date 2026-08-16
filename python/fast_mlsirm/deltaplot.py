@@ -101,11 +101,17 @@ def _normalize_controls(
     if not 1 <= normalized_max_iter <= MAX_MAX_ITER:
         raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
 
+    # Admit every control identity before any active-branch domain check so a
+    # hostile unused field cannot reach response/group materialization.
+    if type(const_range) is not tuple or len(const_range) != 2:
+        raise ValueError("const_range must be an exact 2-tuple")
+    lo = _exact_real(const_range[0], "const_range[0]")
+    hi = _exact_real(const_range[1], "const_range[1]")
+    normalized_nr_add = _exact_integer(nr_add, "nr_add")
+    normalized_alpha = _exact_real(alpha, "alpha")
+    normalized_fixed_threshold = _exact_real(fixed_threshold, "fixed_threshold")
+
     if normalized_extreme == "constraint":
-        if type(const_range) is not tuple or len(const_range) != 2:
-            raise ValueError("const_range must be an exact 2-tuple")
-        lo = _exact_real(const_range[0], "const_range[0]")
-        hi = _exact_real(const_range[1], "const_range[1]")
         if not (
             math.isfinite(lo)
             and math.isfinite(hi)
@@ -114,17 +120,19 @@ def _normalize_controls(
             raise ValueError("constraint range must satisfy 0 <= lo < hi <= 1")
         ea, eb = lo, hi
     else:
-        normalized_nr_add = _exact_integer(nr_add, "nr_add")
         if normalized_nr_add < 1:
             raise ValueError("nr_add must be a positive integer >= 1")
-        ea, eb = float(normalized_nr_add), 0.0
+        try:
+            ea, eb = float(normalized_nr_add), 0.0
+        except OverflowError as exc:
+            raise ValueError("nr_add must be a real number") from exc
 
     if normalized_threshold == "norm":
-        tv = _exact_real(alpha, "alpha")
+        tv = normalized_alpha
         if not math.isfinite(tv) or not 0.0 < tv < 1.0:
             raise ValueError("alpha must be finite and in (0, 1)")
     else:
-        tv = _exact_real(fixed_threshold, "fixed_threshold")
+        tv = normalized_fixed_threshold
         if not math.isfinite(tv):
             raise ValueError("fixed_threshold must be finite")
 
