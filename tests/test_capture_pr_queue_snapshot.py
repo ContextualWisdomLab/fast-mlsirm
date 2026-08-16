@@ -403,7 +403,7 @@ def test_entrypoint_guard_executes_for_invalid_repository(tmp_path):
     """Direct script execution reaches the guarded CLI entry point."""
     completed = subprocess.run(
         [
-            "python",
+            sys.executable,
             str(SCRIPT),
             "--repo",
             "invalid repo",
