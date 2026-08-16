@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- `ContextualOrchestratorJudge` now defaults to contextual-orchestrator `auto` mode so the orchestration plane may allocate the quality-sufficient route or conducted workflow and then minimize known cost, while explicit `route` and `conduct` remain available for controlled ablation.
+
 ### Fixed
 
 - Public conditional-Rasch M2 fails closed without the compiled Rust core and delegates every result field to the native `m2_cmle_rasch_stat` entrypoint.

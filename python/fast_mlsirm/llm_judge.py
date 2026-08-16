@@ -360,9 +360,9 @@ def _usage(trace: Any) -> dict[str, int]:
 
 
 class ContextualOrchestratorJudge:
-    """Evaluate one answer through an injected contextual-orchestrator."""
+    """Evaluate through contextual-orchestrator adaptive quality-cost routing by default."""
 
-    def __init__(self, orchestrator: Any, *, mode: str = "route", accept_threshold: float = 0.7) -> None:
+    def __init__(self, orchestrator: Any, *, mode: str = "auto", accept_threshold: float = 0.7) -> None:
         if not callable(getattr(orchestrator, "complete", None)):
             raise TypeError("orchestrator must provide complete(messages, mode=...)")
         if type(mode) is not str or mode not in {"auto", "route", "conduct"}:
