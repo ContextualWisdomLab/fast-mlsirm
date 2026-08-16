@@ -260,6 +260,18 @@ def _fit_mmle_marginal(
     Person latents are integrated out by Gauss-Hermite quadrature; item-side
     parameters carry the LSIRM priors of Jeon et al. (2021) as MAP penalties
     (see ``estimators/marginal.py`` / ``mlsirm-core/src/marginal.rs``).
+
+    ``backend="rust"`` (and ``auto`` once it resolves to rust) requires a
+    compiled ``fit_marginal`` whose ``MARGINAL_CAPABILITY_VERSION`` matches
+    this package. Missing, stale, or keyword-incompatible native entrypoints
+    raise ``RuntimeError`` and never fall back to NumPy production arithmetic.
+    Use ``backend="numpy"`` only for explicit reference or parity runs.
+
+    References (APA 7th ed.):
+        Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
+            unobserved item-respondent interactions: A latent space item
+            response model with interaction map. *Psychometrika, 86*(2),
+            378-403. https://doi.org/10.1007/s11336-021-09762-5
     """
     from .estimators.marginal import LSIRM_PRIOR, fit_marginal_numpy
 
