@@ -50,8 +50,20 @@ def test_hover_does_not_dim_unrelated_chart_or_table_content(tmp_path: Path) -> 
 
 
 def test_focus_containers_suppress_mouse_click_outlines(tmp_path: Path) -> None:
-    """Semantic focus containers must suppress mouse click outlines."""
+    """Semantic focus containers must suppress mouse click outlines without breaking fallbacks."""
     html = _render_report(tmp_path)
-    assert ".table-wrap:focus {\n  outline: none;\n}" in html
-    assert ".export-block pre:focus {\n  outline: none;\n}" in html
-    assert ".exact-values > summary:focus,\n.export-block > summary:focus {\n  outline: none;\n}" in html
+
+    # Reject bare :focus + outline: none
+    assert ".table-wrap:focus {" not in html
+    assert "pre:focus {" not in html
+    assert "summary:focus {" not in html
+
+    # Require explicit :focus:not(:focus-visible) fail-safe suppression
+    assert ".table-wrap:focus:not(:focus-visible) {\n  outline: none;\n}" in html
+    assert ".export-block pre:focus:not(:focus-visible) {\n  outline: none;\n}" in html
+    assert ".exact-values > summary:focus:not(:focus-visible),\n.export-block > summary:focus:not(:focus-visible) {\n  outline: none;\n}" in html
+
+    # Require focus-visible 3px indicators
+    assert ".table-wrap:focus-visible {\n  outline: 3px solid var(--teal);\n  outline-offset: 3px;\n}" in html
+    assert ".export-block pre:focus-visible {\n  outline: 3px solid var(--teal);\n  outline-offset: -2px;\n}" in html
+    assert ".exact-values > summary:focus-visible,\n.export-block > summary:focus-visible {\n  outline: 3px solid var(--teal);\n  outline-offset: 2px;\n}" in html

@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- 단독 실행 HTML 리포트의 focus 표시기에서 마우스 클릭 시 기본 브라우저 윤곽선이 나타나는 문제를 방지하기 위해, fail-safe CSS 선택자 `:focus:not(:focus-visible)`를 적용했습니다.
 - Public conditional-Rasch M2 fails closed without the compiled Rust core and delegates every result field to the native `m2_cmle_rasch_stat` entrypoint.
 - Reject ambiguous LLM-judge JSON with duplicate keys or unexpected top-level fields; require the exact mode-specific schema including advisory `accepted`.
 - Require compiled Rust ownership for public `s_x2` and `person_fit`, including prior-mean S-X² dispatch, with fail-closed errors when the core is missing.

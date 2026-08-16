@@ -771,7 +771,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
+.table-wrap:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -860,8 +860,8 @@ tbody tr:hover {
   color: var(--teal);
 }
 
-.exact-values > summary:focus,
-.export-block > summary:focus {
+.exact-values > summary:focus:not(:focus-visible),
+.export-block > summary:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -891,7 +891,7 @@ tbody tr:hover {
   white-space: pre;
 }
 
-.export-block pre:focus {
+.export-block pre:focus:not(:focus-visible) {
   outline: none;
 }
 
