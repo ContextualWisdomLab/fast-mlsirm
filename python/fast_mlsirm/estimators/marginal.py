@@ -17,6 +17,7 @@ MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
 MAX_MARGINAL_WORKING_SET = 100_000_000
 MAX_MARGINAL_DISTANCE_WORKSPACE_BYTES = 128 * 1024 * 1024
+MAX_QMC_XI_POINTS = 1_000_000
 _FLOAT64_ITEMSIZE = np.dtype(np.float64).itemsize
 _BOOL_ITEMSIZE = np.dtype(np.bool_).itemsize
 _MAX_TENSOR_XI_NODES = 1_000_000
@@ -253,6 +254,8 @@ def _preflight_xi_node_count(
             raise ValueError("xi_points must be an exact built-in integer")
         if xi_points < 1:
             raise ValueError("xi_points must be a positive integer")
+        if xi_points > MAX_QMC_XI_POINTS:
+            raise ValueError(f"xi_points exceeds maximum limit of {MAX_QMC_XI_POINTS}")
         return xi_points
     # Tensor Gauss-Hermite product rule.
     if type(q_xi) is not int or isinstance(q_xi, bool):
@@ -400,6 +403,8 @@ def _xi_nodes(
     if rule in {"qmc", "halton"}:
         if xi_points < 1:
             raise ValueError("xi_points must be >= 1 for the Halton/MonteCarlo rules")
+        if xi_points > MAX_QMC_XI_POINTS:
+            raise ValueError(f"xi_points exceeds maximum limit of {MAX_QMC_XI_POINTS}")
         if latent_dim > len(_HALTON_PRIMES):
             raise ValueError(
                 f"Halton rule supports latent_dim <= {len(_HALTON_PRIMES)}"
@@ -420,6 +425,8 @@ def _xi_nodes(
     if rule in {"mc", "montecarlo", "monte-carlo"}:
         if xi_points < 1:
             raise ValueError("xi_points must be >= 1 for the Halton/MonteCarlo rules")
+        if xi_points > MAX_QMC_XI_POINTS:
+            raise ValueError(f"xi_points exceeds maximum limit of {MAX_QMC_XI_POINTS}")
         state = max(xi_seed, 1)
         grid = np.empty((xi_points, latent_dim))
         for j in range(xi_points):
