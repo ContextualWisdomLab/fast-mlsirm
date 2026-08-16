@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NoReturn
 
 import numpy as np
 import pytest
@@ -20,7 +21,7 @@ class _CallbackCounter:
 
     calls: int = 0
 
-    def hit(self) -> None:
+    def hit(self) -> NoReturn:
         """Record one callback and fail immediately."""
         self.calls += 1
         raise AssertionError("caller callback executed")
