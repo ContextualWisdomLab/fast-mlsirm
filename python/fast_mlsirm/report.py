@@ -6,7 +6,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from .io import _load_json_bounded
+from .io import _atomic_write_text, _load_json_bounded
 from .report_exact_values import exact_value_disclosure
 
 
@@ -44,14 +44,14 @@ def render_diagnostics_report(
     if out.suffix.lower() != ".html":
         raise ValueError("report output path must end with .html")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
+    _atomic_write_text(
+        out,
         _render_html(
             payload=payload,
             report_type=report_type,
             title=resolved_title,
             source_name=source.name,
         ),
-        encoding="utf-8",
     )
     return out
 
