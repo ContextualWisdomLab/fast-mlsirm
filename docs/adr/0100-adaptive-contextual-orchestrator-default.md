@@ -23,4 +23,8 @@ Ordinary consumers no longer pin the judge to one model call. Depending on task 
 
 Omidvar, H., & Akhlaghi, V. (2026). *A communication-theoretic framework for LLM agents: Cost-aware adaptive reliability* [Preprint]. arXiv. https://doi.org/10.48550/arXiv.2605.09121
 
+The study unifies difficulty-adaptive reliability allocation and reports a cost-aware semantic router that traverses an empirical quality-cost frontier, supporting per-task allocation rather than one fixed model-technique-budget choice.
+
 Tang, Y., Cetin, E., Xu, J., Sun, Q., Nielsen, S., Richard, V., Goda, H., Tymchenko, I., Nguyen, N., Lee, H., Ashiga, M., Kotyan, S., Kuroki, S., & Clanuwat, T. (2026). *Sakana Fugu technical report* [Technical report]. arXiv. https://doi.org/10.48550/arXiv.2606.21228
+
+The report demonstrates query-adaptive worker selection and generated multi-agent scaffolds, with separate latency-balanced and quality-prioritized operating points that make the latency-quality trade-off explicit.
