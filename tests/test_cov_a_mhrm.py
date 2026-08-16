@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-
+from fast_mlsirm.irt_contract import fit_irt_experiment
 from fast_mlsirm.mhrm import MhrmFit, fit_mhrm
 from fast_mlsirm.models import confirmatory
 
@@ -25,7 +25,7 @@ def _poly(n_cat=3, seed=1, n_persons=60, n_items=6):
 
 
 def _short(**kw):
-    base = dict(max_cycles=40, burn_in=10, mh_steps=2)
+    base = {"max_cycles": 40, "burn_in": 10, "mh_steps": 2}
     base.update(kw)
     return base
 
@@ -53,15 +53,60 @@ def test_fit_mhrm_gpcm_without_standard_errors():
     assert fit.se_loading.size == 0
 
 
-def test_fit_mhrm_all_missing_skips_category_check():
-    fit = fit_mhrm(np.full((10, 4), np.nan), 1, **_short(max_cycles=20, burn_in=5))
-    assert isinstance(fit, MhrmFit)
+def test_fit_mhrm_all_missing_is_not_experiment_ready():
+    with pytest.raises(ValueError, match="non-missing"):
+        fit_irt_experiment(
+            fit_mhrm,
+            np.full((10, 4), np.nan),
+            "dichotomous",
+            factor_ids=(0, 0, 0, 0),
+            model=1,
+            **_short(max_cycles=20, burn_in=5),
+        )
+
+
+def test_fit_mhrm_direct_all_missing_keeps_low_level_path(monkeypatch):
+    calls = []
+
+    def fake_fit_mhrm(*args):
+        calls.append(args)
+        return {
+            "loading": [0.0] * 4,
+            "intercept": [0.0] * 4,
+            "step": [],
+            "n_cat": 2,
+            "theta": [0.0] * 10,
+            "corr": [1.0],
+            "se_loading": [0.0] * 4,
+            "se_intercept": [0.0] * 4,
+            "se_step": [],
+            "acceptance_rate": 0.0,
+            "n_cycles": 0,
+            "converged": False,
+            "termination_reason": "max_cycles_reached",
+            "final_param_change": 0.0,
+            "n_parameters": 8,
+        }
+
+    class FakeCore:
+        fit_mhrm = staticmethod(fake_fit_mhrm)
+
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: FakeCore())
+    fit = fit_mhrm(
+        np.full((10, 4), np.nan),
+        1,
+        family="2pl",
+        **_short(max_cycles=20, burn_in=5),
+    )
+    assert fit.family == "2pl"
+    assert calls and not np.any(calls[0][1])
 
 
 def test_fit_mhrm_requires_rust_core():
-    with patch("fast_mlsirm.fitstats._core_module", return_value=None):
-        with pytest.raises(RuntimeError):
-            fit_mhrm(_binary(), 1)
+    with patch("fast_mlsirm.fitstats._core_module", return_value=None), pytest.raises(
+        RuntimeError
+    ):
+        fit_mhrm(_binary(), 1)
 
 
 def test_fit_mhrm_rejects_non_2d():
@@ -82,9 +127,9 @@ def test_fit_mhrm_rejects_non_integer_cycle_counts():
 
 
 def test_fit_mhrm_rejects_bad_seed():
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         fit_mhrm(_binary(), 1, seed=True)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         fit_mhrm(_binary(), 1, seed=1.5)
     with pytest.raises(ValueError):
         fit_mhrm(_binary(), 1, seed=-1)
@@ -107,6 +152,8 @@ def test_fit_mhrm_rejects_bad_n_cat_for_gpcm():
         fit_mhrm(_poly(), 1, family="gpcm", n_cat=2.5)
     with pytest.raises(ValueError):
         fit_mhrm(_poly(), 1, family="gpcm", n_cat=1)
+    with pytest.raises(ValueError, match="between 2 and 64"):
+        fit_mhrm(_poly(), 1, family="gpcm", n_cat=65)
 
 
 def test_fit_mhrm_rejects_bad_2pl_values():
