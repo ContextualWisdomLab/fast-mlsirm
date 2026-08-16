@@ -6,22 +6,25 @@ from concurrent.futures import ThreadPoolExecutor
 from types import ModuleType
 import sys
 import threading
-import time
 
 import pytest
 
 import fast_mlsirm
+import fast_mlsirm._ata_core_loader as ata_loader
 import fast_mlsirm._bifactor_core_loader as bifactor_loader
 import fast_mlsirm._multilevel_core_loader as multilevel_loader
 import fast_mlsirm._rating_range_core_loader as rating_range_loader
+import fast_mlsirm._rotation_core_loader as rotation_loader
 
 
 @pytest.mark.parametrize(
     ("loader", "function_name"),
     [
+        (ata_loader, "ata_core"),
         (bifactor_loader, "bifactor_core"),
         (multilevel_loader, "multilevel_core"),
         (rating_range_loader, "rating_range_core"),
+        (rotation_loader, "rotation_core"),
     ],
 )
 def test_secondary_loader_cache_does_not_bypass_initialization_lock(
@@ -62,13 +65,19 @@ def test_secondary_loader_cache_does_not_bypass_initialization_lock(
     monkeypatch.setattr(loader, "spec_from_loader", lambda _name, _loader: object())
     monkeypatch.setattr(loader, "module_from_spec", lambda _spec: ModuleType(target))
     load = getattr(loader, function_name)
+    second_started = threading.Event()
+
+    def load_second() -> ModuleType:
+        """Signal that the second worker is active before entering the loader."""
+        second_started.set()
+        return load()
 
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(load)
             assert exec_started.wait(timeout=1.0)
-            second = pool.submit(load)
-            time.sleep(0.05)
+            second = pool.submit(load_second)
+            assert second_started.wait(timeout=1.0)
             assert not second.done(), (
                 f"{function_name} returned the sys.modules entry while the first "
                 "caller was still initializing it"
