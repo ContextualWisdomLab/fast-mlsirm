@@ -46,6 +46,15 @@ def test_statistical_studies_are_read_only_and_never_rewrite_source():
     assert "--exact" in text
 
 
+def test_grm_recovery_checkout_does_not_persist_credentials():
+    """The dedicated GRM study keeps checkout credentials away from Rust tests."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    _, grm_block = text.split("\n  grm-recovery:\n", maxsplit=1)
+    grm_block, _ = grm_block.split("\n  gpu-recovery:\n", maxsplit=1)
+    assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in grm_block
+    assert "persist-credentials: false" in grm_block
+
+
 def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():
     """The general inventory uses workspace metadata; excluded PyO3 is separate."""
     workflow = _STUDIES.read_text(encoding="utf-8")
