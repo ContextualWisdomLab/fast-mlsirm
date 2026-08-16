@@ -14,6 +14,16 @@ from ._rating_range_core_loader import rating_range_core
 
 MAX_CATEGORY_COUNT = 1_000
 MAX_OBSERVATIONS = 1_000_000
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,19 @@ class RatingRangeEvidence:
     upper_endpoint_gap: int
     narrower_observed_support: bool
     central_tendency_signal: bool
+
+
+def _normalize_category_count(value: object) -> int:
+    """Return a trusted built-in category count without running subclass hooks."""
+    value_type = type(value)
+    if value_type is not int and not any(
+        value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        raise ValueError("category_count must be an integer between 2 and 1000")
+    category_count = int(value)
+    if not 2 <= category_count <= MAX_CATEGORY_COUNT:
+        raise ValueError("category_count must be between 2 and 1000")
+    return category_count
 
 
 def _rating_array(
@@ -86,13 +109,7 @@ def paired_rating_range_evidence(
     cases. Relative span and SD ratios are unavailable when the reference
     denominator is zero. No acceptance threshold is applied.
     """
-    if isinstance(category_count, (bool, np.bool_)) or not isinstance(
-        category_count, (int, np.integer)
-    ):
-        raise ValueError("category_count must be an integer between 2 and 1000")
-    category_count = int(category_count)
-    if not 2 <= category_count <= MAX_CATEGORY_COUNT:
-        raise ValueError("category_count must be between 2 and 1000")
+    category_count = _normalize_category_count(category_count)
 
     automated_v = _rating_array(
         automated,
