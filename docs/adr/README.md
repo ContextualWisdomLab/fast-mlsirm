@@ -31,6 +31,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0012](0012-purpose-limited-sensitive-data.md) | Accepted | Preserve valid measurement linkage through purpose-limited sensitive-data handling rather than blanket masking or raw-data proliferation. |
 | [0013](0013-continuous-execution-and-documentation-governance.md) | Proposed | Keep autonomous work work-conserving and enforce one canonical cross-cutting documentation writer with explicit maturity states. |
 | [0014](0014-bounded-llm-judge-category-inputs.md) | Proposed | Bound LLM-judge category inputs to exact built-in scalars and keep model/provider security evidence fail-closed and independently verifiable. |
+| [0015](0015-multi-item-irt-fit-boundary.md) | Proposed | Enforce the multi-item dichotomous/polytomous contract at public IRT fitters and require explicit readiness evidence before interpreting estimates. |
 
 ## ADR completeness rule
 
