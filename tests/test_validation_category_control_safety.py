@@ -167,7 +167,9 @@ def test_validate_judge_rejects_hostile_scalar_metaclass_without_callbacks(
     """Scalar-type admission cannot dispatch caller metaclass hash/equality hooks."""
     _HostileScalarMeta.calls = 0
     rust_calls: list[tuple[int, type[int]]] = []
-    monkeypatch.setattr(fast_mlsirm, "_core", _fake_core(rust_calls), raising=False)
+    fake = _fake_core(rust_calls)
+    monkeypatch.setattr(fast_mlsirm, "_core", fake, raising=False)
+    monkeypatch.setitem(sys.modules, "fast_mlsirm._core", fake)
 
     with pytest.raises(ValueError):
         validation.validate_judge(
