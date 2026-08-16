@@ -14,10 +14,12 @@ The regression suite must prove all of the following on the exact PR head:
 
 - hostile Python integer subclasses execute zero `__int__` callbacks;
 - hostile NumPy integer subclasses execute zero `__int__` callbacks;
-- arbitrary integer-protocol providers execute zero callbacks;
+- arbitrary `__int__` and `__index__`-only providers execute zero callbacks;
 - caller-controlled NumPy scalar metaclasses execute zero hashing/equality callbacks during type admission;
-- invalid exact category counts fail before compiled-core import;
-- genuine concrete NumPy integer scalars remain compatible and arrive at the Rust boundary as an exact built-in integer; and
+- booleans, `np.bool_`, and 0-d `ndarray` values are rejected as non-exact integer scalars;
+- invalid exact category counts and type-invalid controls fail before compiled-core import;
+- genuine built-in integers and concrete NumPy integer scalars remain compatible and arrive at the Rust boundary as an exact built-in integer;
+- the existing `2..=1000` domain still rejects an exact in-type overflow; and
 - no judge-validation numerical formula or policy threshold changes.
 
 The initial test commit `7cf9eb6c2937020b5e755b5ae0a6cc2380fc068d` records the conversion/native-discovery RED contract, and `db0cb5848d317d39f197933043e289e00cdf522b` supplies its first bounded GREEN. A second RED at `3979f064b3e32fe44892cab369f8ffc1e3af4d73` demonstrates that hashed type-container membership would still execute caller-controlled metaclass hooks; `54fe33b2dd9d2a287c04635f2acba7bfc94f10fa` replaces that admission with identity-only comparisons. Hosted exact-head evidence remains authoritative over these remembered identities and must be refetched before lifecycle or integration decisions.
