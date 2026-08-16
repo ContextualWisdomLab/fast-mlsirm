@@ -339,9 +339,11 @@ fn aisp_leaves_independent_items_unscaled() {
 }
 
 /// Monte Carlo: >= 500 replications of a unidimensional Rasch scale
-/// (normal and skew-positive traits). Reads crate `h` and `aisp` labels.
-/// Asserts distributional behavior: mean H within a plausible band and
-/// one-scale full recovery in >= 95% of replications.
+/// under normal and standardized skew-positive latent distributions. The
+/// skew condition changes distribution shape while preserving latent mean
+/// and variance, so recovery is not confounded with a weaker trait spread.
+/// Reads crate `h` and `aisp` labels and requires mean H in the stated band
+/// plus one-scale full recovery in >= 95% of replications.
 /// Limitations stated: this cannot pin exact constants; the algebra anchors
 /// live in `coefficients_match_brute_force_oracle` and
 /// `z_statistic_matches_hand_computation`.
@@ -350,6 +352,9 @@ fn aisp_leaves_independent_items_unscaled() {
 fn monte_carlo_unidimensional_recovery() {
     let bs = [-1.0, -0.5, 0.0, 0.5, 1.0];
     let n = 500;
+    let latent_scale = 1.6;
+    let half_normal_mean = (2.0 / std::f64::consts::PI).sqrt();
+    let half_normal_sd = (1.0 - 2.0 / std::f64::consts::PI).sqrt();
     for (label, skew) in [("normal", false), ("skew", true)] {
         let mut full = 0usize;
         let mut h_sum = 0.0;
@@ -361,10 +366,11 @@ fn monte_carlo_unidimensional_recovery() {
             for p in 0..n {
                 let mut th = rng.next_normal();
                 if skew {
-                    // half-normal shifted: skewed positive trait
-                    th = th.abs() * 1.2 - 0.9;
+                    // Standardize |N(0,1)| before applying the common latent
+                    // scale so only distribution shape differs from normal.
+                    th = (th.abs() - half_normal_mean) / half_normal_sd;
                 }
-                th *= 1.5;
+                th *= latent_scale;
                 for (i, &b) in bs.iter().enumerate() {
                     let pr = 1.0 / (1.0 + (-(th - b)).exp());
                     x[p * j + i] = if rng.next_f64() < pr { 1 } else { 0 };
