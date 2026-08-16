@@ -12,9 +12,15 @@ This is an accept-known-good type-validation boundary consistent with CWE-1287, 
 
 ## Regression evidence
 
-`tests/test_parallel_analysis_control_bounds.py` requires rejected scalar values, Python/NumPy integer subclasses, arbitrary conversion providers, and out-of-domain controls to fail before native-core discovery. It also proves supported concrete NumPy integer scalars normalize to exact Python integers at the Rust boundary while preserving the existing iteration, centile, seed, and random-workspace limits.
+`tests/test_parallel_analysis_control_bounds.py` requires rejected scalar values, `np.bool_`, Python/NumPy integer subclasses, arbitrary conversion providers, out-of-domain controls, and oversized random-benchmark workspaces to fail before native-core discovery. It also proves the allowlisted concrete NumPy integer scalar identities, including distinct `longlong`/`ulonglong` types, normalize to exact Python integers at the Rust boundary while preserving the existing iteration, centile, seed, and random-workspace limits.
 
 ## References
+
+Horn, J. L. (1965). A rationale and a test for the number of factors in factor analysis. *Psychometrika, 30*(2), 179-185. https://doi.org/10.1007/BF02289447
+
+Glorfeld, L. W. (1995). An improvement on Horn's parallel analysis methodology for selecting the correct number of factors to retain. *Educational and Psychological Measurement, 55*(3), 377-393. https://doi.org/10.1177/0013164495055003002
+
+Dinno, A. (2018). *paran: Horn's test of principal components/factors* (Version 1.5.6) [R package]. https://CRAN.R-project.org/package=paran
 
 MITRE. (2026). *CWE-1287: Improper validation of specified type of input* (CWE 4.20). https://cwe.mitre.org/data/definitions/1287.html
 

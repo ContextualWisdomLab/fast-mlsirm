@@ -19,13 +19,6 @@ _DATA = np.array(
 )
 
 
-class _TrapCore:
-    """Fail if an invalid public control reaches compiled numerical dispatch."""
-
-    def parallel_analysis(self, *args, **kwargs):
-        raise AssertionError("invalid control reached Rust dispatch")
-
-
 class _RecordingCore:
     """Capture accepted controls without running the expensive numerical kernel."""
 
@@ -70,12 +63,15 @@ def _reject_core_discovery(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
     ("name", "bad_value"),
     [
         ("n_iterations", True),
+        ("n_iterations", np.bool_(True)),
         ("n_iterations", 2.5),
         ("n_iterations", "2"),
         ("centile", True),
+        ("centile", np.bool_(True)),
         ("centile", 50.5),
         ("centile", "50"),
         ("seed", True),
+        ("seed", np.bool_(True)),
         ("seed", 1.5),
         ("seed", "1"),
     ],
@@ -185,22 +181,28 @@ def test_invalid_domains_fail_before_core_discovery(
     assert discovery_calls == []
 
 
-def test_oversized_random_benchmark_workspace_fails_before_rust_dispatch(
+def test_oversized_random_benchmark_workspace_fails_before_core_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Caller-controlled iteration counts cannot request unbounded simulation storage."""
-    _install_core(monkeypatch, _TrapCore())
+    discovery_calls = _reject_core_discovery(monkeypatch)
 
     with pytest.raises(ValueError, match="workspace"):
         parallel_analysis(_DATA, n_iterations=2**62)
 
+    assert discovery_calls == []
 
-def test_seed_must_fit_rust_u64_before_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Python validates the PyO3 integer transport range with a stable package error."""
-    _install_core(monkeypatch, _TrapCore())
+
+def test_seed_must_fit_rust_u64_before_core_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Python validates the PyO3 integer transport range before native discovery."""
+    discovery_calls = _reject_core_discovery(monkeypatch)
 
     with pytest.raises(ValueError, match=r"^seed "):
         parallel_analysis(_DATA, n_iterations=2, seed=2**64)
+
+    assert discovery_calls == []
 
 
 @pytest.mark.parametrize(
@@ -210,10 +212,14 @@ def test_seed_must_fit_rust_u64_before_dispatch(monkeypatch: pytest.MonkeyPatch)
         np.int16,
         np.int32,
         np.int64,
+        np.intp,
+        np.longlong,
         np.uint8,
         np.uint16,
         np.uint32,
         np.uint64,
+        np.uintp,
+        np.ulonglong,
     ],
 )
 def test_numpy_integer_controls_remain_accepted(
