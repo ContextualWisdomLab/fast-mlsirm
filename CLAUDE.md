@@ -26,6 +26,21 @@ fully before making changes. In particular it defines:
   deployment concerns. The hosted runtime must not be recreated under
   `services/assessment_runtime` in this repository.
 
+## Runtime Contract
+
+The following block is machine-checked against package metadata and the shipped
+backend-ownership policy. Keep it as one exact TOML block rather than replacing
+it with an equivalent prose-only claim.
+
+<!-- BEGIN fast-mlsirm-runtime-contract -->
+```toml
+[runtime_contract]
+requires_python = ">=3.12"
+auto_backend = "rust_required"
+numpy_role = "reference_parity_only"
+```
+<!-- END fast-mlsirm-runtime-contract -->
+
 ## Common Commands
 
 ### Setup
