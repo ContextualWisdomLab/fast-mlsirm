@@ -31,6 +31,6 @@ The initial product goal was fast simulation, fitting and recovery diagnostics f
 logit P(Y_pi = 1) = a_i * theta_p,d(i) + b_i - gamma * distance(xi_p, zeta_i)
 ```
 
-The early architecture separated a Python API from a Rust numerical core and PyO3 binding. That separation remains conceptually valid, but the current governing architecture is stricter: production psychometric arithmetic is Rust-first, while Python owns validation/orchestration/reporting and transparent governed reference/fallback paths.
+The early architecture separated a Python API from a Rust numerical core and PyO3 binding. That separation remains conceptually valid, but the current governing architecture is stricter: production psychometric arithmetic is Rust-first, while Python owns validation/orchestration/reporting and governed reference/parity paths. Automatic backend resolution fails closed without the compiled Rust core.
 
 The old MVP roadmap is intentionally not reproduced here because it is no longer the authoritative backlog. Current bounded requirements and proposed work are recorded in `PRD.md`, `TRD.md`, ADR statuses, open issues/PRs, and the traceability matrix.

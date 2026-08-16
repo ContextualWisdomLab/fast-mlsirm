@@ -20,9 +20,10 @@ evidence index over the exact artifacts being offered.
   rendering.
 - CLI workflows for simulation, fitting, fit diagnostics, dimensionality
   diagnostics, response-process diagnostics, and report rendering.
-- NumPy reference backend as the default runtime path.
-- Optional Rust/PyO3 backend for the fitting objective through
-  `fast_mlsirm._core`.
+- Rust/PyO3 backend as the default `auto` runtime path through
+  `fast_mlsirm._core`. `auto` fails closed when the compiled core is
+  unavailable.
+- Explicit NumPy reference backend for parity testing only.
 - Backend selection through `FitConfig(backend=...)` and
   `fast-mlsirm fit --backend`.
 - Dense response matrices with missing values represented by `NaN`, `-1`, or an

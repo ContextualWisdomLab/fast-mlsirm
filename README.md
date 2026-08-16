@@ -123,7 +123,8 @@ print(fixed_item_calibration.best)
 - CLI commands for simulation and fitting.
 - Rust-backed fitting objective (neg-loglik, gradients, and distance kernels)
   via PyO3/maturin as the primary numeric path, with a numerically-identical
-  NumPy reference backend kept for parity testing and fallback.
+  NumPy reference backend kept for parity testing. `auto` fails closed when
+  the compiled Rust core is unavailable.
 
 ## Install
 
@@ -133,12 +134,12 @@ For local development:
 python -m pip install -e .
 ```
 
-The default runtime backend is `"auto"`, which uses the compiled Rust core
-(`fast_mlsirm._core`) as the primary numeric path and transparently falls back
-to the NumPy reference implementation when the extension is unavailable. Source
-and editable installs use maturin to build the extension, so they require a
-working Rust toolchain; installed wheels ship the compiled core. Pass
-`backend="numpy"` to force the pure-Python reference (used for parity testing).
+The default runtime backend is `"auto"`. It uses the compiled Rust core
+(`fast_mlsirm._core`) and fails closed when that extension is unavailable.
+Automatic resolution never silently selects NumPy. Source and editable installs
+use maturin to build the extension, so they require a working Rust toolchain;
+installed wheels ship the compiled core. Pass `backend="numpy"` only when you
+want the explicit pure-Python reference used for parity testing.
 The core Rust workspace can be tested with:
 
 ```bash
