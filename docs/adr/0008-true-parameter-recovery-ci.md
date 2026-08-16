@@ -38,6 +38,8 @@ Examples:
 
 PR CI should contain bounded sentinel/recovery tests that catch scientific regressions without exhausting the merge queue. Expensive paper-design Monte Carlo studies remain scheduled/manual/release evidence with deterministic manifests proving coverage of the intended study inventory.
 
+Studies whose scientific sample size cannot finish inside the generic 1,800-second ignored-shard subprocess budget run in a dedicated scheduled job. The multidimensional Graded Response Model 500-replication recovery (`mc_grm_recovery_500`) is one such lane: it is excluded from the 12-way shard inventory by a target-qualified name, executed exactly once under a 120-minute job ceiling, and published as a 90-day log artifact so bias, RMSE, convergence, and theta-correlation lines survive after the Actions log expires. Do not copy that job into pull-request CI.
+
 Monte Carlo acceptance rules are chosen prospectively from theory/sampling precision, not retrofitted to one observed seed outcome.
 
 ## Consequences

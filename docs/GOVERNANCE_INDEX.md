@@ -14,6 +14,7 @@ security posture, test strategy, and operability artifacts. Pair with root
 | MMLE / multigroup / multilevel design | Population structures, quadrature, EAP | `docs/mmle_marginal_lsirm_design.md` |
 | Multilevel / multi-membership / temporal contracts | Atomistic-fallacy guards, longitudinal occasions | `python/fast_mlsirm/multilevel/`, `docs/doctoring/multilevel_longitudinal_measurement.md` |
 | Doctoring (APA 7th) | Paper and standard citations for shipped claims | `docs/doctoring/` |
+| Dedicated GRM recovery lane | 500-rep Samejima/MIRT recovery outside PR CI and the 1,800s shard budget | `docs/doctoring/grm-recovery-dedicated-lane.md`, `.github/workflows/statistical-studies.yml` |
 | Commercial readiness | Buyer packet / 20B product narrative gates | `docs/20b_product_readiness.md`, `docs/commercial_readiness.md` |
 | Security | Bounded JSON, hostile control rejection, Strix/CodeQL CI | `SECURITY.md`, `docs/bounded_json_input_security.md` |
 | Changelog fragments | Authoritative unreleased notes | `docs/changelog.d/`, `/CHANGELOG.md` |
@@ -65,7 +66,7 @@ STRIDE focus for this package:
 
 | Layer | Evidence |
 | --- | --- |
-| Rust equation + recovery | `cargo test`; true-parameter recovery sentinels |
+| Rust equation + recovery | `cargo test`; true-parameter recovery sentinels; scheduled `grm-recovery` artifact |
 | Python API fail-closed | Hostile control suites (equating, exposure, node_rule, ATA, …) |
 | Multilevel contracts | Factory seal, multi-membership weights, temporal order |
 | GPU | Explicit parity vs CPU in CI (`gpu-smoke`) |
@@ -127,3 +128,11 @@ item-respondent interactions: A latent space item response model with interactio
 Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models:
 A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826.
 https://doi.org/10.1017/psy.2025.5
+
+Samejima, F. (1969). Estimation of latent ability using a response pattern of
+graded scores. *Psychometrika Monograph Supplement, 17*.
+
+Svetina, D., Valdivia, A., Underhill, S., Dai, S., & Wang, X. (2017). Parameter
+recovery in multidimensional item response theory models under complexity and
+nonnormality. *Applied Psychological Measurement, 41*(7), 530–544.
+https://doi.org/10.1177/0146621617703180

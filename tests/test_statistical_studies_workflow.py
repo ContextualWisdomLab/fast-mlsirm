@@ -19,8 +19,11 @@ def test_pull_request_ci_keeps_exhaustive_studies_out_of_the_queue():
     assert "rust-ignored:" not in text
     assert "rust-pyo3-ignored:" not in text
     assert "rust-recovery:" not in text
+    assert "grm-recovery:" not in text
+    assert "gpu-recovery:" not in text
     assert "gpu_recovery_matches_cpu_on_paper_design" not in text
     assert "kang_jeon_2025_minimum_cell_recovers_true_parameters" not in text
+    assert "mc_grm_recovery_500" not in text
 
 
 def test_exhaustive_studies_are_scheduled_manual_and_release_triggered():
@@ -53,6 +56,31 @@ def test_grm_recovery_checkout_does_not_persist_credentials():
     grm_block, _ = grm_block.split("\n  gpu-recovery:\n", maxsplit=1)
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in grm_block
     assert "persist-credentials: false" in grm_block
+
+
+def test_statistical_studies_checkouts_do_not_persist_credentials():
+    """Every scheduled study checkout withholds the Actions token from cargo test."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    checkout = "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+    assert text.count(checkout) == 5
+    assert text.count("persist-credentials: false") == 5
+
+
+def test_grm_recovery_publishes_a_durable_study_log():
+    """Buyers can download bias/RMSE/convergence lines after the job log expires."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    _, grm_block = text.split("\n  grm-recovery:\n", maxsplit=1)
+    grm_block, _ = grm_block.split("\n  gpu-recovery:\n", maxsplit=1)
+    assert "set -euo pipefail" in grm_block
+    assert "tee grm-recovery-study.log" in grm_block
+    assert (
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+        in grm_block
+    )
+    assert "path: grm-recovery-study.log" in grm_block
+    assert "if-no-files-found: error" in grm_block
+    assert "retention-days: 90" in grm_block
+    assert "if: always()" in grm_block
 
 
 def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():

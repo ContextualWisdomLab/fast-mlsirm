@@ -117,8 +117,11 @@ Architecture effect:
 
 Primary basis:
 
+- Samejima, F. (1969). Estimation of latent ability using a response pattern of graded scores. *Psychometrika Monograph Supplement, 17*.
 - Svetina, D., Valdivia, A., Underhill, S., Dai, S., & Wang, X. (2017). Parameter recovery in multidimensional item response theory models under complexity and nonnormality. *Applied Psychological Measurement, 41*(7), 530–544.
 - Bland, J. M., & Altman, D. G. (1986). Statistical methods for assessing agreement between two methods of clinical measurement. *The Lancet, 327*(8476), 307–310.
+
+The Samejima graded-response recovery evidence is the dedicated scheduled `grm-recovery` lane, not a pull-request CI job.
 
 ## 8. Multilevel, multiple-membership and temporal measurement — Proposed
 
