@@ -8,6 +8,43 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+)
+
+
+def _normalize_integer_control(
+    value: object,
+    *,
+    type_error: str,
+    minimum: int,
+    range_error: str,
+) -> int:
+    """Return a trusted integer control without running subclass hooks.
+
+    Only the built-in ``int`` and exact concrete NumPy integer scalar types
+    are admitted. Caller-defined subclasses and protocol providers are
+    rejected before comparison or conversion, so validation cannot execute
+    their numeric special methods.
+    """
+    value_type = type(value)
+    if value_type is not int and not any(
+        value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        raise ValueError(type_error)
+    normalized = int(value)
+    if normalized < minimum:
+        raise ValueError(range_error)
+    return normalized
+
+
 @dataclass
 class WollackOmegaResult:
     """Omega answer-copying statistic for one (copier, source) pair.
@@ -86,11 +123,12 @@ def wollack_omega(
     *aberrance* (R package) [Computer software]. CRAN; `compute_OMG` in
     `R/detect-ac.R`/`R/compute.R`. (READ: R sources; independent check.)
     """
-    if not isinstance(n_options, (int, np.integer)) or isinstance(n_options, bool):
-        raise ValueError("n_options must be an integer")
-    if n_options <= 0:
-        raise ValueError("n_options must be positive")
-    n_options = int(n_options)
+    n_options = _normalize_integer_control(
+        n_options,
+        type_error="n_options must be an integer",
+        minimum=1,
+        range_error="n_options must be positive",
+    )
 
     c = _index_vector(copier, "copier", n_options)
     s = _index_vector(source, "source", n_options)
@@ -130,6 +168,7 @@ def wollack_omega(
         omega=float(res["omega"]),
         p_value=float(res["p_value"]),
     )
+
 
 @dataclass
 class KIndexResult:
@@ -194,13 +233,18 @@ def k_index(
     Zopluoglu, C. (2018). *CopyDetect* (R package). (READ: R sources;
     ported implementation.)
     """
-    for name, idx in (("copier", copier), ("source", source)):
-        if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
-            raise ValueError(f"{name} must be an integer row index")
-        if idx < 0:
-            raise ValueError(f"{name} must be nonnegative")
-    copier = int(copier)
-    source = int(source)
+    copier = _normalize_integer_control(
+        copier,
+        type_error="copier must be an integer row index",
+        minimum=0,
+        range_error="copier must be nonnegative",
+    )
+    source = _normalize_integer_control(
+        source,
+        type_error="source must be an integer row index",
+        minimum=0,
+        range_error="source must be nonnegative",
+    )
 
     x = np.asarray(responses)
     if x.ndim != 2:
@@ -235,6 +279,7 @@ def k_index(
         p=float(res["p"]),
         k_index=float(res["k_index"]),
     )
+
 
 @dataclass
 class GbtResult:
@@ -316,6 +361,7 @@ def gbt(matches, match_probs):
         p_value=float(res["p_value"]),
     )
 
+
 @dataclass
 class KVariantsResult:
     """K1/K2/S1/S2 answer-copying indices for one (copier, source) pair.
@@ -392,13 +438,18 @@ def k_variants(
     Zopluoglu, C. (2018). *CopyDetect* (R package). (READ:
     ``R/similarity1.r`` internal ``ks12()``; ported implementation.)
     """
-    for name, idx in (("copier", copier), ("source", source)):
-        if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
-            raise ValueError(f"{name} must be an integer row index")
-        if idx < 0:
-            raise ValueError(f"{name} must be nonnegative")
-    copier = int(copier)
-    source = int(source)
+    copier = _normalize_integer_control(
+        copier,
+        type_error="copier must be an integer row index",
+        minimum=0,
+        range_error="copier must be nonnegative",
+    )
+    source = _normalize_integer_control(
+        source,
+        type_error="source must be an integer row index",
+        minimum=0,
+        range_error="source must be nonnegative",
+    )
 
     x = np.asarray(responses)
     if x.ndim != 2:
