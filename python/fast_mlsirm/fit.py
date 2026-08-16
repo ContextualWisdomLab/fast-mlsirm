@@ -405,6 +405,10 @@ def _fit_mmle_marginal(
             )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
+        except TypeError as exc:
+            raise RuntimeError(
+                "compiled Rust core marginal ABI capability is missing or unsupported"
+            ) from exc
         alpha = np.asarray(res["alpha"], dtype=np.float64)
         b = np.asarray(res["b"], dtype=np.float64)
         zeta = np.asarray(res["zeta"], dtype=np.float64).reshape(

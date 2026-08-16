@@ -9,10 +9,12 @@ executing ``fit_marginal_numpy``.
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+import fast_mlsirm
 from fast_mlsirm.config import FitConfig
 
 
@@ -38,13 +40,12 @@ def test_public_spatial_mmle_fails_closed_before_numpy_reference(
         dtype=np.float64,
     )
     factor_id = np.zeros(responses.shape[1], dtype=np.int64)
-
-    try:
-        from fast_mlsirm import _core
-    except ImportError:
-        pass
-    else:
-        monkeypatch.setattr(_core, "fit_marginal", None)
+    incomplete_core = SimpleNamespace(
+        MARGINAL_CAPABILITY_VERSION=fit_module._MARGINAL_CAPABILITY_VERSION,
+        fit_marginal=None,
+    )
+    monkeypatch.setattr(fast_mlsirm, "_core", incomplete_core, raising=False)
+    monkeypatch.setattr(fit_module, "resolve_backend", lambda _backend: "rust")
 
     numpy_calls: list[tuple[object, ...]] = []
 
