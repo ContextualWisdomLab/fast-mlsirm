@@ -8,6 +8,8 @@ Public configuration validation accepted Python's generic integer protocol. Call
 
 Configuration validation is marshalling and trust-boundary work, not psychometric arithmetic. The package now accepts only exact built-in `int` values and exact supported NumPy integer scalar types for validated integer controls. Accepted NumPy scalars are converted to built-in integers for bounds and work-budget calculations; booleans, caller-defined `int` subclasses, and arbitrary index providers are rejected without invoking their coercion hooks.
 
+`MLS2PLMConfig` and `FitConfig` run that same validator from `__post_init__`, so invalid or untrusted controls cannot exist as constructed objects. `validate()` remains public and idempotent for callers that already invoke it at simulate/fit entry points.
+
 The hardened surface covers simulation sizes and latent dimension plus fit latent dimension, optimizer iteration/restart/history controls, quadrature node counts, marginal M-step count, and latent-space integration point/seed controls. Numerical model ownership and Rust-first computation are unchanged.
 
 ## Test evidence

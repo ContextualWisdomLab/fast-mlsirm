@@ -38,7 +38,7 @@ def _assert_rejected_without_index_callback(callable_) -> None:
 def test_simulation_integer_controls_reject_index_callbacks(field: str) -> None:
     """Simulation-size validation rejects arbitrary index providers inertly."""
     _assert_rejected_without_index_callback(
-        lambda value: MLS2PLMConfig(**{field: value}).validate()
+        lambda value: MLS2PLMConfig(**{field: value})
     )
 
 
@@ -57,7 +57,7 @@ def test_simulation_integer_controls_reject_index_callbacks(field: str) -> None:
 def test_fit_integer_controls_reject_index_callbacks(field: str) -> None:
     """Fit integer validation never dispatches arbitrary ``__index__`` hooks."""
     _assert_rejected_without_index_callback(
-        lambda value: FitConfig(**{field: value}).validate()
+        lambda value: FitConfig(**{field: value})
     )
 
 
@@ -87,7 +87,7 @@ def test_integer_controls_reject_caller_int_subclasses(
 ) -> None:
     """Caller-defined ``int`` subclasses are not package-trusted controls."""
     with pytest.raises(ValueError, match=rf"{field} must be an integer"):
-        config_type(**{field: _HostileInt(valid_value)}).validate()
+        config_type(**{field: _HostileInt(valid_value)})
 
 
 @pytest.mark.parametrize("value", [1, np.int32(2), np.int64(3), np.uint64(4)])

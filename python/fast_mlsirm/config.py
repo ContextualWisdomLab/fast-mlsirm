@@ -84,6 +84,10 @@ class MLS2PLMConfig:
     seed: int = 1
     dtype: str = "float64"
 
+    def __post_init__(self) -> None:
+        """Reject invalid simulation controls at construction."""
+        self.validate()
+
     @property
     def n_items(self) -> int:
         """Total item count (``n_dims * items_per_dim``)."""
@@ -213,6 +217,10 @@ class FitConfig:
     # class produces all-zero patterns with probability pi (estimated by EM);
     # cf. the ZI count-model guidance of Perumean-Chaney et al. (2013).
     zero_inflation: bool = False
+
+    def __post_init__(self) -> None:
+        """Reject invalid fit controls at construction."""
+        self.validate()
 
     def normalized_model(self) -> str:
         """Return the model name upper-cased for case-insensitive matching."""
