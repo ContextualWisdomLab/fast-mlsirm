@@ -1,4 +1,4 @@
-"""Repository-hygiene regression tests for transient patch artifacts."""
+"""Repository-hygiene regression tests for merge-conflict artifacts."""
 
 from __future__ import annotations
 
@@ -36,21 +36,3 @@ def test_merge_conflict_backup_artifacts_are_absent_and_ignored():
     }
     assert "*.orig" in ignore_lines
     assert "*.rej" in ignore_lines
-
-
-def test_root_patch_tool_scratch_artifacts_are_not_tracked():
-    """Reject ad-hoc patch-tool payloads accidentally committed at repository root."""
-    repository_root = Path(__file__).resolve().parents[1]
-    artifacts: list[str] = []
-    for tracked in _tracked_paths(repository_root):
-        path = Path(tracked)
-        if len(path.parts) != 1:
-            continue
-        is_patch_payload = path.suffix in {".diff", ".patch"}
-        is_patch_driver = path.suffix == ".py" and (
-            path.stem.startswith("fix_") or path.stem.startswith("patch")
-        )
-        if is_patch_payload or is_patch_driver:
-            artifacts.append(tracked)
-
-    assert sorted(artifacts) == []

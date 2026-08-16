@@ -305,7 +305,9 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
     }
     for name, command in commands.items():
         try:
-            completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            completed = subprocess.run(
+                command, capture_output=True, text=True, timeout=30
+            )
             snapshot[name] = {
                 "ok": completed.returncode == 0,
                 "returncode": completed.returncode,
@@ -513,7 +515,38 @@ def _render_report(manifest: dict[str, Any]) -> str:
     )
 
 
+def _is_trusted_python(executable: str) -> bool:
+    """Validate that the Python executable is trusted."""
+    path = Path(executable)
+    if "python" not in path.name.lower():
+        return False
+
+    try:
+        resolved = path.resolve()
+        allowed_prefixes = [
+            "/usr/bin/",
+            "/usr/local/bin/",
+            "/opt/hostedtoolcache/",
+            "/home/runner/work/",
+            "/app/.venv/bin/",
+            sys.prefix + "/bin/",
+            str(Path(".venv/bin").resolve()) + "/",
+            str(Path.cwd() / ".venv/bin") + "/",
+        ]
+
+        for prefix in allowed_prefixes:
+            if str(resolved).startswith(prefix):
+                return True
+
+        return False
+    except Exception:
+        return False
+
+
 def build_procurement_due_diligence(args: argparse.Namespace) -> dict[str, Any]:
+    if hasattr(args, "python") and not _is_trusted_python(args.python):
+        raise ValueError(f"Untrusted Python executable: {args.python}")
+
     repo_root = Path(args.repo_root).resolve()
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
     commercial_path = _resolve_path(

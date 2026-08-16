@@ -177,32 +177,31 @@ def _run_gh_json(
 ) -> tuple[Any, dict[str, Any] | None]:
     """Execute a GitHub CLI JSON command and return payload plus redacted error.
 
-    Retries HTTP 502/503/504 responses and subprocess transport timeouts.
-    Other failures fail closed on the first response so real auth/query defects
-    are not masked.
+    Retries only on HTTP 502/503/504. Non-transient failures fail closed on the
+    first response so real auth/query defects are not masked.
     """
     attempts = max(1, int(max_attempts))
     last_error: dict[str, Any] | None = None
     for attempt in range(1, attempts + 1):
         try:
-            completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            completed = subprocess.run(
+                command, capture_output=True, text=True, timeout=30
+            )
             payload = _json_from_completed(completed)
             if completed.returncode == 0:
                 return payload, None
             stderr = completed.stderr.strip()
             returncode = completed.returncode
-            retryable = _is_transient_gh_stderr(stderr)
         except subprocess.TimeoutExpired:
             stderr = "GitHub API request timed out"
             returncode = 124
-            retryable = True
 
         last_error = {
             "command": command[1:3],
             "stderr": stderr,
             "returncode": returncode,
         }
-        if attempt >= attempts or not retryable:
+        if attempt >= attempts or not _is_transient_gh_stderr(stderr):
             break
         if retry_sleep_seconds > 0:
             time.sleep(retry_sleep_seconds)
@@ -902,8 +901,39 @@ def _render_report(manifest: dict[str, Any]) -> str:
     )
 
 
+def _is_trusted_python(executable: str) -> bool:
+    """Validate that the Python executable is trusted."""
+    path = Path(executable)
+    if "python" not in path.name.lower():
+        return False
+
+    try:
+        resolved = path.resolve()
+        allowed_prefixes = [
+            "/usr/bin/",
+            "/usr/local/bin/",
+            "/opt/hostedtoolcache/",
+            "/home/runner/work/",
+            "/app/.venv/bin/",
+            sys.prefix + "/bin/",
+            str(Path(".venv/bin").resolve()) + "/",
+            str(Path.cwd() / ".venv/bin") + "/",
+        ]
+
+        for prefix in allowed_prefixes:
+            if str(resolved).startswith(prefix):
+                return True
+
+        return False
+    except Exception:
+        return False
+
+
 def build_pr_queue_governance(args: argparse.Namespace) -> dict[str, Any]:
     """Build machine-readable and accessible PR queue governance evidence."""
+    if hasattr(args, "python") and not _is_trusted_python(args.python):
+        raise ValueError(f"Untrusted Python executable: {args.python}")
+
     repo_root = Path(args.repo_root).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
