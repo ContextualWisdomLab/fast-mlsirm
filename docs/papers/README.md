@@ -10,6 +10,11 @@ The retained files and their source/license/hash checks are recorded in
 [`oa-pdf-manifest.md`](oa-pdf-manifest.md). No PDF is fetched through a
 provider credential, and no paper is used as a keyword-matching judgment rule.
 
+Implemented-method citations that are not redistributed as PDFs, including
+Angoff delta-plot DIF and Bradley–Terry MM, are indexed in
+[`implemented-literature-map.md`](implemented-literature-map.md) and
+[`../traceability/research-basis.md`](../traceability/research-basis.md).
+
 ## Wu et al. 2021
 
 Wu, M., Davis, R. L., Domingue, B. W., Piech, C., & Goodman, N. (2021).
