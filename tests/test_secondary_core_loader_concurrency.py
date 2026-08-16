@@ -26,15 +26,16 @@ import fast_mlsirm._rating_range_core_loader as rating_range_loader
 )
 def test_secondary_loader_cache_does_not_bypass_initialization_lock(
     monkeypatch,
+    tmp_path,
     loader,
     function_name: str,
 ) -> None:
     """A published in-progress module must not escape through the cache fast path."""
     target = loader._MODULE_NAME
-    sys.modules.pop(target, None)
+    previous = sys.modules.pop(target, None)
 
     fake_core = ModuleType("fast_mlsirm._core")
-    fake_core.__file__ = "/tmp/fake-fast-mlsirm-core.so"
+    fake_core.__file__ = str(tmp_path / "fake-fast-mlsirm-core.so")
     monkeypatch.setattr(fast_mlsirm, "_core", fake_core)
 
     exec_started = threading.Event()
@@ -78,6 +79,8 @@ def test_secondary_loader_cache_does_not_bypass_initialization_lock(
     finally:
         release_exec.set()
         sys.modules.pop(target, None)
+        if previous is not None:
+            sys.modules[target] = previous
 
     assert first_module is second_module
     assert first_module.initialized is True
