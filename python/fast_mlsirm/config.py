@@ -64,6 +64,11 @@ def _trusted_integer(value: object, name: str) -> int:
     raise ValueError(f"{name} must be an integer")
 
 
+def _store_trusted_integer(instance: object, name: str, value: int) -> None:
+    """Write one trusted built-in integer onto a frozen dataclass field."""
+    object.__setattr__(instance, name, value)
+
+
 @dataclass(frozen=True)
 class MLS2PLMConfig:
     """Simulation settings for generating a synthetic MLS2PLM dataset.
@@ -98,12 +103,15 @@ class MLS2PLMConfig:
 
         Enforces integer/positivity constraints, the memory-safety size caps,
         a positive-definite trait equicorrelation from ``phi``, a finite
-        non-negative ``gamma``, and a supported ``dtype``.
+        non-negative ``gamma``, and a supported ``dtype``. Trusted integer
+        controls, including ``seed``, are stored back as built-in ``int``
+        values so later size products and RNG seeding cannot wrap.
         """
         n_persons = _trusted_integer(self.n_persons, "n_persons")
         n_dims = _trusted_integer(self.n_dims, "n_dims")
         items_per_dim = _trusted_integer(self.items_per_dim, "items_per_dim")
         latent_dim = _trusted_integer(self.latent_dim, "latent_dim")
+        seed = _trusted_integer(self.seed, "seed")
 
         if n_persons < 1:
             raise ValueError("n_persons must be >= 1")
@@ -140,6 +148,11 @@ class MLS2PLMConfig:
             raise ValueError("gamma must be >= 0")
         if self.dtype not in {"float32", "float64"}:
             raise ValueError("dtype must be float32 or float64")
+        _store_trusted_integer(self, "n_persons", n_persons)
+        _store_trusted_integer(self, "n_dims", n_dims)
+        _store_trusted_integer(self, "items_per_dim", items_per_dim)
+        _store_trusted_integer(self, "latent_dim", latent_dim)
+        _store_trusted_integer(self, "seed", seed)
 
 
 @dataclass(frozen=True)
@@ -233,12 +246,15 @@ class FitConfig:
         L-BFGS-history bounds, the per-field and aggregate optimizer-work caps,
         finiteness/positivity of the float controls, the supported
         Gauss-Hermite node counts, and the latent-space integration rule and
-        its point/seed ranges.
+        its point/seed ranges. Trusted integer controls, including ``seed``
+        and ``verbose``, are stored back as built-in ``int`` values.
         """
         model = self.normalized_model()
         if model not in VALID_MODELS:
             raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
         latent_dim = _trusted_integer(self.latent_dim, "latent_dim")
+        seed = _trusted_integer(self.seed, "seed")
+        verbose = _trusted_integer(self.verbose, "verbose")
         if not (1 <= latent_dim <= MAX_LATENT_DIM):
             raise ValueError(f"latent_dim must be >= 1 and <= {MAX_LATENT_DIM}")
         if self.optimizer not in VALID_OPTIMIZERS:
@@ -280,8 +296,14 @@ class FitConfig:
             raise ValueError("gradient_clip must be > 0 and finite, or None")
 
         supported_q = {7, 11, 15, 21, 31, 41}
-        for name in ("q_theta", "q_xi", "q_u"):
-            quadrature_nodes = _trusted_integer(getattr(self, name), name)
+        q_theta = _trusted_integer(self.q_theta, "q_theta")
+        q_xi = _trusted_integer(self.q_xi, "q_xi")
+        q_u = _trusted_integer(self.q_u, "q_u")
+        for name, quadrature_nodes in (
+            ("q_theta", q_theta),
+            ("q_xi", q_xi),
+            ("q_u", q_u),
+        ):
             if quadrature_nodes not in supported_q:
                 raise ValueError(f"{name} must be one of {sorted(supported_q)}")
         m_steps = _trusted_integer(self.m_steps, "m_steps")
@@ -304,3 +326,15 @@ class FitConfig:
             raise ValueError("xi_seed must fit an unsigned 64-bit integer")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)
+        _store_trusted_integer(self, "latent_dim", latent_dim)
+        _store_trusted_integer(self, "seed", seed)
+        _store_trusted_integer(self, "verbose", verbose)
+        _store_trusted_integer(self, "lbfgs_history", lbfgs_history)
+        _store_trusted_integer(self, "max_iter", max_iter)
+        _store_trusted_integer(self, "n_restarts", n_restarts)
+        _store_trusted_integer(self, "q_theta", q_theta)
+        _store_trusted_integer(self, "q_xi", q_xi)
+        _store_trusted_integer(self, "q_u", q_u)
+        _store_trusted_integer(self, "m_steps", m_steps)
+        _store_trusted_integer(self, "xi_points", xi_points)
+        _store_trusted_integer(self, "xi_seed", xi_seed)
