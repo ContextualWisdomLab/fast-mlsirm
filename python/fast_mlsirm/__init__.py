@@ -6,6 +6,16 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
+from . import reliability as _reliability
+from ._icc_control_safety import install as _install_icc_control_safety
+
+# Harden the historical ICC adapter before copying legacy exports. The wrapper
+# only validates and normalizes semantic controls; all ICC arithmetic remains
+# in the existing Rust-backed implementation.
+_install_icc_control_safety(_reliability)
+_legacy_init.icc = _reliability.icc
+
+del _install_icc_control_safety, _reliability
 
 # Copy only declared legacy exports that are currently defined. This preserves
 # the established package surface without leaking helper imports from the
