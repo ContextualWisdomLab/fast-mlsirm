@@ -28,6 +28,7 @@ This is positive/allow-list validation at the trusted service boundary, consiste
 - `7fc499fbbde4d2518a5afa93c37e3d9235955da2` supplies the first bounded GREEN by validating and normalizing controls before core discovery.
 - `8531dbdb2b0f53497bcf0f94a97873a888bbe668` adds a second RED demonstrating that hashed trusted-type membership still executes a caller-controlled scalar metaclass callback.
 - `bbc640a97c556b0241e3bc33e0b24f3904a50612` replaces hashed/equality-based type admission with identity-only comparisons.
+- The public suite also proves pre-core rejection for `bool` / `np.bool_`, non-integer floats, `n_draws` domain `0` and `MAX_DRAWS + 1`, `__index__` providers, and that a valid request discovers the compiled core exactly once at dispatch.
 
 Hosted exact-head CI, security, package/provenance, coverage/OpenCode, formal-review, and protected-base evidence is authoritative over these remembered commit identities and must be refetched before any lifecycle or integration decision.
 

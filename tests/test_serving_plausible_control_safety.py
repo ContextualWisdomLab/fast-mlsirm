@@ -156,6 +156,63 @@ def test_plausible_values_rejects_unknown_device_before_core(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("controls", "expected"),
+    [
+        ({"n_draws": True}, "n_draws must be an integer"),
+        ({"n_draws": False}, "n_draws must be an integer"),
+        ({"n_draws": np.bool_(True)}, "n_draws must be an integer"),
+        ({"seed": True}, "seed must be an integer"),
+        ({"seed": np.bool_(False)}, "seed must be an integer"),
+        ({"n_draws": 1.5}, "n_draws must be an integer"),
+        ({"n_draws": np.float64(2.0)}, "n_draws must be an integer"),
+        ({"seed": 1.5}, "seed must be an integer"),
+        ({"n_draws": 0}, r"n_draws must be between 1 and 100000"),
+        ({"n_draws": serving.MAX_DRAWS + 1}, r"n_draws must be between 1 and 100000"),
+        ({"device": True}, "device must be a string"),
+    ],
+)
+def test_plausible_values_rejects_bool_float_and_draw_bounds_before_core(
+    monkeypatch, controls, expected
+):
+    """Booleans, floats, and out-of-range draws fail before native discovery."""
+    _assert_rejected_before_core(monkeypatch, expected=expected, **controls)
+
+
+def test_plausible_values_rejects_index_provider_before_core(monkeypatch):
+    """An ``__index__`` provider must not be admitted as an integer control."""
+    coercions: list[bool] = []
+
+    class HostileIndex:
+        def __index__(self) -> int:
+            coercions.append(True)
+            return 5
+
+    _assert_rejected_before_core(
+        monkeypatch,
+        expected="n_draws must be an integer",
+        n_draws=HostileIndex(),
+    )
+    assert coercions == []
+
+
+def test_plausible_values_valid_input_discovers_core_only_at_dispatch(monkeypatch):
+    """A valid request discovers the compiled core exactly once, at dispatch."""
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(serving, "_core_module", missing_core)
+    with pytest.raises(
+        RuntimeError, match="plausible_values requires the compiled Rust core"
+    ):
+        serving.plausible_values(_bundle(), {"i0": 1, "i1": 0})
+    assert calls == 1
+
+
 def test_plausible_values_normalizes_trusted_numpy_integer_controls(monkeypatch):
     """Exact NumPy integer scalars marshal to exact built-in integers."""
     captured: dict[str, object] = {}
