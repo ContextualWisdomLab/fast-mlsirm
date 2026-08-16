@@ -32,6 +32,7 @@ def test_exhaustive_studies_are_scheduled_manual_and_release_triggered():
     assert "rust-ignored:" in text
     assert "rust-pyo3-ignored:" in text
     assert "rust-recovery:" in text
+    assert "grm-recovery:" in text
     assert "gpu-recovery:" in text
 
 
@@ -72,11 +73,13 @@ def test_dedicated_study_exclusions_are_target_qualified_and_executed_elsewhere(
         "gpu_recovery_matches_cpu_on_paper_design",
         "mlsirm-core/test/higher_order_mc_recovery::"
         "higher_order_dina_recovery_respects_monte_carlo_tolerance",
+        "mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500",
     )
     raw_names = (
         "kang_jeon_2025_minimum_cell_recovers_true_parameters",
         "gpu_recovery_matches_cpu_on_paper_design",
         "higher_order_dina_recovery_respects_monte_carlo_tolerance",
+        "mc_grm_recovery_500",
     )
     for identifier in identifiers:
         assert f"--skip {identifier}" in text
