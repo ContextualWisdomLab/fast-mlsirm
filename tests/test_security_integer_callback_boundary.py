@@ -127,6 +127,14 @@ def _responses() -> np.ndarray:
     )
 
 
+def _identity_responses() -> np.ndarray:
+    """Return deterministic non-degenerate data for native parity checks."""
+    rng = np.random.default_rng(0)
+    responses = (rng.random((60, 20)) < 0.6).astype(np.float64)
+    responses[1, :] = 0.0
+    return responses
+
+
 def _options() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return valid nominal-option inputs for Wollack omega."""
     copier = np.array([0, 1, 2], dtype=np.int64)
@@ -151,29 +159,39 @@ def test_wollack_rejects_untrusted_integer_controls_without_callbacks(
 
 
 @pytest.mark.parametrize("factory", _HOSTILE_INTEGER_FACTORIES)
+@pytest.mark.parametrize("argument_name", ("copier", "source"))
 def test_k_index_rejects_untrusted_integer_controls_without_callbacks(
-    monkeypatch, factory
+    monkeypatch, factory, argument_name
 ):
-    """K-index row validation rejects subclasses/protocol providers first."""
+    """K-index validates each row control before callbacks or core discovery."""
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     factory.reset()
+    copier = factory(0) if argument_name == "copier" else 0
+    source = factory(1) if argument_name == "source" else 1
 
-    with pytest.raises(ValueError, match="copier must be an integer row index"):
-        k_index(_responses(), factory(0), 1)
+    with pytest.raises(
+        ValueError, match=f"{argument_name} must be an integer row index"
+    ):
+        k_index(_responses(), copier, source)
 
     assert factory.calls == 0
 
 
 @pytest.mark.parametrize("factory", _HOSTILE_INTEGER_FACTORIES)
+@pytest.mark.parametrize("argument_name", ("copier", "source"))
 def test_k_variants_rejects_untrusted_integer_controls_without_callbacks(
-    monkeypatch, factory
+    monkeypatch, factory, argument_name
 ):
-    """K1/K2/S1/S2 row validation rejects subclasses/protocol providers first."""
+    """K-variant validation covers both row controls before native discovery."""
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     factory.reset()
+    copier = factory(0) if argument_name == "copier" else 0
+    source = factory(1) if argument_name == "source" else 1
 
-    with pytest.raises(ValueError, match="source must be an integer row index"):
-        k_variants(_responses(), 0, factory(1))
+    with pytest.raises(
+        ValueError, match=f"{argument_name} must be an integer row index"
+    ):
+        k_variants(_responses(), copier, source)
 
     assert factory.calls == 0
 
@@ -205,6 +223,36 @@ def test_genuine_numpy_integer_controls_reach_dispatch_boundary(
         k_variants(_responses(), numpy_type(0), numpy_type(1))
 
     assert calls == 3
+
+
+def test_numpy_integer_controls_preserve_native_statistic_identity() -> None:
+    """Representative NumPy controls produce the same Rust statistics as ints."""
+    if fitstats._core_module() is None:
+        pytest.skip("compiled Rust core required for native statistic parity")
+
+    copier, source, probs = _options()
+    py_omega = wollack_omega(copier, source, probs, 3)
+    np_omega = wollack_omega(copier, source, probs, np.int64(3))
+    assert np_omega.omega == py_omega.omega
+
+    responses = _identity_responses()
+    py_k = k_index(responses, 0, 1)
+    np_k = k_index(responses, np.int64(0), np.int64(1))
+    assert np_k.k_index == py_k.k_index
+
+    py_variants = k_variants(responses, 0, 1)
+    np_variants = k_variants(responses, np.int64(0), np.int64(1))
+    assert (
+        np_variants.k1,
+        np_variants.k2,
+        np_variants.s1_index,
+        np_variants.s2_index,
+    ) == (
+        py_variants.k1,
+        py_variants.k2,
+        py_variants.s1_index,
+        py_variants.s2_index,
+    )
 
 
 @pytest.mark.parametrize(
