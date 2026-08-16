@@ -31,6 +31,7 @@ _NUMPY_FLOATING_SCALAR_TYPES = (
     np.float64,
     np.longdouble,
 )
+_NATIVE_USIZE_MAX = int(np.iinfo(np.uintp).max)
 
 
 def _exact_integer(value: object, name: str) -> int:
@@ -122,10 +123,15 @@ def _normalize_controls(
     else:
         if normalized_nr_add < 1:
             raise ValueError("nr_add must be a positive integer >= 1")
+        if normalized_nr_add > _NATIVE_USIZE_MAX:
+            raise ValueError("nr_add must fit native usize and round-trip exactly")
         try:
-            ea, eb = float(normalized_nr_add), 0.0
+            ea = float(normalized_nr_add)
         except OverflowError as exc:
-            raise ValueError("nr_add must be a real number") from exc
+            raise ValueError("nr_add must fit native usize and round-trip exactly") from exc
+        if not math.isfinite(ea) or int(ea) != normalized_nr_add:
+            raise ValueError("nr_add must fit native usize and round-trip exactly")
+        eb = 0.0
 
     if normalized_threshold == "norm":
         tv = normalized_alpha
