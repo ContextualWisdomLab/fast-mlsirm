@@ -288,6 +288,10 @@ def capture_pr_queue_snapshot(
         branch = repo_payload.get("defaultBranchRef")
         if isinstance(branch, dict):
             default_branch = str(branch.get("name") or "").strip()
+            if not default_branch:
+                errors.append(
+                    _malformed_payload_error(repo_command, "default branch name was missing")
+                )
     elif repo_error is None:
         errors.append(_malformed_payload_error(repo_command, "repository payload was not an object"))
 
