@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+import fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm.config import MAX_MAX_ITER
 from fast_mlsirm.scaling import bradley_terry_mm
@@ -215,3 +216,8 @@ def test_genuine_numpy_controls_dispatch_as_exact_builtins(monkeypatch):
     assert alpha == pytest.approx(0.25)
     assert max_iter == 50
     assert tol == pytest.approx(float(np.float32(1e-6)))
+
+
+def test_top_level_export_uses_the_hardened_scaling_wrapper():
+    """The public package export must not retain the pre-install legacy callable."""
+    assert fast_mlsirm.bradley_terry_mm is bradley_terry_mm
