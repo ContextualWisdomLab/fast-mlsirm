@@ -174,7 +174,7 @@ def test_fit_cli_help_names_fail_closed_auto_backend(capsys) -> None:
     else:
         raise AssertionError("fit --help must exit through argparse SystemExit")
 
-    help_text = capsys.readouterr().out
+    help_text = " ".join(capsys.readouterr().out.split())
     assert _STALE_CLI_HELP_FALLBACK not in help_text
     assert "fails closed otherwise" in help_text
     assert "pass numpy only for the explicit reference/parity path" in help_text

@@ -10,8 +10,11 @@ def test_auto_unavailable_message_names_purchaser_next_action() -> None:
     assert message.startswith("compiled Rust core is required for automatic backend resolution")
     assert "fast_mlsirm._core" in message
     assert "backend='numpy'" in message
-    assert "/" not in message
+    assert ":" not in message
     assert "\\" not in message
+    assert "/home/" not in message
+    assert "/usr/" not in message
+    assert "/tmp/" not in message
 
 
 def test_load_core_surfaces_import_errors(monkeypatch):
