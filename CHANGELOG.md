@@ -5,6 +5,12 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
+#### Govern non-psychometric item-bank suspension concerns
+
+- Governed item-bank suspension and reactivation can now bind exact non-psychometric concern evidence for evidence/content validity and security/privacy findings, alongside existing DIF, drift, exposure, and linking evidence, without fabricating psychometric drift evidence.
+- Suspended records bind the exact newly asserted concern classes into their content-addressed identity, and reactivation requires fresh evidence for those same classes so unrelated evidence cannot clear a quarantine.
+- Reactivation rejects a historical approval or concern fingerprint even when it is presented under a replacement evidence identifier; every required reactivation artifact must bind new evidence content.
+
 #### Harden remaining equating controls before native discovery
 
 - Validate circle-arc method/point/scalar controls, nominal-weights score ceilings and synthetic-population weight, and the composite-linking exponent before compiled-core discovery.
@@ -28,6 +34,29 @@
 
 - Expanded the read-only Actions-registry audit transport's bounded retry classifier to cover transient HTTP 403, 404, 429, and all 5xx responses, while preserving fail-closed exhaustion and immediate failure for non-transient authentication errors such as HTTP 401.
 - Added direct transport regression coverage so incident audits do not misclassify one transient GitHub control-plane response as a completed inventory failure.
+
+#### Harden RAG metadata callback safety
+
+- Validate caller-provided RAG metadata keys exactly once before reading any values, then freeze only the captured allowlisted values. Hostile membership, key/value, duplicate-key, and key-reiteration callbacks now fail through non-reflective package errors without granting new metadata authority.
+
+#### Exposure-control scalar callback safety
+
+- Validate CAT/exposure integer controls from exact built-in Python and genuine NumPy scalar types before caller-dispatchable coercion or Rust-core discovery, preserving integral built-in/NumPy floating controls, package-owned bounds/errors, and Rust-owned exposure, routing, scoring, posterior, recovery, and simulation arithmetic.
+
+#### Harden scoring-policy integer callback boundaries
+
+- Reject caller-defined integer coercion at scoring-policy positive-integer boundaries before any `__index__` callback can run, while preserving exact built-in and genuine NumPy integer scalar compatibility and existing bounded `AssessmentSpecError` semantics.
+
+#### ATA integer callback safety
+
+- Automated test assembly now admits only exact built-in integers and explicitly supported genuine NumPy integer scalar identities for public length, seed, exposure, content-count, and exclusion controls before normalization.
+- Caller-defined Python and NumPy integer subclasses fail closed before conversion callbacks or item-information work, while existing finite-domain validation and genuine NumPy scalar compatibility are preserved.
+- Added focused public-boundary regressions for hostile scalar and container controls without changing ATA information, selection, or scoring arithmetic.
+
+#### Fleiss kappa control trust boundary
+
+- Hardened the public Fleiss/Conger kappa control boundary so explicit category counts and exact-mode selection are validated without executing caller-defined integer, index, or truthiness callbacks before ratings materialization or compiled-core discovery.
+- Preserved genuine Python/NumPy scalar compatibility, capped explicit and inferred category counts at the Rust contract maximum of 10,000, and kept all agreement arithmetic Rust-owned.
 
 ### Security
 
