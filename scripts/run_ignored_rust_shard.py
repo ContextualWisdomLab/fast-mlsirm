@@ -35,6 +35,16 @@ from _subprocess_deadlines import (  # noqa: E402
     run_bounded,
 )
 
+try:
+    from scripts._bounded_json import parse_json_bounded
+except ModuleNotFoundError:
+    try:
+        from _bounded_json import parse_json_bounded
+    except ModuleNotFoundError:
+        def parse_json_bounded(content: str, **_: object) -> object:
+            """Parse JSON when the repository helper is unavailable in isolation."""
+            return json.loads(content)
+
 _TEST_LINE = re.compile(r"^(?P<name>.+): test$")
 _SUPPORTED_SELECTORS = frozenset({"lib", "bin", "test", "example", "doc"})
 _LIBRARY_TARGET_KINDS = frozenset(
@@ -117,7 +127,7 @@ def _metadata_string_set(
 
 def parse_workspace_targets(metadata_output: str) -> list[CargoTarget]:
     """Return exact default-tested targets for Cargo workspace members."""
-    metadata = json.loads(metadata_output)
+    metadata = parse_json_bounded(metadata_output)
     if not isinstance(metadata, dict):
         raise ValueError("Cargo metadata root must be an object")
     packages = metadata.get("packages")

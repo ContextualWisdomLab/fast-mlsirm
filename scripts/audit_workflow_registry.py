@@ -24,6 +24,16 @@ _GH_TIMEOUT_SECONDS = 20
 _WORKFLOW_PREFIX = ".github/workflows/"
 _DYNAMIC_PREFIX = "dynamic/"
 
+try:
+    from scripts._bounded_json import parse_json_bounded
+except ModuleNotFoundError:
+    try:
+        from _bounded_json import parse_json_bounded
+    except ModuleNotFoundError:
+        def parse_json_bounded(content: str, **_: Any) -> Any:
+            """Parse JSON when the repository helper is unavailable in isolation."""
+            return json.loads(content)
+
 
 @dataclass(frozen=True)
 class GitHubApiError(RuntimeError):
@@ -95,8 +105,8 @@ def _run_gh_api(
             continue
         if completed.returncode == 0:
             try:
-                return json.loads(completed.stdout)
-            except json.JSONDecodeError as exc:
+                return parse_json_bounded(completed.stdout)
+            except (ValueError, json.JSONDecodeError) as exc:
                 raise GitHubApiError(
                     endpoint=endpoint,
                     returncode=completed.returncode,

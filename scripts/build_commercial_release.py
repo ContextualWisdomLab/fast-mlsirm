@@ -17,9 +17,14 @@ from typing import Any, Callable
 GIT_METADATA_TIMEOUT_SECONDS = 5
 
 try:
-    from scripts._bounded_json import read_json_object
+    from scripts._bounded_json import parse_json_bounded, read_json_object
 except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    try:
+        from _bounded_json import parse_json_bounded, read_json_object
+    except ModuleNotFoundError:
+        def parse_json_bounded(content: str, **_: Any) -> Any:
+            """Parse JSON when the repository helper is unavailable in isolation."""
+            return json.loads(content)
 
 
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
@@ -76,8 +81,8 @@ def _parse_last_json_line(stdout: str) -> dict[str, Any] | None:
     for index in range(len(lines)):
         candidate = "\n".join(lines[index:])
         try:
-            payload = json.loads(candidate)
-        except json.JSONDecodeError:
+            payload = parse_json_bounded(candidate)
+        except (ValueError, json.JSONDecodeError):
             continue
         if isinstance(payload, dict):
             return payload
