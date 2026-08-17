@@ -37,8 +37,27 @@ References (APA 7th ed.):
 from __future__ import annotations
 
 import math
-import numbers
 from dataclasses import dataclass
+
+import numpy as np
+
+
+_TRUSTED_REAL_SCALAR_TYPES = (
+    int,
+    float,
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
 
 
 @dataclass
@@ -48,7 +67,7 @@ class SelectionUtilityResult:
     ``xc`` is the standard-normal predictor cutoff ``Phi^-1(1 - sr)``;
     ``ux`` the selection intensity ``phi(xc)/sr`` (mean standardized
     predictor of those selected); ``pux = rxy * ux`` the Naylor-Shine mean
-    standardized criterion of those selected; ``utility_gain`` the BCG
+    standardized criterion of those selected); ``utility_gain`` the BCG
     gain ``n * period * sdy * pux - cost_total``."""
 
     xc: float
@@ -70,8 +89,8 @@ class TaylorRussellResult:
 
 
 def _coerce_finite_real(value: object, *, name: str) -> float:
-    """Return a trusted finite real scalar without invoking arbitrary protocols."""
-    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+    """Return a trusted finite real scalar without invoking caller protocols."""
+    if type(value) not in _TRUSTED_REAL_SCALAR_TYPES:
         raise ValueError(f"{name} must be a finite real number")
     marshaled = float(value)
     if not math.isfinite(marshaled):
