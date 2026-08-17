@@ -32,7 +32,7 @@ A lifecycle evidence reference stores only:
 - a descriptive evidence identifier; and
 - the complete SHA-256 fingerprint of the exact evidence artifact.
 
-The referenced artifact may contain Rust-backed calibration, fit, DIF, information, linking, exposure, drift, approval, suspension, or retirement evidence. The lifecycle layer does not reproduce or reinterpret those calculations.
+The referenced artifact may contain Rust-backed calibration, fit, DIF, information, linking, exposure, or drift evidence, as well as source-text-free evidence/content-validity, security/privacy, approval, suspension, or retirement governance evidence. The lifecycle layer does not reproduce or reinterpret numerical calculations or infer that the presence of a reference proves the underlying concern is resolved.
 
 The initial calibration gate requires references for calibration, item fit, DIF, and item information. This requirement proves only that the governed evidence classes are present; later slices must validate their schemas, estimator identity, uncertainty, population/design scope, parameter recovery, and decision thresholds.
 
@@ -50,7 +50,11 @@ A low-information safety-critical criterion may therefore remain operationally r
 
 ## Suspension and retirement
 
-Suspension is reversible but requires both a governance suspension record and evidence of a measured concern such as drift or DIF. Reactivation requires new approval plus new drift evidence. Retirement is terminal for new operational use, while historical evidence remains content-addressed for audit reconstruction.
+Suspension is reversible but requires both a governance suspension reference and newly supplied concern evidence. Governed concern classes include DIF, drift, exposure, linking, evidence validity, content validity, and security/privacy, so a non-psychometric quarantine does not need fabricated DIF or drift evidence. The suspended record binds the exact newly asserted concern classes in its content-addressed identity.
+
+Reactivation requires a newly supplied approval plus newly supplied evidence for every concern class bound by that suspension; unrelated evidence cannot clear a different quarantine (for example, a fresh DIF artifact cannot reactivate an item suspended for security/privacy). “Newly supplied” means a content fingerprint not already present anywhere in the suspended record’s cumulative evidence history. A caller cannot make historical approval or concern evidence appear fresh by assigning it a new `evidence_id`; approval and every persisted suspension concern must bind genuinely new evidence content.
+
+These gates establish evidence presence and provenance only; downstream governance remains responsible for deciding whether the referenced evidence actually resolves the operational concern. Retirement is terminal for new operational use, while historical evidence remains content-addressed for audit reconstruction.
 
 The contract does not authorize physical deletion, retention exceptions, or erasure behavior. Those controls belong to the downstream persistence and governance system.
 
@@ -81,6 +85,9 @@ The implementation requires deterministic tests for:
 - direct-construction refusal;
 - transition graph enforcement;
 - required evidence classes;
+- non-psychometric suspension and reactivation without fabricated DIF/drift evidence;
+- suspension-to-reactivation concern-class continuity;
+- rejection of historical approval or concern fingerprints under replacement identifiers;
 - use-specific approval;
 - cumulative evidence and previous-record linkage;
 - evidence-order invariance;

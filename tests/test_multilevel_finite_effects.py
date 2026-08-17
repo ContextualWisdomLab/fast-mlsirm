@@ -1,0 +1,143 @@
+"""End-to-end fail-closed coverage for contextual random-effect values."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Mapping
+import math
+import sys
+
+import pytest
+
+from fast_mlsirm.multilevel import (
+    build_context_membership,
+    build_context_membership_design,
+    weighted_contextual_effect,
+)
+
+_CONTEXT_KEY = ("team_membership", "team_alpha")
+_SECRET = "raw_sensitive_context_effect_callback"
+
+
+class _ContainsTrap(Mapping[tuple[str, str], float]):
+    """Expose one valid effect while rejecting alien membership probes."""
+
+    def __getitem__(self, key: tuple[str, str]) -> float:
+        if key != _CONTEXT_KEY:
+            raise KeyError(key)
+        return 2.0
+
+    def __iter__(self) -> Iterator[tuple[str, str]]:
+        return iter((_CONTEXT_KEY,))
+
+    def __len__(self) -> int:
+        return 1
+
+    def __contains__(self, key: object) -> bool:
+        del key
+        raise RuntimeError(_SECRET)
+
+
+class _LookupTrap(Mapping[tuple[str, str], float]):
+    """Raise caller-controlled text when a referenced effect is read."""
+
+    def __getitem__(self, key: tuple[str, str]) -> float:
+        del key
+        raise RuntimeError(_SECRET)
+
+    def __iter__(self) -> Iterator[tuple[str, str]]:
+        return iter((_CONTEXT_KEY,))
+
+    def __len__(self) -> int:
+        return 1
+
+    def __contains__(self, key: object) -> bool:
+        del key
+        return True
+
+
+class _FloatTrap:
+    """Raise caller-controlled text from numeric coercion."""
+
+    def __float__(self) -> float:
+        raise RuntimeError(_SECRET)
+
+
+def _single_context_design():
+    edge = build_context_membership(
+        observation_id="person_one",
+        context_dimension_id="team_membership",
+        context_id="team_alpha",
+        membership_weight=1.0,
+        membership_revision_fingerprint="a".rjust(64, "0"),
+    )
+    return build_context_membership_design([edge])
+
+
+@pytest.mark.parametrize("effect", [math.nan, math.inf, -math.inf])
+def test_public_predictor_rejects_non_finite_context_effects(effect: float) -> None:
+    design = _single_context_design()
+
+    with pytest.raises(ValueError, match="effects must be finite"):
+        weighted_contextual_effect(
+            design,
+            {_CONTEXT_KEY: effect},
+        )
+
+
+def test_public_predictor_does_not_invoke_alien_membership_callbacks() -> None:
+    """Required effects are read once rather than probed through ``__contains__``."""
+    result = weighted_contextual_effect(_single_context_design(), _ContainsTrap())
+
+    assert result.tolist() == [2.0]
+
+
+def test_public_predictor_normalizes_hostile_effect_lookup_failures() -> None:
+    """Caller callback text must not escape the Python marshalling boundary."""
+    with pytest.raises(ValueError, match="context_effects could not be read safely") as caught:
+        weighted_contextual_effect(_single_context_design(), _LookupTrap())
+
+    assert _SECRET not in str(caught.value)
+
+
+def test_public_predictor_normalizes_hostile_effect_coercion_failures() -> None:
+    """Numeric-conversion callbacks must not reflect caller exception text."""
+    with pytest.raises(
+        ValueError,
+        match="context_effects values could not be converted safely",
+    ) as caught:
+        weighted_contextual_effect(
+            _single_context_design(),
+            {_CONTEXT_KEY: _FloatTrap()},  # type: ignore[dict-item]
+        )
+
+    assert _SECRET not in str(caught.value)
+
+
+def test_public_predictor_rejects_finite_inputs_that_overflow_weighted_sum() -> None:
+    design = build_context_membership_design(
+        [
+            build_context_membership(
+                observation_id="person_one",
+                context_dimension_id="team_membership",
+                context_id="team_alpha",
+                membership_weight=1.0,
+                membership_revision_fingerprint="b".rjust(64, "0"),
+            ),
+            build_context_membership(
+                observation_id="person_one",
+                context_dimension_id="site_membership",
+                context_id="site_alpha",
+                membership_weight=1.0,
+                membership_revision_fingerprint="c".rjust(64, "0"),
+            ),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="weighted contextual effects must be finite"):
+        weighted_contextual_effect(
+            design,
+            {
+                ("team_membership", "team_alpha"): sys.float_info.max,
+                ("site_membership", "site_alpha"): sys.float_info.max,
+            },
+        )

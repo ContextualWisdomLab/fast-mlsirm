@@ -9129,9 +9129,13 @@ fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f6
     core_standard_errors_from_vcov(vcov.as_slice()?, n).map_err(PyValueError::new_err)
 }
 
+/// Version of the Python-to-Rust marginal-MMLE call contract.
+const MARGINAL_CAPABILITY_VERSION: u32 = 1;
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
