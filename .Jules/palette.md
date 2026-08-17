@@ -1,4 +1,6 @@
-## 2024-05-15 - Focus Visible For Scrollable Tables\n**Learning:** Using :focus-visible instead of :focus for scrollable containers improves accessibility for keyboard users without causing jarring outlines for mouse users.\n**Action:** Use :focus-visible on focusable generic containers like `.table-wrap[tabindex="0"]` in Python HTML report templates.
+## 2024-05-15 - Focus Visible For Scrollable Tables
+**Learning:** Using :focus-visible instead of :focus for scrollable containers improves accessibility for keyboard users without causing jarring outlines for mouse users.
+**Action:** Use :focus-visible on focusable generic containers like `.table-wrap[tabindex="0"]` in Python HTML report templates.
 ## 2024-05-15 - Smooth Table Row Hover Transitions
 **Learning:** Table row hover states without transitions feel abrupt and unpolished in data-heavy static reports, and adding hover states helps users track their reading position across wide tables.
 **Action:** Apply a `transition: background-color 0.15s ease-in-out` to `tbody tr` elements and a subtle `background` color on `tbody tr:hover` in Python HTML report templates.
@@ -23,4 +25,6 @@
 ## 2026-08-04 - Status Semantics and Numeric Alignment for Reports
 **Learning:** Explicit status semantics can make conditionally rendered empty states easier to discover with assistive technology, while tabular numerals improve visual comparison of metric columns. Focus-reveal behavior must not depend only on `:focus-visible`, and hover styling must not reduce the contrast of unrelated rows.
 **Action:** Use `role="status"` for genuine conditionally rendered status messages, apply `font-variant-numeric: tabular-nums` to numeric report tables, reveal skip links on `:focus`, retain a visible `:focus-visible` indicator, and avoid opacity-based dimming of non-hovered content.
-## 2026-08-05 - Focus Reveal and Suppression for Main Content Regions\n**Learning:** When using `:focus-visible` to show keyboard focus on a `<main>` region with `tabindex="-1"` (e.g., for "skip to content" links), relying only on `main:focus { outline: none; }` hides the ring for everyone, breaking keyboard a11y. Conversely, removing the `:focus` rule entirely shows a massive focus ring when mouse users click the main content area, creating poor visual UX.\n**Action:** Use the `:focus:not(:focus-visible) { outline: none; }` CSS pattern. This perfectly suppresses the jarring default focus ring for mouse/touch interactions while ensuring the browser or custom `:focus-visible` ring remains visible for keyboard navigation.
+## 2026-08-05 - Focus Reveal and Suppression for Main Content Regions
+**Learning:** When using `:focus-visible` to show keyboard focus on a `<main>` region with `tabindex="-1"` (for example, a skip-link target), a bare `main:focus { outline: none; }` can suppress the keyboard indicator. Removing suppression entirely can also expose a pointer-triggered outline that is not useful to mouse users.
+**Action:** Pair `main:focus:not(:focus-visible) { outline: none; }` with an explicit `main:focus-visible` outline so pointer focus can stay quiet while keyboard focus remains visible.
