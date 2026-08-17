@@ -87,7 +87,9 @@ def test_rust_state_fit_recovers_true_ols_parameters_with_rmse() -> None:
     true_slopes = (0.75, -1.0, 0.25)
     occasions = []
     values: dict[str, float] = {}
-    for respondent_index, respondent in enumerate(("r0", "r1", "r2")):
+    for respondent_index, respondent in enumerate(
+        ("respondent_r0", "respondent_r1", "respondent_r2")
+    ):
         intercept = true_intercepts[respondent_index]
         slope = true_slopes[respondent_index]
         for occasion_index in range(5):
@@ -202,7 +204,7 @@ def test_state_fit_rejects_invalid_worker_count_and_foreign_design() -> None:
         fit_longitudinal_state(ForeignDesign(), {})  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("value", [True, 1 + 2j, "not-a-number"])
+@pytest.mark.parametrize("value", [True, np.bool_(True), 1 + 2j, "not-a-number"])
 def test_state_fit_rejects_non_real_observation_values(value: object) -> None:
     """Caller-controlled observations fail with the package-owned exception."""
     with pytest.raises(ValueError, match="must be a real number"):
@@ -232,3 +234,13 @@ def test_state_fit_translates_hostile_mapping_reads_to_value_error() -> None:
 
     with pytest.raises(ValueError, match="plain read-only mapping"):
         fit_longitudinal_state(_single_occasion_design(), ExplodingMapping())
+
+
+def test_state_fit_accepts_numpy_real_scalars() -> None:
+    """Supported NumPy scalars convert through the package-owned helper."""
+    result = fit_longitudinal_state(
+        _single_occasion_design(),
+        {"occasion_guard": np.float64(2.5)},
+    )
+    np.testing.assert_allclose(result["intercepts"], [2.5])
+    assert result["observed_count"] == 1
