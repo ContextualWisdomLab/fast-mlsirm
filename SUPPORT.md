@@ -2,7 +2,7 @@
 
 ## Current Pre-1.0 Support Scope
 
-`fast-mlsirm` 0.7.x is the current supported pre-1.0 minor line. Support applies
+`fast-mlsirm` 0.8.x is the current supported pre-1.0 minor line. Support applies
 to behavior that is part of a released artifact and documented public API or CLI
 contract. An active pull request, research plan, experimental internal helper,
 or roadmap item is not supported merely because it exists in the repository.
