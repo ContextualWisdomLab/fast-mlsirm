@@ -116,7 +116,8 @@ def test_command_loader_error_debug_reraises(argv, target, make_exc, monkeypatch
 
 def _valid_load():
     """Patch context returning a valid (responses, factors) pair for fit()."""
-    return patch(TARGET_RF, return_value=(np.zeros((2, 2)), np.array([0, 1])))
+    responses = np.array([[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]])
+    return patch(TARGET_RF, return_value=(responses, np.array([0, 0])))
 
 
 def test_fit_call_value_error_returns_one(capsys):

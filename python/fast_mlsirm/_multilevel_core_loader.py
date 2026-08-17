@@ -44,6 +44,10 @@ def _initialize_module() -> ModuleType:
 def multilevel_core() -> ModuleType:
     """Return the cached secondary Rust multilevel extension module.
 
+    The cache lookup occurs under the initialization lock because
+    ``_initialize_module`` must publish a temporary ``sys.modules`` entry
+    before native ``exec_module`` completes.
+
     Raises
     ------
     ImportError
@@ -51,9 +55,6 @@ def multilevel_core() -> ModuleType:
         or the extension loader cannot initialize ``PyInit__multilevel_core``.
     """
 
-    cached = sys.modules.get(_MODULE_NAME)
-    if cached is not None:
-        return cached
     with _LOAD_LOCK:
         cached = sys.modules.get(_MODULE_NAME)
         if cached is not None:

@@ -1,9 +1,12 @@
 """Provider-neutral automated-scoring contracts and policy specifications."""
 
 from . import calibration as _calibration
+from . import rag as _rag
 from ._calibration_validation import install as _install_calibration_validation
+from ._rag_metadata_validation import install as _install_rag_metadata_validation
 
 _install_calibration_validation(_calibration)
+_install_rag_metadata_validation(_rag)
 
 from .calibration import MAX_SCORING_FACETS_CELLS as MAX_SCORING_FACETS_CELLS
 from .calibration import MAX_SCORING_FACETS_RATINGS as MAX_SCORING_FACETS_RATINGS
@@ -67,11 +70,15 @@ from .item_bank import ItemBankRelease as ItemBankRelease
 from .item_bank import ItemLifecycleState as ItemLifecycleState
 from .item_bank import build_item_bank_entry as build_item_bank_entry
 from .item_bank import build_item_bank_release as build_item_bank_release
+from .rag_evidence import RAGEvidenceRegimeLimitations as RAGEvidenceRegimeLimitations
+from .rag_evidence import (
+    rag_evidence_regime_limitations as rag_evidence_regime_limitations,
+)
 
 # Preserve the pinned star-import contract. Execution, authorization,
-# calibration, and item-bank contracts remain explicit package attributes
-# imported by their documented names, but are not added to ``__all__`` until
-# the next public-surface version bump.
+# calibration, item-bank, and RAG adapter contracts remain explicit package
+# attributes imported by their documented names, but are not added to
+# ``__all__`` until the next public-surface version bump.
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",

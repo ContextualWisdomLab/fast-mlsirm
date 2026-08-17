@@ -31,12 +31,15 @@ MAX_LBFGS_HISTORY = 100
 # Aggregate optimizer work (max_iter x n_restarts) across a single fit; the
 # per-field caps still permit 1e8 iterations together, so bound the product.
 MAX_AGGREGATE_ITERS = 10_000_000
-# Simulation config bounds: reject dimensions whose dense response matrix
-# (n_persons x n_items float64) would exhaust memory before any real work.
-MAX_SIM_PERSONS = 5_000_000
-MAX_SIM_DIMS = 1_000
-MAX_SIM_ITEMS_PER_DIM = 10_000
-MAX_SIM_CELLS = 200_000_000
+# Simulation config bounds. ``simulate`` materializes several dense N x J
+# work arrays (distance, predictor, float64 sigmoid input, probabilities, and
+# responses), so the response-cell budget is intentionally much smaller than
+# a single-array memory limit. Per-axis caps also stop small-product but
+# pathological inputs before RNG/covariance work begins.
+MAX_SIM_PERSONS = 100_000
+MAX_SIM_DIMS = 50
+MAX_SIM_ITEMS_PER_DIM = 1_000
+MAX_SIM_CELLS = 20_000_000
 
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
@@ -281,7 +284,6 @@ class FitConfig:
                 f"max_iter x n_restarts ({aggregate_iters}) exceeds the "
                 f"aggregate optimizer-work budget {MAX_AGGREGATE_ITERS}"
             )
-        # non-finite floats (NaN/Inf) slip past bare `<= 0` comparisons
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
             raise ValueError("learning_rate must be > 0 and finite")
         if not math.isfinite(self.init_gamma) or self.init_gamma <= 0:
@@ -299,24 +301,13 @@ class FitConfig:
         q_theta = _trusted_integer(self.q_theta, "q_theta")
         q_xi = _trusted_integer(self.q_xi, "q_xi")
         q_u = _trusted_integer(self.q_u, "q_u")
-        for name, quadrature_nodes in (
-            ("q_theta", q_theta),
-            ("q_xi", q_xi),
-            ("q_u", q_u),
-        ):
+        for name, quadrature_nodes in (("q_theta", q_theta), ("q_xi", q_xi), ("q_u", q_u)):
             if quadrature_nodes not in supported_q:
                 raise ValueError(f"{name} must be one of {sorted(supported_q)}")
         m_steps = _trusted_integer(self.m_steps, "m_steps")
         if not (1 <= m_steps <= MAX_M_STEPS):
             raise ValueError(f"m_steps must be >= 1 and <= {MAX_M_STEPS}")
-        if self.xi_rule.lower() not in {
-            "gh",
-            "qmc",
-            "halton",
-            "mc",
-            "montecarlo",
-            "monte-carlo",
-        }:
+        if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
             raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
         xi_points = _trusted_integer(self.xi_points, "xi_points")
         xi_seed = _trusted_integer(self.xi_seed, "xi_seed")

@@ -42,6 +42,10 @@ def _initialize_module() -> ModuleType:
 def rating_range_core() -> ModuleType:
     """Return the cached secondary Rust rating-range extension module.
 
+    The cache lookup occurs under the initialization lock because
+    ``_initialize_module`` must publish a temporary ``sys.modules`` entry
+    before native ``exec_module`` completes.
+
     Raises
     ------
     ImportError
@@ -49,9 +53,6 @@ def rating_range_core() -> ModuleType:
         extension loader cannot initialize the secondary module.
     """
 
-    cached = sys.modules.get(_MODULE_NAME)
-    if cached is not None:
-        return cached
     with _LOAD_LOCK:
         cached = sys.modules.get(_MODULE_NAME)
         if cached is not None:

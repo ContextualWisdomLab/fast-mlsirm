@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io as _io
 import json
+import os
 import zipfile
 
 import numpy as np
@@ -17,6 +18,7 @@ from fast_mlsirm.io import (
     _arrays_to_lists,
     _atomic_write,
     _load_json_bounded,
+    _load_numpy_bounded,
     _read_text_bounded,
     _validate_npy_header,
     _validate_numpy_file,
@@ -192,6 +194,51 @@ def test_load_factor_csv_rejects_empty(tmp_path):
     path.write_text("   \n", encoding="utf-8")
     with pytest.raises(ValueError):
         load_factor_csv(path)
+
+
+@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW unavailable")
+@pytest.mark.parametrize("loader", [
+    "json",
+    "csv",
+    "numpy",
+    "validate_numpy",
+    "params",
+])
+def test_bounded_loaders_reject_leaf_symlinks(tmp_path, loader):
+    """Input readers never follow a symlink to an attacker-chosen file."""
+    target = tmp_path / f"target-{loader}"
+    if loader == "json":
+        target.write_text('{"safe": true}', encoding="utf-8")
+    elif loader == "csv":
+        target.write_text("item_id,factor_id\n0,0\n", encoding="utf-8")
+    elif loader in {"numpy", "validate_numpy"}:
+        target = target.with_suffix(".npy")
+        _save_npy(target, np.zeros(1))
+    else:
+        target = target.with_suffix(".npz")
+        np.savez(
+            target,
+            theta=np.zeros((1, 1)),
+            alpha=np.zeros(1),
+            b=np.zeros(1),
+            xi=np.zeros((1, 1)),
+            zeta=np.zeros((1, 1)),
+            tau=np.array(1.0),
+        )
+    link = tmp_path / f"link-{loader}"
+    link.symlink_to(target)
+
+    with pytest.raises(ValueError, match="stable regular file"):
+        if loader == "json":
+            _load_json_bounded(link, source="test JSON")
+        elif loader == "csv":
+            load_factor_csv(link)
+        elif loader == "numpy":
+            _load_numpy_bounded(link)
+        elif loader == "validate_numpy":
+            _validate_numpy_file(link)
+        else:
+            load_params(link)
 
 
 # --------------------------- numpy file validation ---------------------------
