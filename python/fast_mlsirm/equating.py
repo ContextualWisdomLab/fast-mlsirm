@@ -25,6 +25,9 @@ _CONTINUIZATION_ALIASES = frozenset(
     {"uniform", "u", "gaussian", "gauss", "normal", "g"}
 )
 _SEE_ROUTE_ALIASES = frozenset({"bootstrap", "analytic"})
+_CIRCLE_ARC_METHOD_ALIASES = frozenset(
+    {"1", "arc1", "circlearc1", "2", "arc2", "circlearc2"}
+)
 _NUMPY_INTEGER_SCALAR_TYPES = tuple(
     np.dtype(name).type
     for name in (
@@ -99,6 +102,17 @@ def _require_see_route(route: object) -> str:
     return route
 
 
+def _require_circle_arc_method(value: object) -> str:
+    """Return one exact Rust-supported circle-arc method identity.
+
+    Circle-arc parsing does not remove punctuation in Rust, so this boundary
+    intentionally performs only case folding and preserves that exact vocabulary.
+    """
+    if type(value) is not str or value.lower() not in _CIRCLE_ARC_METHOD_ALIASES:
+        raise ValueError("method must be a supported circle-arc method identity")
+    return value
+
+
 def _require_integer_control(value: object, name: str) -> int:
     """Normalize one exact Python/NumPy integer without executable coercion."""
     if type(value) is int:
@@ -150,6 +164,14 @@ def _require_weight(value: object, name: str = "w1") -> float:
     normalized = _require_real_control(value, name)
     if normalized < 0.0 or normalized > 1.0:
         raise ValueError(f"{name} must be between 0 and 1 inclusive")
+    return normalized
+
+
+def _require_composite_exponent(value: object) -> float:
+    """Return the finite Holland-Strawderman exponent accepted by Rust."""
+    normalized = _require_real_control(value, "p")
+    if normalized < 1.0:
+        raise ValueError("p must be finite and >= 1")
     return normalized
 
 
@@ -608,17 +630,22 @@ class CircleArcResult:
 
 
 def _ca_point(p, name: str) -> tuple[float, float]:
-    """Validate and unpack an ``(x, y)`` anchor point into a float pair."""
-    try:
+    """Validate one inert ``(x, y)`` anchor point into a finite float pair."""
+    point_type = type(p)
+    if point_type is tuple or point_type is list:
+        if len(p) != 2:
+            raise ValueError(f"{name} must be an (x, y) pair")
         x, y = p
-    except (TypeError, ValueError):
-        raise ValueError(f"{name} must be an (x, y) pair") from None
-    if np.iscomplexobj(np.asarray(x)) or np.iscomplexobj(np.asarray(y)):
-        raise ValueError(f"{name} must be real-valued")
-    try:
-        return (float(x), float(y))
-    except (TypeError, ValueError):
-        raise ValueError(f"{name} must be an (x, y) pair of numbers") from None
+    elif point_type is np.ndarray:
+        if p.ndim != 1 or p.size != 2:
+            raise ValueError(f"{name} must be an (x, y) pair")
+        x, y = p[0], p[1]
+    else:
+        raise ValueError(f"{name} must be an (x, y) pair")
+    return (
+        _require_real_control(x, f"{name}[0]"),
+        _require_real_control(y, f"{name}[1]"),
+    )
 
 
 def circle_arc_equate(
@@ -653,9 +680,10 @@ def circle_arc_equate(
     """
     from .fitstats import _core_module
 
-    core = _core_module()
-    if core is None or not hasattr(core, "circle_arc_equate"):
-        raise RuntimeError("circle_arc_equate requires the compiled Rust core")
+    method = _require_circle_arc_method(method)
+    low_point = _ca_point(low, "low")
+    middle_point = _ca_point(middle, "middle")
+    high_point = _ca_point(high, "high")
     s = np.asarray(scores)
     if np.iscomplexobj(s):
         raise ValueError("scores must be real-valued")
@@ -664,12 +692,15 @@ def circle_arc_equate(
     except (TypeError, ValueError):
         raise ValueError("scores must be numeric") from None
     s = np.ascontiguousarray(s.ravel())
+    core = _core_module()
+    if core is None or not hasattr(core, "circle_arc_equate"):
+        raise RuntimeError("circle_arc_equate requires the compiled Rust core")
     res = core.circle_arc_equate(
         s,
-        _ca_point(low, "low"),
-        _ca_point(middle, "middle"),
-        _ca_point(high, "high"),
-        str(method),
+        low_point,
+        middle_point,
+        high_point,
+        method,
     )
     return CircleArcResult(
         equated=np.asarray(res["equated"], dtype=np.float64),
@@ -678,7 +709,7 @@ def circle_arc_equate(
         r2=float(res["r2"]),
         collinear=bool(res["collinear"]),
         middle=(float(res["middle"][0]), float(res["middle"][1])),
-        method=str(method),
+        method=method,
     )
 
 
@@ -704,20 +735,20 @@ def circle_arc_middle_anchor(
     """
     from .fitstats import _core_module
 
+    vals = [
+        _require_real_control(value, name)
+        for name, value in (
+            ("m_xa", m_xa),
+            ("m_va", m_va),
+            ("m_yb", m_yb),
+            ("s_yb", s_yb),
+            ("m_vb", m_vb),
+            ("s_vb", s_vb),
+        )
+    ]
     core = _core_module()
     if core is None or not hasattr(core, "circle_arc_middle_anchor"):
         raise RuntimeError("circle_arc_middle_anchor requires the compiled Rust core")
-    vals = []
-    for name, v in (
-        ("m_xa", m_xa), ("m_va", m_va), ("m_yb", m_yb),
-        ("s_yb", s_yb), ("m_vb", m_vb), ("s_vb", s_vb),
-    ):
-        if np.iscomplexobj(np.asarray(v)):
-            raise ValueError(f"{name} must be real-valued")
-        try:
-            vals.append(float(v))
-        except (TypeError, ValueError):
-            raise ValueError(f"{name} must be a number") from None
     x2, y2 = core.circle_arc_middle_anchor(*vals)
     return (float(x2), float(y2))
 
@@ -758,32 +789,39 @@ def nominal_weights_mean_equate(
     """
     from .fitstats import _core_module
 
+    k_x = _require_positive_integer_control(k_x, "k_x")
+    k_y = _require_positive_integer_control(k_y, "k_y")
+    k_v = _require_positive_integer_control(k_v, "k_v")
+    w1 = _require_weight(w1)
+    arrs = []
+    for name, value in (
+        ("x_total", x_total),
+        ("x_anchor", x_anchor),
+        ("y_total", y_total),
+        ("y_anchor", y_anchor),
+    ):
+        array = np.asarray(value)
+        if np.iscomplexobj(array):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            array = array.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be numeric") from None
+        arrs.append(np.ascontiguousarray(array.ravel()))
     core = _core_module()
     if core is None or not hasattr(core, "nominal_weights_mean_equate"):
         raise RuntimeError(
             "nominal_weights_mean_equate requires the compiled Rust core"
         )
-    arrs = []
-    for name, v in (
-        ("x_total", x_total), ("x_anchor", x_anchor),
-        ("y_total", y_total), ("y_anchor", y_anchor),
-    ):
-        a = np.asarray(v)
-        if np.iscomplexobj(a):
-            raise ValueError(f"{name} must be real-valued")
-        try:
-            a = a.astype(np.float64)
-        except (TypeError, ValueError):
-            raise ValueError(f"{name} must be numeric") from None
-        arrs.append(np.ascontiguousarray(a.ravel()))
-    ks = []
-    for name, k in (("k_x", k_x), ("k_y", k_y), ("k_v", k_v)):
-        ki = int(k)
-        if ki <= 0:
-            raise ValueError(f"{name} must be a positive integer")
-        ks.append(ki)
-    res = core.nominal_weights_mean_equate(*arrs, *ks, w1=float(w1))
+    res = core.nominal_weights_mean_equate(
+        *arrs,
+        k_x,
+        k_y,
+        k_v,
+        w1=w1,
+    )
     return _build(res, "nominal-weights-mean", "NEAT")
+
 
 def composite_linking(tables, weights, slopes=None, p=1.0):
     """Composite linking of component conversion tables.
@@ -811,19 +849,17 @@ def composite_linking(tables, weights, slopes=None, p=1.0):
     """
     from .fitstats import _core_module
 
-    core = _core_module()
-    if core is None or not hasattr(core, "composite_linking"):
-        raise RuntimeError("composite_linking requires the compiled Rust core")
+    p = _require_composite_exponent(p)
     tabs = []
-    for i, t in enumerate(tables):
-        a = np.asarray(t)
-        if np.iscomplexobj(a):
+    for i, table in enumerate(tables):
+        array = np.asarray(table)
+        if np.iscomplexobj(array):
             raise ValueError(f"tables[{i}] must be real-valued")
         try:
-            a = a.astype(np.float64)
+            array = array.astype(np.float64)
         except (TypeError, ValueError):
             raise ValueError(f"tables[{i}] must be numeric") from None
-        tabs.append(np.ascontiguousarray(a.ravel()))
+        tabs.append(np.ascontiguousarray(array.ravel()))
     w = np.asarray(weights)
     if np.iscomplexobj(w):
         raise ValueError("weights must be real-valued")
@@ -842,7 +878,10 @@ def composite_linking(tables, weights, slopes=None, p=1.0):
         except (TypeError, ValueError):
             raise ValueError("slopes must be numeric") from None
         s = np.ascontiguousarray(s.ravel())
-    res = core.composite_linking(tabs, w, slopes=s, p=float(p))
+    core = _core_module()
+    if core is None or not hasattr(core, "composite_linking"):
+        raise RuntimeError("composite_linking requires the compiled Rust core")
+    res = core.composite_linking(tabs, w, slopes=s, p=p)
     return {
         "composite": np.asarray(res["composite"]),
         "adjusted_weights": np.asarray(res["adjusted_weights"]),
