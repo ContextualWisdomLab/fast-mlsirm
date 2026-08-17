@@ -8,6 +8,32 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+
+
+def _exact_integer_control(value: object, error_message: str) -> int:
+    """Normalize one trusted integer scalar without caller-controlled coercion."""
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        return int(value)
+    raise ValueError(error_message)
+
+
 @dataclass
 class WollackOmegaResult:
     """Omega answer-copying statistic for one (copier, source) pair.
@@ -86,11 +112,11 @@ def wollack_omega(
     *aberrance* (R package) [Computer software]. CRAN; `compute_OMG` in
     `R/detect-ac.R`/`R/compute.R`. (READ: R sources; independent check.)
     """
-    if not isinstance(n_options, (int, np.integer)) or isinstance(n_options, bool):
-        raise ValueError("n_options must be an integer")
+    n_options = _exact_integer_control(
+        n_options, "n_options must be an integer"
+    )
     if n_options <= 0:
         raise ValueError("n_options must be positive")
-    n_options = int(n_options)
 
     c = _index_vector(copier, "copier", n_options)
     s = _index_vector(source, "source", n_options)
@@ -130,6 +156,7 @@ def wollack_omega(
         omega=float(res["omega"]),
         p_value=float(res["p_value"]),
     )
+
 
 @dataclass
 class KIndexResult:
@@ -194,13 +221,16 @@ def k_index(
     Zopluoglu, C. (2018). *CopyDetect* (R package). (READ: R sources;
     ported implementation.)
     """
-    for name, idx in (("copier", copier), ("source", source)):
-        if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
-            raise ValueError(f"{name} must be an integer row index")
-        if idx < 0:
-            raise ValueError(f"{name} must be nonnegative")
-    copier = int(copier)
-    source = int(source)
+    copier = _exact_integer_control(
+        copier, "copier must be an integer row index"
+    )
+    source = _exact_integer_control(
+        source, "source must be an integer row index"
+    )
+    if copier < 0:
+        raise ValueError("copier must be nonnegative")
+    if source < 0:
+        raise ValueError("source must be nonnegative")
 
     x = np.asarray(responses)
     if x.ndim != 2:
@@ -235,6 +265,7 @@ def k_index(
         p=float(res["p"]),
         k_index=float(res["k_index"]),
     )
+
 
 @dataclass
 class GbtResult:
@@ -316,6 +347,7 @@ def gbt(matches, match_probs):
         p_value=float(res["p_value"]),
     )
 
+
 @dataclass
 class KVariantsResult:
     """K1/K2/S1/S2 answer-copying indices for one (copier, source) pair.
@@ -392,13 +424,16 @@ def k_variants(
     Zopluoglu, C. (2018). *CopyDetect* (R package). (READ:
     ``R/similarity1.r`` internal ``ks12()``; ported implementation.)
     """
-    for name, idx in (("copier", copier), ("source", source)):
-        if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
-            raise ValueError(f"{name} must be an integer row index")
-        if idx < 0:
-            raise ValueError(f"{name} must be nonnegative")
-    copier = int(copier)
-    source = int(source)
+    copier = _exact_integer_control(
+        copier, "copier must be an integer row index"
+    )
+    source = _exact_integer_control(
+        source, "source must be an integer row index"
+    )
+    if copier < 0:
+        raise ValueError("copier must be nonnegative")
+    if source < 0:
+        raise ValueError("source must be nonnegative")
 
     x = np.asarray(responses)
     if x.ndim != 2:
