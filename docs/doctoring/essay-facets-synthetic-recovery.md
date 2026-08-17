@@ -41,11 +41,17 @@ and ordered step parameters are distinct model components.
 ## Identification and alignment
 
 The recovery fixture uses centered generating task difficulties, centered
-rater severities, and thresholds summing to zero. Estimates are compared only
-after aligning them to the governed task-revision, rater-engine, threshold, and
-respondent axes returned by the assembled calibration design and Rust fit. The
-test therefore does not infer identity from insertion order, display labels, or
-a scorer's human/AI class.
+rater severities, and thresholds summing to zero. Task, rater, and respondent
+estimates are compared after aligning them to the governed task-revision,
+rater-engine, and respondent axes returned by the assembled calibration
+design. The governed `allowed_scores` contract requires the category values to
+be sorted and unique. `fit.thresholds` exposes the corresponding \(K-1\)
+ordered step values without a separate threshold-axis label, so the generated
+and fitted threshold vectors are compared positionally in that shared category
+step order. The test therefore does not infer task, rater, or respondent
+identity from insertion order, display labels, or a scorer's human/AI class,
+and it does not imply that an unlabelled threshold vector can be realigned by
+an independent axis that the fit result does not provide.
 
 The bounded study reports test-layer bias, MAE, and RMSE for:
 
