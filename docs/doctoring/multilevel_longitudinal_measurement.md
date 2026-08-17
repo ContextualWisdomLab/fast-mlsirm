@@ -5,13 +5,18 @@
 `fast_mlsirm.multilevel` introduces immutable design contracts for nested,
 cross-classified, weighted multiple-membership, and repeated longitudinal
 measurement. The contracts prevent contextual and temporal provenance from
-being collapsed into respondent IDs or unstructured metadata.
+being collapsed into respondent IDs or unstructured metadata. A Rust-owned
+state layer now consumes the sealed longitudinal design for independent
+per-respondent OLS trends and discrete-step AR(1) state prediction; the full
+joint multilevel likelihood remains outside this slice.
 
-This first slice performs no statistical estimation. Python owns validation,
-content identity, bounded collection handling, replay protection, sparse design
-marshalling, and serialization only. Likelihood, integration, gradients,
-optimization, uncertainty, CPU multithreading, and any justified GPU batching
-remain in Rust.
+Python owns validation, content identity, bounded collection handling, replay
+protection, sparse design marshalling, and serialization. Rust owns the
+weighted contextual predictor and the first state-layer arithmetic. The
+OLS path uses respondent-sharded CPU threads; the AR path uses
+sequence-index gaps and a caller-supplied coefficient. Full likelihood,
+random-effect integration, optimization, uncertainty, and GPU batching for
+recurrent state remain separate boundaries.
 
 ## Scientific rationale
 
@@ -63,7 +68,11 @@ The implementation:
 - canonicalizes input order without changing assignments;
 - retains exact membership and occasion revision fingerprints;
 - requires strict respondent-level sequence and time ordering;
-- distinguishes a random-intercept/slope state from stationary AR(1);
+- distinguishes a random-intercept/slope wire label from stationary AR(1);
+- fits the state layer with Rust-only arithmetic and deterministic respondent
+  sharding, reporting independent OLS or caller-supplied AR estimand metadata;
+- reports state RMSE, observed/transition counts, and worker-count-invariant
+  results;
 - keeps lagged-response dependence independently switchable;
 - bounds all collections before aggregate allocation;
 - rejects Boolean-as-number coercion, non-finite values, duplicate cells, and
@@ -111,18 +120,19 @@ must use explicit schema migration rather than mutating the accepted contract.
 
 ## Verification boundary
 
-The current evidence is limited to contract validation, deterministic identity,
+The current evidence includes contract validation, deterministic identity,
 child replay, resource bounds, dimension-scoped assignment, strict temporal
-ordering, and source-text-free serialization. It is not evidence of:
+ordering, Rust state-layer slope recovery, missing-occasion preservation,
+discrete AR transition RMSE, worker-count determinism, and source-text-free
+serialization. It is not evidence of:
 
-- estimator correctness;
+- full joint estimator correctness;
 - variance-component identification;
-- true-parameter recovery;
-- interval coverage;
+- population random-effects recovery or interval coverage;
 - measurement invariance or fairness;
 - causal contextual effects;
 - continuous-time dynamics;
-- GPU performance or parity; or
+- GPU recurrent-state performance or parity; or
 - high-stakes deployment readiness.
 
 Those claims require separate Rust implementations and same-head recovery,

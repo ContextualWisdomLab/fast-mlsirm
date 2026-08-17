@@ -6,10 +6,12 @@
 //! counts, and its input validation are owned by
 //! `mlsirm_core::multilevel::weighted_contextual_effect`.
 
+use mlsirm_core::longitudinal::fit_longitudinal_state as core_fit_longitudinal_state;
 use mlsirm_core::multilevel::weighted_contextual_effect as core_weighted_contextual_effect;
 use numpy::{PyArray1, PyReadonlyArray1, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3::types::PyModule;
 use pyo3::wrap_pyfunction;
 
@@ -87,9 +89,74 @@ fn py_weighted_contextual_effect<'py>(
     Ok(result.to_pyarray(py))
 }
 
+/// Fit the Rust-owned repeated-measurement state layer.
+///
+/// Parameters
+/// ----------
+/// row_offsets : numpy.ndarray[uint64]
+///     CSR-style respondent pointer, length ``n_respondents + 1``.
+/// sequence_indices : numpy.ndarray[uint64]
+///     Discrete occasion indices aligned with ``values``.
+/// time_offsets_milliseconds : numpy.ndarray[int64]
+///     Exact millisecond offsets aligned with ``values``.
+/// values : numpy.ndarray[float64]
+///     Observed states; ``NaN`` marks a missing occasion.
+/// state_kind : str
+///     Compatibility wire label for the requested state predictor.
+/// ar_coefficient : float or None
+///     Caller-supplied discrete AR coefficient, or ``None`` for OLS trends.
+/// worker_count : int
+///     Number of deterministic worker threads (``>= 1``).
+///
+/// Returns
+/// -------
+/// dict
+///     Predicted states, respondent intercepts/slopes, RMSE, and counts.
+#[pyfunction(name = "fit_longitudinal_state")]
+fn py_fit_longitudinal_state<'py>(
+    py: Python<'py>,
+    row_offsets: PyReadonlyArray1<'_, u64>,
+    sequence_indices: PyReadonlyArray1<'_, u64>,
+    time_offsets_milliseconds: PyReadonlyArray1<'_, i64>,
+    values: PyReadonlyArray1<'_, f64>,
+    state_kind: &str,
+    ar_coefficient: Option<f64>,
+    worker_count: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
+    let sequence_indices = checked_usize_values(sequence_indices.as_slice()?, "sequence_indices")?;
+    let time_offsets = time_offsets_milliseconds.as_slice()?.to_vec();
+    let values = values.as_slice()?.to_vec();
+    let state_kind = state_kind.to_owned();
+    let fit = py
+        .detach(move || {
+            core_fit_longitudinal_state(
+                &row_offsets,
+                &sequence_indices,
+                &time_offsets,
+                &values,
+                &state_kind,
+                ar_coefficient,
+                worker_count,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let result = PyDict::new(py);
+    result.set_item("state", fit.state.to_pyarray(py))?;
+    result.set_item("intercepts", fit.intercepts.to_pyarray(py))?;
+    result.set_item("slopes", fit.slopes.to_pyarray(py))?;
+    result.set_item("ar_coefficient", fit.ar_coefficient)?;
+    result.set_item("rmse", fit.rmse)?;
+    result.set_item("observed_count", fit.observed_count)?;
+    result.set_item("transition_count", fit.transition_count)?;
+    result.set_item("engine", "rust_cpu_multithreaded")?;
+    Ok(result)
+}
+
 #[pymodule]
 #[pyo3(name = "_multilevel_core")]
 fn fast_mlsirm_multilevel_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_weighted_contextual_effect, m)?)?;
+    m.add_function(wrap_pyfunction!(py_fit_longitudinal_state, m)?)?;
     Ok(())
 }
