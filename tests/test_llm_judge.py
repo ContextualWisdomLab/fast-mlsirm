@@ -176,7 +176,7 @@ def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     assert result.score == 0.8
     assert result.trace_step_count == 1
     assert dict(result.usage) == {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}
-    assert orchestrator.calls[0][1] == "route"
+    assert orchestrator.calls[0][1] == "auto"
     prompt = orchestrator.calls[0][0][1]["content"]
     payload = json.loads(prompt.split("\n", 1)[1])
     assert payload["task"] == "Explain the release plan."
