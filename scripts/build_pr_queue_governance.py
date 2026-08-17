@@ -86,6 +86,7 @@ _HISTORY_PR_LIST_LIMIT = 100
 _GH_TRANSIENT_STATUS_RE = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
 _GH_JSON_MAX_ATTEMPTS = 3
 _GH_JSON_RETRY_SLEEP_SECONDS = 0.5
+_GH_COMMAND_TIMEOUT_SECONDS = 60
 GIT_METADATA_TIMEOUT_SECONDS = 5
 
 
@@ -184,7 +185,17 @@ def _run_gh_json(
     attempts = max(1, int(max_attempts))
     last_error: dict[str, Any] | None = None
     for attempt in range(1, attempts + 1):
-        completed = subprocess.run(command, capture_output=True, text=True)
+        try:
+            completed = subprocess.run(
+                command, capture_output=True, text=True, timeout=_GH_COMMAND_TIMEOUT_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            last_error = {
+                "command": command[1:3],
+                "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
+                "returncode": 124,
+            }
+            break
         payload = _json_from_completed(completed)
         if completed.returncode == 0:
             return payload, None
