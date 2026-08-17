@@ -43,6 +43,18 @@ class _TruthinessProvider:
         return False
 
 
+class _RatingsArrayProvider:
+    """Array-protocol provider that records forbidden early materialization."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __array__(self, *args: object, **kwargs: object) -> np.ndarray:
+        del args, kwargs
+        self.calls += 1
+        raise AssertionError("ratings materialized before Fleiss control validation")
+
+
 def _fake_core(calls: list[tuple[int, type[int], bool, type[bool]]]) -> SimpleNamespace:
     """Return a deterministic Rust-boundary stand-in for marshalling tests."""
 
@@ -110,10 +122,11 @@ def test_fleiss_rejects_invalid_k_before_core_import(
     monkeypatch: pytest.MonkeyPatch,
     k: object,
 ) -> None:
-    """Invalid category controls fail before compiled-core discovery."""
+    """Invalid category controls fail before data materialization or core discovery."""
     real_import = builtins.__import__
     core_import_calls = 0
     _IndexOnlyProvider.calls = 0
+    ratings = _RatingsArrayProvider()
 
     def guarded_import(name, globals_=None, locals_=None, fromlist=(), level=0):
         nonlocal core_import_calls
@@ -125,8 +138,9 @@ def test_fleiss_rejects_invalid_k_before_core_import(
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
     with pytest.raises(ValueError):
-        validation.fleiss_kappa(_ratings(), k=k)
+        validation.fleiss_kappa(ratings, k=k)
 
+    assert ratings.calls == 0
     assert core_import_calls == 0
     assert _IndexOnlyProvider.calls == 0
 
@@ -134,9 +148,10 @@ def test_fleiss_rejects_invalid_k_before_core_import(
 def test_fleiss_rejects_invalid_exact_before_core_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Type-invalid exact-mode controls fail before compiled-core discovery."""
+    """Type-invalid exact controls fail before data materialization or core discovery."""
     real_import = builtins.__import__
     core_import_calls = 0
+    ratings = _RatingsArrayProvider()
 
     def guarded_import(name, globals_=None, locals_=None, fromlist=(), level=0):
         nonlocal core_import_calls
@@ -148,8 +163,9 @@ def test_fleiss_rejects_invalid_exact_before_core_import(
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
     with pytest.raises(ValueError, match="exact must be a boolean"):
-        validation.fleiss_kappa(_ratings(), k=2, exact=1)
+        validation.fleiss_kappa(ratings, k=2, exact=1)
 
+    assert ratings.calls == 0
     assert core_import_calls == 0
 
 
