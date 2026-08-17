@@ -84,7 +84,7 @@ The table below records product truth, not documentation-file presence. “Imple
 | Formal non-nested distinguishability/model comparison | PARTIAL | fail-closed relation-aware comparison exists; additional family-specific evidence and metadata remain incremental |
 | Adaptive rotation criterion selection | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust-backed criterion registry/multi-start selector/report surfaces are integrated; additional criteria/GPU/recovery remain incremental |
 | Multilevel / cross-classified / multiple-membership contracts | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | contextual and longitudinal contracts are integrated; estimator identification/recovery remains separate work |
-| Temporal/longitudinal/drift estimators | PARTIAL | governed contracts/design primitives exist; continuous-time or richer estimator claims require separate recovery evidence |
+| Temporal/longitudinal/drift estimators | IMPLEMENTED_ON_ACTIVE_PR / PARTIAL | independent per-respondent OLS and caller-supplied discrete AR state predictors exist on the longitudinal state-engine PR; continuous-time, shrinkage, and joint multilevel IRT remain separate recovery work |
 | Automated essay scoring calibration/validation | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | governed essay contracts/validation/reporting exist; generalized rater discrimination/range/drift remains incremental |
 | Paired automated-vs-reference rating-range evidence | IMPLEMENTED_ON_PROTECTED_MAIN | Rust-owned paired range/compression diagnostic is integrated |
 | Enterprise issue measurement | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | reusable evidence/calibration adapters exist; causal intervention utility remains downstream/policy-bound |

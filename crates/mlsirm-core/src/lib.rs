@@ -18,6 +18,7 @@ pub mod gtheory;
 pub mod ksirt;
 pub mod linking;
 pub mod lltm;
+pub mod longitudinal;
 pub mod marginal;
 pub mod mhrm;
 pub mod mixed;

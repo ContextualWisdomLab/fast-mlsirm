@@ -1,13 +1,14 @@
-"""Typed Python access to the Rust-native contextual-effects predictor.
+"""Typed Python access to the Rust-native contextual and longitudinal predictors.
 
 This module performs marshalling only: converting a validated
 ``ContextMembershipDesign`` (see ``fast_mlsirm.multilevel.contracts``) into
 the flat CSR arrays ``mlsirm_core::multilevel::weighted_contextual_effect``
-expects, and converting the caller's per-context random-effect values into
-the matching flat vector. The additive sum, its determinism across worker
-counts, and its numerical input validation are owned by the Rust core; see
-that module's docstring for the full linear-predictor context and the
-Browne, Goldstein, and Rasbash (2001) citation.
+expects, converting the caller's per-context random-effect values into the
+matching flat vector, and converting a sealed ``LongitudinalDesign`` into the
+row-offset arrays ``mlsirm_core::longitudinal::fit_longitudinal_state``
+expects. The additive contextual sum, independent per-respondent OLS trends,
+caller-supplied discrete AR predictions, worker determinism, and numerical
+input validation are owned by the Rust core.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from collections.abc import Mapping
 import numpy as np
 
 from .._multilevel_core_loader import multilevel_core
-from .contracts import ContextMembershipDesign
+from .contracts import ContextMembershipDesign, LongitudinalDesign, LongitudinalStateKind
 
 ContextKey = tuple[str, str]
 
@@ -127,4 +128,132 @@ def weighted_contextual_effect(
     )
 
 
-__all__ = ["ContextKey", "weighted_contextual_effect"]
+def _observed_value(values: Mapping[str, float], occasion_id: str) -> float:
+    """Return one caller observation as a real float, or NaN when absent."""
+    try:
+        raw = values.get(occasion_id, np.nan)
+    except Exception:
+        raise ValueError("values must be a plain read-only mapping") from None
+    if isinstance(raw, (bool, np.bool_)) or not isinstance(
+        raw, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError(f"values[{occasion_id!r}] must be a real number")
+    return float(raw)
+
+
+def fit_longitudinal_state(
+    design: LongitudinalDesign,
+    values: Mapping[str, float],
+    *,
+    worker_count: int = 1,
+) -> dict[str, object]:
+    """Fit the Rust-owned respondent state predictor for a sealed design.
+
+    ``values`` maps exact occasion identifiers to observed factor scores. A
+    missing identifier is represented as ``NaN`` so the design remains intact
+    while the Rust fitter excludes that observation from estimation. The
+    returned state is aligned with ``design.occasions`` sorted by respondent
+    and sequence, and includes normative estimand metadata so callers cannot
+    mistake independent respondent OLS trends for population random effects or
+    a caller-supplied AR coefficient for an estimated parameter.
+
+    Parameters
+    ----------
+    design:
+        A package-built ``LongitudinalDesign``. Integrity is verified before
+        marshalling so a tampered or hand-constructed design raises here.
+    values:
+        Mapping from occasion identifier to a real observed state. Absent
+        keys become ``NaN``. Boolean, complex, and non-numeric values are
+        rejected before native dispatch.
+    worker_count:
+        Number of deterministic worker threads (``>= 1``). The numerical
+        result does not depend on this value.
+
+    Returns
+    -------
+    dict
+        Predicted states, respondent intercepts and slopes, RMSE, counts,
+        engine identity, fingerprints, and normative estimand metadata.
+
+    Raises
+    ------
+    ValueError
+        If ``worker_count < 1``, the design is not an exact sealed
+        ``LongitudinalDesign``, a caller observation cannot be read or
+        converted safely, or the Rust-side state contract is invalid.
+    """
+    if worker_count < 1:
+        raise ValueError("worker_count must be at least one")
+    if type(design) is not LongitudinalDesign:
+        raise ValueError("design must be an exact LongitudinalDesign")
+    _ = design.design_fingerprint
+    occasions = list(design.occasions)
+    grouped: dict[str, list] = {
+        respondent_id: [] for respondent_id in design.respondent_ids
+    }
+    for occasion in occasions:
+        grouped[occasion.respondent_id].append(occasion)
+
+    row_offsets = [0]
+    sequence_indices: list[int] = []
+    time_offsets: list[int] = []
+    observations: list[float] = []
+    ordered_occasions: list = []
+    for respondent_id in design.respondent_ids:
+        for occasion in grouped[respondent_id]:
+            sequence_indices.append(occasion.sequence_index)
+            time_offsets.append(occasion.time_offset_milliseconds)
+            observations.append(_observed_value(values, occasion.occasion_id))
+            ordered_occasions.append(occasion)
+        row_offsets.append(len(time_offsets))
+    state_kind = design.state_spec.state_kind
+    ar_coefficient = design.state_spec.autoregressive_coefficient
+    if state_kind is LongitudinalStateKind.RANDOM_INTERCEPT_SLOPE:
+        ar_coefficient = None
+        estimand_scope = "independent_respondent_ols_trend"
+        ar_coefficient_source = "not_applicable"
+    else:
+        estimand_scope = "discrete_ar_state_prediction"
+        ar_coefficient_source = "caller_supplied"
+    core = multilevel_core()
+    result = core.fit_longitudinal_state(
+        np.asarray(row_offsets, dtype=np.uint64),
+        np.asarray(sequence_indices, dtype=np.uint64),
+        np.asarray(time_offsets, dtype=np.int64),
+        np.asarray(observations, dtype=np.float64),
+        state_kind.value,
+        ar_coefficient,
+        worker_count,
+    )
+    return {
+        "state_kind": state_kind.value,
+        "estimand_scope": estimand_scope,
+        "population_random_effects_estimated": False,
+        "ar_coefficient_estimated": False,
+        "ar_coefficient_source": ar_coefficient_source,
+        "state_spec_fingerprint": design.state_spec.state_spec_fingerprint,
+        "design_fingerprint": design.design_fingerprint,
+        "state": np.asarray(result["state"], dtype=np.float64),
+        "intercepts": np.asarray(result["intercepts"], dtype=np.float64),
+        "slopes": np.asarray(result["slopes"], dtype=np.float64),
+        "ar_coefficient": float(result["ar_coefficient"]),
+        "rmse": float(result["rmse"]),
+        "observed_count": int(result["observed_count"]),
+        "transition_count": int(result["transition_count"]),
+        "engine": str(result["engine"]),
+        "respondent_ids": list(design.respondent_ids),
+        "occasion_ids": [occasion.occasion_id for occasion in ordered_occasions],
+        "occasion_records": [
+            {
+                "occasion_id": occasion.occasion_id,
+                "respondent_id": occasion.respondent_id,
+                "sequence_index": occasion.sequence_index,
+                "time_offset_milliseconds": occasion.time_offset_milliseconds,
+            }
+            for occasion in ordered_occasions
+        ],
+    }
+
+
+__all__ = ["ContextKey", "fit_longitudinal_state", "weighted_contextual_effect"]
