@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 
+try:
+    from scripts._bounded_json import parse_json_bounded
+except ModuleNotFoundError:
+    from _bounded_json import parse_json_bounded
+
 
 _RETRYABLE_HTTP_RE = re.compile(r"\bHTTP (?:403|404|429|5\d\d)\b", re.IGNORECASE)
 _REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
@@ -95,8 +100,8 @@ def _run_gh_api(
             continue
         if completed.returncode == 0:
             try:
-                return json.loads(completed.stdout)
-            except json.JSONDecodeError as exc:
+                return parse_json_bounded(completed.stdout)
+            except ValueError as exc:
                 raise GitHubApiError(
                     endpoint=endpoint,
                     returncode=completed.returncode,
