@@ -117,8 +117,9 @@ Rejected. LSR, Rank Centrality, and Plackett–Luce are different estimators.
 
 Invalid shapes, non-finite or negative counts, nonzero diagonals, empty
 comparison graphs, zero-win objects (where the MLE is outside the positive
-parameter space), and non-convergence return errors. `bratt_mm` redirects
-tie-free data to `bradley_terry_mm` rather than returning `alpha0 = 0`.
+parameter space), and non-convergence return errors. `bratt_mm` rejects
+tie-free data; callers must use `bradley_terry_mm` rather than treating
+`alpha0 = 0` as a valid BRATT fit.
 
 ## Security and privacy implications
 

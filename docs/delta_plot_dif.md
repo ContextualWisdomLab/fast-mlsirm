@@ -15,8 +15,8 @@ Architecture decision: [`adr/0016-angoff-delta-plot-dif.md`](adr/0016-angoff-del
 
 ## What is implemented
 
-For a complete binary persons-by-items matrix and a two-group coding
-(`0` = reference, `1` = focal):
+For a persons-by-items matrix containing `0`, `1`, or `NaN` values and a
+two-group coding (`0` = reference, `1` = focal):
 
 1. Compute the per-item proportion correct in each group. Missing cells
    (`NaN`) are dropped per item per group; values other than `0`, `1`, or
