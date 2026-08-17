@@ -128,7 +128,10 @@ def parallel_analysis(
     centile_value = _integer_control("centile", centile, minimum=0, maximum=99)
     seed_value = _integer_control("seed", seed, minimum=0, maximum=_U64_MAX)
 
-    x = np.ascontiguousarray(data, dtype=np.float64)
+    try:
+        x = np.ascontiguousarray(data, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("data must be numeric and convertible to float64") from None
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_persons, n_items = x.shape
