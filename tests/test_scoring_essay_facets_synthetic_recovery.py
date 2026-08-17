@@ -194,6 +194,10 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
         ],
         dtype=np.float64,
     )
+    # ``allowed_scores`` is sorted and unique by the governed calibration
+    # contract, and the fit exposes no separate threshold-axis labels. The
+    # generated and fitted K-1 threshold vectors are therefore compared by
+    # their shared positional category-step order.
     true_thresholds = np.asarray(truth["thresholds"], dtype=np.float64)
     estimated_thresholds = np.asarray(fit.thresholds, dtype=np.float64)
     true_theta = np.asarray(
