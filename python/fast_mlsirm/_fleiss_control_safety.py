@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import wraps
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
