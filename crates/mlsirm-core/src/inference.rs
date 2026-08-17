@@ -3,22 +3,13 @@
 //! Python wrappers must marshal only; inversion/pseudoinverse and SE extraction
 //! stay on the Rust numeric path so inference contracts stay single-sourced.
 
-fn checked_square_len(n: usize, matrix_name: &str) -> Result<usize, String> {
-    n.checked_mul(n)
-        .ok_or_else(|| format!("{matrix_name} dimension exceeds supported size"))
-}
-
 /// Invert a square observed-information / Hessian matrix.
 ///
 /// Attempts a partial-pivot Gauss–Jordan inverse; on singularity falls back to
 /// a Moore–Penrose pseudoinverse via Jacobi eigen-decomposition with eigenvalue
 /// cutoff `rcond * max(|λ|)`. The returned matrix is symmetrised.
 pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f64>, String> {
-    if n == 0 {
-        return Err("hessian must be a square matrix".into());
-    }
-    let expected_len = checked_square_len(n, "hessian")?;
-    if hessian.len() != expected_len {
+    if n == 0 || hessian.len() != n * n {
         return Err("hessian must be a square matrix".into());
     }
     if !rcond.is_finite() || rcond < 0.0 {
@@ -47,24 +38,18 @@ pub fn vcov_from_hessian(hessian: &[f64], n: usize, rcond: f64) -> Result<Vec<f6
 /// Positive-definiteness diagnostic for an observed-information / Hessian matrix.
 ///
 /// Symmetrises the matrix, computes eigenvalues via Jacobi, and reports whether
-/// every eigenvalue exceeds a finite, non-negative `tol`. Used by public
-/// second-order tests so uncertainty diagnostics stay single-sourced on the
-/// numeric core without letting a negative tolerance redefine positive
-/// definiteness.
+/// every eigenvalue exceeds `tol`. Used by public second-order tests so
+/// uncertainty diagnostics stay single-sourced on the numeric core.
 pub fn second_order_test(
     hessian: &[f64],
     n: usize,
     tol: f64,
 ) -> Result<(bool, f64, Vec<f64>), String> {
-    if n == 0 {
+    if n == 0 || hessian.len() != n * n {
         return Err("hessian must be a square matrix".into());
     }
-    let expected_len = checked_square_len(n, "hessian")?;
-    if hessian.len() != expected_len {
-        return Err("hessian must be a square matrix".into());
-    }
-    if !tol.is_finite() || tol < 0.0 {
-        return Err("tol must be a finite non-negative float".into());
+    if !tol.is_finite() {
+        return Err("tol must be finite".into());
     }
     if hessian.iter().any(|v| !v.is_finite()) {
         return Err("hessian entries must be finite".into());
@@ -107,7 +92,6 @@ pub fn finite_difference_hessian(
     if n == 0 {
         return Err("hessian dimension must be positive".into());
     }
-    let matrix_len = checked_square_len(n, "hessian")?;
     if !step.is_finite() || step <= 0.0 {
         return Err("step must be > 0 and finite".into());
     }
@@ -130,7 +114,7 @@ pub fn finite_difference_hessian(
         }
     }
     let h2 = step * step;
-    let mut hessian = vec![0.0_f64; matrix_len];
+    let mut hessian = vec![0.0_f64; n * n];
     for i in 0..n {
         hessian[i * n + i] = (diag_plus[i] - 2.0 * base + diag_minus[i]) / h2;
     }
@@ -161,11 +145,7 @@ pub fn finite_difference_hessian(
 /// diagonals (`NaN`, `±∞`) are preserved so undefined or unbounded uncertainty
 /// is never misrepresented as zero.
 pub fn standard_errors_from_vcov(vcov: &[f64], n: usize) -> Result<Vec<f64>, String> {
-    if n == 0 {
-        return Err("vcov must be a square matrix".into());
-    }
-    let expected_len = checked_square_len(n, "vcov")?;
-    if vcov.len() != expected_len {
+    if n == 0 || vcov.len() != n * n {
         return Err("vcov must be a square matrix".into());
     }
     let mut out = vec![0.0_f64; n];

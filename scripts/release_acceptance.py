@@ -170,10 +170,16 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     report["steps"].append(fit_auto_payload)
 
     summary = read_json_object(fit_auto_out / "fit_summary.json")
-    if summary.get("backend") != "rust":
-        raise RuntimeError("automatic release acceptance fit must use Rust backend")
-    if fit_auto_payload.get("backend") != "rust":
-        raise RuntimeError("fit_payload backend does not match fit_summary backend")
+    if summary.get("backend") not in {"numpy", "rust"}:
+        raise RuntimeError("fit auto backend is not numpy or rust")
+
+    fit_payload_backend = fit_auto_payload.get("backend")
+    if summary.get("backend") == "numpy":
+        if fit_payload_backend != "numpy":
+            raise RuntimeError("fit_payload backend does not match fit_summary backend")
+    elif summary.get("backend") == "rust":
+        if fit_payload_backend != "rust":
+            raise RuntimeError("fit_payload backend does not match fit_summary backend")
 
     if args.require_rust:
         fit_rust_payload = _run_cli(

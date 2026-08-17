@@ -51,58 +51,23 @@ from dataclasses import dataclass
 import numpy as np
 
 
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-_NUMPY_FLOAT_SCALAR_TYPES = (
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
-
-
-def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
-    """Return whether ``value`` has one exact package-trusted scalar type."""
-
-    value_type = type(value)
-    return any(value_type is trusted_type for trusted_type in trusted_types)
-
-
 def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
-    """Validate and coerce a trusted integral scalar within package bounds.
+    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``.
 
-    Only exact built-in numeric types and exact supported NumPy scalar types
-    are admitted. This rejects caller-defined subclasses before ``int()``,
-    ``np.isfinite()``, equality, or range comparisons can dispatch to caller
-    code. Error messages name only the field and package-owned bounds.
+    Error messages name only the field and package-owned bounds. They never
+    interpolate caller-controlled values (or invoke ``repr``/``str`` on them),
+    so hostile content cannot leak through validation diagnostics.
     """
-    value_type = type(value)
-    if value_type is int:
-        iv = value
-    elif _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES):
+    # Reject bool first: ``bool`` is a subclass of ``int`` but is not an
+    # exposure-control cardinality.
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(value, (int, np.integer)):
         iv = int(value)
-    elif value_type is float:
-        if not np.isfinite(value) or not value.is_integer():
+    elif isinstance(value, (float, np.floating)):
+        if not np.isfinite(value) or int(value) != value:
             raise ValueError(f"{name} must be an integer")
         iv = int(value)
-    elif _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES):
-        if not bool(np.isfinite(value)):
-            raise ValueError(f"{name} must be an integer")
-        iv = int(value)
-        if iv != value:
-            raise ValueError(f"{name} must be an integer")
     else:
         raise ValueError(f"{name} must be an integer")
     if iv < minimum or (maximum is not None and iv > maximum):
@@ -193,7 +158,6 @@ def sympson_hetter(
         history_max_exposure=np.asarray(r["history_max_exposure"]),
     )
 
-
 @dataclass
 class AStratifiedResult:
     """a-stratified multistage CAT simulation output.
@@ -249,13 +213,6 @@ def a_stratified(
             Psychological Measurement, 25*(4), 333-341. (Not read; cited
             only as the deferred b-blocking extension.)
     """
-    _usize_max = int(np.iinfo(np.uintp).max)
-    n_strata = _as_int("n_strata", n_strata, maximum=_usize_max)
-    test_length = _as_int("test_length", test_length, maximum=_usize_max)
-    n_simulees = _as_int("n_simulees", n_simulees, maximum=_usize_max)
-    seed = _as_int("seed", seed, maximum=2**64 - 1)
-    q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
-
     from . import _core
 
     a = np.ascontiguousarray(a, dtype=np.float64)
@@ -264,15 +221,16 @@ def a_stratified(
         c = np.zeros_like(a)
     c = np.ascontiguousarray(c, dtype=np.float64)
 
+    _usize_max = int(np.iinfo(np.uintp).max)
     r = _core.py_a_stratified(
         a,
         b,
         c,
-        n_strata,
-        test_length,
-        n_simulees,
-        seed,
-        q_theta,
+        _as_int("n_strata", n_strata, maximum=_usize_max),
+        _as_int("test_length", test_length, maximum=_usize_max),
+        _as_int("n_simulees", n_simulees, maximum=_usize_max),
+        _as_int("seed", seed, maximum=2**64 - 1),
+        _as_int("q_theta", q_theta, maximum=_usize_max),
     )
     return AStratifiedResult(
         exposure=np.asarray(r["exposure"]),
@@ -282,7 +240,6 @@ def a_stratified(
         theta_rmse=float(r["theta_rmse"]),
         theta_bias=float(r["theta_bias"]),
     )
-
 
 def kl_information(
     a: np.ndarray,
@@ -367,8 +324,6 @@ def kl_select(
     (``mlsirm_core::exposure::kl_select``). See :func:`kl_information` for
     sources and references.
     """
-    n_administered = _as_int("n_administered", n_administered, minimum=1)
-
     from . import _core
 
     a = np.asarray(a, dtype=np.float64)
@@ -387,7 +342,7 @@ def kl_select(
         np.ascontiguousarray(c),
         np.ascontiguousarray(mask),
         float(theta0),
-        n_administered,
+        _as_int("n_administered", n_administered, minimum=1),
         float(r),
     )
     return {
@@ -478,8 +433,6 @@ def owen_cat(
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
             adaptive testing* (Research Report 96-01). University of Twente.
     """
-    test_length = _as_int("test_length", test_length, minimum=1)
-
     from . import _core
 
     a = np.asarray(a, dtype=np.float64)
@@ -509,7 +462,7 @@ def owen_cat(
         np.ascontiguousarray(responses, dtype=np.uint8),
         float(mu0),
         float(sig2_0),
-        test_length,
+        _as_int("test_length", test_length, minimum=1),
         None if sig2_stop is None else float(sig2_stop),
     )
     return {
@@ -687,7 +640,6 @@ def epv_select(
         "predictive": np.asarray(r["predictive"]),
     }
 
-
 def sprt_classify(
     a: np.ndarray,
     b: np.ndarray,
@@ -781,8 +733,6 @@ def sprt_classify(
         "llr": float(r["llr"]),
         "llr_trace": np.asarray(r["llr_trace"]),
     }
-
-
 def ci_classify(
     a: np.ndarray,
     b: np.ndarray,
@@ -882,7 +832,6 @@ def ci_classify(
         "upper_trace": np.asarray(r["upper_trace"]),
     }
 
-
 def flexilevel_administer(
     responses: np.ndarray,
     *,
@@ -922,13 +871,12 @@ def flexilevel_administer(
             effectiveness of flexilevel tests* (Research Bulletin RB-71-6;
             ERIC ED051286). Educational Testing Service. (READ.)
     """
-    n_persons = _as_int("n_persons", n_persons, minimum=1)
-    n_items = _as_int("n_items", n_items, minimum=3)
-
     from . import _core
 
     if np.iscomplexobj(np.asarray(responses)):
         raise ValueError("responses must be real-valued")
+    n_persons = _as_int("n_persons", n_persons, minimum=1)
+    n_items = _as_int("n_items", n_items, minimum=3)
     resp = np.asarray(responses)
     if resp.ndim == 2:
         if resp.shape != (n_persons, n_items):
@@ -1008,7 +956,6 @@ def flexilevel_score_distribution(p: np.ndarray) -> dict:
         "variance": float(r["variance"]),
     }
 
-
 def stradaptive_administer(
     stratum: np.ndarray,
     difficulty: np.ndarray,
@@ -1057,16 +1004,15 @@ def stradaptive_administer(
             test* (Research Report 73-3; ERIC ED084301). University of
             Minnesota, Psychometric Methods Program. (READ.)
     """
-    entry_stratum = _as_int("entry_stratum", entry_stratum, minimum=0)
-    min_items = _as_int("min_items", min_items, minimum=1)
-    max_items = _as_int("max_items", max_items, minimum=1)
-
     from . import _core
 
     for name, arr in (("stratum", stratum), ("difficulty", difficulty),
                       ("responses", responses)):
         if np.iscomplexobj(np.asarray(arr)):
             raise ValueError(f"{name} must be real-valued")
+    entry_stratum = _as_int("entry_stratum", entry_stratum, minimum=0)
+    min_items = _as_int("min_items", min_items, minimum=1)
+    max_items = _as_int("max_items", max_items, minimum=1)
     chance = float(chance)
     # Validate BEFORE the integer/uint8 casts (casts truncate/wrap).
     try:
@@ -1115,7 +1061,6 @@ def stradaptive_administer(
         "consistency": float(r["consistency"]),
     }
 
-
 def pyramidal_administer(
     b: np.ndarray,
     n_stages: int,
@@ -1157,10 +1102,9 @@ def pyramidal_administer(
             testing.* (NOT read; all-item and final-difficulty scores
             implemented as described by Larkin & Weiss, 1974.)
     """
-    n_stages = _as_int("n_stages", n_stages, minimum=1)
-
     from . import _core
 
+    n_stages = _as_int("n_stages", n_stages, minimum=1)
     if np.iscomplexobj(np.asarray(b)) or np.iscomplexobj(np.asarray(u)):
         raise ValueError("b and u must be real-valued")
     try:
@@ -1247,11 +1191,10 @@ def two_stage_route(
             ED103466). University of Minnesota, Psychometric Methods
             Program. (READ.)
     """
-    x1 = _as_int("x1", x1, minimum=0)
-    m1 = _as_int("m1", m1, minimum=1)
-
     from . import _core
 
+    x1 = _as_int("x1", x1, minimum=0)
+    m1 = _as_int("m1", m1, minimum=1)
     b_arr = _two_stage_real_1d("b_meas", b_meas)
     theta1, assigned = _core.py_two_stage_route(
         x1, m1, float(a1), float(b1), b_arr, float(c)
@@ -1298,14 +1241,13 @@ def two_stage_score(
             ED103466). University of Minnesota, Psychometric Methods
             Program. (READ.)
     """
+    from . import _core
+
     x1 = _as_int("x1", x1, minimum=0)
     m1 = _as_int("m1", m1, minimum=1)
     x2 = _as_int("x2", x2, minimum=0)
     m2 = _as_int("m2", m2, minimum=1)
     administered = _as_int("administered", administered, minimum=0)
-
-    from . import _core
-
     a_arr = _two_stage_real_1d("a_meas", a_meas)
     b_arr = _two_stage_real_1d("b_meas", b_meas)
     r = _core.py_two_stage_score(

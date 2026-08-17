@@ -41,52 +41,37 @@ and ordered step parameters are distinct model components.
 ## Identification and alignment
 
 The recovery fixture uses centered generating task difficulties, centered
-rater severities, and thresholds summing to zero. Task, rater, and respondent
-estimates are compared after aligning them to the governed task-revision,
-rater-engine, and respondent axes returned by the assembled calibration
-design. The governed `allowed_scores` contract requires the category values to
-be sorted and unique. `fit.thresholds` exposes the corresponding \(K-1\)
-ordered step values without a separate threshold-axis label, so the generated
-and fitted threshold vectors are compared positionally in that shared category
-step order. The test therefore does not infer task, rater, or respondent
-identity from insertion order, display labels, or a scorer's human/AI class,
-and it does not imply that an unlabelled threshold vector can be realigned by
-an independent axis that the fit result does not provide.
+rater severities, and thresholds summing to zero. Estimates are compared only
+after aligning them to the governed task-revision, rater-engine, and respondent
+axes returned by the assembled calibration design. The test therefore does not
+infer identity from insertion order, display labels, or a scorer's human/AI
+class.
 
-The bounded study reports test-layer bias, MAE, and RMSE for:
+The first bounded study reports test-layer bias, MAE, and RMSE for:
 
 - rater severity;
 - task difficulty; and
 - respondent EAP standing.
 
-For shared category thresholds it separately verifies the identified sum-zero
-constraint and reports MAE and RMSE. Mean signed threshold bias is not used as
-independent recovery evidence because both the generating and fitted threshold
-vectors are constrained to sum zero; under that identification, the mean
-signed difference is algebraically near zero even when individual thresholds
-are poorly recovered.
-
 Rater-severity and task-difficulty ordering are checked separately. Correlation
 is deliberately not used as the primary acceptance criterion because a high
-correlation can coexist with substantial scale or location error. Threshold
-recovery is checked on the identified sum-zero scale rather than inferred from
-category-use correlation or support alone.
+correlation can coexist with substantial scale or location error.
 
 ## Current acceptance boundary
 
 The deterministic fixture uses a fully crossed design with four task revisions,
 two raters, three ordered categories, and 500 respondents. The exact numerical
-bounds are regression gates for this seeded fixture, not universal psychometric
-quality cutoffs. If a current-head run exceeds a bound, the response is to
-inspect the estimator, identification, simulation, and sampling behavior; the
-bound must not be loosened merely to obtain a green check.
+thresholds are regression gates for this seeded fixture, not universal
+psychometric quality cutoffs. If a current-head run exceeds a bound, the
+response is to inspect the estimator, identification, simulation, and sampling
+behavior; the threshold must not be loosened merely to obtain a green check.
 
 This slice does **not** establish:
 
 - rater consistency/discrimination recovery;
 - rater-specific threshold or range-restriction recovery;
-- uncertainty or interval coverage for rater/task/threshold parameters when the
-  current estimator does not expose the corresponding standard errors;
+- uncertainty or interval coverage for rater/task parameters when the current
+  estimator does not expose the corresponding standard errors;
 - subgroup fairness, DIF, invariance, or multilingual comparability;
 - construct validity or score interpretation;
 - human/automated scorer interchangeability; or

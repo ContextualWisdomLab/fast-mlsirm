@@ -7,71 +7,7 @@ item response model is fitted. The numerical computation runs in Rust."""
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
-
-from . import fitstats
-
-
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-_NUMPY_FLOATING_SCALAR_TYPES = (
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
-
-
-def _exact_bool(value: object, name: str) -> bool:
-    """Return a trusted bool without invoking caller conversion hooks."""
-    if type(value) is not bool:
-        raise ValueError(f"{name} must be an exact bool")
-    return value
-
-
-def _exact_real(value: object, name: str) -> float:
-    """Return a trusted real scalar without invoking caller conversion hooks."""
-    value_type = type(value)
-    if value_type is int or value_type is float:
-        try:
-            return float(value)
-        except OverflowError as exc:
-            raise ValueError(f"{name} must be a real number") from exc
-    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        try:
-            return float(value)
-        except OverflowError as exc:
-            raise ValueError(f"{name} must be a real number") from exc
-    if any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES):
-        return float(value)
-    raise ValueError(f"{name} must be a real number")
-
-
-def _normalize_mh_controls(
-    *,
-    exclude_studied_item: object,
-    fdr_q: object,
-) -> tuple[bool, float]:
-    """Validate MH semantic controls before caller data or native discovery."""
-    normalized_exclude = _exact_bool(exclude_studied_item, "exclude_studied_item")
-    normalized_fdr_q = _exact_real(fdr_q, "fdr_q")
-    if not math.isfinite(normalized_fdr_q) or not 0.0 < normalized_fdr_q <= 1.0:
-        raise ValueError("fdr_q must be finite and in (0, 1]")
-    return normalized_exclude, normalized_fdr_q
 
 
 def mantel_haenszel_dif(
@@ -123,10 +59,11 @@ def mantel_haenszel_dif(
         Zieky, M. (1993). Practical questions in the use of DIF statistics in test development. In P. W.
             Holland & H. Wainer (Eds.), *Differential item functioning* (pp. 337-347). Erlbaum.
     """
-    exclude_studied_item, fdr_q = _normalize_mh_controls(
-        exclude_studied_item=exclude_studied_item,
-        fdr_q=fdr_q,
-    )
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mantel_haenszel_dif"):
+        raise RuntimeError("mantel_haenszel_dif requires the compiled Rust core")
 
     y = np.asarray(responses)
     if y.ndim != 2:
@@ -143,18 +80,16 @@ def mantel_haenszel_dif(
     gf = np.asarray(g, dtype=np.float64)
     if not np.all(np.isin(gf, (0.0, 1.0))):
         raise ValueError("group labels must be 0 (reference) or 1 (focal)")
-
-    core = fitstats._core_module()
-    if core is None or not hasattr(core, "mantel_haenszel_dif"):
-        raise RuntimeError("mantel_haenszel_dif requires the compiled Rust core")
+    if not np.isfinite(fdr_q) or not 0 < fdr_q <= 1:
+        raise ValueError("fdr_q must be finite and in (0, 1]")
 
     res = core.mantel_haenszel_dif(
         yf.astype(np.int64).reshape(-1),
         gf.astype(np.int64),
         int(n_persons),
         int(n_items),
-        exclude_studied_item,
-        fdr_q,
+        bool(exclude_studied_item),
+        float(fdr_q),
     )
     return {
         "item": np.asarray(res["item"], dtype=np.int64),

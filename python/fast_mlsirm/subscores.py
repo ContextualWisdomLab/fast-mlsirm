@@ -87,6 +87,12 @@ def subscore_analysis(
             H. Wainer (Eds.), *Test scoring* (pp. 343-387). Lawrence
             Erlbaum. (as cited in Sinharay, 2010)
     """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "subscore_analysis"):
+        raise RuntimeError("subscore_analysis requires the compiled Rust core")
+
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -112,12 +118,6 @@ def subscore_analysis(
     if np.any(g >= n_items):
         # trust boundary: the subscale count drives Rust-side allocations
         raise ValueError("groups indices must be < n_items")
-
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "subscore_analysis"):
-        raise RuntimeError("subscore_analysis requires the compiled Rust core")
 
     res = core.subscore_analysis(
         y.reshape(-1), int(n_persons), int(n_items), [int(v) for v in g]

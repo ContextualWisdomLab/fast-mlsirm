@@ -12,35 +12,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import math
+import operator
 from typing import Any
-
-import numpy as np
 
 from .fitstats import vuong_nonnested
 
 MAX_CASEWISE_VALUES = 1_000_000
 MAX_MODEL_LABEL_CHARS = 128
-
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-_NUMPY_FLOAT_SCALAR_TYPES = (
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
 
 
 class ModelRelation(str, Enum):
@@ -114,8 +92,8 @@ def _is_boolean_like(value: Any) -> bool:
 
 
 def _model_label(value: str, name: str) -> str:
-    """Return a bounded printable exact-string label suitable for audit output."""
-    if type(value) is not str:
+    """Return a bounded printable model label suitable for audit output."""
+    if not isinstance(value, str):
         raise ValueError(f"{name} must be a non-empty string")
     normalized = value.strip()
     if not normalized:
@@ -143,34 +121,36 @@ def _relation(value: ModelRelation | str) -> ModelRelation:
 
 
 def _parameter_count(value: Any, name: str) -> int:
-    """Return an exact trusted non-negative integer parameter count."""
-    value_type = type(value)
-    if value_type is int:
-        normalized = value
-    elif any(value_type is trusted for trusted in _NUMPY_INTEGER_SCALAR_TYPES):
-        normalized = int(value)
-    else:
+    """Return a non-negative integer parameter count while rejecting booleans."""
+    if _is_boolean_like(value):
         raise ValueError(f"{name} must be a non-negative integer")
+    try:
+        normalized = operator.index(value)
+    except MemoryError:
+        raise
+    except Exception:
+        raise ValueError(f"{name} must be a non-negative integer") from None
     if normalized < 0:
         raise ValueError(f"{name} must be a non-negative integer")
-    return normalized
+    return int(normalized)
 
 
 def _trusted_real_scalar(value: Any, message: str) -> float:
-    """Return an exact built-in or genuine NumPy real scalar."""
+    """Return a built-in or NumPy real scalar without custom coercion hooks."""
     value_type = type(value)
-    trusted = (
-        value_type is int
-        or value_type is float
-        or any(value_type is candidate for candidate in _NUMPY_INTEGER_SCALAR_TYPES)
-        or any(value_type is candidate for candidate in _NUMPY_FLOAT_SCALAR_TYPES)
-    )
-    if not trusted:
+    if _is_boolean_like(value):
         raise ValueError(message)
-    try:
+    if value_type is int or value_type is float:
         return float(value)
-    except OverflowError:
-        raise ValueError(message) from None
+    if value_type.__module__.startswith("numpy"):
+        mro = value_type.__mro__
+        if any(
+            base.__module__.startswith("numpy")
+            and base.__name__ in {"integer", "floating"}
+            for base in mro
+        ):
+            return float(value)
+    raise ValueError(message)
 
 
 def _alpha_value(value: Any) -> float:

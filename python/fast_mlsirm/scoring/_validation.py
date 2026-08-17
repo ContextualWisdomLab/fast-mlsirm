@@ -7,11 +7,10 @@ from enum import Enum
 import hashlib
 import json
 import math
+import operator
 import re
 from types import MappingProxyType
 from typing import Any, TypeVar
-
-import numpy as np
 
 from fast_mlsirm.rubric.models import _identifier, _semantic_version, _text
 
@@ -32,20 +31,6 @@ MIN_SIGNED_INTEGER = -(1 << 63)
 MAX_SIGNED_INTEGER = (1 << 63) - 1
 FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
 _SENSITIVE_METADATA_FIELDS = frozenset(
     {
         "answer_text",
@@ -205,38 +190,35 @@ def strict_boolean(value: Any, name: str, path: str | None = None) -> bool:
     return value
 
 
-def _has_exact_type(value: Any, trusted_types: tuple[type, ...]) -> bool:
-    """Return whether a control has one exact package-trusted scalar type."""
-    value_type = type(value)
-    return any(value_type is trusted_type for trusted_type in trusted_types)
-
-
 def bounded_positive_integer(
     value: Any,
     name: str,
     maximum: int,
     path: str | None = None,
 ) -> int:
-    """Return a bounded positive integer without caller-controlled coercion."""
+    """Return a bounded positive integer with stable conversion failures."""
     resolved_path = path or f"$.{name}"
-    value_type = type(value)
-    if value_type is int:
-        normalized = value
-    elif _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES):
-        normalized = int(value)
-    else:
+    if isinstance(value, bool):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be an integer between 1 and {maximum}",
         )
-    if not 1 <= normalized <= maximum:
+    try:
+        normalized = operator.index(value)
+    except (TypeError, ValueError, OverflowError):
+        raise assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be an integer between 1 and {maximum}",
+        ) from None
+    if isinstance(normalized, bool) or not 1 <= normalized <= maximum:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be between 1 and {maximum}",
         )
-    return normalized
+    return int(normalized)
 
 
 def bounded_values(

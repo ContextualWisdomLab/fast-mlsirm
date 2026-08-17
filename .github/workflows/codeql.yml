@@ -1,44 +1,30 @@
 name: CodeQL
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  analyze-actions:
-    # Branch protection requires a deterministic Actions-language CodeQL check
-    # on PRs. Default setup remains the repository's code-scanning upload owner.
-    name: Analyze (actions)
+  analyze:
+    # The repository has GitHub CodeQL default setup enabled; keep this
+    # advanced workflow manual-only so it documents SAST coverage without
+    # colliding with default setup uploads on pull_request/push.
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+          - language: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3
         with:
-          languages: actions
+          languages: ${{ matrix.language }}
       - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3
-        with:
-          upload: never
-
-  analyze-python:
-    # Default setup already owns ordinary Python code-scanning uploads.
-    # Retain a no-upload advanced diagnostic only for explicit operator runs.
-    if: github.event_name == 'workflow_dispatch'
-    name: Analyze (python)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3
-        with:
-          languages: python
-      - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3
-        with:
-          upload: never

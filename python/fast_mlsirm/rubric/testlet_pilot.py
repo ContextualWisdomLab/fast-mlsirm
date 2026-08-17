@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import InitVar, dataclass
 import math
+import operator
 from typing import Any, Iterable
 
 import numpy as np
@@ -22,76 +23,38 @@ from .pilot_observations import (
 _TESTLET_DESIGN_TOKEN = object()
 _SUPPORTED_Q_GAMMA = (7, 11, 15, 21, 31, 41)
 _SUPPORTED_MODELS = ("rasch", "2pl")
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-_NUMPY_FLOATING_SCALAR_TYPES = (
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
-
-
-def _is_exact_numpy_integer_scalar(value_type: type[Any]) -> bool:
-    """Return whether ``value_type`` is one supported NumPy integer class."""
-    return any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES)
-
-
-def _is_exact_numpy_floating_scalar(value_type: type[Any]) -> bool:
-    """Return whether ``value_type`` is one supported NumPy floating class."""
-    return any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES)
 
 
 def _normalized_integer(value: Any, name: str, *, minimum: int, maximum: int) -> int:
-    """Return one bounded trusted integer without caller protocol dispatch."""
-    value_type = type(value)
-    if value_type is int:
-        normalized = value
-    elif _is_exact_numpy_integer_scalar(value_type):
-        normalized = int(value)
-    else:
+    """Return one bounded integer while rejecting booleans and fractions."""
+    if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be an integer")
+    try:
+        normalized = operator.index(value)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
     if not minimum <= normalized <= maximum:
         raise ValueError(f"{name} must be between {minimum} and {maximum}")
-    return normalized
+    return int(normalized)
 
 
 def _normalized_float(value: Any, name: str) -> float:
-    """Return one finite non-negative trusted numeric scalar."""
-    value_type = type(value)
-    if value_type is int or value_type is float:
-        normalized = float(value)
-    elif _is_exact_numpy_integer_scalar(value_type) or _is_exact_numpy_floating_scalar(
-        value_type
+    """Return one finite non-negative numeric scalar."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.integer, np.floating)
     ):
-        normalized = float(value)
-    else:
         raise ValueError(f"{name} must be a finite non-negative number")
+    normalized = float(value)
     if not math.isfinite(normalized) or normalized < 0.0:
         raise ValueError(f"{name} must be a finite non-negative number")
     return normalized
 
 
 def _normalized_bool(value: Any, name: str) -> bool:
-    """Return one strict trusted boolean setting."""
-    value_type = type(value)
-    if value_type is bool:
-        return value
-    if value_type is np.bool_:
-        return bool(value)
-    raise ValueError(f"{name} must be a boolean")
+    """Return one strict boolean setting."""
+    if not isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be a boolean")
+    return bool(value)
 
 
 @dataclass(frozen=True)
@@ -223,7 +186,7 @@ class TestletPilotDesign:
         responsibility for Rust-core availability, convergence, fit, and the
         estimated testlet variances.
         """
-        if type(model) is not str:
+        if not isinstance(model, str):
             raise ValueError("model must be 'rasch' or '2pl'")
         normalized_model = model.casefold()
         if normalized_model not in _SUPPORTED_MODELS:

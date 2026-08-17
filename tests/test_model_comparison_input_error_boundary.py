@@ -66,13 +66,10 @@ class _MemoryFloat:
 
 
 class _MemoryIndex:
-    """Probe an untrusted integer protocol that must never be dispatched."""
-
-    calls = 0
+    """Raise resource exhaustion during caller-controlled index coercion."""
 
     def __index__(self) -> int:
-        """Record forbidden index conversion before simulating exhaustion."""
-        type(self).calls += 1
+        """Preserve process-level resource exhaustion from index conversion."""
         raise MemoryError("index allocation exhausted")
 
 
@@ -149,22 +146,12 @@ def test_parameter_count_conversion_failure_is_redacted() -> None:
         lambda: compare_nonnested_models(_MemoryIteratorFactory(), (0.1, 0.2), 2, 2),
         lambda: compare_nonnested_models(_MemoryIterable(), (0.1, 0.2), 2, 2),
         lambda: compare_nonnested_models((_MemoryFloat(), 0.2), (0.1, 0.2), 2, 2),
+        lambda: compare_nonnested_models(
+            (0.1, 0.2), (0.1, 0.2), _MemoryIndex(), 2  # type: ignore[arg-type]
+        ),
     ],
 )
 def test_memory_error_remains_explicit_resource_exhaustion(callable_) -> None:
-    """Resource exhaustion from accepted casewise callbacks remains explicit."""
+    """Resource exhaustion must not be downgraded into an input-validation error."""
     with pytest.raises(MemoryError):
         callable_()
-
-
-def test_untrusted_memory_index_is_rejected_without_callback() -> None:
-    """Parameter-count trust is established before arbitrary index protocols run."""
-    _MemoryIndex.calls = 0
-    with pytest.raises(ValueError, match="k_a must be a non-negative integer"):
-        compare_nonnested_models(
-            (0.1, 0.2),
-            (0.1, 0.2),
-            _MemoryIndex(),  # type: ignore[arg-type]
-            2,
-        )
-    assert _MemoryIndex.calls == 0

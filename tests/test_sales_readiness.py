@@ -18,8 +18,7 @@ def _load_sales_readiness():
 
 def _touch(path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = json.dumps({"backend": "rust"}) if path.name == "fit_summary.json" else "ok"
-    path.write_text(content, encoding="utf-8")
+    path.write_text("ok", encoding="utf-8")
     return str(path)
 
 
@@ -75,7 +74,7 @@ def _write_acceptance(tmp_path: Path, *, include_rust: bool = True) -> Path:
                 "files": {"summary": _touch(artifacts / "fit_rust" / "fit_summary.json")},
             }
         )
-    path = artifacts / "acceptance_summary.json"
+    path = tmp_path / "acceptance_summary.json"
     path.write_text(module.json.dumps(summary), encoding="utf-8")
     return path
 

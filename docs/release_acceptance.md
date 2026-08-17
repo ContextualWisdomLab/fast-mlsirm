@@ -161,10 +161,9 @@ The Figma sync report writes `figma_evidence_sync_manifest.json` and
 `figma_evidence_sync_report.html`. A final gate can require it with
 `scripts/sales_readiness.py --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync`.
 
-## Required Rust Core
+## Optional Local Mode
 
-`--backend auto` requires the compiled Rust core and fails closed when that
-extension is unavailable. Omitting `--require-rust` skips only the second,
-explicit `--backend rust` fit; it does not enable a NumPy fallback for the
-automatic production acceptance path. Explicit NumPy remains a reference and
-parity choice outside this release-acceptance path.
+If Rust backend is unavailable in the local environment, run without
+`--require-rust` and the script validates the default `auto` path only. For
+commercial package verification, CI and distribution checks should keep
+`--require-rust`.

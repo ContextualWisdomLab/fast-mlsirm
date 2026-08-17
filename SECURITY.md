@@ -8,8 +8,8 @@ notice explicitly says otherwise.
 
 | Version | Supported |
 | --- | --- |
-| 0.8.x | Yes |
-| < 0.8 | No |
+| 0.7.x | Yes |
+| < 0.7 | No |
 
 ## Reporting a Vulnerability
 

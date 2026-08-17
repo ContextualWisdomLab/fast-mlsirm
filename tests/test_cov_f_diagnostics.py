@@ -9,10 +9,9 @@ deterministic.
 
 from __future__ import annotations
 
-from importlib import import_module
-
 import numpy as np
 import pytest
+
 from fast_mlsirm import FitConfig, fit
 from fast_mlsirm import diagnostics as diag
 from fast_mlsirm.diagnostics import (
@@ -365,47 +364,6 @@ def test_dimensionality_diagnostics_rejects_excessive_fit_budget():
             latent_dims=list(range(1, 33)),
             k_folds=32,
             seed=1,
-        )
-
-
-def test_dimensionality_diagnostics_readiness_blocks_before_folds(monkeypatch):
-    """Production dimension diagnostics reject an unready source matrix."""
-
-    def native_must_not_run(*args, **kwargs):
-        raise AssertionError("fit must not run for an unready experiment")
-
-    monkeypatch.setattr(import_module("fast_mlsirm.fit"), "fit", native_must_not_run)
-    with pytest.raises(ValueError, match=r"at least .* persons"):
-        dimensionality_diagnostics(
-            np.zeros((4, 2)),
-            np.zeros(2, dtype=int),
-            latent_dims=[1],
-            k_folds=2,
-            require_experiment_readiness=True,
-        )
-
-
-def test_dimensionality_diagnostics_readiness_checks_each_training_fold(monkeypatch):
-    """A fold with too few observed item responses cannot reach fitting."""
-
-    def native_must_not_run(*args, **kwargs):
-        raise AssertionError("fit must not run for an unready training fold")
-
-    monkeypatch.setattr(import_module("fast_mlsirm.fit"), "fit", native_must_not_run)
-    fold = np.zeros((5, 2), dtype=bool)
-    fold[:3, 0] = True
-    monkeypatch.setattr(
-        "fast_mlsirm.diagnostics._validation_folds",
-        lambda observed, k_folds, seed: [fold],
-    )
-    responses = np.array([[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]])
-    with pytest.raises(ValueError, match="non-missing"):
-        dimensionality_diagnostics(
-            responses,
-            np.zeros(2, dtype=int),
-            latent_dims=[1],
-            k_folds=2,
-            require_experiment_readiness=True,
         )
 
 

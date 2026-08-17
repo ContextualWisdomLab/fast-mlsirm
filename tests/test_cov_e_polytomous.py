@@ -90,7 +90,7 @@ def test_fit_polytomous_rejects_bad_q_theta():
 def test_fit_polytomous_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        fit_polytomous(_responses(5, 2, 2), n_cat=2)
+        fit_polytomous(_responses(4, 2, 2), n_cat=2)
 
 
 # --- score_polytomous ---
@@ -173,7 +173,7 @@ def test_fit_lsirm_rejects_bad_tol():
 def test_fit_lsirm_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        fit_lsirm_polytomous(_responses(5, 2, 3), n_cat=3)
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3)
 
 
 # --- polytomous_information_criteria: latent-space parameter count ---
@@ -238,7 +238,7 @@ def test_fit_nominal_rejects_bad_q_theta():
 def test_fit_nominal_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        fit_nominal_polytomous(_responses(5, 2, 3), n_cat=3)
+        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3)
 
 
 # --- person_fit_polytomous ---

@@ -30,15 +30,12 @@ MAX_LBFGS_HISTORY = 100
 # Aggregate optimizer work (max_iter x n_restarts) across a single fit; the
 # per-field caps still permit 1e8 iterations together, so bound the product.
 MAX_AGGREGATE_ITERS = 10_000_000
-# Simulation config bounds. ``simulate`` materializes several dense N x J
-# work arrays (distance, predictor, float64 sigmoid input, probabilities, and
-# responses), so the response-cell budget is intentionally much smaller than
-# a single-array memory limit. Per-axis caps also stop small-product but
-# pathological inputs before RNG/covariance work begins.
-MAX_SIM_PERSONS = 100_000
-MAX_SIM_DIMS = 50
-MAX_SIM_ITEMS_PER_DIM = 1_000
-MAX_SIM_CELLS = 20_000_000
+# Simulation config bounds: reject dimensions whose dense response matrix
+# (n_persons x n_items float64) would exhaust memory before any real work.
+MAX_SIM_PERSONS = 5_000_000
+MAX_SIM_DIMS = 1_000
+MAX_SIM_ITEMS_PER_DIM = 10_000
+MAX_SIM_CELLS = 200_000_000
 
 
 @dataclass(frozen=True)

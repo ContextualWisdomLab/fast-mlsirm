@@ -10,8 +10,6 @@ import operator
 import re
 from typing import Any, Iterable, TypeVar
 
-import numpy as np
-
 SCHEMA_VERSION = "1.0"
 MAX_TEXT_LENGTH = 8_192
 MAX_COLLECTION_VALUES = 32
@@ -29,9 +27,6 @@ _SEMANTIC_VERSION_PATTERN = re.compile(
 )
 
 EnumValue = TypeVar("EnumValue", bound=Enum)
-_TRUSTED_NUMPY_INTEGER_TYPES = tuple(
-    np.dtype(code).type for code in np.typecodes["AllInteger"]
-)
 
 
 class ResponseFormat(str, Enum):
@@ -180,15 +175,13 @@ def _enum_tuple(
 
 
 def _integer(value: Any, name: str) -> int:
-    """Normalize only exact package-trusted integer scalar identities."""
-    value_type = type(value)
-    if value_type is bool:
+    """Normalize an integer while rejecting booleans and fractional values."""
+    if isinstance(value, bool):
         raise ValueError(f"{name} must be an integer")
-    if value_type is int:
-        return value
-    if not any(value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_TYPES):
-        raise ValueError(f"{name} must be an integer")
-    return operator.index(value)
+    try:
+        return operator.index(value)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
 
 
 def _unsigned_integer(value: Any, name: str) -> int:

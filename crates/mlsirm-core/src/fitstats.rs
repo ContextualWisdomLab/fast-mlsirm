@@ -1916,48 +1916,8 @@ fn chol_solve(l: &[f64], n: usize, b: &[f64]) -> Vec<f64> {
     x
 }
 
-/// Maximum supported dense workspace for projected M2, in `f64` elements.
-pub const PROJECTED_M2_MAX_WORKSPACE_ELEMENTS: usize = 4_000_000;
-
-/// Return the peak dense element budget required by projected M2.
-pub fn projected_m2_workspace_elements(
-    n_moments: usize,
-    n_parameters: usize,
-) -> Result<usize, String> {
-    let xi_elements = n_moments
-        .checked_mul(n_moments)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-    let delta_elements = n_moments
-        .checked_mul(n_parameters)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-    let parameter_elements = n_parameters
-        .checked_mul(n_parameters)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-    let two_moments = n_moments
-        .checked_mul(2)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-    let two_parameters = n_parameters
-        .checked_mul(2)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-
-    [
-        xi_elements,
-        delta_elements,
-        delta_elements,
-        parameter_elements,
-        two_moments,
-        two_parameters,
-    ]
-    .into_iter()
-    .try_fold(0_usize, |total, elements| {
-        total
-            .checked_add(elements)
-            .ok_or_else(|| "projected M2 dimensions overflow".to_string())
-    })
-}
-
 /// Evaluate the M2 projected quadratic form without forming either inverse.
-pub fn projected_m2(
+fn projected_m2(
     e: &[f64],
     delta: &[f64],
     mut xi: Vec<f64>,
@@ -1967,39 +1927,6 @@ pub fn projected_m2(
 ) -> Result<f64, String> {
     let s = n_moments;
     let p = n_parameters;
-    let delta_elements = s
-        .checked_mul(p)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-    let xi_elements = s
-        .checked_mul(s)
-        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
-    let workspace_elements = projected_m2_workspace_elements(s, p)?;
-    if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
-        return Err(
-            "projected M2 workspace exceeds supported element budget".to_string(),
-        );
-    }
-    if e.len() != s {
-        return Err("residual length must match n_moments".to_string());
-    }
-    if delta.len() != delta_elements {
-        return Err("delta length must equal n_moments * n_parameters".to_string());
-    }
-    if xi.len() != xi_elements {
-        return Err("xi length must equal n_moments * n_moments".to_string());
-    }
-    if !n.is_finite() {
-        return Err("n must be finite".to_string());
-    }
-    if e.iter().any(|value| !value.is_finite()) {
-        return Err("residual values must be finite".to_string());
-    }
-    if delta.iter().any(|value| !value.is_finite()) {
-        return Err("delta values must be finite".to_string());
-    }
-    if xi.iter().any(|value| !value.is_finite()) {
-        return Err("xi values must be finite".to_string());
-    }
     cholesky_lower(&mut xi, s)?;
     let u = chol_solve(&xi, s, e); // Xi^-1 e
     let mut w = vec![0.0_f64; s * p]; // Xi^-1 Delta

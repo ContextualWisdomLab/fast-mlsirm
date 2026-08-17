@@ -747,49 +747,6 @@ def cat_next_item(
     return res
 
 
-_TRUSTED_NUMPY_INTEGER_TYPES = (
-    np.dtype(np.int8).type,
-    np.dtype(np.int16).type,
-    np.dtype(np.int32).type,
-    np.dtype(np.int64).type,
-    np.dtype(np.uint8).type,
-    np.dtype(np.uint16).type,
-    np.dtype(np.uint32).type,
-    np.dtype(np.uint64).type,
-)
-
-
-def _serving_integer_control(
-    value: Any,
-    *,
-    name: str,
-    minimum: int,
-    maximum: int,
-) -> int:
-    """Normalize one integer request control without invoking caller hooks."""
-    value_type = type(value)
-    if value_type is int:
-        normalized = value
-    elif any(
-        value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_TYPES
-    ):
-        normalized = int(value)
-    else:
-        raise ValueError(f"{name} must be an integer")
-    if not minimum <= normalized <= maximum:
-        raise ValueError(f"{name} must be between {minimum} and {maximum}")
-    return normalized
-
-
-def _plausible_values_device(value: Any) -> str:
-    """Validate the Rust-supported plausible-values device vocabulary."""
-    if type(value) is not str:
-        raise ValueError("device must be a string")
-    if value not in ("cpu", "gpu", "auto"):
-        raise ValueError("device must be one of ['cpu', 'gpu', 'auto']")
-    return value
-
-
 def plausible_values(
     bundle: dict[str, Any],
     responses: dict[str, Any] | list[dict[str, Any]] | np.ndarray,
@@ -812,20 +769,17 @@ def plausible_values(
     from plausible values? *Psychometrika, 81*(2), 274–289.
     https://doi.org/10.1007/s11336-016-9497-x
     """
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("plausible_values requires the compiled Rust core")
     _validate_bundle(bundle)
-    draw_count = _serving_integer_control(
-        n_draws,
-        name="n_draws",
-        minimum=1,
-        maximum=MAX_DRAWS,
-    )
-    seed_value = _serving_integer_control(
-        seed,
-        name="seed",
-        minimum=0,
-        maximum=(1 << 64) - 1,
-    )
-    device_value = _plausible_values_device(device)
+    if not isinstance(n_draws, (int, np.integer)) or isinstance(
+        n_draws, (bool, np.bool_)
+    ):
+        raise ValueError("n_draws must be an integer")
+    draw_count = int(n_draws)
+    if not (1 <= draw_count <= MAX_DRAWS):
+        raise ValueError(f"n_draws must be between 1 and {MAX_DRAWS}")
     items = bundle["items"]
     n_items = bundle["n_items"]
     code_to_col = {it["code"]: j for j, it in enumerate(items)}
@@ -870,15 +824,12 @@ def plausible_values(
         raise ValueError("observed responses must be 0 or 1")
     mean, sd = serving_prior(bundle) if prior is None else (
         np.asarray(prior[0], dtype=float), np.asarray(prior[1], dtype=float))
-    core = _core_module()
-    if core is None:
-        raise RuntimeError("plausible_values requires the compiled Rust core")
     pv = core.plausible_values(
         np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
         prior_mean=mean, prior_sd=sd,
         q_theta=int(bundle["quadrature"]["q_theta"]), xi_rule="gh",
-        q_xi=int(bundle["quadrature"]["q_xi"]), n_draws=draw_count, seed=seed_value,
-        device=device_value,
+        q_xi=int(bundle["quadrature"]["q_xi"]), n_draws=draw_count, seed=int(seed),
+        device=str(device),
         **_bundle_bank_args(bundle),
     )
     return np.asarray(pv).reshape(y.shape[0], draw_count, bundle["n_dims"])

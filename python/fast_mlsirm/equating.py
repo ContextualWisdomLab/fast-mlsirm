@@ -6,7 +6,6 @@ equating, all computed in the Rust core."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
@@ -14,64 +13,6 @@ import numpy as np
 _EG_METHOD_ALIASES = frozenset(
     {"mean", "m", "linear", "lin", "l", "equipercentile", "equip", "ep"}
 )
-_NEAT_METHOD_ALIASES = frozenset(
-    {"chained", "chain", "ce", "frequencyestimation", "fe"}
-)
-_NEAT_LINEAR_METHOD_ALIASES = frozenset({"tucker", "t", "levine", "l"})
-_ANCHOR_KIND_ALIASES = frozenset(
-    {"internal", "int", "i", "external", "ext", "e"}
-)
-_CONTINUIZATION_ALIASES = frozenset(
-    {"uniform", "u", "gaussian", "gauss", "normal", "g"}
-)
-_SEE_ROUTE_ALIASES = frozenset({"bootstrap", "analytic"})
-_CIRCLE_ARC_METHOD_ALIASES = frozenset(
-    {"1", "arc1", "circlearc1", "2", "arc2", "circlearc2"}
-)
-_NUMPY_INTEGER_SCALAR_TYPES = tuple(
-    np.dtype(name).type
-    for name in (
-        "int8",
-        "int16",
-        "int32",
-        "int64",
-        "uint8",
-        "uint16",
-        "uint32",
-        "uint64",
-    )
-)
-_NUMPY_FLOAT_SCALAR_TYPES = tuple(
-    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
-)
-_U64_MAX = (1 << 64) - 1
-
-
-def _is_exact_numpy_scalar(value: object, trusted_types: tuple[type, ...]) -> bool:
-    """Return whether ``value`` has one exact trusted NumPy scalar identity.
-
-    Identity checks intentionally avoid ``isinstance`` so caller-defined NumPy
-    subclasses cannot become executable conversion providers at the Python/Rust
-    trust boundary.
-    """
-    value_type = type(value)
-    return any(value_type is trusted_type for trusted_type in trusted_types)
-
-
-def _require_string_control(
-    value: object,
-    *,
-    name: str,
-    aliases: frozenset[str],
-    description: str,
-) -> str:
-    """Return an exact built-in string whose normalized identity is allow-listed."""
-    if type(value) is not str:
-        raise ValueError(f"{name} must be a str {description}")
-    normalized = value.lower().replace("-", "").replace("_", "")
-    if normalized not in aliases:
-        raise ValueError(f"{name} must be a supported {description}")
-    return value
 
 
 def _require_equating_method(method, *, name: str = "method") -> str:
@@ -81,128 +22,34 @@ def _require_equating_method(method, *, name: str = "method") -> str:
     denial-of-service; accept only exact ``str`` identities so validation never
     executes those callbacks before the Rust core is reached.
     """
-    return _require_string_control(
-        method,
-        name=name,
-        aliases=_EG_METHOD_ALIASES,
-        description="equating method identity",
-    )
-
-
-def _require_see_route(route: object) -> str:
-    """Return one exact legacy SEE route identity without caller callbacks.
-
-    ``equating_standard_errors`` historically accepted only the two exact
-    lowercase route names because Python selected the implementation before
-    native dispatch. Keep that public identity contract while rejecting
-    subclasses and arbitrary protocol providers before Rust discovery.
-    """
-    if type(route) is not str or route not in _SEE_ROUTE_ALIASES:
-        raise ValueError("route must be 'bootstrap' or 'analytic'")
-    return route
-
-
-def _require_circle_arc_method(value: object) -> str:
-    """Return one exact Rust-supported circle-arc method identity.
-
-    Circle-arc parsing does not remove punctuation in Rust, so this boundary
-    intentionally performs only case folding and preserves that exact vocabulary.
-    """
-    if type(value) is not str or value.lower() not in _CIRCLE_ARC_METHOD_ALIASES:
-        raise ValueError("method must be a supported circle-arc method identity")
-    return value
-
-
-def _require_integer_control(value: object, name: str) -> int:
-    """Normalize one exact Python/NumPy integer without executable coercion."""
-    if type(value) is int:
-        return value
-    if _is_exact_numpy_scalar(value, _NUMPY_INTEGER_SCALAR_TYPES):
-        return int(value)
-    raise ValueError(f"{name} must be an integer control")
-
-
-def _require_positive_integer_control(value: object, name: str) -> int:
-    """Return a trusted integer greater than or equal to one."""
-    normalized = _require_integer_control(value, name)
-    if normalized < 1:
-        raise ValueError(f"{name} must be a positive integer")
-    return normalized
-
-
-def _require_seed(value: object, name: str = "seed") -> int:
-    """Return a trusted Rust ``u64`` seed without caller-controlled coercion."""
-    normalized = _require_integer_control(value, name)
-    if normalized < 0 or normalized > _U64_MAX:
-        raise ValueError(f"{name} must be in the unsigned 64-bit integer range")
-    return normalized
-
-
-def _require_real_control(value: object, name: str) -> float:
-    """Normalize one exact Python/NumPy real scalar and require finiteness."""
-    value_type = type(value)
-    if value_type is int or value_type is float:
-        trusted = True
-    else:
-        trusted = _is_exact_numpy_scalar(
-            value,
-            _NUMPY_INTEGER_SCALAR_TYPES + _NUMPY_FLOAT_SCALAR_TYPES,
+    if type(method) is not str:
+        raise ValueError(f"{name} must be a str method identity")
+    normalized = method.lower().replace("-", "").replace("_", "")
+    if normalized not in _EG_METHOD_ALIASES:
+        raise ValueError(
+            f"{name} must be one of mean, linear, or equipercentile"
         )
-    if not trusted:
-        raise ValueError(f"{name} must be a real numeric control")
-    try:
-        normalized = float(value)
-    except OverflowError:
-        raise ValueError(f"{name} must be a finite real numeric control") from None
-    if not math.isfinite(normalized):
-        raise ValueError(f"{name} must be a finite real numeric control")
-    return normalized
-
-
-def _require_weight(value: object, name: str = "w1") -> float:
-    """Return a finite synthetic-population weight in the closed unit interval."""
-    normalized = _require_real_control(value, name)
-    if normalized < 0.0 or normalized > 1.0:
-        raise ValueError(f"{name} must be between 0 and 1 inclusive")
-    return normalized
-
-
-def _require_composite_exponent(value: object) -> float:
-    """Return the finite Holland-Strawderman exponent accepted by Rust."""
-    normalized = _require_real_control(value, "p")
-    if normalized < 1.0:
-        raise ValueError("p must be finite and >= 1")
-    return normalized
-
-
-def _require_optional_bandwidth(value: object, name: str) -> float | None:
-    """Return ``None`` or a finite strictly positive kernel bandwidth."""
-    if value is None:
-        return None
-    normalized = _require_real_control(value, name)
-    if normalized <= 0.0:
-        raise ValueError(f"{name} must be > 0")
-    return normalized
-
-
-def _require_ci_level(value: object, name: str = "ci_level") -> float:
-    """Return a finite confidence level strictly between zero and one."""
-    normalized = _require_real_control(value, name)
-    if normalized <= 0.0 or normalized >= 1.0:
-        raise ValueError(f"{name} must be strictly between 0 and 1")
-    return normalized
+    return method
 
 
 def _require_optional_score_ceiling(value, name: str) -> int | None:
     """Return a trusted optional score ceiling without caller-controlled int().
 
-    Accept exact plain ``int`` and genuine NumPy integer scalar identities only.
-    Arbitrary protocol providers and Python/NumPy subclasses are rejected before
-    conversion so validation cannot execute caller code.
+    Accept plain ``int`` and NumPy integer scalars only. Arbitrary objects that
+    implement ``__int__`` / ``__index__`` are rejected before conversion so
+    validation cannot be hijacked by hostile callables.
     """
     if value is None:
         return None
-    return _require_positive_integer_control(value, name)
+    if type(value) is int:
+        normalized = value
+    elif isinstance(value, np.integer):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer score ceiling")
+    if normalized <= 0:
+        raise ValueError(f"{name} must be a positive integer score ceiling")
+    return normalized
 
 
 @dataclass
@@ -343,16 +190,6 @@ def equate_neat(
     """
     from .fitstats import _core_module
 
-    method = _require_string_control(
-        method,
-        name="method",
-        aliases=_NEAT_METHOD_ALIASES,
-        description="NEAT equating method",
-    )
-    k_x = _require_optional_score_ceiling(k_x, "k_x")
-    k_y = _require_optional_score_ceiling(k_y, "k_y")
-    k_v = _require_optional_score_ceiling(k_v, "k_v")
-    w1 = _require_weight(w1)
     core = _core_module()
     if core is None or not hasattr(core, "equate_neat"):
         raise RuntimeError("equate_neat requires the compiled Rust core")
@@ -364,9 +201,9 @@ def equate_neat(
     ky = _infer_k(yt, k_y, "k_y")
     kv = _infer_k(np.concatenate([xa, ya]), k_v, "k_v")
     res = core.equate_neat(
-        xt, xa, yt, ya, int(kx), int(ky), int(kv), method=method, w1=w1
+        xt, xa, yt, ya, int(kx), int(ky), int(kv), method=str(method), w1=float(w1)
     )
-    return _build(res, method, "NEAT")
+    return _build(res, str(method), "NEAT")
 
 
 def equate_neat_linear(
@@ -402,21 +239,6 @@ def equate_neat_linear(
     """
     from .fitstats import _core_module
 
-    method = _require_string_control(
-        method,
-        name="method",
-        aliases=_NEAT_LINEAR_METHOD_ALIASES,
-        description="linear NEAT method",
-    )
-    anchor_kind = _require_string_control(
-        anchor_kind,
-        name="anchor_kind",
-        aliases=_ANCHOR_KIND_ALIASES,
-        description="anchor kind",
-    )
-    k_x = _require_optional_score_ceiling(k_x, "k_x")
-    k_y = _require_optional_score_ceiling(k_y, "k_y")
-    w1 = _require_weight(w1)
     core = _core_module()
     if core is None or not hasattr(core, "equate_neat_linear"):
         raise RuntimeError("equate_neat_linear requires the compiled Rust core")
@@ -428,7 +250,7 @@ def equate_neat_linear(
     ky = _infer_k(yt, k_y, "k_y")
     res = core.equate_neat_linear(
         xt, xa, yt, ya, int(kx), int(ky),
-        method=method, anchor_kind=anchor_kind, w1=w1,
+        method=str(method), anchor_kind=str(anchor_kind), w1=float(w1),
     )
     return _build(res, f"{method}-{anchor_kind}", "NEAT")
 
@@ -453,14 +275,13 @@ def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
     """
     from .fitstats import _core_module
 
-    degree = _require_positive_integer_control(degree, "degree")
     core = _core_module()
     if core is None or not hasattr(core, "loglinear_smooth"):
         raise RuntimeError("loglinear_smooth requires the compiled Rust core")
     c = np.asarray(counts, dtype=np.float64).ravel()
     # the model preserves at most k = len(counts)-1 moments; clamp so the default
     # degree works on short forms (k < 6) instead of erroring
-    deg = max(1, min(degree, c.size - 1))
+    deg = max(1, min(int(degree), c.size - 1))
     res = core.loglinear_smooth(c, deg)
     return {
         "probs": np.asarray(res["probs"], dtype=np.float64),
@@ -509,34 +330,23 @@ def equate_observed_scores_kernel(
     """
     from .fitstats import _core_module
 
-    continuization = _require_string_control(
-        continuization,
-        name="continuization",
-        aliases=_CONTINUIZATION_ALIASES,
-        description="continuization method",
-    )
-    k_x = _require_optional_score_ceiling(k_x, "k_x")
-    k_y = _require_optional_score_ceiling(k_y, "k_y")
-    if smooth_x is not None:
-        smooth_x = _require_positive_integer_control(smooth_x, "smooth_x")
-    if smooth_y is not None:
-        smooth_y = _require_positive_integer_control(smooth_y, "smooth_y")
-    bandwidth_x = _require_optional_bandwidth(bandwidth_x, "bandwidth_x")
-    bandwidth_y = _require_optional_bandwidth(bandwidth_y, "bandwidth_y")
     core = _core_module()
     if core is None or not hasattr(core, "equate_observed_scores_ext"):
         raise RuntimeError("equate_observed_scores_kernel requires the compiled Rust core")
     xs = np.asarray(x_scores, dtype=np.float64).ravel()
     ys = np.asarray(y_scores, dtype=np.float64).ravel()
+    for nm, sv in (("smooth_x", smooth_x), ("smooth_y", smooth_y)):
+        if sv is not None and int(sv) < 1:
+            raise ValueError(f"{nm} must be >= 1")
     kx = _infer_k(xs, k_x, "k_x")
     ky = _infer_k(ys, k_y, "k_y")
     res = core.equate_observed_scores_ext(
         xs, ys, int(kx), int(ky),
-        continuization=continuization,
-        smooth_degree_x=smooth_x,
-        smooth_degree_y=smooth_y,
-        bandwidth_x=bandwidth_x,
-        bandwidth_y=bandwidth_y,
+        continuization=str(continuization),
+        smooth_degree_x=None if smooth_x is None else int(smooth_x),
+        smooth_degree_y=None if smooth_y is None else int(smooth_y),
+        bandwidth_x=None if bandwidth_x is None else float(bandwidth_x),
+        bandwidth_y=None if bandwidth_y is None else float(bandwidth_y),
     )
     return _build(res, f"{continuization}-kernel", "EG")
 
@@ -572,13 +382,6 @@ def equating_standard_errors(
     """
     from .fitstats import _core_module
 
-    method = _require_equating_method(method)
-    route = _require_see_route(route)
-    k_x = _require_optional_score_ceiling(k_x, "k_x")
-    k_y = _require_optional_score_ceiling(k_y, "k_y")
-    n_boot = _require_positive_integer_control(n_boot, "n_boot")
-    ci_level = _require_ci_level(ci_level)
-    seed = _require_seed(seed)
     core = _core_module()
     if core is None:
         raise RuntimeError("equating_standard_errors requires the compiled Rust core")
@@ -591,14 +394,14 @@ def equating_standard_errors(
             raise RuntimeError("bootstrap SEE requires the compiled Rust core")
         res = core.bootstrap_see(
             xs, ys, int(kx), int(ky),
-            method=method, n_boot=n_boot, ci_level=ci_level, seed=seed,
+            method=str(method), n_boot=int(n_boot), ci_level=float(ci_level), seed=int(seed),
         )
-    else:
+    elif route == "analytic":
         if not hasattr(core, "analytic_see"):
             raise RuntimeError("analytic SEE requires the compiled Rust core")
-        res = core.analytic_see(
-            xs, ys, int(kx), int(ky), method=method, ci_level=ci_level
-        )
+        res = core.analytic_see(xs, ys, int(kx), int(ky), method=str(method), ci_level=float(ci_level))
+    else:
+        raise ValueError("route must be 'bootstrap' or 'analytic'")
     return {
         "x_scores": np.asarray(res["x_scores"], dtype=np.float64),
         "y_equivalents": np.asarray(res["y_equivalents"], dtype=np.float64),
@@ -630,22 +433,17 @@ class CircleArcResult:
 
 
 def _ca_point(p, name: str) -> tuple[float, float]:
-    """Validate one inert ``(x, y)`` anchor point into a finite float pair."""
-    point_type = type(p)
-    if point_type is tuple or point_type is list:
-        if len(p) != 2:
-            raise ValueError(f"{name} must be an (x, y) pair")
+    """Validate and unpack an ``(x, y)`` anchor point into a float pair."""
+    try:
         x, y = p
-    elif point_type is np.ndarray:
-        if p.ndim != 1 or p.size != 2:
-            raise ValueError(f"{name} must be an (x, y) pair")
-        x, y = p[0], p[1]
-    else:
-        raise ValueError(f"{name} must be an (x, y) pair")
-    return (
-        _require_real_control(x, f"{name}[0]"),
-        _require_real_control(y, f"{name}[1]"),
-    )
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an (x, y) pair") from None
+    if np.iscomplexobj(np.asarray(x)) or np.iscomplexobj(np.asarray(y)):
+        raise ValueError(f"{name} must be real-valued")
+    try:
+        return (float(x), float(y))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an (x, y) pair of numbers") from None
 
 
 def circle_arc_equate(
@@ -680,10 +478,9 @@ def circle_arc_equate(
     """
     from .fitstats import _core_module
 
-    method = _require_circle_arc_method(method)
-    low_point = _ca_point(low, "low")
-    middle_point = _ca_point(middle, "middle")
-    high_point = _ca_point(high, "high")
+    core = _core_module()
+    if core is None or not hasattr(core, "circle_arc_equate"):
+        raise RuntimeError("circle_arc_equate requires the compiled Rust core")
     s = np.asarray(scores)
     if np.iscomplexobj(s):
         raise ValueError("scores must be real-valued")
@@ -692,15 +489,12 @@ def circle_arc_equate(
     except (TypeError, ValueError):
         raise ValueError("scores must be numeric") from None
     s = np.ascontiguousarray(s.ravel())
-    core = _core_module()
-    if core is None or not hasattr(core, "circle_arc_equate"):
-        raise RuntimeError("circle_arc_equate requires the compiled Rust core")
     res = core.circle_arc_equate(
         s,
-        low_point,
-        middle_point,
-        high_point,
-        method,
+        _ca_point(low, "low"),
+        _ca_point(middle, "middle"),
+        _ca_point(high, "high"),
+        str(method),
     )
     return CircleArcResult(
         equated=np.asarray(res["equated"], dtype=np.float64),
@@ -709,7 +503,7 @@ def circle_arc_equate(
         r2=float(res["r2"]),
         collinear=bool(res["collinear"]),
         middle=(float(res["middle"][0]), float(res["middle"][1])),
-        method=method,
+        method=str(method),
     )
 
 
@@ -735,20 +529,20 @@ def circle_arc_middle_anchor(
     """
     from .fitstats import _core_module
 
-    vals = [
-        _require_real_control(value, name)
-        for name, value in (
-            ("m_xa", m_xa),
-            ("m_va", m_va),
-            ("m_yb", m_yb),
-            ("s_yb", s_yb),
-            ("m_vb", m_vb),
-            ("s_vb", s_vb),
-        )
-    ]
     core = _core_module()
     if core is None or not hasattr(core, "circle_arc_middle_anchor"):
         raise RuntimeError("circle_arc_middle_anchor requires the compiled Rust core")
+    vals = []
+    for name, v in (
+        ("m_xa", m_xa), ("m_va", m_va), ("m_yb", m_yb),
+        ("s_yb", s_yb), ("m_vb", m_vb), ("s_vb", s_vb),
+    ):
+        if np.iscomplexobj(np.asarray(v)):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            vals.append(float(v))
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a number") from None
     x2, y2 = core.circle_arc_middle_anchor(*vals)
     return (float(x2), float(y2))
 
@@ -789,39 +583,32 @@ def nominal_weights_mean_equate(
     """
     from .fitstats import _core_module
 
-    k_x = _require_positive_integer_control(k_x, "k_x")
-    k_y = _require_positive_integer_control(k_y, "k_y")
-    k_v = _require_positive_integer_control(k_v, "k_v")
-    w1 = _require_weight(w1)
-    arrs = []
-    for name, value in (
-        ("x_total", x_total),
-        ("x_anchor", x_anchor),
-        ("y_total", y_total),
-        ("y_anchor", y_anchor),
-    ):
-        array = np.asarray(value)
-        if np.iscomplexobj(array):
-            raise ValueError(f"{name} must be real-valued")
-        try:
-            array = array.astype(np.float64)
-        except (TypeError, ValueError):
-            raise ValueError(f"{name} must be numeric") from None
-        arrs.append(np.ascontiguousarray(array.ravel()))
     core = _core_module()
     if core is None or not hasattr(core, "nominal_weights_mean_equate"):
         raise RuntimeError(
             "nominal_weights_mean_equate requires the compiled Rust core"
         )
-    res = core.nominal_weights_mean_equate(
-        *arrs,
-        k_x,
-        k_y,
-        k_v,
-        w1=w1,
-    )
+    arrs = []
+    for name, v in (
+        ("x_total", x_total), ("x_anchor", x_anchor),
+        ("y_total", y_total), ("y_anchor", y_anchor),
+    ):
+        a = np.asarray(v)
+        if np.iscomplexobj(a):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            a = a.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be numeric") from None
+        arrs.append(np.ascontiguousarray(a.ravel()))
+    ks = []
+    for name, k in (("k_x", k_x), ("k_y", k_y), ("k_v", k_v)):
+        ki = int(k)
+        if ki <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        ks.append(ki)
+    res = core.nominal_weights_mean_equate(*arrs, *ks, w1=float(w1))
     return _build(res, "nominal-weights-mean", "NEAT")
-
 
 def composite_linking(tables, weights, slopes=None, p=1.0):
     """Composite linking of component conversion tables.
@@ -849,17 +636,19 @@ def composite_linking(tables, weights, slopes=None, p=1.0):
     """
     from .fitstats import _core_module
 
-    p = _require_composite_exponent(p)
+    core = _core_module()
+    if core is None or not hasattr(core, "composite_linking"):
+        raise RuntimeError("composite_linking requires the compiled Rust core")
     tabs = []
-    for i, table in enumerate(tables):
-        array = np.asarray(table)
-        if np.iscomplexobj(array):
+    for i, t in enumerate(tables):
+        a = np.asarray(t)
+        if np.iscomplexobj(a):
             raise ValueError(f"tables[{i}] must be real-valued")
         try:
-            array = array.astype(np.float64)
+            a = a.astype(np.float64)
         except (TypeError, ValueError):
             raise ValueError(f"tables[{i}] must be numeric") from None
-        tabs.append(np.ascontiguousarray(array.ravel()))
+        tabs.append(np.ascontiguousarray(a.ravel()))
     w = np.asarray(weights)
     if np.iscomplexobj(w):
         raise ValueError("weights must be real-valued")
@@ -878,10 +667,7 @@ def composite_linking(tables, weights, slopes=None, p=1.0):
         except (TypeError, ValueError):
             raise ValueError("slopes must be numeric") from None
         s = np.ascontiguousarray(s.ravel())
-    core = _core_module()
-    if core is None or not hasattr(core, "composite_linking"):
-        raise RuntimeError("composite_linking requires the compiled Rust core")
-    res = core.composite_linking(tabs, w, slopes=s, p=p)
+    res = core.composite_linking(tabs, w, slopes=s, p=float(p))
     return {
         "composite": np.asarray(res["composite"]),
         "adjusted_weights": np.asarray(res["adjusted_weights"]),

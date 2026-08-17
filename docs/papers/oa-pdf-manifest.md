@@ -12,14 +12,8 @@ are local provenance only; they are not credentials and are not required by CI.
 
 ## Citation-only records
 
-- Jones and Loe (2013), [SAGE Open page](https://journals.sagepub.com/doi/10.1177/2158244013489691): OpenAlex/Unpaywall identify the published version as gold OA with CC BY metadata, and [ResearchGate lists an author-uploaded CC BY 3.0 copy](https://www.researchgate.net/publication/258187383_Optimal_Number_of_Questionnaire_Response_Categories_More_May_Not_Be_Better). An external official PDF fetch confirms the 10-page source, but the reproducible local downloader receives HTTP 403 HTML. Zotero Local API item `CWY355RP` confirms open access and has `numChildren=0`. Zotero 9.0.6 exposes read-only Local API behavior here, so no substitute or regenerated PDF is counted as the original; add the original binary only after an authorized Zotero/Web API or GUI retrieval.
 - Zheng et al. (2024), [ICLR page](https://proceedings.iclr.cc/paper_files/paper/2024/hash/54dd9e0cff6d9214e20d97eb2a3bae49-Abstract-Conference.html): the local arXiv record grants a non-exclusive distribution license to arXiv, and the ICLR policy describes a license granted to ICLR; neither is an explicit third-party repository redistribution license.
-- Iannario, Monti, and Scalera (2022), [publisher page](https://www.degruyterbrill.com/document/doi/10.1515/ijb-2021-0013/html): publisher and Crossref/OpenAlex metadata identify CC BY 4.0, and Zotero item `MYPNHHWJ` confirms that license. An external official PDF fetch confirms the 19-page source and CC BY 4.0 notice, but the reproducible local redirect returns CloudFront WAF HTTP 202 with zero bytes and the local item has no child attachment. The original binary remains an OA retrieval task rather than a vendored file.
-- Cao et al. (2026), [AAAI landing page](https://ojs.aaai.org/index.php/AAAI/article/view/40262) and [official PDF](https://ojs.aaai.org/index.php/AAAI/article/view/40262/44223): the PDF states all rights reserved, so it is citation-only despite being publicly readable.
 - Samejima (1969), [Psychometric Society reproduction](https://www.psychometricsociety.org/sites/main/files/file-attachments/mn17.pdf): publicly accessible and preserved in Zotero for local research, but no redistribution license is asserted here.
-
-The Cao citation was added through the local Zotero Connector API on
-2026-08-14 as item `393S5NXZ`; the official PDF was intentionally not copied.
 
 ## Interpretation boundary
 

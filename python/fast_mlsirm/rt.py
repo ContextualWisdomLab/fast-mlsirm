@@ -5,27 +5,12 @@ core."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import operator
 import warnings
 
 import numpy as np
 
 from .config import MAX_MAX_ITER
-
-
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
 
 
 @dataclass
@@ -53,20 +38,19 @@ class RtFit:
 def _validated_max_iter(value: int) -> int:
     """Return an exact bounded RT iteration count or raise a stable ``ValueError``.
 
-    Only exact built-in integers and package-supported genuine NumPy integer
-    scalars are normalized. Caller-defined subclasses and arbitrary integer
-    protocol providers are rejected before any coercion callback can execute.
+    Boolean and floating-point values are rejected instead of being silently
+    truncated by ``int(...)``. Python and NumPy integer scalars are accepted only
+    in the package-wide ``1..MAX_MAX_ITER`` resource envelope.
     """
-    value_type = type(value)
-    if value_type is int:
-        validated = value
-    elif any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        validated = int(value)
-    else:
+    if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
+    try:
+        validated = operator.index(value)
+    except TypeError as exc:
+        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}") from exc
     if not 1 <= validated <= MAX_MAX_ITER:
         raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
-    return validated
+    return int(validated)
 
 
 def fit_response_times(

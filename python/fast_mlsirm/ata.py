@@ -53,20 +53,6 @@ __all__ = [
 ]
 
 _TIE_EPS = 1e-12
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
 
 
 @dataclass
@@ -180,25 +166,17 @@ def _validated_content_labels(content: np.ndarray | None, n_items: int) -> np.nd
     return labels.astype(str)
 
 
-def _is_exact_public_integer(value: object) -> bool:
-    """Return whether ``value`` has one package-trusted integer scalar identity."""
-    value_type = type(value)
-    return value_type is int or any(
-        value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
-    )
-
-
 def _exact_public_integer(value: object, name: str) -> int:
     """Return one exact integer while rejecting bools and conversion hooks.
 
-    Public ATA scalar/map counts are a type boundary: only exact Python ``int``
-    and explicitly supported NumPy integer scalar identities are admitted.
-    Booleans, caller-defined subclasses, and arbitrary ``__int__``/``__index__``
-    providers are rejected before any caller conversion callback can execute.
+    Public ATA scalar/map counts are a type boundary: only Python ``int`` and
+    NumPy integer scalars are admitted. Booleans are rejected even though
+    ``bool`` subclasses ``int``. Arbitrary objects with ``__int__``/``__index__``
+    are rejected without invoking those callbacks.
     """
-    if not _is_exact_public_integer(value):
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
         raise ValueError(f"{name} must be an integer")
-    return value if type(value) is int else int(value)
+    return int(value)
 
 
 def _validated_content_constraints(
@@ -216,9 +194,9 @@ def _validated_content_constraints(
         for key, count in raw.items():
             if not isinstance(key, (str, np.str_)):
                 raise ValueError("content constraint keys must be strings")
-            if not _is_exact_public_integer(count):
+            if isinstance(count, bool) or not isinstance(count, (int, np.integer)):
                 raise ValueError("content constraint counts must be integers")
-            value = count if type(count) is int else int(count)
+            value = int(count)
             if value < 0:
                 raise ValueError("content constraint counts must be non-negative")
             out[str(key)] = value
@@ -243,10 +221,12 @@ def _validated_exposure_counts(
         raise ValueError("exposure_counts must be a mapping")
     out: dict[int, int] = {}
     for key, count in exposure_counts.items():
-        if not _is_exact_public_integer(key) or not _is_exact_public_integer(count):
+        if isinstance(key, bool) or not isinstance(key, (int, np.integer)):
             raise ValueError("exposure_counts keys and values must be integers")
-        item_index = key if type(key) is int else int(key)
-        usage_count = count if type(count) is int else int(count)
+        if isinstance(count, bool) or not isinstance(count, (int, np.integer)):
+            raise ValueError("exposure_counts keys and values must be integers")
+        item_index = int(key)
+        usage_count = int(count)
         if not 0 <= item_index < n_items:
             raise ValueError("exposure_counts keys must identify existing items")
         if usage_count < 0:
@@ -277,9 +257,9 @@ def _validated_exclude(exclude: object, n_items: int) -> set[int]:
 
     validated: set[int] = set()
     for value in values:
-        if not _is_exact_public_integer(value):
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
             raise ValueError("exclude must contain integer item indices")
-        item_index = value if type(value) is int else int(value)
+        item_index = int(value)
         if not 0 <= item_index < n_items:
             raise ValueError("exclude item indices must identify existing items")
         validated.add(item_index)
@@ -326,7 +306,9 @@ def assemble_to_target(
 
     # Validate semantic controls before any item-information evaluation so hostile
     # conversion hooks and invalid finite-domain controls never reach scoring.
-    length = _exact_public_integer(length, "length")
+    if not isinstance(length, (int, np.integer)) or isinstance(length, bool):
+        raise ValueError("length must be an integer")
+    length = int(length)
     if not (1 <= length <= n_items):
         raise ValueError("length must be between 1 and the number of items")
 

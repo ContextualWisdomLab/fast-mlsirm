@@ -8,31 +8,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-
-
-def _exact_integer_control(value: object, error_message: str) -> int:
-    """Normalize one trusted integer scalar without caller-controlled coercion."""
-    value_type = type(value)
-    if value_type is int:
-        return value
-    if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        return int(value)
-    raise ValueError(error_message)
-
 
 @dataclass
 class GuttmanResult:
@@ -92,15 +67,6 @@ def guttman_lambdas(
     management these bound the internal consistency of a judge rubric.
 
     """
-    n_sample_splits = _exact_integer_control(
-        n_sample_splits, "n_sample_splits must be an integer"
-    )
-    seed = _exact_integer_control(seed, "seed must be an integer")
-    if n_sample_splits < 1:
-        raise ValueError("n_sample_splits must be >= 1")
-    if seed < 0:
-        raise ValueError("seed must be non-negative")
-
     from .fitstats import _core_module
 
     core = _core_module()
@@ -110,8 +76,12 @@ def guttman_lambdas(
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_persons, n_items = x.shape
+    if int(n_sample_splits) < 1:
+        raise ValueError("n_sample_splits must be >= 1")
+    if int(seed) < 0:
+        raise ValueError("seed must be non-negative")
     res = core.guttman_lambdas(
-        x.reshape(-1), int(n_persons), int(n_items), n_sample_splits, seed
+        x.reshape(-1), int(n_persons), int(n_items), int(n_sample_splits), int(seed)
     )
     return GuttmanResult(
         lambda1=float(res["lambda1"]),
@@ -263,17 +233,14 @@ def feldt_alpha_ci(
     In LLM-as-a-Judge quality management this quantifies the sampling
     uncertainty of a rubric's internal-consistency estimate.
     """
-    n_persons = _exact_integer_control(n_persons, "n_persons must be an integer")
-    n_items = _exact_integer_control(n_items, "n_items must be an integer")
-    if n_persons < 0 or n_items < 0:
-        raise ValueError("n_persons and n_items must be non-negative")
-
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "feldt_alpha_ci"):
         raise RuntimeError("feldt_alpha_ci requires the compiled Rust core")
-    res = core.feldt_alpha_ci(float(alpha), n_persons, n_items, float(level))
+    if n_persons < 0 or n_items < 0:
+        raise ValueError("n_persons and n_items must be non-negative")
+    res = core.feldt_alpha_ci(float(alpha), int(n_persons), int(n_items), float(level))
     return AlphaCiResult(
         alpha=float(res["alpha"]),
         lower=float(res["lower"]),
@@ -589,10 +556,6 @@ def finn_coefficient(ratings, s_levels: int, model: str = "oneway") -> FinnResul
             30*(1), 71-76. https://doi.org/10.1177/001316447003000106
             (as cited in Gamer et al., 2019; not read)
     """
-    s_levels = _exact_integer_control(s_levels, "s_levels must be an integer")
-    if s_levels < 2:
-        raise ValueError("s_levels must be at least 2")
-
     from .fitstats import _core_module
 
     core = _core_module()
@@ -613,9 +576,14 @@ def finn_coefficient(ratings, s_levels: int, model: str = "oneway") -> FinnResul
         raise ValueError("ratings must be a numeric array")
     if arr.ndim != 2:
         raise ValueError("ratings must be a 2-D subjects x raters array")
+    # bool is an int subclass; True would silently become s_levels=1.
+    if isinstance(s_levels, bool) or not isinstance(s_levels, (int, np.integer)):
+        raise ValueError("s_levels must be an integer")
+    if int(s_levels) < 2:
+        raise ValueError("s_levels must be at least 2")
     x = np.ascontiguousarray(arr, dtype=np.float64)
     ns, nr = x.shape
-    res = core.finn_coefficient(x.reshape(-1), int(ns), int(nr), s_levels, str(model))
+    res = core.finn_coefficient(x.reshape(-1), int(ns), int(nr), int(s_levels), str(model))
     return FinnResult(
         value=float(res["value"]),
         statistic=float(res["statistic"]),

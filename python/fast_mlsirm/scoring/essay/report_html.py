@@ -204,7 +204,6 @@ def _css() -> str:
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
-main:focus:not(:focus-visible) { outline: none; }
 main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 .skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
 .skip-link:focus { top: 8px; }

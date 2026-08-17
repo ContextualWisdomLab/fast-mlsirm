@@ -3,46 +3,9 @@ this module only validates and marshals arrays."""
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
-
-
-_NUMPY_REAL_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
-
-
-def _percentage_control(value: object, name: str) -> float:
-    """Normalize one trusted percentage scalar without caller callbacks."""
-    value_type = type(value)
-    if value_type is not int and value_type is not float and not any(
-        value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES
-    ):
-        raise ValueError(f"{name} must be a real number")
-    try:
-        normalized = float(value)
-    except (OverflowError, ValueError):
-        raise ValueError(f"{name} must be finite and in [0, 100]") from None
-    if not math.isfinite(normalized) or not 0.0 <= normalized <= 100.0:
-        raise ValueError(f"{name} must be finite and in [0, 100]")
-    return normalized
 
 
 @dataclass
@@ -118,21 +81,23 @@ def hofstee(
     if s.dtype.kind not in ("i", "u", "f"):
         raise ValueError("scores must be an integer or float array")
     sf = np.ascontiguousarray(s, dtype=np.float64)
-    min_cut = _percentage_control(min_cut, "min_cut")
-    max_cut = _percentage_control(max_cut, "max_cut")
-    min_fail = _percentage_control(min_fail, "min_fail")
-    max_fail = _percentage_control(max_fail, "max_fail")
-    if min_cut > max_cut:
-        raise ValueError("min_cut must not exceed max_cut")
-    if min_fail > max_fail:
-        raise ValueError("min_fail must not exceed max_fail")
+    for name, p in (
+        ("min_cut", min_cut),
+        ("max_cut", max_cut),
+        ("min_fail", min_fail),
+        ("max_fail", max_fail),
+    ):
+        if not isinstance(p, (int, float)) or isinstance(p, bool):
+            raise ValueError(f"{name} must be a real number")
 
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "py_hofstee"):
         raise RuntimeError("Rust core with py_hofstee is required")
-    res = core.py_hofstee(sf, min_cut, max_cut, min_fail, max_fail)
+    res = core.py_hofstee(
+        sf, float(min_cut), float(max_cut), float(min_fail), float(max_fail)
+    )
     return HofsteeResult(
         cut_score=float(res["cut_score"]),
         fail_rate=float(res["fail_rate"]),

@@ -1,11 +1,5 @@
 """Essay-specific adapters for the shared provider-neutral scoring contracts."""
 
-from . import contracts as _contracts
-from ._integer_safety import install as _install_integer_safety
-
-_install_integer_safety(_contracts)
-del _contracts, _install_integer_safety
-
 from .calibration_reporting import (
     MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS,
 )

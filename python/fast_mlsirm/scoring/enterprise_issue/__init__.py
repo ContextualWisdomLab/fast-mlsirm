@@ -1,11 +1,5 @@
 """Enterprise-issue adapters for the shared governed scoring contracts."""
 
-from . import contracts as _contracts
-from ._integer_safety import install as _install_integer_safety
-
-_install_integer_safety(_contracts)
-del _contracts, _install_integer_safety
-
 from .calibration import (
     MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS as MAX_ENTERPRISE_ISSUE_CALIBRATION_EXECUTIONS,
 )

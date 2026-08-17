@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import stat
 import tempfile
 import zipfile
 from dataclasses import asdict
@@ -24,67 +23,6 @@ MAX_NUMPY_HEADER_BYTES = 64 * 1024
 MAX_JSON_INPUT_BYTES = 32 * 1024 * 1024
 MAX_JSON_NESTING_DEPTH = 128
 MAX_FACTOR_CSV_BYTES = 16 * 1024 * 1024
-
-
-def _input_open_flags() -> int:
-    """Open input without following a leaf symlink where supported."""
-    return (
-        os.O_RDONLY
-        | getattr(os, "O_CLOEXEC", 0)
-        | getattr(os, "O_NONBLOCK", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-    )
-
-
-def _validate_input_identity(
-    path: Path,
-    descriptor_status: os.stat_result,
-    *,
-    source: str,
-) -> None:
-    """Require the requested path to still name the opened regular file."""
-    try:
-        path_status = os.lstat(path)
-    except OSError:
-        raise ValueError(f"{source} path changed during the read") from None
-    if not stat.S_ISREG(path_status.st_mode):
-        raise ValueError(f"{source} must be a stable regular file")
-    if (path_status.st_dev, path_status.st_ino) != (
-        descriptor_status.st_dev,
-        descriptor_status.st_ino,
-    ):
-        raise ValueError(f"{source} path changed during the read")
-
-
-def _open_stable_input(
-    path: str | Path,
-    *,
-    source: str,
-) -> tuple[Path, BinaryIO, os.stat_result]:
-    """Open one regular input descriptor without following its leaf symlink."""
-    input_path = Path(path)
-    if not hasattr(os, "O_NOFOLLOW"):
-        try:
-            if input_path.is_symlink():
-                raise ValueError(f"{source} must be a stable regular file")
-        except OSError:
-            raise ValueError(f"{source} could not be opened safely") from None
-    try:
-        file_descriptor = os.open(input_path, _input_open_flags())
-    except FileNotFoundError:
-        raise
-    except OSError:
-        raise ValueError(f"{source} must be a stable regular file") from None
-    try:
-        descriptor_status = os.fstat(file_descriptor)
-        if not stat.S_ISREG(descriptor_status.st_mode):
-            raise ValueError(f"{source} must be a stable regular file")
-        _validate_input_identity(input_path, descriptor_status, source=source)
-        stream = os.fdopen(file_descriptor, "rb")
-    except BaseException:
-        os.close(file_descriptor)
-        raise
-    return input_path, stream, descriptor_status
 
 
 def _atomic_write(path: str | Path, writer: Callable[[BinaryIO], object]) -> None:
@@ -165,45 +103,23 @@ def _validate_numpy_file(path: Path) -> None:
     rejects object dtypes or truncated arrays, guarding against
     memory-exhaustion and unpickling attacks from untrusted numpy inputs.
     """
-    input_path, stream, descriptor_status = _open_stable_input(
-        path,
-        source="NumPy input",
-    )
-    try:
-        _validate_numpy_stream(
-            stream,
-            source=input_path.name,
-            suffix=input_path.suffix.lower(),
-            file_size=descriptor_status.st_size,
-        )
-    finally:
-        stream.close()
-
-
-def _validate_numpy_stream(
-    stream: BinaryIO,
-    *,
-    source: str,
-    suffix: str,
-    file_size: int,
-) -> None:
-    """Validate one already-open NPY/NPZ stream and its declared arrays."""
+    file_size = path.stat().st_size
     if file_size > MAX_NUMPY_ARCHIVE_BYTES:
         raise ValueError(
             f"NumPy input exceeds the {MAX_NUMPY_ARCHIVE_BYTES}-byte file limit"
         )
-    stream.seek(0)
-    if suffix == ".npy":
-        nbytes, header_end = _validate_npy_header(stream, source)
+    if path.suffix.lower() == ".npy":
+        with path.open("rb") as stream:
+            nbytes, header_end = _validate_npy_header(stream, path.name)
         if file_size - header_end < nbytes:
             raise ValueError(
-                f"{source} is truncated relative to its declared array shape"
+                f"{path.name} is truncated relative to its declared array shape"
             )
         return
-    if suffix != ".npz":
+    if path.suffix.lower() != ".npz":
         raise ValueError("NumPy input must use a .npy or .npz suffix")
 
-    with zipfile.ZipFile(stream) as archive:
+    with zipfile.ZipFile(path) as archive:
         members = [info for info in archive.infolist() if not info.is_dir()]
         if not members or len(members) > MAX_NUMPY_ARCHIVE_MEMBERS:
             raise ValueError(
@@ -239,15 +155,9 @@ def _read_text_bounded(
     max_bytes: int,
 ) -> str:
     """Read UTF-8 text without permitting an unbounded in-memory payload."""
-    input_path, stream, descriptor_status = _open_stable_input(
-        path,
-        source=source,
-    )
-    try:
+    input_path = Path(path)
+    with input_path.open("rb") as stream:
         payload = stream.read(max_bytes + 1)
-        _validate_input_identity(input_path, descriptor_status, source=source)
-    finally:
-        stream.close()
     if len(payload) > max_bytes:
         raise ValueError(f"{source} exceeds the {max_bytes}-byte input limit")
     try:
@@ -298,39 +208,13 @@ def _load_json_bounded(
 
 def _load_numpy_bounded(path: str | Path):
     """Load NPY/NPZ only after validating headers and allocation bounds."""
-    source, stream, descriptor_status = _open_stable_input(
-        path,
-        source="NumPy input",
+    source = Path(path)
+    _validate_numpy_file(source)
+    return np.load(
+        source,
+        allow_pickle=False,
+        max_header_size=MAX_NUMPY_HEADER_BYTES,
     )
-    loaded = None
-    owns_stream = False
-    try:
-        _validate_numpy_stream(
-            stream,
-            source=source.name,
-            suffix=source.suffix.lower(),
-            file_size=descriptor_status.st_size,
-        )
-        stream.seek(0)
-        loaded = np.load(
-            stream,
-            allow_pickle=False,
-            max_header_size=MAX_NUMPY_HEADER_BYTES,
-        )
-        _validate_input_identity(source, descriptor_status, source="NumPy input")
-        if isinstance(loaded, np.lib.npyio.NpzFile):
-            # np.load(file_object) does not own the stream; transfer ownership
-            # so the existing NpzFile context-manager contract still closes it.
-            loaded.fid = stream
-            owns_stream = True
-        return loaded
-    except BaseException:
-        if isinstance(loaded, np.lib.npyio.NpzFile):
-            loaded.close()
-        raise
-    finally:
-        if not owns_stream:
-            stream.close()
 
 
 def save_simulation(data: SimulationData, run_dir: str | Path) -> None:

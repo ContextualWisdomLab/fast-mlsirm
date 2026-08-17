@@ -5,56 +5,10 @@ work happens in Rust; this module only validates and marshals arrays."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
-
-
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
-
-
-def _integer_control(value: object, name: str, *, allow_none: bool = False) -> int | None:
-    """Normalize one trusted integer control without caller callbacks."""
-    if value is None and allow_none:
-        return None
-    value_type = type(value)
-    if value_type is int:
-        return value
-    if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        return int(value)
-    raise ValueError(f"{name} must be an integer")
-
-
-def _real_control(value: object, name: str) -> float:
-    """Normalize one trusted real control without caller callbacks."""
-    value_type = type(value)
-    if value_type is int or value_type is float:
-        try:
-            return float(value)
-        except OverflowError:
-            raise ValueError(f"{name} must be finite and > 0") from None
-    if any(
-        value_type is trusted_type
-        for trusted_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
-    ):
-        return float(value)
-    raise ValueError(f"{name} must be a real number")
 
 
 @dataclass
@@ -123,17 +77,25 @@ def fit_facets(
             categories. *Psychometrika, 43*(4), 561-573.
             https://doi.org/10.1007/BF02293814
     """
-    n_cat = _integer_control(n_cat, "n_cat", allow_none=True)
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_facets"):
+        raise RuntimeError("fit_facets requires the compiled Rust core")
+
+    if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
+        raise ValueError("n_cat must be an integer >= 2")
     if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
         raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
-    q_theta = _integer_control(q_theta, "q_theta")
-    if q_theta not in (7, 11, 15, 21, 31, 41):
+    if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    max_iter = _integer_control(max_iter, "max_iter")
-    if not (1 <= max_iter <= MAX_MAX_ITER):
+    if (
+        not isinstance(max_iter, int)
+        or isinstance(max_iter, bool)
+        or not (1 <= max_iter <= MAX_MAX_ITER)
+    ):
         raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
-    tol = _real_control(tol, "tol")
-    if not math.isfinite(tol) or tol <= 0:
+    if not np.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
     y = np.asarray(responses, dtype=np.float64)
@@ -174,12 +136,6 @@ def fit_facets(
     if missing_raters.size:
         raise ValueError(f"rater {int(missing_raters[0])} has no observed responses")
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
-
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_facets"):
-        raise RuntimeError("fit_facets requires the compiled Rust core")
     res = core.fit_facets(
         yy,
         observed.reshape(-1),

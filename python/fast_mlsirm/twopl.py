@@ -15,7 +15,6 @@ import numpy as np
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
-from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
@@ -125,6 +124,12 @@ def fit_2pl(
     # Fail closed on hostile node_rule before any core import or coercion.
     node_rule = normalize_node_rule(node_rule)
 
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_2pl"):
+        raise RuntimeError("fit_2pl requires the compiled Rust core")
+
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -178,14 +183,6 @@ def fit_2pl(
         raise ValueError("xi_seed must be in [0, 2**64)")
 
     observed = ~np.isnan(y)
-    validation_y = np.where(observed, y, np.nan)
-    validate_irt_response_matrix(validation_y, "dichotomous")
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_2pl"):
-        raise RuntimeError("fit_2pl requires the compiled Rust core")
-
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_2pl(
         yy,

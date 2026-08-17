@@ -44,11 +44,6 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     bar_row_rule = _rule_body(style, ".bar-row")
     assert "transition:" not in bar_row_rule
     assert "opacity:" not in bar_row_rule
-    assert "padding: 4px 8px;" in bar_row_rule
-    assert "border-radius: 4px;" in bar_row_rule
-
-    bar_row_hover_rule = _rule_body(style, ".bar-row:hover")
-    assert "background: var(--hover-bg);" in bar_row_hover_rule
 
     table_row_rule = _rule_body(style, "tbody tr")
     assert "transition: background-color 0.15s ease-in-out;" in table_row_rule

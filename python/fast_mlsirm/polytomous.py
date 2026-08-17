@@ -23,7 +23,6 @@ from .config import (
     MAX_SIM_CELLS,
     MAX_SIM_PERSONS,
 )
-from .irt_contract import validate_irt_response_matrix
 
 __all__ = [
     "PolytomousFit",
@@ -190,12 +189,6 @@ def fit_polytomous(
         raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
-    validation_y = np.where(observed, y_int, np.nan)
-    validate_irt_response_matrix(
-        validation_y,
-        "polytomous",
-        n_categories=int(n_cat),
-    )
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_poly_unidim"):
@@ -424,12 +417,6 @@ def fit_lsirm_polytomous(
         raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
-    validation_y = np.where(observed, y_int, np.nan)
-    validate_irt_response_matrix(
-        validation_y,
-        "polytomous",
-        n_categories=int(n_cat),
-    )
     core = _core_module()
     if core is None or not hasattr(core, "fit_poly_lsirm"):
         raise RuntimeError("fit_lsirm_polytomous requires the compiled Rust core")
@@ -782,12 +769,8 @@ def fit_nominal_polytomous(
         raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
-    validation_y = np.where(observed, y_int, np.nan)
-    validate_irt_response_matrix(
-        validation_y,
-        "polytomous",
-        n_categories=int(n_cat),
-    )
+    if y_int.shape[0] == 0 or y_int.shape[1] == 0:
+        raise ValueError("responses must contain at least one person and one item")
     missing_items = np.flatnonzero(~observed.any(axis=0))
     if missing_items.size:
         raise ValueError(f"items with no observed responses: {missing_items.tolist()}")
