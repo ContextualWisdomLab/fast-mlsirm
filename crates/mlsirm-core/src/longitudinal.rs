@@ -86,6 +86,15 @@ fn checked_ar_gap(gap: usize) -> Result<i32, String> {
         .map_err(|_| "accumulated AR occasion gap exceeds the supported range".to_string())
 }
 
+fn respondent_sequence_span(sequences: &[usize]) -> Result<usize, String> {
+    let Some(first) = sequences.first().copied() else {
+        return Ok(0);
+    };
+    sequences[sequences.len() - 1]
+        .checked_sub(first)
+        .ok_or_else(|| "sequence indices must increase within the supported AR gap".to_string())
+}
+
 fn validate_inputs(
     row_offsets: &[usize],
     sequence_indices: &[usize],
@@ -112,12 +121,7 @@ fn validate_inputs(
             return Err("sequence indices must increase within the supported AR gap".to_string());
         }
         if !sequences.is_empty() {
-            let span = sequences[sequences.len() - 1]
-                .checked_sub(sequences[0])
-                .ok_or_else(|| {
-                    "sequence indices must increase within the supported AR gap".to_string()
-                })?;
-            checked_ar_gap(span)?;
+            checked_ar_gap(respondent_sequence_span(sequences)?)?;
         }
         if time_offsets_milliseconds[start..end]
             .windows(2)
@@ -481,6 +485,26 @@ mod tests {
     }
 
     #[test]
+    fn ar_state_starts_from_first_finite_observation() {
+        let fit = fit_longitudinal_state(
+            &[0, 3],
+            &[0, 1, 2],
+            &[0, 86_400_000, 172_800_000],
+            &[f64::NAN, 1.0, 0.4],
+            "stationary_autoregressive",
+            Some(0.4),
+            1,
+        )
+        .unwrap();
+        assert_eq!(fit.state[0], 0.0);
+        assert_eq!(fit.state[1], 1.0);
+        assert!((fit.state[2] - 0.4).abs() < 1e-12);
+        assert_eq!(fit.observed_count, 2);
+        assert_eq!(fit.transition_count, 1);
+        assert!(fit.rmse < 1e-12);
+    }
+
+    #[test]
     fn ar_state_preserves_missing_occasion_and_recovers_prediction_error() {
         let offsets = [0, 4];
         let sequences = [0, 1, 2, 3];
@@ -717,6 +741,31 @@ mod tests {
     }
 
     #[test]
+    fn unused_worker_chunk_is_skipped_without_changing_estimates() {
+        // Four respondents and three workers yield chunk=2, so the third
+        // worker starts at index 4 and is skipped. The remaining shards still
+        // produce the independent intercept-only estimates.
+        let offsets = [0, 1, 2, 3, 4];
+        let sequences = [0, 0, 0, 0];
+        let times = [0, 0, 0, 0];
+        let values = [1.0, 2.0, 3.0, 4.0];
+        let fit = fit_longitudinal_state(
+            &offsets,
+            &sequences,
+            &times,
+            &values,
+            "random_intercept_slope",
+            None,
+            3,
+        )
+        .unwrap();
+        assert_eq!(fit.intercepts, vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(fit.slopes, vec![0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(fit.observed_count, 4);
+        assert_eq!(fit.rmse, 0.0);
+    }
+
+    #[test]
     fn package_owned_join_and_missing_fit_errors_are_stable() {
         let join_error = map_worker_join::<()>(Err(Box::new("boom")));
         assert_eq!(join_error.unwrap_err(), "longitudinal worker failed");
@@ -727,6 +776,12 @@ mod tests {
         assert!(checked_ar_gap(MAX_AR_SEQUENCE_GAP + 1)
             .unwrap_err()
             .contains("accumulated AR occasion gap"));
+        assert_eq!(respondent_sequence_span(&[]).unwrap(), 0);
+        assert_eq!(respondent_sequence_span(&[5]).unwrap(), 0);
+        assert_eq!(respondent_sequence_span(&[0, 3]).unwrap(), 3);
+        assert!(respondent_sequence_span(&[5, 2])
+            .unwrap_err()
+            .contains("sequence indices must increase"));
         assert!(!slope_is_identified(0.0, 0.0));
         assert!(slope_is_identified(1e-16, 1e-8));
     }

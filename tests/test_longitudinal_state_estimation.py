@@ -236,11 +236,12 @@ def test_state_fit_translates_hostile_mapping_reads_to_value_error() -> None:
         fit_longitudinal_state(_single_occasion_design(), ExplodingMapping())
 
 
-def test_state_fit_accepts_numpy_real_scalars() -> None:
-    """Supported NumPy scalars convert through the package-owned helper."""
+@pytest.mark.parametrize("value", [2, np.int64(2), 2.5, np.float64(2.5)])
+def test_state_fit_accepts_real_numeric_scalars(value: object) -> None:
+    """Supported Python and NumPy real scalars convert through the helper."""
     result = fit_longitudinal_state(
         _single_occasion_design(),
-        {"occasion_guard": np.float64(2.5)},
+        {"occasion_guard": value},  # type: ignore[dict-item]
     )
-    np.testing.assert_allclose(result["intercepts"], [2.5])
+    np.testing.assert_allclose(result["intercepts"], [float(value)])
     assert result["observed_count"] == 1
