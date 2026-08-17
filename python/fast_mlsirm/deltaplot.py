@@ -4,8 +4,153 @@ core; this module only validates and marshals arrays."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import numpy as np
+
+from .config import MAX_MAX_ITER
+
+
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOATING_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+_NATIVE_USIZE_MAX = int(np.iinfo(np.uintp).max)
+
+
+def _exact_integer(value: object, name: str) -> int:
+    """Return a trusted integer without invoking caller conversion hooks."""
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def _exact_real(value: object, name: str) -> float:
+    """Return a trusted real scalar without invoking caller conversion hooks."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        try:
+            return float(value)
+        except OverflowError as exc:
+            raise ValueError(f"{name} must be a real number") from exc
+    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        try:
+            return float(value)
+        except OverflowError as exc:
+            raise ValueError(f"{name} must be a real number") from exc
+    if any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES):
+        return float(value)
+    raise ValueError(f"{name} must be a real number")
+
+
+def _exact_selector(value: object, name: str) -> str:
+    """Return an exact built-in selector without invoking subclass callbacks."""
+    if type(value) is not str:
+        raise ValueError(f"{name} must be an exact string")
+    return value
+
+
+def _normalize_controls(
+    *,
+    threshold: object,
+    alpha: object,
+    fixed_threshold: object,
+    extreme: object,
+    const_range: object,
+    nr_add: object,
+    purify: object,
+    max_iter: object,
+) -> tuple[str, float, str, float, float, str | None, int]:
+    """Validate semantic controls before caller data or native discovery."""
+    normalized_threshold = _exact_selector(threshold, "threshold")
+    if normalized_threshold not in ("norm", "fixed"):
+        raise ValueError("threshold must be 'norm' or 'fixed'")
+
+    normalized_extreme = _exact_selector(extreme, "extreme")
+    if normalized_extreme not in ("constraint", "add"):
+        raise ValueError("extreme must be 'constraint' or 'add'")
+
+    if purify is None:
+        normalized_purify = None
+    else:
+        if type(purify) is not str:
+            raise ValueError("purify must be None or an exact string")
+        normalized_purify = purify
+        if normalized_purify not in ("IPP1", "IPP2", "IPP3"):
+            raise ValueError("purify must be None, 'IPP1', 'IPP2', or 'IPP3'")
+
+    normalized_max_iter = _exact_integer(max_iter, "max_iter")
+    if not 1 <= normalized_max_iter <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
+
+    # Admit every control identity before any active-branch domain check so a
+    # hostile unused field cannot reach response/group materialization.
+    if type(const_range) is not tuple or len(const_range) != 2:
+        raise ValueError("const_range must be an exact 2-tuple")
+    lo = _exact_real(const_range[0], "const_range[0]")
+    hi = _exact_real(const_range[1], "const_range[1]")
+    normalized_nr_add = _exact_integer(nr_add, "nr_add")
+    normalized_alpha = _exact_real(alpha, "alpha")
+    normalized_fixed_threshold = _exact_real(fixed_threshold, "fixed_threshold")
+
+    if normalized_extreme == "constraint":
+        if not (
+            math.isfinite(lo)
+            and math.isfinite(hi)
+            and 0.0 <= lo < hi <= 1.0
+        ):
+            raise ValueError("constraint range must satisfy 0 <= lo < hi <= 1")
+        ea, eb = lo, hi
+    else:
+        if normalized_nr_add < 1:
+            raise ValueError("nr_add must be a positive integer >= 1")
+        if normalized_nr_add > _NATIVE_USIZE_MAX:
+            raise ValueError("nr_add must fit native usize and round-trip exactly")
+        try:
+            ea = float(normalized_nr_add)
+        except OverflowError as exc:
+            raise ValueError("nr_add must fit native usize and round-trip exactly") from exc
+        if not math.isfinite(ea) or int(ea) != normalized_nr_add:
+            raise ValueError("nr_add must fit native usize and round-trip exactly")
+        eb = 0.0
+
+    if normalized_threshold == "norm":
+        tv = normalized_alpha
+        if not math.isfinite(tv) or not 0.0 < tv < 1.0:
+            raise ValueError("alpha must be finite and in (0, 1)")
+    else:
+        tv = normalized_fixed_threshold
+        if not math.isfinite(tv):
+            raise ValueError("fixed_threshold must be finite")
+
+    return (
+        normalized_threshold,
+        tv,
+        normalized_extreme,
+        ea,
+        eb,
+        normalized_purify,
+        normalized_max_iter,
+    )
 
 
 @dataclass
@@ -81,6 +226,25 @@ def delta_plot(
     https://doi.org/10.18637/jss.v059.c01 (package paper; the R sources
     listed above were READ and ported.)
     """
+    (
+        threshold,
+        tv,
+        extreme,
+        ea,
+        eb,
+        purify,
+        max_iter,
+    ) = _normalize_controls(
+        threshold=threshold,
+        alpha=alpha,
+        fixed_threshold=fixed_threshold,
+        extreme=extreme,
+        const_range=const_range,
+        nr_add=nr_add,
+        purify=purify,
+        max_iter=max_iter,
+    )
+
     xa = np.asarray(responses)
     if xa.ndim != 2:
         raise ValueError("responses must be a 2-D person-by-item matrix")
@@ -111,21 +275,6 @@ def delta_plot(
         raise ValueError("group entries must be 0 (reference) or 1 (focal)")
     gu = np.ascontiguousarray(gf, dtype=np.uint8)
 
-    if threshold not in ("norm", "fixed"):
-        raise ValueError("threshold must be 'norm' or 'fixed'")
-    if extreme not in ("constraint", "add"):
-        raise ValueError("extreme must be 'constraint' or 'add'")
-    if purify is not None and purify not in ("IPP1", "IPP2", "IPP3"):
-        raise ValueError("purify must be None, 'IPP1', 'IPP2', or 'IPP3'")
-    if extreme == "constraint":
-        lo, hi = float(const_range[0]), float(const_range[1])
-        ea, eb = lo, hi
-    else:
-        if int(nr_add) != nr_add or nr_add < 1:
-            raise ValueError("nr_add must be a positive integer >= 1")
-        ea, eb = float(nr_add), 0.0
-    tv = float(alpha) if threshold == "norm" else float(fixed_threshold)
-
     from .fitstats import _core_module
 
     core = _core_module()
@@ -142,7 +291,7 @@ def delta_plot(
         threshold,
         tv,
         purify,
-        int(max_iter),
+        max_iter,
     )
     n_iter = int(res["n_iter"])
     return DeltaPlotResult(
