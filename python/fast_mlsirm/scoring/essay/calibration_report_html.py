@@ -206,7 +206,7 @@ def _validated_report(
             "essay_facets_connectedness_mismatch",
             "$.report.fit_connected",
             "fit connectedness does not match the source design",
-        )
+        ) from None
 
     replayed = EssayFacetsCalibrationReport(
         report_id=report.report_id,
@@ -532,7 +532,7 @@ def render_essay_facets_calibration_report_html(
     requested_output = Path(output_path)
     if requested_output.suffix.lower() != ".html":
         raise ValueError("essay facets calibration output path must end with .html")
-    if title is not None and (not isinstance(title, str) or not title.strip()):
+    if title is not None and (type(title) is not str or not title.strip()):
         raise ValueError("essay facets calibration title must be a non-empty string")
     output, approved_root = _bounded_output_path(requested_output, output_root)
     resolved_title = _DEFAULT_TITLE if title is None else title
