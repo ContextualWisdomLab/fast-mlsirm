@@ -37,6 +37,16 @@ def test_actions_codeql_runs_on_pull_requests_while_python_stays_manual() -> Non
     assert "if: github.event_name == 'workflow_dispatch'" in python_job
 
 
+def test_advanced_jobs_do_not_upload_while_default_setup_is_enabled() -> None:
+    """Run real CodeQL queries without competing with default setup SARIF ownership."""
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    actions_job = _job_block(workflow, "analyze-actions", "analyze-python")
+    python_job = _job_block(workflow, "analyze-python")
+
+    assert "upload: never" in actions_job
+    assert "upload: never" in python_job
+
+
 def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
     """The trigger repair must not loosen action pinning or workflow permissions."""
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
