@@ -701,6 +701,13 @@ h3 {
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 4px;
+}
+
+.bar-row:hover {
+  background: var(--hover-bg);
 }
 
 .bar-label,
