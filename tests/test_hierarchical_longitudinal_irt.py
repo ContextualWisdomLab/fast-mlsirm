@@ -206,6 +206,19 @@ def test_public_fit_rejects_invalid_item_labels(
         )
 
 
+def test_simulate_accepts_list_and_ndarray_item_intercepts() -> None:
+    """Generating intercepts may be a Python sequence or a NumPy vector."""
+    design = _design(1, 2)
+    listed = simulate_hierarchical_longitudinal_irt(
+        design, item_intercepts=[-0.2, 0.2], seed=2
+    )
+    arrayed = simulate_hierarchical_longitudinal_irt(
+        design, item_intercepts=np.array([-0.2, 0.2], dtype=np.float64), seed=2
+    )
+    np.testing.assert_array_equal(listed["responses"], arrayed["responses"])
+    np.testing.assert_array_equal(listed["state"], arrayed["state"])
+
+
 def test_simulate_and_fit_reject_invalid_generating_controls() -> None:
     """The recovery simulator validates generating parameters locally."""
     design = _design(1, 2)

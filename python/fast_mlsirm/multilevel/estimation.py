@@ -476,7 +476,7 @@ def simulate_hierarchical_longitudinal_irt(
         raise ValueError("design must be an exact LongitudinalDesign")
     _ = design.design_fingerprint
     if isinstance(item_intercepts, (str, bytes)) or not isinstance(
-        item_intercepts, Sequence
+        item_intercepts, (Sequence, np.ndarray)
     ):
         raise ValueError("item_intercepts must be a sequence of real numbers")
     try:

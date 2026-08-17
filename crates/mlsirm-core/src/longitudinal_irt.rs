@@ -576,6 +576,7 @@ fn initialize_params(
     })
 }
 
+#[cfg(test)]
 fn empirical_state_sd(state: &[f64]) -> f64 {
     if state.is_empty() {
         return 0.0;
@@ -589,6 +590,7 @@ fn empirical_state_sd(state: &[f64]) -> f64 {
     var.sqrt()
 }
 
+#[cfg(test)]
 fn interval_population_sd(unpacked: &Unpacked) -> Result<f64, String> {
     let fitted = sd_from_log(unpacked.log_sd)?;
     Ok(fitted.max(empirical_state_sd(&unpacked.state)).max(0.25))
