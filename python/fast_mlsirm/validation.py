@@ -16,6 +16,48 @@ from typing import Any
 import numpy as np
 
 
+MAX_JUDGE_CATEGORIES = 1_000
+_TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = tuple(
+    np.dtype(code).type
+    for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
+)
+
+
+def _is_exact_numpy_integer_scalar_type(value_type: type) -> bool:
+    """Return whether ``value_type`` is a package-trusted NumPy integer type.
+
+    Identity comparisons deliberately avoid hashing or equality on a
+    caller-controlled metaclass. This keeps type admission inert even for a
+    NumPy scalar subclass that overrides metaclass ``__hash__`` or ``__eq__``.
+    """
+    return any(value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES)
+
+
+def _trusted_judge_category_count(value: object) -> int:
+    """Return a trusted built-in category count without caller coercion callbacks.
+
+    Only an exact built-in :class:`int` or an exact concrete NumPy integer scalar
+    identity is normalized. Python/NumPy subclasses, booleans, and arbitrary
+    integer-protocol providers are rejected before ``int`` can execute caller
+    code. The returned value is always an exact built-in integer suitable for
+    downstream NumPy validation and PyO3 marshalling.
+    """
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif _is_exact_numpy_integer_scalar_type(value_type):
+        normalized = int(value)
+    else:
+        raise ValueError("k (number of categories) must be an integer")
+
+    if normalized < 2:
+        raise ValueError("k (number of categories) must be >= 2")
+    if normalized > MAX_JUDGE_CATEGORIES:
+        # k drives a dense k-by-k confusion matrix in the Rust core.
+        raise ValueError(f"k (number of categories) must be <= {MAX_JUDGE_CATEGORIES}")
+    return normalized
+
+
 def _validate_labels(a, name: str, *, k: int | None = None, n: int | None = None) -> np.ndarray:
     """Validate caller-supplied category labels before the uint32 conversion the
     Rust gate expects: reject non-1-D, wrong-length, non-finite, non-integer,
@@ -130,27 +172,20 @@ def validate_judge(
     degradation criterion; ``subgroup`` labels each observation for the
     fairness SMD.
     """
-    from . import _core  # computation lives in the Rust core
-
     active_policy = policy if policy is not None else ValidationPolicy()
     if not isinstance(active_policy, ValidationPolicy):
         raise TypeError("policy must be a ValidationPolicy")
 
-    MAX_JUDGE_CATEGORIES = 1_000
-    if int(k) < 2:
-        raise ValueError("k (number of categories) must be >= 2")
-    if int(k) > MAX_JUDGE_CATEGORIES:
-        # k drives a dense k-by-k confusion matrix in the Rust core.
-        raise ValueError(f"k (number of categories) must be <= {MAX_JUDGE_CATEGORIES}")
-    judge_v = _validate_labels(judge, "judge", k=int(k))
-    human_v = _validate_labels(human, "human", k=int(k), n=judge_v.shape[0])
+    category_count = _trusted_judge_category_count(k)
+    judge_v = _validate_labels(judge, "judge", k=category_count)
+    human_v = _validate_labels(human, "human", k=category_count, n=judge_v.shape[0])
     kwargs: dict[str, Any] = {}
     if human_human is not None:
         kwargs["human_a"] = _validate_labels(
-            human_human[0], "human_a", k=int(k), n=judge_v.shape[0]
+            human_human[0], "human_a", k=category_count, n=judge_v.shape[0]
         )
         kwargs["human_b"] = _validate_labels(
-            human_human[1], "human_b", k=int(k), n=kwargs["human_a"].shape[0]
+            human_human[1], "human_b", k=category_count, n=kwargs["human_a"].shape[0]
         )
     if subgroup is not None:
         sg = _validate_labels(subgroup, "subgroup", n=judge_v.shape[0])
@@ -159,10 +194,13 @@ def validate_judge(
         _uniq, sg_compact = np.unique(sg, return_inverse=True)
         kwargs["subgroup"] = sg_compact.astype(np.uint32)
     kwargs.update(active_policy.rust_kwargs())
+
+    from . import _core  # computation lives in the Rust core
+
     res = _core.validate_scoring(
         judge_v,
         human_v,
-        int(k),
+        category_count,
         **kwargs,
     )
     gates = [dict(g) for g in res["gates"]]
@@ -267,6 +305,8 @@ def fleiss_kappa(
         category_z=np.asarray(res["category_z"]),
         category_p=np.asarray(res["category_p"]),
     )
+
+
 @dataclass
 class LightKappaResult:
     """Result of :func:`light_kappa`: mean pairwise unweighted Cohen's kappa
