@@ -8,14 +8,17 @@ from importlib.metadata import version as _distribution_version
 from . import _legacy_init as _legacy_init
 from . import dif as _dif
 from . import reliability as _reliability
+from . import scaling as _scaling
 from ._dif_control_safety import install as _install_dif_control_safety
 from ._icc_control_safety import install as _install_icc_control_safety
+from ._scaling_control_safety import install as _install_scaling_control_safety
 
 # Harden historical adapters before copying legacy exports. These wrappers only
 # validate and normalize semantic controls; all result-affecting arithmetic
 # remains in the existing Rust-backed implementations.
 _install_icc_control_safety(_reliability)
 _legacy_init.icc = _reliability.icc
+
 _install_dif_control_safety(_dif)
 for _dif_name in (
     "logistic_dif",
@@ -25,7 +28,18 @@ for _dif_name in (
     if hasattr(_legacy_init, _dif_name):
         setattr(_legacy_init, _dif_name, getattr(_dif, _dif_name))
 
-del _install_dif_control_safety, _install_icc_control_safety, _dif, _dif_name, _reliability
+_install_scaling_control_safety(_scaling)
+_legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
+
+del (
+    _install_dif_control_safety,
+    _install_icc_control_safety,
+    _install_scaling_control_safety,
+    _dif,
+    _dif_name,
+    _reliability,
+    _scaling,
+)
 
 # Copy only declared legacy exports that are currently defined. This preserves
 # the established package surface without leaking helper imports from the

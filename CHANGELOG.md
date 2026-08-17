@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Harden remaining equating controls before native discovery
+
+- Validate circle-arc method/point/scalar controls, nominal-weights score ceilings and synthetic-population weight, and the composite-linking exponent before compiled-core discovery.
+- Reject caller-defined scalar/container subclasses and arbitrary conversion providers without executing their conversion, comparison, representation, hashing, or iteration callbacks.
+- Preserve exact built-in and genuine NumPy scalar compatibility while keeping circle-arc geometry, nominal-weights moments, composite-linking weight arithmetic, and all result-affecting equating mathematics in Rust.
+
+#### Harden observed-score logistic DIF controls
+
+- Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
+- Reject caller-defined scalar subclasses, arbitrary conversion providers, booleans-as-numbers, invalid FDR levels, zero iteration caps, negative anchor floors, and values outside native `usize` without invoking caller callbacks.
+- Preserve genuine supported NumPy scalar compatibility and keep all logistic/Mantel-Haenszel/purification statistics and BH arithmetic Rust-owned.
+
+### Fixed
+
+#### Fail closed on unsafe multilevel contextual effects
+
+- Multilevel contextual-effect evaluation now fails closed when any referenced context random-effect value is NaN or infinite and when finite inputs overflow the weighted sum, preventing non-finite predictor results from escaping the Rust boundary while leaving unreferenced table capacity outside sparse validation work.
+- Python context-effect marshalling snapshots each required mapping value once without caller-defined membership probes and normalizes hostile lookup callbacks to non-reflective package errors before native dispatch.
+
+#### Workflow-registry audit transport retry hardening
+
+- Expanded the read-only Actions-registry audit transport's bounded retry classifier to cover transient HTTP 403, 404, 429, and all 5xx responses, while preserving fail-closed exhaustion and immediate failure for non-transient authentication errors such as HTTP 401.
+- Added direct transport regression coverage so incident audits do not misclassify one transient GitHub control-plane response as a completed inventory failure.
+
+### Security
+
+#### Parallel-analysis control trust hardening
+
+- Validate `n_iterations`, `centile`, and `seed` before native-core discovery, accepting only exact built-in integers and supported concrete NumPy integer scalars while rejecting booleans, `np.bool_`, caller-defined subclasses, and conversion providers without executing their callbacks. Workspace and `u64` seed limits fail at the same pre-discovery boundary.
+- Normalize nonnumeric `data` conversion failures to a package-owned `ValueError` before native-core discovery while preserving dimensionality and workspace validation for successfully converted arrays.
+- Preserve the existing positive-iteration, centile `0..99`, Rust `u64` seed, and 128 MiB random-benchmark workspace limits without changing Rust-owned Horn/Glorfeld factor-retention arithmetic.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.8.0] - 2026-08-17
+
+
 ### Fixed
 
 - Public spatial/marginal MMLE now wraps a version-matched Rust `fit_marginal` keyword `TypeError` as the package-owned ABI `RuntimeError`, so a stale native signature cannot leak past `MARGINAL_CAPABILITY_VERSION = 1` or fall back to NumPy production arithmetic.
@@ -25,8 +63,6 @@
   fail-closed regression tests and APA 7th doctoring for the validation
   contract.
 
-
-<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
 #### Paired rating-range evidence
@@ -61,11 +97,36 @@
 - Added a provider-neutral `fast_mlsirm.factor_retention` contract that records already-computed candidate counts from supported retention methods, rejects duplicate method evidence, and reports `consensus`, `disagreement`, or `insufficient_evidence` without forcing a winner when methods disagree.
 - Added deterministic conservative candidate ranges, a fixed transport ceiling, closed method identities, complete fail-closed tests, and scientific doctoring while keeping factor-retention and structural model-selection arithmetic Rust-owned and separate.
 
+#### Relation-safe structural model comparison contract
+
+- Added a typed structural measurement-model relation contract that keeps factor
+  retention separate from structural model choice and classifies model pairs
+  from explicit parameter-space, boundary, constraint, overlap, and formal
+  distinguishability facts rather than model names.
+- Restricted regular likelihood-ratio procedures to regular nesting, routed
+  boundary/unidentified/nonlinear restrictions to conservative bootstrap LR,
+  required formal Vuong distinguishability before non-nested selection, and
+  returned explicit no-selection or unknown states instead of forcing a winner.
+- Added fail-closed contradiction, exact-Boolean, boundary-precedence, and
+  procedure-routing tests plus APA 7 doctoring; no comparison statistic or
+  estimator is introduced by this contract slice.
+
+#### Leakage-safe model-validation units
+
+- Added a provider-neutral `fast_mlsirm.model_validation` contract that requires model-selection validation to declare a scientific generalization unit rather than silently splitting response cells.
+- Added group-partition validation that rejects one declared person/system, query/testlet, rater/family, domain/language, cluster/context, or temporal group appearing across folds.
+- Added temporal-forward validation that requires an explicit temporal-period unit and rejects any window whose latest training period overlaps or follows the earliest validation period, preventing look-ahead while keeping calendar interpretation caller-owned.
+- Kept predictive scoring, bootstrap statistics, likelihoods, and other result-affecting psychometric arithmetic outside this Python validation/orchestration boundary and under Rust ownership.
+
 #### Governed post-pilot item-bank lifecycle
 
 - Add a factory-sealed, content-addressed post-pilot item-bank lifecycle that requires exact calibration, item-fit, DIF, information, approval, drift, suspension, and retirement evidence before an item can advance through `piloting`, `calibrated`, `approved`, `active`, `suspended`, reactivated, or terminal `retired` states.
 - Preserve policy criticality independently of psychometric discrimination, require use-specific approval, link every successor to the exact previous record fingerprint, and retain only source-text-free evidence identities while leaving numerical calibration and item-bank arithmetic Rust-owned.
 - Keep tenancy, authorization, identity mapping, persistence, encryption, retention, deletion, human governance, provider SDKs, new estimators, version bumps, and releases outside this reusable-core slice.
+
+#### Governed item-bank lifecycle contracts
+
+- Add immutable, content-addressed item-bank lifecycle and release contracts that bind generated items to exact rubric, blueprint, generation, audit, screening, pilot, calibration, approval, retirement, and linking evidence without adding hosted persistence or new numerical ownership.
 
 #### Governed RAG scoring request
 
@@ -79,6 +140,17 @@
   overall/subgroup SMD, `min_subgroup_n`) into the Rust `validate_scoring`
   decision owner instead of hard-coding Williamson high-stakes cutoffs only in
   Python.
+
+#### Governed RAG perturbation anchors
+
+- Added source-free, content-addressed reference-free RAG perturbation anchors with finite preregistered construct/direction semantics for unsupported claims, contradictions, irrelevant context, required-evidence removal, citation swaps, semantic paraphrases, style-only rewrites, and unanswerable queries.
+- Require canonical governed baseline and perturbed `ScoringRequest` values, reject unrelated or mixed-axis pairs, and bind each anchor to exact perturbation specification/run fingerprints while serializing only source-free identities.
+- Distinguish literature-aligned constructs from package-owned model-design hypotheses. Every expected direction remains a validation hypothesis, not a claim that the cited papers established the exact perturbation, that an observed system actually changed, or that an evaluator is ground truth.
+
+#### Essay facets synthetic recovery evidence
+
+- Deterministic governed synthetic recovery coverage for scoring-facets MFRM/RSM
+  recovery against true injected rater/item effects (issue #397).
 
 #### Architecture baseline documentation
 
@@ -280,6 +352,18 @@
   activation, immutable reusable-workflow source, failure behavior, rollback,
   and the NVIDIA NIM control-plane boundary.
 
+#### Governed RAG facets calibration
+
+- Added the governed RAG facets calibration adapter.
+- The adapter reuses the existing MFRM rater-severity/threshold calibration
+  machinery (Linacre, 1989; Eckes, 2015; Bock & Aitkin, 1981; Andrich, 1978)
+  for RAG evaluation executions. It does not introduce a new psychometric
+  estimator or rely on legacy evaluation package implementations (e.g.
+  RAGAS-style tooling) as the source of psychometric validity; all
+  likelihood/threshold arithmetic is delegated to the existing Rust-backed MFRM
+  fit grounded in the primary many-facet Rasch measurement literature. Full
+  citations are in `docs/scoring_facets_calibration_handoff.md`.
+
 #### Supplemental exact-value report tooltips
 
 - Added native `title` tooltips to finite floating-point metric cards, decorative
@@ -383,6 +467,35 @@
 - Default policy remains `williamson_high_stakes` v1.0 with the published
   high-stakes thresholds; invalid threshold ranges fail closed before Rust work.
 
+#### ATA target-gain Rust ownership
+
+- Moved result-affecting capped-shortfall target-information gains for automated
+  test assembly from Python/NumPy into a bounded Rust PyO3 kernel.
+- Kept Python responsible for validated candidate/content/exposure orchestration
+  and deterministic tie breaking while the compiled path owns candidate gain
+  arithmetic without candidate-by-point broadcast temporaries.
+- Made the public PyO3 boundary reject wrong-dtype, non-array, non-contiguous,
+  empty-matrix and overlong candidate-set inputs with stable package-owned
+  `ValueError` messages before candidate/output allocation.
+- Bounded candidate inputs to the item count represented by the information
+  matrix and converted both candidate and result vectors with fallible reserve.
+- Added direct Rust and installed-extension parity/ownership regression evidence.
+
+#### Conditional Rasch M2 Rust ownership
+
+- Public `m2_cmle_rasch()` and `m2(..., estimator="cmle")` fail closed without the compiled Rust core and delegate every result field to `m2_cmle_rasch_stat`.
+
+#### Fail-closed IRT linking control values
+
+- Validate `irt_link(method=...)` as an exact built-in string against the existing Rust `LinkMethod` vocabulary before loading or calling the native core.
+- Validate `q_theta` as either an exact built-in Python integer or a genuine NumPy integer scalar before native-loader access; integer subclasses are rejected before caller-controlled `__int__`/representation callbacks can run.
+- Reject hostile method objects, string subclasses, unsupported method identities, and hostile quadrature subclasses with package-owned `ValueError` evidence, while preserving trusted Rust-supported aliases and genuine NumPy integer quadrature scalars.
+- Keep all IRT scale-linking coefficients, characteristic-curve criteria, optimization, convergence arithmetic, and quadrature generation behavior in their existing numerical owners; this change is limited to Python validation and marshalling.
+
+#### Default LLM judge orchestration to adaptive auto mode
+
+- `ContextualOrchestratorJudge` now defaults ordinary calls to contextual-orchestrator `auto` mode while preserving explicit `route` and `conduct` overrides and the fail-closed `contextual-orchestrator-contract-v1` adapter boundary.
+
 #### MMLE theta calculation memory optimization
 
 - Replaced the NumPy reference/fallback EAP expression `(posterior * nodes[None, :]).sum(axis=1)` with the algebraically equivalent matrix-vector product `posterior @ nodes`. This avoids constructing the explicit posterior-shaped broadcast product; NumPy may use optimized BLAS for matrix multiplication when available, while realized runtime remains dependent on array shape, layout, hardware, and the linked numerical library.
@@ -399,17 +512,6 @@
 - Defined the `fast-mlsirm-cjson-v1` fingerprint preimage, SHA-256 binding, null/ordering/Unicode/number rules, and cross-language normative vector instead of leaving canonical serialization as an interoperability assumption.
 - Added the persistence-neutral `docs/uml/domain-public-contract.puml` view, indexed every UML source including the compatibility alias, modeled versioned calibration-design inputs as a many-to-many association, and made corrected quarantined items new immutable revisions.
 - Added complete APA 7 research records and scope summaries for LLM-RUBRIC, AutoNuggetizer/TREC RAG, EvalGen, the 2025 AutoNuggetizer follow-up and 2026 reflective rubric research, plus NIST AI RMF governance inputs with explicit non-certification language.
-
-#### Release cut 0.7.0
-
-- Project version is bumped to 0.7.0 in `pyproject.toml`,
-  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated
-  `Unreleased` notes (the governed automated-essay-scoring adapters, the
-  governed criterion facets calibration handoff into the Rust-backed
-  many-facet estimator, and the keyboard-scrollable report export
-  accessibility fix) now form the `[0.7.0] - 2026-08-04` release section.
-- Released authoritative fragments are removed from `docs/changelog.d`;
-  the directory again holds only genuinely unreleased notes.
 
 #### Exact task-revision identity for scoring calibration
 
@@ -438,6 +540,12 @@
 - Reused the governed helper in table construction, candidate predictors, the
   tau update, and the covariate update while preserving the Rust production
   backend and public model contracts.
+
+#### Second-order diagnostics keep positive-definiteness semantics strict
+
+- Rust-owned observed-information diagnostics now reject negative positive-definiteness tolerances instead of allowing callers to redefine a matrix with small negative eigenvalues as positive definite.
+- Zero tolerance remains supported and preserves the strict requirement that every information eigenvalue be positive.
+- Oversized second-order matrix dimensions whose square cannot be represented by `usize` now fail closed with a stable package error instead of overflowing dimension arithmetic.
 
 #### S-X2 and person-fit Rust ownership fail-closed
 
@@ -604,6 +712,124 @@
   fields contradict canonical log-scale parameters, and admits only exact built-in
   numeric scalars so hostile conversion hooks cannot execute during load/score.
 
+#### Factor-retention iterable error redaction
+
+- Governed factor-retention evidence now converts hostile iterator-construction
+  and iteration callback failures into stable package-owned validation errors
+  without exposing caller-controlled exception text or chained causes.
+- Explicit `MemoryError`, duplicate-method precedence, deterministic ordering,
+  decision semantics, and the bounded closed-method evidence contract remain
+  unchanged.
+
+#### Multigroup M2 Rust projection ownership
+
+- Public `m2_multigroup` fails closed without the compiled Rust core and delegates target/null projected M2 quadratic forms to `projected_m2`.
+
+#### Report pointer focus correction
+
+- Suppress the browser's default outline for pointer-focused report content while preserving the explicit keyboard-visible focus treatment.
+
+#### Exploratory model factor-count callback safety
+
+- Accept only exact built-in Python integers and genuine NumPy integer scalar types for exploratory factor counts, rejecting caller-defined integer subclasses before conversion callbacks can execute while preserving the existing positive-factor and multidimensional-support contracts.
+
+#### G-theory NumPy scalar trust hardening
+
+- Require exact package-supported NumPy integer and floating scalar classes for G-theory public numeric controls, rejecting caller-defined subclasses even when they spoof NumPy module metadata before any conversion callback can execute.
+
+#### Mixture IRT control callback safety
+
+- Validate mixture-model controls before native-core discovery, accept only exact built-in or supported genuine NumPy scalar identities, preserve the Rust binding's existing model aliases and tolerance semantics, and reject hostile scalar subclasses before conversion or representation callbacks can execute.
+
+#### Continuous-response-model control callback safety
+
+- Validate CRM quadrature, iteration, and tolerance controls before native-core discovery; accept only exact built-in or supported genuine NumPy scalar identities; preserve the Rust quadrature domain and convergence tolerance contract; and reject hostile scalar subclasses before caller-controlled conversion, comparison, ufunc, or representation callbacks can execute.
+
+#### Paired rating-range category control hardening
+
+- Require exact built-in or package-supported genuine NumPy integer scalar identities for `paired_rating_range_evidence(..., category_count=...)`, rejecting caller-defined subclasses before conversion, type-hash/equality, representation, or Rust-dispatch callbacks can execute.
+
+#### G-theory pilot control callback boundary
+
+- Hardened the generated-item G-theory pilot handoff so D-study sizes and mastery-cut controls accept only exact built-in or genuine supported NumPy scalar identities.
+- Rejected caller-defined numeric and protocol subclasses before conversion, representation, hashing, or equality callbacks while preserving existing bounds and Rust-owned G-theory arithmetic.
+
+#### Testlet pilot control callback boundary
+
+- Hardened the generated-item testlet pilot handoff so model and execution controls establish exact trusted built-in or supported NumPy scalar identities before normalization or conversion.
+- Rejected caller-defined protocol, numeric, and string subclasses without callback dispatch while preserving existing limits and Rust-owned testlet arithmetic.
+
+#### Harden governed scoring execution integer boundaries
+
+- Reject caller-defined integer coercion at governed scoring request, observation, and result controls before any `__index__` callback can run, while preserving exact built-in and genuine NumPy integer scalar compatibility and existing bounded `AssessmentSpecError` semantics.
+
+#### Bounded hourly PR queue capture
+
+- Split hourly open-PR identity enumeration from per-PR nested evidence capture so large queues no longer exceed GitHub GraphQL resource limits or publish a false zero-PR snapshot.
+- Preserve fail-closed review, merge-state, label, changed-file, body, history, and exact default-branch evidence while excluding pull requests that close during capture.
+- Fail closed when an open-PR detail payload omits required classification fields instead of promoting partial queue evidence.
+
+#### Rubric integer control callback boundary
+
+- Hardened rubric and blueprint integer normalization so exact built-in integers and genuine supported NumPy integer scalars remain compatible while caller-defined integer/protocol objects are rejected before executable conversion callbacks.
+- Preserved the existing score, item-count, replicate-index, seed, and unsigned-64 bounds without changing psychometric arithmetic or Rust numerical ownership.
+
+#### Harden essay adapter integer boundaries
+
+- Reject caller-defined integer coercion across essay prompt limits, submission counts, and evidence offsets before any conversion callback can run, while preserving exact built-in and genuine NumPy integer scalar compatibility and existing bounded `AssessmentSpecError` semantics.
+
+#### Harden enterprise evidence integer boundaries
+
+- Reject caller-defined integer coercion for enterprise source character counts and evidence offsets before any conversion callback can run, while preserving exact built-in and genuine NumPy integer scalar compatibility, nonempty-span semantics, and existing bounded `AssessmentSpecError` behavior.
+
+#### Harden observed-score equating control boundaries
+
+- Validate NEAT, log-linear, kernel, and standard-error semantic controls before Rust discovery, rejecting executable coercion and comparison providers while preserving exact built-in primitives, genuine NumPy numeric scalars, documented Rust aliases, and Rust ownership of all equating arithmetic.
+
+#### Reject executable ICC semantic controls
+
+- Validate ICC model/type/unit choices and r0/confidence controls before native-core discovery or ratings materialization, reject caller-defined conversion/comparison protocol providers and scalar subclasses without executing their callbacks, preserve the Rust parameter ranges, and normalize trusted NumPy real scalars to exact Python floats before Rust dispatch.
+
+#### Validate DETECT inputs before native discovery
+
+- Validate and marshal DETECT and DIMTEST public response/partition inputs before compiled-core discovery, so rejected requests remain package-owned validation failures without crossing the native-loader boundary while all result-affecting dimensionality arithmetic remains Rust-owned.
+
+#### Harden Rasch CML public controls
+
+- Validate Rasch CML and Andersen LR response/group inputs plus trusted iteration/tolerance controls before compiled-core discovery, rejecting caller-defined scalar coercion while preserving genuine NumPy scalar compatibility and Rust-owned conditional-likelihood arithmetic.
+
+#### Validate subscore inputs before native discovery
+
+- Validate Haberman subscore response and partition inputs before compiled-core discovery, keeping rejected requests inside package-owned validation while preserving all PRMSE, reliability, covariance, disattenuation and added-value arithmetic in Rust.
+
+#### Plausible-value serving control safety
+
+- Validate and normalize public plausible-value `n_draws`, `seed`, and `device` controls before compiled-core discovery.
+- Bound `seed` to the Rust/PyO3 `u64` contract, keep `n_draws` within the existing serving limit, and constrain device selection to `cpu`, `gpu`, or `auto`.
+- Reject booleans, caller-defined integer/string subclasses, arbitrary coercion providers, and hostile scalar metaclasses without executing their conversion, hashing, or equality callbacks.
+- Preserve exact supported NumPy integer scalar compatibility by admitting trusted scalar types through identity-only comparisons and marshalling them once to built-in integers.
+Closes #914.
+
+#### Secondary extension loader concurrency
+
+- Serialize cache inspection and native initialization for the ATA, bifactor, multilevel, paired rating-range, and rotation secondary extension loaders so concurrent callers cannot observe temporary `sys.modules` entries before `exec_module()` completes.
+- Preserve one-time shared-library loading, cached module identity, public loader APIs, and cleanup of failed initialization attempts without changing psychometric or numerical arithmetic.
+
+#### Bradley-Terry control trust boundary
+
+- `bradley_terry_mm()` now validates and normalizes `alpha`, `max_iter`, and `tol` before caller data materialization or compiled-core discovery. Exact built-in and supported NumPy scalar identities remain compatible; booleans, numeric subclasses, and arbitrary conversion providers are rejected without executing caller callbacks.
+- `max_iter` is bounded by the package-wide `MAX_MAX_ITER` resource ceiling. Exact integers that overflow IEEE-754 conversion raise a package-owned `ValueError` before data materialization, matching the ICC adapter. Bradley-Terry MM arithmetic, convergence, normalization, estimates, and result statistics remain Rust-owned.
+
+#### Delta-plot control trust boundary
+
+- `delta_plot()` now establishes trusted selector, scalar, range, and iteration controls before materializing caller response/group data or discovering the compiled Rust core. Exact built-in strings and supported exact NumPy numeric scalar identities remain compatible; booleans, subclasses, unused-branch hostiles, and arbitrary conversion providers fail closed before caller callbacks. Huge exact integers that overflow `float()` raise package `ValueError` rather than a bare `OverflowError`.
+- Normal-threshold `alpha` preserves the Rust `(0, 1)` domain, constraint ranges preserve `0 <= lo < hi <= 1`, fixed thresholds must be finite, additive adjustment counts stay positive, and `max_iter` is bounded by the package-wide `MAX_MAX_ITER` ceiling. Angoff Delta plot proportions, transforms, purification, thresholds, DIF flags, and result arithmetic remain Rust-owned.
+
+#### Mantel-Haenszel control trust boundary
+
+- `mantel_haenszel_dif()` now establishes trusted `fdr_q` and `exclude_studied_item` controls before materializing caller response/group data or discovering the compiled Rust core. Exact built-in bools and supported exact NumPy numeric scalar identities remain compatible; booleans-as-numbers, subclasses, and arbitrary conversion providers fail closed before caller callbacks. Huge exact integers that overflow `float()` raise package `ValueError` rather than a bare `OverflowError`.
+- The FDR threshold preserves the existing finite `(0, 1]` domain. The ETS default still includes the studied item in the matching total. Mantel-Haenszel odds ratios, chi-square, ETS delta, standardized P-DIF, A/B/C classes, and BH flags remain Rust-owned.
+
 #### Diagnostics-report focus and contrast preservation
 
 - Revealed the visually hidden diagnostics-report skip link for every actual `:focus` state while retaining the explicit `:focus-visible` treatment and strong outline.
@@ -669,6 +895,44 @@
 
 - Keep invalid ATA semantic controls on a stable package-owned error surface rather than allowing arbitrary `__str__`/`__int__`/`__index__` callbacks during constraint-map coercion.
 
+#### Model-comparison callback-boundary hardening
+
+- Harden parameter-count, audit-label, and real-valued model-comparison controls so caller-defined integer/string/NumPy subclasses and arbitrary integer-protocol providers are rejected before conversion or normalization callbacks execute, while preserving genuine NumPy scalar compatibility and Rust-owned Vuong arithmetic.
+
+#### Bounded hourly PR queue capture
+
+- Keep GitHub subprocesses bounded, retry only explicit HTTP 502/503/504 responses, reject malformed or duplicate PR identities, and fail rather than truncate queues above the supported cap.
+- Enforce a 420-second cumulative monotonic capture deadline so sequential enrichment leaves time for deterministic failure manifests and artifact publication inside the ten-minute workflow job budget.
+
+#### Cognitive-diagnosis native control boundary
+
+- Validate CDM-family `max_iter`, `tol`, and DINA/DINO model selectors before compiled-core discovery. Only exact built-in values and explicitly supported concrete NumPy scalar types are normalized; booleans, subclasses, protocol providers, non-finite/out-of-range values, and unknown model selectors fail locally without executing caller conversion callbacks. Rust-owned psychometric arithmetic and result schemas are unchanged.
+
+#### Answer-copying integer control boundary
+
+- Harden Wollack omega, K-index, and K1/K2/S1/S2 row/count controls so only exact built-in integers and genuine supported NumPy integer scalars are normalized before compiled-core discovery; reject booleans, integer subclasses, and arbitrary coercion providers without executing caller callbacks.
+
+#### Judge category-count RED completeness
+
+- Extend `validate_judge(..., k=...)` regressions so `__index__`-only providers, comparison/repr hooks, booleans, `np.bool_`, 0-d arrays, and type-invalid controls fail before compiled-core discovery.
+- Keep the existing trusted-scalar admission, `2..=1000` domain, and Rust-owned judge-validation arithmetic unchanged.
+Closes #912.
+
+#### Judge category-count control hardening
+
+- Validate the public `validate_judge(..., k=...)` category count before compiled-core discovery.
+- Accept exact built-in integers and genuine concrete NumPy integer scalars while rejecting booleans, subclasses, and arbitrary integer-conversion protocol providers without executing caller conversion callbacks.
+- Marshal only a trusted built-in integer into the existing Rust-owned judge-validation computation; psychometric/fairness formulas, thresholds, and result schemas are unchanged.
+Closes #912.
+
+#### Harden Hofstee scalar control validation
+
+- Harden Hofstee standard-setting scalar controls so rejected booleans, scalar subclasses, arbitrary conversion providers, non-finite/out-of-range percentages, overflowed trusted integers, and inverted bound pairs fail before Rust-core discovery; genuine supported NumPy scalars remain compatible and all Hofstee numerical arithmetic remains Rust-owned.
+
+#### Harden many-facet control validation
+
+- Harden public many-facet calibration controls so invalid booleans, scalar subclasses, arbitrary numeric protocol providers, unsupported quadrature/category/iteration controls, and non-finite or non-positive tolerances fail before Rust-core discovery; genuine supported NumPy scalars remain compatible and all MFRM numerical arithmetic remains Rust-owned.
+
 #### Descriptor-safe bounded JSON input for automation scripts
 
 - Consolidated governed automation JSON readers behind a descriptor-safe shared
@@ -683,7 +947,10 @@
 - Release acceptance and generation-request contract loading use size- and
   depth-bounded JSON parsers instead of unbounded `json.loads` on CLI stdout
   and fit_summary artifacts.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+#### Reliability integer control boundary
+
+- Harden Finn `s_levels`, Guttman `n_sample_splits`/`seed`, and Feldt `n_persons`/`n_items` so only exact built-in integers and genuine supported NumPy integer scalars are normalized before compiled-core discovery or ratings materialization; reject booleans, integer subclasses, and arbitrary coercion providers without executing caller callbacks.
 
 ## [0.7.0] - 2026-08-04
 
