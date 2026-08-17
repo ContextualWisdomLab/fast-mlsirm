@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 GIT_METADATA_TIMEOUT_SECONDS = 5
+COMMAND_TIMEOUT_SECONDS = 300
 
 try:
     from scripts._bounded_json import parse_json_bounded, read_json_object
@@ -68,7 +69,22 @@ def _content_security_policy() -> str:
 
 
 def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    """Run one release stage with a hard timeout and structured failure result."""
+    try:
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            command,
+            124,
+            "",
+            f"command timed out after {COMMAND_TIMEOUT_SECONDS} seconds",
+        )
 
 
 def _parse_last_json_line(stdout: str) -> dict[str, Any] | None:
