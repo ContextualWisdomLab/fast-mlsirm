@@ -18,8 +18,17 @@ from fast_mlsirm.estimators import mmle as mmle_module
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CHANGELOG_FRAGMENT = ROOT / "docs" / "changelog.d" / "bolt-mmle-theta-optimization.md"
+CHANGELOG_PATH = ROOT / "CHANGELOG.md"
+CHANGELOG_SECTION_HEADING = "#### MMLE theta calculation memory optimization"
 DOCTORING = ROOT / "docs" / "doctoring" / "mmle-eap-matvec-projection.md"
+
+
+def _changelog_section(heading: str) -> str:
+    """Return one released or unreleased CHANGELOG.md subsection's exact text."""
+    text = CHANGELOG_PATH.read_text(encoding="utf-8")
+    start = text.index(heading)
+    next_heading = text.index("\n#### ", start + len(heading))
+    return text[start:next_heading]
 
 
 def _initial_posterior(
@@ -223,7 +232,7 @@ def test_public_mmle_fails_closed_without_allocating_fallback_grid(
 
 def test_changelog_avoids_universal_eap_speedup_claims() -> None:
     """Release notes must describe the optimization without a fixed speedup promise."""
-    fragment = CHANGELOG_FRAGMENT.read_text(encoding="utf-8")
+    fragment = _changelog_section(CHANGELOG_SECTION_HEADING)
     lowered = fragment.casefold()
 
     assert "30x" not in lowered
