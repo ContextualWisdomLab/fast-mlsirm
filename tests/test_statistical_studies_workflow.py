@@ -62,8 +62,12 @@ def test_statistical_studies_checkouts_do_not_persist_credentials():
     """Every scheduled study checkout withholds the Actions token from cargo test."""
     text = _STUDIES.read_text(encoding="utf-8")
     checkout = "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-    assert text.count(checkout) == 5
-    assert text.count("persist-credentials: false") == 5
+    checkout_tails = text.split(checkout)[1:]
+    assert len(checkout_tails) == 5
+    for checkout_tail in checkout_tails:
+        checkout_block = checkout_tail.split("\n      - ", maxsplit=1)[0]
+        assert "\n        with:\n" in checkout_block
+        assert "\n          persist-credentials: false" in checkout_block
 
 
 def test_grm_recovery_publishes_a_durable_study_log():
@@ -71,6 +75,11 @@ def test_grm_recovery_publishes_a_durable_study_log():
     text = _STUDIES.read_text(encoding="utf-8")
     _, grm_block = text.split("\n  grm-recovery:\n", maxsplit=1)
     grm_block, _ = grm_block.split("\n  gpu-recovery:\n", maxsplit=1)
+    assert "timeout-minutes: 120" in grm_block
+    assert "grm::tests::mc_grm_recovery_500" in grm_block
+    assert "--ignored" in grm_block
+    assert "--exact" in grm_block
+    assert "--test-threads=1" in grm_block
     assert "set -euo pipefail" in grm_block
     assert "tee grm-recovery-study.log" in grm_block
     assert (
