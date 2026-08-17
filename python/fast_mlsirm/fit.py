@@ -6,6 +6,7 @@ import numpy as np
 
 from .backend import normalize_device, resolve_backend
 from .config import FitConfig, PenaltyConfig
+from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
 from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
                         validate_factor_id)
@@ -114,6 +115,8 @@ def fit(
         raise ValueError("factor_id length must match number of items")
     if factors.dtype.kind not in {"i", "u"}:
         raise ValueError("factor_id must contain integer values")
+    validation_y = np.where(observed, y, np.nan)
+    validate_irt_response_matrix(validation_y, "dichotomous")
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")
@@ -121,7 +124,6 @@ def fit(
     if model in {"ULS2PLM", "ULSRM"}:
         factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
-
     if group_id is not None and cluster_id is not None:
         raise ValueError("group_id and cluster_id are mutually exclusive")
     if (group_id is not None or cluster_id is not None) and config.estimator != "mmle":
