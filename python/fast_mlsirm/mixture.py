@@ -12,6 +12,64 @@ from .config import MAX_AGGREGATE_ITERS, MAX_MAX_ITER, MAX_RESTARTS
 
 MAX_MIXTURE_CLASSES = 64
 MAX_MIXTURE_BUFFER_CELLS = 60_000_000
+_MAX_U64 = (1 << 64) - 1
+_SUPPORTED_MIXTURE_MODELS = ("rasch", "Rasch", "RASCH", "2pl", "2PL", "twopl", "TwoPl")
+_NUMPY_INTEGER_TYPES = tuple(
+    np.dtype(name).type
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
+)
+_NUMPY_FLOAT_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted type without callbacks."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _bounded_integer(value: object, name: str, lower: int, upper: int) -> int:
+    """Return a trusted integer in ``lower..upper`` without subclass coercion."""
+
+    value_type = type(value)
+    if value_type is int:
+        result = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_TYPES):
+        result = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer in {lower}..{upper}")
+    if not lower <= result <= upper:
+        raise ValueError(f"{name} must be an integer in {lower}..{upper}")
+    return result
+
+
+def _finite_nonnegative_real(value: object, name: str) -> float:
+    """Return a trusted finite non-negative real without subclass coercion."""
+
+    value_type = type(value)
+    if not (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_TYPES)
+    ):
+        raise ValueError(f"{name} must be a finite non-negative number")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite non-negative number") from exc
+    if not np.isfinite(result) or result < 0.0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+    return result
+
+
+def _mixture_model_name(value: object) -> str:
+    """Return one exact model alias accepted by the Rust mixture binding."""
+
+    if type(value) is not str or value not in _SUPPORTED_MIXTURE_MODELS:
+        raise ValueError("model must be one of rasch, Rasch, RASCH, 2pl, 2PL, twopl, TwoPl")
+    return value
 
 
 @dataclass
@@ -80,27 +138,18 @@ def fit_mixture(
     """
     from .fitstats import _core_module
 
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_mixture"):
-        raise RuntimeError("fit_mixture requires the compiled Rust core")
+    n_classes_int = _bounded_integer(n_classes, "n_classes", 1, MAX_MIXTURE_CLASSES)
+    n_starts_int = _bounded_integer(n_starts, "n_starts", 1, MAX_RESTARTS)
+    max_iter_int = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    model_value = _mixture_model_name(model)
+    tol_value = _finite_nonnegative_real(tol, "tol")
+    seed_int = _bounded_integer(seed, "seed", 0, _MAX_U64)
 
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
 
-    def bounded_integer(value, name: str, upper: int) -> int:
-        """Validate that ``value`` is an integer in ``1..upper`` and return it."""
-        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-            raise ValueError(f"{name} must be an integer in 1..{upper}")
-        result = int(value)
-        if not (1 <= result <= upper):
-            raise ValueError(f"{name} must be an integer in 1..{upper}")
-        return result
-
-    n_classes_int = bounded_integer(n_classes, "n_classes", MAX_MIXTURE_CLASSES)
-    n_starts_int = bounded_integer(n_starts, "n_starts", MAX_RESTARTS)
-    max_iter_int = bounded_integer(max_iter, "max_iter", MAX_MAX_ITER)
     aggregate_iterations = n_classes_int * n_starts_int * max_iter_int
     if aggregate_iterations > MAX_AGGREGATE_ITERS:
         raise ValueError(
@@ -118,17 +167,22 @@ def fit_mixture(
             )
     observed = np.isfinite(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mixture"):
+        raise RuntimeError("fit_mixture requires the compiled Rust core")
+
     res = core.fit_mixture(
         yy,
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
         n_classes_int,
-        str(model),
+        model_value,
         n_starts_int,
         max_iter_int,
-        float(tol),
-        int(seed),
+        tol_value,
+        seed_int,
     )
     c = int(res["n_classes"])
     return MixtureFit(
