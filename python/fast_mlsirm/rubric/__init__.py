@@ -1,5 +1,12 @@
 """Rubric-centered authoring, generation, audit, pilot, and bank lifecycle."""
 
+from . import item_bank as _item_bank
+from ._item_bank_reactivation_validation import (
+    install as _install_item_bank_reactivation_validation,
+)
+
+_install_item_bank_reactivation_validation(_item_bank)
+
 from .candidates import BinaryAnswerKey as BinaryAnswerKey
 from .candidates import CandidateValidationError as CandidateValidationError
 from .candidates import ConstructedAnswerKey as ConstructedAnswerKey
