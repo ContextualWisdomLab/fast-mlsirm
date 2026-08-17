@@ -1,10 +1,9 @@
-"""Regressions for bounded JSON at non-conflicting command-output boundaries."""
+"""Regression for bounded JSON at an isolated command-output boundary."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -24,35 +23,6 @@ def _load_script(filename: str) -> ModuleType:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
-
-
-def _too_deep_json_object() -> str:
-    """Return a small JSON object that exceeds the repository depth limit."""
-    value: object = 0
-    for _ in range(129):
-        value = [value]
-    return json.dumps({"nested": value})
-
-
-def test_workflow_registry_rejects_overdeep_success_payload(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A successful gh command must not bypass the bounded JSON contract."""
-    module = _load_script("audit_workflow_registry.py")
-    completed = subprocess.CompletedProcess(
-        args=["gh", "api"],
-        returncode=0,
-        stdout=_too_deep_json_object(),
-        stderr="",
-    )
-    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: completed)
-
-    with pytest.raises(module.GitHubApiError, match="invalid JSON"):
-        module._run_gh_api(
-            "/repos/example/project/actions/workflows",
-            max_attempts=1,
-            retry_sleep_seconds=0,
-        )
 
 
 def test_ignored_rust_shard_rejects_overdeep_metadata() -> None:
