@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Public spatial/marginal MMLE now wraps a version-matched Rust `fit_marginal` keyword `TypeError` as the package-owned ABI `RuntimeError`, so a stale native signature cannot leak past `MARGINAL_CAPABILITY_VERSION = 1` or fall back to NumPy production arithmetic.
 - Public multigroup M2 fails closed without the compiled Rust core and delegates target/null projected quadratic forms to native `projected_m2`.
 - Public conditional-Rasch M2 fails closed without the compiled Rust core and delegates every result field to the native `m2_cmle_rasch_stat` entrypoint.
 - Reject ambiguous LLM-judge JSON with duplicate keys or unexpected top-level fields; require the exact mode-specific schema including advisory `accepted`.
