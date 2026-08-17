@@ -60,10 +60,13 @@ class _DomainErrorString(str):
 
 
 class _DomainErrorInteger:
-    """Integer-like fixture that raises an existing package-owned domain error."""
+    """Integer-like fixture whose callback must never cross the trust boundary."""
+
+    calls = 0
 
     def __index__(self):
-        """Raise the shared sentinel domain error unchanged."""
+        """Record forbidden dispatch before raising the shared sentinel error."""
+        type(self).calls += 1
         raise _SENTINEL_ERROR
 
 
@@ -211,8 +214,8 @@ def test_response_type_equality_callback_failure_is_redacted() -> None:
     assert "private enum comparison payload" not in str(captured.value)
 
 
-def test_package_owned_callback_errors_are_preserved_unchanged() -> None:
-    """The public boundary re-raises an existing AssessmentSpecError object."""
+def test_package_owned_text_callback_errors_are_preserved_unchanged() -> None:
+    """String normalization re-raises an existing package-owned domain error."""
     with pytest.raises(AssessmentSpecError) as text_error:
         ConstructSpec(
             construct_id=_DomainErrorString("argument_quality"),
@@ -221,6 +224,10 @@ def test_package_owned_callback_errors_are_preserved_unchanged() -> None:
         )
     assert text_error.value is _SENTINEL_ERROR
 
+
+def test_integer_callback_domain_errors_are_rejected_before_dispatch() -> None:
+    """Untrusted integer callbacks cannot execute even to raise domain errors."""
+    _DomainErrorInteger.calls = 0
     with pytest.raises(AssessmentSpecError) as integer_error:
         EnginePolicy(
             policy_id="engine_policy",
@@ -229,7 +236,11 @@ def test_package_owned_callback_errors_are_preserved_unchanged() -> None:
             allow_automated_raters=False,
             minimum_raters_per_response=_DomainErrorInteger(),  # type: ignore[arg-type]
         )
-    assert integer_error.value is _SENTINEL_ERROR
+
+    assert integer_error.value.code == "invalid_minimum_raters_per_response"
+    assert integer_error.value.path == "$.minimum_raters_per_response"
+    assert integer_error.value is not _SENTINEL_ERROR
+    assert _DomainErrorInteger.calls == 0
 
 
 def test_base_exceptions_are_not_swallowed_by_callback_redaction() -> None:
