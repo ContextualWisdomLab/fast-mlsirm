@@ -36,6 +36,8 @@ References (APA 7th ed.):
 
 from __future__ import annotations
 
+import math
+import numbers
 from dataclasses import dataclass
 
 
@@ -67,6 +69,16 @@ class TaylorRussellResult:
     q_joint: float
 
 
+def _coerce_finite_real(value: object, *, name: str) -> float:
+    """Return a trusted finite real scalar without invoking arbitrary protocols."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise ValueError(f"{name} must be a finite real number")
+    marshaled = float(value)
+    if not math.isfinite(marshaled):
+        raise ValueError(f"{name} must be a finite real number")
+    return marshaled
+
+
 def selection_utility(
     n: float,
     sdy: float,
@@ -84,10 +96,22 @@ def selection_utility(
     applicant" but never multiplies by ``n``; we document the actual
     semantics), ``period`` expected tenure (>= 1).
     """
+    marshaled_n = _coerce_finite_real(n, name="n")
+    marshaled_sdy = _coerce_finite_real(sdy, name="sdy")
+    marshaled_rxy = _coerce_finite_real(rxy, name="rxy")
+    marshaled_sr = _coerce_finite_real(sr, name="sr")
+    marshaled_cost_total = _coerce_finite_real(cost_total, name="cost_total")
+    marshaled_period = _coerce_finite_real(period, name="period")
+
     from . import _core
 
     r = _core.selection_utility(
-        float(n), float(sdy), float(rxy), float(sr), float(cost_total), float(period)
+        marshaled_n,
+        marshaled_sdy,
+        marshaled_rxy,
+        marshaled_sr,
+        marshaled_cost_total,
+        marshaled_period,
     )
     return SelectionUtilityResult(
         xc=r["xc"], ux=r["ux"], pux=r["pux"], utility_gain=r["utility_gain"]
@@ -101,9 +125,13 @@ def taylor_russell(rxy: float, sr: float, br: float) -> TaylorRussellResult:
     base rate of success in (0, 1). At ``rxy = 0`` the success ratio
     equals ``br`` (no selection information).
     """
+    marshaled_rxy = _coerce_finite_real(rxy, name="rxy")
+    marshaled_sr = _coerce_finite_real(sr, name="sr")
+    marshaled_br = _coerce_finite_real(br, name="br")
+
     from . import _core
 
-    r = _core.taylor_russell(float(rxy), float(sr), float(br))
+    r = _core.taylor_russell(marshaled_rxy, marshaled_sr, marshaled_br)
     return TaylorRussellResult(
         success_ratio=r["success_ratio"],
         base_rate=r["base_rate"],
