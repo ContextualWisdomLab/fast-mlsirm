@@ -646,7 +646,7 @@ main {
   padding: 32px 20px 48px;
 }
 
-main:focus {
+main:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -836,7 +836,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
+.table-wrap:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -925,6 +925,11 @@ tbody tr:hover {
   color: var(--teal);
 }
 
+.exact-values > summary:focus:not(:focus-visible),
+.export-block > summary:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .exact-values > summary:focus-visible,
 .export-block > summary:focus-visible {
   outline: 3px solid var(--teal);
@@ -951,7 +956,7 @@ tbody tr:hover {
   white-space: pre;
 }
 
-.export-block pre:focus {
+.export-block pre:focus:not(:focus-visible) {
   outline: none;
 }
 
