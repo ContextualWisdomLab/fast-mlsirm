@@ -70,12 +70,6 @@ def detect_analysis(
             structure. *Psychometrika, 64*(2), 213-249. (as cited in
             Robitzsch, 2024)
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "detect_analysis"):
-        raise RuntimeError("detect_analysis requires the compiled Rust core")
-
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -84,6 +78,8 @@ def detect_analysis(
         raise ValueError("responses needs at least 2 persons and 2 items")
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
+    if not np.all(np.isin(y, (0.0, 1.0))):
+        raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
     c = np.asarray(cluster).reshape(-1)
     if c.shape[0] != n_items:
@@ -115,6 +111,12 @@ def detect_analysis(
             # Kept as a defensive guard.
             raise ValueError("cluster labels must fit in a 64-bit integer")  # pragma: no cover
         c = c.astype(np.int64)
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "detect_analysis"):
+        raise RuntimeError("detect_analysis requires the compiled Rust core")
 
     res = core.detect_analysis(
         y.reshape(-1), int(n_persons), int(n_items), [int(v) for v in c]
@@ -192,12 +194,6 @@ def dimtest(
             trait unidimensionality. *Psychometrika, 52*(4), 589-617. (NOT
             read; as described by Nandakumar & Stout, 1993)
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "py_dimtest"):
-        raise RuntimeError("dimtest requires the compiled Rust core")
-
     resp = np.asarray(responses)
     if np.iscomplexobj(resp):
         raise ValueError("responses must be real-valued")
@@ -228,6 +224,13 @@ def dimtest(
 
     idx1 = _index_set(at1, "at1")
     idx2 = _index_set(at2, "at2")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_dimtest"):
+        raise RuntimeError("dimtest requires the compiled Rust core")
+
     res = core.py_dimtest(y.reshape(-1), int(n_persons), int(n_items), idx1, idx2)
     return DimtestResult(
         t=float(res["t"]),

@@ -74,6 +74,18 @@ paths. The matrix must state target architecture and protected-main behavior
 separately until ADR-0011 is implemented; the active PR applies that wording
 correction.
 
+The cross-repository Strix security dependency exposed an additional evidence
+boundary: a successful status and a named artifact are not enough to establish
+that the report belongs to the exact workflow run being used by this PR. The
+central workflow must bind the target repository, the exact `strix-reports`
+artifact name, the outer GitHub Actions run ID, the full PR head, the report
+path, and the report digest. Consumers must require exactly one non-expired
+artifact of that name before download and reject provider-internal run IDs,
+missing fields, duplicates, expiry, or mismatches. Until that structured
+binding exists on protected `main` and the current fast-mlsirm head is
+rechecked, Strix output remains provider/content evidence only; it cannot
+authorize Judge, IRT, or Merge acceptance.
+
 ## Consequences
 
 ### Positive

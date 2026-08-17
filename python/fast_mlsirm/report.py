@@ -6,8 +6,15 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from .io import _load_json_bounded
+from .io import _atomic_write_text, _load_json_bounded
 from .report_exact_values import exact_value_disclosure
+
+
+MAX_REPORT_METRICS = 512
+MAX_REPORT_ROWS = 50_000
+MAX_REPORT_COLUMNS = 64
+MAX_REPORT_CELLS = 250_000
+MAX_REPORT_COVERAGE_ITEMS = 32
 
 
 def render_diagnostics_report(
@@ -16,7 +23,13 @@ def render_diagnostics_report(
     *,
     title: str | None = None,
 ) -> Path:
-    """Render saved diagnostics JSON as a standalone HTML report."""
+    """Render saved diagnostics JSON as a standalone HTML report.
+
+    Both path operands are explicit local filesystem choices made by the
+    calling process. This library function is not a network endpoint or path
+    sandbox; a service accepting untrusted identifiers must map them to trusted
+    filesystem paths before calling this boundary.
+    """
 
     source = Path(diagnostics_path)
     # 🛡️ Sentinel: Prevent JSON DoS via unbounded recursion or memory exhaustion by using bounded loader
@@ -31,14 +44,14 @@ def render_diagnostics_report(
     if out.suffix.lower() != ".html":
         raise ValueError("report output path must end with .html")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
+    _atomic_write_text(
+        out,
         _render_html(
             payload=payload,
             report_type=report_type,
             title=resolved_title,
             source_name=source.name,
         ),
-        encoding="utf-8",
     )
     return out
 
@@ -203,6 +216,11 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
 
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     """Render a labelled metric-card grid, or ``None`` when there are no metrics."""
+    if len(metrics) > MAX_REPORT_METRICS:
+        raise ValueError(
+            f"report metrics exceed the {MAX_REPORT_METRICS}-entry limit"
+        )
+
     cards = []
     for key, value in metrics.items():
         cards.append(
@@ -218,7 +236,7 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     if not cards:
         return None
 
-    heading_id = heading.lower().replace(" ", "-")
+    heading_id = escape(heading.lower().replace(" ", "-"), quote=True)
     return "\n".join(
         [
             f'<section class="report-section" aria-labelledby="{heading_id}">',
@@ -240,8 +258,9 @@ def _table_section(
     so the complete untruncated full-precision source rows and their JSON and
     CSV exports stay available without hover, JavaScript, or pointer input.
     """
+    _validate_report_rows(rows)
     chart = _bar_chart(rows, chart_value) if chart_value else ""
-    heading_id = heading.lower().replace(" ", "-")
+    heading_id = escape(heading.lower().replace(" ", "-"), quote=True)
     return "\n".join(
         [
             f'<section class="report-section" aria-labelledby="{heading_id}">',
@@ -287,6 +306,11 @@ def _availability_section(
 
 def _coverage_column(heading: str, items: list[str], *, muted: bool = False) -> str:
     """Render one titled pill list within the coverage grid."""
+    if len(items) > MAX_REPORT_COVERAGE_ITEMS:
+        raise ValueError(
+            f"report coverage exceeds the {MAX_REPORT_COVERAGE_ITEMS}-item limit"
+        )
+
     class_name = "coverage-list coverage-list-muted" if muted else "coverage-list"
     item_markup = "\n".join(f"<li>{escape(name)}</li>" for name in items)
     return "\n".join(
@@ -404,15 +428,28 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
 
 
 def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
-    """Transpose a column-oriented diagnostics section into a list of row dicts."""
+    """Transpose a bounded column-oriented diagnostics section into row dicts."""
     if not isinstance(section, dict) or not section:
         return []
 
     columns = list(section)
+    if len(columns) > MAX_REPORT_COLUMNS:
+        raise ValueError(
+            f"report table columns exceed the {MAX_REPORT_COLUMNS}-column limit"
+        )
+
     lengths = [_value_length(section[column]) for column in columns]
     row_count = max(lengths) if lengths else 0
     if row_count == 0:
         return []
+    if row_count > MAX_REPORT_ROWS:
+        raise ValueError(
+            f"report table rows exceed the {MAX_REPORT_ROWS}-row limit"
+        )
+    if row_count * len(columns) > MAX_REPORT_CELLS:
+        raise ValueError(
+            f"report table cells exceed the {MAX_REPORT_CELLS}-cell limit"
+        )
 
     rows = []
     for index in range(row_count):
@@ -421,6 +458,28 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
             row[column] = _index_value(section[column], index)
         rows.append(row)
     return rows
+
+
+def _validate_report_rows(rows: list[dict[str, Any]]) -> None:
+    """Reject row-oriented diagnostics that exceed report rendering budgets."""
+    if len(rows) > MAX_REPORT_ROWS:
+        raise ValueError(
+            f"report table rows exceed the {MAX_REPORT_ROWS}-row limit"
+        )
+
+    columns: set[str] = set()
+    cell_count = 0
+    for row in rows:
+        columns.update(row)
+        if len(columns) > MAX_REPORT_COLUMNS:
+            raise ValueError(
+                f"report table columns exceed the {MAX_REPORT_COLUMNS}-column limit"
+            )
+        cell_count += len(row)
+        if cell_count > MAX_REPORT_CELLS:
+            raise ValueError(
+                f"report table cells exceed the {MAX_REPORT_CELLS}-cell limit"
+            )
 
 
 def _columns(rows: list[dict[str, Any]]) -> list[str]:
@@ -701,6 +760,12 @@ h3 {
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.bar-row:hover {
+  background: var(--hover-bg);
 }
 
 .bar-label,

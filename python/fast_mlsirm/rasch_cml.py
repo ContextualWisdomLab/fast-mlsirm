@@ -9,6 +9,25 @@ from __future__ import annotations
 
 import numpy as np
 
+from .config import MAX_MAX_ITER
+
+
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+
 
 def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
     """Validate a complete 0/1 response matrix and return it with its shape.
@@ -25,6 +44,37 @@ def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
     if not np.all(np.isin(yf, (0.0, 1.0))):
         raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
     return yf.astype(np.int64).reshape(-1), n_persons, n_items
+
+
+def _trusted_iteration_cap(value: int, *, name: str = "max_iter") -> int:
+    """Return a bounded exact integer without caller-controlled coercion hooks."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer between 1 and {MAX_MAX_ITER}")
+    if not 1 <= normalized <= MAX_MAX_ITER:
+        raise ValueError(f"{name} must be an integer between 1 and {MAX_MAX_ITER}")
+    return normalized
+
+
+def _trusted_positive_tolerance(value: float, *, name: str = "tol") -> float:
+    """Return a finite positive exact real scalar without caller coercion hooks."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        normalized = float(value)
+    elif any(
+        value_type is scalar_type
+        for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        normalized = float(value)
+    else:
+        raise ValueError(f"{name} must be finite and positive")
+    if not np.isfinite(normalized) or normalized <= 0:
+        raise ValueError(f"{name} must be finite and positive")
+    return normalized
 
 
 def fit_rasch_cml(
@@ -48,15 +98,16 @@ def fit_rasch_cml(
         Andersen, E. B. (1972). The numerical solution of a set of conditional estimation equations.
             *Journal of the Royal Statistical Society: Series B, 34*(1), 42-54.
     """
+    yy, n_persons, n_items = _binary_matrix(responses)
+    max_iter = _trusted_iteration_cap(max_iter)
+    tol = _trusted_positive_tolerance(tol)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_rasch_cml"):
         raise RuntimeError("fit_rasch_cml requires the compiled Rust core")
-    yy, n_persons, n_items = _binary_matrix(responses)
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and positive")
-    res = core.fit_rasch_cml(yy, int(n_persons), int(n_items), int(max_iter), float(tol))
+    res = core.fit_rasch_cml(yy, int(n_persons), int(n_items), max_iter, tol)
     return {
         "beta": np.asarray(res["beta"], dtype=np.float64),
         "se": np.asarray(res["se"], dtype=np.float64),
@@ -88,11 +139,6 @@ def andersen_lr_test(
         Andersen, E. B. (1973). A goodness of fit test for the Rasch model. *Psychometrika, 38*(1),
             123-140. https://doi.org/10.1007/BF02291180
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "andersen_lr_test"):
-        raise RuntimeError("andersen_lr_test requires the compiled Rust core")
     yy, n_persons, n_items = _binary_matrix(responses)
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
@@ -105,10 +151,22 @@ def andersen_lr_test(
     n_groups = int(gid.max()) + 1
     if n_groups < 2:
         raise ValueError("the Andersen LR test needs at least 2 groups")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and positive")
+    max_iter = _trusted_iteration_cap(max_iter)
+    tol = _trusted_positive_tolerance(tol)
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "andersen_lr_test"):
+        raise RuntimeError("andersen_lr_test requires the compiled Rust core")
     res = core.andersen_lr_test(
-        yy, gid.astype(np.int64), int(n_groups), int(n_persons), int(n_items), int(max_iter), float(tol)
+        yy,
+        gid.astype(np.int64),
+        int(n_groups),
+        int(n_persons),
+        int(n_items),
+        max_iter,
+        tol,
     )
     return {
         "lr": float(res["lr"]),

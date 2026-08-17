@@ -16,7 +16,10 @@ use mlsirm_core::fitstats::{
     benjamini_hochberg as core_benjamini_hochberg, chi2_sf as core_chi2_sf,
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
     m2_cmle_rasch as core_m2_cmle_rasch, m2_rmsea2 as core_m2, person_fit as core_person_fit,
-    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
+    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2,
+    projected_m2 as core_projected_m2,
+    projected_m2_workspace_elements as core_projected_m2_workspace_elements,
+    s_x2 as core_s_x2, SX2Config, PROJECTED_M2_MAX_WORKSPACE_ELEMENTS,
 };
 use mlsirm_core::linking::{
     irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
@@ -7034,6 +7037,69 @@ fn m2_stat(
 }
 
 
+
+/// Projected M2 quadratic form ownership entrypoint (dense residual / Delta / Xi).
+#[pyfunction]
+fn projected_m2(
+    residual: PyReadonlyArray1<'_, f64>,
+    delta: PyReadonlyArray2<'_, f64>,
+    xi: PyReadonlyArray2<'_, f64>,
+    n: f64,
+) -> PyResult<f64> {
+    let residual_arr = residual.as_array();
+    let delta_arr = delta.as_array();
+    let xi_arr = xi.as_array();
+    let s = residual_arr.len();
+    if delta_arr.shape()[0] != s {
+        return Err(PyValueError::new_err(
+            "delta rows must match residual length",
+        ));
+    }
+    if xi_arr.shape() != [s, s] {
+        return Err(PyValueError::new_err("xi must be residual_len x residual_len"));
+    }
+    let p = delta_arr.shape()[1];
+    let workspace_elements = core_projected_m2_workspace_elements(s, p)
+        .map_err(PyValueError::new_err)?;
+    if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
+        return Err(PyValueError::new_err(
+            "projected M2 workspace exceeds supported element budget",
+        ));
+    }
+    if !n.is_finite() {
+        return Err(PyValueError::new_err("n must be finite"));
+    }
+    if residual_arr.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("residual values must be finite"));
+    }
+    if delta_arr.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("delta values must be finite"));
+    }
+    if xi_arr.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("xi values must be finite"));
+    }
+    let residual = residual.as_slice()?;
+    let delta_elements = s
+        .checked_mul(p)
+        .ok_or_else(|| PyValueError::new_err("projected M2 dimensions overflow"))?;
+    let xi_elements = s
+        .checked_mul(s)
+        .ok_or_else(|| PyValueError::new_err("projected M2 dimensions overflow"))?;
+    let mut delta_flat = vec![0.0_f64; delta_elements];
+    for row in 0..s {
+        for col in 0..p {
+            delta_flat[row * p + col] = delta_arr[[row, col]];
+        }
+    }
+    let mut xi_flat = vec![0.0_f64; xi_elements];
+    for row in 0..s {
+        for col in 0..s {
+            xi_flat[row * s + col] = xi_arr[[row, col]];
+        }
+    }
+    core_projected_m2(residual, &delta_flat, xi_flat, s, p, n).map_err(PyValueError::new_err)
+}
+
 /// Conditional-Rasch M2 (CMLE ownership path).
 #[pyfunction]
 #[pyo3(signature = (y, observed, n_persons, item_easiness))]
@@ -9063,9 +9129,13 @@ fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f6
     core_standard_errors_from_vcov(vcov.as_slice()?, n).map_err(PyValueError::new_err)
 }
 
+/// Version of the Python-to-Rust marginal-MMLE call contract.
+const MARGINAL_CAPABILITY_VERSION: u32 = 1;
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
@@ -9169,6 +9239,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(leniency_residuals_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_cmle_rasch_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(projected_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;

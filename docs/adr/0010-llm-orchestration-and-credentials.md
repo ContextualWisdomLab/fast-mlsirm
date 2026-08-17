@@ -12,9 +12,41 @@ Some `fast-mlsirm` features and validation studies may use LLMs for item generat
 ### Product/model calls
 
 - Prefer provider-neutral interfaces.
-- Use `contextual-orchestrator` when a reusable orchestration boundary is appropriate, but do not create a reverse source dependency or write there while its owner loop controls that repository. Every cross-repository call MUST bind a versioned request/result schema (for example, `contextual-orchestrator-contract-v1`) or an immutable artifact digest, and the compatibility policy for that contract must be recorded with the caller.
+- Every LLM-as-a-Judge call MUST use a contextual-orchestrator-backed adapter. The adapter must declare the versioned `contextual-orchestrator-contract-v1` boundary; `ContextualOrchestratorJudge` rejects an unmarked or direct-provider transport at construction. Do not create a reverse source dependency or write there while its owner loop controls that repository. Every cross-repository call MUST bind the versioned request/result schema or an immutable artifact digest, and the compatibility policy for that contract must be recorded with the caller.
 - Treat all model output as untrusted; schema/provenance/semantic validation remains inside the calling workflow.
 - Deterministic tests/gates that do not require a model call shall remain executable without model credentials.
+
+### Cross-repository judge contract
+
+The versioned boundary is also a public package contract: fast-mlsirm exports
+`CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1` from both `fast_mlsirm.llm_judge` and the
+package root with the value `contextual-orchestrator-contract-v1`. The
+contextual-orchestrator same-interpreter preflight is authoritative for live
+judge readiness; a working injected judge with a missing public contract symbol
+is an integration failure, not an available integration. A regression test must
+cover the package-root export before a live MLX judge result is treated as
+cross-repository evidence.
+
+The two repositories remain separately installable and do not acquire a reverse
+source dependency. That boundary is easy to misconfigure: isolated project
+virtual environments cannot import the other checkout. A live source checkout
+therefore MUST use one interpreter with both packages installed (prefer editable
+installs), or explicitly expose both source roots with `PYTHONPATH`, and MUST
+run `python -m contextual_orchestrator check-fast-mlsirm` with that interpreter
+before judging. A missing cross-import is a fail-closed integration error; it
+must not be hidden by a second interpreter, keyword/positional repair, or direct
+provider fallback.
+
+### Failure-evidence boundary
+
+Failed binary-threshold calls may expose bounded operational evidence, but they
+must not retain raw provider output or exception text: either can contain task,
+answer, reference, rubric, or provider diagnostics. Evidence is therefore an
+allowlisted record of criterion/threshold identity, call/parse status, stable
+failure code, exception type, validated Boolean values, trace count, and usage.
+This redaction boundary applies before callers persist or publish
+`JudgeFormatError.evidence`; it is not a keyword, positional, or silent-repair
+mechanism.
 
 ### Credentials
 
@@ -55,6 +87,8 @@ Costs:
 - live-model validation requires explicit external service availability;
 - orchestration evidence can be expensive;
 - some end-to-end tests remain bounded/scheduled rather than always-on PR gates.
+- test doubles must explicitly declare the same contract marker; an unmarked
+  fake is not evidence of a valid production transport path.
 
 ## Alternatives considered
 

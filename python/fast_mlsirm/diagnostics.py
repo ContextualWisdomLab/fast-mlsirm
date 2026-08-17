@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from .config import FitConfig
+from .irt_contract import fit_irt_experiment, validate_irt_experiment_readiness
 from .math import sigmoid, standardize
 from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
 from .types import (
@@ -332,6 +333,7 @@ def dimensionality_diagnostics(
     k_folds: int = 5,
     seed: int = 1,
     eps: float = 1e-12,
+    require_experiment_readiness: bool = False,
 ) -> DimensionalityDiagnostics:
     """Choose a latent-space dimension by k-fold cross-validated held-out fit.
 
@@ -339,11 +341,21 @@ def dimensionality_diagnostics(
     entry-wise validation masks; the model is fit on the training entries and
     scored on the held-out entries (held-out log-likelihood, RMSE, mean
     absolute residual). The candidate with the best held-out log-likelihood is
-    reported as ``best``.
+    reported as ``best``. When ``require_experiment_readiness`` is true, the
+    original matrix and every training fold must pass the production
+    experiment-readiness gate before fitting; the default false preserves this
+    function's low-level diagnostic use for small fixtures.
     """
     from .fit import fit
 
     y, observed = prepare_response(responses, mask)
+    if require_experiment_readiness:
+        validation_y = np.where(observed, y, np.nan)
+        validate_irt_experiment_readiness(
+            validation_y,
+            "dichotomous",
+            factor_ids=factor_id,
+        )
     dims = _validated_latent_dims(latent_dims)
     folds = _validation_folds(observed, k_folds, seed)
     if len(dims) * k_folds > MAX_DIM_DIAGNOSTIC_FITS:
@@ -357,14 +369,21 @@ def dimensionality_diagnostics(
         totals = {"loglik": 0.0, "abs_residual": 0.0, "sq_residual": 0.0, "n": 0.0}
         for fold_idx, validation_mask in enumerate(folds):
             train_mask = observed & ~validation_mask
-            fitted = fit(
-                y,
-                factor_id,
-                config=replace(
-                    base, model=model, latent_dim=latent_dim, seed=seed + fold_idx
-                ),
-                mask=train_mask,
+            fit_config = replace(
+                base, model=model, latent_dim=latent_dim, seed=seed + fold_idx
             )
+            if require_experiment_readiness:
+                fitted = fit_irt_experiment(
+                    fit,
+                    np.where(train_mask, y, np.nan),
+                    "dichotomous",
+                    factor_ids=factor_id,
+                    factor_id=factor_id,
+                    config=fit_config,
+                    mask=train_mask,
+                )
+            else:
+                fitted = fit(y, factor_id, config=fit_config, mask=train_mask)
             prob = np.clip(
                 predict_proba(fitted.params, factor_id, model=fitted.model),
                 eps,

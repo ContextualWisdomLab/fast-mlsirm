@@ -2737,9 +2737,24 @@ def m2_multigroup(
         null_delta[rows, cols] = root_n * null_d
         null_xi_blocks.append(null_xi)
 
-    m2_value = _projected_m2_numpy(residual, delta, _block_diag(xi_blocks), 1.0)
-    null_m2 = _projected_m2_numpy(
-        null_residual, null_delta, _block_diag(null_xi_blocks), 1.0
+    core = _core_module()
+    if core is None or not hasattr(core, "projected_m2"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    m2_value = float(
+        core.projected_m2(
+            np.ascontiguousarray(residual, dtype=np.float64),
+            np.ascontiguousarray(delta, dtype=np.float64),
+            np.ascontiguousarray(_block_diag(xi_blocks), dtype=np.float64),
+            1.0,
+        )
+    )
+    null_m2 = float(
+        core.projected_m2(
+            np.ascontiguousarray(null_residual, dtype=np.float64),
+            np.ascontiguousarray(null_delta, dtype=np.float64),
+            np.ascontiguousarray(_block_diag(null_xi_blocks), dtype=np.float64),
+            1.0,
+        )
     )
     df = float(n_groups * s - p)
     null_df = float(n_groups * s - n_groups * y0.shape[1])
