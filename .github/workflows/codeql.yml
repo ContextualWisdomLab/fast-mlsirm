@@ -9,8 +9,8 @@ permissions:
 
 jobs:
   analyze-actions:
-    # Branch protection requires the advanced-workflow Actions context on PRs.
-    # Python remains on CodeQL default setup during ordinary PR activity.
+    # Branch protection requires a deterministic Actions-language CodeQL check
+    # on PRs. Default setup remains the repository's code-scanning upload owner.
     name: Analyze (actions)
     runs-on: ubuntu-latest
     permissions:
@@ -22,10 +22,12 @@ jobs:
         with:
           languages: actions
       - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3
+        with:
+          upload: never
 
   analyze-python:
-    # Avoid duplicate Python uploads because default setup already analyzes it.
-    # Retain this advanced job only for explicit operator diagnostics.
+    # Default setup already owns ordinary Python code-scanning uploads.
+    # Retain a no-upload advanced diagnostic only for explicit operator runs.
     if: github.event_name == 'workflow_dispatch'
     name: Analyze (python)
     runs-on: ubuntu-latest
@@ -38,3 +40,5 @@ jobs:
         with:
           languages: python
       - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3
+        with:
+          upload: never
