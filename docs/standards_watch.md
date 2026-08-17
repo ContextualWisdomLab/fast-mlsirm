@@ -88,4 +88,4 @@ National Institute of Standards and Technology. (2024). *Artificial intelligence
 
 World Wide Web Consortium. (2024, December 12). *Web content accessibility guidelines (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
 
-Method-specific psychometric papers for implemented DIF and ranking kernels are recorded in [`delta_plot_dif.md`](delta_plot_dif.md), [`bradley_terry_mm.md`](bradley_terry_mm.md), [`adr/0015-angoff-delta-plot-dif.md`](adr/0015-angoff-delta-plot-dif.md), and [`adr/0016-bradley-terry-mm.md`](adr/0016-bradley-terry-mm.md). Those citations are scientific method records, not additional governing ISO/NIST editions.
+Method-specific psychometric papers for implemented DIF and ranking kernels are recorded in [`delta_plot_dif.md`](delta_plot_dif.md), [`bradley_terry_mm.md`](bradley_terry_mm.md), [`adr/0016-angoff-delta-plot-dif.md`](adr/0016-angoff-delta-plot-dif.md), and [`adr/0017-bradley-terry-mm.md`](adr/0017-bradley-terry-mm.md). Those citations are scientific method records, not additional governing ISO/NIST editions.

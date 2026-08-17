@@ -10,6 +10,54 @@ import numpy as np
 from .config import MAX_MAX_ITER
 
 
+_SUPPORTED_Q_THETA = (7, 11, 15, 21, 31, 41)
+_NUMPY_INTEGER_TYPES = tuple(
+    np.dtype(name).type
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
+)
+_NUMPY_FLOAT_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted scalar type without callbacks."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _trusted_integer(value: object, name: str) -> int:
+    """Normalize an exact built-in or genuine NumPy integer scalar."""
+
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if _is_exact_type(value_type, _NUMPY_INTEGER_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def _positive_real(value: object, name: str) -> float:
+    """Normalize a trusted finite positive numeric scalar without subclass hooks."""
+
+    value_type = type(value)
+    trusted = (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_TYPES)
+    )
+    if not trusted:
+        raise ValueError(f"{name} must be finite and positive")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{name} must be finite and positive") from exc
+    if not np.isfinite(result) or result <= 0.0:
+        raise ValueError(f"{name} must be finite and positive")
+    return result
+
+
 @dataclass
 class CrmFit:
     """Fitted continuous response model (Samejima, 1973).
@@ -79,9 +127,13 @@ def fit_crm(
     """
     from .fitstats import _core_module
 
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_crm"):
-        raise RuntimeError("fit_crm requires the compiled Rust core")
+    q_theta_value = _trusted_integer(q_theta, "q_theta")
+    if q_theta_value not in _SUPPORTED_Q_THETA:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, or 41")
+    max_iter_value = _trusted_integer(max_iter, "max_iter")
+    if not 1 <= max_iter_value <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
+    tol_value = _positive_real(tol, "tol")
 
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
@@ -89,21 +141,22 @@ def fit_crm(
     n_persons, n_items = y.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
-    if not 1 <= max_iter <= MAX_MAX_ITER:
-        raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0.0:
-        raise ValueError("tol must be finite and positive")
 
     observed = np.isfinite(y)
     yy = np.where(observed, y, 0.5).reshape(-1)
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_crm"):
+        raise RuntimeError("fit_crm requires the compiled Rust core")
+
     res = core.fit_crm(
         yy,
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(q_theta),
-        int(max_iter),
-        float(tol),
+        q_theta_value,
+        max_iter_value,
+        tol_value,
     )
     return CrmFit(
         slope=np.asarray(res["slope"], dtype=np.float64),

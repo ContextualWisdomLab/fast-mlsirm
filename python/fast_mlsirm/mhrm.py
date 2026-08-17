@@ -14,6 +14,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_POLYTOMOUS_CATEGORIES
+from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _MAX_DIMS = 64
@@ -107,14 +109,14 @@ def fit_mhrm(
 
     The response family is selected by ``family``: ``"2pl"`` (binary, default) or ``"gpcm"`` (the
     ordered polytomous generalized partial credit model, Muraki, 1992, with ``n_cat`` integer
-    categories ``0..n_cat``). For the GPCM each item keeps a SINGLE discrimination vector ``a_i`` and
+    categories ``0..n_cat-1``). For the GPCM each item keeps a SINGLE discrimination vector ``a_i`` and
     gains ``n_cat - 1`` free UNORDERED step intercepts, ``P(X_ij=k) = softmax_k(k*sum_d a_id theta_jd +
     step_ik)``, estimated by the same MH-RM machinery with the closed-form multinomial complete-data
     Hessian as the Robbins-Monro preconditioner and Louis information. ``family="gpcm"`` requires every
     declared category to be observed for every item (else the corresponding step is unidentified).
 
     ``responses`` is a persons x items array (``NaN`` = missing, dropped under MAR): ``0/1`` for the
-    2PL, integer categories ``0..n_cat`` for the GPCM. For ``model=1`` all item loadings on the single
+    2PL, integer categories ``0..n_cat-1`` for the GPCM. For ``model=1`` all item loadings on the single
     factor are free; a multidimensional confirmatory structure is supplied with
     ``model=models.confirmatory(loading_pattern)``; every dimension needs a pure single-loading anchor
     item. ``burn_in`` must be less than ``max_cycles``; ``proposal_sd`` is the initial random-walk SD,
@@ -136,12 +138,6 @@ def fit_mhrm(
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
             Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_mhrm"):
-        raise RuntimeError("fit_mhrm requires the compiled Rust core")
-
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -169,7 +165,7 @@ def fit_mhrm(
     burn_in_int = _finite_int(burn_in, "burn_in")
     mh_steps_int = _finite_int(mh_steps, "mh_steps")
     if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
-        raise ValueError("seed must be a non-negative integer")
+        raise TypeError("seed must be a non-negative integer")
     seed_int = int(seed)
     if not 0 <= seed_int < 2**64:
         raise ValueError("seed must be in [0, 2**64)")
@@ -183,8 +179,11 @@ def fit_mhrm(
     n_cat_int = _finite_int(n_cat, "n_cat")
     if fam == "2pl":
         n_cat_int = 2
-    elif n_cat_int < 2:
-        raise ValueError("n_cat must be >= 2 for family='gpcm'")
+    elif not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(
+            "n_cat must be between 2 and "
+            f"{MAX_POLYTOMOUS_CATEGORIES} for family='gpcm'"
+        )
 
     observed = ~np.isnan(y)
     if np.any(observed):
@@ -195,8 +194,21 @@ def fit_mhrm(
         else:
             if np.any(obs_y != np.floor(obs_y)) or np.any(obs_y < 0) or np.any(obs_y >= n_cat_int):
                 raise ValueError(
-                    f"responses must be integer categories in 0..{n_cat_int}, or NaN (missing)"
+                    "responses must be integer categories in "
+                    f"0..{n_cat_int - 1}, or NaN (missing)"
                 )
+    validation_y = np.where(observed, y, np.nan)
+    validate_irt_response_matrix(
+        validation_y,
+        "dichotomous" if fam == "2pl" else "polytomous",
+        n_categories=None if fam == "2pl" else n_cat_int,
+    )
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mhrm"):
+        raise RuntimeError("fit_mhrm requires the compiled Rust core")
+
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
     res = core.fit_mhrm(

@@ -68,7 +68,7 @@ than evidence of measurement invariance.
 The Angoff transformed-item-difficulty / delta-plot screen is part of this
 observed-score DIF family. It is documented separately in
 [`delta_plot_dif.md`](delta_plot_dif.md) and decided in
-[`adr/0015-angoff-delta-plot-dif.md`](adr/0015-angoff-delta-plot-dif.md). It is
+[`adr/0016-angoff-delta-plot-dif.md`](adr/0016-angoff-delta-plot-dif.md). It is
 not a CWE, OWASP, or NIST control, and it is not an alias for Mantel–Haenszel,
 logistic DIF, or SIBTEST.
 

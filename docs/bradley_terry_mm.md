@@ -9,7 +9,7 @@ worths plus a single positive tie parameter `alpha0`.
 These estimators are psychometric ranking models. They are not security
 controls, and CWE/OWASP/NIST publications are not their methodological basis.
 
-Architecture decision: [`adr/0016-bradley-terry-mm.md`](adr/0016-bradley-terry-mm.md).
+Architecture decision: [`adr/0017-bradley-terry-mm.md`](adr/0017-bradley-terry-mm.md).
 
 ## What is implemented
 

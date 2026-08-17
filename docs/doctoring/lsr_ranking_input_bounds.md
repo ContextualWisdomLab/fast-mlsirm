@@ -18,7 +18,7 @@ Caller-controlled ranking iterables can be infinite or oversized. Before the Rus
 Numerical Plackett–Luce / LSR arithmetic remains Rust-owned. Bradley–Terry MM
 and the additive-ties BRATT variant are separate ranking estimators; see
 [`../bradley_terry_mm.md`](../bradley_terry_mm.md) and
-[`../adr/0016-bradley-terry-mm.md`](../adr/0016-bradley-terry-mm.md). This
+[`../adr/0017-bradley-terry-mm.md`](../adr/0017-bradley-terry-mm.md). This
 page does not make a Bradley–Terry product claim.
 
 ## Implementation

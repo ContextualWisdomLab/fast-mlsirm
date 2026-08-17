@@ -11,7 +11,7 @@ SIBTEST screens already documented in
 [`rubric_dif_pilot_handoff.md`](rubric_dif_pilot_handoff.md). Those methods
 remain available; this page records only the delta-plot path.
 
-Architecture decision: [`adr/0015-angoff-delta-plot-dif.md`](adr/0015-angoff-delta-plot-dif.md).
+Architecture decision: [`adr/0016-angoff-delta-plot-dif.md`](adr/0016-angoff-delta-plot-dif.md).
 
 ## What is implemented
 

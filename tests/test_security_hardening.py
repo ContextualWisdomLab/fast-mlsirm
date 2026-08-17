@@ -1356,12 +1356,30 @@ def test_diagnostics_save_replaces_leaf_symlink_without_overwriting_target(tmp_p
     assert json.loads(output.read_text(encoding="utf-8"))["model_fit"] == {}
 
 
+def test_diagnostics_report_replaces_leaf_symlink_without_overwriting_target(tmp_path):
+    from fast_mlsirm.report import render_diagnostics_report
+
+    diagnostics = tmp_path / "fit_diagnostics.json"
+    diagnostics.write_text(json.dumps({"model_fit": {}}), encoding="utf-8")
+    external = tmp_path / "external.html"
+    external.write_text("do not overwrite", encoding="utf-8")
+    output = tmp_path / "report.html"
+    output.symlink_to(external)
+
+    render_diagnostics_report(diagnostics, output)
+
+    assert external.read_text(encoding="utf-8") == "do not overwrite"
+    assert output.is_file() and not output.is_symlink()
+    assert "<!doctype html>" in output.read_text(encoding="utf-8")
+
+
 # ---- Same-head Strix follow-up: remaining public trust boundaries ---------
 def test_cli_score_replaces_leaf_symlink_without_overwriting_target(
     tmp_path, monkeypatch
 ):
     import fast_mlsirm.cli as cli
 
+    monkeypatch.chdir(tmp_path)
     external = tmp_path / "external.txt"
     external.write_text("do not overwrite", encoding="utf-8")
     output = tmp_path / "scores.json"

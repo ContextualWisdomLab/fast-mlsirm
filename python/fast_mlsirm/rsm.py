@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
+from .irt_contract import MIN_IRT_ITEMS, validate_irt_response_matrix
 
 
 @dataclass
@@ -49,21 +50,16 @@ def fit_rsm(
     sum to zero.
 
     ``responses`` is a persons x items array of integer category indices
-    ``0..n_cat-1`` (``NaN`` marks a missing cell, dropped under a missing-at-random
-    assumption). ``n_cat`` defaults to ``max(responses) + 1``.
+    ``0..n_cat-1`` with at least two item columns (``NaN`` marks a missing cell,
+    dropped under a missing-at-random assumption). ``n_cat`` defaults to
+    ``max(responses) + 1``.
 
     References (APA 7th ed.):
         Andrich, D. (1978). A rating formulation for ordered response categories.
             *Psychometrika, 43*(4), 561-573. https://doi.org/10.1007/BF02293814
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_rsm"):
-        raise RuntimeError("fit_rsm requires the compiled Rust core")
-
     if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
-        raise ValueError("n_cat must be an integer >= 2")
+        raise TypeError("n_cat must be an integer >= 2")
     if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
         raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
     if q_theta not in {7, 11, 15, 21, 31, 41}:
@@ -81,8 +77,10 @@ def fit_rsm(
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
-    if n_persons < 1 or n_items < 1:
-        raise ValueError("responses must contain at least one person and one item")
+    if n_persons < 1 or n_items < MIN_IRT_ITEMS:
+        raise ValueError(
+            "responses must contain at least one person and at least two item columns"
+        )
     missing = np.isnan(y)
     if np.any(~missing & ~np.isfinite(y)):
         raise ValueError("observed responses must be finite integer categories")
@@ -109,6 +107,13 @@ def fit_rsm(
     missing_items = np.flatnonzero(~observed.any(axis=0))
     if missing_items.size:
         raise ValueError(f"item {int(missing_items[0])} has no observed responses")
+    validate_irt_response_matrix(y, "polytomous", n_categories=int(n_cat))
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rsm"):
+        raise RuntimeError("fit_rsm requires the compiled Rust core")
+
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.fit_rsm(
         yy,

@@ -55,9 +55,25 @@ class ItemBankEvidenceKind(str, Enum):
     LINKING = "linking"
     EXPOSURE = "exposure"
     DRIFT = "drift"
+    EVIDENCE_VALIDITY = "evidence_validity"
+    CONTENT_VALIDITY = "content_validity"
+    SECURITY_PRIVACY = "security_privacy"
     APPROVAL = "approval"
     SUSPENSION = "suspension"
     RETIREMENT = "retirement"
+
+
+_SUSPENSION_CONCERN_EVIDENCE_KINDS = frozenset(
+    {
+        ItemBankEvidenceKind.DIF,
+        ItemBankEvidenceKind.DRIFT,
+        ItemBankEvidenceKind.EXPOSURE,
+        ItemBankEvidenceKind.LINKING,
+        ItemBankEvidenceKind.EVIDENCE_VALIDITY,
+        ItemBankEvidenceKind.CONTENT_VALIDITY,
+        ItemBankEvidenceKind.SECURITY_PRIVACY,
+    }
+)
 
 
 class PolicyCriticality(str, Enum):
@@ -241,6 +257,7 @@ class ItemBankLifecycleRecord:
     evidence_references: tuple[ItemBankEvidenceReference, ...]
     previous_record_fingerprint: str | None
     transition_reason_id: str
+    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...] = ()
     schema_version: str = SCHEMA_VERSION
     _creation_token: InitVar[object | None] = None
     _record_fingerprint: str = field(init=False, repr=False)
@@ -307,6 +324,27 @@ class ItemBankLifecycleRecord:
             "evidence_references",
             _normalize_evidence_references(self.evidence_references),
         )
+        normalized_concerns = tuple(
+            sorted(
+                {
+                    _enum_value(
+                        kind,
+                        ItemBankEvidenceKind,
+                        "suspension_concern_kinds",
+                    )
+                    for kind in self.suspension_concern_kinds
+                },
+                key=lambda kind: kind.value,
+            )
+        )
+        if any(
+            kind not in _SUSPENSION_CONCERN_EVIDENCE_KINDS
+            for kind in normalized_concerns
+        ):
+            raise ValueError(
+                "suspension_concern_kinds must contain only governed concern evidence kinds"
+            )
+        object.__setattr__(self, "suspension_concern_kinds", normalized_concerns)
         if self.previous_record_fingerprint is not None:
             object.__setattr__(
                 self,
@@ -330,6 +368,11 @@ class ItemBankLifecycleRecord:
         else:
             if self.previous_record_fingerprint is None:
                 raise ValueError("post-pilot records require a previous record fingerprint")
+        if self.lifecycle_state is ItemBankLifecycleState.SUSPENDED:
+            if not self.suspension_concern_kinds:
+                raise ValueError("suspended records require suspension concern kinds")
+        elif self.suspension_concern_kinds:
+            raise ValueError("only suspended records may retain suspension concern kinds")
         if self.lifecycle_state in {
             ItemBankLifecycleState.APPROVED,
             ItemBankLifecycleState.ACTIVE,
@@ -360,6 +403,9 @@ class ItemBankLifecycleRecord:
             ],
             "previous_record_fingerprint": self.previous_record_fingerprint,
             "transition_reason_id": self.transition_reason_id,
+            "suspension_concern_kinds": [
+                kind.value for kind in self.suspension_concern_kinds
+            ],
         }
 
     @property
@@ -414,6 +460,7 @@ def _create_record(
     evidence_references: tuple[ItemBankEvidenceReference, ...],
     previous_record_fingerprint: str | None,
     transition_reason_id: str,
+    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...],
 ) -> ItemBankLifecycleRecord:
     """Create one sealed normalized lifecycle record through a private token."""
     return ItemBankLifecycleRecord(
@@ -431,6 +478,7 @@ def _create_record(
         evidence_references=evidence_references,
         previous_record_fingerprint=previous_record_fingerprint,
         transition_reason_id=transition_reason_id,
+        suspension_concern_kinds=suspension_concern_kinds,
         _creation_token=_RECORD_CREATION_TOKEN,
     )
 
@@ -469,6 +517,7 @@ def build_item_bank_pilot_record(
         evidence_references=(),
         previous_record_fingerprint=None,
         transition_reason_id="pilot_admission",
+        suspension_concern_kinds=(),
     )
 
 
@@ -499,6 +548,8 @@ def _missing_required_kinds(
     current_state: ItemBankLifecycleState,
     target_state: ItemBankLifecycleState,
     supplied_kinds: set[ItemBankEvidenceKind],
+    *,
+    suspension_concern_kinds: frozenset[ItemBankEvidenceKind] = frozenset(),
 ) -> tuple[str, ...]:
     """Return missing newly supplied evidence kinds for one allowed transition."""
     if target_state is ItemBankLifecycleState.CALIBRATED:
@@ -513,19 +564,27 @@ def _missing_required_kinds(
         ):
             missing.append("dif_or_dif_not_applicable")
         return tuple(sorted(missing))
-    elif target_state is ItemBankLifecycleState.APPROVED:
+    if target_state is ItemBankLifecycleState.APPROVED:
         required = {ItemBankEvidenceKind.APPROVAL}
     elif (
         current_state is ItemBankLifecycleState.SUSPENDED
         and target_state is ItemBankLifecycleState.ACTIVE
     ):
-        required = {ItemBankEvidenceKind.APPROVAL, ItemBankEvidenceKind.DRIFT}
+        required = {ItemBankEvidenceKind.APPROVAL}
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not suspension_concern_kinds:
+            missing.append("suspension_resolution_evidence")
+        else:
+            missing.extend(
+                kind.value for kind in suspension_concern_kinds - supplied_kinds
+            )
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.SUSPENDED:
         required = {ItemBankEvidenceKind.SUSPENSION}
-        if not supplied_kinds.intersection(
-            {ItemBankEvidenceKind.DIF, ItemBankEvidenceKind.DRIFT}
-        ):
-            return ("dif_or_drift",)
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS):
+            missing.append("suspension_concern_evidence")
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.RETIRED:
         required = {ItemBankEvidenceKind.RETIREMENT}
     else:
@@ -577,10 +636,12 @@ def transition_item_bank_record(
             "$.evidence_references",
             "calibration requires exactly one DIF applicability evidence class",
         )
+    current_suspension_concerns = frozenset(current.suspension_concern_kinds)
     missing = _missing_required_kinds(
         current.lifecycle_state,
         target,
         supplied_kinds,
+        suspension_concern_kinds=current_suspension_concerns,
     )
     if missing:
         raise ItemBankLifecycleError(
@@ -639,6 +700,16 @@ def transition_item_bank_record(
             "transition reason must be a descriptive identifier",
         ) from None
 
+    target_suspension_concerns = (
+        tuple(
+            sorted(
+                supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS),
+                key=lambda kind: kind.value,
+            )
+        )
+        if target is ItemBankLifecycleState.SUSPENDED
+        else ()
+    )
     return _create_record(
         item_id=current.item_id,
         item_version=current.item_version,
@@ -654,6 +725,7 @@ def transition_item_bank_record(
         evidence_references=combined,
         previous_record_fingerprint=current.record_fingerprint,
         transition_reason_id=normalized_reason,
+        suspension_concern_kinds=target_suspension_concerns,
     )
 
 

@@ -210,7 +210,7 @@ Primary basis:
 - Magis, D., & Facon, B. (2014). deltaPlotR: An R package for differential item functioning analysis with Angoff's Delta Plot. *Journal of Statistical Software, 59*(1), 1–19. https://doi.org/10.18637/jss.v059.c01
 - American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 
-Decision record: ADR-0015. Method page: `docs/delta_plot_dif.md`. Adjacent MH/logistic/SIBTEST sources remain in `docs/rubric_dif_pilot_handoff.md`.
+Decision record: ADR-0016. Method page: `docs/delta_plot_dif.md`. Adjacent MH/logistic/SIBTEST sources remain in `docs/rubric_dif_pilot_handoff.md`.
 
 ## 14. Bradley–Terry MM pairwise ranking — Accepted estimators
 
@@ -227,7 +227,7 @@ Primary basis:
 - Hunter, D. R. (2004). MM algorithms for generalized Bradley–Terry models. *The Annals of Statistics, 32*(1), 384–406. https://doi.org/10.1214/aos/1079120141
 - American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 
-Decision record: ADR-0016. Method page: `docs/bradley_terry_mm.md`. Changelog notes that Bradley and Terry (1952) or Hunter (2004) were unread at port time are historical source-governance comments, not a reason to omit these citations.
+Decision record: ADR-0017. Method page: `docs/bradley_terry_mm.md`. Changelog notes that Bradley and Terry (1952) or Hunter (2004) were unread at port time are historical source-governance comments, not a reason to omit these citations.
 
 ## Maintenance rule
 

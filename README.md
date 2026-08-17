@@ -104,14 +104,57 @@ print(fixed_item_calibration.best)
   strict structured parsing. A judge result becomes an IRT row only through
   LLMJudgeResult.to_irt_row() with at least two criteria, followed by
   validate_irt_response_matrix() for a multi-item dichotomous or explicitly
-  categorized polytomous matrix. Equal-width direct K-way projection is
-  experimental; opt-in `category_method="cumulative_threshold"` evaluates each
-  ordered boundary with a strict Boolean vector and derives the category in the
-  adapter. Category-count and prompt-perturbation calibration remain required
-  for both methods. See
+  categorized polytomous matrix. When `category_count` is supplied without an
+  explicit method, the adapter defaults to `category_method="binary_threshold"`:
+  each ordered boundary is a bounded Boolean call, and malformed or
+  non-monotone evidence fails closed. Equal-width direct K-way projection is
+  calibration-only and requires explicit `category_method="direct"`;
+  `category_method="cumulative_threshold"` remains an explicit alternative
+  that asks for one strict Boolean vector. Binary threshold judging has a
+  maximum of 64 calls per result.
+  When the injected contextual-orchestrator exposes its bounded
+  `client.local_concurrency`, those independent boundary calls reuse that limit;
+  generic injected orchestrators remain sequential by default.
+  `ContextualOrchestratorJudge` accepts only an adapter declaring
+  `contextual_orchestrator_contract == "contextual-orchestrator-contract-v1"`;
+  an arbitrary direct provider transport fails at construction. This is an
+  architectural provenance marker, not a security credential; production
+  adapters must still route, trace, and validate through contextual-orchestrator.
+  A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
+  containing call/parse status, partial trace-step counts, usage, and ordered
+  boundary records; callers must retain that failure in calibration results.
+  For semantically interpretable polytomous calibration, callers may provide a
+  `category_anchors` tuple of exactly K definitions on every `JudgeCriterion`;
+  those definitions are carried as rubric data to each binary boundary. Mixed,
+  incomplete, or mismatched anchor sets are rejected. Omitted anchors remain a
+  backwards-compatible exploratory mode and must not be treated as gold
+  calibration evidence. Each binary prompt asks whether the answer meets at
+  least the requested boundary (not exactly that category), requires
+  criterion/task relevance, and rejects generic intent, unrelated detail,
+  missing-control admissions, or rubric repetition as evidence.
+  Category-count and prompt-perturbation calibration remain required for all
+  methods. See
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),
   [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md), and
   [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0008-fast-judge-review-hardening.md).
+  Production and benchmark IRT readiness additionally requires every declared
+  polytomous category to be observed at least once for every item; low-level
+  diagnostic fitters remain available for partial-occupancy fixtures.
+  `build_multiple_choice_calibration_cases()` and
+  `evaluate_paired_calibration()` provide bounded paired controls for
+  baseline, option-only/no-question, shuffled-option, and
+  distractor-replacement variants. They accept an existing
+  `ContextualOrchestratorJudge`, so every calibration call uses the
+  contextual-orchestrator route; provider, parse, semantic, and IRT failures
+  remain in the denominator, with no retry, repair, keyword matching, or
+  positional category inference. Gold categories and contamination status are
+  caller-supplied, and every successful result must project to multiple
+  criterion columns before it can be used as a polytomous row. Paired score
+  deltas are diagnostic sensitivity evidence, not a causal positive-option-
+  count law or a claim of judge debiasing. When a binary judge raises a
+  `JudgeFormatError`, the report retains its bounded `.evidence` (boundary
+  statuses, parse state, trace counts, and usage) while excluding source text
+  and raw model output.
   Cross-repository exact-head review, structured Strix evidence, and merge
   policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0004-pr-review-merge-loop.md) and
   [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
