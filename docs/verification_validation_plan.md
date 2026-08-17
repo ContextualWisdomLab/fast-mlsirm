@@ -191,7 +191,7 @@ Compare parameter/SE/coverage behavior against atomistic misspecification so the
 
 ### VV-SCI-008 — Temporal/longitudinal recovery
 
-Validate ordering, missing occasions, unequal follow-up patterns, drift/state parameters, random intercept/slope effects, and revision boundaries. A discrete-step model is evaluated by step count; a future continuous-time model must include interval-sensitive generating processes and recovery.
+Validate ordering, missing occasions, unequal follow-up patterns, drift/state parameters, random intercept/slope effects, and revision boundaries. A discrete-step model is evaluated by step count. The joint MAP hierarchical CT-AR Rasch slice must include interval-sensitive generating processes and recovery of known states and `(mu, tau, lambda)` against honest MAP RMSE/coverage bounds. Estimated multiple-membership `u_h` remains a later recovery target.
 
 ## 5. Automated scoring / LLM-as-a-Judge validation
 

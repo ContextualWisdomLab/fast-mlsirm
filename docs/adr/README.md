@@ -33,6 +33,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0014](0014-bounded-llm-judge-category-inputs.md) | Proposed | Bound LLM-judge category inputs to exact built-in scalars and keep model/provider security evidence fail-closed and independently verifiable. |
 | [0015](0015-multi-item-irt-fit-boundary.md) | Proposed | Enforce the multi-item dichotomous/polytomous contract at public IRT fitters and require explicit readiness evidence before interpreting estimates. |
 | [0018](0018-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
+| [0019](0019-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
 
 ## ADR completeness rule
 
