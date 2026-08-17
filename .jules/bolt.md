@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2025-05-19 - Fast scalar expected log-likelihood sums
+**Learning:** Computing expected log-likelihoods in MMLE loops using `float(np.sum(A * B + C * D))` constructs full-size intermediate arrays for the products `A * B` and `C * D` before performing the sum, which wastes memory allocation time and memory bandwidth.
+**Action:** Replace `float(np.sum(A * B + C * D))` with `float(np.vdot(A, B) + np.vdot(C, D))` to entirely skip the temporary intermediate array allocations. This yields significant speedups in the maximization steps.
