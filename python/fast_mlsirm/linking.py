@@ -5,6 +5,62 @@ import numpy as np
 from .types import MLSIRMParams
 
 
+_IRT_LINK_METHOD_ALIASES = frozenset(
+    {"meanmean", "mm", "meansigma", "ms", "haebara", "hb", "stockinglord", "sl"}
+)
+_NUMPY_INTEGER_SCALAR_TYPES = frozenset(
+    {
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.intp,
+        np.longlong,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.uintp,
+        np.ulonglong,
+    }
+)
+
+
+def _require_irt_link_method(method, *, name: str = "method") -> str:
+    """Return a trusted IRT-link method without caller-controlled callbacks.
+
+    The Rust parser accepts case-insensitive method names and ignores ``-`` and
+    ``_`` separators. Accept only exact built-in strings before applying that
+    normalization so hostile string subclasses or arbitrary objects cannot run
+    representation or normalization hooks at the Python-to-Rust boundary.
+    """
+    if type(method) is not str:
+        raise ValueError(f"{name} must be a str method identity")
+    normalized = method.lower().replace("-", "").replace("_", "")
+    if normalized not in _IRT_LINK_METHOD_ALIASES:
+        raise ValueError(
+            f"{name} must be one of mean_mean, mean_sigma, haebara, or stocking_lord"
+        )
+    return method
+
+
+def _require_irt_link_quadrature_size(value, *, name: str = "q_theta") -> int:
+    """Return a trusted quadrature-size integer without caller coercion hooks.
+
+    Plain Python integers and genuine NumPy integer scalar classes retain the
+    established public contract. Integer subclasses are rejected before
+    ``int()`` so caller-defined ``__int__``, type hashing, equality, or
+    representation hooks cannot run. Range/support validation remains owned by
+    the established quadrature helper.
+    """
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer quadrature size")
+
+
 def link_fixed_item_parameters(
     source: MLSIRMParams,
     target: MLSIRMParams,
@@ -149,6 +205,9 @@ def irt_link(
     response theory. *Applied Psychological Measurement, 7*(2), 201–210.
     https://doi.org/10.1177/014662168300700208
     """
+    method = _require_irt_link_method(method)
+    q_theta = _require_irt_link_quadrature_size(q_theta)
+
     from .fitstats import _core_module
     from .estimators.marginal import _gh
 
@@ -166,9 +225,7 @@ def irt_link(
         raise ValueError('slope/intercept arrays must have matching lengths')
     if np.any(ao <= 0) or np.any(an <= 0):
         raise ValueError('slopes (a_old/a_new) must be positive')
-    if isinstance(q_theta, (bool, np.bool_)) or not isinstance(q_theta, (int, np.integer)):
-        raise ValueError('q_theta must be an integer quadrature size')
-    nodes, weights = _gh(int(q_theta))
+    nodes, weights = _gh(q_theta)
     res = core.irt_link(
         ao,
         bo,
@@ -176,12 +233,12 @@ def irt_link(
         bn,
         np.asarray(nodes, dtype=np.float64),
         np.asarray(weights, dtype=np.float64),
-        method=str(method),
+        method=method,
     )
     return IrtLinkResult(
         slope=float(res["slope"]), intercept=float(res["intercept"]),
         criterion=float(res["criterion"]), n_iter=int(res["n_iter"]),
-        method=str(method),
+        method=method,
         converged=bool(res["converged"]),
         termination_reason=str(res["termination_reason"]),
         max_iter=int(res["max_iter"]),
