@@ -8,18 +8,23 @@ from importlib.metadata import version as _distribution_version
 from . import _legacy_init as _legacy_init
 from . import reliability as _reliability
 from . import scaling as _scaling
+from . import validation as _validation
+from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._scaling_control_safety import install as _install_scaling_control_safety
 
-# Harden historical adapters before copying legacy exports. These wrappers only
-# validate and normalize semantic controls; all result-affecting arithmetic
+# Harden historical public adapters before copying legacy exports. These
+# wrappers validate and normalize semantic controls only; result arithmetic
 # remains in the existing Rust-backed implementations.
 _install_icc_control_safety(_reliability)
-_legacy_init.icc = _reliability.icc
 _install_scaling_control_safety(_scaling)
+_install_fleiss_control_safety(_validation)
+_legacy_init.icc = _reliability.icc
 _legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
+_legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
+    _install_fleiss_control_safety,
     _install_icc_control_safety,
     _install_scaling_control_safety,
     _reliability,
@@ -81,8 +86,6 @@ from .irt_contract import (
 
 # Bind the rating-range API on the historical validation namespace without
 # duplicating implementation or arithmetic ownership.
-from . import validation as _validation
-
 _validation.RatingRangeEvidence = RatingRangeEvidence
 _validation.paired_rating_range_evidence = paired_rating_range_evidence
 
