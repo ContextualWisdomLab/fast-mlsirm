@@ -37,6 +37,11 @@ from typing import Any
 #: Text used in the exact-value table when a cell has no recorded value.
 MISSING_VALUE_TEXT = "missing"
 
+#: Resource ceilings for the fully materialized exact-value table/exports.
+MAX_EXACT_VALUE_ROWS = 50_000
+MAX_EXACT_VALUE_COLUMNS = 64
+MAX_EXACT_VALUE_CELLS = 250_000
+
 
 def ordered_column_names(source_rows: list[dict[str, Any]]) -> list[str]:
     """Return every column name across ``source_rows`` in first-seen order.
@@ -49,6 +54,27 @@ def ordered_column_names(source_rows: list[dict[str, Any]]) -> list[str]:
         for column_name in source_row:
             column_names.setdefault(str(column_name), None)
     return list(column_names)
+
+
+def _validated_column_names(source_rows: list[dict[str, Any]]) -> list[str]:
+    """Return report columns after bounding fully materialized exact-value cells."""
+    if len(source_rows) > MAX_EXACT_VALUE_ROWS:
+        raise ValueError(
+            f"report table rows exceed the {MAX_EXACT_VALUE_ROWS}-row limit"
+        )
+
+    column_names = ordered_column_names(source_rows)
+    if len(column_names) > MAX_EXACT_VALUE_COLUMNS:
+        raise ValueError(
+            f"report table columns exceed the {MAX_EXACT_VALUE_COLUMNS}-column limit"
+        )
+
+    cell_count = len(source_rows) * len(column_names)
+    if cell_count > MAX_EXACT_VALUE_CELLS:
+        raise ValueError(
+            f"report table cells exceed the {MAX_EXACT_VALUE_CELLS}-cell limit"
+        )
+    return column_names
 
 
 def exact_value_text(cell_value: Any) -> str:
@@ -95,7 +121,7 @@ def exact_value_json(source_rows: list[dict[str, Any]]) -> str:
     as ``null`` and non-finite floats as their explicit text names, so the
     export round-trips the finite chart/table source without numeric drift.
     """
-    column_names = ordered_column_names(source_rows)
+    column_names = _validated_column_names(source_rows)
     export_rows = [
         {
             column_name: _portable_export_value(source_row.get(column_name))
@@ -115,7 +141,7 @@ def exact_value_csv(source_rows: list[dict[str, Any]]) -> str:
     full-precision text of :func:`exact_value_text`, and missing cells stay
     as explicitly empty fields under their named column.
     """
-    column_names = ordered_column_names(source_rows)
+    column_names = _validated_column_names(source_rows)
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer, quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
     csv_writer.writerow(column_names)
@@ -151,7 +177,7 @@ def exact_value_disclosure(
     if not source_rows:
         return ""
 
-    column_names = ordered_column_names(source_rows)
+    column_names = _validated_column_names(source_rows)
     disclosure_id = _disclosure_dom_id(section_label)
 
     header_cells = "".join(

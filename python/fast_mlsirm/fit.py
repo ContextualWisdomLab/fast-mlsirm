@@ -13,6 +13,9 @@ from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
 from .types import FitResult, MLSIRMParams
 
 
+_MARGINAL_CAPABILITY_VERSION = 1
+
+
 def _compact_population_labels(raw, n_persons: int, name: str):
     """Validate and compact caller-supplied population labels to contiguous
     ``0..k-1`` ids. Rejects non-1-D, wrong-length, non-finite, non-integer, or
@@ -254,11 +257,23 @@ def _fit_mmle_marginal(
     anchors: dict | None = None,
     covariate: dict | None = None,
 ) -> FitResult:
-    """Marginal EM for the latent-space family (Rust core, NumPy fallback).
+    """Marginal EM for the latent-space family with explicit backend ownership.
 
     Person latents are integrated out by Gauss-Hermite quadrature; item-side
     parameters carry the LSIRM priors of Jeon et al. (2021) as MAP penalties
     (see ``estimators/marginal.py`` / ``mlsirm-core/src/marginal.rs``).
+
+    ``backend="rust"`` (and ``auto`` once it resolves to rust) requires a
+    compiled ``fit_marginal`` whose ``MARGINAL_CAPABILITY_VERSION`` matches
+    this package. Missing, stale, or keyword-incompatible native entrypoints
+    raise ``RuntimeError`` and never fall back to NumPy production arithmetic.
+    Use ``backend="numpy"`` only for explicit reference or parity runs.
+
+    References (APA 7th ed.):
+        Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
+            unobserved item-respondent interactions: A latent space item
+            response model with interaction map. *Psychometrika, 86*(2),
+            378-403. https://doi.org/10.1007/s11336-021-09762-5
     """
     from .estimators.marginal import LSIRM_PRIOR, fit_marginal_numpy
 
@@ -347,10 +362,24 @@ def _fit_mmle_marginal(
     if backend == "rust":
         try:  # pragma: no cover - depends on the compiled extension
             from . import _core  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "compiled Rust core marginal estimator is required for marginal MMLE"
+            ) from exc
 
-            rust = getattr(_core, "fit_marginal", None)
-        except Exception:  # pragma: no cover
-            rust = None
+        capability = getattr(_core, "MARGINAL_CAPABILITY_VERSION", None)
+        if (
+            type(capability) is not int
+            or capability != _MARGINAL_CAPABILITY_VERSION
+        ):
+            raise RuntimeError(
+                "compiled Rust core marginal ABI capability is missing or unsupported"
+            )
+        rust = getattr(_core, "fit_marginal", None)
+        if not callable(rust):
+            raise RuntimeError(
+                "compiled Rust core marginal estimator is required for marginal MMLE"
+            )
 
     y_filled = np.where(observed, y, 0.0).astype(np.float64)
     if rust is not None:  # pragma: no cover - exercised only with the extension
@@ -390,6 +419,10 @@ def _fit_mmle_marginal(
             )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
+        except TypeError as exc:
+            raise RuntimeError(
+                "compiled Rust core marginal ABI capability is missing or unsupported"
+            ) from exc
         alpha = np.asarray(res["alpha"], dtype=np.float64)
         b = np.asarray(res["b"], dtype=np.float64)
         zeta = np.asarray(res["zeta"], dtype=np.float64).reshape(
