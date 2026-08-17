@@ -49,8 +49,55 @@ def test_hover_does_not_dim_unrelated_chart_or_table_content(tmp_path: Path) -> 
     assert "tbody tr:hover {\n  background: var(--hover-bg);\n}" in html
 
 
-def test_focus_containers_suppress_mouse_click_outlines(tmp_path: Path) -> None:
-    """Semantic focus containers must suppress mouse click outlines."""
+def test_focus_outline_suppression_preserves_user_agent_fallbacks(tmp_path: Path) -> None:
+    """Pointer polish must never erase keyboard focus in older user agents."""
     html = _render_report(tmp_path)
-    assert ".table-wrap:focus {\n  outline: none;\n}" in html
-    assert ".export-block pre:focus {\n  outline: none;\n}" in html
+
+    # Bare :focus outline removal is unsafe: browsers without usable
+    # :focus-visible support would still apply the suppression.
+    assert "main:focus {\n  outline: none;\n}" not in html
+    assert ".table-wrap:focus {\n  outline: none;\n}" not in html
+    assert ".export-block pre:focus {\n  outline: none;\n}" not in html
+    assert ".exact-values > summary:focus {" not in html
+    assert ".export-block > summary:focus {" not in html
+
+    # Scope pointer-only suppression to selectors whose whole rule becomes
+    # invalid when :focus-visible is unsupported, preserving UA fallback focus.
+    assert "main:focus:not(:focus-visible) {\n  outline: none;\n}" in html
+    assert (
+        ".table-wrap:focus:not(:focus-visible) {\n  outline: none;\n}" in html
+    )
+    assert (
+        ".export-block pre:focus:not(:focus-visible) {\n  outline: none;\n}"
+        in html
+    )
+    assert (
+        ".exact-values > summary:focus:not(:focus-visible),\n"
+        ".export-block > summary:focus:not(:focus-visible) {\n"
+        "  outline: none;\n}"
+        in html
+    )
+
+    # Keyboard-visible focus remains explicit for every suppressible region.
+    assert (
+        "main:focus-visible {\n  outline: 3px solid var(--teal);\n"
+        "  outline-offset: 3px;\n}"
+        in html
+    )
+    assert (
+        ".table-wrap:focus-visible {\n  outline: 3px solid var(--teal);\n"
+        "  outline-offset: 3px;\n}"
+        in html
+    )
+    assert (
+        ".export-block pre:focus-visible {\n  outline: 3px solid var(--teal);\n"
+        "  outline-offset: -2px;\n}"
+        in html
+    )
+    assert (
+        ".exact-values > summary:focus-visible,\n"
+        ".export-block > summary:focus-visible {\n"
+        "  outline: 3px solid var(--teal);\n"
+        "  outline-offset: 2px;\n}"
+        in html
+    )
