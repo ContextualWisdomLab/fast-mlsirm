@@ -157,13 +157,14 @@ def _synthetic_records(
     truth = {
         "task_difficulty_by_id": task_difficulty_by_id,
         "rater_severity_by_fingerprint": rater_severity_by_fingerprint,
+        "thresholds": thresholds,
         "theta_by_respondent": theta_by_respondent,
     }
     return tuple(records), truth
 
 
 def test_governed_essay_facets_recovers_injected_parameters() -> None:
-    """The governed Rust path recovers task, rater, and respondent signals."""
+    """The governed Rust path recovers task, rater, threshold, and respondent signals."""
     records, truth = _synthetic_records()
     bundle = build_scoring_facets_calibration_bundle(records)
     assert bundle.criterion_ids == ("claim_support",)
@@ -193,6 +194,12 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
         ],
         dtype=np.float64,
     )
+    # ``allowed_scores`` is sorted and unique by the governed calibration
+    # contract, and the fit exposes no separate threshold-axis labels. The
+    # generated and fitted K-1 threshold vectors are therefore compared by
+    # their shared positional category-step order.
+    true_thresholds = np.asarray(truth["thresholds"], dtype=np.float64)
+    estimated_thresholds = np.asarray(fit.thresholds, dtype=np.float64)
     true_theta = np.asarray(
         [
             truth["theta_by_respondent"][respondent_id]
@@ -207,6 +214,9 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
     task_bias, task_mae, task_rmse = _error_metrics(
         np.asarray(fit.item_difficulty), true_task
     )
+    _, threshold_mae, threshold_rmse = _error_metrics(
+        estimated_thresholds, true_thresholds
+    )
     theta_bias, theta_mae, theta_rmse = _error_metrics(
         np.asarray(fit.theta), true_theta
     )
@@ -217,6 +227,11 @@ def test_governed_essay_facets_recovers_injected_parameters() -> None:
     assert abs(task_bias) < 0.15
     assert task_mae < 0.25
     assert task_rmse < 0.30
+    assert estimated_thresholds.shape == true_thresholds.shape
+    assert abs(float(np.sum(true_thresholds))) < 1e-12
+    assert abs(float(np.sum(estimated_thresholds))) < 1e-8
+    assert threshold_mae < 0.20
+    assert threshold_rmse < 0.20
     assert abs(theta_bias) < 0.10
     assert theta_mae < 0.70
     assert theta_rmse < 0.90

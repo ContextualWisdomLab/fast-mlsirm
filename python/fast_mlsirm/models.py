@@ -28,6 +28,43 @@ __all__ = [
 ]
 
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+
+
+def _is_exact_numpy_integer_scalar(value: object) -> bool:
+    """Return whether ``value`` has an exact supported NumPy integer type."""
+
+    value_type = type(value)
+    return any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES)
+
+
+def _require_exploratory_dimensions(value: object) -> int:
+    """Return a trusted positive factor count without caller coercion hooks."""
+
+    if type(value) is int:
+        dimensions = value
+    elif _is_exact_numpy_integer_scalar(value):
+        dimensions = int(value)
+    else:
+        raise ValueError("exploratory dimensions must be a positive integer")
+    if dimensions < 1:
+        raise ValueError("exploratory dimensions must be a positive integer")
+    return dimensions
+
+
 @dataclass(frozen=True)
 class ExploratoryModel:
     """An exploratory model identified by its number of latent dimensions."""
@@ -35,13 +72,11 @@ class ExploratoryModel:
     dimensions: int = 1
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.dimensions, bool)
-            or not isinstance(self.dimensions, (int, np.integer))
-            or int(self.dimensions) < 1
-        ):
-            raise ValueError("exploratory dimensions must be a positive integer")
-        object.__setattr__(self, "dimensions", int(self.dimensions))
+        object.__setattr__(
+            self,
+            "dimensions",
+            _require_exploratory_dimensions(self.dimensions),
+        )
 
     @property
     def n_dims(self) -> int:
@@ -109,10 +144,10 @@ def _resolve_model(
 ) -> tuple[IrtModel, np.ndarray]:
     """Normalize a public model argument to a specification and core loading pattern."""
 
-    if isinstance(model, bool):
+    if type(model) is bool:
         raise TypeError("model must be a factor count or an IRT model specification")
-    if isinstance(model, (int, np.integer)):
-        model = ExploratoryModel(int(model))
+    if type(model) is int or _is_exact_numpy_integer_scalar(model):
+        model = ExploratoryModel(model)
     if isinstance(model, ExploratoryModel):
         if model.dimensions != 1:
             raise NotImplementedError(

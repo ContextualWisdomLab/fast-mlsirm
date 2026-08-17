@@ -444,9 +444,9 @@ def _single_call_failure_evidence(
 
 
 class ContextualOrchestratorJudge:
-    """Evaluate one answer through a marked contextual-orchestrator adapter."""
+    """Evaluate through a marked contextual-orchestrator adapter using adaptive routing by default."""
 
-    def __init__(self, orchestrator: Any, *, mode: str = "route", accept_threshold: float = 0.7) -> None:
+    def __init__(self, orchestrator: Any, *, mode: str = "auto", accept_threshold: float = 0.7) -> None:
         if not callable(getattr(orchestrator, "complete", None)):
             raise TypeError("orchestrator must provide complete(messages, mode=...)")
         try:
@@ -658,9 +658,6 @@ class ContextualOrchestratorJudge:
                 )
                 if type(parsed["meets_threshold"]) is not bool:
                     raise JudgeFormatError("meets_threshold must be a boolean")
-                # Keep the parsed ordinal signal in bounded failure evidence so
-                # a non-monotone comparison can be audited without retaining
-                # the full model response.
                 record["meets_threshold"] = parsed["meets_threshold"]
                 rationale = _bounded_text(parsed["rationale"], "rationale")
                 record["parse_status"] = "passed"
@@ -731,8 +728,6 @@ class ContextualOrchestratorJudge:
         if max_workers == 1:
             outcomes = [judge_boundary(request) for request in requests]
         else:
-            # Reuse contextual-orchestrator's already-bounded local setting;
-            # generic injected orchestrators remain sequential by default.
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 outcomes = list(pool.map(judge_boundary, requests))
 
@@ -811,8 +806,6 @@ class ContextualOrchestratorJudge:
             normalized_criteria, category_count
         )
         if category_method is None:
-            # K-way category selection is vulnerable to score-option effects;
-            # use independent Boolean boundaries for implicit polytomous calls.
             category_method = "binary_threshold" if category_count is not None else "direct"
         elif (
             type(category_method) is not str
@@ -832,7 +825,7 @@ class ContextualOrchestratorJudge:
         criterion_payload = [criterion.to_dict() for criterion in normalized_criteria]
         reference_block = reference_answer or "(none supplied)"
         if category_method == "binary_threshold":
-            assert category_count is not None  # validated above
+            assert category_count is not None
             call_count = len(normalized_criteria) * (category_count - 1)
             if call_count > MAX_BINARY_THRESHOLD_CALLS:
                 raise ValueError(
@@ -1063,6 +1056,7 @@ class ContextualOrchestratorJudge:
                     error_type=type(exc).__name__,
                 ),
             ) from None
+
         def response_failure(exc: JudgeFormatError) -> JudgeFormatError:
             return JudgeFormatError(
                 str(exc),
@@ -1086,8 +1080,6 @@ class ContextualOrchestratorJudge:
             expected_id_set = set(expected_ids)
             criterion_categories: dict[str, int] | None = None
             if category_count is not None:
-                # Validate the redundant field's shape, but derive the accepted score
-                # from the ordered category items below rather than trusting it.
                 _score(parsed.get("score"), "score")
                 criterion_categories = {}
                 if category_method == "cumulative_threshold":
