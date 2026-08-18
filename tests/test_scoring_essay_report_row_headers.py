@@ -29,7 +29,11 @@ def test_facets_report_marks_primary_table_axes_as_row_headers(tmp_path: Path) -
     report = _FACETS_FIXTURES["build_report"]()
     output = tmp_path / "facets-row-headers.html"
 
-    render_essay_facets_calibration_report_html(report, output)
+    render_essay_facets_calibration_report_html(
+        report,
+        output,
+        output_root=tmp_path,
+    )
     html = output.read_text(encoding="utf-8")
 
     identity_row_headers = (
