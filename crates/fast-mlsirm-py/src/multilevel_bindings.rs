@@ -7,8 +7,13 @@
 //! `mlsirm_core::multilevel::weighted_contextual_effect`.
 
 use mlsirm_core::longitudinal::fit_longitudinal_state as core_fit_longitudinal_state;
+use mlsirm_core::longitudinal_irt::{
+    fit_hierarchical_ctar_rasch as core_fit_hierarchical_ctar_rasch,
+    simulate_hierarchical_ctar_rasch as core_simulate_hierarchical_ctar_rasch,
+    HierarchicalCtarRaschConfig,
+};
 use mlsirm_core::multilevel::weighted_contextual_effect as core_weighted_contextual_effect;
-use numpy::{PyArray1, PyReadonlyArray1, ToPyArray};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -19,6 +24,8 @@ use pyo3::wrap_pyfunction;
 // contract. The regression tests import the Python constant so drift fails CI.
 const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
 const MAX_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
+const MAX_HIERARCHICAL_OCCASIONS: usize = 100_000;
+const MAX_HIERARCHICAL_ITEMS: usize = 4_096;
 
 fn checked_usize_values(values: &[u64], name: &str) -> PyResult<Vec<usize>> {
     values
@@ -153,10 +160,183 @@ fn py_fit_longitudinal_state<'py>(
     Ok(result)
 }
 
+/// Fit the joint MAP hierarchical continuous-time AR(1) Rasch slice.
+///
+/// Parameters
+/// ----------
+/// row_offsets : numpy.ndarray[uint64]
+///     CSR-style respondent pointer, length ``n_respondents + 1``.
+/// time_offsets_milliseconds : numpy.ndarray[int64]
+///     Exact millisecond offsets aligned with the occasion axis of
+///     ``responses``.
+/// responses : numpy.ndarray[float64]
+///     Occasion-major binary matrix with shape
+///     ``(n_occasions, n_items)``. ``NaN`` marks a missing response.
+/// worker_count : int
+///     Number of deterministic person-shard worker threads (``>= 1``).
+/// max_iter : int
+///     Maximum packed L-BFGS iterations (``>= 1``).
+/// tolerance : float
+///     Relative L-BFGS tolerance; must be finite and strictly positive.
+/// hessian_step : float
+///     Central-difference step for the hyperparameter Hessian.
+///
+/// Returns
+/// -------
+/// dict
+///     Joint MAP states, Wald intervals, item intercepts, estimated
+///     ``(mu, tau, lambda)``, and normative estimand metadata.
+#[pyfunction(name = "fit_hierarchical_ctar_rasch")]
+fn py_fit_hierarchical_ctar_rasch<'py>(
+    py: Python<'py>,
+    row_offsets: PyReadonlyArray1<'_, u64>,
+    time_offsets_milliseconds: PyReadonlyArray1<'_, i64>,
+    responses: PyReadonlyArray2<'_, f64>,
+    worker_count: usize,
+    max_iter: usize,
+    tolerance: f64,
+    hessian_step: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let shape = responses.shape();
+    if shape[0] > MAX_HIERARCHICAL_OCCASIONS {
+        return Err(PyValueError::new_err(format!(
+            "responses occasion axis exceeds maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
+        )));
+    }
+    if shape[1] > MAX_HIERARCHICAL_ITEMS {
+        return Err(PyValueError::new_err(format!(
+            "responses item axis exceeds maximum supported length of {MAX_HIERARCHICAL_ITEMS}"
+        )));
+    }
+    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
+    let time_offsets = time_offsets_milliseconds.as_slice()?.to_vec();
+    let responses = responses.as_slice()?.to_vec();
+    let n_items = shape[1];
+    let config = HierarchicalCtarRaschConfig {
+        worker_count,
+        max_iter,
+        tolerance,
+        hessian_step,
+    };
+    let fit = py
+        .detach(move || {
+            core_fit_hierarchical_ctar_rasch(
+                &row_offsets,
+                &time_offsets,
+                &responses,
+                n_items,
+                config,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let result = PyDict::new(py);
+    result.set_item("state", fit.state.to_pyarray(py))?;
+    result.set_item("state_se", fit.state_se.to_pyarray(py))?;
+    result.set_item("state_lower", fit.state_lower.to_pyarray(py))?;
+    result.set_item("state_upper", fit.state_upper.to_pyarray(py))?;
+    result.set_item("item_intercepts", fit.item_intercepts.to_pyarray(py))?;
+    result.set_item("population_mean", fit.population_mean)?;
+    result.set_item("population_sd", fit.population_sd)?;
+    result.set_item("decay_rate", fit.decay_rate)?;
+    result.set_item("unit_time_ar_coefficient", fit.unit_time_ar_coefficient)?;
+    result.set_item("hyperparameter_se", fit.hyperparameter_se.to_vec())?;
+    result.set_item("hyperparameter_lower", fit.hyperparameter_lower.to_vec())?;
+    result.set_item("hyperparameter_upper", fit.hyperparameter_upper.to_vec())?;
+    result.set_item(
+        "hyperparameter_intervals_identified",
+        fit.hyperparameter_intervals_identified,
+    )?;
+    result.set_item("state_intervals_identified", fit.state_intervals_identified)?;
+    result.set_item("observed_count", fit.observed_count)?;
+    result.set_item("transition_count", fit.transition_count)?;
+    result.set_item("status", fit.status)?;
+    result.set_item("estimand_scope", fit.estimand_scope)?;
+    result.set_item("transition_kind", fit.transition_kind)?;
+    result.set_item("interval_kind", fit.interval_kind)?;
+    result.set_item("engine", fit.engine)?;
+    result.set_item("population_random_effects_estimated", true)?;
+    result.set_item("ar_coefficient_estimated", true)?;
+    result.set_item("ar_coefficient_source", "joint_map")?;
+    result.set_item("multiple_membership_estimated", false)?;
+    result.set_item("gpu_parity", false)?;
+    Ok(result)
+}
+
+/// Simulate hierarchical continuous-time AR(1) Rasch responses.
+///
+/// Parameters
+/// ----------
+/// row_offsets : numpy.ndarray[uint64]
+///     CSR-style respondent pointer, length ``n_respondents + 1``.
+/// time_offsets_milliseconds : numpy.ndarray[int64]
+///     Exact millisecond offsets aligned with the generated occasions.
+/// item_intercepts : numpy.ndarray[float64]
+///     Sum-to-zero Rasch item intercepts used as generating values.
+/// population_mean : float
+///     Generating population mean.
+/// population_sd : float
+///     Generating stationary standard deviation.
+/// decay_rate : float
+///     Generating continuous-time decay rate per day.
+/// seed : int
+///     Deterministic LCG seed.
+///
+/// Returns
+/// -------
+/// dict
+///     Generating latent states and occasion-major binary responses.
+#[pyfunction(name = "simulate_hierarchical_ctar_rasch")]
+fn py_simulate_hierarchical_ctar_rasch<'py>(
+    py: Python<'py>,
+    row_offsets: PyReadonlyArray1<'_, u64>,
+    time_offsets_milliseconds: PyReadonlyArray1<'_, i64>,
+    item_intercepts: PyReadonlyArray1<'_, f64>,
+    population_mean: f64,
+    population_sd: f64,
+    decay_rate: f64,
+    seed: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let item_intercepts = item_intercepts.as_slice()?.to_vec();
+    if item_intercepts.len() > MAX_HIERARCHICAL_ITEMS {
+        return Err(PyValueError::new_err(format!(
+            "item_intercepts exceeds maximum supported length of {MAX_HIERARCHICAL_ITEMS}"
+        )));
+    }
+    let n_items = item_intercepts.len();
+    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
+    let time_offsets = time_offsets_milliseconds.as_slice()?.to_vec();
+    if time_offsets.len() > MAX_HIERARCHICAL_OCCASIONS {
+        return Err(PyValueError::new_err(format!(
+            "time offsets exceed maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
+        )));
+    }
+    let (state, responses) = py
+        .detach(move || {
+            core_simulate_hierarchical_ctar_rasch(
+                &row_offsets,
+                &time_offsets,
+                n_items,
+                population_mean,
+                population_sd,
+                decay_rate,
+                &item_intercepts,
+                seed,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let result = PyDict::new(py);
+    result.set_item("state", state.to_pyarray(py))?;
+    result.set_item("responses", responses.to_pyarray(py))?;
+    result.set_item("n_items", n_items)?;
+    Ok(result)
+}
+
 #[pymodule]
 #[pyo3(name = "_multilevel_core")]
 fn fast_mlsirm_multilevel_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_weighted_contextual_effect, m)?)?;
     m.add_function(wrap_pyfunction!(py_fit_longitudinal_state, m)?)?;
+    m.add_function(wrap_pyfunction!(py_fit_hierarchical_ctar_rasch, m)?)?;
+    m.add_function(wrap_pyfunction!(py_simulate_hierarchical_ctar_rasch, m)?)?;
     Ok(())
 }

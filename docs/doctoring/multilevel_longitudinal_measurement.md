@@ -7,16 +7,21 @@ cross-classified, weighted multiple-membership, and repeated longitudinal
 measurement. The contracts prevent contextual and temporal provenance from
 being collapsed into respondent IDs or unstructured metadata. A Rust-owned
 state layer now consumes the sealed longitudinal design for independent
-per-respondent OLS trends and discrete-step AR(1) state prediction; the full
-joint multilevel likelihood remains outside this slice.
+per-respondent OLS trends and discrete-step AR(1) state prediction. A
+separate joint MAP hierarchical continuous-time AR(1) Rasch slice estimates
+shared population hyperparameters and person-occasion states. Estimated
+multiple-membership `u_h` and Fox–Glas / adaptive-quadrature multilevel IRT
+remain outside both slices.
 
 Python owns validation, content identity, bounded collection handling, replay
 protection, sparse design marshalling, and serialization. Rust owns the
-weighted contextual predictor and the first state-layer arithmetic. The
-OLS path uses respondent-sharded CPU threads; the AR path uses
-sequence-index gaps and a caller-supplied coefficient. Full likelihood,
-random-effect integration, optimization, uncertainty, and GPU batching for
-recurrent state remain separate boundaries.
+weighted contextual predictor, the first state-layer arithmetic, and the
+joint MAP hierarchical CT-AR Rasch kernel. The OLS path uses
+respondent-sharded CPU threads; the AR path uses sequence-index gaps and a
+caller-supplied coefficient; the hierarchical CT-AR path uses elapsed-day
+Ornstein–Uhlenbeck transitions and packed L-BFGS. GPU batching for this
+Rasch objective is not implemented: the existing wgpu path owns MLSIRM
+distance/likelihood kernels, a different estimand.
 
 ## Scientific rationale
 
@@ -71,6 +76,9 @@ The implementation:
 - distinguishes a random-intercept/slope wire label from stationary AR(1);
 - fits the state layer with Rust-only arithmetic and deterministic respondent
   sharding, reporting independent OLS or caller-supplied AR estimand metadata;
+- fits a separate joint MAP hierarchical CT-AR Rasch slice with estimated
+  `(mu, tau, lambda)`, Wald observed-information intervals, and explicit
+  exclusion of multiple-membership random effects and GPU parity;
 - reports state RMSE, observed/transition counts, and worker-count-invariant
   results;
 - keeps lagged-response dependence independently switchable;
@@ -82,17 +90,16 @@ The implementation:
 
 ## Temporal interpretation boundary
 
-The current `autoregressive_coefficient` is a discrete occasion-step stationary
-AR(1) coefficient with \(-1<\phi<1\). Irregular millisecond offsets are retained
-as exact ordering and audit provenance. They do **not** imply that one \(\phi\)
-is automatically adjusted for elapsed time.
+The ADR-0018 `autoregressive_coefficient` is a discrete occasion-step
+stationary AR(1) coefficient with \(-1<\phi<1\). Irregular millisecond
+offsets are retained as exact ordering and audit provenance. They do **not**
+imply that one \(\phi\) is automatically adjusted for elapsed time.
 
-A continuous-time model would require a separate parameterization, for example a
-transition rate mapped to interval-specific correlations, plus explicit units,
-identification, recovery, and numerical stability evidence. That arithmetic is
-reserved for a later Rust estimator PR. Until then, no report may describe the
-current coefficient as continuous-time, interval-adjusted, or comparable across
-different occasion spacings without an explicit design assumption.
+A separate joint MAP slice (ADR-0019) parameterizes elapsed time through
+\(\phi_{pt}=\exp(-\lambda\Delta_{pt})\) with \(\Delta_{pt}\) in days. That
+slice may be described as continuous-time AR(1) / Ornstein–Uhlenbeck. The
+OLS/AR layer still must not be described as continuous-time,
+interval-adjusted, or comparable across different occasion spacings.
 
 ## Identification and interpretation limits
 
@@ -123,15 +130,19 @@ must use explicit schema migration rather than mutating the accepted contract.
 The current evidence includes contract validation, deterministic identity,
 child replay, resource bounds, dimension-scoped assignment, strict temporal
 ordering, Rust state-layer slope recovery, missing-occasion preservation,
-discrete AR transition RMSE, worker-count determinism, and source-text-free
-serialization. It is not evidence of:
+discrete AR transition RMSE, worker-count determinism, source-text-free
+serialization, and joint MAP hierarchical CT-AR Rasch recovery of known
+states with measurement-information Wald interval coverage. Shared mean and
+MAP-shrunk `tau` are recovered under documented RMSE bounds. Short series
+leave `lambda` weakly identified; the transition claim is elapsed-day
+`phi_pt=exp(-lambda Delta_pt)` with a finite positive decay, not tight
+unbiased recovery of `lambda`. It is not evidence of:
 
-- full joint estimator correctness;
-- variance-component identification;
-- population random-effects recovery or interval coverage;
+- Fox and Glas Gibbs or Jeon and Rabe-Hesketh adaptive-quadrature ML;
+- unbiased maximum-likelihood variance-component recovery;
+- estimated multiple-membership or crossed `u_h`;
 - measurement invariance or fairness;
 - causal contextual effects;
-- continuous-time dynamics;
 - GPU recurrent-state performance or parity; or
 - high-stakes deployment readiness.
 
@@ -162,6 +173,13 @@ https://doi.org/10.3102/10769986231193351
 Jeon, M., & Rabe-Hesketh, S. (2016). An autoregressive growth model for
 longitudinal item analysis. *Psychometrika, 81*(3), 830–850.
 https://doi.org/10.1007/s11336-015-9489-2
+
+Laird, N. M., & Ware, J. H. (1982). Random-effects models for longitudinal
+data. *Biometrics, 38*(4), 963–974. https://doi.org/10.2307/2529876
+
+Oravecz, Z., Tuerlinckx, F., & Vandekerckhove, J. (2011). A hierarchical
+latent stochastic differential equation model for affective dynamics.
+*Psychological Methods, 16*(2), 468–490. https://doi.org/10.1037/a0024375
 
 Tranmer, M., Steel, D., & Browne, W. J. (2014). Multiple-membership
 multiple-classification models for social network and group dependencies.
