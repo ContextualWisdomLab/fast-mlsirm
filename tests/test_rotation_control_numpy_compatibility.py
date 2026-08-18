@@ -65,7 +65,8 @@ def test_numpy_selection_controls_preserve_native_execution() -> None:
     )
     result = select_rotation_criterion(
         loadings,
-        ("varimax", "geomin"),
+        ("cf", "geomin"),
+        mode="oblique",
         normalize=np.bool_(False),
         n_starts=np.int64(1),
         seed=np.uint64(1),
@@ -77,5 +78,5 @@ def test_numpy_selection_controls_preserve_native_execution() -> None:
         max_threads=np.int64(0),
         kappa=np.float64(0.3),
     )
-    assert result.selected_criterion in {"varimax", "geomin"}
+    assert result.selected_criterion in {"cf", "geomin", "crawford_ferguson"}
     assert len(result.candidates) == 2
