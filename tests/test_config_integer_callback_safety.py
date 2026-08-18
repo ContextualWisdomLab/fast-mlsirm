@@ -11,6 +11,7 @@ from fast_mlsirm.config import FitConfig, MLS2PLMConfig
 from fast_mlsirm.diagnostics import (
     _validated_latent_dims,
     dimensionality_diagnostics,
+    fit_diagnostics,
 )
 from fast_mlsirm.simulation import simulate
 from fast_mlsirm.types import FitResult, MLSIRMParams
@@ -311,3 +312,63 @@ def test_validated_latent_dims_stores_trusted_integers() -> None:
     dims = _validated_latent_dims([np.uint8(2), np.int32(1)])
     assert dims == [2, 1]
     assert all(type(value) is int for value in dims)
+
+
+def _tiny_fit_diagnostic_args() -> tuple[np.ndarray, MLSIRMParams, np.ndarray]:
+    """Return a two-by-two MIRT fixture for integer-control regressions."""
+    responses = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    params = MLSIRMParams(
+        theta=np.zeros((2, 1)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=0.0,
+    )
+    return responses, params, np.zeros(2, dtype=int)
+
+
+def test_fit_diagnostics_parameter_count_reject_index_callbacks() -> None:
+    """Caller parameter counts must not reach ``int()`` or AIC arithmetic."""
+    responses, params, factor_id = _tiny_fit_diagnostic_args()
+    _assert_rejected_without_index_callback(
+        lambda value: fit_diagnostics(
+            responses,
+            params,
+            factor_id,
+            model="MIRT",
+            parameter_count=value,
+        )
+    )
+
+
+@pytest.mark.parametrize("field", ["m2_q_theta", "m2_q_u", "m2_q_xi"])
+def test_fit_diagnostics_m2_quadrature_reject_index_callbacks(field: str) -> None:
+    """M2 quadrature sizes must not dispatch arbitrary ``__index__`` hooks."""
+    responses, params, factor_id = _tiny_fit_diagnostic_args()
+    _assert_rejected_without_index_callback(
+        lambda value: fit_diagnostics(
+            responses,
+            params,
+            factor_id,
+            model="MIRT",
+            **{field: value},
+        )
+    )
+
+
+def test_fit_diagnostics_stores_trusted_parameter_count() -> None:
+    """Admitted NumPy parameter counts must stay built-in integers in AIC/BIC."""
+    responses, params, factor_id = _tiny_fit_diagnostic_args()
+    diagnostics = fit_diagnostics(
+        responses,
+        params,
+        factor_id,
+        model="MIRT",
+        parameter_count=np.uint8(200),
+    )
+    count = diagnostics.model_fit["parameter_count"]
+    assert count == 200.0
+    assert type(count) is float
+    # uint8(200) * a later integer addend would wrap; the trusted count must not.
+    assert int(count) + 60 == 260

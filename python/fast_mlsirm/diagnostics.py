@@ -141,7 +141,15 @@ def fit_diagnostics(
     Clustered data use a between-cluster covariance rather than an iid M2.
     When the calibration convergence status is available, pass it so
     inferential fit indices cannot be computed from an unfinished fit.
+    ``parameter_count`` and the M2 quadrature sizes are marshalling-trusted to
+    built-in integers before AIC/BIC arithmetic or ``int(q_*)`` can dispatch
+    caller ``__index__`` hooks or wrap a narrow NumPy scalar.
     """
+    if parameter_count is not None:
+        parameter_count = _trusted_integer(parameter_count, "parameter_count")
+    m2_q_theta = _trusted_integer(m2_q_theta, "m2_q_theta")
+    m2_q_u = _trusted_integer(m2_q_u, "m2_q_u")
+    m2_q_xi = _trusted_integer(m2_q_xi, "m2_q_xi")
     if include_m2 and estimator is None:
         raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
     if include_m2 and convergence_status is not None:
@@ -175,7 +183,7 @@ def fit_diagnostics(
     residual = (y - prob) * observed
     pearson_sq = np.where(observed, residual * residual / variance, 0.0)
     n_parameters = (
-        int(parameter_count)
+        parameter_count
         if parameter_count is not None
         else _parameter_count(params, model)
     )
