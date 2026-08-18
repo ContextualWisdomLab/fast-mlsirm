@@ -19,9 +19,14 @@ GIT_METADATA_TIMEOUT_SECONDS = 5
 _GH_COMMAND_TIMEOUT_SECONDS = 60
 
 try:
-    from scripts._bounded_json import read_json_object
+    from scripts._bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
+    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    from _bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
+    from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
+
+_GH_STDOUT_MAX_BYTES = MAX_JSON_BYTES
+_GH_STDERR_MAX_BYTES = 1024 * 1024
 
 
 POLICY_FILES = [
@@ -277,6 +282,90 @@ def _commercial_checks(
     return payload, checks
 
 
+def _bounded_json_snapshot(command: list[str]) -> dict[str, Any]:
+    """Run one GitHub JSON command with bounded output and stable failures."""
+    try:
+        completed = run_bounded_capture(
+            command,
+            timeout_seconds=_GH_COMMAND_TIMEOUT_SECONDS,
+            max_stdout_bytes=_GH_STDOUT_MAX_BYTES,
+            max_stderr_bytes=_GH_STDERR_MAX_BYTES,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "returncode": 124,
+            "data": None,
+            "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
+        }
+    except BoundedSubprocessOutputError as exc:
+        return {
+            "ok": False,
+            "returncode": 75,
+            "data": None,
+            "stderr": str(exc),
+        }
+    if completed.returncode != 0:
+        return {
+            "ok": False,
+            "returncode": completed.returncode,
+            "data": None,
+            "stderr": completed.stderr.strip(),
+        }
+    try:
+        data = (
+            parse_json_bounded(completed.stdout, max_bytes=_GH_STDOUT_MAX_BYTES)
+            if completed.stdout.strip()
+            else None
+        )
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "returncode": 65,
+            "data": None,
+            "stderr": str(exc),
+        }
+    return {
+        "ok": True,
+        "returncode": 0,
+        "data": data,
+        "stderr": completed.stderr.strip(),
+    }
+
+
+def _bounded_lines_snapshot(command: list[str]) -> dict[str, Any]:
+    """Run one GitHub text command with bounded output and stable failures."""
+    try:
+        completed = run_bounded_capture(
+            command,
+            timeout_seconds=_GH_COMMAND_TIMEOUT_SECONDS,
+            max_stdout_bytes=_GH_STDOUT_MAX_BYTES,
+            max_stderr_bytes=_GH_STDERR_MAX_BYTES,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "returncode": 124,
+            "lines": [],
+            "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
+        }
+    except BoundedSubprocessOutputError as exc:
+        return {
+            "ok": False,
+            "returncode": 75,
+            "lines": [],
+            "stderr": str(exc),
+        }
+    return {
+        "ok": completed.returncode == 0,
+        "returncode": completed.returncode,
+        "lines": [line for line in completed.stdout.splitlines() if line.strip()]
+        if completed.returncode == 0
+        else [],
+        "stderr": completed.stderr.strip(),
+    }
+
+
 def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
     if offline:
         return {"mode": "offline", "repo": repo, "checks": {"snapshot_recorded": True}}
@@ -305,43 +394,10 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         ],
     }
     for name, command in commands.items():
-        try:
-            completed = subprocess.run(command, capture_output=True, text=True, timeout=_GH_COMMAND_TIMEOUT_SECONDS)
-            snapshot[name] = {
-                "ok": completed.returncode == 0,
-                "returncode": completed.returncode,
-                "data": json.loads(completed.stdout)
-                if completed.returncode == 0 and completed.stdout.strip()
-                else None,
-                "stderr": completed.stderr.strip(),
-            }
-        except subprocess.TimeoutExpired:
-            snapshot[name] = {
-                "ok": False,
-                "returncode": 124,
-                "data": None,
-                "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
-            }
-    try:
-        release = subprocess.run(
-            ["gh", "release", "list", "--repo", repo, "--limit", "20"],
-            capture_output=True,
-            text=True,
-            timeout=_GH_COMMAND_TIMEOUT_SECONDS,
-        )
-        snapshot["releases"] = {
-            "ok": release.returncode == 0,
-            "returncode": release.returncode,
-            "lines": [line for line in release.stdout.splitlines() if line.strip()],
-            "stderr": release.stderr.strip(),
-        }
-    except subprocess.TimeoutExpired:
-        snapshot["releases"] = {
-            "ok": False,
-            "returncode": 124,
-            "lines": [],
-            "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
-        }
+        snapshot[name] = _bounded_json_snapshot(command)
+    snapshot["releases"] = _bounded_lines_snapshot(
+        ["gh", "release", "list", "--repo", repo, "--limit", "20"]
+    )
     return snapshot
 
 
