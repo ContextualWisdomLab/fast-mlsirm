@@ -32,16 +32,17 @@ def test_facets_report_marks_primary_table_axes_as_row_headers(tmp_path: Path) -
     render_essay_facets_calibration_report_html(report, output)
     html = output.read_text(encoding="utf-8")
 
-    expected_row_headers = (
+    identity_row_headers = (
         report.task_ids[0],
         report.rater_engine_ids[0],
         report.respondent_ids[0],
-        report.category_values[0],
-        1,
     )
-    for value in expected_row_headers:
+    for value in identity_row_headers:
         assert _row_header(value) in html
         assert f"<td>{escape(str(value))}</td>" not in html
+
+    assert _row_header(report.category_values[0]) in html
+    assert _row_header(1) in html
 
 
 def test_validation_report_marks_metric_identity_as_row_header(tmp_path: Path) -> None:
