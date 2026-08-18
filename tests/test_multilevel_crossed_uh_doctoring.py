@@ -13,5 +13,6 @@ def test_crossed_uh_doctoring_cites_fox_glas_and_browne_mmmc() -> None:
     assert "Browne, W. J., Goldstein, H., & Rasbash, J. (2001)" in note
     assert "https://doi.org/10.1007/BF02294839" in note
     assert "https://doi.org/10.1177/1471082X0100100202" in note
-    assert "Multiple membership multiple classification" in note
+    assert "Multiple membership" in note
+    assert "multiple classification (MMMC) models" in note
     assert "does not estimate OLS" in note

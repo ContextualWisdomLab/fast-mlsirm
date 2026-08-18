@@ -159,7 +159,7 @@ fn py_estimate_crossed_person_effects<'py>(
         )));
     }
     if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
-        return Err(PyValueError.new_err(format!(
+        return Err(PyValueError::new_err(format!(
             "context_indices exceeds maximum supported length of {MAX_CONTEXT_MEMBERSHIPS}"
         )));
     }
