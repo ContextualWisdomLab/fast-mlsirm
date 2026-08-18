@@ -152,13 +152,15 @@ def _identifier_tuple(
 
 
 def _enum_value(value: Any, enum_type: type[EnumValue], name: str) -> EnumValue:
-    """Normalize an enum instance or its exact string value."""
+    """Normalize an enum instance or its exact built-in string value."""
     if isinstance(value, enum_type):
         return value
+    choices = [member.value for member in enum_type]
+    if type(value) is not str:
+        raise ValueError(f"{name} must be one of {choices}")
     try:
         return enum_type(value)
     except (TypeError, ValueError) as exc:
-        choices = [member.value for member in enum_type]
         raise ValueError(f"{name} must be one of {choices}") from exc
 
 
