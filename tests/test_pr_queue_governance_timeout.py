@@ -23,11 +23,18 @@ def test_run_gh_json_timeout_fails_closed_without_retrying(monkeypatch) -> None:
     module = _load_governance()
     observed: list[tuple[list[str], float | None]] = []
 
-    def fake_run(command, *, capture_output=True, text=True, timeout=None):
-        observed.append((list(command), timeout))
-        raise subprocess.TimeoutExpired(command, timeout)
+    def fake_run(
+        command,
+        *,
+        timeout_seconds,
+        max_stdout_bytes,
+        max_stderr_bytes,
+        **kwargs,
+    ):
+        observed.append((list(command), timeout_seconds))
+        raise subprocess.TimeoutExpired(command, timeout_seconds)
 
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module, "run_bounded_capture", fake_run)
 
     payload, error = module._run_gh_json(
         ["gh", "api", "/rate_limit"],
