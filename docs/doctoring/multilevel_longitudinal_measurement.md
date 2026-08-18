@@ -98,8 +98,9 @@ imply that one \(\phi\) is automatically adjusted for elapsed time.
 A separate joint MAP slice (ADR-0019) parameterizes elapsed time through
 \(\phi_{pt}=\exp(-\lambda\Delta_{pt})\) with \(\Delta_{pt}\) in days. That
 slice may be described as continuous-time AR(1) / Ornstein–Uhlenbeck. The
-OLS/AR layer still must not be described as continuous-time,
-interval-adjusted, or comparable across different occasion spacings.
+discrete AR path must not be described as continuous-time or interval-adjusted;
+its coefficient is tied to sequence gaps. The OLS path uses exact day-scaled
+offsets and does not estimate a continuous-time transition.
 
 ## Identification and interpretation limits
 
