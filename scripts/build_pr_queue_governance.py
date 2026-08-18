@@ -17,9 +17,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 try:
-    from scripts._bounded_json import read_json_object
+    from scripts._bounded_json import parse_json_bounded, read_json_object
 except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    from _bounded_json import parse_json_bounded, read_json_object
 
 
 RISK_COUNT_KEYS = [
@@ -162,7 +162,7 @@ def _json_from_completed(completed: subprocess.CompletedProcess[str]) -> Any:
     """Decode command stdout when the command succeeded and emitted JSON."""
     if completed.returncode != 0 or not completed.stdout.strip():
         return None
-    return json.loads(completed.stdout)
+    return parse_json_bounded(completed.stdout)
 
 
 def _is_transient_gh_stderr(stderr: str) -> bool:
