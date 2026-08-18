@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import numpy as np
 import pytest
 
 from fast_mlsirm.config import FitConfig, MLS2PLMConfig
+from fast_mlsirm.diagnostics import (
+    _validated_latent_dims,
+    dimensionality_diagnostics,
+)
 from fast_mlsirm.simulation import simulate
+from fast_mlsirm.types import FitResult, MLSIRMParams
 
 
 class _HostileIndex:
@@ -192,3 +199,115 @@ def test_fit_seed_and_verbose_reject_bool(value: bool) -> None:
         FitConfig(seed=value)
     with pytest.raises(ValueError, match="verbose must be an integer"):
         FitConfig(verbose=value)
+
+
+def test_dimensionality_diagnostics_rejects_uint8_k_folds_budget_wrap(
+    monkeypatch,
+) -> None:
+    """32 candidates times uint8(32) must not wrap past the diagnostic fit cap.
+
+    ``len(dims) * np.uint8(32)`` wraps to 0, which would skip the 1_000-fit
+    budget check and let ``fit()`` run. The product must use a trusted
+    built-in integer so the same 32-by-32 request still raises.
+    """
+
+    def fit_must_not_run(*_args, **_kwargs):
+        """Fail if the wrap path lets a budget-exceeding request reach fit()."""
+        raise AssertionError("fit() should not run when the diagnostic budget is exceeded")
+
+    monkeypatch.setattr(import_module("fast_mlsirm.fit"), "fit", fit_must_not_run)
+    responses = np.ones((40, 40), dtype=np.float64)
+    with pytest.raises(ValueError, match="exceeds the diagnostic fit limit"):
+        dimensionality_diagnostics(
+            responses,
+            np.zeros(40, dtype=int),
+            latent_dims=list(range(1, 33)),
+            config=FitConfig(max_iter=1, n_restarts=1, seed=1),
+            k_folds=np.uint8(32),
+            seed=1,
+        )
+
+
+def test_dimensionality_diagnostics_uint8_seed_does_not_wrap_fold_offsets(
+    monkeypatch,
+) -> None:
+    """Narrow unsigned seeds must not wrap ``seed + fold_idx`` before ``fit()``."""
+    captured: list[object] = []
+
+    def capture_fit(responses, factor_id, config=None, mask=None):
+        """Record fold seeds and return a dummy fit so wrap can be observed."""
+        captured.append(config.seed)
+        n_persons, n_items = responses.shape
+        return FitResult(
+            params=MLSIRMParams(
+                theta=np.zeros((n_persons, 1)),
+                alpha=np.zeros(n_items),
+                b=np.zeros(n_items),
+                xi=np.zeros((n_persons, 1)),
+                zeta=np.zeros((n_items, 1)),
+                tau=0.0,
+            ),
+            model="MLS2PLM",
+            optimizer="adam",
+            backend="numpy",
+            rust_device="cpu",
+            objective=0.0,
+            loglik_trace=[0.0],
+            objective_trace=[0.0],
+            convergence_status="converged",
+            n_iter=1,
+        )
+
+    monkeypatch.setattr(import_module("fast_mlsirm.fit"), "fit", capture_fit)
+    dimensionality_diagnostics(
+        np.ones((8, 8), dtype=np.float64),
+        np.zeros(8, dtype=int),
+        latent_dims=[1],
+        config=FitConfig(max_iter=1, n_restarts=1, seed=1),
+        k_folds=7,
+        seed=np.uint8(250),
+    )
+    assert captured == [250, 251, 252, 253, 254, 255, 256]
+    assert all(type(value) is int for value in captured)
+
+
+def test_dimensionality_diagnostics_k_folds_reject_index_callbacks() -> None:
+    """Fold-count validation never dispatches arbitrary ``__index__`` hooks."""
+    _assert_rejected_without_index_callback(
+        lambda value: dimensionality_diagnostics(
+            np.ones((8, 8), dtype=np.float64),
+            np.zeros(8, dtype=int),
+            latent_dims=[1],
+            k_folds=value,
+        )
+    )
+
+
+def test_dimensionality_diagnostics_seed_reject_index_callbacks() -> None:
+    """Diagnostic seed validation never dispatches arbitrary ``__index__`` hooks."""
+    _assert_rejected_without_index_callback(
+        lambda value: dimensionality_diagnostics(
+            np.ones((8, 8), dtype=np.float64),
+            np.zeros(8, dtype=int),
+            latent_dims=[1],
+            seed=value,
+        )
+    )
+
+
+def test_dimensionality_diagnostics_latent_dims_reject_index_callbacks() -> None:
+    """Candidate-dimension validation never dispatches arbitrary ``__index__`` hooks."""
+    _assert_rejected_without_index_callback(
+        lambda value: dimensionality_diagnostics(
+            np.ones((8, 8), dtype=np.float64),
+            np.zeros(8, dtype=int),
+            latent_dims=[value],
+        )
+    )
+
+
+def test_validated_latent_dims_stores_trusted_integers() -> None:
+    """Admitted NumPy dimension candidates are stored as built-in integers."""
+    dims = _validated_latent_dims([np.uint8(2), np.int32(1)])
+    assert dims == [2, 1]
+    assert all(type(value) is int for value in dims)

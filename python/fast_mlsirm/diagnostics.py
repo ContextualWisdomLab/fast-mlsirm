@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from .config import FitConfig
+from .config import FitConfig, _trusted_integer
 from .irt_contract import fit_irt_experiment, validate_irt_experiment_readiness
 from .math import sigmoid, standardize
 from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
@@ -341,13 +341,18 @@ def dimensionality_diagnostics(
     entry-wise validation masks; the model is fit on the training entries and
     scored on the held-out entries (held-out log-likelihood, RMSE, mean
     absolute residual). The candidate with the best held-out log-likelihood is
-    reported as ``best``. When ``require_experiment_readiness`` is true, the
-    original matrix and every training fold must pass the production
-    experiment-readiness gate before fitting; the default false preserves this
-    function's low-level diagnostic use for small fixtures.
+    reported as ``best``. ``k_folds``, ``seed``, and each ``latent_dims``
+    value are marshalling-trusted to built-in integers before the diagnostic
+    fit-budget product or ``seed + fold_idx`` offsets are computed. When
+    ``require_experiment_readiness`` is true, the original matrix and every
+    training fold must pass the production experiment-readiness gate before
+    fitting; the default false preserves this function's low-level diagnostic
+    use for small fixtures.
     """
     from .fit import fit
 
+    k_folds = _trusted_integer(k_folds, "k_folds")
+    seed = _trusted_integer(seed, "seed")
     y, observed = prepare_response(responses, mask)
     if require_experiment_readiness:
         validation_y = np.where(observed, y, np.nan)
@@ -1194,8 +1199,10 @@ def _parameter_count(params: MLSIRMParams, model: str) -> int:
 
 
 def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
-    """Deduplicate and bounds-check the candidate latent dimensions."""
-    dims = list(dict.fromkeys(int(value) for value in latent_dims))
+    """Deduplicate and bounds-check trusted built-in candidate latent dimensions."""
+    dims = list(
+        dict.fromkeys(_trusted_integer(value, "latent_dims") for value in latent_dims)
+    )
     if not dims:
         raise ValueError("latent_dims must not be empty")
     if any(value < 1 for value in dims):
@@ -1214,17 +1221,17 @@ def _validation_folds(
 
     Randomly partitions the eligible observed cells (those whose row and column
     keep more than one observation) into fold masks, dropping any fold entry
-    that would empty a training row or column.
+    that would empty a training row or column. ``k_folds`` and ``seed`` are
+    marshalling-trusted to built-in integers before the mask-budget product
+    or RNG construction.
     """
-    if (
-        not isinstance(k_folds, (int, np.integer))
-        or isinstance(k_folds, (bool, np.bool_))
-        or not 2 <= int(k_folds) <= MAX_DIM_DIAGNOSTIC_FOLDS
-    ):
+    k_folds = _trusted_integer(k_folds, "k_folds")
+    seed = _trusted_integer(seed, "seed")
+    if not 2 <= k_folds <= MAX_DIM_DIAGNOSTIC_FOLDS:
         raise ValueError(
             f"k_folds must be an integer between 2 and {MAX_DIM_DIAGNOSTIC_FOLDS}"
         )
-    if observed.size * int(k_folds) > MAX_DIM_DIAGNOSTIC_MASK_CELLS:
+    if observed.size * k_folds > MAX_DIM_DIAGNOSTIC_MASK_CELLS:
         raise ValueError("k-fold validation masks exceed the aggregate size limit")
 
     row_counts = observed.sum(axis=1)
