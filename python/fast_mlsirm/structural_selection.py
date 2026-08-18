@@ -170,6 +170,8 @@ def govern_structural_selection(
     """
     if type(evidence) is not StructuralSelectionEvidence:
         raise TypeError("evidence must be StructuralSelectionEvidence")
+    evidence.__post_init__()
+    evidence.relation_evidence.__post_init__()
 
     relation = classify_model_relation(evidence.relation_evidence)
     pending = _pending_relation_decision(
