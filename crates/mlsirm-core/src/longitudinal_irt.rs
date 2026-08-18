@@ -505,8 +505,16 @@ fn joint_objective(
     let reduced = reduce_person_nll(ordered, n_items, n_occasions);
     let mut grad = vec![0.0; params.len()];
     grad[0] = reduced.mean_grad;
-    grad[1] = reduced.log_sd_grad;
-    grad[2] = reduced.log_decay_grad;
+    grad[1] = if params[1] < MIN_LOG_SD || params[1] > MAX_LOG_SD {
+        0.0
+    } else {
+        reduced.log_sd_grad
+    };
+    grad[2] = if params[2] < MIN_LOG_DECAY || params[2] > MAX_LOG_DECAY {
+        0.0
+    } else {
+        reduced.log_decay_grad
+    };
     grad[3..3 + n_items].copy_from_slice(&reduced.item_grad);
     grad[3 + n_items..].copy_from_slice(&reduced.state_grad);
     Ok((
@@ -688,6 +696,16 @@ fn hyperparameter_hessian(
 ) -> Result<Vec<f64>, String> {
     let n = 3;
     let base = joint_objective(row_offsets, times, responses, n_items, params, worker_count)?.0;
+    if params[1] - step <= MIN_LOG_SD
+        || params[1] + step >= MAX_LOG_SD
+        || params[2] - step <= MIN_LOG_DECAY
+        || params[2] + step >= MAX_LOG_DECAY
+    {
+        return Err(
+            "hyperparameter Hessian is not identified at the supported log-scale boundary"
+                .to_string(),
+        );
+    }
     let mut hessian = vec![0.0; n * n];
     for i in 0..n {
         let mut plus = params.to_vec();
@@ -1095,6 +1113,73 @@ mod tests {
                     .nll
         ) / (2.0 * step);
         assert!((analytic.log_decay_grad - decay_numeric).abs() < 1e-5);
+    }
+
+    #[test]
+    fn clamped_hyperparameters_have_flat_raw_gradients_and_unidentified_boundary_hessian() {
+        let offsets = [0, 3];
+        let times = [0, 86_400_000, 172_800_000];
+        let responses = [1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+        let base = Unpacked {
+            mean: 0.0,
+            log_sd: 0.0,
+            log_decay: (0.4_f64).ln(),
+            items: vec![-0.1, 0.1],
+            state: vec![0.2, -0.1, 0.1],
+        };
+        let params = pack(&base);
+        for (index, first_raw, second_raw) in [
+            (1, MAX_LOG_SD + 1.0, MAX_LOG_SD + 2.0),
+            (1, MIN_LOG_SD - 1.0, MIN_LOG_SD - 2.0),
+            (2, MAX_LOG_DECAY + 1.0, MAX_LOG_DECAY + 2.0),
+            (2, MIN_LOG_DECAY - 1.0, MIN_LOG_DECAY - 2.0),
+        ] {
+            let mut first = params.clone();
+            first[index] = first_raw;
+            let (first_nll, first_grad, _, _, _) =
+                joint_objective(&offsets, &times, &responses, 2, &first, 1).unwrap();
+            let mut second = params.clone();
+            second[index] = second_raw;
+            let (second_nll, _, _, _, _) =
+                joint_objective(&offsets, &times, &responses, 2, &second, 1).unwrap();
+            assert!((first_nll - second_nll).abs() < 1e-12);
+            assert_eq!(first_grad[index], 0.0);
+        }
+
+        for (index, boundary_near) in [
+            (1, MAX_LOG_SD - 0.5e-3),
+            (2, MIN_LOG_DECAY + 0.5e-3),
+        ] {
+            let mut near_boundary = params.clone();
+            near_boundary[index] = boundary_near;
+            let err = hyperparameter_hessian(
+                &offsets,
+                &times,
+                &responses,
+                2,
+                &near_boundary,
+                1,
+                1e-3,
+            )
+            .unwrap_err();
+            assert!(err.contains("supported log-scale boundary"));
+            let unpacked = unpack(&near_boundary, 2, 3).unwrap();
+            let (se, lower, upper, identified) = hyperparameter_interval_estimates(
+                &offsets,
+                &times,
+                &responses,
+                2,
+                &near_boundary,
+                &unpacked,
+                1,
+                1e-3,
+            )
+            .unwrap();
+            assert!(!identified);
+            assert!(se.iter().all(|value| value.is_nan()));
+            assert!(lower.iter().all(|value| value.is_nan()));
+            assert!(upper.iter().all(|value| value.is_nan()));
+        }
     }
 
     #[test]
