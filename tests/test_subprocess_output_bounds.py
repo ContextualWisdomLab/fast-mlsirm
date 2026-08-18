@@ -40,7 +40,7 @@ def test_bounded_capture_rejects_stderr_overflow() -> None:
         )
 
 
-def test_bounded_capture_rejects_invalid_utf8_stdout() -> None:
+def test_bounded_capture_invalid_utf8_is_data_error() -> None:
     """Machine-readable stdout must never be silently replacement-decoded."""
     from scripts._bounded_subprocess import run_bounded_capture
 
@@ -49,13 +49,16 @@ def test_bounded_capture_rejects_invalid_utf8_stdout() -> None:
         "-c",
         "import sys; sys.stdout.buffer.write(b'{\"record\":\"ok' + bytes([255]) + b'\"}')",
     ]
-    with pytest.raises(UnicodeError):
-        run_bounded_capture(
-            command,
-            timeout_seconds=5,
-            max_stdout_bytes=1024,
-            max_stderr_bytes=1024,
-        )
+    completed = run_bounded_capture(
+        command,
+        timeout_seconds=5,
+        max_stdout_bytes=1024,
+        max_stderr_bytes=1024,
+    )
+    assert completed.returncode == 65
+    assert completed.stdout == ""
+    assert "not valid UTF-8" in completed.stderr
+    assert "�" not in completed.stderr
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
@@ -101,11 +104,14 @@ def test_governance_parse_failure_is_stable_error(monkeypatch: pytest.MonkeyPatc
 
 
 def test_governance_decode_failure_is_stable_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Invalid UTF-8 from gh must map to the existing data-error status."""
-    def raise_decode(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
-
-    monkeypatch.setattr(governance, "run_bounded_capture", raise_decode)
+    """Invalid UTF-8 from gh must retain the helper's data-error status."""
+    monkeypatch.setattr(
+        governance,
+        "run_bounded_capture",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 65, "", "stdout was not valid UTF-8"
+        ),
+    )
     payload, error = governance._run_gh_json(
         ["gh", "api", "repos/example/project"],
         max_attempts=1,
@@ -114,6 +120,7 @@ def test_governance_decode_failure_is_stable_error(monkeypatch: pytest.MonkeyPat
     assert payload is None
     assert error is not None
     assert error["returncode"] == 65
+    assert "UTF-8" in error["stderr"]
 
 
 def test_governance_timeout_remains_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,15 +178,19 @@ def test_procurement_parse_failure_is_snapshot_error(monkeypatch: pytest.MonkeyP
 
 
 def test_procurement_decode_failure_is_snapshot_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Invalid UTF-8 must be recorded as a stable procurement evidence failure."""
-    def raise_decode(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
-
-    monkeypatch.setattr(procurement, "run_bounded_capture", raise_decode)
+    """Invalid UTF-8 must remain a stable procurement evidence failure."""
+    monkeypatch.setattr(
+        procurement,
+        "run_bounded_capture",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 65, "", "stdout was not valid UTF-8"
+        ),
+    )
     snapshot = procurement._github_snapshot("example/project", offline=False)
     assert snapshot["repo"]["ok"] is False
     assert snapshot["repo"]["returncode"] == 65
     assert snapshot["repo"]["data"] is None
+    assert "UTF-8" in snapshot["repo"]["stderr"]
 
 
 def test_procurement_overflow_is_snapshot_error(monkeypatch: pytest.MonkeyPatch) -> None:
