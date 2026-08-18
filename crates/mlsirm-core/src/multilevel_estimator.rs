@@ -300,7 +300,9 @@ fn validate_estimator_inputs(
     }
     if classification_offsets[0] != 0
         || *classification_offsets.last().expect("non-empty") != n_effects
-        || classification_offsets.windows(2).any(|window| window[1] <= window[0])
+        || classification_offsets
+            .windows(2)
+            .any(|window| window[1] <= window[0])
     {
         return Err(
             "classification_offsets must start at zero, increase strictly, and end at n_effects"
@@ -309,9 +311,7 @@ fn validate_estimator_inputs(
     }
     for window in classification_offsets.windows(2) {
         if window[1] - window[0] < 2 {
-            return Err(
-                "each classification must contain at least two context levels".to_string(),
-            );
+            return Err("each classification must contain at least two context levels".to_string());
         }
     }
     if !config.prior_precision.is_finite() || config.prior_precision <= 0.0 {
@@ -662,7 +662,12 @@ mod tests {
         let context_indices = vec![0, 2, 0, 1, 3, 1, 2, 1, 3];
         let weights = vec![1.0, 1.0, 0.6, 0.4, 1.0, 1.0, 1.0, 1.0, 1.0];
         let classification_offsets = vec![0, 2, 4];
-        (row_offsets, context_indices, weights, classification_offsets)
+        (
+            row_offsets,
+            context_indices,
+            weights,
+            classification_offsets,
+        )
     }
 
     fn simulate_responses(
@@ -675,22 +680,15 @@ mod tests {
         n_items: usize,
         seed: u64,
     ) -> Vec<f64> {
-        let locations = weighted_contextual_effect(
-            row_offsets,
-            context_indices,
-            weights,
-            true_effects,
-            1,
-        )
-        .unwrap();
+        let locations =
+            weighted_contextual_effect(row_offsets, context_indices, weights, true_effects, 1)
+                .unwrap();
         let mut y = vec![0.0_f64; n_persons * n_items];
         let mut state = seed;
         for person in 0..n_persons {
             for item in 0..n_items {
                 let probability = sigmoid_stable(locations[person] + intercepts[item]);
-                state = state
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1);
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
                 let unit = ((state >> 11) as f64) / ((1u64 << 53) as f64);
                 y[person * n_items + item] = if unit < probability { 1.0 } else { 0.0 };
             }

@@ -163,9 +163,8 @@ fn py_estimate_crossed_person_effects<'py>(
             "context_indices exceeds maximum supported length of {MAX_CONTEXT_MEMBERSHIPS}"
         )));
     }
-    let device = Device::parse(device).ok_or_else(|| {
-        PyValueError::new_err("device must be one of 'cpu', 'gpu', or 'auto'")
-    })?;
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of 'cpu', 'gpu', or 'auto'"))?;
     let row_offsets = checked_usize_values(row_offsets, "row_offsets")?;
     let context_indices = checked_usize_values(context_indices, "context_indices")?;
     let classification_offsets =

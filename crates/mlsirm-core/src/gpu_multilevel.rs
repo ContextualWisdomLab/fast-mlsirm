@@ -279,40 +279,42 @@ pub(crate) fn person_irt_scores_gpu(
     );
     let residual_buf = output(&context.device, n_persons);
     let information_buf = output(&context.device, n_persons);
-    let bind_group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("crossed-person-effect-bind-group"),
-        layout: &context.layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: y_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: slope_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: intercept_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: location_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: residual_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: information_buf.as_entire_binding(),
-            },
-        ],
-    });
+    let bind_group = context
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("crossed-person-effect-bind-group"),
+            layout: &context.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: y_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: slope_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: intercept_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: location_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: residual_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: information_buf.as_entire_binding(),
+                },
+            ],
+        });
     let groups = n_persons.div_ceil(WORKGROUP_SIZE as usize) as u32;
     let mut encoder = context
         .device

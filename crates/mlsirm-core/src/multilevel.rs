@@ -24,10 +24,10 @@
 
 use std::collections::HashSet;
 
-#[path = "multilevel_kernel.rs"]
-mod kernel;
 #[path = "multilevel_estimator.rs"]
 mod estimator;
+#[path = "multilevel_kernel.rs"]
+mod kernel;
 
 pub use estimator::{
     estimate_crossed_person_effects, CrossedPersonEffectConfig, CrossedPersonEffectEstimate,
