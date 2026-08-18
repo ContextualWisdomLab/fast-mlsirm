@@ -217,7 +217,9 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     """Render a labelled metric-card grid, or ``None`` when there are no metrics."""
     if len(metrics) > MAX_REPORT_METRICS:
-        raise ValueError(f"report metrics exceed the {MAX_REPORT_METRICS}-entry limit")
+        raise ValueError(
+            f"report metrics exceed the {MAX_REPORT_METRICS}-entry limit"
+        )
 
     cards = []
     for key, value in metrics.items():
@@ -441,9 +443,13 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
     if row_count == 0:
         return []
     if row_count > MAX_REPORT_ROWS:
-        raise ValueError(f"report table rows exceed the {MAX_REPORT_ROWS}-row limit")
+        raise ValueError(
+            f"report table rows exceed the {MAX_REPORT_ROWS}-row limit"
+        )
     if row_count * len(columns) > MAX_REPORT_CELLS:
-        raise ValueError(f"report table cells exceed the {MAX_REPORT_CELLS}-cell limit")
+        raise ValueError(
+            f"report table cells exceed the {MAX_REPORT_CELLS}-cell limit"
+        )
 
     rows = []
     for index in range(row_count):
@@ -457,7 +463,9 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
 def _validate_report_rows(rows: list[dict[str, Any]]) -> None:
     """Reject row-oriented diagnostics that exceed report rendering budgets."""
     if len(rows) > MAX_REPORT_ROWS:
-        raise ValueError(f"report table rows exceed the {MAX_REPORT_ROWS}-row limit")
+        raise ValueError(
+            f"report table rows exceed the {MAX_REPORT_ROWS}-row limit"
+        )
 
     columns: set[str] = set()
     cell_count = 0
@@ -917,8 +925,8 @@ tbody tr:hover {
   color: var(--teal);
 }
 
-.exact-values > summary:focus,
-.export-block > summary:focus {
+.exact-values > summary:focus:not(:focus-visible),
+.export-block > summary:focus:not(:focus-visible) {
   outline: none;
 }
 
