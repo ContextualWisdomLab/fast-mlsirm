@@ -170,7 +170,27 @@ def govern_structural_selection(
     """
     if type(evidence) is not StructuralSelectionEvidence:
         raise TypeError("evidence must be StructuralSelectionEvidence")
-    evidence.__post_init__()
+    simpler_id = _require_candidate_id(evidence.simpler_candidate_id, "simpler")
+    complex_id = _require_candidate_id(
+        evidence.more_complex_candidate_id,
+        "more_complex",
+    )
+    if simpler_id == complex_id:
+        raise ValueError("structural candidate identifiers must be distinct")
+    if type(evidence.relation_evidence) is not ModelRelationEvidence:
+        raise TypeError("relation_evidence must be ModelRelationEvidence")
+    _require_exact_bool(
+        evidence.simpler_score_interpretation_supported,
+        "simpler_score_interpretation_supported",
+    )
+    _require_exact_bool(
+        evidence.more_complex_score_interpretation_supported,
+        "more_complex_score_interpretation_supported",
+    )
+    _require_exact_bool(
+        evidence.recovery_evidence_sufficient,
+        "recovery_evidence_sufficient",
+    )
     evidence.relation_evidence.__post_init__()
 
     relation = classify_model_relation(evidence.relation_evidence)
