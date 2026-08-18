@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -9,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 _READ_CHUNK_BYTES = 64 * 1024
+_DATA_ERROR_RETURN_CODE = 65
 
 
 class BoundedSubprocessOutputError(RuntimeError):
@@ -18,6 +21,14 @@ class BoundedSubprocessOutputError(RuntimeError):
         self.stream = stream
         self.limit_bytes = limit_bytes
         super().__init__(f"{stream} exceeded bounded capture limit of {limit_bytes} bytes")
+
+
+class BoundedSubprocessDecodeError(UnicodeError):
+    """Describe machine-readable subprocess stdout that is not valid UTF-8."""
+
+    def __init__(self, stream: str) -> None:
+        self.stream = stream
+        super().__init__(f"{stream} was not valid UTF-8")
 
 
 def _drain_bounded(
@@ -30,7 +41,10 @@ def _drain_bounded(
     """Drain one binary pipe without retaining more than ``limit_bytes + 1`` bytes."""
     read = getattr(stream, "read")
     while True:
-        chunk = read(_READ_CHUNK_BYTES)
+        try:
+            chunk = read(_READ_CHUNK_BYTES)
+        except (OSError, ValueError):
+            return
         if not chunk:
             return
         remaining = (limit_bytes + 1) - len(buffer)
@@ -38,6 +52,36 @@ def _drain_bounded(
             buffer.extend(chunk[:remaining])
         if len(buffer) > limit_bytes:
             overflow.set()
+
+
+def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+    """Terminate the owned process tree without signalling the caller process."""
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        return
+    if process.poll() is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            return
+
+
+def _close_capture_pipes(process: subprocess.Popen[bytes]) -> None:
+    """Close parent-side capture pipes to unblock any remaining daemon reader."""
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
+
+
+def _remaining(deadline: float) -> float:
+    """Return non-negative seconds remaining before one absolute deadline."""
+    return max(0.0, deadline - time.monotonic())
 
 
 def run_bounded_capture(
@@ -49,13 +93,15 @@ def run_bounded_capture(
     cwd: str | Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``command`` with deadline and byte-bounded stdout/stderr capture.
+    """Run ``command`` with one hard deadline and bounded output capture.
 
-    Both pipes are drained concurrently so neither can deadlock the child. As
-    soon as either retained stream crosses its byte budget, the child is
-    terminated and the overflow is reported without retaining additional
-    output. The returned text uses replacement decoding so diagnostics remain
-    available even when a tool emits malformed UTF-8.
+    Stdout and stderr are drained concurrently so neither pipe can deadlock the
+    child. POSIX commands run in a dedicated session so timeout/overflow cleanup
+    can terminate descendants that inherited a capture pipe. Process reaping
+    and reader joins share the original deadline rather than extending it.
+    Machine-readable stdout is decoded strictly as UTF-8. Malformed stdout
+    becomes a stable data-error result rather than replacement-decoded content;
+    diagnostic stderr alone uses replacement decoding.
     """
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
@@ -71,6 +117,7 @@ def run_bounded_capture(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=False,
+        start_new_session=os.name == "posix",
     )
     assert process.stdout is not None
     assert process.stderr is not None
@@ -106,31 +153,67 @@ def run_bounded_capture(
 
     deadline = time.monotonic() + timeout_seconds
     timed_out = False
+    overflowed = False
     while process.poll() is None:
         if stdout_overflow.is_set() or stderr_overflow.is_set():
-            process.kill()
+            overflowed = True
+            _terminate_process_tree(process)
             break
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        remaining = _remaining(deadline)
+        if remaining <= 0.0:
             timed_out = True
-            process.kill()
+            _terminate_process_tree(process)
             break
         time.sleep(min(0.01, remaining))
 
-    process.wait()
+    if process.poll() is None:
+        try:
+            process.wait(timeout=_remaining(deadline))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _terminate_process_tree(process)
+
     for reader in readers:
-        reader.join()
+        reader.join(timeout=_remaining(deadline))
+        if reader.is_alive():
+            if not overflowed:
+                timed_out = True
+            _terminate_process_tree(process)
+            _close_capture_pipes(process)
+            break
 
     if timed_out:
+        _terminate_process_tree(process)
+        _close_capture_pipes(process)
         raise subprocess.TimeoutExpired(list(command), timeout_seconds)
     if stdout_overflow.is_set():
+        _terminate_process_tree(process)
+        _close_capture_pipes(process)
         raise BoundedSubprocessOutputError("stdout", max_stdout_bytes)
     if stderr_overflow.is_set():
+        _terminate_process_tree(process)
+        _close_capture_pipes(process)
         raise BoundedSubprocessOutputError("stderr", max_stderr_bytes)
 
+    stderr_text = stderr.decode("utf-8", errors="replace")
+    try:
+        stdout_text = stdout.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        decode_error = BoundedSubprocessDecodeError("stdout")
+        diagnostic = stderr_text.strip()
+        if diagnostic:
+            diagnostic = f"{diagnostic}\n{decode_error}"
+        else:
+            diagnostic = str(decode_error)
+        return subprocess.CompletedProcess(
+            list(command),
+            _DATA_ERROR_RETURN_CODE,
+            "",
+            diagnostic,
+        )
     return subprocess.CompletedProcess(
         list(command),
         process.returncode,
-        stdout.decode("utf-8", errors="replace"),
-        stderr.decode("utf-8", errors="replace"),
+        stdout_text,
+        stderr_text,
     )
