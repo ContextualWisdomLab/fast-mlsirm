@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 _READ_CHUNK_BYTES = 64 * 1024
+_DATA_ERROR_RETURN_CODE = 65
 
 
 class BoundedSubprocessOutputError(RuntimeError):
@@ -23,7 +24,7 @@ class BoundedSubprocessOutputError(RuntimeError):
 
 
 class BoundedSubprocessDecodeError(UnicodeError):
-    """Raised when machine-readable subprocess stdout is not valid UTF-8."""
+    """Describe machine-readable subprocess stdout that is not valid UTF-8."""
 
     def __init__(self, stream: str) -> None:
         self.stream = stream
@@ -98,8 +99,9 @@ def run_bounded_capture(
     child. POSIX commands run in a dedicated session so timeout/overflow cleanup
     can terminate descendants that inherited a capture pipe. Process reaping
     and reader joins share the original deadline rather than extending it.
-    Machine-readable stdout is decoded strictly as UTF-8; malformed stdout
-    fails closed while diagnostic stderr uses replacement decoding.
+    Machine-readable stdout is decoded strictly as UTF-8. Malformed stdout
+    becomes a stable data-error result rather than replacement-decoded content;
+    diagnostic stderr alone uses replacement decoding.
     """
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
@@ -193,11 +195,22 @@ def run_bounded_capture(
         _close_capture_pipes(process)
         raise BoundedSubprocessOutputError("stderr", max_stderr_bytes)
 
+    stderr_text = stderr.decode("utf-8", errors="replace")
     try:
         stdout_text = stdout.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as exc:
-        raise BoundedSubprocessDecodeError("stdout") from exc
-    stderr_text = stderr.decode("utf-8", errors="replace")
+    except UnicodeDecodeError:
+        decode_error = BoundedSubprocessDecodeError("stdout")
+        diagnostic = stderr_text.strip()
+        if diagnostic:
+            diagnostic = f"{diagnostic}\n{decode_error}"
+        else:
+            diagnostic = str(decode_error)
+        return subprocess.CompletedProcess(
+            list(command),
+            _DATA_ERROR_RETURN_CODE,
+            "",
+            diagnostic,
+        )
     return subprocess.CompletedProcess(
         list(command),
         process.returncode,
