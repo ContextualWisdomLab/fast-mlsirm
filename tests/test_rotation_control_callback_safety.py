@@ -78,34 +78,57 @@ def _assert_rejected_without_callback(
     monkeypatch: pytest.MonkeyPatch,
     hostile_type: type,
     call: Callable[[object], object],
+    *,
+    value: object | None = None,
 ) -> None:
     """Assert package-owned rejection precedes caller callbacks and Rust discovery."""
 
     hostile_type.calls = 0
     core_calls = _deny_core_discovery(monkeypatch)
+    candidate = hostile_type() if value is None else value
     with pytest.raises(ValueError):
-        call(hostile_type())
+        call(candidate)
     assert hostile_type.calls == 0
-    assert core_calls == []
-
-
-def test_rotation_rejects_criterion_subclass_without_callbacks(
-    monkeypatch: pytest.MonkeyPatch, loadings: np.ndarray
-) -> None:
-    """Criterion normalization rejects string subclasses before ``strip`` or Rust."""
-
-    _HostileString.calls = 0
-    core_calls = _deny_core_discovery(monkeypatch)
-    with pytest.raises(ValueError, match="criterion must be a non-empty string"):
-        rotation.rotate_factor_loadings(loadings, _HostileString("varimax"))
-    assert _HostileString.calls == 0
     assert core_calls == []
 
 
 @pytest.mark.parametrize(
     "call",
     (
-        lambda loadings, value: rotation.rotate_factor_loadings(loadings, normalize=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, value),
+        lambda loadings, value: rotation.rotation_criterion_value_gradient(loadings, value),
+    ),
+)
+def test_rotation_rejects_criterion_subclass_without_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    loadings: np.ndarray,
+    call: Callable[[np.ndarray, object], object],
+) -> None:
+    """Criterion normalization rejects string subclasses before ``strip`` or Rust."""
+
+    _HostileString.calls = 0
+    core_calls = _deny_core_discovery(monkeypatch)
+    with pytest.raises(ValueError, match="criterion must be a non-empty string"):
+        call(loadings, _HostileString("varimax"))
+    assert _HostileString.calls == 0
+    assert core_calls == []
+
+
+def test_rotation_rejects_boolean_protocol_normalize_before_core(
+    monkeypatch: pytest.MonkeyPatch, loadings: np.ndarray
+) -> None:
+    """The boolean normalize control rejects arbitrary protocols before native discovery."""
+
+    _assert_rejected_without_callback(
+        monkeypatch,
+        _HostileBoolean,
+        lambda value: rotation.rotate_factor_loadings(loadings, normalize=value),
+    )
+
+
+@pytest.mark.parametrize(
+    "call",
+    (
         lambda loadings, value: rotation.rotate_factor_loadings(loadings, n_starts=value),
         lambda loadings, value: rotation.rotate_factor_loadings(loadings, seed=value),
         lambda loadings, value: rotation.rotate_factor_loadings(loadings, max_iter=value),
@@ -114,19 +137,15 @@ def test_rotation_rejects_criterion_subclass_without_callbacks(
         lambda loadings, value: rotation.rotate_factor_loadings(loadings, max_threads=value),
     ),
 )
-def test_rotation_rejects_boolean_and_integer_protocol_controls_before_core(
+def test_rotation_rejects_integer_protocol_controls_before_core(
     monkeypatch: pytest.MonkeyPatch,
     loadings: np.ndarray,
     call: Callable[[np.ndarray, object], object],
 ) -> None:
-    """Boolean/integer controls reject arbitrary protocols before native discovery."""
+    """Integer controls reject arbitrary conversion protocols before native discovery."""
 
-    hostile_type = _HostileBoolean if call.__code__.co_firstlineno == 99 else _HostileInteger
-    # ``normalize`` is the first parametrized lambda; all remaining controls are integers.
-    if call.__code__.co_firstlineno != 99:
-        hostile_type = _HostileInteger
     _assert_rejected_without_callback(
-        monkeypatch, hostile_type, lambda value: call(loadings, value)
+        monkeypatch, _HostileInteger, lambda value: call(loadings, value)
     )
 
 
@@ -176,3 +195,43 @@ def test_rotation_rejects_optional_integer_protocol_controls_before_core(
     _assert_rejected_without_callback(
         monkeypatch, _HostileInteger, lambda value: call(loadings, value)
     )
+
+
+@pytest.mark.parametrize("value", (True, False))
+@pytest.mark.parametrize(
+    "call",
+    (
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, n_starts=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, seed=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, max_iter=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, tolerance=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, basin_tolerance=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, function_window=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, max_line_search=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, max_threads=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, criterion="cf", kappa=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, criterion="oblimin", gamma=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(loadings, criterion="geomin", delta=value),
+        lambda loadings, value: rotation.rotate_factor_loadings(
+            loadings, criterion="simplimax", simplimax_zeros=value
+        ),
+        lambda loadings, value: rotation.rotation_criterion_value_gradient(loadings, "cf", kappa=value),
+        lambda loadings, value: rotation.rotation_criterion_value_gradient(loadings, "oblimin", gamma=value),
+        lambda loadings, value: rotation.rotation_criterion_value_gradient(loadings, "geomin", delta=value),
+        lambda loadings, value: rotation.rotation_criterion_value_gradient(
+            loadings, "simplimax", simplimax_zeros=value
+        ),
+    ),
+)
+def test_rotation_rejects_boolean_numeric_controls_before_core(
+    monkeypatch: pytest.MonkeyPatch,
+    loadings: np.ndarray,
+    call: Callable[[np.ndarray, object], object],
+    value: bool,
+) -> None:
+    """Boolean values never masquerade as numeric rotation controls."""
+
+    core_calls = _deny_core_discovery(monkeypatch)
+    with pytest.raises(ValueError):
+        call(loadings, value)
+    assert core_calls == []
