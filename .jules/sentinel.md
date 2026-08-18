@@ -30,3 +30,8 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** The functions `parse_generated_item_candidate` and `_contract_object` used `json.loads` directly on string payloads before strictly enforcing depth limits over the string itself. A maliciously nested JSON string (e.g. `{"a": {"a": ...}}`) could exceed the Python maximum recursion limit, crashing the process with a `RecursionError` and causing a Denial of Service (DoS) attack, because Python's built-in `json.loads` recurses natively while decoding.
 **Learning:** Checking for JSON nested depth after decoding using `json.loads` (or implicitly relying on string size constraints) is insufficient to prevent recursion crashes on deep but compact objects. Depth checking must happen by scanning the raw string stream prior to any decoding engine invocations.
 **Prevention:** Always implement a character-level depth limit scanner (`_validate_raw_json_depth`) and enforce it on raw strings before passing them to `json.loads`.
+
+## 2026-08-18 - [Prevent subprocess hang DoS]
+**Vulnerability:** External `subprocess.run` calls without timeouts can hang indefinitely during GitHub CLI network or provider failures, stalling repository automation.
+**Learning:** Command duration is a separate resource bound from JSON size/depth. A bounded parser cannot terminate a child process that never returns.
+**Prevention:** Supply an explicit timeout for external repository-automation subprocesses and convert `subprocess.TimeoutExpired` into stable fail-closed evidence rather than hanging indefinitely.

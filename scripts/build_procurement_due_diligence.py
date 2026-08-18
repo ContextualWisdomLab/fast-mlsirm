@@ -16,11 +16,12 @@ from pathlib import Path
 from typing import Any
 
 GIT_METADATA_TIMEOUT_SECONDS = 5
+_GH_COMMAND_TIMEOUT_SECONDS = 60
 
 try:
-    from scripts._bounded_json import parse_json_bounded, read_json_object
+    from scripts._bounded_json import read_json_object
 except ModuleNotFoundError:
-    from _bounded_json import parse_json_bounded, read_json_object
+    from _bounded_json import read_json_object
 
 
 POLICY_FILES = [
@@ -304,26 +305,43 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         ],
     }
     for name, command in commands.items():
-        completed = subprocess.run(command, capture_output=True, text=True)
-        snapshot[name] = {
-            "ok": completed.returncode == 0,
-            "returncode": completed.returncode,
-            "data": parse_json_bounded(completed.stdout)
-            if completed.returncode == 0 and completed.stdout.strip()
-            else None,
-            "stderr": completed.stderr.strip(),
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=_GH_COMMAND_TIMEOUT_SECONDS)
+            snapshot[name] = {
+                "ok": completed.returncode == 0,
+                "returncode": completed.returncode,
+                "data": json.loads(completed.stdout)
+                if completed.returncode == 0 and completed.stdout.strip()
+                else None,
+                "stderr": completed.stderr.strip(),
+            }
+        except subprocess.TimeoutExpired:
+            snapshot[name] = {
+                "ok": False,
+                "returncode": 124,
+                "data": None,
+                "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
+            }
+    try:
+        release = subprocess.run(
+            ["gh", "release", "list", "--repo", repo, "--limit", "20"],
+            capture_output=True,
+            text=True,
+            timeout=_GH_COMMAND_TIMEOUT_SECONDS,
+        )
+        snapshot["releases"] = {
+            "ok": release.returncode == 0,
+            "returncode": release.returncode,
+            "lines": [line for line in release.stdout.splitlines() if line.strip()],
+            "stderr": release.stderr.strip(),
         }
-    release = subprocess.run(
-        ["gh", "release", "list", "--repo", repo, "--limit", "20"],
-        capture_output=True,
-        text=True,
-    )
-    snapshot["releases"] = {
-        "ok": release.returncode == 0,
-        "returncode": release.returncode,
-        "lines": [line for line in release.stdout.splitlines() if line.strip()],
-        "stderr": release.stderr.strip(),
-    }
+    except subprocess.TimeoutExpired:
+        snapshot["releases"] = {
+            "ok": False,
+            "returncode": 124,
+            "lines": [],
+            "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
+        }
     return snapshot
 
 

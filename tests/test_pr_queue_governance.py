@@ -506,7 +506,7 @@ def test_run_gh_snapshot_uses_light_history_fields_and_recovers_from_502(
     recorded: list[list[str]] = []
     history_attempts = {"n": 0}
 
-    def fake_run(command, capture_output=True, text=True):
+    def fake_run(command, capture_output=True, text=True, timeout=None):
         recorded.append(list(command))
         if command[1:3] == ["repo", "view"]:
             return subprocess.CompletedProcess(
@@ -583,7 +583,7 @@ def test_run_gh_snapshot_records_exhausted_history_502_without_dropping_open_prs
     """When history stays 502 after retries, open PRs remain and the error is kept."""
     module = _load_governance()
 
-    def fake_run(command, capture_output=True, text=True):
+    def fake_run(command, capture_output=True, text=True, timeout=None):
         if command[1:3] == ["repo", "view"]:
             return subprocess.CompletedProcess(
                 command,
