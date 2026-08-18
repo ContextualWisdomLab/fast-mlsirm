@@ -220,13 +220,17 @@ def _finite_vector(values: object, name: str, length: int) -> np.ndarray:
 
 
 def _response_matrix(values: object, n_persons: int, n_items: int) -> np.ndarray:
-    """Return one row-major response matrix aligned with the design."""
+    """Return one row-major binary response matrix aligned with the design."""
     try:
         array = np.asarray(values, dtype=np.float64)
     except Exception:
         raise ValueError("responses could not be converted safely") from None
     if array.ndim != 2 or array.shape != (n_persons, n_items):
         raise ValueError("responses must have shape (n_observations, n_items)")
+    observed = np.isfinite(array) & (array >= 0.0)
+    nonbinary = observed & (array != 0.0) & (array != 1.0)
+    if np.any(nonbinary):
+        raise ValueError("binary responses must contain only 0 or 1 for observed cells")
     return np.ascontiguousarray(array.reshape(-1), dtype=np.float64)
 
 
@@ -283,7 +287,8 @@ def estimate_crossed_person_effects(
     ----------
     responses:
         Binary response matrix aligned with ``design.observation_ids`` on axis
-        0 and items on axis 1. Non-finite or negative cells are missing.
+        0 and items on axis 1. Finite non-negative observed cells must be
+        exactly 0 or 1; non-finite or negative cells are treated as missing.
     design:
         A package-built ``ContextMembershipDesign``. Tampered designs fail
         closed before native dispatch.
@@ -319,7 +324,8 @@ def estimate_crossed_person_effects(
     Raises
     ------
     ValueError
-        If controls, shapes, or the design fail the package contract.
+        If controls, shapes, response values, or the design fail the package
+        contract.
     KeyError
         Not used; membership identities come from the sealed design.
 
