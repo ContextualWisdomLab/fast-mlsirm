@@ -118,12 +118,13 @@ pub struct CrossedPersonEffectEstimate {
 
 /// Estimate crossed / multiple-membership `u_h` by Gaussian-prior MAP.
 ///
-/// `y` is row-major `n_persons * n_items`. A cell is treated as missing when
-/// it is non-finite or strictly negative (the established `NaN` / `-1` mask
+/// `y` is row-major `n_persons * n_items`. Finite non-negative observed cells
+/// must be exactly `0` or `1`; a cell is treated as missing when it is
+/// non-finite or strictly negative (the established `NaN` / `-1` mask
 /// contract). `item_slopes` and `item_intercepts` have length `n_items`.
 /// `person_offsets` is either empty (treated as zeros) or length `n_persons`.
 /// `classification_offsets` is a CSR pointer over the flattened effect table:
-/// classification `d` occupies `classification_offsets[d]
+/// classification `d` occupies `classification_offsets[d]`
 /// .. classification_offsets[d + 1]`.
 #[allow(clippy::too_many_arguments)]
 pub fn estimate_crossed_person_effects(
@@ -273,6 +274,11 @@ fn validate_estimator_inputs(
     let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
     if y.len() != expected {
         return Err("y must have length n_persons * n_items".to_string());
+    }
+    for &response in y {
+        if response.is_finite() && response >= 0.0 && response != 0.0 && response != 1.0 {
+            return Err("binary responses must contain only 0 or 1 for observed cells".to_string());
+        }
     }
     if item_slopes.len() != n_items || item_intercepts.len() != n_items {
         return Err("item_slopes and item_intercepts must have length n_items".to_string());
@@ -835,6 +841,26 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("at least two context levels"));
+    }
+
+    #[test]
+    fn rejects_nonbinary_observed_response() {
+        let error = estimate_crossed_person_effects(
+            &[0.5, 0.0],
+            &[0, 1, 2],
+            &[0, 1],
+            &[1.0, 1.0],
+            &[1.0],
+            &[0.0],
+            &[],
+            &[0, 2],
+            2,
+            1,
+            2,
+            CrossedPersonEffectConfig::default(),
+        )
+        .unwrap_err();
+        assert!(error.contains("binary responses"));
     }
 
     #[test]
