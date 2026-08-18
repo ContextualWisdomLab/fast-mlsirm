@@ -106,3 +106,23 @@ def test_tampered_comparison_enum_fails_closed() -> None:
 
     with pytest.raises(ValueError, match="unsupported structural comparison outcome"):
         govern_structural_selection(evidence)
+
+
+def test_post_construction_recovery_tamper_fails_closed() -> None:
+    """Post-construction truthiness must not bypass the independent recovery gate."""
+    evidence = _evidence(
+        comparison_outcome=StructuralComparisonOutcome.FAVORS_MORE_COMPLEX
+    )
+    object.__setattr__(evidence, "recovery_evidence_sufficient", 1)
+
+    with pytest.raises(TypeError, match="recovery_evidence_sufficient"):
+        govern_structural_selection(evidence)
+
+
+def test_nested_relation_tamper_is_revalidated() -> None:
+    """A forged relation fact must not become a truthy regular-nested assertion."""
+    evidence = _evidence()
+    object.__setattr__(evidence.relation_evidence, "parameter_embedding", "regular")
+
+    with pytest.raises(TypeError, match="parameter_embedding"):
+        govern_structural_selection(evidence)
