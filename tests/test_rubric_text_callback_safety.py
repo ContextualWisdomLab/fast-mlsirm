@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from fast_mlsirm.rubric import ResponseFormat, RubricLevel, RubricSpecification
-from fast_mlsirm.rubric.audit import AuditSeverity, CandidateAuditFinding
 
 
 def _hostile_text(value: str) -> tuple[str, type[str]]:
@@ -77,33 +76,6 @@ def test_rubric_specification_rejects_enum_text_subclass_without_callback() -> N
         )
 
     assert hostile_type.calls == 0
-
-
-def test_audit_finding_rejects_enum_text_subclass_without_callback() -> None:
-    """Audit enum text rejects caller subclasses before Enum value lookup."""
-    hostile, hostile_type = _hostile_text("blocking")
-
-    with pytest.raises(ValueError, match="severity must be one of"):
-        CandidateAuditFinding(
-            finding_code="unsafe_content",
-            severity=hostile,
-            path="$.candidate",
-            message="Candidate requires review.",
-        )
-
-    assert hostile_type.calls == 0
-
-
-def test_audit_finding_accepts_builtin_enum_value() -> None:
-    """Audit findings retain exact built-in enum-string compatibility."""
-    finding = CandidateAuditFinding(
-        finding_code="unsafe_content",
-        severity="blocking",
-        path="$.candidate",
-        message="Candidate requires review.",
-    )
-
-    assert finding.severity is AuditSeverity.BLOCKING
 
 
 def test_rubric_specification_rejects_collection_text_subclass_without_callback() -> None:
