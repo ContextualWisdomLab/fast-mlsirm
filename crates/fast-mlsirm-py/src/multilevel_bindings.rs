@@ -296,20 +296,22 @@ fn py_simulate_hierarchical_ctar_rasch<'py>(
     decay_rate: f64,
     seed: u64,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let item_intercepts = item_intercepts.as_slice()?.to_vec();
-    if item_intercepts.len() > MAX_HIERARCHICAL_ITEMS {
+    let item_intercepts_view = item_intercepts.as_slice()?;
+    if item_intercepts_view.len() > MAX_HIERARCHICAL_ITEMS {
         return Err(PyValueError::new_err(format!(
             "item_intercepts exceeds maximum supported length of {MAX_HIERARCHICAL_ITEMS}"
         )));
     }
+    let item_intercepts = item_intercepts_view.to_vec();
     let n_items = item_intercepts.len();
     let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
-    let time_offsets = time_offsets_milliseconds.as_slice()?.to_vec();
-    if time_offsets.len() > MAX_HIERARCHICAL_OCCASIONS {
+    let time_offsets_view = time_offsets_milliseconds.as_slice()?;
+    if time_offsets_view.len() > MAX_HIERARCHICAL_OCCASIONS {
         return Err(PyValueError::new_err(format!(
             "time offsets exceed maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
         )));
     }
+    let time_offsets = time_offsets_view.to_vec();
     let (state, responses) = py
         .detach(move || {
             core_simulate_hierarchical_ctar_rasch(
