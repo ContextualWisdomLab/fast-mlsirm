@@ -14,7 +14,7 @@ def test_fit_config_model_estimator_compatibility_matrix(
 ) -> None:
     """Every advertised model-estimator pair must match executable fit support."""
     if model == "BIFAC2PLM" and estimator == "jmle":
-        with pytest.raises(ValueError, match="BIFAC2PLM.*mmle"):
+        with pytest.raises(ValueError, match=r"BIFAC2PLM.*mmle"):
             FitConfig(model=model, estimator=estimator)
         return
 
@@ -24,5 +24,5 @@ def test_fit_config_model_estimator_compatibility_matrix(
 
 def test_bifactor_jmle_fails_during_configuration_validation() -> None:
     """Bifactor JMLE must fail before response preparation or fitting work."""
-    with pytest.raises(ValueError, match="BIFAC2PLM.*mmle"):
+    with pytest.raises(ValueError, match=r"BIFAC2PLM.*mmle"):
         FitConfig(model="BIFAC2PLM", estimator="jmle")
