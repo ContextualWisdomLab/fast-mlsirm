@@ -156,6 +156,13 @@ def test_public_fit_rejects_invalid_controls_and_foreign_designs() -> None:
         fit_hierarchical_longitudinal_irt(design, responses, tolerance=0.0)
     with pytest.raises(ValueError, match="hessian_step"):
         fit_hierarchical_longitudinal_irt(design, responses, hessian_step=-1.0)
+    with pytest.raises(
+        ValueError, match="at least one respondent must have two or more occasions"
+    ):
+        fit_hierarchical_longitudinal_irt(
+            _design(1, 1),
+            np.array([[1.0, 0.0]], dtype=np.float64),
+        )
 
     class ForeignDesign:
         """Represent an object that was not produced by the package factory."""
@@ -242,11 +249,6 @@ def test_simulate_and_fit_reject_invalid_generating_controls() -> None:
     with pytest.raises(ValueError, match="converted safely"):
         simulate_hierarchical_longitudinal_irt(
             design, item_intercepts=[object(), object()]  # type: ignore[list-item]
-        )
-    with pytest.raises(ValueError, match="at least one respondent"):
-        fit_hierarchical_longitudinal_irt(
-            _design(1, 1),
-            np.array([[1.0, 0.0]], dtype=np.float64),
         )
 
 
