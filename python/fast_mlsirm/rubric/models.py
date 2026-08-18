@@ -64,7 +64,7 @@ class EvidenceMode(str, Enum):
 
 def _text(value: Any, name: str, *, maximum: int = MAX_TEXT_LENGTH) -> str:
     """Normalize bounded non-empty text or raise a field-specific error."""
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise ValueError(f"{name} must be a string")
     normalized = value.strip()
     if not normalized:
