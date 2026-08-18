@@ -23,6 +23,55 @@ from .contracts import ContextMembershipDesign, LongitudinalDesign, Longitudinal
 
 ContextKey = tuple[str, str]
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_REAL_SCALAR_TYPES = _NUMPY_INTEGER_SCALAR_TYPES + (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+
+
+def _trusted_positive_integer(value: object, name: str) -> int:
+    """Return one positive execution integer without caller coercion callbacks."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer")
+    if normalized < 1:
+        raise ValueError(f"{name} must be at least one")
+    return normalized
+
+
+def _trusted_positive_real(value: object, name: str) -> float:
+    """Return one positive finite execution real without caller coercion callbacks."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        normalized = float(value)
+    elif any(value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES):
+        normalized = float(value)
+    else:
+        raise ValueError(f"{name} must be a real number")
+    if not np.isfinite(normalized) or normalized <= 0.0:
+        raise ValueError(f"{name} must be finite and strictly positive")
+    return normalized
+
 
 def _snapshot_context_effects(
     context_keys: tuple[ContextKey, ...],
@@ -361,14 +410,10 @@ def fit_hierarchical_longitudinal_irt(
         If execution controls, the sealed design, or the response matrix are
         invalid, or the Rust kernel rejects the design.
     """
-    if worker_count < 1:
-        raise ValueError("worker_count must be at least one")
-    if max_iter < 1:
-        raise ValueError("max_iter must be at least one")
-    if not np.isfinite(tolerance) or tolerance <= 0.0:
-        raise ValueError("tolerance must be finite and strictly positive")
-    if not np.isfinite(hessian_step) or hessian_step <= 0.0:
-        raise ValueError("hessian_step must be finite and strictly positive")
+    worker_count = _trusted_positive_integer(worker_count, "worker_count")
+    max_iter = _trusted_positive_integer(max_iter, "max_iter")
+    tolerance = _trusted_positive_real(tolerance, "tolerance")
+    hessian_step = _trusted_positive_real(hessian_step, "hessian_step")
     if type(design) is not LongitudinalDesign:
         raise ValueError("design must be an exact LongitudinalDesign")
     _ = design.design_fingerprint
@@ -382,8 +427,8 @@ def fit_hierarchical_longitudinal_irt(
         matrix,
         worker_count,
         max_iter,
-        float(tolerance),
-        float(hessian_step),
+        tolerance,
+        hessian_step,
     )
     return {
         "estimand_scope": str(result["estimand_scope"]),
