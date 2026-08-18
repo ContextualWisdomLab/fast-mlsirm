@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -38,6 +40,46 @@ def test_bounded_capture_rejects_stderr_overflow() -> None:
         )
 
 
+def test_bounded_capture_rejects_invalid_utf8_stdout() -> None:
+    """Machine-readable stdout must never be silently replacement-decoded."""
+    from scripts._bounded_subprocess import run_bounded_capture
+
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stdout.buffer.write(b'{\"record\":\"ok' + bytes([255]) + b'\"}')",
+    ]
+    with pytest.raises(UnicodeError):
+        run_bounded_capture(
+            command,
+            timeout_seconds=5,
+            max_stdout_bytes=1024,
+            max_stderr_bytes=1024,
+        )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
+def test_bounded_capture_deadline_kills_pipe_inheriting_descendants() -> None:
+    """A descendant holding captured pipes cannot extend the configured deadline."""
+    from scripts._bounded_subprocess import run_bounded_capture
+
+    grandchild = "import time; time.sleep(2)"
+    child = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {grandchild!r}]); "
+        "sys.exit(0)"
+    )
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_bounded_capture(
+            [sys.executable, "-c", child],
+            timeout_seconds=0.2,
+            max_stdout_bytes=1024,
+            max_stderr_bytes=1024,
+        )
+    assert time.monotonic() - started < 1.0
+
+
 def test_governance_parse_failure_is_stable_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Malformed successful gh output must not crash the governance builder."""
     monkeypatch.setattr(
@@ -56,6 +98,22 @@ def test_governance_parse_failure_is_stable_error(monkeypatch: pytest.MonkeyPatc
     assert error is not None
     assert error["returncode"] == 65
     assert "JSON" in error["stderr"]
+
+
+def test_governance_decode_failure_is_stable_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Invalid UTF-8 from gh must map to the existing data-error status."""
+    def raise_decode(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(governance, "run_bounded_capture", raise_decode)
+    payload, error = governance._run_gh_json(
+        ["gh", "api", "repos/example/project"],
+        max_attempts=1,
+        retry_sleep_seconds=0,
+    )
+    assert payload is None
+    assert error is not None
+    assert error["returncode"] == 65
 
 
 def test_governance_timeout_remains_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,6 +168,18 @@ def test_procurement_parse_failure_is_snapshot_error(monkeypatch: pytest.MonkeyP
     assert snapshot["repo"]["returncode"] == 65
     assert snapshot["repo"]["data"] is None
     assert "JSON" in snapshot["repo"]["stderr"]
+
+
+def test_procurement_decode_failure_is_snapshot_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Invalid UTF-8 must be recorded as a stable procurement evidence failure."""
+    def raise_decode(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(procurement, "run_bounded_capture", raise_decode)
+    snapshot = procurement._github_snapshot("example/project", offline=False)
+    assert snapshot["repo"]["ok"] is False
+    assert snapshot["repo"]["returncode"] == 65
+    assert snapshot["repo"]["data"] is None
 
 
 def test_procurement_overflow_is_snapshot_error(monkeypatch: pytest.MonkeyPatch) -> None:
