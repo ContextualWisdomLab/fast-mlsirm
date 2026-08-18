@@ -171,7 +171,7 @@ def test_selection_rejects_real_protocol_controls_before_core(
 
 @pytest.mark.parametrize("keyword", ("kappa", "gamma", "delta"))
 def test_selection_rejects_optional_real_protocol_controls_before_core(
-    monkeypatch: pytest.MonPatch, loadings: np.ndarray, keyword: str
+    monkeypatch: pytest.MonkeyPatch, loadings: np.ndarray, keyword: str
 ) -> None:
     """Optional criterion reals reject caller float protocols before native discovery."""
 
