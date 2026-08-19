@@ -89,8 +89,41 @@ jobs:
           toolchain: 1.97.1
       - name: Install software Vulkan adapter
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
+          # The hosted runner's mirror+file registry can keep selecting a
+          # black-holed Azure mirror even after apt falls back for InRelease.
+          # Use a job-local source file pinned to canonical Ubuntu archives so
+          # package payloads do not re-enter that broken mirror selection path.
+          . /etc/os-release
+          test -n "${VERSION_CODENAME:-}"
+          cat > /tmp/fast-mlsirm-ubuntu.sources <<EOF
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu
+          Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://security.ubuntu.com/ubuntu
+          Suites: ${VERSION_CODENAME}-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          timeout 120s sudo apt-get \
+            -o Dir::Etc::sourcelist=/tmp/fast-mlsirm-ubuntu.sources \
+            -o Dir::Etc::sourceparts=- \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=10 \
+            -o Acquire::https::Timeout=10 \
+            -o DPkg::Lock::Timeout=30 \
+            update
+          timeout 180s sudo apt-get \
+            -o Dir::Etc::sourcelist=/tmp/fast-mlsirm-ubuntu.sources \
+            -o Dir::Etc::sourceparts=- \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=10 \
+            -o Acquire::https::Timeout=10 \
+            -o DPkg::Lock::Timeout=30 \
+            install --yes mesa-vulkan-drivers vulkan-tools
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           LVP_ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*.json' -print -quit)"
