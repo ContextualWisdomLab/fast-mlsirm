@@ -351,10 +351,16 @@ def render_item_bank_report_html(
         (
             _table_row("Item", str(report["item_id"])),
             _table_row("Version", str(report["item_version"])),
+            _table_row("Blueprint", str(report["blueprint_id"])),
             _table_row("Current state", str(report["current_state"])),
             _table_row("Rubric", str(report["rubric_id"])),
             _table_row("Rubric version", str(report["rubric_version"])),
             _table_row("Policy criticality", str(report["policy_criticality"])),
+            _table_row(
+                "Approved-use scope",
+                ", ".join(str(value) for value in report["approved_use_ids"])
+                or "none",
+            ),
             _table_row(
                 "Cross-version comparability",
                 str(report["cross_version_comparability"]),
