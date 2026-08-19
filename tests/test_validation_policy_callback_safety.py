@@ -12,11 +12,13 @@ class _HostileText(str):
     """String subclass that records any caller-dispatchable normalization."""
 
     def __new__(cls, value: str, calls: list[str]) -> "_HostileText":
+        """Attach the callback log to one hostile text scalar."""
         instance = super().__new__(cls, value)
         instance.calls = calls
         return instance
 
     def strip(self, *args: object, **kwargs: object) -> str:
+        """Fail if validation dispatches caller-controlled text normalization."""
         self.calls.append("strip")
         raise AssertionError("caller string callback executed")
 
@@ -25,11 +27,13 @@ class _HostileFloat(float):
     """Float subclass that records caller-dispatchable numeric coercion."""
 
     def __new__(cls, value: float, calls: list[str]) -> "_HostileFloat":
+        """Attach the callback log to one hostile floating scalar."""
         instance = super().__new__(cls, value)
         instance.calls = calls
         return instance
 
     def __float__(self) -> float:
+        """Fail if validation dispatches caller-controlled float conversion."""
         self.calls.append("float")
         raise AssertionError("caller float callback executed")
 
@@ -38,15 +42,18 @@ class _HostileInt(int):
     """Integer subclass that records numeric coercion and comparisons."""
 
     def __new__(cls, value: int, calls: list[str]) -> "_HostileInt":
+        """Attach the callback log to one hostile integer scalar."""
         instance = super().__new__(cls, value)
         instance.calls = calls
         return instance
 
     def __float__(self) -> float:
+        """Fail if validation dispatches caller-controlled float conversion."""
         self.calls.append("float")
         raise AssertionError("caller integer float callback executed")
 
     def __lt__(self, other: object) -> bool:
+        """Fail if validation dispatches a caller-controlled range comparison."""
         self.calls.append("lt")
         raise AssertionError("caller integer comparison executed")
 
