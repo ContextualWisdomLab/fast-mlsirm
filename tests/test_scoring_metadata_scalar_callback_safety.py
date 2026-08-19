@@ -61,20 +61,21 @@ def _engine(metadata):
 
 
 @pytest.mark.parametrize(
-    ("value", "control_type", "expected"),
+    ("control_type", "raw_value", "expected"),
     [
-        (_HostileText("pilot"), _HostileText, "pilot"),
-        (_HostileInteger(7), _HostileInteger, 7),
-        (_HostileFloat(0.75), _HostileFloat, 0.75),
+        pytest.param(_HostileText, "pilot", "pilot", id="text"),
+        pytest.param(_HostileInteger, 7, 7, id="integer"),
+        pytest.param(_HostileFloat, 0.75, 0.75, id="float"),
     ],
 )
 def test_engine_metadata_scalar_subclasses_normalize_without_callbacks(
-    value: object,
     control_type: type,
+    raw_value: object,
     expected: object,
 ) -> None:
     """JSON scalar subclasses cannot execute caller callbacks during freezing."""
     control_type.calls = 0
+    value = control_type(raw_value)
 
     descriptor = _engine({"deployment_value": value})
 
