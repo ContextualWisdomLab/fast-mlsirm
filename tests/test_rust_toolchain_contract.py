@@ -14,6 +14,16 @@ _DEPENDABOT = _ROOT / ".github" / "dependabot.yml"
 _ACTION = "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30"
 
 
+def _dependabot_ecosystem_block(ecosystem: str) -> str:
+    """Return exactly one Dependabot ecosystem block without borrowing sibling fields."""
+
+    dependabot = _DEPENDABOT.read_text(encoding="utf-8")
+    marker = f'  - package-ecosystem: "{ecosystem}"\n'
+    assert dependabot.count(marker) == 1
+    _, remainder = dependabot.split(marker, 1)
+    return remainder.split("\n  - package-ecosystem:", 1)[0]
+
+
 def test_local_rust_toolchain_is_exact_without_raising_public_crate_msrv() -> None:
     """Pin repository builds while leaving each published crate's MSRV unchanged."""
 
@@ -40,9 +50,9 @@ def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
 
 
 def test_stable_compiler_updates_arrive_as_reviewable_pull_requests() -> None:
-    """Dependabot tracks the root toolchain manifest without changing Cargo lanes."""
+    """Dependabot tracks the root toolchain manifest with its own bounded settings."""
 
-    dependabot = _DEPENDABOT.read_text(encoding="utf-8")
-    assert 'package-ecosystem: "rust-toolchain"' in dependabot
-    assert 'directory: "/"' in dependabot
-    assert 'interval: "weekly"' in dependabot
+    block = _dependabot_ecosystem_block("rust-toolchain")
+    assert '    directory: "/"' in block
+    assert "    schedule:\n      interval: \"weekly\"" in block
+    assert "    open-pull-requests-limit: 1" in block
