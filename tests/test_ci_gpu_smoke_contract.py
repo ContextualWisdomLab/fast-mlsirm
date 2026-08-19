@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 _CI_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
-_APT_SOURCES = "/tmp/fast-mlsirm-ubuntu.sources"
+_APT_SOURCES = "/tmp/fast-mlsirm-ubuntu.sources"  # noqa: S108 - asserts CI contract only
 
 
 def _gpu_install_script() -> str:
