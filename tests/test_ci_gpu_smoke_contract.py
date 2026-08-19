@@ -27,19 +27,56 @@ def _logical_shell(script: str) -> str:
     return script.replace("\\\n", " ")
 
 
-def test_gpu_smoke_apt_network_work_has_hard_deadlines() -> None:
-    """Runner mirror stalls must fail boundedly before the job-level timeout."""
+def _apt_commands() -> tuple[tuple[str, ...], ...]:
+    """Return tokenized apt commands from only the GPU provisioning step."""
     script = _logical_shell(_gpu_install_script())
+    return tuple(
+        tuple(line.split())
+        for line in script.splitlines()
+        if "sudo apt-get" in line
+    )
 
-    assert re.search(r"timeout\s+\d+s\s+sudo\s+apt-get\b.*\bupdate\b", script)
-    assert re.search(r"timeout\s+\d+s\s+sudo\s+apt-get\b.*\binstall\b", script)
-    assert "Acquire::http::Timeout=" in script
-    assert "Acquire::https::Timeout=" in script
-    assert "Acquire::Retries=" in script
+
+def test_gpu_smoke_apt_network_work_has_hard_deadlines() -> None:
+    """Each apt operation must retain its exact bounded network contract."""
+    update = (
+        "timeout",
+        "120s",
+        "sudo",
+        "apt-get",
+        "-o",
+        "Acquire::Retries=2",
+        "-o",
+        "Acquire::http::Timeout=10",
+        "-o",
+        "Acquire::https::Timeout=10",
+        "-o",
+        "DPkg::Lock::Timeout=30",
+        "update",
+    )
+    install = (
+        "timeout",
+        "180s",
+        "sudo",
+        "apt-get",
+        "-o",
+        "Acquire::Retries=2",
+        "-o",
+        "Acquire::http::Timeout=10",
+        "-o",
+        "Acquire::https::Timeout=10",
+        "-o",
+        "DPkg::Lock::Timeout=30",
+        "install",
+        "--yes",
+        "mesa-vulkan-drivers",
+        "vulkan-tools",
+    )
+
+    assert _apt_commands() == (update, install)
 
 
 def test_gpu_smoke_apt_lock_wait_is_bounded() -> None:
-    """Package-manager lock contention must not consume the full GPU job budget."""
-    script = _gpu_install_script()
-
-    assert "DPkg::Lock::Timeout=" in script
+    """Both package-manager operations keep the exact 30-second lock bound."""
+    for command in _apt_commands():
+        assert "DPkg::Lock::Timeout=30" in command
