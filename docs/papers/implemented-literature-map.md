@@ -24,3 +24,18 @@ implementation-ready extractions live in this repository at
 | Ferrando, Lorenzo-Seva & Chico (2009), factor-analytic response-bias procedure, SEM | adapted (full tridimensional MRFA remains out of scope; added observed-minus-expected leniency residual proxy with explicit non-identification boundaries) | `diagnostics.py::fit_diagnostics` (`personfit.leniency_*`, `model_fit.leniency_*`), group C spec |
 | Wolkowitz & Skorupski (2013), MC option imputation, EPM | superseded (marginal-ML integrates over missing cells under MAR; option-level imputation needs polytomous data) | group C spec |
 | Joubert et al. (2015), forced-choice vs Likert psychometrics, IJSA | documented-only (Thurstonian forced-choice blocks absent from binary judge data) | group C spec |
+
+## Additional implemented-method bibliography
+
+These rows record primary sources for kernels that already exist on protected
+main but were outside the original supplied reading-set table. Changelog
+"NOT READ" notes and unmerged PRs are not the bibliographic record.
+
+| Paper | Status | Where |
+|---|---|---|
+| Jeon, Jin, Schweinberger & Baugh (2021), LSIRM interaction map, Psychometrika; DOI [10.1007/s11336-021-09762-5](https://doi.org/10.1007/s11336-021-09762-5) | implemented (simple-structure MLSIRM/MLS2PLM specialization; not the full discrimination-vector model) | `docs/papers/mls2plm-canonical-equations.md`, ADR-0001, `fit` / `simulate` MLS2PLM path |
+| Kang & Jeon (2025), multidimensional LSIRM / conditional-dependence relativity, Psychometrika; DOI [10.1017/psy.2025.5](https://doi.org/10.1017/psy.2025.5) | implemented (simple-structure MLS2PLM; residual interaction after substantive structure) | ADR-0001, ADR-0006, `docs/traceability/research-basis.md` |
+| Molenaar & Jeon (2026), regularized JML for LSIRM, Psychometrika; DOI [10.1017/psy.2025.10068](https://doi.org/10.1017/psy.2025.10068) | implemented (penalized joint ML / MAP-style point estimation) | `docs/papers/mls2plm-canonical-equations.md`, ADR-0001 |
+| Angoff (1972) APA meeting presentation; Angoff & Ford (1973) JEM; Magis & Facon (2012, 2014) BJMSP / JSS | implemented (Angoff TID / delta-plot with Magis–Facon threshold; not MH/logistic/SIBTEST; not a CWE/OWASP/NIST control) | `fast_mlsirm.delta_plot`, `mlsirm_core::dif::delta_plot`, `docs/delta_plot_dif.md`, ADR-0016 |
+| Bradley & Terry (1952), paired comparisons, Biometrika; Hunter (2004), MM algorithms, Ann. Statist. | implemented (tie-free BT MM; additive-`alpha0` BRATT ties variant only — not Rao–Kupper/Davidson) | `fast_mlsirm.bradley_terry_mm`, `fast_mlsirm.bratt_mm`, `docs/bradley_terry_mm.md`, ADR-0017 |
+| AERA, APA, & NCME (2014), *Standards for educational and psychological testing* | governing score-interpretation / fairness standard for the methods above | `docs/standards_watch.md`, ADR-0001, ADR-0016, ADR-0017 |

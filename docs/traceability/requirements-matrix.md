@@ -1,7 +1,7 @@
 # Requirements, decisions, implementation and evidence matrix
 
 Status: **Authoritative traceability baseline**  
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-16
 
 This matrix makes the major product requirements discoverable without reconstructing decisions from chat history or PR bodies. It deliberately distinguishes **protected-main implementation**, **active/open work**, **future research**, and **downstream ownership**.
 
@@ -20,7 +20,9 @@ This matrix makes the major product requirements discoverable without reconstruc
 | Model relation/comparison | PRD-FR-040..043, TRD-MOD | ADR-0006 | relation-safe comparison primitives and diagnostics where merged; formal family-wide distinguishability remains work in progress | Partial |
 | Bifactor scoreability | PRD-FR-044, TRD-BIF | ADR-0006 | protected-main package exposes bifactor scoreability surfaces; interpretation still depends on the evidence contract and model relation | Accepted bounded capability / evolving evidence |
 | Factor retention | PRD-FR-040/050, TRD-MOD-001 | ADR-0006 | dimensionality diagnostics exist; unified retention + structural-selection evidence workflow remains a product gap tracked by issue #608 | Partial / planned integration |
-| Latent-space residual interaction | PRD-FR-040..052, TRD-MOD | ADR-0006 | MLSIRM family on protected main | Accepted only after substantive dimension/testlet/facet diagnosis; not a substitute for omitted structure |
+| Latent-space residual interaction | PRD-FR-040..052, TRD-MOD | ADR-0001, ADR-0006 | MLSIRM family on protected main | Accepted only after substantive dimension/testlet/facet diagnosis; not a substitute for omitted structure |
+| Observed-score DIF screens | PRD-FR-021/043, fairness/invariance | ADR-0016 | `fast_mlsirm.delta_plot` (Angoff / Magis–Facon) plus MH/logistic/SIBTEST; method page `docs/delta_plot_dif.md` | Accepted screens; flags are review candidates, not fairness determinations |
+| Pairwise ranking (Bradley–Terry MM) | TRD-NUM-001 scoring/ranking | ADR-0017 | `fast_mlsirm.bradley_terry_mm`, `fast_mlsirm.bratt_mm`; method page `docs/bradley_terry_mm.md` | Accepted BT/Hunter MM and additive-ties BRATT only; Rao–Kupper/Davidson not implemented |
 | Adaptive rotation | PRD-FR-051/052, TRD-ROT | ADR-0009 | protected main contains `crates/mlsirm-core/src/rotation/`, PyO3 bindings, `python/fast_mlsirm/rotation.py`, `rotation_selection.py`, package-root exports, criterion-neutral selection and rotation regression/doctoring evidence | Accepted CPU baseline / planned GPU and broader recovery extensions |
 | True-parameter recovery | PRD-PRN-003, TRD-TEST-003..006 | ADR-0008 | simulation/recovery reports, Rust/NumPy parity, scheduled statistical studies/recovery contracts | Accepted |
 | Correlation vs recovery/agreement | PRD-PRN-003, scoring validity requirements | ADR-0008, ADR-0005 | recovery/simulation, agreement/QWK/facets evidence | Accepted: correlation is supplementary association evidence, never sole proof of parameter recovery or interchangeability |
