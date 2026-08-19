@@ -19,6 +19,44 @@ MAX_BIFACTOR_ITEMS = 1_000_000
 MAX_BIFACTOR_FACTORS = 64
 MAX_BIFACTOR_WORK_UNITS = 50_000_000
 
+_TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = tuple(
+    np.dtype(code).type
+    for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
+)
+_TRUSTED_NUMPY_FLOAT_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+
+
+def _is_exact_trusted_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Check a scalar type by identity without caller-controlled equality hooks."""
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _general_factor_control(value: object) -> int:
+    """Normalize one trusted factor index without caller coercion callbacks."""
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if _is_exact_trusted_type(value_type, _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES):
+        return int(value)
+    raise ValueError("general_factor must be an integer")
+
+
+def _zero_tolerance_control(value: object) -> float:
+    """Normalize one trusted real tolerance without caller coercion callbacks."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        return float(value)
+    if _is_exact_trusted_type(value_type, _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES):
+        return float(value)
+    if _is_exact_trusted_type(value_type, _TRUSTED_NUMPY_FLOAT_SCALAR_TYPES):
+        return float(value)
+    raise ValueError("zero_tolerance must be a real number")
+
 
 @dataclass(frozen=True)
 class BifactorScoreabilityResult:
@@ -239,6 +277,8 @@ def bifactor_scoreability(
     predictive validation, recovery, invariance, and substantive validity
     remain separate evidence requirements.
     """
+    general_factor_value = _general_factor_control(general_factor)
+    zero_tolerance_value = _zero_tolerance_control(zero_tolerance)
     loading_matrix = _matrix(loadings, "loadings")
     uniqueness_vector = _uniqueness_vector(
         uniquenesses,
@@ -247,8 +287,8 @@ def bifactor_scoreability(
     raw = bifactor_core().bifactor_indices(
         loading_matrix,
         uniqueness_vector,
-        general_factor,
-        zero_tolerance,
+        general_factor_value,
+        zero_tolerance_value,
     )
     return _result_from_mapping(raw)
 
@@ -276,10 +316,12 @@ def bifactor_scoreability_from_logit_slopes(
     The same bounded CPU work and advertised-shape inspection contract as
     :func:`bifactor_scoreability` applies.
     """
+    general_factor_value = _general_factor_control(general_factor)
+    zero_tolerance_value = _zero_tolerance_control(zero_tolerance)
     slope_matrix = _matrix(logit_slopes, "logit_slopes")
     raw = bifactor_core().bifactor_indices_from_logit_slopes(
         slope_matrix,
-        general_factor,
-        zero_tolerance,
+        general_factor_value,
+        zero_tolerance_value,
     )
     return _result_from_mapping(raw)
