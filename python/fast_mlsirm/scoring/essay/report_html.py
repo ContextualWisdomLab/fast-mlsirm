@@ -306,6 +306,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
         ),
         rows=_evidence_rows(report),
         empty_message="No evidence references are attached to this report.",
+        row_header_column=0,
     )
     return "\n".join(
         (
