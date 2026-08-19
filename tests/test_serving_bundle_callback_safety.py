@@ -65,6 +65,23 @@ class _HostileText(str):
         self._trip()
 
 
+class _ArmedHostileKey(str):
+    calls = 0
+    armed = False
+
+    def __hash__(self):
+        if type(self).armed:
+            type(self).calls += 1
+            raise AssertionError("caller key hash callback executed")
+        return super().__hash__()
+
+    def __eq__(self, other):
+        if type(self).armed:
+            type(self).calls += 1
+            raise AssertionError("caller key equality callback executed")
+        return super().__eq__(other)
+
+
 class _HostileInt(int):
     calls = 0
 
@@ -146,6 +163,26 @@ def test_serving_prior_rejects_top_level_dict_subclass_without_callbacks():
         serving.serving_prior(bundle)
 
     assert _HostileDict.calls == 0
+
+
+def test_top_level_key_subclass_is_rejected_without_callbacks(monkeypatch):
+    _ArmedHostileKey.calls = 0
+    _ArmedHostileKey.armed = False
+    _fail_if_core_discovered(monkeypatch)
+    bundle = _bundle()
+    value = bundle.pop("schema_version")
+    hostile_key = _ArmedHostileKey("schema_version")
+    bundle[hostile_key] = value
+
+    _ArmedHostileKey.calls = 0
+    _ArmedHostileKey.armed = True
+    try:
+        with pytest.raises(ValueError, match="keys must be strings"):
+            serving.score_respondents(bundle, np.array([[1.0]]))
+    finally:
+        _ArmedHostileKey.armed = False
+
+    assert _ArmedHostileKey.calls == 0
 
 
 def test_schema_integer_subclass_is_rejected_without_callbacks(monkeypatch):
