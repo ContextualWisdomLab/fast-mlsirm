@@ -31,6 +31,43 @@ _MAX_EVIDENCE_REFERENCES = 64
 _MAX_ERROR_MESSAGE_CHARACTERS = 512
 _LIFECYCLE_PATH_PATTERN = re.compile(r"^\$(?:\.[a-z][a-z0-9_]*|\[[0-9]+\])*$")
 _RECORD_CREATION_TOKEN = object()
+_RECORD_INSTANCE_FIELDS = frozenset(
+    {
+        "item_id",
+        "item_version",
+        "candidate_fingerprint",
+        "pilot_record_fingerprint",
+        "audit_report_fingerprint",
+        "blueprint_id",
+        "rubric_id",
+        "rubric_version",
+        "lifecycle_state",
+        "policy_criticality",
+        "approved_use_ids",
+        "evidence_references",
+        "previous_record_fingerprint",
+        "transition_reason_id",
+        "suspension_concern_kinds",
+        "schema_version",
+        "_record_fingerprint",
+    }
+)
+_EVIDENCE_REFERENCE_INSTANCE_FIELDS = frozenset(
+    {"evidence_kind", "evidence_id", "evidence_fingerprint"}
+)
+_RECORD_STRING_FIELDS = (
+    "item_id",
+    "item_version",
+    "candidate_fingerprint",
+    "pilot_record_fingerprint",
+    "audit_report_fingerprint",
+    "blueprint_id",
+    "rubric_id",
+    "rubric_version",
+    "transition_reason_id",
+    "schema_version",
+    "_record_fingerprint",
+)
 
 
 class ItemBankLifecycleState(str, Enum):
@@ -427,6 +464,68 @@ class ItemBankLifecycleRecord:
         }
 
 
+def _has_exact_instance_fields(value: object, expected: frozenset[str]) -> bool:
+    """Return whether a package object retains only its declared state fields."""
+    field_names = tuple(vars(value))
+    if any(type(name) is not str for name in field_names):
+        return False
+    return frozenset(field_names) == expected
+
+
+def _record_replay_state_is_inert(record: ItemBankLifecycleRecord) -> bool:
+    """Validate creation-normalized record state without caller callback dispatch."""
+    if not _has_exact_instance_fields(record, _RECORD_INSTANCE_FIELDS):
+        return False
+    state = vars(record)
+    if any(type(state[name]) is not str for name in _RECORD_STRING_FIELDS):
+        return False
+    if type(state["lifecycle_state"]) is not ItemBankLifecycleState:
+        return False
+    if type(state["policy_criticality"]) is not PolicyCriticality:
+        return False
+    previous = state["previous_record_fingerprint"]
+    if previous is not None and type(previous) is not str:
+        return False
+    approved_use_ids = state["approved_use_ids"]
+    if type(approved_use_ids) is not tuple:
+        return False
+    if any(type(value) is not str for value in approved_use_ids):
+        return False
+    evidence_references = state["evidence_references"]
+    if type(evidence_references) is not tuple:
+        return False
+    for reference in evidence_references:
+        if type(reference) is not ItemBankEvidenceReference:
+            return False
+        if not _has_exact_instance_fields(
+            reference,
+            _EVIDENCE_REFERENCE_INSTANCE_FIELDS,
+        ):
+            return False
+        reference_state = vars(reference)
+        if type(reference_state["evidence_kind"]) is not ItemBankEvidenceKind:
+            return False
+        if type(reference_state["evidence_id"]) is not str:
+            return False
+        if type(reference_state["evidence_fingerprint"]) is not str:
+            return False
+    suspension_concern_kinds = state["suspension_concern_kinds"]
+    if type(suspension_concern_kinds) is not tuple:
+        return False
+    return all(
+        type(kind) is ItemBankEvidenceKind for kind in suspension_concern_kinds
+    )
+
+
+def _raise_lifecycle_replay_mismatch() -> None:
+    """Raise the stable source-text-free current-record replay failure."""
+    raise ItemBankLifecycleError(
+        "lifecycle_record_replay_mismatch",
+        "$.current_record",
+        "current lifecycle record no longer matches its creation-time identity",
+    )
+
+
 def _verify_current_record(record: Any) -> ItemBankLifecycleRecord:
     """Replay one exact package record before granting transition authority."""
     if type(record) is not ItemBankLifecycleRecord:
@@ -435,12 +534,14 @@ def _verify_current_record(record: Any) -> ItemBankLifecycleRecord:
             "$.current_record",
             "current record must be an exact ItemBankLifecycleRecord",
         )
-    if _sha256_hex(record._content_dict()) != record.record_fingerprint:
-        raise ItemBankLifecycleError(
-            "lifecycle_record_replay_mismatch",
-            "$.current_record",
-            "current lifecycle record no longer matches its creation-time identity",
-        )
+    if not _record_replay_state_is_inert(record):
+        _raise_lifecycle_replay_mismatch()
+    state = vars(record)
+    if (
+        _sha256_hex(ItemBankLifecycleRecord._content_dict(record))
+        != state["_record_fingerprint"]
+    ):
+        _raise_lifecycle_replay_mismatch()
     return record
 
 
