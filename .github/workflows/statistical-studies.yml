@@ -28,6 +28,8 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -40,6 +42,7 @@ jobs:
           --skip mlsirm-core/test/literature_true_parameter_recovery::kang_jeon_2025_minimum_cell_recovers_true_parameters
           --skip mlsirm-core/test/literature_true_parameter_recovery::gpu_recovery_matches_cpu_on_paper_design
           --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
+          --skip mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies
@@ -47,6 +50,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       - run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
 
@@ -56,6 +61,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       - name: Run Kang-Jeon paper-design recovery
         run: >-
@@ -70,6 +77,31 @@ jobs:
           higher_order_dina_recovery_respects_monte_carlo_tolerance
           -- --ignored --exact --nocapture
 
+  grm-recovery:
+    name: GRM 500-rep recovery study
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Run multidimensional GRM Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            grm::tests::mc_grm_recovery_500 \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee grm-recovery-study.log
+      - name: Publish GRM recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: grm-recovery-study-${{ github.run_id }}
+          path: grm-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
   gpu-recovery:
     name: Literature GPU recovery parity
     runs-on: ubuntu-latest
@@ -79,6 +111,8 @@ jobs:
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       - name: Install software Vulkan adapter
         run: |
