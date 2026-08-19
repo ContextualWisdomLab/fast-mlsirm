@@ -170,6 +170,8 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert '<main id="main-content">' in rendered
     assert '<a class="skip-link" href="#main-content">Skip to report</a>' in rendered
     assert "Item bank &lt;release&gt; &amp; review" in rendered
+    assert f"<dt>Blueprint</dt><dd>{records[-1].blueprint_id}</dd>" in rendered
+    assert "<dt>Approved-use scope</dt><dd>production_scoring</dd>" in rendered
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
