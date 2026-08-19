@@ -94,7 +94,7 @@ def test_sx2_trusted_numpy_controls_remain_supported() -> None:
     normalized = fitstats_module._validate_sx2_controls(
         np.int64(21),
         np.uint8(11),
-        np.float32(5.0),
+        np.int16(5),
         np.float64(0.05),
         np.float16(0.1),
     )
