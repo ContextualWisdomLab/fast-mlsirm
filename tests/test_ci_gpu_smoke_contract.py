@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 
 
 _CI_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
@@ -13,14 +12,13 @@ _APT_SOURCES = "/tmp/fast-mlsirm-ubuntu.sources"
 def _gpu_install_script() -> str:
     """Return the software-Vulkan provisioning shell from the CI workflow."""
     text = _CI_WORKFLOW.read_text(encoding="utf-8")
-    match = re.search(
-        r"- name: Install software Vulkan adapter\n"
-        r"\s+run: \|\n(?P<script>(?:\s{8,}.*\n)+?)"
-        r"\s+- name: Prove Vulkan compute adapter availability",
-        text,
-    )
-    assert match is not None, "gpu-smoke Vulkan provisioning step is missing"
-    return match.group("script")
+    start_marker = "      - name: Install software Vulkan adapter\n        run: |\n"
+    end_marker = "      - name: Prove Vulkan compute adapter availability\n"
+    assert start_marker in text, "gpu-smoke Vulkan provisioning step is missing"
+    _, remainder = text.split(start_marker, 1)
+    assert end_marker in remainder, "gpu-smoke Vulkan proof step is missing"
+    script, _ = remainder.split(end_marker, 1)
+    return script
 
 
 def _logical_shell(script: str) -> str:
@@ -44,7 +42,10 @@ def test_gpu_smoke_uses_isolated_canonical_ubuntu_sources() -> None:
     assert f"cat > {_APT_SOURCES} <<EOF" in script
     assert "URIs: https://archive.ubuntu.com/ubuntu" in script
     assert "URIs: https://security.ubuntu.com/ubuntu" in script
-    assert "Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-backports" in script
+    assert (
+        "Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates "
+        "${VERSION_CODENAME}-backports"
+    ) in script
     assert "Suites: ${VERSION_CODENAME}-security" in script
 
 
