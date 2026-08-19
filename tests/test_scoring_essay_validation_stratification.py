@@ -254,8 +254,21 @@ def test_validation_html_replay_preserves_explicit_and_pooled_strata(tmp_path: P
     )
     explicit_html = explicit_path.read_text(encoding="utf-8")
     assert explicit.validation_stratum is not None
-    assert explicit.validation_stratum.stratum_fingerprint in explicit_html
+    stratum = explicit.validation_stratum
+    assert stratum.stratum_fingerprint in explicit_html
     assert "validation_stratum" in explicit_html
+    for label, value in (
+        ("Validation scope", "Explicit validation stratum"),
+        ("Prompt ID", stratum.prompt_id),
+        ("Prompt fingerprint", stratum.prompt_fingerprint),
+        ("Genre ID", stratum.genre_id),
+        ("Language ID", stratum.language_id),
+        ("Rubric version", stratum.rubric_version),
+        ("Validation stratum handle", stratum.stratum_handle),
+        ("Validation stratum fingerprint", stratum.stratum_fingerprint),
+    ):
+        assert label in explicit_html
+        assert value in explicit_html
 
     pooled = _report(stratum=None)
     pooled_path = render_essay_validation_evidence_report_html(
@@ -265,6 +278,8 @@ def test_validation_html_replay_preserves_explicit_and_pooled_strata(tmp_path: P
     pooled_html = pooled_path.read_text(encoding="utf-8")
     assert "validation_stratification_missing" in pooled_html
     assert "&quot;validation_stratum&quot;: null" in pooled_html
+    assert "Validation scope" in pooled_html
+    assert "Pooled validation evidence" in pooled_html
 
 
 def test_validation_html_replay_preserves_legacy_base_reports(tmp_path: Path) -> None:
@@ -294,3 +309,5 @@ def test_validation_html_replay_preserves_legacy_base_reports(tmp_path: Path) ->
     html = output.read_text(encoding="utf-8")
     assert legacy.report_fingerprint in html
     assert "validation_stratum" not in html
+    assert "Validation scope" in html
+    assert "Legacy unstratified report" in html
