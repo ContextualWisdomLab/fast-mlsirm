@@ -17,9 +17,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 try:
-    from scripts._bounded_json import read_json_object
+    from scripts._bounded_json import parse_json_bounded, read_json_object
 except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    from _bounded_json import parse_json_bounded, read_json_object
 
 
 RISK_COUNT_KEYS = [
@@ -78,8 +78,7 @@ _OPEN_PR_JSON_FIELDS = (
 # nested ``files``/``labels`` on ``--state all --limit 100`` routinely trips
 # GitHub GraphQL HTTP 502 for this repository (see Actions run 31374029017).
 _HISTORY_PR_JSON_FIELDS = (
-    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,"
-    "mergedAt,url"
+    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,mergedAt,url"
 )
 _OPEN_PR_LIST_LIMIT = 100
 _HISTORY_PR_LIST_LIMIT = 100
@@ -162,7 +161,7 @@ def _json_from_completed(completed: subprocess.CompletedProcess[str]) -> Any:
     """Decode command stdout when the command succeeded and emitted JSON."""
     if completed.returncode != 0 or not completed.stdout.strip():
         return None
-    return json.loads(completed.stdout)
+    return parse_json_bounded(completed.stdout)
 
 
 def _is_transient_gh_stderr(stderr: str) -> bool:
