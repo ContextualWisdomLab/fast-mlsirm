@@ -3,8 +3,7 @@
 Conditioning each response pattern on its raw score -- the sufficient statistic for ability -- removes
 the person parameters, so the Rasch item difficulties are estimated without any assumption on the
 ability distribution (specific objectivity) and consistently at fixed test length, unlike joint or
-marginal ML. The numerical computation runs in Rust.
-"""
+marginal ML. The numerical computation runs in Rust."""
 
 from __future__ import annotations
 
