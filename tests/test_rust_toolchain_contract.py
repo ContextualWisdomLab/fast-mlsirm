@@ -11,6 +11,7 @@ _TOOLCHAIN = _ROOT / "rust-toolchain.toml"
 _CI = _ROOT / ".github" / "workflows" / "ci.yml"
 _STUDIES = _ROOT / ".github" / "workflows" / "statistical-studies.yml"
 _DEPENDABOT = _ROOT / ".github" / "dependabot.yml"
+_ACTION_PREFIX = "dtolnay/rust-toolchain@"
 _ACTION = "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30"
 
 
@@ -22,6 +23,31 @@ def _dependabot_ecosystem_block(ecosystem: str) -> str:
     assert dependabot.count(marker) == 1
     _, remainder = dependabot.split(marker, 1)
     return remainder.split("\n  - package-ecosystem:", 1)[0]
+
+
+def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
+    """Return Rust action references paired with their step-local toolchain values."""
+
+    lines = workflow.splitlines()
+    steps: list[tuple[str, str | None]] = []
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        uses_prefix = f"- uses: {_ACTION_PREFIX}"
+        if not stripped.startswith(uses_prefix):
+            continue
+
+        indent = len(line) - len(stripped)
+        action = stripped.removeprefix("- uses: ").strip()
+        toolchain: str | None = None
+        for candidate in lines[index + 1 :]:
+            candidate_stripped = candidate.lstrip()
+            candidate_indent = len(candidate) - len(candidate_stripped)
+            if candidate_stripped and candidate_indent <= indent:
+                break
+            if candidate_stripped.startswith("toolchain:"):
+                toolchain = candidate_stripped.partition(":")[2].strip()
+        steps.append((action, toolchain))
+    return tuple(steps)
 
 
 def test_local_rust_toolchain_is_exact_without_raising_public_crate_msrv() -> None:
@@ -44,8 +70,10 @@ def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
     expected_counts = ((_CI, 4), (_STUDIES, 4))
     for workflow_path, expected in expected_counts:
         workflow = workflow_path.read_text(encoding="utf-8")
-        assert workflow.count(_ACTION) == expected
-        assert workflow.count("toolchain: 1.97.1") == expected
+        steps = _rust_toolchain_steps(workflow)
+        assert len(steps) == expected
+        assert all(action == _ACTION for action, _ in steps)
+        assert all(toolchain == "1.97.1" for _, toolchain in steps)
         assert "toolchain: stable" not in workflow
 
 
