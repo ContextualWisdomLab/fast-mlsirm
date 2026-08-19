@@ -51,17 +51,24 @@ def serving_prior(bundle: dict) -> tuple[np.ndarray, np.ndarray]:
     explicit prior to ``score_respondents`` to condition on a known cluster
     (mean = u_eap) or group (mean = mu_g, sd = sigma_g).
     """
-    n_dims = bundle["n_dims"]
-    if not isinstance(n_dims, int) or isinstance(n_dims, bool) or not (1 <= n_dims <= 64):
+    if type(bundle) is not dict:
+        raise ValueError("serving bundle must be a JSON object")
+    _require_exact_string_keys(bundle, label="serving bundle")
+    n_dims = bundle.get("n_dims")
+    if type(n_dims) is not int or not (1 <= n_dims <= 64):
         raise ValueError("bundle n_dims must be an integer in 1..64")
     mean = np.zeros(n_dims)
     sd = np.ones(n_dims)
     pop = bundle.get("population")
     if pop is None:
         pop = {}
-    elif not isinstance(pop, dict):
+    elif type(pop) is not dict:
         raise ValueError("bundle population must be an object or null")
-    if pop.get("kind") == "multilevel" and "sigma_u" in pop:
+    _require_exact_string_keys(pop, label="bundle population")
+    kind = pop.get("kind")
+    if kind is not None and type(kind) is not str:
+        raise ValueError("bundle population kind must be a string")
+    if kind == "multilevel" and "sigma_u" in pop:
         su = pop["sigma_u"]
         # sigma_u is attacker-controlled in an untrusted bundle: a string
         # crashes ** with TypeError, 1e200 overflows, 1e150 poisons sd.
@@ -216,34 +223,49 @@ def _finite_number(x) -> bool:
         return False
 
 
+def _require_exact_string_keys(mapping: dict, *, label: str) -> None:
+    """Reject mapping keys that could dispatch caller equality/hash callbacks."""
+    if any(type(key) is not str for key in mapping):
+        raise ValueError(f"{label} keys must be strings")
+
 
 def _validate_bundle(bundle: Any) -> None:
-    """Validate a serving bundle's structure, sizes, and numeric domains
-    before it is used to score untrusted respondents. Guards against oversized
-    or inconsistent dimensions (multi-terabyte allocations / index errors) and
-    unsafe item parameters (NaN/Inf scores) reaching the scoring core."""
-    if not isinstance(bundle, dict):
+    """Validate a serving bundle before any caller callbacks or Rust scoring.
+
+    Direct in-memory bundles are untrusted just like serialized bundles.  Exact
+    JSON-runtime container/scalar identities are established before hashing,
+    equality, iteration of nested values, numeric comparison, or package-owned
+    native dispatch can observe caller-defined subclasses.
+    """
+    if type(bundle) is not dict:
         raise ValueError("serving bundle must be a JSON object")
-    if bundle.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError(
-            f"unsupported bundle schema_version {bundle.get('schema_version')!r}"
-        )
+    _require_exact_string_keys(bundle, label="serving bundle")
+
+    schema_version = bundle.get("schema_version")
+    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+        raise ValueError("unsupported bundle schema_version")
+
     population = bundle.get("population")
-    if population is not None and not isinstance(population, dict):
-        raise ValueError("bundle population must be an object or null")
+    if population is not None:
+        if type(population) is not dict:
+            raise ValueError("bundle population must be an object or null")
+        _require_exact_string_keys(population, label="bundle population")
 
     def _pos_int(key: str, hi: int) -> int:
-        """Return bundle field ``key`` as an integer in ``1..hi`` or raise."""
-        v = bundle.get(key)
-        if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= hi):
+        """Return bundle field ``key`` as an exact integer in ``1..hi``."""
+        value = bundle.get(key)
+        if type(value) is not int or not (1 <= value <= hi):
             raise ValueError(f"bundle {key} must be an integer in 1..{hi}")
-        return v
+        return value
 
     n_items = _pos_int("n_items", 100_000)
     n_dims = _pos_int("n_dims", 64)
     latent_dim = _pos_int("latent_dim", MAX_LATENT_DIM)
-    if bundle.get("model") not in VALID_MODELS:
+
+    model = bundle.get("model")
+    if type(model) is not str or model not in VALID_MODELS:
         raise ValueError(f"bundle model must be one of {sorted(VALID_MODELS)}")
+
     if (
         not _finite_number(bundle.get("tau"))
         or abs(float(bundle["tau"])) > MAX_ABS_LOG_SCALE
@@ -269,62 +291,75 @@ def _validate_bundle(bundle: Any) -> None:
             f"bundle eps_distance must be in the safe numeric range "
             f"(0, {MAX_ABS_ITEM_PARAMETER}]"
         )
+
     quad = bundle.get("quadrature")
-    if not isinstance(quad, dict):
+    if type(quad) is not dict:
         raise ValueError("bundle quadrature must be an object")
+    _require_exact_string_keys(quad, label="bundle quadrature")
     for qk in ("q_theta", "q_xi"):
-        if quad.get(qk) not in {7, 11, 15, 21, 31, 41}:
-            raise ValueError(f"bundle quadrature {qk} must be one of 7,11,15,21,31,41")
+        q_value = quad.get(qk)
+        if type(q_value) is not int or q_value not in {7, 11, 15, 21, 31, 41}:
+            raise ValueError(
+                f"bundle quadrature {qk} must be one of 7,11,15,21,31,41"
+            )
+
     # Latent-space models score on a tensor Gauss-Hermite grid of
     # q_xi ** latent_dim points; reject combinations that would allocate an
     # astronomically large grid (e.g. 41**8 ~ 8e12).
-    if bundle["model"] != "MIRT" and int(quad["q_xi"]) ** latent_dim > 1_000_000:
+    if model != "MIRT" and quad["q_xi"] ** latent_dim > 1_000_000:
         raise ValueError("bundle q_xi ** latent_dim exceeds the serving grid limit")
     # The scoring core builds item-response tables of size
     # max(n_items, n_dims) * q_theta * n_xi; bound the product (55+ GB otherwise).
-    n_xi = 1 if bundle["model"] == "MIRT" else int(quad["q_xi"]) ** latent_dim
-    if max(n_items, n_dims) * int(quad["q_theta"]) * n_xi > 50_000_000:
-        raise ValueError("bundle scoring-table size (items x q_theta x n_xi) exceeds the serving limit")
+    n_xi = 1 if model == "MIRT" else quad["q_xi"] ** latent_dim
+    if max(n_items, n_dims) * quad["q_theta"] * n_xi > 50_000_000:
+        raise ValueError(
+            "bundle scoring-table size (items x q_theta x n_xi) exceeds the serving limit"
+        )
+
     items = bundle.get("items")
-    if not isinstance(items, list) or len(items) != n_items:
+    if type(items) is not list or len(items) != n_items:
         raise ValueError("bundle items must be a list of length n_items")
-    seen: set = set()
-    for j, it in enumerate(items):
-        if not isinstance(it, dict):
+    seen: set[str] = set()
+    for j, item in enumerate(items):
+        if type(item) is not dict:
             raise ValueError(f"bundle item {j} must be an object")
-        code = it.get("code")
-        if not isinstance(code, str) or code in seen:
+        _require_exact_string_keys(item, label=f"bundle item {j}")
+        code = item.get("code")
+        if type(code) is not str or code in seen:
             raise ValueError(f"bundle item {j} must have a unique string code")
         seen.add(code)
-        fid = it.get("factor_id")
-        if not isinstance(fid, int) or isinstance(fid, bool) or not (0 <= fid < n_dims):
-            raise ValueError(f"bundle item {code!r} factor_id must be an int in 0..n_dims-1")
+        fid = item.get("factor_id")
+        if type(fid) is not int or not (0 <= fid < n_dims):
+            raise ValueError(
+                f"bundle item {code!r} factor_id must be an int in 0..n_dims-1"
+            )
         for pk, bound in (
             ("alpha", MAX_ABS_LOG_SCALE),
             ("b", MAX_ABS_ITEM_PARAMETER),
         ):
             if (
-                not _finite_number(it.get(pk))
-                or abs(float(it[pk])) > bound
+                not _finite_number(item.get(pk))
+                or abs(float(item[pk])) > bound
             ):
                 raise ValueError(
                     f"bundle item {code!r} {pk} must be in the safe numeric "
                     f"range [-{bound}, {bound}]"
                 )
-        if "a" in it:
-            slope = it["a"]
-            expected_slope = math.exp(float(it["alpha"]))
+        if "a" in item:
+            slope = item["a"]
+            expected_slope = math.exp(float(item["alpha"]))
             if not _finite_number(slope) or not math.isclose(
                 float(slope), expected_slope, rel_tol=1e-12, abs_tol=0.0
             ):
                 raise ValueError(f"bundle item {code!r} a must match exp(alpha)")
-        zeta = it.get("zeta")
+        zeta = item.get("zeta")
         if (
-            not isinstance(zeta, list)
+            type(zeta) is not list
             or len(zeta) != latent_dim
             or not all(
-                _finite_number(z) and abs(float(z)) <= MAX_ABS_ITEM_PARAMETER
-                for z in zeta
+                _finite_number(value)
+                and abs(float(value)) <= MAX_ABS_ITEM_PARAMETER
+                for value in zeta
             )
         ):
             raise ValueError(
@@ -332,9 +367,10 @@ def _validate_bundle(bundle: Any) -> None:
                 f"the safe numeric range [-{MAX_ABS_ITEM_PARAMETER}, "
                 f"{MAX_ABS_ITEM_PARAMETER}]"
             )
+
     tables = bundle.get("eapsum_tables")
     if tables is not None:
-        if not isinstance(tables, list) or len(tables) != n_dims:
+        if type(tables) is not list or len(tables) != n_dims:
             raise ValueError(
                 "bundle eapsum_tables must be null or a list of length n_dims"
             )
@@ -343,12 +379,12 @@ def _validate_bundle(bundle: Any) -> None:
             item_counts[item["factor_id"]] += 1
         seen_dims: set[int] = set()
         for index, table in enumerate(tables):
-            if not isinstance(table, dict):
+            if type(table) is not dict:
                 raise ValueError(f"bundle eapsum table {index} must be an object")
+            _require_exact_string_keys(table, label=f"bundle eapsum table {index}")
             dim = table.get("dim")
             if (
-                not isinstance(dim, int)
-                or isinstance(dim, bool)
+                type(dim) is not int
                 or not 0 <= dim < n_dims
                 or dim in seen_dims
             ):
@@ -357,14 +393,15 @@ def _validate_bundle(bundle: Any) -> None:
                 )
             seen_dims.add(dim)
             expected = item_counts[dim] + 1
-            if table.get("n_items_dim") != item_counts[dim]:
+            n_items_dim = table.get("n_items_dim")
+            if type(n_items_dim) is not int or n_items_dim != item_counts[dim]:
                 raise ValueError(
                     "bundle eapsum table n_items_dim does not match bundle items"
                 )
             for key in ("score_prob", "eap", "sd"):
                 values = table.get(key)
                 if (
-                    not isinstance(values, list)
+                    type(values) is not list
                     or len(values) != expected
                     or not all(_finite_number(value) for value in values)
                 ):
