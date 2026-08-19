@@ -26,7 +26,7 @@ def _dependabot_ecosystem_block(ecosystem: str) -> str:
 
 
 def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
-    """Return Rust action references paired with their step-local toolchain values."""
+    """Return Rust action references paired only with their ``with.toolchain`` values."""
 
     lines = workflow.splitlines()
     steps: list[tuple[str, str | None]] = []
@@ -36,15 +36,27 @@ def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
         if not stripped.startswith(uses_prefix):
             continue
 
-        indent = len(line) - len(stripped)
+        step_indent = len(line) - len(stripped)
+        with_indent = step_indent + 2
+        toolchain_indent = step_indent + 4
         action = stripped.removeprefix("- uses: ").strip()
         toolchain: str | None = None
+        inside_with = False
         for candidate in lines[index + 1 :]:
             candidate_stripped = candidate.lstrip()
             candidate_indent = len(candidate) - len(candidate_stripped)
-            if candidate_stripped and candidate_indent <= indent:
+            if candidate_stripped and candidate_indent <= step_indent:
                 break
-            if candidate_stripped.startswith("toolchain:"):
+            if candidate_indent == with_indent and candidate_stripped == "with:":
+                inside_with = True
+                continue
+            if candidate_stripped and candidate_indent <= with_indent:
+                inside_with = False
+            if (
+                inside_with
+                and candidate_indent == toolchain_indent
+                and candidate_stripped.startswith("toolchain:")
+            ):
                 toolchain = candidate_stripped.partition(":")[2].strip()
         steps.append((action, toolchain))
     return tuple(steps)
@@ -75,6 +87,20 @@ def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
         assert all(action == _ACTION for action, _ in steps)
         assert all(toolchain == "1.97.1" for _, toolchain in steps)
         assert "toolchain: stable" not in workflow
+
+
+def test_rust_toolchain_parser_does_not_borrow_non_with_values() -> None:
+    """An unrelated nested ``toolchain`` key cannot satisfy the action input contract."""
+
+    workflow = f"""steps:
+  - uses: {_ACTION}
+    env:
+      toolchain: 1.97.1
+  - uses: {_ACTION}
+    with:
+      toolchain: 1.97.1
+"""
+    assert _rust_toolchain_steps(workflow) == ((_ACTION, None), (_ACTION, "1.97.1"))
 
 
 def test_stable_compiler_updates_arrive_as_reviewable_pull_requests() -> None:
