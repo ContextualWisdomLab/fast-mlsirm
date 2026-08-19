@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from fast_mlsirm.validation import ValidationPolicy
@@ -126,3 +127,23 @@ def test_policy_builtin_controls_still_normalize_for_rust_marshalling() -> None:
         "subgroup_smd_max": 0.1,
         "min_subgroup_n": 3,
     }
+
+
+@pytest.mark.parametrize(
+    "threshold",
+    [
+        np.float16(0.5),
+        np.float32(0.5),
+        np.float64(0.5),
+        np.longdouble(0.5),
+        np.int64(1),
+    ],
+)
+def test_policy_trusted_numpy_thresholds_marshal_as_builtin_floats(threshold: object) -> None:
+    """Supported concrete NumPy scalar identities normalize to Rust-ready floats."""
+    policy = ValidationPolicy(qwk_min=threshold)
+    rust_kwargs = policy.rust_kwargs()
+
+    assert type(policy.qwk_min) is float
+    assert type(rust_kwargs["qwk_min"]) is float
+    assert rust_kwargs["qwk_min"] == float(threshold)
