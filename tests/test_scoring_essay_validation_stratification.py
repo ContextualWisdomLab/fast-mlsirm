@@ -26,6 +26,7 @@ from fast_mlsirm.scoring.essay import (
     build_essay_prompt,
     build_essay_validation_evidence_report,
     build_essay_validation_stratum,
+    render_essay_validation_evidence_report_html,
 )
 
 _FIXTURES = runpy.run_path(
@@ -241,3 +242,25 @@ def test_validation_stratum_direct_construction_is_rejected() -> None:
             rubric_version=valid.rubric_version,
         )
     assert caught.value.code == "unverified_essay_validation_stratum"
+
+
+def test_validation_html_replay_preserves_explicit_and_pooled_strata(tmp_path: Path) -> None:
+    """Standalone HTML replay must retain the exact stratification payload."""
+    explicit = _report(stratum=_stratum())
+    explicit_path = render_essay_validation_evidence_report_html(
+        explicit,
+        tmp_path / "explicit.html",
+    )
+    explicit_html = explicit_path.read_text(encoding="utf-8")
+    assert explicit.validation_stratum is not None
+    assert explicit.validation_stratum.stratum_fingerprint in explicit_html
+    assert "validation_stratum" in explicit_html
+
+    pooled = _report(stratum=None)
+    pooled_path = render_essay_validation_evidence_report_html(
+        pooled,
+        tmp_path / "pooled.html",
+    )
+    pooled_html = pooled_path.read_text(encoding="utf-8")
+    assert "validation_stratification_missing" in pooled_html
+    assert '"validation_stratum": null' in pooled_html
