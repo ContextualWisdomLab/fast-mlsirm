@@ -68,3 +68,34 @@ def test_rudner_rejects_invalid_cut_identity_or_finiteness_before_core(
             np.array([1.0]),
             [cut],
         )
+
+
+def test_trusted_builtin_and_numpy_cut_scores_normalize_to_builtin_floats() -> None:
+    """Established built-in and concrete NumPy real scalar cuts remain accepted."""
+    normalized = classification._normalize_cutscores(
+        [0, 1.5, np.int64(2), np.uint8(3), np.float32(4.5), np.float64(5.5)]
+    )
+
+    assert normalized == [0.0, 1.5, 2.0, 3.0, 4.5, 5.5]
+    assert all(type(value) is float for value in normalized)
+
+
+def test_empty_cut_sequence_remains_rust_owned_domain_validation(monkeypatch) -> None:
+    """An empty trusted sequence reaches Rust so domain validation stays native-owned."""
+    calls: list[tuple[str, list[float]]] = []
+
+    class StubCore:
+        def rudner_classification(self, _theta, _sem, _weights, cuts):
+            calls.append(("rudner_classification", cuts))
+            raise RuntimeError("native domain validation sentinel")
+
+    monkeypatch.setattr(classification, "_core_or_raise", lambda _name: StubCore())
+
+    with pytest.raises(RuntimeError, match="native domain validation sentinel"):
+        classification.rudner_classification(
+            np.array([0.0]),
+            np.array([1.0]),
+            [],
+        )
+
+    assert calls == [("rudner_classification", [])]
