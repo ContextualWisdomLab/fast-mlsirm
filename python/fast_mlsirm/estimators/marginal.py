@@ -260,14 +260,14 @@ def _preflight_xi_node_count(
     if type(latent_dim) is not int or isinstance(latent_dim, bool):
         raise ValueError("latent_dim must be an exact built-in integer")
     if q_xi not in SUPPORTED_Q:
-        raise ValueError(
-            f"unsupported quadrature size {q_xi}; supported: {list(SUPPORTED_Q)}"
-        )
+        raise ValueError(f"unsupported quadrature size {q_xi}; supported: {list(SUPPORTED_Q)}")
     if latent_dim < 1:
         raise ValueError("latent_dim must be a positive integer")
     count = _bounded_tensor_node_count(q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES)
     if count > _MAX_TENSOR_XI_NODES:
-        raise ValueError("q_xi ** latent_dim exceeds the tensor-grid limit; use qmc/mc")
+        raise ValueError(
+            "q_xi ** latent_dim exceeds the tensor-grid limit; use qmc/mc"
+        )
     return count
 
 
@@ -300,35 +300,14 @@ def _interaction_kind(model: str) -> str:
 _HALTON_PRIMES = (2, 3, 5, 7, 11, 13)
 
 # Acklam's inverse normal CDF (same coefficients as the Rust core; parity).
-_ACK_A = (
-    -3.969683028665376e01,
-    2.209460984245205e02,
-    -2.759285104469687e02,
-    1.383577518672690e02,
-    -3.066479806614716e01,
-    2.506628277459239e00,
-)
-_ACK_B = (
-    -5.447609879822406e01,
-    1.615858368580409e02,
-    -1.556989798598866e02,
-    6.680131188771972e01,
-    -1.328068155288572e01,
-)
-_ACK_C = (
-    -7.784894002430293e-03,
-    -3.223964580411365e-01,
-    -2.400758277161838e00,
-    -2.549732539343734e00,
-    4.374664141464968e00,
-    2.938163982698783e00,
-)
-_ACK_D = (
-    7.784695709041462e-03,
-    3.224671290700398e-01,
-    2.445134137142996e00,
-    3.754408661907416e00,
-)
+_ACK_A = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+          1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+_ACK_B = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+          6.680131188771972e+01, -1.328068155288572e+01)
+_ACK_C = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+          -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+_ACK_D = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+          3.754408661907416e+00)
 
 
 def _inv_normal_cdf(p: float) -> float:
@@ -381,9 +360,7 @@ def _normal_draw(state: int) -> tuple[float, int]:
     """Draw a standard-normal sample (Box-Muller) and the next LCG state."""
     u1, state = _lcg_uniform(state)
     u2, state = _lcg_uniform(state)
-    return float(
-        np.sqrt(-2.0 * np.log(max(u1, 1e-12))) * np.cos(2.0 * np.pi * u2)
-    ), state
+    return float(np.sqrt(-2.0 * np.log(max(u1, 1e-12))) * np.cos(2.0 * np.pi * u2)), state
 
 
 def _xi_nodes(
@@ -401,9 +378,7 @@ def _xi_nodes(
         if xi_points < 1:
             raise ValueError("xi_points must be >= 1 for the Halton/MonteCarlo rules")
         if latent_dim > len(_HALTON_PRIMES):
-            raise ValueError(
-                f"Halton rule supports latent_dim <= {len(_HALTON_PRIMES)}"
-            )
+            raise ValueError(f"Halton rule supports latent_dim <= {len(_HALTON_PRIMES)}")
         shift = np.zeros(latent_dim)
         if xi_seed != 0:
             state = xi_seed
@@ -437,7 +412,9 @@ def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
     """
     nodes, weights = _gh(q_xi)
     # Match the Rust ordering: axis k advances every q_xi^k nodes.
-    n_points = _bounded_tensor_node_count(q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES)
+    n_points = _bounded_tensor_node_count(
+        q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES
+    )
     if n_points > _MAX_TENSOR_XI_NODES:
         raise ValueError("q_xi ** latent_dim exceeds the tensor-grid limit; use qmc/mc")
     idx = np.arange(n_points)
@@ -472,11 +449,7 @@ def _build_contexts(
     """
     kind = pop["kind"]
     if kind == "single":
-        return {
-            "n_ctx": 1,
-            "shift": np.zeros((1, n_dims)),
-            "scale": np.ones((1, n_dims)),
-        }
+        return {"n_ctx": 1, "shift": np.zeros((1, n_dims)), "scale": np.ones((1, n_dims))}
     if kind in {"multigroup", "singlefree"}:
         # singlefree (FIPC) is a one-group multigroup with free (mu, sigma)
         return {"n_ctx": mu.shape[0], "shift": mu.copy(), "scale": sigma.copy()}
@@ -528,11 +501,9 @@ def _build_tables(
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
-
-    # mathematically simplify _log_sigmoid(eta) = eta + _log_sigmoid(-eta)
+    logp1 = _log_sigmoid(eta)
     logp0 = _log_sigmoid(-eta)
-    logp1 = eta + logp0
-    n_ctx = eta.shape[0]
+    n_ctx, n_items = eta.shape[0], eta.shape[1]
     c0 = np.zeros((n_ctx, n_dims, eta.shape[2], eta.shape[3]))
     for d in range(n_dims):
         c0[:, d] = logp0[:, factor_id == d].sum(axis=1)
@@ -553,12 +524,12 @@ def _person_logliks(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Vectorized person pass for one context assignment.
 
-    Returns (llik, log_zdx, log_lp): llik has shape (P, D, Qt, Nx); log_zdx (P, D, Nx);
+    Returns (l, log_zdx, log_lp): l has shape (P, D, Qt, Nx); log_zdx (P, D, Nx);
     log_lp (P,).
     """
     delta = logp1 - logp0  # (S, I, Qt, Nx)
     pos = np.where(observed, y, 0.0)  # (P, I)
-    llik = c0[s_of_person]  # (P, D, Qt, Nx) — copy via fancy indexing
+    l = c0[s_of_person]  # (P, D, Qt, Nx) — copy via fancy indexing
     # positives: add delta_i; missing: subtract logp0_i — per dimension.
     for d in range(n_dims):
         items = np.flatnonzero(factor_id == d)
@@ -568,22 +539,26 @@ def _person_logliks(
         delta_d = delta[:, items]  # (S, I_d, Qt, Nx)
         logp0_d = logp0[:, items]
         # einsum over the item axis with per-person context gather
-        llik[:, d] += np.einsum("pi,piqx->pqx", pos_d, delta_d[s_of_person], optimize=True)
+        l[:, d] += np.einsum(
+            "pi,piqx->pqx", pos_d, delta_d[s_of_person], optimize=True
+        )
         if miss_d.any():
-            llik[:, d] -= np.einsum(
+            l[:, d] -= np.einsum(
                 "pi,piqx->pqx", miss_d, logp0_d[s_of_person], optimize=True
             )
-    lw = t_logw[None, None, :, None] + llik  # (P, D, Qt, Nx)
+    lw = t_logw[None, None, :, None] + l  # (P, D, Qt, Nx)
     m = lw.max(axis=2, keepdims=True)
-    log_zdx = np.squeeze(m, axis=2) + np.log(np.exp(lw - m).sum(axis=2))  # (P, D, Nx)
+    log_zdx = np.squeeze(m, axis=2) + np.log(
+        np.exp(lw - m).sum(axis=2)
+    )  # (P, D, Nx)
     ax = x_logw[None, :] + log_zdx.sum(axis=1)  # (P, Nx)
     mx = ax.max(axis=1, keepdims=True)
     log_lp = np.squeeze(mx, axis=1) + np.log(np.exp(ax - mx).sum(axis=1))
-    return llik, log_zdx, log_lp
+    return l, log_zdx, log_lp
 
 
 def _posteriors(
-    llik: np.ndarray,
+    l: np.ndarray,
     log_zdx: np.ndarray,
     log_lp: np.ndarray,
     t_logw: np.ndarray,
@@ -591,7 +566,7 @@ def _posteriors(
 ) -> np.ndarray:
     """Joint per-person posterior over (d, t, x): shape (P, D, Qt, Nx)."""
     px = np.exp(x_logw[None, :] + log_zdx.sum(axis=1) - log_lp[:, None])  # (P, Nx)
-    pt = np.exp(t_logw[None, None, :, None] + llik - log_zdx[:, :, None, :])
+    pt = np.exp(t_logw[None, None, :, None] + l - log_zdx[:, :, None, :])
     return px[:, None, None, :] * pt
 
 
@@ -620,7 +595,9 @@ def _multilevel_context_posteriors(
         a_zero = np.where(all_zero[:, None], log_pi, -np.inf)
         b_irt = log_1m + lp_irt
         maximum = np.maximum(a_zero, b_irt)
-        lp_mix = maximum + np.log(np.exp(a_zero - maximum) + np.exp(b_irt - maximum))
+        lp_mix = maximum + np.log(
+            np.exp(a_zero - maximum) + np.exp(b_irt - maximum)
+        )
         # Replacing this person's mixture contribution with its IRT
         # contribution conditions its context posterior on engager membership.
         log_irt_adjust = b_irt - lp_mix
@@ -694,8 +671,7 @@ def _item_q(
     for item ``i`` and subtracts the MAP ridge penalties on its active
     parameters. This is the per-item M-step objective the ascent maximizes.
     """
-    # mathematically simplify r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta) to r_i * eta + n_i * _log_sigmoid(-eta)
-    q = float(np.sum(r_i * eta + n_i * _log_sigmoid(-eta)))
+    q = float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))
     q -= 0.5 * pen["lambda_b"] * b_i * b_i
     if free_alpha:
         da = alpha_i - pen["mu_alpha"]
@@ -774,13 +750,10 @@ def fit_marginal_numpy(
         n_dims = int(factor_id.max()) + 1
     # Bound the dominant EM working array (persons x max(items,dims) x q_theta x
     # n_xi_nodes) so oversized quadrature/data cannot exhaust memory (DoS).
-    if (
-        n_persons * max(n_items, n_dims) * int(q_theta) * int(n_xi)
-        > MAX_MARGINAL_WORKING_SET
-    ):
+    if n_persons * max(n_items, n_dims) * int(q_theta) * int(n_xi) > MAX_MARGINAL_WORKING_SET:
         raise ValueError(
-            "marginal working set (persons x max(items,dims) x q_theta x n_xi) "
-            f"exceeds the {MAX_MARGINAL_WORKING_SET}-element limit"
+            'marginal working set (persons x max(items,dims) x q_theta x n_xi) '
+            f'exceeds the {MAX_MARGINAL_WORKING_SET}-element limit'
         )
     pop = pop or {"kind": "single"}
     pen = dict(LSIRM_PRIOR)
@@ -791,11 +764,7 @@ def fit_marginal_numpy(
         raise ValueError("unidimensional models require n_dims == 1")
     if factor_id.min() < 0 or factor_id.max() >= n_dims:
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    if (
-        type(latent_dim) is not int
-        or isinstance(latent_dim, bool)
-        or not (1 <= latent_dim <= 3)
-    ):
+    if type(latent_dim) is not int or isinstance(latent_dim, bool) or not (1 <= latent_dim <= 3):
         raise ValueError("marginal estimator supports 1 <= latent_dim <= 3")
     obs_vals = y[observed]
     if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
@@ -820,9 +789,7 @@ def fit_marginal_numpy(
 
     # --- deterministic init (mirror of the Rust code) ---
     counts = observed.sum(axis=0)
-    means = np.where(
-        counts > 0, np.where(observed, y, 0.0).sum(axis=0) / np.maximum(counts, 1), 0.5
-    )
+    means = np.where(counts > 0, np.where(observed, y, 0.0).sum(axis=0) / np.maximum(counts, 1), 0.5)
     prop = np.clip(means, 0.02, 0.98)
     b = np.log(prop / (1.0 - prop))
     alpha = np.zeros(n_items)
@@ -844,9 +811,7 @@ def fit_marginal_numpy(
         raise ValueError("singlefree (FIPC) requires anchors for identification")
     if covariate is not None:
         if kind == "multilevel":
-            raise ValueError(
-                "item covariates with a multilevel structure are not supported"
-            )
+            raise ValueError("item covariates with a multilevel structure are not supported")
         n_ctx_expected = pop.get("n_groups", 1) if kind == "multigroup" else 1
         w_cov = np.asarray(covariate["w"], dtype=np.float64).reshape(
             n_ctx_expected, n_items
@@ -859,23 +824,15 @@ def fit_marginal_numpy(
     else:
         w_cov = None
     n_groups = (
-        pop.get("n_groups", 0)
-        if kind == "multigroup"
-        else (1 if kind == "singlefree" else 0)
+        pop.get("n_groups", 0) if kind == "multigroup" else (1 if kind == "singlefree" else 0)
     )
     n_clusters = pop.get("n_clusters", 0) if kind == "multilevel" else 0
     for _cnt, _nm in ((n_groups, "n_groups"), (n_clusters, "n_clusters")):
         if _cnt and (int(_cnt) < 1 or int(_cnt) > n_persons):
-            raise ValueError(
-                f"{_nm} ({_cnt}) must be between 1 and n_persons ({n_persons})"
-            )
+            raise ValueError(f"{_nm} ({_cnt}) must be between 1 and n_persons ({n_persons})")
     if kind == "multigroup":
         group_id = np.asarray(pop["group_id"], dtype=np.int64)
-        if (
-            group_id.shape != (n_persons,)
-            or group_id.min() < 0
-            or group_id.max() >= n_groups
-        ):
+        if group_id.shape != (n_persons,) or group_id.min() < 0 or group_id.max() >= n_groups:
             raise ValueError("group_id values must be in 0..n_groups-1")
     if kind == "multilevel":
         cluster_id = np.asarray(pop["cluster_id"], dtype=np.int64)
@@ -946,18 +903,8 @@ def fit_marginal_numpy(
         ctx = _build_contexts(pop, mu, sigma, sigma_u, n_dims, q_u)
         offsets = delta * w_cov if w_cov is not None else None
         logp1, logp0, c0 = _build_tables(
-            alpha,
-            b,
-            zeta,
-            tau,
-            model,
-            factor_id,
-            ctx,
-            t_nodes,
-            x_grid,
-            eps_distance,
-            n_dims,
-            offsets,
+            alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance,
+            n_dims, offsets,
         )
         n_ctx = ctx["n_ctx"]
         nbar = np.zeros((n_ctx, n_dims, q_theta, n_x))
@@ -966,21 +913,10 @@ def fit_marginal_numpy(
 
         if kind in {"single", "singlefree", "multigroup"}:
             s_of_person = (
-                group_id
-                if kind == "multigroup"
-                else np.zeros(n_persons, dtype=np.int64)
+                group_id if kind == "multigroup" else np.zeros(n_persons, dtype=np.int64)
             )
-            llik, log_zdx, log_lp = _person_logliks(
-                y,
-                observed,
-                factor_id,
-                logp1,
-                logp0,
-                c0,
-                t_logw,
-                x_logw,
-                s_of_person,
-                n_dims,
+            l, log_zdx, log_lp = _person_logliks(
+                y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_of_person, n_dims
             )
             if zero_inflation:
                 all_zero_bcast = all_zero
@@ -990,18 +926,10 @@ def fit_marginal_numpy(
             else:
                 loglik = float(log_lp.sum())
                 w_irt = np.ones(n_persons)
-            post = _posteriors(llik, log_zdx, log_lp, t_logw, x_logw)
+            post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
             _accumulate(
-                post,
-                w_irt,
-                y,
-                observed,
-                factor_id,
-                s_of_person,
-                n_ctx,
-                nbar,
-                rbar,
-                mbar,
+                post, w_irt, y, observed, factor_id, s_of_person, n_ctx,
+                nbar, rbar, mbar,
             )
             sum_e_v2 = 0.0
         else:  # multilevel
@@ -1009,16 +937,7 @@ def fit_marginal_numpy(
             for v in range(n_ctx):
                 s_all = np.full(n_persons, v, dtype=np.int64)
                 _, _, lp = _person_logliks(
-                    y,
-                    observed,
-                    factor_id,
-                    logp1,
-                    logp0,
-                    c0,
-                    t_logw,
-                    x_logw,
-                    s_all,
-                    n_dims,
+                    y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
                 )
                 lp_v[:, v] = lp
             if zero_inflation:
@@ -1041,19 +960,10 @@ def fit_marginal_numpy(
                 if not keep.any():
                     continue
                 s_all = np.full(n_persons, v, dtype=np.int64)
-                llik, log_zdx, log_lp = _person_logliks(
-                    y,
-                    observed,
-                    factor_id,
-                    logp1,
-                    logp0,
-                    c0,
-                    t_logw,
-                    x_logw,
-                    s_all,
-                    n_dims,
+                l, log_zdx, log_lp = _person_logliks(
+                    y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
                 )
-                post = _posteriors(llik, log_zdx, log_lp, t_logw, x_logw)
+                post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
                 w_eff = np.where(keep, w_outer, 0.0)
                 _accumulate(
                     post, w_eff, y, observed, factor_id, s_all, n_ctx, nbar, rbar, mbar
@@ -1072,9 +982,7 @@ def fit_marginal_numpy(
 
         # --- M-step: items (Fisher-preconditioned ascent with Armijo) ---
         gamma = float(np.exp(tau))
-        theta_sx = (
-            ctx["shift"][:, :, None] + ctx["scale"][:, :, None] * t_nodes[None, None, :]
-        )
+        theta_sx = ctx["shift"][:, :, None] + ctx["scale"][:, :, None] * t_nodes[None, None, :]
         for i in range(n_items):
             if fixed_mask[i]:
                 continue
@@ -1084,7 +992,9 @@ def fit_marginal_numpy(
             r_i = rbar[:, i]
             theta_i = theta_sx[:, d]  # (S, Qt)
 
-            off_i = offsets[:, i][:, None, None] if offsets is not None else 0.0
+            off_i = (
+                offsets[:, i][:, None, None] if offsets is not None else 0.0
+            )
 
             kind_i = _interaction_kind(model)
 
@@ -1094,9 +1004,7 @@ def fit_marginal_numpy(
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
                     # (1, Nx) pairwise distances from one item embedding to all nodes.
-                    zeta_row = np.ascontiguousarray(
-                        zeta_c.reshape(1, -1), dtype=np.float64
-                    )
+                    zeta_row = np.ascontiguousarray(zeta_c.reshape(1, -1), dtype=np.float64)
                     x_c = np.ascontiguousarray(x_grid, dtype=np.float64)
                     dist = _pairwise_euclidean_distances(
                         zeta_row,
@@ -1109,15 +1017,8 @@ def fit_marginal_numpy(
                 return e
 
             cur_q = _item_q(
-                n_i,
-                r_i,
-                eta_of(alpha[i], b[i], zeta_i),
-                alpha[i],
-                b[i],
-                zeta_i,
-                free_alpha,
-                uses_space,
-                pen,
+                n_i, r_i, eta_of(alpha[i], b[i], zeta_i), alpha[i], b[i], zeta_i,
+                free_alpha, uses_space, pen,
             )
             for _ in range(m_steps):
                 a_c = np.exp(alpha[i]) if free_alpha else 1.0
@@ -1146,9 +1047,7 @@ def fit_marginal_numpy(
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
                         - pen["lambda_zeta"] * zeta_i
                     )
-                    i_zeta = np.einsum(
-                        "stx,xk->k", info, deta_z * deta_z, optimize=True
-                    )
+                    i_zeta = np.einsum("stx,xk->k", info, deta_z * deta_z, optimize=True)
                 else:
                     g_zeta = np.zeros(latent_dim)
                     i_zeta = np.zeros(latent_dim)
@@ -1164,15 +1063,8 @@ def fit_marginal_numpy(
                     cand_alpha = alpha[i] + step * d_alpha if free_alpha else alpha[i]
                     cand_zeta = zeta_i + step * d_zeta
                     cand_q = _item_q(
-                        n_i,
-                        r_i,
-                        eta_of(cand_alpha, cand_b, cand_zeta),
-                        cand_alpha,
-                        cand_b,
-                        cand_zeta,
-                        free_alpha,
-                        uses_space,
-                        pen,
+                        n_i, r_i, eta_of(cand_alpha, cand_b, cand_zeta), cand_alpha,
+                        cand_b, cand_zeta, free_alpha, uses_space, pen,
                     )
                     if cand_q > cur_q + 1e-4 * step * slope:
                         b[i] = cand_b
@@ -1210,13 +1102,8 @@ def fit_marginal_numpy(
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
             deta = -gamma * dist[None, :, None, :]
-            grad = float((resid * deta).sum()) - pen["lambda_tau"] * (
-                tau - pen["mu_tau"]
-            )
-            info = (
-                float((n_all * prob * (1.0 - prob) * deta * deta).sum())
-                + pen["lambda_tau"]
-            )
+            grad = float((resid * deta).sum()) - pen["lambda_tau"] * (tau - pen["mu_tau"])
+            info = float((n_all * prob * (1.0 - prob) * deta * deta).sum()) + pen["lambda_tau"]
             if info > 0.0:
                 direction = grad / info
 
@@ -1229,8 +1116,7 @@ def fit_marginal_numpy(
                         - np.exp(tau_c) * dist[None, :, None, :]
                     )
                     qv = float(
-                        # mathematically simplify rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e) to rbar * e + n_all * _log_sigmoid(-e)
-                        np.sum(rbar * e + n_all * _log_sigmoid(-e))
+                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
                     )
                     qv -= 0.5 * pen["lambda_b"] * float(b @ b)
                     if free_alpha:
@@ -1292,8 +1178,7 @@ def fit_marginal_numpy(
                     """Expected-count objective as a function of covariate slope ``delta_c``."""
                     e = eta_delta(delta_c)
                     return float(
-                        # mathematically simplify rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e) to rbar * e + n_all * _log_sigmoid(-e)
-                        np.sum(rbar * e + n_all * _log_sigmoid(-e))
+                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
                     )
 
                 cur = q_of_delta(delta)
@@ -1329,25 +1214,13 @@ def fit_marginal_numpy(
     ctx = _build_contexts(pop, mu, sigma, sigma_u, n_dims, q_u)
     final_offsets = delta * w_cov if w_cov is not None else None
     logp1, logp0, c0 = _build_tables(
-        alpha,
-        b,
-        zeta,
-        tau,
-        model,
-        factor_id,
-        ctx,
-        t_nodes,
-        x_grid,
-        eps_distance,
-        n_dims,
-        final_offsets,
+        alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance,
+        n_dims, final_offsets,
     )
     if not converged:
         if kind in {"single", "singlefree", "multigroup"}:
             s_of_person = (
-                group_id
-                if kind == "multigroup"
-                else np.zeros(n_persons, dtype=np.int64)
+                group_id if kind == "multigroup" else np.zeros(n_persons, dtype=np.int64)
             )
             _, _, final_log_lp = _person_logliks(
                 y,
@@ -1413,16 +1286,14 @@ def fit_marginal_numpy(
 
     def eap_accumulate(s_all: np.ndarray, w_outer: np.ndarray) -> None:
         """Accumulate posterior-weighted EAP trait/latent-space estimates in place."""
-        llik, log_zdx, log_lp = _person_logliks(
+        l, log_zdx, log_lp = _person_logliks(
             y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
         )
-        post = _posteriors(llik, log_zdx, log_lp, t_logw, x_logw)
+        post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
         wpost = post * w_outer[:, None, None, None]
         px = wpost.sum(axis=(1, 2)) / n_dims  # (P, Nx) — same for every d
         xi_eap[:] += px @ x_grid
-        theta_s = (
-            ctx["shift"][s_all][:, :, None] + ctx["scale"][s_all][:, :, None] * t_nodes
-        )
+        theta_s = ctx["shift"][s_all][:, :, None] + ctx["scale"][s_all][:, :, None] * t_nodes
         theta_eap[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s, optimize=True)
         theta_m2[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s**2, optimize=True)
 
@@ -1482,9 +1353,7 @@ def fit_marginal_numpy(
     ic = {
         "aic": aic,
         "bic": dev + k * np.log(nf),
-        "aicc": aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0)
-        if nf - k - 1.0 > 0
-        else float("nan"),
+        "aicc": aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0) if nf - k - 1.0 > 0 else float("nan"),
         "sabic": dev + k * np.log((nf + 2.0) / 24.0),
         "caic": dev + k * (np.log(nf) + 1.0),
         "n_parameters": n_parameters,
@@ -1580,7 +1449,9 @@ def score_eap(
         raise ValueError("factor_id must contain finite non-negative integers")
     max_factor = int(factor_numeric.max())
     if max_factor >= MAX_FACTOR_DIMENSIONS:
-        raise ValueError(f"factor_id values must be below {MAX_FACTOR_DIMENSIONS}")
+        raise ValueError(
+            f"factor_id values must be below {MAX_FACTOR_DIMENSIONS}"
+        )
     if n_dims is None:
         n_dims = max_factor + 1
     elif (
@@ -1589,7 +1460,8 @@ def score_eap(
         or not (max_factor < int(n_dims) <= MAX_FACTOR_DIMENSIONS)
     ):
         raise ValueError(
-            f"n_dims must be an integer in {max_factor + 1}..{MAX_FACTOR_DIMENSIONS}"
+            f"n_dims must be an integer in {max_factor + 1}.."
+            f"{MAX_FACTOR_DIMENSIONS}"
         )
     n_dims = int(n_dims)
     factor_id = factor_numeric.astype(np.int64)
@@ -1610,24 +1482,15 @@ def score_eap(
 
     ctx = {"n_ctx": 1, "shift": np.zeros((1, n_dims)), "scale": np.ones((1, n_dims))}
     logp1, logp0, c0 = _build_tables(
-        alpha,
-        b,
-        zeta,
-        float(tau),
-        model,
-        factor_id,
-        ctx,
-        t_nodes,
-        x_grid,
-        eps_distance,
-        n_dims,
+        alpha, b, zeta, float(tau), model, factor_id, ctx, t_nodes, x_grid,
+        eps_distance, n_dims,
     )
     s_all = np.zeros(n_persons, dtype=np.int64)
     y_filled = np.where(observed, y, 0.0)
-    llik, log_zdx, log_lp = _person_logliks(
+    l, log_zdx, log_lp = _person_logliks(
         y_filled, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
     )
-    post = _posteriors(llik, log_zdx, log_lp, t_logw, x_logw)
+    post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
     px = post.sum(axis=(1, 2)) / n_dims  # (P, Nx)
     xi_eap = px @ x_grid
     theta_eap = np.einsum("pdtx,t->pd", post, t_nodes, optimize=True)
@@ -1666,9 +1529,7 @@ def category_logprobs(base, scores, intercepts):
     if scores.size < 2:
         raise ValueError("need at least K=2 categories")
     if scores[0] != 0.0 or intercepts[0] != 0.0:
-        raise ValueError(
-            "baseline category 0 must be pinned: scores[0] = intercepts[0] = 0"
-        )
+        raise ValueError("baseline category 0 must be pinned: scores[0] = intercepts[0] = 0")
     psi = scores * base[..., None] + intercepts  # (..., K)
     m = psi.max(axis=-1, keepdims=True)
     log_z = m[..., 0] + np.log(np.exp(psi - m).sum(axis=-1))
@@ -1742,9 +1603,7 @@ def _gpcm_m_step_item(params0, theta_nodes, r_counts, n_newton=10):
         hess = 0.5 * (hess + hess.T) + 1e-8 * np.eye(p.size)
         try:
             step = np.linalg.solve(hess, g)
-        except (
-            np.linalg.LinAlgError
-        ):  # pragma: no cover - ridge-regularized finite Hessian is non-singular
+        except np.linalg.LinAlgError:  # pragma: no cover - ridge-regularized finite Hessian is non-singular
             step = g
         p = p - step
         if np.max(np.abs(step)) < 1e-9:
@@ -1866,9 +1725,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
             r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
         next_ll, post = estep(params)
-        if not np.isfinite(
-            next_ll
-        ):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
+        if not np.isfinite(next_ll):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
             raise RuntimeError("GPCM EM produced a non-finite observed-data likelihood")
         final_delta = float(abs(next_ll - ll))
         stopping_tolerance = float(tol * (1.0 + abs(ll)))
@@ -1918,12 +1775,12 @@ def grm_category_logprobs(base, thresholds):
     if thresholds.ndim != 1 or thresholds.size < 1:
         raise ValueError("thresholds must be a 1-D array of length K-1 >= 1")
     kb = thresholds.shape[0]
-    eta = base[..., None] + thresholds  # (..., K-1)
-    ls = -np.logaddexp(0.0, -eta)  # log sigmoid(eta) = log P(Y>=k)
-    ls_neg = -np.logaddexp(0.0, eta)  # log(1 - P(Y>=k))
+    eta = base[..., None] + thresholds                 # (..., K-1)
+    ls = -np.logaddexp(0.0, -eta)                       # log sigmoid(eta) = log P(Y>=k)
+    ls_neg = -np.logaddexp(0.0, eta)                    # log(1 - P(Y>=k))
     out = np.empty(base.shape + (kb + 1,), dtype=np.float64)
-    out[..., 0] = ls_neg[..., 0]  # P(Y=0)
-    for k in range(1, kb):  # P(Y=k) = e^{ls[k-1]} - e^{ls[k]}
+    out[..., 0] = ls_neg[..., 0]                        # P(Y=0)
+    for k in range(1, kb):                              # P(Y=k) = e^{ls[k-1]} - e^{ls[k]}
         upper = eta[..., k - 1]
         lower = eta[..., k]
         out[..., k] = (
@@ -1931,5 +1788,5 @@ def grm_category_logprobs(base, thresholds):
             - np.logaddexp(0.0, lower)
             + np.log(-np.expm1(lower - upper))
         )
-    out[..., kb] = ls[..., kb - 1]  # P(Y=K-1)
+    out[..., kb] = ls[..., kb - 1]                      # P(Y=K-1)
     return out
