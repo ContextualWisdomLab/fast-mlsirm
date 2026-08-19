@@ -83,8 +83,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       - name: Install software Vulkan adapter
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
+          # Hosted Azure mirrors can become black holes without failing the
+          # TCP connection. Keep both per-request and whole-command budgets
+          # below the 30-minute job deadline so a mirror outage is observable
+          # as a bounded provisioning failure rather than a cancelled CI run.
+          timeout 120s sudo apt-get \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=10 \
+            -o Acquire::https::Timeout=10 \
+            -o DPkg::Lock::Timeout=30 \
+            update
+          timeout 180s sudo apt-get \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=10 \
+            -o Acquire::https::Timeout=10 \
+            -o DPkg::Lock::Timeout=30 \
+            install --yes mesa-vulkan-drivers vulkan-tools
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           LVP_ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*.json' -print -quit)"
