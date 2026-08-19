@@ -185,7 +185,6 @@ def gtheory_pi(
     this asks how many judge items are needed for a dependable rating.
 
     """
-    core = _core_or_raise("gtheory_pi")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
@@ -194,6 +193,7 @@ def gtheory_pi(
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
+    core = _core_or_raise("gtheory_pi")
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
 
 
@@ -215,7 +215,6 @@ def gtheory_pio(
     policies match :func:`gtheory_pi`.
 
     """
-    core = _core_or_raise("gtheory_pio")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 3:
         raise ValueError("data must be a 3-D persons x items x occasions array")
@@ -228,6 +227,7 @@ def gtheory_pio(
         )
         for a, b in n_prime
     ]
+    core = _core_or_raise("gtheory_pio")
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
     )
@@ -283,7 +283,6 @@ def phi_lambda(
     panel classifies systems against a fixed quality threshold.
 
     """
-    core = _core_or_raise("phi_lambda")
     x = np.asarray(data)
     if np.iscomplexobj(x):
         raise ValueError("data must be real-valued")
@@ -296,6 +295,7 @@ def phi_lambda(
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
+    core = _core_or_raise("phi_lambda")
     res = core.phi_lambda(
         x.reshape(-1),
         int(n_p),
