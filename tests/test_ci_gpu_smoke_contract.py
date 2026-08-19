@@ -22,9 +22,14 @@ def _gpu_install_script() -> str:
     return match.group("script")
 
 
+def _logical_shell(script: str) -> str:
+    """Join explicit shell continuations so command contracts stay readable."""
+    return script.replace("\\\n", " ")
+
+
 def test_gpu_smoke_apt_network_work_has_hard_deadlines() -> None:
     """Runner mirror stalls must fail boundedly before the job-level timeout."""
-    script = _gpu_install_script()
+    script = _logical_shell(_gpu_install_script())
 
     assert re.search(r"timeout\s+\d+s\s+sudo\s+apt-get\b.*\bupdate\b", script)
     assert re.search(r"timeout\s+\d+s\s+sudo\s+apt-get\b.*\binstall\b", script)
