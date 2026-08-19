@@ -42,9 +42,8 @@ def test_mls2plmconfig_invalid_latent_dim():
         MLS2PLMConfig(latent_dim=0).validate()
 
 def test_mls2plmconfig_invalid_phi_lower_bound():
-    config = MLS2PLMConfig(n_dims=2, phi=-1.0)
     with pytest.raises(ValueError, match="phi must produce a positive-definite equicorrelation matrix"):
-        config.validate()
+        MLS2PLMConfig(n_dims=2, phi=-1.0)
 
 def test_mls2plmconfig_invalid_phi_upper_bound():
     with pytest.raises(ValueError, match="phi must produce a positive-definite equicorrelation matrix"):
@@ -107,3 +106,15 @@ def test_fitconfig_rejects_noninteger_xi_controls(name, value):
 def test_fitconfig_rejects_xi_seed_outside_u64(value):
     with pytest.raises(ValueError, match="xi_seed must fit an unsigned 64-bit integer"):
         FitConfig(xi_seed=value).validate()
+
+
+def test_mls2plmconfig_rejects_invalid_values_at_construction():
+    """Memory-safety bounds are enforced when the simulation config is built."""
+    with pytest.raises(ValueError, match="n_persons must be >= 1"):
+        MLS2PLMConfig(n_persons=-1)
+
+
+def test_fitconfig_rejects_invalid_values_at_construction():
+    """Memory-safety bounds are enforced when the fit config is built."""
+    with pytest.raises(ValueError, match="latent_dim must be >= 1 and <= "):
+        FitConfig(latent_dim=0)

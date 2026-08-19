@@ -35,17 +35,19 @@ def test_cli_simulate_rejects_excessive_person_count(tmp_path, capsys, monkeypat
 
 
 @pytest.mark.parametrize(
-    ("config", "message"),
+    ("config_kwargs", "message"),
     [
-        (MLS2PLMConfig(n_dims=51), "n_dims must be <= 50"),
-        (MLS2PLMConfig(items_per_dim=1001), "items_per_dim must be <= 1000"),
+        ({"n_dims": 51}, "n_dims must be <= 50"),
+        ({"items_per_dim": 1001}, "items_per_dim must be <= 1000"),
         (
-            MLS2PLMConfig(n_persons=20_001, n_dims=1, items_per_dim=1_000),
+            {"n_persons": 20_001, "n_dims": 1, "items_per_dim": 1_000},
             "exceeds the 20000000-cell simulation budget",
         ),
     ],
 )
-def test_simulation_config_rejects_bounded_resource_exhaustion(config, message):
-    """Reject individually or jointly unsafe simulation dimensions."""
+def test_simulation_config_rejects_bounded_resource_exhaustion(
+    config_kwargs, message
+):
+    """Reject unsafe simulation dimensions during config construction."""
     with pytest.raises(ValueError, match=message):
-        config.validate()
+        MLS2PLMConfig(**config_kwargs)
