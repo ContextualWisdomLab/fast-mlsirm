@@ -3,7 +3,8 @@
 Conditioning each response pattern on its raw score -- the sufficient statistic for ability -- removes
 the person parameters, so the Rasch item difficulties are estimated without any assumption on the
 ability distribution (specific objectivity) and consistently at fixed test length, unlike joint or
-marginal ML. The numerical computation runs in Rust."""
+marginal ML. The numerical computation runs in Rust.
+"""
 
 from __future__ import annotations
 
@@ -98,9 +99,9 @@ def fit_rasch_cml(
         Andersen, E. B. (1972). The numerical solution of a set of conditional estimation equations.
             *Journal of the Royal Statistical Society: Series B, 34*(1), 42-54.
     """
-    yy, n_persons, n_items = _binary_matrix(responses)
     max_iter = _trusted_iteration_cap(max_iter)
     tol = _trusted_positive_tolerance(tol)
+    yy, n_persons, n_items = _binary_matrix(responses)
 
     from .fitstats import _core_module
 
@@ -139,6 +140,8 @@ def andersen_lr_test(
         Andersen, E. B. (1973). A goodness of fit test for the Rasch model. *Psychometrika, 38*(1),
             123-140. https://doi.org/10.1007/BF02291180
     """
+    max_iter = _trusted_iteration_cap(max_iter)
+    tol = _trusted_positive_tolerance(tol)
     yy, n_persons, n_items = _binary_matrix(responses)
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
@@ -151,8 +154,6 @@ def andersen_lr_test(
     n_groups = int(gid.max()) + 1
     if n_groups < 2:
         raise ValueError("the Andersen LR test needs at least 2 groups")
-    max_iter = _trusted_iteration_cap(max_iter)
-    tol = _trusted_positive_tolerance(tol)
 
     from .fitstats import _core_module
 
