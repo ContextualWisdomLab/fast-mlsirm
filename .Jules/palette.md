@@ -9,7 +9,7 @@
 **Learning:** CSS animations can enhance static data visualizations without requiring JavaScript, providing visual polish and reducing perceived loading times for data.
 **Action:** Use CSS keyframe animations for simple visual improvements in static reports.
 ## 2025-01-28 - ARIA Live Regions for Empty States
-**Learning:** Using standard `<p>` tags with ARIA live region roles in dynamic or conditionally rendered tables can lead to screen readers silently skipping the section, leaving users confused about missing data.
+**Learning:** Using standard `<p>` tags for empty states in dynamic or conditionally rendered tables can lead to screen readers silently skipping the section, leaving users confused about missing data.
 **Action:** Use `<div class="empty-state" role="status">` for empty states to leverage ARIA live regions, ensuring assistive technologies actively announce that no rows were recorded.
 ## 2025-02-12 - Native Dark Mode for Static Reports
 **Learning:** Hardcoded light colors in static HTML reports ignore OS-level theme preferences, leading to poor UX and increased eye strain for users who rely on dark mode in data-heavy environments.
