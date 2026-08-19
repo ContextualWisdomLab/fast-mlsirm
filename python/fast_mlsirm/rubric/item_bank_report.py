@@ -13,9 +13,11 @@ from typing import Any
 
 from .item_bank import (
     ItemBankEvidenceKind,
+    ItemBankEvidenceReference,
     ItemBankLifecycleError,
     ItemBankLifecycleRecord,
     ItemBankLifecycleState,
+    PolicyCriticality,
     _verify_current_record,
 )
 
@@ -26,6 +28,74 @@ _REPORT_SCHEMA_VERSION = "fast-mlsirm-item-bank-report-v1"
 
 class ItemBankReportError(ValueError):
     """Raised when a lifecycle cannot be represented as a trustworthy report."""
+
+
+def _preflight_record_identity(record: ItemBankLifecycleRecord) -> None:
+    """Reject mutated record fields before replay can invoke caller callbacks."""
+    string_fields = (
+        "item_id",
+        "item_version",
+        "candidate_fingerprint",
+        "pilot_record_fingerprint",
+        "audit_report_fingerprint",
+        "blueprint_id",
+        "rubric_id",
+        "rubric_version",
+        "transition_reason_id",
+        "schema_version",
+    )
+    if any(type(getattr(record, name)) is not str for name in string_fields):
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    if type(record.record_fingerprint) is not str:
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    if type(record.lifecycle_state) is not ItemBankLifecycleState:
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    if type(record.policy_criticality) is not PolicyCriticality:
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    if (
+        record.previous_record_fingerprint is not None
+        and type(record.previous_record_fingerprint) is not str
+    ):
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    if type(record.approved_use_ids) is not tuple or any(
+        type(value) is not str for value in record.approved_use_ids
+    ):
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    if type(record.evidence_references) is not tuple:
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
+    for reference in record.evidence_references:
+        if type(reference) is not ItemBankEvidenceReference:
+            raise ItemBankReportError(
+                "lifecycle record no longer matches its creation-time identity"
+            )
+        if type(reference.evidence_kind) is not ItemBankEvidenceKind or any(
+            type(value) is not str
+            for value in (reference.evidence_id, reference.evidence_fingerprint)
+        ):
+            raise ItemBankReportError(
+                "lifecycle record no longer matches its creation-time identity"
+            )
+    if type(record.suspension_concern_kinds) is not tuple or any(
+        type(kind) is not ItemBankEvidenceKind
+        for kind in record.suspension_concern_kinds
+    ):
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
 
 
 def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
@@ -43,6 +113,7 @@ def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
     for record in records:
         if type(record) is not ItemBankLifecycleRecord:
             raise TypeError("records must contain exact ItemBankLifecycleRecord values")
+        _preflight_record_identity(record)
         try:
             verified_records.append(_verify_current_record(record))
         except ItemBankLifecycleError:
