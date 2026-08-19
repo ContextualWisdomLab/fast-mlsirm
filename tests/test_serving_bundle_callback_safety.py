@@ -138,6 +138,16 @@ def test_top_level_dict_subclass_is_rejected_without_callbacks(monkeypatch):
     assert _HostileDict.calls == 0
 
 
+def test_serving_prior_rejects_top_level_dict_subclass_without_callbacks():
+    _HostileDict.calls = 0
+    bundle = _HostileDict(_bundle())
+
+    with pytest.raises(ValueError, match="JSON object"):
+        serving.serving_prior(bundle)
+
+    assert _HostileDict.calls == 0
+
+
 def test_schema_integer_subclass_is_rejected_without_callbacks(monkeypatch):
     _HostileInt.calls = 0
     _fail_if_core_discovered(monkeypatch)
