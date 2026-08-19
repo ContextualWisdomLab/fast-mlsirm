@@ -187,6 +187,15 @@ def test_report_rejects_partial_or_forged_lifecycle_lineage() -> None:
         build_item_bank_report((records[0], records[2], records[3]))
 
 
+def test_report_replays_creation_fingerprint_before_trusting_record_fields() -> None:
+    """Frozen-record bypasses cannot forge approved-use metadata under an old hash."""
+    records = _lifecycle()
+    object.__setattr__(records[-1], "approved_use_ids", ("forged_use",))
+
+    with pytest.raises(ItemBankReportError, match="creation-time identity"):
+        build_item_bank_report(records)
+
+
 def test_report_rejects_hostile_container_and_title_subclasses() -> None:
     """Rendering rejects caller subclasses before invoking their callbacks."""
     records = _lifecycle()
