@@ -12,6 +12,13 @@ table does not declare a row-header column: its first value is repeated
 criterion provenance inside a many-row evidence relation rather than a unique
 row identity.
 
+The governed essay facets-calibration renderer likewise supplies
+`row_header_column=0` for task, rater, respondent, ordered-threshold, and
+likelihood-trace tables because those first-column values identify the row's
+semantic axis. The validation-evidence renderer supplies it for the metric
+identity column. This is an explicit domain decision at each call site rather
+than a blanket first-column transform.
+
 Every non-empty row must have exactly the same width as the declared header
 axis. Invalid, Boolean, negative, or out-of-range row-header indices fail before
 HTML is emitted. This prevents a malformed row from silently shifting a
@@ -22,7 +29,7 @@ HTML is emitted. This prevents a malformed row from silently shifting a
 The renderer emits:
 
 - `<th scope="col">` for every declared column header;
-- `<th scope="row">` only for the explicitly identified criterion field;
+- `<th scope="row">` only for an explicitly identified row-identity field;
 - `<td>` for all other body values;
 - a semantic `<caption>` for each table;
 - a keyboard-focusable overflow region around each table; and
@@ -37,18 +44,17 @@ column transform.
 
 ## Verification
 
-Focused tests parse a complete rendered report with Python's standard-library
-`HTMLParser` and verify that:
+Focused tests exercise complete rendered artifacts and verify that:
 
-1. every criterion outcome starts with `<th scope="row">`;
-2. the remaining criterion cells are `<td>`;
-3. every evidence-reference body cell remains `<td>`;
-4. the canonical JSON in the same artifact reconstructs the exact report; and
+1. score-report criterion outcomes start with `<th scope="row">` while evidence-reference cells remain data cells;
+2. facets-calibration task, rater, respondent, category/iteration identity axes emit `<th scope="row">`;
+3. validation-evidence metric identities emit `<th scope="row">`;
+4. canonical JSON in the same artifacts continues to reconstruct the exact governed reports; and
 5. invalid row-header indices and header/row width drift fail closed.
 
-The tests operate on the final standalone artifact rather than asserting only a
+The tests operate on final standalone artifacts rather than asserting only a
 helper substring, so they cover the production composition path and the exact
-criterion/evidence distinction.
+row-identity distinctions.
 
 ## Interpretation boundary
 
