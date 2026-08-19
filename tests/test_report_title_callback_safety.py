@@ -55,3 +55,17 @@ def test_generic_report_empty_builtin_title_keeps_default(tmp_path) -> None:
     html = output.read_text(encoding="utf-8")
     assert "<title>Fit Diagnostics Report</title>" in html
     assert '<h1 id="hero-heading">Fit Diagnostics Report</h1>' in html
+
+
+def test_generic_report_builtin_title_remains_html_escaped(tmp_path) -> None:
+    """An admitted exact built-in title remains escaped in every HTML title surface."""
+    source = tmp_path / "fit.json"
+    output = tmp_path / "fit.html"
+    _write_fit_payload(source)
+
+    render_diagnostics_report(source, output, title='<Admin & "Ops">')
+
+    html = output.read_text(encoding="utf-8")
+    assert "<title>&lt;Admin &amp; &quot;Ops&quot;&gt;</title>" in html
+    assert '<h1 id="hero-heading">&lt;Admin &amp; &quot;Ops&quot;&gt;</h1>' in html
+    assert '<Admin & "Ops">' not in html
