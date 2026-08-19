@@ -143,14 +143,8 @@ class EssayValidationEvidenceReport(_BaseEssayValidationEvidenceReport):
     validation_stratum: EssayValidationStratum | None = None
 
     def __post_init__(self, _report_token: object | None) -> None:
-        """Preserve the base seal and reject forged stratum values."""
+        """Preserve the base report factory seal."""
         super().__post_init__(_report_token)
-        if self.validation_stratum is not None and type(self.validation_stratum) is not EssayValidationStratum:
-            raise assessment_error(
-                "invalid_essay_validation_stratum",
-                "$.validation_stratum",
-                "validation_stratum must be an EssayValidationStratum or None",
-            )
 
     def _content_dict(self) -> dict[str, Any]:
         """Return base evidence plus explicit stratification provenance."""
@@ -209,7 +203,10 @@ def build_essay_validation_evidence_report(
     metadata: Mapping[str, Any] | None = None,
 ) -> EssayValidationEvidenceReport:
     """Build Rust-backed validation evidence and bind its declared stratum."""
-    if validation_stratum is not None and type(validation_stratum) is not EssayValidationStratum:
+    if (
+        validation_stratum is not None
+        and type(validation_stratum) is not EssayValidationStratum
+    ):
         raise assessment_error(
             "invalid_essay_validation_stratum",
             "$.validation_stratum",
@@ -256,12 +253,6 @@ def build_essay_validation_evidence_report(
                 "essay_validation_stratum_rubric_mismatch",
                 "$.validation_stratum.rubric_fingerprint",
                 "validation stratum does not match the report rubric",
-            )
-        if validation_stratum.model_family_id != report.automated_engine.engine_family_id:
-            raise assessment_error(
-                "essay_validation_stratum_engine_mismatch",
-                "$.validation_stratum.model_family_id",
-                "validation stratum does not match the automated engine family",
             )
     return _bind_stratum(report, validation_stratum)
 
