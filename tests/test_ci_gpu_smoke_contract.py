@@ -7,6 +7,7 @@ import re
 
 
 _CI_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
+_APT_SOURCES = "/tmp/fast-mlsirm-ubuntu.sources"
 
 
 def _gpu_install_script() -> str:
@@ -37,13 +38,30 @@ def _apt_commands() -> tuple[tuple[str, ...], ...]:
     )
 
 
+def test_gpu_smoke_uses_isolated_canonical_ubuntu_sources() -> None:
+    """GPU provisioning must bypass runner mirrorlists that can pin dead mirrors."""
+    script = _gpu_install_script()
+    assert f"cat > {_APT_SOURCES} <<EOF" in script
+    assert "URIs: https://archive.ubuntu.com/ubuntu" in script
+    assert "URIs: https://security.ubuntu.com/ubuntu" in script
+    assert "Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-backports" in script
+    assert "Suites: ${VERSION_CODENAME}-security" in script
+
+
 def test_gpu_smoke_apt_network_work_has_hard_deadlines() -> None:
     """Each apt operation must retain its exact bounded network contract."""
+    source_options = (
+        "-o",
+        f"Dir::Etc::sourcelist={_APT_SOURCES}",
+        "-o",
+        "Dir::Etc::sourceparts=-",
+    )
     update = (
         "timeout",
         "120s",
         "sudo",
         "apt-get",
+        *source_options,
         "-o",
         "Acquire::Retries=2",
         "-o",
@@ -59,6 +77,7 @@ def test_gpu_smoke_apt_network_work_has_hard_deadlines() -> None:
         "180s",
         "sudo",
         "apt-get",
+        *source_options,
         "-o",
         "Acquire::Retries=2",
         "-o",
