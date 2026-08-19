@@ -9,6 +9,7 @@ import runpy
 import numpy as np
 import pytest
 
+import fast_mlsirm.scoring.essay.validation_reporting as base_validation_reporting
 from fast_mlsirm.scoring import (
     AdjudicationPolicy,
     AssessmentResponseType,
@@ -264,3 +265,32 @@ def test_validation_html_replay_preserves_explicit_and_pooled_strata(tmp_path: P
     pooled_html = pooled_path.read_text(encoding="utf-8")
     assert "validation_stratification_missing" in pooled_html
     assert '"validation_stratum": null' in pooled_html
+
+
+def test_validation_html_replay_preserves_legacy_base_reports(tmp_path: Path) -> None:
+    """Existing direct-module base reports remain renderable after stratification."""
+    rubric = _rubric()
+    assessment = _assessment(rubric)
+    construct = assessment.constructs[0]
+    legacy = base_validation_reporting.build_essay_validation_evidence_report(
+        report_id="legacy_validation_report",
+        assessment=assessment,
+        construct_id=construct.construct_id,
+        rubric_fingerprint=construct.rubric_fingerprints[0],
+        criterion_id="claim_support",
+        automated_engine=_automated_engine(),
+        reference_engine=_human_engine(),
+        validation_dataset_fingerprint="e" * 64,
+        automated_labels=_AUTOMATED,
+        reference_labels=_REFERENCE,
+        category_count=3,
+        human_human_labels=(_HUMAN_A, _HUMAN_B),
+        subgroup_labels=_SUBGROUP,
+    )
+    output = render_essay_validation_evidence_report_html(
+        legacy,
+        tmp_path / "legacy.html",
+    )
+    html = output.read_text(encoding="utf-8")
+    assert legacy.report_fingerprint in html
+    assert "validation_stratum" not in html
