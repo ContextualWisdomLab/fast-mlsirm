@@ -163,6 +163,7 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
         records,
         title="Item bank <release> & review",
     )
+    piloting_rendered = render_item_bank_report_html((records[0],))
 
     assert rendered.startswith("<!doctype html>")
     assert '<html lang="en">' in rendered
@@ -172,6 +173,7 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "Item bank &lt;release&gt; &amp; review" in rendered
     assert f"<dt>Blueprint</dt><dd>{records[-1].blueprint_id}</dd>" in rendered
     assert "<dt>Approved-use scope</dt><dd>production_scoring</dd>" in rendered
+    assert "<dt>Approved-use scope</dt><dd>none</dd>" in piloting_rendered
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
