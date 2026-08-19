@@ -13,8 +13,10 @@ from typing import Any
 
 from .item_bank import (
     ItemBankEvidenceKind,
+    ItemBankLifecycleError,
     ItemBankLifecycleRecord,
     ItemBankLifecycleState,
+    _verify_current_record,
 )
 
 _MAX_REPORT_RECORDS = 256
@@ -36,11 +38,20 @@ def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
         raise ItemBankReportError(
             f"records must contain at most {_MAX_REPORT_RECORDS} lifecycle records"
         )
+
+    verified_records: list[ItemBankLifecycleRecord] = []
     for record in records:
         if type(record) is not ItemBankLifecycleRecord:
             raise TypeError("records must contain exact ItemBankLifecycleRecord values")
+        try:
+            verified_records.append(_verify_current_record(record))
+        except ItemBankLifecycleError:
+            raise ItemBankReportError(
+                "lifecycle record no longer matches its creation-time identity"
+            ) from None
+    normalized = tuple(verified_records)
 
-    first = records[0]
+    first = normalized[0]
     if (
         first.lifecycle_state is not ItemBankLifecycleState.PILOTING
         or first.previous_record_fingerprint is not None
@@ -59,7 +70,7 @@ def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
         first.policy_criticality,
     )
     previous = first
-    for record in records[1:]:
+    for record in normalized[1:]:
         current_identity = (
             record.item_id,
             record.item_version,
@@ -76,7 +87,7 @@ def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
         if record.previous_record_fingerprint != previous.record_fingerprint:
             raise ItemBankReportError("lifecycle lineage is not contiguous")
         previous = record
-    return records
+    return normalized
 
 
 def _present_evidence_kinds(
