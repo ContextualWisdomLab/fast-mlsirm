@@ -53,7 +53,7 @@ def _typed_content_values(
     """Return bounded unique records in deterministic fingerprint order."""
     raw = bounded_values(values, name, minimum=0, maximum=maximum)
     for index, value in enumerate(raw):
-        if not isinstance(value, expected_type):
+        if type(value) is not expected_type:
             raise assessment_error(
                 f"invalid_{name}",
                 f"$.{name}[{index}]",
@@ -125,7 +125,7 @@ def _intervention_values(
 
 def _validated_issue(issue: AtomicIssueRecord) -> AtomicIssueRecord:
     """Return one accepted atomic issue or fail before attribute access."""
-    if not isinstance(issue, AtomicIssueRecord):
+    if type(issue) is not AtomicIssueRecord:
         raise assessment_error(
             "invalid_atomic_issue",
             "$.issue",
