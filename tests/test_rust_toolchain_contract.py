@@ -55,4 +55,5 @@ def test_stable_compiler_updates_arrive_as_reviewable_pull_requests() -> None:
     block = _dependabot_ecosystem_block("rust-toolchain")
     assert '    directory: "/"' in block
     assert "    schedule:\n      interval: \"weekly\"" in block
+    assert "    cooldown:\n      default-days: 7" in block
     assert "    open-pull-requests-limit: 1" in block
