@@ -76,8 +76,10 @@ Method documentation: [`../delta_plot_dif.md`](../delta_plot_dif.md).
 ## Non-goals and claims not made
 
 - Not a multiple-group IRT, bifactor, or latent-space DIF model.
-- Not a missing-data DIF likelihood; incomplete matrices stay on a separately
-  reviewed path.
+- Not a missing-data DIF likelihood. The observed-score kernel may drop `NaN`
+  cells per item and group. A missing-data DIF likelihood remains on a
+  separately reviewed path. An item-group with no observed cells still
+  returns an error.
 - Not a security vulnerability scanner or AI-risk control.
 - Not a claim that `deltaPlotR` is the scientific oracle. The R package is a
   computational comparison source (Magis & Facon, 2014).
