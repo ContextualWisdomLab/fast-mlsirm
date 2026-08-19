@@ -24,14 +24,50 @@ from .item_bank import (
 _MAX_REPORT_RECORDS = 256
 _MAX_TITLE_CHARACTERS = 160
 _REPORT_SCHEMA_VERSION = "fast-mlsirm-item-bank-report-v1"
+_RECORD_INSTANCE_FIELDS = frozenset(
+    {
+        "item_id",
+        "item_version",
+        "candidate_fingerprint",
+        "pilot_record_fingerprint",
+        "audit_report_fingerprint",
+        "blueprint_id",
+        "rubric_id",
+        "rubric_version",
+        "lifecycle_state",
+        "policy_criticality",
+        "approved_use_ids",
+        "evidence_references",
+        "previous_record_fingerprint",
+        "transition_reason_id",
+        "suspension_concern_kinds",
+        "schema_version",
+        "_record_fingerprint",
+    }
+)
+_EVIDENCE_INSTANCE_FIELDS = frozenset(
+    {"evidence_kind", "evidence_id", "evidence_fingerprint"}
+)
 
 
 class ItemBankReportError(ValueError):
     """Raised when a lifecycle cannot be represented as a trustworthy report."""
 
 
+def _has_exact_instance_fields(value: object, expected: frozenset[str]) -> bool:
+    """Return whether an exact package object retains only declared state fields."""
+    field_names = tuple(vars(value))
+    if any(type(name) is not str for name in field_names):
+        return False
+    return frozenset(field_names) == expected
+
+
 def _preflight_record_identity(record: ItemBankLifecycleRecord) -> None:
     """Reject mutated record fields before replay can invoke caller callbacks."""
+    if not _has_exact_instance_fields(record, _RECORD_INSTANCE_FIELDS):
+        raise ItemBankReportError(
+            "lifecycle record no longer matches its creation-time identity"
+        )
     string_fields = (
         "item_id",
         "item_version",
@@ -79,6 +115,10 @@ def _preflight_record_identity(record: ItemBankLifecycleRecord) -> None:
         )
     for reference in record.evidence_references:
         if type(reference) is not ItemBankEvidenceReference:
+            raise ItemBankReportError(
+                "lifecycle record no longer matches its creation-time identity"
+            )
+        if not _has_exact_instance_fields(reference, _EVIDENCE_INSTANCE_FIELDS):
             raise ItemBankReportError(
                 "lifecycle record no longer matches its creation-time identity"
             )
