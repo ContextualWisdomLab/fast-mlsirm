@@ -264,7 +264,7 @@ def test_validation_html_replay_preserves_explicit_and_pooled_strata(tmp_path: P
     )
     pooled_html = pooled_path.read_text(encoding="utf-8")
     assert "validation_stratification_missing" in pooled_html
-    assert '"validation_stratum": null' in pooled_html
+    assert "&quot;validation_stratum&quot;: null" in pooled_html
 
 
 def test_validation_html_replay_preserves_legacy_base_reports(tmp_path: Path) -> None:
