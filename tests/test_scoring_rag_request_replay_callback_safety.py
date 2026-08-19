@@ -9,7 +9,10 @@ import runpy
 import pytest
 
 from fast_mlsirm.scoring import AssessmentSpecError, ScoringRequest
-from fast_mlsirm.scoring.rag import build_rag_perturbation_anchor, build_rag_scoring_request
+from fast_mlsirm.scoring.rag import (
+    build_rag_perturbation_anchor,
+    build_rag_scoring_request,
+)
 from fast_mlsirm.scoring.rag_calibration import build_rag_facets_rating_records
 
 _FIXTURES = runpy.run_path(
@@ -21,7 +24,6 @@ rubric = _FIXTURES["rubric"]
 _QUERY_FP = hashlib.sha256(b"rag-replay-query").hexdigest()
 _SYSTEM_FP = hashlib.sha256(b"rag-replay-system").hexdigest()
 _RETRIEVAL_FP = hashlib.sha256(b"rag-replay-retrieval").hexdigest()
-_RESPONSE_FP = hashlib.sha256(b"rag-replay-response").hexdigest()
 _SECOND_RESPONSE_FP = hashlib.sha256(b"rag-replay-response-second").hexdigest()
 _SPECIFICATION_FP = hashlib.sha256(b"rag-replay-specification").hexdigest()
 _RUN_FP = hashlib.sha256(b"rag-replay-run").hexdigest()
