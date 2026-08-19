@@ -333,7 +333,8 @@ def _validate_category_anchors(
     if not all(provided):
         raise ValueError("criterion category_anchors must be provided for every criterion")
     for criterion in criteria:
-        assert criterion.category_anchors is not None
+        if criterion.category_anchors is None:
+            raise ValueError("criterion category_anchors must be provided for every criterion")
         if len(criterion.category_anchors) != category_count:
             raise ValueError(
                 f"criterion {criterion.criterion_id} category_anchors must match category_count"
@@ -480,9 +481,11 @@ class ContextualOrchestratorJudge:
             required = ["meets_threshold", "rationale"]
             name = "fast_mlsirm_binary_judge"
         else:
-            assert category_count is not None or category_method == "direct"
+            if category_count is None and category_method != "direct":
+                raise ValueError(f"{category_method} requires an explicit category_count")
             if category_method == "cumulative_threshold":
-                assert category_count is not None
+                if category_count is None:
+                    raise ValueError("cumulative_threshold requires an explicit category_count")
                 item_schema: dict[str, Any] = {
                     "type": "array",
                     "items": {"type": "boolean"},
@@ -825,7 +828,8 @@ class ContextualOrchestratorJudge:
         criterion_payload = [criterion.to_dict() for criterion in normalized_criteria]
         reference_block = reference_answer or "(none supplied)"
         if category_method == "binary_threshold":
-            assert category_count is not None
+            if category_count is None:
+                raise ValueError("binary_threshold requires an explicit category_count")
             call_count = len(normalized_criteria) * (category_count - 1)
             if call_count > MAX_BINARY_THRESHOLD_CALLS:
                 raise ValueError(
