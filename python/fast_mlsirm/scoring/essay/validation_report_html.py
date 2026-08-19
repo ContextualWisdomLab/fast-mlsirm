@@ -17,8 +17,11 @@ from .._validation import assessment_error
 from . import validation_reporting
 from .report_html import _content_security_policy, _css, _definition_rows, _table
 from .validation_reporting import (
-    EssayValidationEvidenceReport,
-    EssayValidationMetric,
+    EssayValidationEvidenceReport as _BaseEssayValidationEvidenceReport,
+)
+from .validation_reporting import EssayValidationMetric
+from .validation_stratification import (
+    EssayValidationEvidenceReport as _StratifiedEssayValidationEvidenceReport,
 )
 
 _DEFAULT_TITLE = "Governed Automated-Essay Validation Evidence Report"
@@ -43,10 +46,10 @@ def _replay_metric(metric: EssayValidationMetric, index: int) -> EssayValidation
 
 
 def _validated_report(
-    report: EssayValidationEvidenceReport,
-) -> EssayValidationEvidenceReport:
+    report: _BaseEssayValidationEvidenceReport,
+) -> _BaseEssayValidationEvidenceReport:
     """Reconstruct and verify one factory-sealed report before serialization."""
-    if not isinstance(report, EssayValidationEvidenceReport):
+    if not isinstance(report, _BaseEssayValidationEvidenceReport):
         raise assessment_error(
             "invalid_essay_validation_evidence_report",
             "$.report",
@@ -62,25 +65,32 @@ def _validated_report(
         report.automated_engine,
         report.reference_engine,
     )
-    replayed = EssayValidationEvidenceReport(
-        report_id=report.report_id,
-        assessment_spec=report.assessment_spec,
-        construct_id=report.construct_id,
-        rubric_fingerprint=report.rubric_fingerprint,
-        criterion_id=report.criterion_id,
-        automated_engine=report.automated_engine,
-        reference_engine=report.reference_engine,
-        validation_dataset_fingerprint=report.validation_dataset_fingerprint,
-        category_count=report.category_count,
-        paired_observation_count=report.paired_observation_count,
-        metrics=tuple(
+    common = {
+        "report_id": report.report_id,
+        "assessment_spec": report.assessment_spec,
+        "construct_id": report.construct_id,
+        "rubric_fingerprint": report.rubric_fingerprint,
+        "criterion_id": report.criterion_id,
+        "automated_engine": report.automated_engine,
+        "reference_engine": report.reference_engine,
+        "validation_dataset_fingerprint": report.validation_dataset_fingerprint,
+        "category_count": report.category_count,
+        "paired_observation_count": report.paired_observation_count,
+        "metrics": tuple(
             _replay_metric(metric, index) for index, metric in enumerate(report.metrics)
         ),
-        review_trigger_ids=report.review_trigger_ids,
-        metadata=report.metadata,
-        schema_version=report.schema_version,
-        _report_token=validation_reporting._REPORT_TOKEN,
-    )
+        "review_trigger_ids": report.review_trigger_ids,
+        "metadata": report.metadata,
+        "schema_version": report.schema_version,
+        "_report_token": validation_reporting._REPORT_TOKEN,
+    }
+    if isinstance(report, _StratifiedEssayValidationEvidenceReport):
+        replayed = _StratifiedEssayValidationEvidenceReport(
+            **common,
+            validation_stratum=report.validation_stratum,
+        )
+    else:
+        replayed = _BaseEssayValidationEvidenceReport(**common)
     if replayed.report_fingerprint != report.report_fingerprint:
         raise assessment_error(
             "essay_validation_evidence_report_replay_mismatch",
@@ -91,7 +101,7 @@ def _validated_report(
 
 
 def _metric_rows(
-    report: EssayValidationEvidenceReport,
+    report: _BaseEssayValidationEvidenceReport,
 ) -> tuple[tuple[object | None, ...], ...]:
     """Return exact metric evidence without thresholds or pass decisions."""
     return tuple(
@@ -117,7 +127,7 @@ def _identifier_list(
     return f'<ul class="trigger-list">{items}</ul>'
 
 
-def _canonical_json(report: EssayValidationEvidenceReport) -> str:
+def _canonical_json(report: _BaseEssayValidationEvidenceReport) -> str:
     """Return escaped deterministic JSON for exact audit reconstruction."""
     serialized = json.dumps(
         report.to_dict(),
@@ -129,7 +139,7 @@ def _canonical_json(report: EssayValidationEvidenceReport) -> str:
     return escape(serialized)
 
 
-def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
+def _render_html(report: _BaseEssayValidationEvidenceReport, title: str) -> str:
     """Assemble one complete accessible and script-free evidence document."""
     automated = report.automated_engine
     reference = report.reference_engine
@@ -221,7 +231,7 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
 
 
 def render_essay_validation_evidence_report_html(
-    report: EssayValidationEvidenceReport,
+    report: _BaseEssayValidationEvidenceReport,
     output_path: str | Path,
     *,
     title: str | None = None,
