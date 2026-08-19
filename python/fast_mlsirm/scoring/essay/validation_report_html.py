@@ -139,6 +139,28 @@ def _canonical_json(report: _BaseEssayValidationEvidenceReport) -> str:
     return escape(serialized)
 
 
+def _validation_stratum_rows(
+    report: _BaseEssayValidationEvidenceReport,
+) -> tuple[tuple[object | None, object | None], ...]:
+    """Return buyer-visible provenance rows for explicit, pooled, or legacy scope."""
+    if not isinstance(report, _StratifiedEssayValidationEvidenceReport):
+        return (("Validation scope", "Legacy unstratified report"),)
+    stratum = report.validation_stratum
+    if stratum is None:
+        return (("Validation scope", "Pooled validation evidence"),)
+    return (
+        ("Validation scope", "Explicit validation stratum"),
+        ("Prompt ID", stratum.prompt_id),
+        ("Prompt fingerprint", stratum.prompt_fingerprint),
+        ("Genre ID", stratum.genre_id),
+        ("Language ID", stratum.language_id),
+        ("Validation model family", stratum.model_family_id),
+        ("Rubric version", stratum.rubric_version),
+        ("Validation stratum handle", stratum.stratum_handle),
+        ("Validation stratum fingerprint", stratum.stratum_fingerprint),
+    )
+
+
 def _render_html(report: _BaseEssayValidationEvidenceReport, title: str) -> str:
     """Assemble one complete accessible and script-free evidence document."""
     automated = report.automated_engine
@@ -152,6 +174,7 @@ def _render_html(report: _BaseEssayValidationEvidenceReport, title: str) -> str:
             ("Assessment fingerprint", report.assessment_spec.assessment_fingerprint),
             ("Construct ID", report.construct_id),
             ("Rubric fingerprint", report.rubric_fingerprint),
+            *_validation_stratum_rows(report),
             ("Criterion ID", report.criterion_id),
             ("Validation dataset fingerprint", report.validation_dataset_fingerprint),
             ("Category count", report.category_count),
@@ -218,7 +241,7 @@ def _render_html(report: _BaseEssayValidationEvidenceReport, title: str) -> str:
             "</section>",
             '<section aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
-            "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>",
+            "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>',
             '<pre tabindex="0" role="region" aria-label="Canonical essay validation evidence JSON">',
             _canonical_json(report),
             "</pre>",
