@@ -83,17 +83,36 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       - name: Install software Vulkan adapter
         run: |
-          # Hosted Azure mirrors can become black holes without failing the
-          # TCP connection. Keep both per-request and whole-command budgets
-          # below the 30-minute job deadline so a mirror outage is observable
-          # as a bounded provisioning failure rather than a cancelled CI run.
+          # The hosted runner's mirror+file registry can keep selecting a
+          # black-holed Azure mirror even after apt falls back for InRelease.
+          # Use a job-local source file pinned to canonical Ubuntu archives so
+          # package payloads do not re-enter that broken mirror selection path.
+          . /etc/os-release
+          test -n "${VERSION_CODENAME:-}"
+          cat > /tmp/fast-mlsirm-ubuntu.sources <<EOF
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu
+          Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://security.ubuntu.com/ubuntu
+          Suites: ${VERSION_CODENAME}-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
           timeout 120s sudo apt-get \
+            -o Dir::Etc::sourcelist=/tmp/fast-mlsirm-ubuntu.sources \
+            -o Dir::Etc::sourceparts=- \
             -o Acquire::Retries=2 \
             -o Acquire::http::Timeout=10 \
             -o Acquire::https::Timeout=10 \
             -o DPkg::Lock::Timeout=30 \
             update
           timeout 180s sudo apt-get \
+            -o Dir::Etc::sourcelist=/tmp/fast-mlsirm-ubuntu.sources \
+            -o Dir::Etc::sourceparts=- \
             -o Acquire::Retries=2 \
             -o Acquire::http::Timeout=10 \
             -o Acquire::https::Timeout=10 \
