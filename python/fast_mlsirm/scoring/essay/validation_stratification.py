@@ -212,16 +212,19 @@ def build_essay_validation_evidence_report(
             "$.validation_stratum",
             "validation_stratum must be an EssayValidationStratum or None",
         )
-    if (
-        validation_stratum is not None
-        and type(automated_engine) is EngineDescriptor
-        and validation_stratum.model_family_id != automated_engine.engine_family_id
-    ):
-        raise assessment_error(
-            "essay_validation_stratum_engine_mismatch",
-            "$.validation_stratum.model_family_id",
-            "validation stratum does not match the automated engine family",
-        )
+    if validation_stratum is not None:
+        if type(automated_engine) is not EngineDescriptor:
+            raise assessment_error(
+                "invalid_essay_validation_automated_engine",
+                "$.automated_engine",
+                "stratified validation requires an exact EngineDescriptor",
+            )
+        if validation_stratum.model_family_id != automated_engine.engine_family_id:
+            raise assessment_error(
+                "essay_validation_stratum_engine_mismatch",
+                "$.validation_stratum.model_family_id",
+                "validation stratum does not match the automated engine family",
+            )
 
     review_triggers: Iterable[str] = additional_review_trigger_ids
     if validation_stratum is None:
