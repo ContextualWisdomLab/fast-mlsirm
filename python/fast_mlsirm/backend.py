@@ -17,13 +17,20 @@ VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
 
 
+def _normalize_builtin_text(value: object, *, field: str) -> str:
+    """Normalize an exact built-in string without dispatching caller callbacks."""
+    if type(value) is not str:
+        raise ValueError(f"{field} must be a built-in string")
+    return value.strip().lower()
+
+
 def normalize_backend(name: str) -> str:
     """Normalize an internal objective backend.
 
     ``numpy`` remains here only for low-level parity kernels. Public fitting
     configuration must use :func:`normalize_production_backend`.
     """
-    backend = str(name).strip().lower()
+    backend = _normalize_builtin_text(name, field="backend")
     if backend not in VALID_KERNEL_BACKENDS:
         raise ValueError(f"backend must be one of {sorted(VALID_KERNEL_BACKENDS)}")
     return backend
@@ -42,7 +49,7 @@ def normalize_production_backend(name: str) -> str:
 
 def normalize_device(name: str) -> str:
     """Lower-case and validate a Rust-backend device against ``{cpu, gpu, auto}``."""
-    device = str(name).strip().lower()
+    device = _normalize_builtin_text(name, field="rust_device")
     if device not in VALID_DEVICES:
         raise ValueError(f"rust_device must be one of {sorted(VALID_DEVICES)}")
     return device
