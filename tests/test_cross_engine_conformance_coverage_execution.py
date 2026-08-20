@@ -40,7 +40,7 @@ def test_supported_coverage_rejects_only_nonexecuted_evidence() -> None:
     ):
         with pytest.raises(
             ValueError,
-            match="covered capability requires at least one executed evidence row",
+            match="covered capability requires executed evidence",
         ):
             ConformanceCapability(
                 capability_id="rasch_probability",
