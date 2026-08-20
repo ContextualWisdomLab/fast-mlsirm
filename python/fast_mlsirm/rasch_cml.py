@@ -40,6 +40,8 @@ def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
     n_persons, n_items = y.shape
     if n_items < 2:
         raise ValueError("need at least 2 items")
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
         raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
@@ -98,9 +100,9 @@ def fit_rasch_cml(
         Andersen, E. B. (1972). The numerical solution of a set of conditional estimation equations.
             *Journal of the Royal Statistical Society: Series B, 34*(1), 42-54.
     """
-    yy, n_persons, n_items = _binary_matrix(responses)
     max_iter = _trusted_iteration_cap(max_iter)
     tol = _trusted_positive_tolerance(tol)
+    yy, n_persons, n_items = _binary_matrix(responses)
 
     from .fitstats import _core_module
 
@@ -139,10 +141,14 @@ def andersen_lr_test(
         Andersen, E. B. (1973). A goodness of fit test for the Rasch model. *Psychometrika, 38*(1),
             123-140. https://doi.org/10.1007/BF02291180
     """
+    max_iter = _trusted_iteration_cap(max_iter)
+    tol = _trusted_positive_tolerance(tol)
     yy, n_persons, n_items = _binary_matrix(responses)
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
+    if np.iscomplexobj(g):
+        raise ValueError("group labels must be finite non-negative integers")
     gf = np.asarray(g, dtype=np.float64)
     if not np.all(np.isfinite(gf)) or np.any(gf != np.floor(gf)) or np.any(gf < 0):
         raise ValueError("group labels must be finite non-negative integers")
@@ -151,8 +157,6 @@ def andersen_lr_test(
     n_groups = int(gid.max()) + 1
     if n_groups < 2:
         raise ValueError("the Andersen LR test needs at least 2 groups")
-    max_iter = _trusted_iteration_cap(max_iter)
-    tol = _trusted_positive_tolerance(tol)
 
     from .fitstats import _core_module
 
