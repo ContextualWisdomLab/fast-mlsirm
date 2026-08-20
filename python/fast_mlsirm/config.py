@@ -4,7 +4,7 @@ import math
 import operator
 from dataclasses import dataclass
 
-from .backend import normalize_backend, normalize_device
+from .backend import normalize_backend, normalize_device, normalize_production_backend
 
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"}
@@ -145,7 +145,7 @@ class FitConfig:
 
     Selects the model variant (``model``), latent-space dimension, optimizer,
     and implemented public ``estimator`` (``jmle`` penalized joint MLE or
-    ``mmle`` marginal MLE), the compute ``backend``/``rust_device`` axis,
+    ``mmle`` marginal MLE), the production Rust ``backend``/``rust_device`` axis,
     optimizer controls (iterations, restarts, learning rate, tolerance,
     gradient clipping, L-BFGS history), the L2 ``penalty`` block, and the
     marginal-estimator quadrature and zero-inflation options.
@@ -165,9 +165,9 @@ class FitConfig:
     gradient_clip: float | None = 100.0
     lbfgs_history: int = 10
     verbose: int = 0
-    # Rust is the primary numeric path: "auto" resolves to the compiled
-    # ``fast_mlsirm._core`` (Rust/PyO3) kernel when available and transparently
-    # falls back to the pure-numpy reference implementation otherwise.
+    # Rust is the only production numerical owner: "auto" resolves to the
+    # compiled ``fast_mlsirm._core`` (Rust/PyO3) kernel and fails closed when
+    # it is unavailable. The NumPy parity path is exposed by fit_reference.
     backend: str = "auto"
     # Device for the Rust backend: "cpu", "gpu", or "auto". A sub-option of the
     # rust backend, not a separate compute-backend axis. "auto" (default) uses
@@ -200,14 +200,15 @@ class FitConfig:
         """Return the model name upper-cased for case-insensitive matching."""
         return self.model.upper()
 
-    def validate(self) -> None:
+    def validate(self, *, allow_reference_backend: bool = False) -> None:
         """Validate all fit settings, raising ``ValueError`` on any violation.
 
         Checks the model/optimizer/estimator vocabularies, the latent-space and
         L-BFGS-history bounds, the per-field and aggregate optimizer-work caps,
         finiteness/positivity of the float controls, the supported
         Gauss-Hermite node counts, and the latent-space integration rule and
-        its point/seed ranges.
+        its point/seed ranges. NumPy is accepted only when the explicit
+        reference API asks for ``allow_reference_backend``.
         """
         model = self.normalized_model()
         if model not in VALID_MODELS:
@@ -274,5 +275,8 @@ class FitConfig:
             raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
         if not (0 <= xi_seed <= (1 << 64) - 1):
             raise ValueError("xi_seed must fit an unsigned 64-bit integer")
-        normalize_backend(self.backend)
+        if allow_reference_backend:
+            normalize_backend(self.backend)
+        else:
+            normalize_production_backend(self.backend)
         normalize_device(self.rust_device)

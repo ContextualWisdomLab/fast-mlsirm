@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import normalize_device, resolve_backend
+from .backend import normalize_device, resolve_backend, resolve_reference_backend
 from .config import FitConfig, PenaltyConfig
 from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
@@ -46,6 +46,7 @@ def fit(
     cluster_id: np.ndarray | None = None,
     anchors: dict | None = None,
     covariate: dict | None = None,
+    _allow_reference_backend: bool = False,
 ) -> FitResult:
     """Fit a latent-space model.
 
@@ -102,8 +103,12 @@ def fit(
     https://doi.org/10.1080/01621459.1990.10474930
     """
     config = config or FitConfig()
-    config.validate()
-    backend = resolve_backend(config.backend)
+    config.validate(allow_reference_backend=_allow_reference_backend)
+    backend = (
+        resolve_reference_backend(config.backend)
+        if _allow_reference_backend
+        else resolve_backend(config.backend)
+    )
     # The device is a sub-option of the rust backend; the numpy path ignores it.
     device = normalize_device(config.rust_device) if backend == "rust" else "cpu"
     model = config.normalized_model()
@@ -267,7 +272,8 @@ def _fit_mmle_marginal(
     compiled ``fit_marginal`` whose ``MARGINAL_CAPABILITY_VERSION`` matches
     this package. Missing, stale, or keyword-incompatible native entrypoints
     raise ``RuntimeError`` and never fall back to NumPy production arithmetic.
-    Use ``backend="numpy"`` only for explicit reference or parity runs.
+    Use :func:`fast_mlsirm.fit_reference` for explicit reference or parity runs;
+    ordinary production fitting never selects the NumPy owner.
 
     References (APA 7th ed.):
         Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping

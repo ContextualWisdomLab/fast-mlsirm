@@ -5,20 +5,38 @@ import importlib.util
 from types import ModuleType
 
 
-VALID_BACKENDS = {"numpy", "rust", "auto"}
+VALID_PRODUCTION_BACKENDS = {"rust", "auto"}
+VALID_REFERENCE_BACKENDS = {"numpy"}
+VALID_KERNEL_BACKENDS = VALID_PRODUCTION_BACKENDS | VALID_REFERENCE_BACKENDS
+VALID_BACKENDS = VALID_PRODUCTION_BACKENDS
 # Execution device for the Rust backend. This is a sub-option of the ``rust``
-# backend (CPU vs. wgpu GPGPU), NOT a separate compute-backend axis: the single
-# backend axis stays {numpy, rust, auto}. ``auto``/``gpu`` run the GPGPU kernels
-# when a GPU is present and fall back to the identical Rust CPU path otherwise.
+# backend (CPU vs. wgpu GPGPU), not a separate compute-backend axis.
+# The production backend axis is {rust, auto}; NumPy is retained only for
+# low-level parity kernels and the explicit fit_reference API.
 VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
 
 
 def normalize_backend(name: str) -> str:
-    """Lower-case and validate a backend name against ``{numpy, rust, auto}``."""
+    """Normalize an internal objective backend.
+
+    ``numpy`` remains here only for low-level parity kernels. Public fitting
+    configuration must use :func:`normalize_production_backend`.
+    """
     backend = str(name).strip().lower()
-    if backend not in VALID_BACKENDS:
-        raise ValueError(f"backend must be one of {sorted(VALID_BACKENDS)}")
+    if backend not in VALID_KERNEL_BACKENDS:
+        raise ValueError(f"backend must be one of {sorted(VALID_KERNEL_BACKENDS)}")
+    return backend
+
+
+def normalize_production_backend(name: str) -> str:
+    """Normalize a backend accepted by the production fitting contract."""
+    backend = normalize_backend(name)
+    if backend not in VALID_PRODUCTION_BACKENDS:
+        raise ValueError(
+            "production backend must be one of "
+            f"{sorted(VALID_PRODUCTION_BACKENDS)}; use fit_reference for parity"
+        )
     return backend
 
 
@@ -33,15 +51,12 @@ def normalize_device(name: str) -> str:
 def resolve_backend(name: str) -> str:
     """Resolve a requested numerical backend to the concrete backend that runs.
 
-    ``numpy`` is an explicit reference/parity choice and always resolves to
-    ``numpy``. ``rust`` requires the compiled :mod:`fast_mlsirm._core`
+    ``rust`` requires the compiled :mod:`fast_mlsirm._core`
     extension. ``auto`` is the production convenience choice: it resolves to
     ``rust`` when the compiled core is available and fails closed otherwise.
     Automatic resolution never silently changes the numerical owner to NumPy.
     """
-    backend = normalize_backend(name)
-    if backend == "numpy":
-        return "numpy"
+    backend = normalize_production_backend(name)
     core = _load_core()
     if backend == "rust":
         if core is None:
@@ -50,6 +65,14 @@ def resolve_backend(name: str) -> str:
     if core is None:
         raise RuntimeError("compiled Rust core is required for automatic backend resolution")
     return "rust"
+
+
+def resolve_reference_backend(name: str = "numpy") -> str:
+    """Resolve the explicitly named, non-production parity backend."""
+    backend = normalize_backend(name)
+    if backend not in VALID_REFERENCE_BACKENDS:
+        raise ValueError("reference backend must be 'numpy'")
+    return backend
 
 
 def load_rust_core() -> ModuleType:

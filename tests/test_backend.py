@@ -41,5 +41,11 @@ def test_explicit_numpy_reference_backend_remains_explicit(monkeypatch):
 
     monkeypatch.setattr(backend, "_load_core", unexpected_core_load)
 
-    assert backend.resolve_backend("numpy") == "numpy"
+    assert backend.resolve_reference_backend() == "numpy"
     assert calls == []
+
+
+def test_production_backend_rejects_numpy_reference_name():
+    """Production resolution cannot select the Python numerical owner."""
+    with pytest.raises(ValueError, match="production backend"):
+        backend.resolve_backend("numpy")

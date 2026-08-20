@@ -20,8 +20,13 @@ def test_normalize_device_rejects_unknown_name():
         backend.normalize_device("tpu")
 
 
-def test_resolve_backend_numpy_stays_numpy():
-    assert backend.resolve_backend("numpy") == "numpy"
+def test_reference_backend_stays_explicitly_numpy():
+    assert backend.resolve_reference_backend() == "numpy"
+
+
+def test_production_backend_rejects_numpy_reference_name():
+    with pytest.raises(ValueError, match="production backend"):
+        backend.resolve_backend("numpy")
 
 
 def test_resolve_backend_rust_and_auto_resolve_to_rust_when_core_present():

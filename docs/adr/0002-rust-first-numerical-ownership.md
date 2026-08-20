@@ -22,7 +22,11 @@ Python may:
 
 Python shall not become an independently evolving second production formula.
 
-The public backend architecture may expose `auto`, `rust` and governed `numpy` reference/fallback choices for APIs that currently support them. Rust is the preferred resolved production backend when the extension is available. GPU is a Rust device path, not a third psychometric formula implementation.
+The public production backend architecture exposes only `auto` and `rust`.
+NumPy parity is available through the explicitly named `fit_reference` API and
+`fit --reference` CLI mode; it is not a `FitConfig` production choice and is
+never selected by automatic resolution. GPU is a Rust device path, not a third
+psychometric formula implementation.
 
 The canonical PyO3 layer must support feature growth without independent PRs overwriting initialization/export structure. Secondary module symbols, if retained, must be registered through one auditable binding architecture.
 
