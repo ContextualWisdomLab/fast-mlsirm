@@ -307,6 +307,19 @@ def test_provider_neutral_dataset_and_site_identifiers_are_preserved() -> None:
     assert profile.sites == ("site/eu-west/01",)
 
 
+def test_dataset_cohorts_must_be_disjoint() -> None:
+    """Prevent external evidence from reusing a development cohort identity."""
+    with pytest.raises(
+        ValueError,
+        match="dataset id must not occur in both development_dataset_ids and "
+        "external_validation_dataset_ids",
+    ):
+        replace(
+            _profile(_evidence("technical_conformance", EvidenceClass.TECHNICAL)),
+            external_validation_dataset_ids=("development_set_v1",),
+        )
+
+
 def test_status_vocabulary_preserves_failure_and_nonexecution_states() -> None:
     """The reusable contract must never collapse non-success states into pass."""
     assert {member.value for member in EvidenceStatus} == {

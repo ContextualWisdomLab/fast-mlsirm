@@ -309,6 +309,28 @@ class ExternalValidationProfile:
                 _text_tuple(getattr(self, field_name), field_name),
             )
 
+        dataset_groups = (
+            ("development_dataset_ids", self.development_dataset_ids),
+            (
+                "internal_validation_dataset_ids",
+                self.internal_validation_dataset_ids,
+            ),
+            (
+                "external_validation_dataset_ids",
+                self.external_validation_dataset_ids,
+            ),
+        )
+        seen_dataset_ids: dict[str, str] = {}
+        for group_name, dataset_ids in dataset_groups:
+            for dataset_id in dataset_ids:
+                previous_group = seen_dataset_ids.get(dataset_id)
+                if previous_group is not None:
+                    raise ValueError(
+                        f"dataset id must not occur in both {previous_group} and "
+                        f"{group_name}"
+                    )
+                seen_dataset_ids[dataset_id] = group_name
+
         languages = self.languages
         if type(languages) not in {tuple, list}:
             raise ValueError("languages must be a list or tuple")
