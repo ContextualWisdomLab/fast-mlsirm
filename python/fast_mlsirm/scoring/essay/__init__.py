@@ -56,12 +56,18 @@ from .validation_report_html import (
 from .validation_reporting import (
     MAX_ESSAY_VALIDATION_REVIEW_TRIGGERS as MAX_ESSAY_VALIDATION_REVIEW_TRIGGERS,
 )
-from .validation_reporting import (
+from .validation_reporting import EssayValidationMetric as EssayValidationMetric
+from .validation_stratification import (
     EssayValidationEvidenceReport as EssayValidationEvidenceReport,
 )
-from .validation_reporting import EssayValidationMetric as EssayValidationMetric
-from .validation_reporting import (
+from .validation_stratification import (
+    EssayValidationStratum as EssayValidationStratum,
+)
+from .validation_stratification import (
     build_essay_validation_evidence_report as build_essay_validation_evidence_report,
+)
+from .validation_stratification import (
+    build_essay_validation_stratum as build_essay_validation_stratum,
 )
 
 __all__ = [
@@ -82,6 +88,7 @@ __all__ = [
     "EssaySubmission",
     "EssayValidationEvidenceReport",
     "EssayValidationMetric",
+    "EssayValidationStratum",
     "build_essay_facets_calibration_report",
     "build_essay_prompt",
     "build_essay_response_evidence",
@@ -89,6 +96,7 @@ __all__ = [
     "build_essay_scoring_request",
     "build_essay_submission",
     "build_essay_validation_evidence_report",
+    "build_essay_validation_stratum",
     "fit_essay_facets_calibration_report",
     "render_essay_facets_calibration_report_html",
     "render_essay_score_report_html",
