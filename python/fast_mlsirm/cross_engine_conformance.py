@@ -136,6 +136,112 @@ def _sha256(payload: object) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class ConformanceRunProvenance:
+    """Reproducibility metadata for one isolated conformance inventory run."""
+
+    harness_commit: str
+    environment_sha256: str
+    rng_algorithm: str
+    rng_seeds: tuple[int, ...]
+    mapping_schema_version: str
+    mapping_sha256: str
+    tolerance_sha256: str
+    tolerance_rationale: str
+    raw_output_sha256: str | None
+    normalized_output_sha256: str | None
+    license_classification: str
+
+    def __post_init__(self) -> None:
+        """Normalize exact reproducibility identities without raw result content."""
+        if type(self) is not ConformanceRunProvenance:
+            raise ValueError(
+                "ConformanceRunProvenance must be an exact package record"
+            )
+        object.__setattr__(self, "harness_commit", _git_sha(self.harness_commit, "harness_commit"))
+        for field_name in (
+            "environment_sha256",
+            "mapping_sha256",
+            "tolerance_sha256",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _fingerprint(getattr(self, field_name), field_name),
+            )
+        object.__setattr__(
+            self,
+            "rng_algorithm",
+            _text(self.rng_algorithm, "rng_algorithm"),
+        )
+        if type(self.rng_seeds) not in {tuple, list}:
+            raise ValueError("rng_seeds must be a list or tuple")
+        if len(self.rng_seeds) > MAX_COLLECTION_VALUES:
+            raise ValueError(
+                f"rng_seeds must contain at most {MAX_COLLECTION_VALUES} values"
+            )
+        seeds = tuple(self.rng_seeds)
+        if any(type(seed) is not int or seed < 0 for seed in seeds):
+            raise ValueError("rng_seeds must contain non-negative built-in integers")
+        object.__setattr__(self, "rng_seeds", seeds)
+        object.__setattr__(
+            self,
+            "mapping_schema_version",
+            _semantic_version(self.mapping_schema_version, "mapping_schema_version"),
+        )
+        object.__setattr__(
+            self,
+            "tolerance_rationale",
+            _text(self.tolerance_rationale, "tolerance_rationale"),
+        )
+        for field_name in ("raw_output_sha256", "normalized_output_sha256"):
+            object.__setattr__(
+                self,
+                field_name,
+                _optional_fingerprint(getattr(self, field_name), field_name),
+            )
+        object.__setattr__(
+            self,
+            "license_classification",
+            _identifier(self.license_classification, "license_classification"),
+        )
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return source-free reproducibility metadata for an inventory manifest."""
+        return {
+            "environment_sha256": self.environment_sha256,
+            "harness_commit": self.harness_commit,
+            "license_classification": self.license_classification,
+            "mapping_schema_version": self.mapping_schema_version,
+            "mapping_sha256": self.mapping_sha256,
+            "normalized_output_sha256": self.normalized_output_sha256,
+            "raw_output_sha256": self.raw_output_sha256,
+            "rng_algorithm": self.rng_algorithm,
+            "rng_seeds": list(self.rng_seeds),
+            "tolerance_rationale": self.tolerance_rationale,
+            "tolerance_sha256": self.tolerance_sha256,
+        }
+
+
+def _run_provenance(value: object) -> ConformanceRunProvenance:
+    """Revalidate one nested run-provenance record before manifest hashing."""
+    if type(value) is not ConformanceRunProvenance:
+        raise ValueError("run_provenance must be a ConformanceRunProvenance")
+    return ConformanceRunProvenance(
+        harness_commit=value.harness_commit,
+        environment_sha256=value.environment_sha256,
+        rng_algorithm=value.rng_algorithm,
+        rng_seeds=value.rng_seeds,
+        mapping_schema_version=value.mapping_schema_version,
+        mapping_sha256=value.mapping_sha256,
+        tolerance_sha256=value.tolerance_sha256,
+        tolerance_rationale=value.tolerance_rationale,
+        raw_output_sha256=value.raw_output_sha256,
+        normalized_output_sha256=value.normalized_output_sha256,
+        license_classification=value.license_classification,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ComparisonEngine:
     """Versioned identity of one isolated independent comparison engine."""
 
@@ -453,6 +559,7 @@ class ConformanceInventory:
     source_commit: str
     capabilities: tuple[ConformanceCapability, ...]
     schema_version: str = SCHEMA_VERSION
+    run_provenance: ConformanceRunProvenance | None = None
 
     def __post_init__(self) -> None:
         """Normalize a sealed package-owned inventory record."""
@@ -474,12 +581,19 @@ class ConformanceInventory:
             _capability_values(self.capabilities),
         )
         object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
+        if self.run_provenance is not None:
+            object.__setattr__(self, "run_provenance", _run_provenance(self.run_provenance))
 
     def _manifest_without_fingerprint(self) -> dict[str, object]:
         """Return normalized content used to derive immutable inventory identity."""
         return {
             "capabilities": [row.to_manifest() for row in self.capabilities],
             "package_version": self.package_version,
+            "run_provenance": (
+                None
+                if self.run_provenance is None
+                else self.run_provenance.to_manifest()
+            ),
             "schema_version": self.schema_version,
             "source_commit": self.source_commit,
         }
@@ -504,4 +618,5 @@ __all__ = [
     "ConformanceExecutionStatus",
     "ConformanceInventory",
     "ConformanceLayer",
+    "ConformanceRunProvenance",
 ]
