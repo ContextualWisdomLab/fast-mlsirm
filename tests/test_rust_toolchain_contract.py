@@ -26,27 +26,47 @@ def _dependabot_ecosystem_block(ecosystem: str) -> str:
 
 
 def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
-    """Return Rust action references paired only with their ``with.toolchain`` values."""
+    """Return Rust action references paired only with their own ``with.toolchain`` values."""
 
     lines = workflow.splitlines()
     steps: list[tuple[str, str | None]] = []
     for index, line in enumerate(lines):
         stripped = line.lstrip()
-        uses_prefix = f"- uses: {_ACTION_PREFIX}"
-        if not stripped.startswith(uses_prefix):
+        if not stripped.startswith("- "):
             continue
 
         step_indent = len(line) - len(stripped)
-        with_indent = step_indent + 2
-        toolchain_indent = step_indent + 4
-        action = stripped.removeprefix("- uses: ").strip()
-        toolchain: str | None = None
-        inside_with = False
+        step_lines = [stripped[2:]]
         for candidate in lines[index + 1 :]:
             candidate_stripped = candidate.lstrip()
             candidate_indent = len(candidate) - len(candidate_stripped)
-            if candidate_stripped and candidate_indent <= step_indent:
+            if candidate_stripped and (
+                candidate_indent < step_indent
+                or (candidate_indent == step_indent and candidate_stripped.startswith("- "))
+            ):
                 break
+            step_lines.append(candidate)
+
+        action: str | None = None
+        toolchain: str | None = None
+        with_indent = step_indent + 2
+        toolchain_indent = step_indent + 4
+        inside_with = False
+        for offset, candidate in enumerate(step_lines):
+            candidate_stripped = candidate.lstrip()
+            candidate_indent = (
+                step_indent + 2
+                if offset == 0
+                else len(candidate) - len(candidate_stripped)
+            )
+            if (
+                candidate_indent == with_indent
+                and candidate_stripped.startswith("uses:")
+            ):
+                candidate_action = candidate_stripped.partition(":")[2].strip()
+                if candidate_action.startswith(_ACTION_PREFIX):
+                    action = candidate_action
+                continue
             if candidate_indent == with_indent and candidate_stripped == "with:":
                 inside_with = True
                 continue
@@ -58,7 +78,8 @@ def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
                 and candidate_stripped.startswith("toolchain:")
             ):
                 toolchain = candidate_stripped.partition(":")[2].strip()
-        steps.append((action, toolchain))
+        if action is not None:
+            steps.append((action, toolchain))
     return tuple(steps)
 
 
@@ -101,6 +122,18 @@ def test_rust_toolchain_parser_does_not_borrow_non_with_values() -> None:
       toolchain: 1.97.1
 """
     assert _rust_toolchain_steps(workflow) == ((_ACTION, None), (_ACTION, "1.97.1"))
+
+
+def test_rust_toolchain_parser_finds_action_when_name_precedes_uses() -> None:
+    """Step display names cannot hide a Rust action from toolchain enforcement."""
+
+    workflow = f"""steps:
+  - name: Install Rust
+    uses: {_ACTION}
+    with:
+      toolchain: 1.97.1
+"""
+    assert _rust_toolchain_steps(workflow) == ((_ACTION, "1.97.1"),)
 
 
 def test_stable_compiler_updates_arrive_as_reviewable_pull_requests() -> None:
