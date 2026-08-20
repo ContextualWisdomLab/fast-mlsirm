@@ -7,9 +7,13 @@ import json
 import pytest
 
 from fast_mlsirm.cross_engine_conformance import (
+    ComparisonEngine,
     ConformanceCapability,
     ConformanceCoverageStatus,
+    ConformanceEvidence,
+    ConformanceExecutionStatus,
     ConformanceInventory,
+    ConformanceLayer,
     ConformanceRunProvenance,
 )
 
@@ -58,6 +62,47 @@ class _HostileText(str):
         raise AssertionError("hostile string length executed")
 
 
+def _engine() -> ComparisonEngine:
+    """Return one source-free external-engine identity."""
+    return ComparisonEngine(
+        engine_id="mirt_engine",
+        engine_version="1.44.0",
+        source_reference="doi:10.18637/jss.v048.i06",
+        license_classification="gpl_3_reviewed",
+    )
+
+
+def _evidence() -> ConformanceEvidence:
+    """Return one planned nonexecuted evidence record."""
+    return ConformanceEvidence(
+        evidence_id="rasch_probability_plan",
+        engine=_engine(),
+        layer=ConformanceLayer.FIXED_PARAMETER_EQUATION,
+        execution_status=ConformanceExecutionStatus.NOT_EXECUTED,
+        parameter_mapping_version="1.0.0",
+        parameter_mapping_sha256=_SHA_A,
+        fixture_sha256=_SHA_B,
+        environment_sha256=_SHA_C,
+        artifact_sha256=None,
+        limitation="execution scheduled in isolated validation environment",
+    )
+
+
+def _capability(*, capability_id: str = "rasch_probability") -> ConformanceCapability:
+    """Return one planned capability carrying nested engine/evidence metadata."""
+    return ConformanceCapability(
+        capability_id=capability_id,
+        public_entrypoint="fast_mlsirm.rasch.probability",
+        estimand="Dichotomous Rasch response probability",
+        likelihood_family="bernoulli_logit",
+        parameterization="difficulty with unit discrimination",
+        identification="latent location fixed by the compared fixture",
+        comparison_scope="fixed-parameter equation conformance",
+        coverage_status=ConformanceCoverageStatus.PLANNED,
+        evidence=(_evidence(),),
+    )
+
+
 def _provenance() -> ConformanceRunProvenance:
     """Return one canonical source-free run provenance record."""
     return ConformanceRunProvenance(
@@ -81,23 +126,15 @@ def _provenance() -> ConformanceRunProvenance:
     )
 
 
-def _inventory() -> ConformanceInventory:
+def _inventory(*, two_capabilities: bool = False) -> ConformanceInventory:
     """Return one canonical nonexecuted inventory for replay tests."""
-    capability = ConformanceCapability(
-        capability_id="rasch_probability",
-        public_entrypoint="fast_mlsirm.rasch.probability",
-        estimand="Dichotomous Rasch response probability",
-        likelihood_family="bernoulli_logit",
-        parameterization="difficulty with unit discrimination",
-        identification="latent location fixed by the compared fixture",
-        comparison_scope="fixed-parameter equation conformance",
-        coverage_status=ConformanceCoverageStatus.PLANNED,
-        evidence=(),
-    )
+    capabilities = [_capability()]
+    if two_capabilities:
+        capabilities.append(_capability(capability_id="rasch_log_likelihood"))
     return ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
-        capabilities=(capability,),
+        capabilities=capabilities,
         run_provenance=_provenance(),
     )
 
@@ -110,6 +147,19 @@ def _canonical_json(payload: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def _nested_evidence_manifest(manifest: dict[str, object]) -> dict[str, object]:
+    """Return the first nested evidence mapping from a canonical manifest."""
+    capabilities = manifest["capabilities"]
+    assert type(capabilities) is list
+    capability = capabilities[0]
+    assert type(capability) is dict
+    evidence = capability["evidence"]
+    assert type(evidence) is list
+    row = evidence[0]
+    assert type(row) is dict
+    return row
 
 
 def test_manifest_round_trip_revalidates_exact_inventory_identity() -> None:
@@ -157,7 +207,7 @@ def test_manifest_replay_requires_exact_root_key_set(mutation: str) -> None:
         ConformanceInventory.from_manifest(manifest)
 
 
-def test_manifest_replay_requires_exact_nested_key_sets() -> None:
+def test_manifest_replay_requires_exact_capability_key_set() -> None:
     """Unknown nested capability fields cannot survive replay validation."""
     manifest = _inventory().to_manifest()
     capabilities = manifest["capabilities"]
@@ -167,6 +217,41 @@ def test_manifest_replay_requires_exact_nested_key_sets() -> None:
     capability["unexpected"] = "value"
 
     with pytest.raises(ValueError, match="capability manifest keys must be exactly"):
+        ConformanceInventory.from_manifest(manifest)
+
+
+def test_manifest_replay_requires_exact_evidence_key_set() -> None:
+    """Missing evidence fields fail before package reconstruction."""
+    manifest = _inventory().to_manifest()
+    evidence = _nested_evidence_manifest(manifest)
+    del evidence["fixture_sha256"]
+
+    with pytest.raises(ValueError, match="evidence manifest keys must be exactly"):
+        ConformanceInventory.from_manifest(manifest)
+
+
+def test_manifest_replay_requires_exact_engine_key_set() -> None:
+    """Unknown engine identity fields cannot be ignored during replay."""
+    manifest = _inventory().to_manifest()
+    evidence = _nested_evidence_manifest(manifest)
+    engine = evidence["engine"]
+    assert type(engine) is dict
+    engine["unexpected"] = "value"
+
+    with pytest.raises(ValueError, match="engine manifest keys must be exactly"):
+        ConformanceInventory.from_manifest(manifest)
+
+
+def test_manifest_replay_requires_exact_run_provenance_key_set() -> None:
+    """Run provenance schema drift fails closed before reconstruction."""
+    manifest = _inventory().to_manifest()
+    provenance = manifest["run_provenance"]
+    assert type(provenance) is dict
+    del provenance["architecture"]
+
+    with pytest.raises(
+        ValueError, match="run_provenance manifest keys must be exactly"
+    ):
         ConformanceInventory.from_manifest(manifest)
 
 
@@ -191,6 +276,18 @@ def test_manifest_replay_rejects_hostile_nested_list_without_callbacks() -> None
         ConformanceInventory.from_manifest(manifest)
 
     assert _HostileList.callbacks == 0
+
+
+def test_manifest_replay_rejects_hostile_nested_text_without_callbacks() -> None:
+    """Persisted text subclasses fail before normalization callbacks can run."""
+    _HostileText.callbacks = 0
+    manifest = _inventory().to_manifest()
+    manifest["package_version"] = _HostileText("0.8.0")
+
+    with pytest.raises(ValueError, match="manifest.package_version must be a string"):
+        ConformanceInventory.from_manifest(manifest)
+
+    assert _HostileText.callbacks == 0
 
 
 def test_json_replay_rejects_duplicate_object_keys() -> None:
@@ -219,12 +316,35 @@ def test_json_replay_rejects_text_subclass_before_callbacks() -> None:
     assert _HostileText.callbacks == 0
 
 
+def test_json_replay_rejects_malformed_json() -> None:
+    """Malformed JSON is translated to the persisted-manifest validation error."""
+    with pytest.raises(ValueError, match="manifest JSON must contain valid JSON"):
+        ConformanceInventory.from_json("{")
+
+
+def test_json_replay_rejects_nonfinite_constants() -> None:
+    """Python JSON extensions such as NaN are outside the persisted contract."""
+    with pytest.raises(ValueError, match="unsupported constant: NaN"):
+        ConformanceInventory.from_json("NaN")
+
+
 def test_manifest_replay_rejects_noncanonical_normalized_text() -> None:
     """Replay cannot silently normalize a persisted signed manifest in place."""
     manifest = _inventory().to_manifest()
     provenance = manifest["run_provenance"]
     assert type(provenance) is dict
     provenance["operating_system"] = " linux "
+
+    with pytest.raises(ValueError, match="manifest must already be canonical"):
+        ConformanceInventory.from_manifest(manifest)
+
+
+def test_manifest_replay_rejects_noncanonical_capability_order() -> None:
+    """Persisted capability order must already match canonical signed ordering."""
+    manifest = _inventory(two_capabilities=True).to_manifest()
+    capabilities = manifest["capabilities"]
+    assert type(capabilities) is list
+    capabilities.reverse()
 
     with pytest.raises(ValueError, match="manifest must already be canonical"):
         ConformanceInventory.from_manifest(manifest)
