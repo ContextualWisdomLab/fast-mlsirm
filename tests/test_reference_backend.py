@@ -55,6 +55,37 @@ def test_public_fit_rejects_numpy_inside_reference_scope() -> None:
             )
 
 
+def test_public_plain_mmle_auto_reports_resolved_rust_backend() -> None:
+    """Successful production auto resolution records the concrete Rust owner."""
+    pytest.importorskip("fast_mlsirm._core")
+    responses = np.array(
+        [
+            [0.0, 0.0, 1.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0, 0.0],
+            [0.0, 1.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    result = fit(
+        responses,
+        np.zeros(4, dtype=np.int64),
+        FitConfig(
+            model="ULS2PLM",
+            estimator="mmle",
+            max_iter=2,
+            n_restarts=1,
+            backend="auto",
+        ),
+    )
+
+    assert result.backend == "rust"
+
+
 def test_reference_rejects_invalid_config_before_dataclass_replace() -> None:
     """The reference API owns a stable validation error for invalid configs."""
     with pytest.raises(ValueError, match="config must be a FitConfig or None"):
