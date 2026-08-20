@@ -207,19 +207,20 @@ class ConformanceRunProvenance:
         )
 
     def to_manifest(self) -> dict[str, object]:
-        """Return source-free reproducibility metadata for an inventory manifest."""
+        """Return revalidated source-free reproducibility metadata."""
+        sealed = _run_provenance(self)
         return {
-            "environment_sha256": self.environment_sha256,
-            "harness_commit": self.harness_commit,
-            "license_classification": self.license_classification,
-            "mapping_schema_version": self.mapping_schema_version,
-            "mapping_sha256": self.mapping_sha256,
-            "normalized_output_sha256": self.normalized_output_sha256,
-            "raw_output_sha256": self.raw_output_sha256,
-            "rng_algorithm": self.rng_algorithm,
-            "rng_seeds": list(self.rng_seeds),
-            "tolerance_rationale": self.tolerance_rationale,
-            "tolerance_sha256": self.tolerance_sha256,
+            "environment_sha256": sealed.environment_sha256,
+            "harness_commit": sealed.harness_commit,
+            "license_classification": sealed.license_classification,
+            "mapping_schema_version": sealed.mapping_schema_version,
+            "mapping_sha256": sealed.mapping_sha256,
+            "normalized_output_sha256": sealed.normalized_output_sha256,
+            "raw_output_sha256": sealed.raw_output_sha256,
+            "rng_algorithm": sealed.rng_algorithm,
+            "rng_seeds": list(sealed.rng_seeds),
+            "tolerance_rationale": sealed.tolerance_rationale,
+            "tolerance_sha256": sealed.tolerance_sha256,
         }
 
 
