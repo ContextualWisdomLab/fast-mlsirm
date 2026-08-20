@@ -24,6 +24,7 @@ class _HostileText(str):
 
     @classmethod
     def _trip(cls) -> None:
+        """Record and fail if a forbidden callback is reached."""
         cls.callbacks += 1
         raise RuntimeError("caller text callback executed")
 
