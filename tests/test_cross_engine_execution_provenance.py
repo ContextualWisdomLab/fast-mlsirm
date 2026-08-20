@@ -24,6 +24,18 @@ _SHA_D = "d" * 64
 _SOURCE_COMMIT = "0" * 40
 
 
+class _HostileText(str):
+    """String subtype that records unsafe text callback dispatch."""
+
+    callbacks = 0
+
+    def strip(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """Reject normalization before exact built-in text admission."""
+        type(self).callbacks += 1
+        raise AssertionError("hostile strip callback executed")
+
+
+
 def _engine() -> ComparisonEngine:
     """Return one isolated comparison-engine identity."""
     return ComparisonEngine(
@@ -112,7 +124,10 @@ def test_executed_evidence_requires_run_provenance(
     status: ConformanceExecutionStatus,
 ) -> None:
     """An executed verdict cannot exist without reproducible run provenance."""
-    with pytest.raises(ValueError, match="run_provenance is required for executed evidence"):
+    with pytest.raises(
+        ValueError,
+        match="run_provenance is required for executed evidence",
+    ):
         ConformanceInventory(
             package_version="0.8.0",
             source_commit=_SOURCE_COMMIT,
@@ -123,7 +138,10 @@ def test_executed_evidence_requires_run_provenance(
 @pytest.mark.parametrize(
     ("field_name", "message"),
     [
-        ("raw_output_sha256", "raw_output_sha256 is required for executed evidence"),
+        (
+            "raw_output_sha256",
+            "raw_output_sha256 is required for executed evidence",
+        ),
         (
             "normalized_output_sha256",
             "normalized_output_sha256 is required for executed evidence",
@@ -144,6 +162,27 @@ def test_executed_evidence_requires_raw_and_normalized_output_hashes(
             capabilities=(_capability(ConformanceExecutionStatus.PASSED),),
             run_provenance=provenance,
         )
+
+
+def test_mutated_output_hash_revalidates_before_execution_consistency_gate() -> None:
+    """Rebound output text is rejected before caller normalization callbacks."""
+    _HostileText.callbacks = 0
+    provenance = _provenance()
+    object.__setattr__(
+        provenance,
+        "raw_output_sha256",
+        _HostileText(_SHA_B),
+    )
+
+    with pytest.raises(ValueError, match="raw_output_sha256 must be a string"):
+        ConformanceInventory(
+            package_version="0.8.0",
+            source_commit=_SOURCE_COMMIT,
+            capabilities=(_capability(ConformanceExecutionStatus.PASSED),),
+            run_provenance=provenance,
+        )
+
+    assert _HostileText.callbacks == 0
 
 
 def test_nonexecuted_plan_keeps_optional_output_hashes() -> None:
