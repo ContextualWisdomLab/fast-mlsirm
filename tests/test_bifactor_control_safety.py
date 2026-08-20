@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from typing import NoReturn
 
 import numpy as np
 import pytest
 
-import fast_mlsirm.bifactor_scoreability as scoreability
+scoreability = importlib.import_module("fast_mlsirm.bifactor_scoreability")
 
 
 @dataclass
