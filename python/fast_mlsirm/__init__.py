@@ -10,7 +10,7 @@ from . import reliability as _reliability
 from . import scaling as _scaling
 from . import validation as _validation
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
-from ._fit_public import fit as fit
+from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._scaling_control_safety import install as _install_scaling_control_safety
 
@@ -43,7 +43,7 @@ for _public_name in _legacy_init.__all__:
 # callable, which carries private reference-backend authority for
 # ``fit_reference``. Rebind the package export after the legacy copy so callers
 # can never acquire that authority from the public ``fast_mlsirm.fit`` API.
-from ._fit_public import fit as fit
+fit = _public_fit
 
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
@@ -140,4 +140,4 @@ __all__ = list(_legacy_init.__all__) + [
     "paired_rating_range_evidence",
 ]
 
-del _PackageNotFoundError, _distribution_version, _public_name
+del _PackageNotFoundError, _distribution_version, _public_fit, _public_name
