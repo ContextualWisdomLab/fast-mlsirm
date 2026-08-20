@@ -23,7 +23,9 @@ def fit(
     covariate: dict | None = None,
 ) -> FitResult:
     """Fit a latent-space model through the production Rust-owned backend."""
-    requested_config = config or FitConfig()
+    if config is not None and type(config) is not FitConfig:
+        raise ValueError("config must be a FitConfig or None")
+    requested_config = FitConfig() if config is None else config
     # Resolve the production numerical owner before entering the internal fit
     # implementation. Besides failing closed when Rust is unavailable, passing
     # the concrete backend downstream prevents successful ``auto`` runs from
