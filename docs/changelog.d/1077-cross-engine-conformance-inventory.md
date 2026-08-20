@@ -1,0 +1,3 @@
+### Added
+
+- Add a provider-neutral, source-free `ConformanceInventory` contract for independent numerical conformance coverage. The first slice records public estimands, parameterization and identification scope, isolated engine/version/license identity, versioned parameter-mapping and fixture/environment fingerprints, and explicit passed/failed/indeterminate/not-executed states without adding external engines as runtime, build, package, or release dependencies. This is Python validation/provenance schema work only; production psychometric and statistical arithmetic remains Rust-owned.
