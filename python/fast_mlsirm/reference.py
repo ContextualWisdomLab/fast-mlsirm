@@ -29,6 +29,8 @@ def fit_reference(
     selector. Production callers must use :func:`fast_mlsirm.fit` so missing
     Rust capability fails closed.
     """
+    if config is not None and type(config) is not FitConfig:
+        raise ValueError("config must be a FitConfig or None")
     reference_config = replace(config or FitConfig(), backend="numpy")
     with _reference_backend_scope():
         return fit(
