@@ -8,6 +8,7 @@ omega hierarchical, and construct replicability ``H`` are computed in
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -156,6 +157,34 @@ def _validated_matrix_shape(shape: Any, name: str) -> tuple[int, int]:
     return n_items, n_factors
 
 
+def _bounded_sequence_shape(value: Any, name: str) -> tuple[int, ...] | None:
+    """Infer a shallow built-in sequence shape before NumPy materialization.
+
+    Plain nested lists are common array-like inputs, but converting an
+    oversized list with ``np.asarray`` would allocate it before the public
+    work budget can reject it. Inspecting the first nested row is enough to
+    reject the advertised item/factor caps and obvious three-dimensional
+    inputs without invoking NumPy conversion.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return None
+    try:
+        n_items = len(value)
+        if n_items == 0:
+            return (0,)
+        first_row = value[0]
+        if not isinstance(first_row, Sequence) or isinstance(
+            first_row, (str, bytes, bytearray)
+        ):
+            return (n_items,)
+        n_factors = len(first_row)
+        if n_factors and isinstance(first_row[0], Sequence):
+            return (n_items, n_factors, len(first_row[0]))
+        return (n_items, n_factors)
+    except Exception as exc:
+        raise ValueError(f"{name} must be a 2-D item-by-factor matrix") from exc
+
+
 def _matrix(value: Any, name: str) -> np.ndarray:
     """Return a bounded contiguous float64 matrix after pre-allocation checks.
 
@@ -171,6 +200,10 @@ def _matrix(value: Any, name: str) -> np.ndarray:
     advertised_shape = getattr(value, "shape", None)
     if advertised_shape is not None:
         _validated_matrix_shape(advertised_shape, name)
+    else:
+        inferred_shape = _bounded_sequence_shape(value, name)
+        if inferred_shape is not None:
+            _validated_matrix_shape(inferred_shape, name)
 
     matrix = np.asarray(value, dtype=np.float64)
     _validated_matrix_shape(matrix.shape, name)
