@@ -28,6 +28,28 @@ _SCRIPT_MODULES = (
 )
 
 
+class _HostileInt(int):
+    """Integer subclass whose comparison callback must never run in validation."""
+
+    comparisons = 0
+
+    def __le__(self, other: object) -> bool:
+        """Fail if package validation dispatches caller-controlled comparison."""
+        type(self).comparisons += 1
+        raise AssertionError("caller-controlled integer comparison executed")
+
+
+class _HostileText(str):
+    """String subclass whose encoding callback must never run before admission."""
+
+    encodes = 0
+
+    def encode(self, *args: object, **kwargs: object) -> bytes:
+        """Fail if bounded parsing dispatches caller-controlled encoding."""
+        type(self).encodes += 1
+        raise AssertionError("caller-controlled text encoding executed")
+
+
 def _write(path: Path, content: bytes) -> Path:
     """Write exact bytes and return ``path``."""
     path.write_bytes(content)
@@ -88,6 +110,21 @@ def test_limits_require_positive_non_boolean_integers(
     path = _write(tmp_path / "input.json", b"{}")
     with pytest.raises(ValueError, match=f"{keyword} must be a positive integer"):
         read_json_object(path, **{keyword: value})
+
+
+@pytest.mark.parametrize("keyword", ("max_bytes", "max_depth"))
+def test_limit_subclasses_fail_before_comparison_callbacks(
+    tmp_path: Path,
+    keyword: str,
+) -> None:
+    """Caller-defined integer limits are rejected without comparison dispatch."""
+    path = _write(tmp_path / "input.json", b"{}")
+    _HostileInt.comparisons = 0
+
+    with pytest.raises(ValueError, match=f"{keyword} must be a positive integer"):
+        read_json_object(path, **{keyword: _HostileInt(8)})
+
+    assert _HostileInt.comparisons == 0
 
 
 def test_invalid_utf8_malformed_json_and_decoder_recursion(
@@ -266,3 +303,13 @@ def test_parse_json_bounded_invalid_json() -> None:
     """It raises ValueError for invalid JSON syntax."""
     with pytest.raises(ValueError, match="is not valid JSON"):
         parse_json_bounded("{bad")
+
+
+def test_parse_json_bounded_rejects_text_subclass_before_encoding() -> None:
+    """Caller-defined text fails before its encoding callback can execute."""
+    _HostileText.encodes = 0
+
+    with pytest.raises(TypeError, match="content must be str"):
+        parse_json_bounded(_HostileText("{}"))
+
+    assert _HostileText.encodes == 0
