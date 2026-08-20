@@ -7,6 +7,7 @@ from fast_mlsirm.report import render_diagnostics_report
 
 
 def test_render_fit_diagnostics_report_has_sections(tmp_path):
+    """Render populated fit diagnostics with the expected report sections."""
     source = tmp_path / "fit_diagnostics.json"
     out = tmp_path / "report.html"
     source.write_text(
@@ -48,6 +49,7 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
 
 
 def test_render_dimensionality_report_has_best_candidate(tmp_path):
+    """Render dimensionality diagnostics with the selected candidate."""
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
     source.write_text(
@@ -74,6 +76,7 @@ def test_render_dimensionality_report_has_best_candidate(tmp_path):
 
 
 def test_render_dimensionality_report_summarizes_empty_candidates(tmp_path):
+    """Summarize dimensionality diagnostics when no candidates are available."""
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
     source.write_text(
@@ -97,6 +100,7 @@ def test_render_dimensionality_report_summarizes_empty_candidates(tmp_path):
 
 
 def test_render_report_summarizes_empty_metric_sections(tmp_path):
+    """Summarize an empty metric section without rendering an empty panel."""
     source = tmp_path / "fit_diagnostics.json"
     out = tmp_path / "report.html"
     source.write_text(
@@ -123,6 +127,7 @@ def test_render_report_summarizes_empty_metric_sections(tmp_path):
 
 
 def test_render_dimensionality_report_summarizes_empty_best_candidate(tmp_path):
+    """Summarize a dimensionality report whose best candidate has no metrics."""
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
     source.write_text(
@@ -150,6 +155,7 @@ def test_render_dimensionality_report_summarizes_empty_best_candidate(tmp_path):
 
 
 def test_render_coverage_omits_empty_rendered_tables_column(tmp_path):
+    """Omit the rendered-table coverage column when no table is present."""
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
     source.write_text(
@@ -173,6 +179,7 @@ def test_render_coverage_omits_empty_rendered_tables_column(tmp_path):
 
 
 def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
+    """Avoid an empty chart placeholder when rows have no numeric values."""
     source = tmp_path / "fit_diagnostics.json"
     out = tmp_path / "report.html"
     source.write_text(
@@ -194,6 +201,7 @@ def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
 
 
 def test_render_table_section_charts_later_numeric_rows(tmp_path):
+    """Include a later numeric row when earlier rows are not chartable."""
     source = tmp_path / "fit_diagnostics.json"
     out = tmp_path / "report.html"
     item_ids = list(range(13))
@@ -217,6 +225,7 @@ def test_render_table_section_charts_later_numeric_rows(tmp_path):
 
 
 def test_render_report_rejects_unknown_payload(tmp_path):
+    """Reject diagnostics JSON that has no supported report payload."""
     source = tmp_path / "unknown.json"
     out = tmp_path / "report.html"
     source.write_text(json.dumps({"status": "ok"}), encoding="utf-8")
@@ -226,6 +235,7 @@ def test_render_report_rejects_unknown_payload(tmp_path):
 
 
 def test_render_report_rejects_excessive_json_nesting(tmp_path):
+    """Reject JSON that exceeds the configured nesting safety limit."""
     source = tmp_path / "deep.json"
     out = tmp_path / "report.html"
     depth = MAX_JSON_NESTING_DEPTH + 1
@@ -238,6 +248,7 @@ def test_render_report_rejects_excessive_json_nesting(tmp_path):
 
 
 def test_render_report_requires_html_output(tmp_path):
+    """Reject output paths that do not use the HTML extension."""
     source = tmp_path / "fit_diagnostics.json"
     out = tmp_path / "report.txt"
     source.write_text(json.dumps({"model_fit": {}}), encoding="utf-8")
@@ -247,6 +258,7 @@ def test_render_report_requires_html_output(tmp_path):
 
 
 def test_render_table_region_has_keyboard_focus_style(tmp_path):
+    """Keep keyboard focus styling while suppressing mouse-click outlines."""
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
     source.write_text(
