@@ -5,7 +5,7 @@ Date: 2026-08-09
 
 ## Context
 
-The repository exposes Python APIs while supporting computationally intensive psychometric estimation, diagnostics, calibration and simulation. Maintaining independent Python and Rust production formulas creates drift risk, doubles verification burden and makes CPU/GPU ownership ambiguous. At the same time, transparent NumPy paths are valuable for parity, research inspection and controlled fallback.
+The repository exposes Python APIs while supporting computationally intensive psychometric estimation, diagnostics, calibration and simulation. Maintaining independent Python and Rust production formulas creates drift risk, doubles verification burden and makes CPU/GPU ownership ambiguous. At the same time, transparent NumPy paths are valuable for parity and research inspection when reached through an explicit reference API.
 
 ## Decision
 

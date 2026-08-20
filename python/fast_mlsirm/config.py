@@ -172,7 +172,7 @@ class FitConfig:
     # Device for the Rust backend: "cpu", "gpu", or "auto". A sub-option of the
     # rust backend, not a separate compute-backend axis. "auto" (default) uses
     # the wgpu GPGPU kernels when a GPU is available and otherwise falls back to
-    # the identical CPU path. Ignored when backend == "numpy".
+    # the identical CPU path. Ignored by the explicit NumPy reference API.
     rust_device: str = "auto"
     penalty: PenaltyConfig = PenaltyConfig()
     # Marginal (MMLE) estimator quadrature: Gauss-Hermite nodes per trait

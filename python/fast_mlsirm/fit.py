@@ -109,7 +109,7 @@ def fit(
         if _allow_reference_backend
         else resolve_backend(config.backend)
     )
-    # The device is a sub-option of the rust backend; the numpy path ignores it.
+    # The device is a sub-option of the Rust backend; the reference path ignores it.
     device = normalize_device(config.rust_device) if backend == "rust" else "cpu"
     model = config.normalized_model()
 
