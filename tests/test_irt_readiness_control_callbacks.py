@@ -24,6 +24,8 @@ def _hostile_python_int(value: int, callbacks: list[str]) -> int:
     """Return a Python integer subclass whose callbacks must never execute."""
 
     class HostileInt(int):
+        """Integer subclass exposing conversion and comparison callbacks."""
+
         def __int__(self) -> int:
             """Record forbidden integer conversion."""
             callbacks.append("__int__")
@@ -51,6 +53,8 @@ def _hostile_numpy_int(value: int, callbacks: list[str]) -> np.integer:
     """Return a NumPy integer subclass whose callbacks must never execute."""
 
     class HostileNumpyInt(np.int64):
+        """NumPy integer subclass exposing conversion and comparison callbacks."""
+
         def __int__(self) -> int:
             """Record forbidden NumPy-integer conversion."""
             callbacks.append("__int__")
@@ -136,6 +140,8 @@ def test_readiness_integer_controls_do_not_dispatch_integer_protocols() -> None:
     callbacks: list[str] = []
 
     class IntegerProtocol:
+        """Arbitrary integer-like object that must not cross the trust boundary."""
+
         def __int__(self) -> int:
             """Record forbidden arbitrary integer conversion."""
             callbacks.append("__int__")

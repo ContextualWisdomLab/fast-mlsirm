@@ -207,6 +207,7 @@ def validate_irt_experiment_readiness(
         labels = factor_ids.tolist() if isinstance(factor_ids, np.ndarray) else factor_ids
 
         def _memberships(label: object) -> tuple[object, ...]:
+            """Normalize one item label into unique factor memberships."""
             if isinstance(label, np.ndarray):
                 if label.ndim == 0:
                     values = (label.item(),)
