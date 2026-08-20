@@ -75,6 +75,8 @@ def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
     calls = []
 
     class ProjectionCore:
+        """Provide only the Rust projection surface used by this test."""
+
         @staticmethod
         def factorized_trait_moments_stat(
             _probs, _trait_weights, _space_weights, _q_theta, _factor_id, _item_values, item_offsets
@@ -84,6 +86,7 @@ def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
 
         @staticmethod
         def projected_m2(residual, delta, xi, n):
+            """Record projection inputs and return distinct target/null values."""
             residual = np.asarray(residual)
             delta = np.asarray(delta)
             xi = np.asarray(xi)
@@ -93,6 +96,7 @@ def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
 
         @staticmethod
         def chi2_sf(_x, _df):
+            """Return a finite p-value for the delegated projection result."""
             return 0.5
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: ProjectionCore())

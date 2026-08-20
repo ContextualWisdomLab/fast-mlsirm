@@ -70,12 +70,16 @@ def test_multilevel_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
     covariance_calls = []
 
     class ProjectionCore:
+        """Provide only the Rust multilevel projection surface used here."""
+
         @staticmethod
         def chi2_sf(_x, _df):
+            """Return a finite p-value for the delegated projection result."""
             return 0.5
 
         @staticmethod
         def projected_m2(residual, delta, xi, n):
+            """Record projection inputs and return distinct target/null values."""
             calls.append(
                 (
                     np.asarray(residual).shape,
