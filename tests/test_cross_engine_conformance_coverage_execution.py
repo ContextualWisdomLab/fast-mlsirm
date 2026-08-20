@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 import pytest
 
+import fast_mlsirm.cross_engine_conformance as conformance
 from fast_mlsirm.cross_engine_conformance import (
     ComparisonEngine,
     ConformanceCapability,
@@ -53,3 +56,13 @@ def test_supported_coverage_rejects_only_nonexecuted_evidence() -> None:
                 coverage_status=coverage_status,
                 evidence=(evidence,),
             )
+
+
+def test_text_normalizes_unicode_to_nfc_before_manifest_identity() -> None:
+    """Equivalent Unicode forms must canonicalize before content hashing."""
+    decomposed = unicodedata.normalize("NFD", "café")
+
+    normalized = conformance._text(decomposed, "estimand")
+
+    assert normalized == "café"
+    assert unicodedata.is_normalized("NFC", normalized)
