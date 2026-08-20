@@ -7043,6 +7043,7 @@ fn m2_stat(
 #[pyo3(signature = (
     y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
     eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
     fixed_items = None, estimate_population = false, tau_fixed = false,
 ))]
 fn m2_structured_stat(
@@ -7064,6 +7065,8 @@ fn m2_structured_stat(
     q_theta: usize,
     xi_rule: &str,
     q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
     fixed_items: Option<PyReadonlyArray1<'_, bool>>,
     estimate_population: bool,
     tau_fixed: bool,
@@ -7085,7 +7088,7 @@ fn m2_structured_stat(
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
     };
-    let rule = parse_xi_rule(xi_rule, q_xi, 256, 0)?;
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
     let fixed = fixed_items
         .as_ref()
         .map(|values| values.as_slice())
