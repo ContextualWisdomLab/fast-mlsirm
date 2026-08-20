@@ -26,7 +26,6 @@
   Python 3.14 CI).
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
-
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.8.0] - 2026-08-17
 
