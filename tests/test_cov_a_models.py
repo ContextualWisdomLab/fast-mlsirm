@@ -185,6 +185,44 @@ def test_resolve_model_rejects_hostile_metaclass_hash_before_callback():
     assert calls == []
 
 
+def test_resolve_model_rejects_exploratory_subclass_before_attribute_callback():
+    calls: list[str] = []
+
+    class HostileExploratory(ExploratoryModel):
+        def __getattribute__(self, name: str):
+            if name == "dimensions":
+                calls.append(name)
+                raise AssertionError("model attribute callback executed")
+            return super().__getattribute__(name)
+
+    spec = object.__new__(HostileExploratory)
+    object.__setattr__(spec, "dimensions", 1)
+
+    with pytest.raises(TypeError, match="factor count"):
+        _resolve_model(spec, 5)
+
+    assert calls == []
+
+
+def test_resolve_model_rejects_confirmatory_subclass_before_attribute_callback():
+    calls: list[str] = []
+
+    class HostileConfirmatory(ConfirmatoryModel):
+        def __getattribute__(self, name: str):
+            if name == "loading_pattern":
+                calls.append(name)
+                raise AssertionError("model attribute callback executed")
+            return super().__getattribute__(name)
+
+    spec = object.__new__(HostileConfirmatory)
+    object.__setattr__(spec, "loading_pattern", np.ones((5, 1), dtype=np.int64))
+
+    with pytest.raises(TypeError, match="factor count"):
+        _resolve_model(spec, 5)
+
+    assert calls == []
+
+
 def test_resolve_model_multidim_exploratory_not_implemented():
     with pytest.raises(NotImplementedError):
         _resolve_model(2, 6)
