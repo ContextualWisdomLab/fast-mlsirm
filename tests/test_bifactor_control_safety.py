@@ -213,6 +213,19 @@ def test_zero_tolerance_rejects_untrusted_types_before_data_or_core(
     assert counter.calls == 0
 
 
+@pytest.mark.parametrize("entrypoint", [_call_standardized, _call_logit])
+def test_zero_tolerance_rejects_unrepresentable_integer_before_materialization(
+    entrypoint,
+):
+    """Huge built-in integers use the package-owned tolerance error contract."""
+    counter = _CallbackCounter()
+
+    with pytest.raises(ValueError, match="zero_tolerance must be a real number"):
+        entrypoint(_DataProbe(counter), zero_tolerance=10**400)
+
+    assert counter.calls == 0
+
+
 def test_trusted_numpy_controls_are_normalized_to_builtin_scalars(monkeypatch):
     """Concrete NumPy controls retain compatibility without leaking subclasses."""
     seen: list[tuple[int, float]] = []

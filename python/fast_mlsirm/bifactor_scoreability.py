@@ -59,7 +59,10 @@ def _zero_tolerance_control(value: object) -> float:
         value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES
     ):
         raise ValueError("zero_tolerance must be a real number")
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError as exc:
+        raise ValueError("zero_tolerance must be a real number") from exc
 
 
 @dataclass(frozen=True)
