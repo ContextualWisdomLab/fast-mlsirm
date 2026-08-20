@@ -144,6 +144,7 @@ def test_invalid_utf8_malformed_json_and_decoder_recursion(
     valid = _write(tmp_path / "valid-object.json", b"{}")
 
     def raise_recursion(_: str) -> object:
+        """Simulate a JSON decoder stack exhaustion."""
         raise RecursionError("decoder stack exhausted")
 
     monkeypatch.setattr(_bounded_json.json, "loads", raise_recursion)
@@ -176,6 +177,7 @@ def test_every_wrapper_delegates_to_shared_reader(
     observed: list[Path] = []
 
     def fake_reader(path: Path) -> dict[str, bool]:
+        """Record the delegated path and return the sentinel object."""
         observed.append(path)
         return marker
 
@@ -220,6 +222,7 @@ def test_descriptor_path_replacement_is_rejected(
     replaced = False
 
     def replacing_read(file_descriptor: int, byte_count: int) -> bytes:
+        """Replace the path after the first descriptor read."""
         nonlocal replaced
         chunk = real_read(file_descriptor, byte_count)
         if not replaced:
@@ -246,6 +249,7 @@ def test_missing_path_and_identity_lookup_fail_closed(
     calls = 0
 
     def failing_lstat(value: Path) -> os.stat_result:
+        """Simulate disappearance during the post-open identity check."""
         nonlocal calls
         calls += 1
         if calls == 2:
@@ -270,6 +274,8 @@ def test_initial_identity_mismatch_and_nonregular_identity_fail_closed(
         read_json_object(path)
 
     class NonRegularStatus:
+        """Synthetic stat result that is not a regular file."""
+
         st_mode = 0
         st_dev = other_status.st_dev
         st_ino = other_status.st_ino
