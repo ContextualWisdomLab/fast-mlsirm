@@ -181,9 +181,16 @@ def enum_value(
     name: str,
     path: str | None = None,
 ) -> EnumValue:
-    """Return one exact enum member without reflecting a rejected value."""
-    if isinstance(value, enum_type):
+    """Return an exact enum member or admit only inert built-in wire text."""
+    value_type = type(value)
+    if value_type is enum_type:
         return value
+    if value_type is not str:
+        raise assessment_error(
+            f"invalid_{name}",
+            path or f"$.{name}",
+            f"{name} must be one of the supported values",
+        )
     try:
         return enum_type(value)
     except (TypeError, ValueError, OverflowError):
