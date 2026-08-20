@@ -173,6 +173,13 @@ def _bounded_sequence_shape(value: Any, name: str) -> tuple[int, ...] | None:
         if n_items == 0:
             return (0,)
         first_row = value[0]
+        if isinstance(first_row, np.ndarray):
+            row_dimensions = _bounded_shape_dimensions(
+                first_row.shape,
+                expected_dimensions=1,
+                error_message=f"{name} must be a 2-D item-by-factor matrix",
+            )
+            return (n_items, row_dimensions[0])
         if not isinstance(first_row, Sequence) or isinstance(
             first_row, (str, bytes, bytearray)
         ):
