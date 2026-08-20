@@ -63,8 +63,8 @@ def test_auto_backend_resolves_to_rust_when_core_is_available(monkeypatch):
     assert backend.resolve_backend("auto") == "rust"
 
 
-def test_explicit_numpy_reference_backend_remains_explicit(monkeypatch):
-    """The explicit NumPy reference path must never depend on core discovery."""
+def test_explicit_numpy_reference_backend_requires_named_reference_scope(monkeypatch):
+    """NumPy resolution is available only inside the named reference API scope."""
     calls: list[None] = []
 
     def unexpected_core_load():
@@ -73,7 +73,14 @@ def test_explicit_numpy_reference_backend_remains_explicit(monkeypatch):
 
     monkeypatch.setattr(backend, "_load_core", unexpected_core_load)
 
-    assert backend.resolve_reference_backend() == "numpy"
+    with pytest.raises(RuntimeError, match="fit_reference"):
+        backend.resolve_reference_backend()
+
+    with backend._reference_backend_scope():
+        assert backend.resolve_reference_backend() == "numpy"
+
+    with pytest.raises(RuntimeError, match="fit_reference"):
+        backend.resolve_reference_backend()
     assert calls == []
 
 
@@ -124,4 +131,5 @@ def test_backend_semantic_controls_preserve_builtin_normalization():
     assert backend.normalize_backend("  AuTo ") == "auto"
     assert backend.normalize_production_backend(" RUST ") == "rust"
     assert backend.normalize_device(" GPU ") == "gpu"
-    assert backend.resolve_reference_backend(" NumPy ") == "numpy"
+    with backend._reference_backend_scope():
+        assert backend.resolve_reference_backend(" NumPy ") == "numpy"
