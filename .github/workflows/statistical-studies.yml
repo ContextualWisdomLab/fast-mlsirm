@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# Secret boundary: this evidence workflow intentionally consumes no secret
+# inputs. If a future study needs credentials, pass them only through an
+# explicitly reviewed `${{ secrets.NAME }}` value in `env`; never hardcode,
+# interpolate into command arguments, or print a credential.
+
 concurrency:
   group: statistical-studies-${{ github.ref }}
   cancel-in-progress: false
@@ -20,7 +25,11 @@ jobs:
   rust-ignored:
     name: Ignored Rust studies shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Large Monte Carlo recovery tests are real evidence, not a reason to
+    # silently discard a shard after the helper's default 30-minute bound.
+    timeout-minutes: 180
+    env:
+      FAST_MLSIRM_STATISTICAL_TEST_TIMEOUT_SECONDS: "7200"
     strategy:
       fail-fast: false
       max-parallel: 3
