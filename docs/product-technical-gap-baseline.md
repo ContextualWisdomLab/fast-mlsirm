@@ -127,8 +127,14 @@ owns, as applicable:
 - domain-specific external validation data and high-stakes decision policy; and
 - regulated deployment, retention, deletion and audit execution.
 
-The downstream host may consume `fast-mlsirm`; `fast-mlsirm` must not depend on
-that host to remain installable and useful as a standalone library.
+The downstream host may consume `fast-mlsirm` only through a traceable,
+versioned handoff: a released package and schema version, a versioned API/schema,
+or an immutable content-addressed artifact reference. The consumer records the
+package/artifact version, source commit, schema version, and environment
+provenance used for each result. A floating branch checkout or unrecorded
+implementation import is not a reusable integration contract. `fast-mlsirm`
+must not depend on that host to remain installable and useful as a standalone
+library.
 
 ### 4.3 Explicit non-goals for this repository
 
@@ -413,17 +419,17 @@ through the owning downstream product. The first accepted vertical must include:
 
 ## 11. Claim register
 
-| Claim | Minimum evidence | Current baseline disposition |
-| --- | --- | --- |
-| “The package implements the declared equation” | Rust unit/property tests plus #1077 fixed-parameter cross-engine/neutral-fixture conformance where comparable | PARTIAL |
-| “The estimator recovers parameters” | ADEMP simulation, alignment, bias/MAE/RMSE/coverage/convergence/MCSE | IMPLEMENTED/PARTIAL by family |
-| “CPU and GPU are equivalent” | real non-skipped GPU execution against CPU `f64` reference under declared tolerances | IMPLEMENTED/PARTIAL by kernel |
-| “This score measures the intended construct” | content, response-process, internal-structure and external-variable evidence for a named profile | not a universal package claim |
-| “The interpretation transports” | #1078 held-out site/language/time/rater/revision evidence | PLANNED |
-| “The use is fair” | lawful subgroup support, DIF/invariance, threshold/error and consequence evidence | profile-specific; not universal |
-| “The product improves decisions” | preregistered policy/utility evaluation against baselines; causal language only with identified design | downstream/profile-specific |
-| “The package is technical GA” | bounded support matrix plus all technical-GA gates in this document | not yet established |
-| “The product is approved for high-stakes use” | validated profile plus downstream legal/privacy/security/human-governance controls | OUT_OF_SCOPE as a generic package claim |
+| Claim | Minimum evidence | Current baseline disposition | Family scope / claim limitations |
+| --- | --- | --- | --- |
+| “The package implements the declared equation” | Rust unit/property tests plus #1077 fixed-parameter cross-engine/neutral-fixture conformance where comparable | PARTIAL | Declared model paths only; independent engine agreement is still incomplete. |
+| “The estimator recovers parameters” | ADEMP simulation, alignment, bias/MAE/RMSE/coverage/convergence/MCSE | PARTIAL | Evidence exists for selected estimator families, not every advertised family or data regime. |
+| “CPU and GPU are equivalent” | real non-skipped GPU execution against CPU `f64` reference under declared tolerances | PARTIAL | Only kernels with a real GPU execution and an explicit CPU reference are covered. |
+| “This score measures the intended construct” | content, response-process, internal-structure and external-variable evidence for a named profile | OUT_OF_SCOPE | Requires a named downstream domain profile; it is not a universal package claim. |
+| “The interpretation transports” | #1078 held-out site/language/time/rater/revision evidence | PLANNED | Transportability must be shown for the declared held-out units and time window. |
+| “The use is fair” | lawful subgroup support, DIF/invariance, threshold/error and consequence evidence | PLANNED | Evidence is profile-specific and must include the supported subgroups and decision context. |
+| “The product improves decisions” | preregistered policy/utility evaluation against baselines; causal language only with identified design | DOWNSTREAM | The owning host controls the policy, outcome, intervention and decision-utility evidence. |
+| “The package is technical GA” | bounded support matrix plus all technical-GA gates in this document | PLANNED | The current package line is technical alpha until every declared GA gate is evidenced. |
+| “The product is approved for high-stakes use” | validated profile plus downstream legal/privacy/security/human-governance controls | OUT_OF_SCOPE | High-stakes approval belongs to a validated downstream profile and its owning governance process. |
 
 ## 12. Issues created from this review
 
@@ -470,19 +476,29 @@ Use published standards as normative references and drafts/revision projects as
 watch items only.
 
 - The 2014 *Standards for Educational and Psychological Testing* is the current
-  published testing-standard baseline. AERA, APA and NCME revision work is a
-  watch item until a new edition is published.
+  published testing-standard baseline for validity, fairness and score-use
+  claims (American Educational Research Association et al., 2014). AERA, APA
+  and NCME revision work is a watch item until a new edition is published.
 - ISO/IEC 25010:2023 is the current published product-quality model baseline for
-  software product quality characteristics.
+  software product quality characteristics and quality evaluation (International
+  Organization for Standardization & International Electrotechnical Commission,
+  2023).
 - The ITC 2018 test-adaptation guidelines govern translation/adaptation and
-  cross-language equivalence evidence; translation alone is not validation.
-- RFC 8259 governs strict JSON interoperability.
+  cross-language equivalence evidence; translation alone is not validation
+  (International Test Commission, 2018).
+- RFC 8259 governs strict JSON interoperability and its grammar/encoding
+  boundary (The Internet Engineering Task Force, 2017).
 - Semantic Versioning 2.0.0 is the public versioning baseline unless a more
-  specific package contract is accepted.
+  specific package contract is accepted (Preston-Werner, 2013).
 - NIST SP 800-218 SSDF 1.1 is the current final SSDF baseline; SSDF 1.2 remains
-  a draft watch item until finalized.
+  a draft watch item until finalized; the SSDF supplies secure-development
+  practices rather than a certification (National Institute of Standards and
+  Technology, 2022).
 - SLSA 1.2 and SPDX 3.0.1 are stable published supply-chain/provenance and SBOM
-  baselines. Draft successors must not be presented as current conformance.
+  baselines; SLSA addresses build provenance and SPDX addresses machine-readable
+  licensing/component interchange. Draft successors must not be presented as
+  current conformance (Software Package Data Exchange, 2024; Supply-chain
+  Levels for Software Artifacts, 2025).
 
 No standard reference in this file is a certification claim.
 
@@ -492,6 +508,16 @@ and the linked primary-source records under [`docs/papers/`](papers/README.md).
 The references in this baseline explain the product decision boundary; they do
 not replace the model-specific paper-first record required before changing a
 formula, estimator, fit statistic, or interpretation-facing output.
+
+The package-literature entries below are included as implementation context, not
+as substitutes for primary methodological validation: Chalmers (2012) describes
+multidimensional IRT software and its estimation surface; Mair and Hatzinger
+(2007) documents extended Rasch model tooling; Rizopoulos (2006) documents
+latent-variable and IRT analysis tooling; Robitzsch et al. (2025) documents the
+TAM test-analysis modules. Morris et al. (2019) provides the simulation-study
+design rationale used by the recovery evidence requirement. Each source is
+linked in the APA list below so a reviewer can reconstruct the decision without
+access to chat history.
 
 ## 15. APA 7th reference baseline
 
@@ -525,6 +551,9 @@ National Institute of Standards and Technology. (2022). *Secure software
 development framework (SSDF) version 1.1: Recommendations for mitigating the
 risk of software vulnerabilities* (NIST SP 800-218).
 https://doi.org/10.6028/NIST.SP.800-218
+
+Preston-Werner, T. (2013). *Semantic Versioning 2.0.0*.
+https://semver.org/spec/v2.0.0.html
 
 Rizopoulos, D. (2006). ltm: An R package for latent variable modeling and item
 response analysis. *Journal of Statistical Software, 17*(5), 1–25.
