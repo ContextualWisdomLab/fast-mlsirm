@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 
-from fast_mlsirm import FitConfig
-from fast_mlsirm.fit import fit
+from fast_mlsirm import FitConfig, fit
 from fast_mlsirm.reference import fit_reference
 
 
@@ -20,9 +21,11 @@ def test_reference_rejects_rust_only_plain_unidimensional_mmle() -> None:
         )
 
 
-def test_direct_fit_cannot_activate_numpy_reference_with_hidden_flag() -> None:
+def test_public_fit_has_no_reference_authority_keyword() -> None:
     """Only the named reference API may activate the NumPy fitting authority."""
-    with pytest.raises(RuntimeError, match="fit_reference"):
+    assert "_allow_reference_backend" not in inspect.signature(fit).parameters
+
+    with pytest.raises(TypeError, match="_allow_reference_backend"):
         fit(
             np.array([[0.0, 1.0], [1.0, 0.0]]),
             np.array([0, 0], dtype=np.int64),
