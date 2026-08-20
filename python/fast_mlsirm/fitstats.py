@@ -2917,6 +2917,9 @@ def m2_multilevel(
         shared_sigma_u=sigma_u,
         q_u=q_u,
     )
+    core = _core_module()
+    if core is None or not hasattr(core, "projected_m2"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
     complete_clusters = clusters[component["idx"]]
     target_xi, n_clusters = _cluster_moment_covariance(
         component["z_rows"], component["mom"], complete_clusters
@@ -2926,8 +2929,13 @@ def m2_multilevel(
     s = component["residual"].size
     if s <= p:
         raise ValueError(f"multilevel M2 df non-positive: {s} <= {p}")
-    m2_value = _projected_m2_numpy(
-        component["residual"], delta, target_xi, float(component["n"])
+    m2_value = float(
+        core.projected_m2(
+            np.ascontiguousarray(component["residual"], dtype=np.float64),
+            np.ascontiguousarray(delta, dtype=np.float64),
+            np.ascontiguousarray(target_xi, dtype=np.float64),
+            float(component["n"]),
+        )
     )
 
     null_mom, null_delta, _ = _m2_null_components(
@@ -2936,11 +2944,13 @@ def m2_multilevel(
     null_xi, _ = _cluster_moment_covariance(
         component["z_rows"], null_mom, complete_clusters
     )
-    null_m2 = _projected_m2_numpy(
-        component["p_obs"] - null_mom,
-        null_delta,
-        null_xi,
-        float(component["n"]),
+    null_m2 = float(
+        core.projected_m2(
+            np.ascontiguousarray(component["p_obs"] - null_mom, dtype=np.float64),
+            np.ascontiguousarray(null_delta, dtype=np.float64),
+            np.ascontiguousarray(null_xi, dtype=np.float64),
+            float(component["n"]),
+        )
     )
     df = float(s - p)
     null_df = float(s - component["n_items"])
