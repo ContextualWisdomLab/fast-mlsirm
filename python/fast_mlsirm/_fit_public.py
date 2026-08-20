@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .backend import normalize_production_backend
+from .backend import _REFERENCE_BACKEND_ACTIVE, normalize_production_backend
 from .config import FitConfig
 from .fit import fit as _fit_internal
 from .types import FitResult
@@ -22,20 +22,25 @@ def fit(
 ) -> FitResult:
     """Fit a latent-space model through the production Rust-owned backend."""
     production_config = config or FitConfig()
-    # Enforce the production backend contract at the exported entry point.
-    # The internal reference scope is deliberately irrelevant here: callers
-    # that import it cannot turn the public fit surface into a NumPy path.
+    # Enforce the production backend contract before entering the internal fit
+    # implementation, then explicitly clear any inherited reference authority.
+    # A caller that imports _reference_backend_scope therefore cannot turn this
+    # exported production surface into a NumPy fitting path.
     normalize_production_backend(production_config.backend)
-    return _fit_internal(
-        responses,
-        factor_id,
-        production_config,
-        mask=mask,
-        group_id=group_id,
-        cluster_id=cluster_id,
-        anchors=anchors,
-        covariate=covariate,
-    )
+    token = _REFERENCE_BACKEND_ACTIVE.set(False)
+    try:
+        return _fit_internal(
+            responses,
+            factor_id,
+            production_config,
+            mask=mask,
+            group_id=group_id,
+            cluster_id=cluster_id,
+            anchors=anchors,
+            covariate=covariate,
+        )
+    finally:
+        _REFERENCE_BACKEND_ACTIVE.reset(token)
 
 
 # Preserve the established detailed public documentation without exposing the
