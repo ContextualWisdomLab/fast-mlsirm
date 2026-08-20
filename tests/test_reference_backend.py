@@ -32,3 +32,20 @@ def test_public_fit_has_no_reference_authority_keyword() -> None:
             FitConfig(backend="numpy", max_iter=1, n_restarts=1),
             _allow_reference_backend=True,
         )
+
+
+def test_named_reference_fit_owns_numpy_scope() -> None:
+    """The named reference API can run NumPy without a compiled Rust module."""
+    result = fit_reference(
+        np.array([[0.0, 1.0, 0.0, 1.0], [1.0, 0.0, 1.0, 0.0]]),
+        np.array([0, 0, 0, 0], dtype=np.int64),
+        FitConfig(
+            model="MLS2PLM",
+            latent_dim=1,
+            max_iter=1,
+            n_restarts=1,
+            backend="auto",
+        ),
+    )
+
+    assert result.backend == "numpy"
