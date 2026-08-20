@@ -47,9 +47,7 @@ class FactorRetentionEvidence:
         """Fail closed on untyped methods and unbounded candidate counts."""
         if not isinstance(self.method, FactorRetentionMethod):
             raise TypeError("method must be a FactorRetentionMethod")
-        if isinstance(self.candidate_count, bool) or not isinstance(
-            self.candidate_count, int
-        ):
+        if type(self.candidate_count) is not int:
             raise ValueError("candidate_count must be a positive integer")
         if self.candidate_count <= 0:
             raise ValueError("candidate_count must be a positive integer")
@@ -109,7 +107,7 @@ def govern_factor_retention(
             raise
         except Exception:
             raise ValueError(iterable_message) from None
-        if not isinstance(record, FactorRetentionEvidence):
+        if type(record) is not FactorRetentionEvidence:
             raise TypeError("evidence entries must be FactorRetentionEvidence")
         if record.method in seen_methods:
             raise ValueError("duplicate factor-retention method evidence")
