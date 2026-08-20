@@ -76,8 +76,12 @@ def test_source_commit_rejects_missing_git_executable(monkeypatch, tmp_path: Pat
         "unknown",
         "a" * 39,
         "a" * 41,
+        "a" * 63,
+        "a" * 65,
         "g" * 40,
+        "g" * 64,
         "A" * 40,
+        "A" * 64,
     ],
 )
 def test_source_commit_rejects_noncanonical_identity(
@@ -100,10 +104,18 @@ def test_source_commit_rejects_noncanonical_identity(
         module._source_commit(tmp_path)
 
 
-def test_source_commit_accepts_canonical_full_sha(monkeypatch, tmp_path: Path) -> None:
-    """A canonical full SHA remains valid release provenance."""
+@pytest.mark.parametrize(
+    "expected",
+    [
+        "0123456789abcdef0123456789abcdef01234567",
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ],
+)
+def test_source_commit_accepts_canonical_full_sha(
+    monkeypatch, tmp_path: Path, expected: str
+) -> None:
+    """Canonical full SHA-1 and SHA-256 identities remain valid provenance."""
     module = _load_release_index()
-    expected = "0123456789abcdef0123456789abcdef01234567"
 
     def valid_run(*args, **kwargs):
         return subprocess.CompletedProcess(
