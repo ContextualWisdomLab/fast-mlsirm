@@ -188,10 +188,10 @@ def _bounded_sequence_shape(value: Any, name: str) -> tuple[int, ...] | None:
 def _matrix(value: Any, name: str) -> np.ndarray:
     """Return a bounded contiguous float64 matrix after pre-allocation checks.
 
-    Existing NumPy arrays and array-likes that expose ``shape`` are bounded
-    before any dtype-converting copy. Generic Python containers necessarily
-    cross NumPy's materialization boundary before their inferred shape can be
-    checked, after which the same public limits are enforced.
+    Existing NumPy arrays, array-likes that expose ``shape``, and plain nested
+    Python sequences are bounded before any dtype-converting copy. Other
+    generic array-likes cross NumPy's materialization boundary before their
+    inferred shape can be checked, after which the same public limits apply.
     """
     if isinstance(value, np.ndarray):
         _validated_matrix_shape(value.shape, name)

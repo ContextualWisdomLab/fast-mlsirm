@@ -74,6 +74,27 @@ class _OversizedNestedSequence(Sequence):
         return [0.0] * MAX_BIFACTOR_FACTORS
 
 
+class _FailingNestedSequence(Sequence):
+    """Sequence that raises during bounded shape inspection."""
+
+    def __len__(self) -> int:
+        """Raise an ordinary exception that the package must normalize."""
+        raise RuntimeError("caller-controlled sequence failure")
+
+    def __getitem__(self, index):
+        """Provide the protocol member required by ``Sequence``."""
+        del index
+        raise AssertionError("sequence indexing must not be reached")
+
+
+class _ArrayProtocolProvider:
+    """Array-like provider without a shape attribute."""
+
+    def __array__(self, dtype=None):
+        """Return a small valid matrix through NumPy's array protocol."""
+        return np.asarray([[0.60, 0.20], [0.70, 0.30]], dtype=dtype)
+
+
 def test_oversized_nested_sequence_is_rejected_before_numpy_materialization():
     """Plain nested sequences cannot bypass the pre-allocation work budget."""
     loadings = _OversizedNestedSequence()
@@ -81,3 +102,15 @@ def test_oversized_nested_sequence_is_rejected_before_numpy_materialization():
 
     with pytest.raises(ValueError, match="work budget"):
         bifactor_scoreability(loadings, uniquenesses)
+
+
+def test_nested_sequence_inspection_normalizes_caller_exceptions():
+    """Untrusted sequence errors become stable package-owned shape errors."""
+    with pytest.raises(ValueError, match="2-D item-by-factor matrix"):
+        bifactor_scoreability(_FailingNestedSequence(), _uniquenesses())
+
+
+def test_shape_less_array_protocol_provider_uses_bounded_materialized_shape():
+    """Non-sequence array protocols retain the post-materialization shape check."""
+    result = bifactor_scoreability(_ArrayProtocolProvider(), [0.60, 0.42])
+    assert result.factor_item_counts == (2, 2)
