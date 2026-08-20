@@ -26,18 +26,23 @@ def fit(
     if config is not None and type(config) is not FitConfig:
         raise ValueError("config must be a FitConfig or None")
     requested_config = FitConfig() if config is None else config
-    # Resolve the production numerical owner before entering the internal fit
-    # implementation. Besides failing closed when Rust is unavailable, passing
-    # the concrete backend downstream prevents successful ``auto`` runs from
-    # leaking the unresolved selector into FitResult metadata.
-    concrete_backend = resolve_backend(requested_config.backend)
-    production_config = replace(requested_config, backend=concrete_backend)
 
-    # Explicitly clear any inherited reference authority. A caller that imports
-    # _reference_backend_scope therefore cannot turn this exported production
-    # surface into a NumPy fitting path, even with a production backend name.
+    # Public production fitting owns the validation scope. Clear any inherited
+    # reference authority before validating semantic controls, then validate
+    # those controls before native-core discovery. Invalid package-owned
+    # settings therefore fail deterministically without depending on compiled
+    # capability availability, and an imported reference scope cannot weaken
+    # the production backend contract.
     token = _REFERENCE_BACKEND_ACTIVE.set(False)
     try:
+        requested_config.validate()
+
+        # Resolve the production numerical owner only after semantic validation.
+        # Passing the concrete backend downstream also prevents successful
+        # ``auto`` runs from leaking the unresolved selector into result metadata.
+        concrete_backend = resolve_backend(requested_config.backend)
+        production_config = replace(requested_config, backend=concrete_backend)
+
         return _fit_internal(
             responses,
             factor_id,
