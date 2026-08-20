@@ -356,6 +356,8 @@ def test_evidence_subclasses_fail_before_field_callbacks() -> None:
     """Reject evidence subclasses before reading caller-controlled fields."""
 
     class HostileEvidence(ValidationEvidence):
+        """Subclass fixture that raises if validation reads a field."""
+
         def __getattribute__(self, name: str) -> object:
             if name == "evidence_id":
                 raise AssertionError("evidence field callback executed")
@@ -375,6 +377,8 @@ def test_profile_subclasses_fail_before_field_callbacks() -> None:
     base = _profile(_evidence("technical_conformance", EvidenceClass.TECHNICAL))
 
     class HostileProfile(ExternalValidationProfile):
+        """Subclass fixture that raises if validation reads a field."""
+
         def __getattribute__(self, name: str) -> object:
             if name == "construct":
                 raise AssertionError("profile field callback executed")
