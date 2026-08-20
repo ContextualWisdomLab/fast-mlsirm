@@ -5,18 +5,6 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
-#### Govern non-psychometric item-bank suspension concerns
-
-- Governed item-bank suspension and reactivation can now bind exact non-psychometric concern evidence for evidence/content validity and security/privacy findings, alongside existing DIF, drift, exposure, and linking evidence, without fabricating psychometric drift evidence.
-- Suspended records bind the exact newly asserted concern classes into their content-addressed identity, and reactivation requires fresh evidence for those same classes so unrelated evidence cannot clear a quarantine.
-- Reactivation rejects a historical approval or concern fingerprint even when it is presented under a replacement evidence identifier; every required reactivation artifact must bind new evidence content.
-
-#### Harden remaining equating controls before native discovery
-
-- Validate circle-arc method/point/scalar controls, nominal-weights score ceilings and synthetic-population weight, and the composite-linking exponent before compiled-core discovery.
-- Reject caller-defined scalar/container subclasses and arbitrary conversion providers without executing their conversion, comparison, representation, hashing, or iteration callbacks.
-- Preserve exact built-in and genuine NumPy scalar compatibility while keeping circle-arc geometry, nominal-weights moments, composite-linking weight arithmetic, and all result-affecting equating mathematics in Rust.
-
 #### Release cut 0.8.0
 
 - Project version is bumped to 0.8.0 in `pyproject.toml`, `crates/mlsirm-core`,
@@ -39,52 +27,6 @@
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
 
-### Fixed
-
-#### RSM control callback safety
-
-- Harden Rating Scale Model semantic-control admission so `n_cat`, quadrature size, iteration limits, and tolerance are normalized from trusted scalar identities before caller data or Rust capability work; hostile scalar subclasses and conversion/hash providers are rejected without callback dispatch while established built-in and NumPy compatibility remains unchanged.
-
-#### Fail closed on unsafe multilevel contextual effects
-
-- Multilevel contextual-effect evaluation now fails closed when any referenced context random-effect value is NaN or infinite and when finite inputs overflow the weighted sum, preventing non-finite predictor results from escaping the Rust boundary while leaving unreferenced table capacity outside sparse validation work.
-- Python context-effect marshalling snapshots each required mapping value once without caller-defined membership probes and normalizes hostile lookup callbacks to non-reflective package errors before native dispatch.
-
-#### Workflow-registry audit transport retry hardening
-
-- Expanded the read-only Actions-registry audit transport's bounded retry classifier to cover transient HTTP 403, 404, 429, and all 5xx responses, while preserving fail-closed exhaustion and immediate failure for non-transient authentication errors such as HTTP 401.
-- Added direct transport regression coverage so incident audits do not misclassify one transient GitHub control-plane response as a completed inventory failure.
-
-#### Harden RAG metadata callback safety
-
-- Validate caller-provided RAG metadata keys exactly once before reading any values, then freeze only the captured allowlisted values. Hostile membership, key/value, duplicate-key, and key-reiteration callbacks now fail through non-reflective package errors without granting new metadata authority.
-
-#### Exposure-control scalar callback safety
-
-- Validate CAT/exposure integer controls from exact built-in Python and genuine NumPy scalar types before caller-dispatchable coercion or Rust-core discovery, preserving integral built-in/NumPy floating controls, package-owned bounds/errors, and Rust-owned exposure, routing, scoring, posterior, recovery, and simulation arithmetic.
-
-#### Harden scoring-policy integer callback boundaries
-
-- Reject caller-defined integer coercion at scoring-policy positive-integer boundaries before any `__index__` callback can run, while preserving exact built-in and genuine NumPy integer scalar compatibility and existing bounded `AssessmentSpecError` semantics.
-
-#### ATA integer callback safety
-
-- Automated test assembly now admits only exact built-in integers and explicitly supported genuine NumPy integer scalar identities for public length, seed, exposure, content-count, and exclusion controls before normalization.
-- Caller-defined Python and NumPy integer subclasses fail closed before conversion callbacks or item-information work, while existing finite-domain validation and genuine NumPy scalar compatibility are preserved.
-- Added focused public-boundary regressions for hostile scalar and container controls without changing ATA information, selection, or scoring arithmetic.
-
-#### Fleiss kappa control trust boundary
-
-- Hardened the public Fleiss/Conger kappa control boundary so explicit category counts and exact-mode selection are validated without executing caller-defined integer, index, or truthiness callbacks before ratings materialization or compiled-core discovery.
-- Preserved genuine Python/NumPy scalar compatibility, capped explicit and inferred category counts at the Rust contract maximum of 10,000, and kept all agreement arithmetic Rust-owned.
-
-### Security
-
-#### Parallel-analysis control trust hardening
-
-- Validate `n_iterations`, `centile`, and `seed` before native-core discovery, accepting only exact built-in integers and supported concrete NumPy integer scalars while rejecting booleans, `np.bool_`, caller-defined subclasses, and conversion providers without executing their callbacks. Workspace and `u64` seed limits fail at the same pre-discovery boundary.
-- Normalize nonnumeric `data` conversion failures to a package-owned `ValueError` before native-core discovery while preserving dimensionality and workspace validation for successfully converted arrays.
-- Preserve the existing positive-iteration, centile `0..99`, Rust `u64` seed, and 128 MiB random-benchmark workspace limits without changing Rust-owned Horn/Glorfeld factor-retention arithmetic.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.8.0] - 2026-08-17
 
