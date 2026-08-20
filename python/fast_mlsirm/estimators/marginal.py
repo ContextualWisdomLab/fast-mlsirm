@@ -503,7 +503,7 @@ def _build_tables(
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
     logp1 = _log_sigmoid(eta)
     logp0 = _log_sigmoid(-eta)
-    n_ctx, n_items = eta.shape[0], eta.shape[1]
+    n_ctx, _ = eta.shape[0], eta.shape[1]
     c0 = np.zeros((n_ctx, n_dims, eta.shape[2], eta.shape[3]))
     for d in range(n_dims):
         c0[:, d] = logp0[:, factor_id == d].sum(axis=1)
@@ -529,7 +529,7 @@ def _person_logliks(
     """
     delta = logp1 - logp0  # (S, I, Qt, Nx)
     pos = np.where(observed, y, 0.0)  # (P, I)
-    l = c0[s_of_person]  # (P, D, Qt, Nx) — copy via fancy indexing
+    l_val = c0[s_of_person]  # (P, D, Qt, Nx) — copy via fancy indexing
     # positives: add delta_i; missing: subtract logp0_i — per dimension.
     for d in range(n_dims):
         items = np.flatnonzero(factor_id == d)
@@ -539,14 +539,14 @@ def _person_logliks(
         delta_d = delta[:, items]  # (S, I_d, Qt, Nx)
         logp0_d = logp0[:, items]
         # einsum over the item axis with per-person context gather
-        l[:, d] += np.einsum(
+        l_val[:, d] += np.einsum(
             "pi,piqx->pqx", pos_d, delta_d[s_of_person], optimize=True
         )
         if miss_d.any():
-            l[:, d] -= np.einsum(
+            l_val[:, d] -= np.einsum(
                 "pi,piqx->pqx", miss_d, logp0_d[s_of_person], optimize=True
             )
-    lw = t_logw[None, None, :, None] + l  # (P, D, Qt, Nx)
+    lw = t_logw[None, None, :, None] + l_val  # (P, D, Qt, Nx)
     m = lw.max(axis=2, keepdims=True)
     log_zdx = np.squeeze(m, axis=2) + np.log(
         np.exp(lw - m).sum(axis=2)
@@ -554,11 +554,11 @@ def _person_logliks(
     ax = x_logw[None, :] + log_zdx.sum(axis=1)  # (P, Nx)
     mx = ax.max(axis=1, keepdims=True)
     log_lp = np.squeeze(mx, axis=1) + np.log(np.exp(ax - mx).sum(axis=1))
-    return l, log_zdx, log_lp
+    return l_val, log_zdx, log_lp
 
 
 def _posteriors(
-    l: np.ndarray,
+    l_val: np.ndarray,
     log_zdx: np.ndarray,
     log_lp: np.ndarray,
     t_logw: np.ndarray,
@@ -566,7 +566,7 @@ def _posteriors(
 ) -> np.ndarray:
     """Joint per-person posterior over (d, t, x): shape (P, D, Qt, Nx)."""
     px = np.exp(x_logw[None, :] + log_zdx.sum(axis=1) - log_lp[:, None])  # (P, Nx)
-    pt = np.exp(t_logw[None, None, :, None] + l - log_zdx[:, :, None, :])
+    pt = np.exp(t_logw[None, None, :, None] + l_val - log_zdx[:, :, None, :])
     return px[:, None, None, :] * pt
 
 
@@ -915,7 +915,7 @@ def fit_marginal_numpy(
             s_of_person = (
                 group_id if kind == "multigroup" else np.zeros(n_persons, dtype=np.int64)
             )
-            l, log_zdx, log_lp = _person_logliks(
+            l_val, log_zdx, log_lp = _person_logliks(
                 y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_of_person, n_dims
             )
             if zero_inflation:
@@ -926,7 +926,7 @@ def fit_marginal_numpy(
             else:
                 loglik = float(log_lp.sum())
                 w_irt = np.ones(n_persons)
-            post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
+            post = _posteriors(l_val, log_zdx, log_lp, t_logw, x_logw)
             _accumulate(
                 post, w_irt, y, observed, factor_id, s_of_person, n_ctx,
                 nbar, rbar, mbar,
@@ -960,10 +960,10 @@ def fit_marginal_numpy(
                 if not keep.any():
                     continue
                 s_all = np.full(n_persons, v, dtype=np.int64)
-                l, log_zdx, log_lp = _person_logliks(
+                l_val, log_zdx, log_lp = _person_logliks(
                     y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
                 )
-                post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
+                post = _posteriors(l_val, log_zdx, log_lp, t_logw, x_logw)
                 w_eff = np.where(keep, w_outer, 0.0)
                 _accumulate(
                     post, w_eff, y, observed, factor_id, s_all, n_ctx, nbar, rbar, mbar
@@ -1041,7 +1041,7 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        dist = np.sqrt(eps_distance + np.einsum('ij,ij->i', diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -1286,10 +1286,10 @@ def fit_marginal_numpy(
 
     def eap_accumulate(s_all: np.ndarray, w_outer: np.ndarray) -> None:
         """Accumulate posterior-weighted EAP trait/latent-space estimates in place."""
-        l, log_zdx, log_lp = _person_logliks(
+        l_val, log_zdx, log_lp = _person_logliks(
             y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
         )
-        post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
+        post = _posteriors(l_val, log_zdx, log_lp, t_logw, x_logw)
         wpost = post * w_outer[:, None, None, None]
         px = wpost.sum(axis=(1, 2)) / n_dims  # (P, Nx) — same for every d
         xi_eap[:] += px @ x_grid
@@ -1487,10 +1487,10 @@ def score_eap(
     )
     s_all = np.zeros(n_persons, dtype=np.int64)
     y_filled = np.where(observed, y, 0.0)
-    l, log_zdx, log_lp = _person_logliks(
+    l_val, log_zdx, log_lp = _person_logliks(
         y_filled, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
     )
-    post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
+    post = _posteriors(l_val, log_zdx, log_lp, t_logw, x_logw)
     px = post.sum(axis=(1, 2)) / n_dims  # (P, Nx)
     xi_eap = px @ x_grid
     theta_eap = np.einsum("pdtx,t->pd", post, t_nodes, optimize=True)
