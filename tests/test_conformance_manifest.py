@@ -197,3 +197,95 @@ def test_exact_package_records_reject_subclasses_before_field_callbacks() -> Non
             source_url="https://example.org/reference-engine",
             license_classification="open_source",
         )
+
+
+def test_scalar_and_enum_boundaries_reject_invalid_values() -> None:
+    """Cover non-text, oversized, non-enum, and unknown enum controls."""
+    with pytest.raises(ValueError, match="version must be a string"):
+        replace(_engine(), version=object())
+    with pytest.raises(ValueError, match="at most 4096"):
+        replace(_engine(), source_url="x" * 4_097)
+    with pytest.raises(ValueError, match="supported ConformanceLayer"):
+        replace(_capability(), layer=object())
+    with pytest.raises(ValueError, match="layer must be one of"):
+        replace(_capability(), layer="unknown")
+    with pytest.raises(ValueError, match="finite non-negative"):
+        replace(_tolerance(), absolute=object())
+    with pytest.raises(ValueError, match="absolute or relative"):
+        ConformanceTolerance(
+            estimand_id="zero_tolerance",
+            absolute=0.0,
+            relative=0.0,
+            rationale="invalid zero tolerance",
+        )
+
+
+def test_bounded_record_collections_reject_wrong_shape_size_and_type() -> None:
+    """Bound nested records before accepting any caller-provided record."""
+    with pytest.raises(ValueError, match="engines must be a list or tuple"):
+        replace(_capability(), engines=object())
+    too_many = tuple(_engine(f"engine_{index}") for index in range(65))
+    with pytest.raises(ValueError, match="engines must contain at most 64"):
+        replace(_capability(), engines=too_many)
+    with pytest.raises(ValueError, match=r"engines\[0\] must be a EngineReference"):
+        replace(_capability(), engines=(object(),))
+
+
+def test_duplicate_nested_records_and_invalid_seeds_fail_closed() -> None:
+    """Reject duplicate identities and malformed bounded RNG metadata."""
+    with pytest.raises(ValueError, match="engine_id values must be unique"):
+        replace(_capability(), engines=(_engine(), _engine()))
+    with pytest.raises(ValueError, match="tolerance estimand_id values must be unique"):
+        replace(_capability(), tolerances=(_tolerance(), _tolerance()))
+    with pytest.raises(ValueError, match="rng_seeds must be a list or tuple"):
+        replace(_provenance(), rng_seeds=object())
+    with pytest.raises(ValueError, match="at most 64"):
+        replace(_provenance(), rng_seeds=tuple(range(65)))
+    with pytest.raises(ValueError, match="non-negative built-in integers"):
+        replace(_provenance(), rng_seeds=(True,))
+
+
+def test_exact_provenance_and_tolerance_records_reject_subclasses() -> None:
+    """Nested package records cannot be replaced by caller-defined subclasses."""
+    provenance = _provenance()
+    tolerance = _tolerance()
+
+    class HostileProvenance(ConformanceProvenance):
+        """Subclass used to verify exact provenance admission."""
+
+    class HostileTolerance(ConformanceTolerance):
+        """Subclass used to verify exact tolerance admission."""
+
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileProvenance(**{field: getattr(provenance, field) for field in provenance.__dataclass_fields__})
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileTolerance(**{field: getattr(tolerance, field) for field in tolerance.__dataclass_fields__})
+
+
+def test_manifest_boundary_rejects_wrong_provenance_empty_and_duplicate_capabilities() -> None:
+    """Reject malformed manifest ownership, cardinality, and identity metadata."""
+    with pytest.raises(ValueError, match="provenance must be a ConformanceProvenance"):
+        replace(_manifest(_capability()), provenance=object())
+    with pytest.raises(ValueError, match="capabilities must not be empty"):
+        replace(_manifest(_capability()), capabilities=())
+    with pytest.raises(ValueError, match="capability_id values must be unique"):
+        _manifest(_capability("same_capability"), _capability("same_capability"))
+    with pytest.raises(ValueError, match="schema_version must be '1.0'"):
+        replace(_manifest(_capability()), schema_version="2.0")
+
+
+def test_exact_capability_and_manifest_records_reject_subclasses() -> None:
+    """Top-level package records reject subclass construction before normalization."""
+    capability = _capability()
+    manifest = _manifest(capability)
+
+    class HostileCapability(ConformanceCapability):
+        """Subclass used to verify exact capability admission."""
+
+    class HostileManifest(ConformanceManifest):
+        """Subclass used to verify exact manifest admission."""
+
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileCapability(**{field: getattr(capability, field) for field in capability.__dataclass_fields__})
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileManifest(**{field: getattr(manifest, field) for field in manifest.__dataclass_fields__})
