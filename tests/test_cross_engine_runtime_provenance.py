@@ -114,6 +114,39 @@ def test_inventory_fingerprint_binds_each_runtime_provenance_identity(
     assert baseline.inventory_fingerprint != changed.inventory_fingerprint
 
 
+@pytest.mark.parametrize(
+    ("field_name", "replacement", "message"),
+    [
+        ("environment_kind", "docker_image", "environment_kind must be one of"),
+        ("operating_system", " ", "operating_system must not be empty"),
+        ("architecture", " ", "architecture must not be empty"),
+        (
+            "model_configuration_sha256",
+            "bad",
+            "model_configuration_sha256 must be a lowercase SHA-256 hex digest",
+        ),
+        (
+            "convergence_controls_sha256",
+            "bad",
+            "convergence_controls_sha256 must be a lowercase SHA-256 hex digest",
+        ),
+        (
+            "redistribution_status",
+            "open",
+            "redistribution_status must be one of",
+        ),
+    ],
+)
+def test_runtime_provenance_rejects_malformed_release_controls(
+    field_name: str,
+    replacement: str,
+    message: str,
+) -> None:
+    """Runtime provenance fails closed on malformed release-identifying controls."""
+    with pytest.raises(ValueError, match=message):
+        replace(_provenance(), **{field_name: replacement})
+
+
 def test_mutated_runtime_text_revalidates_before_caller_callbacks() -> None:
     """Post-construction runtime mutation is sealed before text normalization."""
     _HostileText.callbacks = 0
