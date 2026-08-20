@@ -224,14 +224,22 @@ class ValidationEvidence:
             )
 
     def to_manifest(self) -> dict[str, object]:
-        """Return the JSON-compatible evidence projection."""
+        """Return the JSON-compatible evidence projection after replay validation."""
+        validated = ValidationEvidence(
+            evidence_id=self.evidence_id,
+            evidence_class=self.evidence_class,
+            status=self.status,
+            available_time=self.available_time,
+            artifact_sha256=self.artifact_sha256,
+            limitation=self.limitation,
+        )
         return {
-            "artifact_sha256": self.artifact_sha256,
-            "available_time": self.available_time,
-            "evidence_class": self.evidence_class.value,
-            "evidence_id": self.evidence_id,
-            "limitation": self.limitation,
-            "status": self.status.value,
+            "artifact_sha256": validated.artifact_sha256,
+            "available_time": validated.available_time,
+            "evidence_class": validated.evidence_class.value,
+            "evidence_id": validated.evidence_id,
+            "limitation": validated.limitation,
+            "status": validated.status.value,
         }
 
 
@@ -374,34 +382,58 @@ class ExternalValidationProfile:
         object.__setattr__(self, "evidence", evidence)
 
     def _manifest_without_fingerprint(self) -> dict[str, object]:
-        """Return canonical profile content used for immutable identity."""
+        """Return canonical profile content after replaying all admission checks."""
+        validated = ExternalValidationProfile(
+            validation_profile_id=self.validation_profile_id,
+            construct=self.construct,
+            score_interpretation=self.score_interpretation,
+            population=self.population,
+            setting=self.setting,
+            decision_use=self.decision_use,
+            assessment_fingerprint=self.assessment_fingerprint,
+            rubric_fingerprint=self.rubric_fingerprint,
+            item_bank_fingerprint=self.item_bank_fingerprint,
+            model_fingerprint=self.model_fingerprint,
+            development_dataset_ids=self.development_dataset_ids,
+            internal_validation_dataset_ids=self.internal_validation_dataset_ids,
+            external_validation_dataset_ids=self.external_validation_dataset_ids,
+            sites=self.sites,
+            languages=self.languages,
+            preregistration_reference=self.preregistration_reference,
+            preregistered_at=self.preregistered_at,
+            analysis_cutoff=self.analysis_cutoff,
+            data_license=self.data_license,
+            purpose_classification=self.purpose_classification,
+            evidence=self.evidence,
+            schema_version=self.schema_version,
+        )
         return {
-            "analysis_cutoff": self.analysis_cutoff,
-            "assessment_fingerprint": self.assessment_fingerprint,
-            "construct": self.construct,
-            "data_license": self.data_license,
-            "decision_use": self.decision_use,
-            "development_dataset_ids": list(self.development_dataset_ids),
-            "evidence": [row.to_manifest() for row in self.evidence],
+            "analysis_cutoff": validated.analysis_cutoff,
+            "assessment_fingerprint": validated.assessment_fingerprint,
+            "construct": validated.construct,
+            "data_license": validated.data_license,
+            "decision_use": validated.decision_use,
+            "development_dataset_ids": list(validated.development_dataset_ids),
+            "evidence": [row.to_manifest() for row in validated.evidence],
             "external_validation_dataset_ids": list(
-                self.external_validation_dataset_ids
+                validated.external_validation_dataset_ids
             ),
             "internal_validation_dataset_ids": list(
-                self.internal_validation_dataset_ids
+                validated.internal_validation_dataset_ids
             ),
-            "item_bank_fingerprint": self.item_bank_fingerprint,
-            "languages": list(self.languages),
-            "model_fingerprint": self.model_fingerprint,
-            "population": self.population,
-            "preregistered_at": self.preregistered_at,
-            "preregistration_reference": self.preregistration_reference,
-            "purpose_classification": self.purpose_classification,
-            "rubric_fingerprint": self.rubric_fingerprint,
-            "schema_version": self.schema_version,
-            "score_interpretation": self.score_interpretation,
-            "setting": self.setting,
-            "sites": list(self.sites),
-            "validation_profile_id": self.validation_profile_id,
+            "item_bank_fingerprint": validated.item_bank_fingerprint,
+            "languages": list(validated.languages),
+            "model_fingerprint": validated.model_fingerprint,
+            "population": validated.population,
+            "preregistered_at": validated.preregistered_at,
+            "preregistration_reference": validated.preregistration_reference,
+            "purpose_classification": validated.purpose_classification,
+            "rubric_fingerprint": validated.rubric_fingerprint,
+            "schema_version": validated.schema_version,
+            "score_interpretation": validated.score_interpretation,
+            "setting": validated.setting,
+            "sites": list(validated.sites),
+            "validation_profile_id": validated.validation_profile_id,
         }
 
     @property
@@ -412,7 +444,7 @@ class ExternalValidationProfile:
     def to_manifest(self) -> dict[str, object]:
         """Return a deterministic JSON-compatible source-free profile."""
         payload = self._manifest_without_fingerprint()
-        payload["profile_fingerprint"] = self.profile_fingerprint
+        payload["profile_fingerprint"] = _sha256(payload)
         return payload
 
 
