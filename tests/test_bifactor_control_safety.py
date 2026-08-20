@@ -107,6 +107,26 @@ def _call_logit(data, *, general_factor=0, zero_tolerance=0.0):
     )
 
 
+def _call_valid_standardized(*, general_factor=0, zero_tolerance=0.0):
+    loadings = np.asarray([[0.60, 0.20], [0.70, 0.30]], dtype=np.float64)
+    uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
+    return scoreability.bifactor_scoreability(
+        loadings,
+        uniquenesses,
+        general_factor=general_factor,
+        zero_tolerance=zero_tolerance,
+    )
+
+
+def _call_valid_logit(*, general_factor=0, zero_tolerance=0.0):
+    slopes = np.asarray([[1.0, 0.2], [1.1, 0.3]], dtype=np.float64)
+    return scoreability.bifactor_scoreability_from_logit_slopes(
+        slopes,
+        general_factor=general_factor,
+        zero_tolerance=zero_tolerance,
+    )
+
+
 @pytest.mark.parametrize("entrypoint", [_call_standardized, _call_logit])
 @pytest.mark.parametrize("kind", ["subclass", "provider", "bool", "numpy_bool"])
 def test_general_factor_rejects_untrusted_types_before_data_or_core(
@@ -200,3 +220,21 @@ def test_trusted_numpy_controls_are_normalized_to_builtin_scalars(monkeypatch):
         )
 
     assert seen == [(0, 0.0)]
+
+
+@pytest.mark.parametrize("entrypoint", [_call_valid_standardized, _call_valid_logit])
+def test_validly_typed_general_factor_domain_errors_remain_rust_owned(entrypoint):
+    """Trusted index values retain the compiled core's semantic range contract."""
+    with pytest.raises(ValueError, match=r"general_factor must be in 0\.\.2"):
+        entrypoint(general_factor=np.int32(2))
+
+
+@pytest.mark.parametrize("entrypoint", [_call_valid_standardized, _call_valid_logit])
+@pytest.mark.parametrize("zero_tolerance", [np.float32(-0.1), np.float64(np.inf)])
+def test_validly_typed_zero_tolerance_domain_errors_remain_rust_owned(
+    entrypoint,
+    zero_tolerance,
+):
+    """Trusted tolerance values retain the compiled core's semantic domain contract."""
+    with pytest.raises(ValueError, match="zero_tolerance must be finite and non-negative"):
+        entrypoint(zero_tolerance=zero_tolerance)
