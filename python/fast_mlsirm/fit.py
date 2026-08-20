@@ -162,6 +162,11 @@ def fit(
             # space is not estimated — unchanged public behavior). Use the
             # spatial models or a population structure for the full marginal
             # latent-space fit.
+            if _allow_reference_backend:
+                raise RuntimeError(
+                    "NumPy reference is unavailable for plain unidimensional MMLE; "
+                    "use the production Rust fit"
+                )
             return _fit_mmle(y, observed, model, config)
         return _fit_mmle_marginal(
             y, observed, factors, n_dims, model, config, backend, device,
