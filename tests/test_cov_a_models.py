@@ -190,7 +190,10 @@ def test_resolve_model_rejects_exploratory_subclass_before_attribute_callback():
     calls: list[str] = []
 
     class HostileExploratory(ExploratoryModel):
+        """Expose a hostile dimensions attribute on a caller subclass."""
+
         def __getattribute__(self, name: str):
+            """Fail if model resolution reads caller-controlled dimensions."""
             if name == "dimensions":
                 calls.append(name)
                 raise AssertionError("model attribute callback executed")
@@ -210,7 +213,10 @@ def test_resolve_model_rejects_confirmatory_subclass_before_attribute_callback()
     calls: list[str] = []
 
     class HostileConfirmatory(ConfirmatoryModel):
+        """Expose a hostile loading-pattern attribute on a caller subclass."""
+
         def __getattribute__(self, name: str):
+            """Fail if model resolution reads caller-controlled metadata."""
             if name == "loading_pattern":
                 calls.append(name)
                 raise AssertionError("model attribute callback executed")
