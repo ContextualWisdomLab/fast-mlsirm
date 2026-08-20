@@ -197,6 +197,18 @@ def test_cli_rejects_reference_with_explicit_rust_backend(tmp_path, capsys):
     assert "cannot be combined" in capsys.readouterr().err
 
 
+def test_cli_rejects_numpy_as_a_production_backend(capsys):
+    with patch.object(
+        sys,
+        "argv",
+        ["fast-mlsirm", "fit", "--backend", "numpy"],
+    ):
+        with pytest.raises(SystemExit) as failure:
+            main()
+    assert failure.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
 def test_cli_score_json_payload_reports_scores(capsys):
     payload = {"item-1": 1}
     scores = [{"theta": [0.25], "theta_sd": [0.5], "method": "eap"}]
