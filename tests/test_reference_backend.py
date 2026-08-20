@@ -58,6 +58,7 @@ def test_public_fit_validates_config_before_native_discovery(
     """Invalid semantic controls must fail before compiled-core discovery."""
 
     def _unexpected_core_discovery() -> None:
+        """Fail if the invalid configuration reaches native discovery."""
         raise AssertionError("native core discovery preceded config validation")
 
     monkeypatch.setattr("fast_mlsirm.backend._load_core", _unexpected_core_discovery)
