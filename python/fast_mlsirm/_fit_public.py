@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
-from .backend import _REFERENCE_BACKEND_ACTIVE, normalize_production_backend
+from .backend import _REFERENCE_BACKEND_ACTIVE, resolve_backend
 from .config import FitConfig
 from .fit import fit as _fit_internal
 from .types import FitResult
@@ -21,12 +23,17 @@ def fit(
     covariate: dict | None = None,
 ) -> FitResult:
     """Fit a latent-space model through the production Rust-owned backend."""
-    production_config = config or FitConfig()
-    # Enforce the production backend contract before entering the internal fit
-    # implementation, then explicitly clear any inherited reference authority.
-    # A caller that imports _reference_backend_scope therefore cannot turn this
-    # exported production surface into a NumPy fitting path.
-    normalize_production_backend(production_config.backend)
+    requested_config = config or FitConfig()
+    # Resolve the production numerical owner before entering the internal fit
+    # implementation. Besides failing closed when Rust is unavailable, passing
+    # the concrete backend downstream prevents successful ``auto`` runs from
+    # leaking the unresolved selector into FitResult metadata.
+    concrete_backend = resolve_backend(requested_config.backend)
+    production_config = replace(requested_config, backend=concrete_backend)
+
+    # Explicitly clear any inherited reference authority. A caller that imports
+    # _reference_backend_scope therefore cannot turn this exported production
+    # surface into a NumPy fitting path, even with a production backend name.
     token = _REFERENCE_BACKEND_ACTIVE.set(False)
     try:
         return _fit_internal(
