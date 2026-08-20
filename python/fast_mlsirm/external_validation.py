@@ -90,13 +90,16 @@ def _text_tuple(
     minimum: int = 0,
     maximum: int = MAX_COLLECTION_VALUES,
 ) -> tuple[str, ...]:
-    """Normalize a bounded exact list/tuple of unique exact built-in strings."""
+    """Normalize a bounded list/tuple of unique provider-neutral text values."""
     if type(values) not in {tuple, list}:
         raise ValueError(f"{name} must be a list or tuple")
     if not minimum <= len(values) <= maximum:
-        raise ValueError(f"{name} must contain between {minimum} and {maximum} values")
+        raise ValueError(
+            f"{name} must contain between {minimum} and {maximum} values"
+        )
     normalized = tuple(
-        _identifier(value, f"{name}[{index}]") for index, value in enumerate(values)
+        _text(value, f"{name}[{index}]", maximum=512)
+        for index, value in enumerate(values)
     )
     if len(set(normalized)) != len(normalized):
         raise ValueError(f"{name} must not contain duplicates")
@@ -110,7 +113,9 @@ def _timestamp(value: object, name: str) -> tuple[str, datetime]:
     try:
         parsed = datetime.fromisoformat(candidate)
     except ValueError:
-        raise ValueError(f"{name} must be an ISO-8601 timestamp with timezone") from None
+        raise ValueError(
+            f"{name} must be an ISO-8601 timestamp with timezone"
+        ) from None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError(f"{name} must include a timezone")
     utc = parsed.astimezone(timezone.utc)
@@ -123,7 +128,9 @@ def _evidence_tuple(values: object) -> tuple[ValidationEvidence, ...]:
     if type(values) not in {tuple, list}:
         raise ValueError("evidence must be a list or tuple")
     if len(values) > MAX_COLLECTION_VALUES:
-        raise ValueError(f"evidence must contain at most {MAX_COLLECTION_VALUES} values")
+        raise ValueError(
+            f"evidence must contain at most {MAX_COLLECTION_VALUES} values"
+        )
     normalized: list[ValidationEvidence] = []
     for index, value in enumerate(values):
         if type(value) is not ValidationEvidence:
@@ -161,7 +168,11 @@ class ValidationEvidence:
     limitation: str | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "evidence_id", _identifier(self.evidence_id, "evidence_id"))
+        object.__setattr__(
+            self,
+            "evidence_id",
+            _identifier(self.evidence_id, "evidence_id"),
+        )
         object.__setattr__(
             self,
             "evidence_class",
@@ -180,7 +191,11 @@ class ValidationEvidence:
             _optional_fingerprint(self.artifact_sha256, "artifact_sha256"),
         )
         if self.limitation is not None:
-            object.__setattr__(self, "limitation", _text(self.limitation, "limitation"))
+            object.__setattr__(
+                self,
+                "limitation",
+                _text(self.limitation, "limitation"),
+            )
 
     def to_manifest(self) -> dict[str, object]:
         """Return the JSON-compatible evidence projection."""
@@ -237,7 +252,11 @@ class ExternalValidationProfile:
             "data_license",
             "purpose_classification",
         ):
-            object.__setattr__(self, field_name, _text(getattr(self, field_name), field_name))
+            object.__setattr__(
+                self,
+                field_name,
+                _text(getattr(self, field_name), field_name),
+            )
         for field_name in (
             "assessment_fingerprint",
             "rubric_fingerprint",
@@ -265,7 +284,9 @@ class ExternalValidationProfile:
         if type(languages) not in {tuple, list}:
             raise ValueError("languages must be a list or tuple")
         if len(languages) > MAX_COLLECTION_VALUES:
-            raise ValueError(f"languages must contain at most {MAX_COLLECTION_VALUES} values")
+            raise ValueError(
+                f"languages must contain at most {MAX_COLLECTION_VALUES} values"
+            )
         normalized_languages = tuple(
             _text(value, f"languages[{index}]", maximum=32)
             for index, value in enumerate(languages)
@@ -280,9 +301,13 @@ class ExternalValidationProfile:
         object.__setattr__(self, "schema_version", schema_version)
 
         preregistered_at, preregistered_dt = _timestamp(
-            self.preregistered_at, "preregistered_at"
+            self.preregistered_at,
+            "preregistered_at",
         )
-        analysis_cutoff, cutoff_dt = _timestamp(self.analysis_cutoff, "analysis_cutoff")
+        analysis_cutoff, cutoff_dt = _timestamp(
+            self.analysis_cutoff,
+            "analysis_cutoff",
+        )
         if preregistered_dt > cutoff_dt:
             raise ValueError("preregistered_at must not exceed analysis_cutoff")
         object.__setattr__(self, "preregistered_at", preregistered_at)
@@ -305,8 +330,12 @@ class ExternalValidationProfile:
             "decision_use": self.decision_use,
             "development_dataset_ids": list(self.development_dataset_ids),
             "evidence": [row.to_manifest() for row in self.evidence],
-            "external_validation_dataset_ids": list(self.external_validation_dataset_ids),
-            "internal_validation_dataset_ids": list(self.internal_validation_dataset_ids),
+            "external_validation_dataset_ids": list(
+                self.external_validation_dataset_ids
+            ),
+            "internal_validation_dataset_ids": list(
+                self.internal_validation_dataset_ids
+            ),
             "item_bank_fingerprint": self.item_bank_fingerprint,
             "languages": list(self.languages),
             "model_fingerprint": self.model_fingerprint,
