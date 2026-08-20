@@ -12,6 +12,13 @@ different axis: a Rust GPU request may fall back to the parity-verified Rust
 CPU implementation because the numerical owner and formula contract remain
 Rust-owned.
 
+The public `fit` signature has no reference-enabling keyword, and
+`FitConfig.validate()` has no public NumPy opt-in flag. The named reference API
+enters a scoped authority context and calls the same fit implementation with
+an explicit NumPy configuration. Low-level objective calls may still request
+`backend="numpy"` explicitly for Rust/NumPy parity; that kernel-level escape
+does not make NumPy a production fit backend.
+
 ## Failure boundary
 
 Python's import machinery provides a direct capability probe: `importlib.util.find_spec()` returns `None` when no module specification is found and importing the module is a separate operation. The package uses that boundary to distinguish an unavailable extension from an available compiled module. The PyO3 and maturin primary documentation describe the native extension as the Python-importable compiled module produced and distributed with the package. Those mechanics support a fail-closed contract when the package's required production extension is missing; they do not justify substituting a different numerical implementation.
