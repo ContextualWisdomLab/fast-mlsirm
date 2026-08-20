@@ -1,5 +1,7 @@
 # Correct skewed-population Mokken study contract
 
+## Fixed
+
 - Keep the normal-trait Monte Carlo condition as the calibrated H/recovery
   contract.
 - Treat the skew-trait condition as a finite, distribution-sensitivity check
