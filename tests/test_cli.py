@@ -179,6 +179,24 @@ def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     assert summary["rust_device"] == "gpu"
 
 
+def test_cli_rejects_reference_with_explicit_rust_backend(tmp_path, capsys):
+    args = [
+        "fit",
+        "--responses",
+        str(tmp_path / "responses.npy"),
+        "--factors",
+        str(tmp_path / "factors.csv"),
+        "--reference",
+        "--backend",
+        "rust",
+        "--out",
+        str(tmp_path / "fit_out"),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 2
+    assert "cannot be combined" in capsys.readouterr().err
+
+
 def test_cli_score_json_payload_reports_scores(capsys):
     payload = {"item-1": 1}
     scores = [{"theta": [0.25], "theta_sd": [0.5], "method": "eap"}]

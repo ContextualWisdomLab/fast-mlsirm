@@ -376,6 +376,9 @@ def _main(argv: list[str] | None = None) -> int:
             raise
         print(f"❌ Error: Invalid path - {str(e)}", file=sys.stderr)
         return 1
+    if args.command == "fit" and args.reference and args.backend != "auto":
+        print("❌ Error: --reference cannot be combined with --backend rust", file=sys.stderr)
+        return 2
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
         try:
