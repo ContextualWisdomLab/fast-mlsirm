@@ -12,6 +12,13 @@ from fast_mlsirm.backend import _reference_backend_scope
 from fast_mlsirm.reference import fit_reference
 
 
+class _HostileFitConfig(FitConfig):
+    """FitConfig subclass that detects truth-value dispatch during admission."""
+
+    def __bool__(self) -> bool:
+        raise AssertionError("public fit dispatched caller-defined truthiness")
+
+
 def test_reference_rejects_rust_only_plain_unidimensional_mmle() -> None:
     """The reference label must not disguise a Rust-only legacy MMLE path."""
     with pytest.raises(RuntimeError, match="NumPy reference is unavailable"):
@@ -32,6 +39,16 @@ def test_public_fit_has_no_reference_authority_keyword() -> None:
             np.array([0, 0], dtype=np.int64),
             FitConfig(backend="numpy", max_iter=1, n_restarts=1),
             _allow_reference_backend=True,
+        )
+
+
+def test_public_fit_rejects_config_subclass_before_truthiness_callback() -> None:
+    """Production config admission must not invoke caller-defined truthiness."""
+    with pytest.raises(ValueError, match="config must be a FitConfig or None"):
+        fit(
+            np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
+            np.array([0, 0], dtype=np.int64),
+            _HostileFitConfig(),
         )
 
 
