@@ -167,12 +167,13 @@ class ComparisonEngine:
         )
 
     def to_manifest(self) -> dict[str, str]:
-        """Return the JSON-compatible external-engine identity."""
+        """Return a revalidated JSON-compatible external-engine identity."""
+        sealed = _engine(self)
         return {
-            "engine_id": self.engine_id,
-            "engine_version": self.engine_version,
-            "license_classification": self.license_classification,
-            "source_reference": self.source_reference,
+            "engine_id": sealed.engine_id,
+            "engine_version": sealed.engine_version,
+            "license_classification": sealed.license_classification,
+            "source_reference": sealed.source_reference,
         }
 
 
@@ -268,19 +269,38 @@ class ConformanceEvidence:
             raise ValueError("artifact_sha256 must be omitted for a nonexecuted status")
 
     def to_manifest(self) -> dict[str, object]:
-        """Return the JSON-compatible evidence projection."""
+        """Return a revalidated JSON-compatible evidence projection."""
+        sealed = _evidence(self)
         return {
-            "artifact_sha256": self.artifact_sha256,
-            "engine": self.engine.to_manifest(),
-            "environment_sha256": self.environment_sha256,
-            "evidence_id": self.evidence_id,
-            "execution_status": self.execution_status.value,
-            "fixture_sha256": self.fixture_sha256,
-            "layer": self.layer.value,
-            "limitation": self.limitation,
-            "parameter_mapping_sha256": self.parameter_mapping_sha256,
-            "parameter_mapping_version": self.parameter_mapping_version,
+            "artifact_sha256": sealed.artifact_sha256,
+            "engine": sealed.engine.to_manifest(),
+            "environment_sha256": sealed.environment_sha256,
+            "evidence_id": sealed.evidence_id,
+            "execution_status": sealed.execution_status.value,
+            "fixture_sha256": sealed.fixture_sha256,
+            "layer": sealed.layer.value,
+            "limitation": sealed.limitation,
+            "parameter_mapping_sha256": sealed.parameter_mapping_sha256,
+            "parameter_mapping_version": sealed.parameter_mapping_version,
         }
+
+
+def _evidence(value: object, name: str = "evidence") -> ConformanceEvidence:
+    """Revalidate one exact package-owned conformance-evidence record."""
+    if type(value) is not ConformanceEvidence:
+        raise ValueError(f"{name} must be a ConformanceEvidence")
+    return ConformanceEvidence(
+        evidence_id=value.evidence_id,
+        engine=value.engine,
+        layer=value.layer,
+        execution_status=value.execution_status,
+        parameter_mapping_version=value.parameter_mapping_version,
+        parameter_mapping_sha256=value.parameter_mapping_sha256,
+        fixture_sha256=value.fixture_sha256,
+        environment_sha256=value.environment_sha256,
+        artifact_sha256=value.artifact_sha256,
+        limitation=value.limitation,
+    )
 
 
 def _evidence_values(values: object) -> tuple[ConformanceEvidence, ...]:
@@ -293,22 +313,7 @@ def _evidence_values(values: object) -> tuple[ConformanceEvidence, ...]:
         )
     normalized: list[ConformanceEvidence] = []
     for index, value in enumerate(values):
-        if type(value) is not ConformanceEvidence:
-            raise ValueError(f"evidence[{index}] must be a ConformanceEvidence")
-        normalized.append(
-            ConformanceEvidence(
-                evidence_id=value.evidence_id,
-                engine=value.engine,
-                layer=value.layer,
-                execution_status=value.execution_status,
-                parameter_mapping_version=value.parameter_mapping_version,
-                parameter_mapping_sha256=value.parameter_mapping_sha256,
-                fixture_sha256=value.fixture_sha256,
-                environment_sha256=value.environment_sha256,
-                artifact_sha256=value.artifact_sha256,
-                limitation=value.limitation,
-            )
-        )
+        normalized.append(_evidence(value, f"evidence[{index}]"))
     if len({row.evidence_id for row in normalized}) != len(normalized):
         raise ValueError("evidence_id values must be unique")
     return tuple(sorted(normalized, key=lambda row: row.evidence_id))
@@ -400,19 +405,38 @@ class ConformanceCapability:
             raise ValueError("planned coverage may contain only nonexecuted evidence")
 
     def to_manifest(self) -> dict[str, object]:
-        """Return the JSON-compatible capability projection."""
+        """Return a revalidated JSON-compatible capability projection."""
+        sealed = _capability(self)
         return {
-            "capability_id": self.capability_id,
-            "comparison_scope": self.comparison_scope,
-            "coverage_status": self.coverage_status.value,
-            "estimand": self.estimand,
-            "evidence": [row.to_manifest() for row in self.evidence],
-            "identification": self.identification,
-            "likelihood_family": self.likelihood_family,
-            "parameterization": self.parameterization,
-            "public_entrypoint": self.public_entrypoint,
-            "schema_version": self.schema_version,
+            "capability_id": sealed.capability_id,
+            "comparison_scope": sealed.comparison_scope,
+            "coverage_status": sealed.coverage_status.value,
+            "estimand": sealed.estimand,
+            "evidence": [row.to_manifest() for row in sealed.evidence],
+            "identification": sealed.identification,
+            "likelihood_family": sealed.likelihood_family,
+            "parameterization": sealed.parameterization,
+            "public_entrypoint": sealed.public_entrypoint,
+            "schema_version": sealed.schema_version,
         }
+
+
+def _capability(value: object, name: str = "capability") -> ConformanceCapability:
+    """Revalidate one exact package-owned conformance-capability record."""
+    if type(value) is not ConformanceCapability:
+        raise ValueError(f"{name} must be a ConformanceCapability")
+    return ConformanceCapability(
+        capability_id=value.capability_id,
+        public_entrypoint=value.public_entrypoint,
+        estimand=value.estimand,
+        likelihood_family=value.likelihood_family,
+        parameterization=value.parameterization,
+        identification=value.identification,
+        comparison_scope=value.comparison_scope,
+        coverage_status=value.coverage_status,
+        evidence=value.evidence,
+        schema_version=value.schema_version,
+    )
 
 
 def _capability_values(values: object) -> tuple[ConformanceCapability, ...]:
@@ -425,22 +449,7 @@ def _capability_values(values: object) -> tuple[ConformanceCapability, ...]:
         )
     normalized: list[ConformanceCapability] = []
     for index, value in enumerate(values):
-        if type(value) is not ConformanceCapability:
-            raise ValueError(f"capabilities[{index}] must be a ConformanceCapability")
-        normalized.append(
-            ConformanceCapability(
-                capability_id=value.capability_id,
-                public_entrypoint=value.public_entrypoint,
-                estimand=value.estimand,
-                likelihood_family=value.likelihood_family,
-                parameterization=value.parameterization,
-                identification=value.identification,
-                comparison_scope=value.comparison_scope,
-                coverage_status=value.coverage_status,
-                evidence=value.evidence,
-                schema_version=value.schema_version,
-            )
-        )
+        normalized.append(_capability(value, f"capabilities[{index}]"))
     if len({row.capability_id for row in normalized}) != len(normalized):
         raise ValueError("capability_id values must be unique")
     return tuple(sorted(normalized, key=lambda row: row.capability_id))
@@ -477,12 +486,13 @@ class ConformanceInventory:
         object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
 
     def _manifest_without_fingerprint(self) -> dict[str, object]:
-        """Return normalized content used to derive immutable inventory identity."""
+        """Return revalidated content used to derive immutable inventory identity."""
+        sealed = _inventory(self)
         return {
-            "capabilities": [row.to_manifest() for row in self.capabilities],
-            "package_version": self.package_version,
-            "schema_version": self.schema_version,
-            "source_commit": self.source_commit,
+            "capabilities": [row.to_manifest() for row in sealed.capabilities],
+            "package_version": sealed.package_version,
+            "schema_version": sealed.schema_version,
+            "source_commit": sealed.source_commit,
         }
 
     @property
@@ -493,8 +503,20 @@ class ConformanceInventory:
     def to_manifest(self) -> dict[str, object]:
         """Return a deterministic JSON-compatible source-free inventory."""
         payload = self._manifest_without_fingerprint()
-        payload["inventory_fingerprint"] = self.inventory_fingerprint
+        payload["inventory_fingerprint"] = _sha256(payload)
         return payload
+
+
+def _inventory(value: object) -> ConformanceInventory:
+    """Revalidate one exact package-owned conformance-inventory record."""
+    if type(value) is not ConformanceInventory:
+        raise ValueError("inventory must be a ConformanceInventory")
+    return ConformanceInventory(
+        package_version=value.package_version,
+        source_commit=value.source_commit,
+        capabilities=value.capabilities,
+        schema_version=value.schema_version,
+    )
 
 
 __all__ = [
