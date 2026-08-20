@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from .backend import _reference_backend_scope
 from .config import FitConfig
 from .fit import fit
 from .types import FitResult
@@ -29,14 +30,15 @@ def fit_reference(
     Rust capability fails closed.
     """
     reference_config = replace(config or FitConfig(), backend="numpy")
-    return fit(
-        responses,
-        factor_id,
-        reference_config,
-        mask=mask,
-        group_id=group_id,
-        cluster_id=cluster_id,
-        anchors=anchors,
-        covariate=covariate,
-        _allow_reference_backend=True,
-    )
+    with _reference_backend_scope():
+        return fit(
+            responses,
+            factor_id,
+            reference_config,
+            mask=mask,
+            group_id=group_id,
+            cluster_id=cluster_id,
+            anchors=anchors,
+            covariate=covariate,
+            _allow_reference_backend=True,
+        )
