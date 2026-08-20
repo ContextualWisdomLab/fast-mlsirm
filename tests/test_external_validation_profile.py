@@ -21,7 +21,7 @@ _SHA_D = "d" * 64
 
 
 class _HostileText(str):
-    """String subclass whose text callbacks must not run during admission."""
+    """String subclass whose callbacks must not run during admission."""
 
     callbacks = 0
 
@@ -29,6 +29,16 @@ class _HostileText(str):
         """Fail if package validation dispatches caller-owned text behavior."""
         type(self).callbacks += 1
         raise AssertionError("caller text callback executed")
+
+    def __hash__(self) -> int:
+        """Fail if package validation hashes caller-owned text."""
+        type(self).callbacks += 1
+        raise AssertionError("caller text hash executed")
+
+    def __lt__(self, other: object) -> bool:
+        """Fail if package validation compares caller-owned text."""
+        type(self).callbacks += 1
+        raise AssertionError("caller text comparison executed")
 
 
 def _evidence(
@@ -136,6 +146,19 @@ def test_duplicate_evidence_ids_are_rejected() -> None:
         _profile(first, second)
 
 
+def test_mutated_evidence_id_fails_before_hash_or_sort_callbacks() -> None:
+    """Revalidate package records before hashing or sorting their identifiers."""
+    evidence = _evidence("technical_conformance", EvidenceClass.TECHNICAL)
+    hostile = _HostileText("technical_conformance")
+    object.__setattr__(evidence, "evidence_id", hostile)
+    _HostileText.callbacks = 0
+
+    with pytest.raises(ValueError, match=r"evidence\[0\]\.evidence_id must be a string"):
+        _profile(evidence)
+
+    assert _HostileText.callbacks == 0
+
+
 def test_provider_neutral_dataset_and_site_identifiers_are_preserved() -> None:
     """Preserve provider-neutral dataset and site identity syntax."""
     technical = _evidence("technical_conformance", EvidenceClass.TECHNICAL)
@@ -172,7 +195,7 @@ def test_status_vocabulary_preserves_failure_and_nonexecution_states() -> None:
 
 
 def test_text_subclasses_fail_before_text_callbacks() -> None:
-    """Profile identity admission rejects hostile text without invoking ``strip``."""
+    """Profile identity admission rejects hostile text without invoking callbacks."""
     _HostileText.callbacks = 0
     technical = _evidence("technical_conformance", EvidenceClass.TECHNICAL)
 
