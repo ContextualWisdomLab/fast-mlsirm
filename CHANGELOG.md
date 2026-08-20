@@ -17,6 +17,12 @@
 - Reject caller-defined scalar/container subclasses and arbitrary conversion providers without executing their conversion, comparison, representation, hashing, or iteration callbacks.
 - Preserve exact built-in and genuine NumPy scalar compatibility while keeping circle-arc geometry, nominal-weights moments, composite-linking weight arithmetic, and all result-affecting equating mathematics in Rust.
 
+#### Harden observed-score logistic DIF controls
+
+- Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
+- Reject caller-defined scalar subclasses, arbitrary conversion providers, booleans-as-numbers, invalid FDR levels, zero iteration caps, negative anchor floors, and values outside native `usize` without invoking caller callbacks.
+- Preserve genuine supported NumPy scalar compatibility and keep all logistic/Mantel-Haenszel/purification statistics and BH arithmetic Rust-owned.
+
 ### Fixed
 
 #### Fail closed on unsafe multilevel contextual effects
