@@ -141,6 +141,29 @@ that host to remain installable and useful as a standalone library.
 - a machine-generated acquisition valuation or guaranteed sale price; and
 - declaring every planned model family part of a 1.0 support promise.
 
+### 4.4 Versioned downstream handoff
+
+The reusable-core boundary is actionable only when a consumer can identify the
+artifact it is allowed to import and the owner of the surrounding lifecycle.
+The current handoff therefore follows these repository contracts:
+
+- [`docs/scoring_assessment_contracts.md`](scoring_assessment_contracts.md) and
+  [`docs/scoring_execution_contracts.md`](scoring_execution_contracts.md) define
+  the package-owned request, observation, scoring, and execution surfaces;
+- [`docs/enterprise_issue_evidence_contracts.md`](enterprise_issue_evidence_contracts.md)
+  defines source-free evidence handoff for an owning product; and
+- [`docs/adr/0001-domain-neutral-measurement-boundary.md`](adr/0001-domain-neutral-measurement-boundary.md),
+  [`docs/adr/0003-content-addressed-measurement-contracts.md`](adr/0003-content-addressed-measurement-contracts.md),
+  and [`docs/adr/0013-continuous-execution-and-documentation-governance.md`](adr/0013-continuous-execution-and-documentation-governance.md)
+  define ownership, immutable provenance, and documentation authority.
+
+Consumers must pin a released package/artifact schema and record its source and
+environment provenance. A downstream host owns participant/session/consent,
+authorization, persistence, raw content, human decisions, and regulated
+retention; this baseline does not create a second database or HTTP contract.
+The handoff is therefore reusable across `psychometrics-commons` and other
+consumers while `fast-mlsirm` remains independently installable.
+
 ## 5. Completion profiles
 
 ### 5.1 Technical alpha
@@ -462,6 +485,13 @@ watch items only.
   baselines. Draft successors must not be presented as current conformance.
 
 No standard reference in this file is a certification claim.
+
+Research traceability is maintained in the canonical
+[`docs/traceability/research-basis.md`](traceability/research-basis.md) index
+and the linked primary-source records under [`docs/papers/`](papers/README.md).
+The references in this baseline explain the product decision boundary; they do
+not replace the model-specific paper-first record required before changing a
+formula, estimator, fit statistic, or interpretation-facing output.
 
 ## 15. APA 7th reference baseline
 
