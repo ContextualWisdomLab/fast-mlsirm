@@ -15,9 +15,13 @@ runner therefore uses three named deadline classes:
 These values are repository operating policy, not universal performance claims.
 The statistical-study deadline is deliberately much longer than the metadata and
 inventory deadlines because true-parameter recovery and other ignored scientific
-studies are expected to perform substantially more computation. The existing
-GitHub Actions job timeout remains a separate outer ceiling; the ignored Rust
-shard job currently has a 90-minute job timeout.
+studies are expected to perform substantially more computation. The scheduled
+ignored-Rust workflow opts into the full 7,200-second statistical bound and has a
+separate 180-minute GitHub Actions shard ceiling; those controls are independent.
+
+The workflow-level override is intentionally limited to the exhaustive study
+job. Interactive and other automation callers continue to use the resolver's
+documented 1,800-second default unless they supply their own bounded override.
 
 ## Operator configuration
 
