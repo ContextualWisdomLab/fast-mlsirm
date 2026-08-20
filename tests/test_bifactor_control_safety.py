@@ -225,7 +225,7 @@ def test_trusted_numpy_controls_are_normalized_to_builtin_scalars(monkeypatch):
 @pytest.mark.parametrize("entrypoint", [_call_valid_standardized, _call_valid_logit])
 def test_validly_typed_general_factor_domain_errors_remain_rust_owned(entrypoint):
     """Trusted index values retain the compiled core's semantic range contract."""
-    with pytest.raises(ValueError, match=r"general_factor must be in 0\.\.2".replace("\\\\", "\\")):
+    with pytest.raises(ValueError, match="general_factor must be in 0[.][.]2"):
         entrypoint(general_factor=np.int32(2))
 
 
