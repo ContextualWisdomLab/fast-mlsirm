@@ -191,6 +191,8 @@ class ValidationEvidence:
     limitation: str | None = None
 
     def __post_init__(self) -> None:
+        if type(self) is not ValidationEvidence:
+            raise ValueError("ValidationEvidence must be an exact package record")
         object.__setattr__(
             self,
             "evidence_id",
@@ -260,6 +262,10 @@ class ExternalValidationProfile:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if type(self) is not ExternalValidationProfile:
+            raise ValueError(
+                "ExternalValidationProfile must be an exact package record"
+            )
         object.__setattr__(
             self,
             "validation_profile_id",

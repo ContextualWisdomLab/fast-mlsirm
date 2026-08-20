@@ -337,3 +337,41 @@ def test_text_subclasses_fail_before_text_callbacks() -> None:
         )
 
     assert _HostileText.callbacks == 0
+
+
+def test_evidence_subclasses_fail_before_field_callbacks() -> None:
+    """Reject evidence subclasses before reading caller-controlled fields."""
+
+    class HostileEvidence(ValidationEvidence):
+        def __getattribute__(self, name: str) -> object:
+            if name == "evidence_id":
+                raise AssertionError("evidence field callback executed")
+            return super().__getattribute__(name)
+
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileEvidence(
+            evidence_id="technical_conformance",
+            evidence_class=EvidenceClass.TECHNICAL,
+            status=EvidenceStatus.PASSED,
+            available_time="2026-07-01T00:00:00Z",
+        )
+
+
+def test_profile_subclasses_fail_before_field_callbacks() -> None:
+    """Reject profile subclasses before reading caller-controlled fields."""
+    base = _profile(_evidence("technical_conformance", EvidenceClass.TECHNICAL))
+
+    class HostileProfile(ExternalValidationProfile):
+        def __getattribute__(self, name: str) -> object:
+            if name == "construct":
+                raise AssertionError("profile field callback executed")
+            return super().__getattribute__(name)
+
+    from dataclasses import fields
+
+    values = {
+        field.name: getattr(base, field.name)
+        for field in fields(ExternalValidationProfile)
+    }
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileProfile(**values)
