@@ -41,7 +41,9 @@ def test_evidence_subclass_is_rejected_without_record_attribute_callback() -> No
                 raise AssertionError("factor-retention record callback executed")
             return super().__getattribute__(name)
 
-    record = HostileEvidence(FactorRetentionMethod.PARALLEL_ANALYSIS, 2)
+    record = object.__new__(HostileEvidence)
+    object.__setattr__(record, "method", FactorRetentionMethod.PARALLEL_ANALYSIS)
+    object.__setattr__(record, "candidate_count", 2)
 
     with pytest.raises(TypeError, match="FactorRetentionEvidence"):
         govern_factor_retention((record,))
