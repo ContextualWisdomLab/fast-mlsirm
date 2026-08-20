@@ -22,8 +22,8 @@ _UNSTABLE_PATH_ERROR = "JSON input path changed during the bounded read"
 
 
 def _positive_limit(value: object, field_name: str) -> int:
-    """Return ``value`` as a positive, non-Boolean integer."""
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+    """Return ``value`` as a positive exact built-in integer."""
+    if type(value) is not int or value <= 0:
         raise ValueError(f"{field_name} must be a positive integer")
     return value
 
@@ -166,15 +166,19 @@ def parse_json_bounded(
     """Parse a stable, bounded UTF-8 JSON string.
 
     Args:
-        content: The string containing the JSON.
+        content: Exact built-in string containing the JSON.
         max_bytes: Inclusive maximum number of bytes accepted.
         max_depth: Inclusive maximum object/array nesting depth.
 
     Raises:
-        ValueError: If limits are exceeded, or decoder recursion fails.
+        TypeError: If ``content`` is not an exact built-in string.
+        ValueError: If limits are invalid or exceeded, JSON syntax is invalid,
+            or decoder recursion fails.
     """
     byte_limit = _positive_limit(max_bytes, "max_bytes")
     depth_limit = _positive_limit(max_depth, "max_depth")
+    if type(content) is not str:
+        raise TypeError("content must be str")
 
     encoded = content.encode("utf-8")
     if len(encoded) > byte_limit:
