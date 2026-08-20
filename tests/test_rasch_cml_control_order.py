@@ -28,6 +28,7 @@ class _HostileResponses:
     calls = 0
 
     def __array__(self, dtype=None, copy=None):
+        """Fail if rejected controls trigger response conversion."""
         type(self).calls += 1
         raise AssertionError("caller-owned response materialization executed")
 
@@ -38,6 +39,7 @@ class _HostileGroup:
     calls = 0
 
     def __array__(self, dtype=None, copy=None):
+        """Fail if rejected controls trigger group conversion."""
         type(self).calls += 1
         raise AssertionError("caller-owned group materialization executed")
 
