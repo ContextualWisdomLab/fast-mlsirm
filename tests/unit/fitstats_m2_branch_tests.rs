@@ -21,13 +21,16 @@ fn m2_factorizes_independent_trait_dimensions() {
     let probs = vec![0.2, 0.8, 0.3, 0.7];
     let weights = vec![0.5, 0.5];
     let sets = vec![vec![0, 1]];
-    let moments = factorized_trait_moments(&probs, &weights, 2, &[0, 1], 2, &sets);
+    let moments = factorized_trait_moments(&probs, &weights, &[1.0], 2, &[0, 1], 2, &sets)
+        .expect("valid factorized moments must integrate");
     assert!((moments[0] - 0.25).abs() < 1e-14);
     assert!(
         (moments[0] - 0.31).abs() > 1e-3,
         "must not share one trait node"
     );
-    let missing_dimension = factorized_trait_moments(&probs, &weights, 2, &[0, 1], 3, &[vec![0]]);
+    let missing_dimension =
+        factorized_trait_moments(&probs, &weights, &[1.0], 2, &[0, 1], 3, &[vec![0]])
+            .expect("unused dimensions do not invalidate a moment set");
     assert!((missing_dimension[0] - 0.5).abs() < 1e-14);
 }
 

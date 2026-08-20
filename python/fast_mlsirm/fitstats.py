@@ -379,6 +379,68 @@ def _factorized_multilevel_moments(
     return np.asarray(cluster_weights, dtype=float) @ conditional
 
 
+def _encode_m2_item_sets(item_sets: list[list[int]]) -> tuple[np.ndarray, np.ndarray]:
+    """Encode variable-length item sets for the Rust M2 moment boundary."""
+    values: list[int] = []
+    offsets = [0]
+    for item_set in item_sets:
+        values.extend(int(item) for item in item_set)
+        offsets.append(len(values))
+    return (
+        np.ascontiguousarray(values, dtype=np.int64),
+        np.ascontiguousarray(offsets, dtype=np.int64),
+    )
+
+
+def _rust_factorized_m2_moments(
+    probs: np.ndarray,
+    trait_weights: np.ndarray,
+    space_weights: np.ndarray,
+    factor_id: np.ndarray,
+    item_sets: list[list[int]],
+    cluster_weights: np.ndarray | None = None,
+) -> np.ndarray:
+    """Delegate population moment integration to the compiled Rust core."""
+    core = _core_module()
+    values, offsets = _encode_m2_item_sets(item_sets)
+    common = (
+        np.ascontiguousarray(trait_weights, dtype=np.float64),
+        np.ascontiguousarray(space_weights, dtype=np.float64),
+        np.ascontiguousarray(factor_id, dtype=np.int64),
+        values,
+        offsets,
+    )
+    if probs.ndim == 3 and core is not None and hasattr(core, "factorized_trait_moments_stat"):
+        result = core.factorized_trait_moments_stat(
+            np.ascontiguousarray(probs, dtype=np.float64).ravel(),
+            common[0],
+            common[1],
+            int(probs.shape[1]),
+            common[2],
+            common[3],
+            common[4],
+        )
+    elif probs.ndim == 4 and core is not None and hasattr(
+        core, "factorized_multilevel_moments_stat"
+    ):
+        if cluster_weights is None:
+            raise ValueError("multilevel moment grids require cluster weights")
+        result = core.factorized_multilevel_moments_stat(
+            np.ascontiguousarray(probs, dtype=np.float64).ravel(),
+            np.ascontiguousarray(cluster_weights, dtype=np.float64),
+            common[0],
+            common[1],
+            int(probs.shape[0]),
+            int(probs.shape[2]),
+            common[2],
+            common[3],
+            common[4],
+        )
+    else:
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    return np.asarray(result, dtype=float)
+
+
 def _lord_wingersky(probs: np.ndarray) -> np.ndarray:
     """Summed-score distribution at each grid node.
 
@@ -2428,17 +2490,13 @@ def _m2_group_components(
 
     def moments(probs, item_sets=moment_items):
         """Return model-implied moments over ``item_sets``, single- or multilevel."""
-        if cluster_weights is None:
-            return _factorized_trait_moments(
-                probs, trait_weights, space_weights, d_of_i, item_sets
-            )
-        return _factorized_multilevel_moments(
+        return _rust_factorized_m2_moments(
             probs,
-            cluster_weights,
             trait_weights,
             space_weights,
             d_of_i,
             item_sets,
+            cluster_weights,
         )
 
     mom0 = moments(probs0)
@@ -2830,23 +2888,28 @@ def m2_multigroup(
 
 
 def _cluster_moment_covariance(z_rows, model_moments, cluster_id):
-    """Between-cluster covariance estimate of sqrt(N) marginal proportions."""
-    labels = np.asarray(cluster_id)
+    """Delegate between-cluster moment covariance construction to Rust."""
+    rows = np.asarray(z_rows, dtype=float)
+    moments = np.asarray(model_moments, dtype=float)
+    labels = np.asarray(cluster_id, dtype=np.int64)
+    if rows.ndim != 2 or moments.ndim != 1 or labels.ndim != 1:
+        raise ValueError("cluster covariance inputs must be one- or two-dimensional")
+    if rows.shape[0] != labels.size or rows.shape[1] != moments.size:
+        raise ValueError("cluster covariance inputs have inconsistent lengths")
     _, compact = np.unique(labels, return_inverse=True)
-    n_clusters = int(compact.max()) + 1
-    s = z_rows.shape[1]
-    if n_clusters <= s:
-        raise ValueError(
-            f"cluster-robust M2 needs more clusters than moments ({n_clusters} <= {s})"
-        )
-    totals = np.zeros((n_clusters, s), dtype=float)
-    residual_rows = z_rows - np.asarray(model_moments, dtype=float)
-    np.add.at(totals, compact, residual_rows)
-    centered = totals - totals.mean(axis=0)
-    return (
-        (n_clusters / (n_clusters - 1.0)) * (centered.T @ centered) / z_rows.shape[0],
+    n_clusters = int(compact.max()) + 1 if compact.size else 0
+    core = _core_module()
+    if core is None or not hasattr(core, "cluster_moment_covariance_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    covariance = core.cluster_moment_covariance_stat(
+        np.ascontiguousarray(rows, dtype=np.float64).ravel(),
+        np.ascontiguousarray(moments, dtype=np.float64),
+        np.ascontiguousarray(compact, dtype=np.int64),
+        int(rows.shape[0]),
+        int(rows.shape[1]),
         n_clusters,
     )
+    return np.asarray(covariance, dtype=float).reshape(rows.shape[1], rows.shape[1]), n_clusters
 
 
 def m2_multilevel(
