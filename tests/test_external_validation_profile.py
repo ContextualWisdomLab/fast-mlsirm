@@ -109,15 +109,21 @@ def test_future_evidence_cannot_cross_the_analysis_cutoff() -> None:
         available_time="2026-08-02T00:00:00Z",
     )
 
-    with pytest.raises(ValueError, match="available_time must not exceed analysis_cutoff"):
+    with pytest.raises(
+        ValueError,
+        match="available_time must not exceed analysis_cutoff",
+    ):
         _profile(future)
 
 
 def test_preregistration_must_precede_the_analysis_cutoff() -> None:
-    """A protocol timestamp after analysis cutoff cannot masquerade as preregistration."""
+    """Reject a protocol timestamp after the declared analysis cutoff."""
     profile = _profile(_evidence("technical_conformance", EvidenceClass.TECHNICAL))
 
-    with pytest.raises(ValueError, match="preregistered_at must not exceed analysis_cutoff"):
+    with pytest.raises(
+        ValueError,
+        match="preregistered_at must not exceed analysis_cutoff",
+    ):
         replace(profile, preregistered_at="2026-08-02T00:00:00Z")
 
 
@@ -128,6 +134,23 @@ def test_duplicate_evidence_ids_are_rejected() -> None:
 
     with pytest.raises(ValueError, match="evidence_id values must be unique"):
         _profile(first, second)
+
+
+def test_provider_neutral_dataset_and_site_identifiers_are_preserved() -> None:
+    """Preserve provider-neutral dataset and site identity syntax."""
+    technical = _evidence("technical_conformance", EvidenceClass.TECHNICAL)
+    profile = replace(
+        _profile(technical),
+        development_dataset_ids=("doi:10.1234/example.dataset",),
+        external_validation_dataset_ids=("urn:dataset:external:2026-01",),
+        sites=("site/eu-west/01",),
+    )
+
+    assert profile.development_dataset_ids == ("doi:10.1234/example.dataset",)
+    assert profile.external_validation_dataset_ids == (
+        "urn:dataset:external:2026-01",
+    )
+    assert profile.sites == ("site/eu-west/01",)
 
 
 def test_status_vocabulary_preserves_failure_and_nonexecution_states() -> None:
@@ -154,6 +177,9 @@ def test_text_subclasses_fail_before_text_callbacks() -> None:
     technical = _evidence("technical_conformance", EvidenceClass.TECHNICAL)
 
     with pytest.raises(ValueError, match="validation_profile_id must be a string"):
-        replace(_profile(technical), validation_profile_id=_HostileText("profile_v1"))
+        replace(
+            _profile(technical),
+            validation_profile_id=_HostileText("profile_v1"),
+        )
 
     assert _HostileText.callbacks == 0
