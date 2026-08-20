@@ -20,6 +20,7 @@ _SHA_B = "b" * 64
 _SHA_C = "c" * 64
 _SHA_D = "d" * 64
 _SHA_E = "e" * 64
+_GIT_SHA_1 = "04d0bc21a2a20693bcf16108cd76d394fe844d23"
 
 
 def _engine(engine_id: str = "reference_engine") -> EngineReference:
@@ -176,6 +177,27 @@ def test_provenance_must_bind_the_same_protected_main_revision() -> None:
             capabilities=(_capability(),),
             provenance=provenance,
         )
+
+
+def test_git_sha_one_and_sha_two_are_valid_commit_identifiers() -> None:
+    """Accept both Git SHA-1 and SHA-256 commit identifier formats."""
+    provenance = replace(_provenance(), protected_main_sha=_GIT_SHA_1)
+    manifest = replace(
+        _manifest(_capability()),
+        protected_main_sha=_GIT_SHA_1,
+        provenance=provenance,
+    )
+
+    assert manifest.protected_main_sha == _GIT_SHA_1
+    assert provenance.harness_sha == _SHA_B
+
+
+def test_git_commit_identifiers_reject_non_git_fingerprints() -> None:
+    """Reject malformed commit IDs without weakening artifact fingerprints."""
+    with pytest.raises(ValueError, match="lowercase Git SHA"):
+        replace(_provenance(), protected_main_sha="bad")
+    with pytest.raises(ValueError, match="lowercase Git SHA"):
+        replace(_provenance(), harness_sha="f" * 63)
 
 
 def test_exact_package_records_reject_subclasses_before_field_callbacks() -> None:

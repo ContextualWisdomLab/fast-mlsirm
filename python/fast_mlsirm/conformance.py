@@ -21,6 +21,7 @@ MAX_TEXT_LENGTH = 4_096
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 _FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_COMMIT_SHA_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 class ConformanceStatus(str, Enum):
@@ -69,6 +70,14 @@ def _fingerprint(value: object, name: str) -> str:
     normalized = _text(value, name, maximum=64)
     if _FINGERPRINT_PATTERN.fullmatch(normalized) is None:
         raise ValueError(f"{name} must be a lowercase SHA-256 hex digest")
+    return normalized
+
+
+def _commit_sha(value: object, name: str) -> str:
+    """Validate a lowercase Git SHA-1 or SHA-256 commit identifier."""
+    normalized = _text(value, name, maximum=64)
+    if _COMMIT_SHA_PATTERN.fullmatch(normalized) is None:
+        raise ValueError(f"{name} must be a lowercase Git SHA-1 or SHA-256")
     return normalized
 
 
@@ -276,7 +285,8 @@ class ConformanceProvenance:
             "fixture_fingerprint",
             "mapping_fingerprint",
         ):
-            object.__setattr__(self, field_name, _fingerprint(getattr(self, field_name), field_name))
+            validator = _commit_sha if field_name in {"protected_main_sha", "harness_sha"} else _fingerprint
+            object.__setattr__(self, field_name, validator(getattr(self, field_name), field_name))
         for field_name in ("mapping_schema", "rng_algorithm", "license_classification"):
             object.__setattr__(self, field_name, _text(getattr(self, field_name), field_name))
         if type(self.rng_seeds) not in {tuple, list}:
@@ -326,7 +336,7 @@ class ConformanceManifest:
             "conformance_manifest_id",
             _identifier(self.conformance_manifest_id, "conformance_manifest_id"),
         )
-        main_sha = _fingerprint(self.protected_main_sha, "protected_main_sha")
+        main_sha = _commit_sha(self.protected_main_sha, "protected_main_sha")
         object.__setattr__(self, "protected_main_sha", main_sha)
         if type(self.provenance) is not ConformanceProvenance:
             raise ValueError("provenance must be a ConformanceProvenance")
