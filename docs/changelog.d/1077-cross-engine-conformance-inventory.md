@@ -4,3 +4,4 @@
 - Accept both full Git SHA-1 and SHA-256 commit identities so protected-main and harness provenance remains valid across repository hash-format migrations.
 - Require at least one executed evidence row before a capability can claim
   `covered` or `partially_covered` status.
+- Revalidate exact package-owned engine, evidence, capability, and inventory records before manifest or fingerprint replay so post-construction field rebinding cannot bypass semantic-control, fingerprint, or collection admission; hostile enum controls and container subclasses fail closed before their callbacks execute.
