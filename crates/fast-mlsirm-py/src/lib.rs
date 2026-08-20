@@ -15,7 +15,8 @@ use mlsirm_core::equating::{
 use mlsirm_core::fitstats::{
     benjamini_hochberg as core_benjamini_hochberg, chi2_sf as core_chi2_sf,
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
-    m2_cmle_rasch as core_m2_cmle_rasch, m2_rmsea2 as core_m2, person_fit as core_person_fit,
+    m2_cmle_rasch as core_m2_cmle_rasch, m2_rmsea2 as core_m2,
+    m2_rmsea2_structured as core_m2_structured, person_fit as core_person_fit,
     poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2,
     projected_m2 as core_projected_m2,
     projected_m2_workspace_elements as core_projected_m2_workspace_elements,
@@ -7036,6 +7037,90 @@ fn m2_stat(
     Ok(out.into())
 }
 
+/// Structured single-population M2 with Rust-owned calibration bookkeeping.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    fixed_items = None, estimate_population = false, tau_fixed = false,
+))]
+fn m2_structured_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    fixed_items: Option<PyReadonlyArray1<'_, bool>>,
+    estimate_population: bool,
+    tau_fixed: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, 256, 0)?;
+    let fixed = fixed_items
+        .as_ref()
+        .map(|values| values.as_slice())
+        .transpose()?;
+    let res = core_m2_structured(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+        fixed,
+        estimate_population,
+        tau_fixed,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("m2", res.m2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rmsea2", res.rmsea2)?;
+    out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
+    out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
+    out.set_item("srmsr", res.srmsr)?;
+    out.set_item("null_m2", res.null_m2)?;
+    out.set_item("null_df", res.null_df)?;
+    out.set_item("cfi", res.cfi)?;
+    out.set_item("tli", res.tli)?;
+    out.set_item("n_moments", res.n_moments)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_complete", res.n_complete)?;
+    Ok(out.into())
+}
+
 
 
 /// Projected M2 quadratic form ownership entrypoint (dense residual / Delta / Xi).
@@ -9238,6 +9323,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(leniency_residuals_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(m2_structured_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_cmle_rasch_stat, m)?)?;
     m.add_function(wrap_pyfunction!(projected_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;

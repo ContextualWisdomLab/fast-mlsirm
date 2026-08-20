@@ -1,6 +1,6 @@
 //! Item- and person-fit statistics on the Rust core (the compute path; the
-//! NumPy implementations in `python/fast_mlsirm/fitstats.py` are the parity
-//! reference and fallback).
+//! NumPy implementations in `python/fast_mlsirm/fitstats.py` are explicit
+//! parity/reference helpers, never an implicit production fallback).
 //!
 //! - S-X² (Orlando & Thissen 2000) and S-G² (Sinharay & Lu 2008) with the
 //!   Lord-Wingersky recursion on the joint `(theta, xi)` node set, per trait
@@ -1764,8 +1764,11 @@ enum M2Param {
     Alpha(usize),
     Zeta(usize, usize),
     Tau,
+    PopulationMean(usize),
+    PopulationSd(usize),
 }
 
+#[cfg(test)]
 fn m2_parameters(
     n_items: usize,
     free_alpha: bool,
@@ -1773,8 +1776,35 @@ fn m2_parameters(
     latent_dim: usize,
     tau_free: bool,
 ) -> Vec<M2Param> {
+    m2_parameters_with_controls(
+        n_items,
+        free_alpha,
+        uses_space,
+        latent_dim,
+        latent_dim,
+        tau_free,
+        None,
+        false,
+        false,
+    )
+}
+
+fn m2_parameters_with_controls(
+    n_items: usize,
+    free_alpha: bool,
+    uses_space: bool,
+    latent_dim: usize,
+    population_dims: usize,
+    tau_free: bool,
+    fixed_items: Option<&[bool]>,
+    estimate_population: bool,
+    tau_fixed: bool,
+) -> Vec<M2Param> {
     let mut params = Vec::new();
     for i in 0..n_items {
+        if fixed_items.is_some_and(|fixed| fixed[i]) {
+            continue;
+        }
         params.push(M2Param::B(i));
         if free_alpha {
             params.push(M2Param::Alpha(i));
@@ -1785,8 +1815,16 @@ fn m2_parameters(
             }
         }
     }
-    if tau_free {
+    if tau_free && !tau_fixed {
         params.push(M2Param::Tau);
+    }
+    if estimate_population {
+        for d in 0..population_dims.max(1) {
+            params.push(M2Param::PopulationMean(d));
+        }
+        for d in 0..population_dims.max(1) {
+            params.push(M2Param::PopulationSd(d));
+        }
     }
     params
 }
@@ -1804,6 +1842,26 @@ fn m2_param_value(
         M2Param::Alpha(i) => alpha[i],
         M2Param::Zeta(i, k) => zeta[i * latent_dim + k],
         M2Param::Tau => tau,
+        M2Param::PopulationMean(_) | M2Param::PopulationSd(_) => {
+            unreachable!("population parameters require prior values")
+        }
+    }
+}
+
+fn m2_structured_param_value(
+    param: M2Param,
+    alpha: &[f64],
+    b: &[f64],
+    zeta: &[f64],
+    tau: f64,
+    latent_dim: usize,
+    prior_mean: &[f64],
+    prior_sd: &[f64],
+) -> f64 {
+    match param {
+        M2Param::PopulationMean(d) => prior_mean[d],
+        M2Param::PopulationSd(d) => prior_sd[d],
+        _ => m2_param_value(param, alpha, b, zeta, tau, latent_dim),
     }
 }
 
@@ -1821,6 +1879,27 @@ fn set_m2_param(
         M2Param::Alpha(i) => alpha[i] = value,
         M2Param::Zeta(i, k) => zeta[i * latent_dim + k] = value,
         M2Param::Tau => *tau = value,
+        M2Param::PopulationMean(_) | M2Param::PopulationSd(_) => {
+            unreachable!("population parameters require prior values")
+        }
+    }
+}
+
+fn set_m2_structured_param(
+    param: M2Param,
+    value: f64,
+    alpha: &mut [f64],
+    b: &mut [f64],
+    zeta: &mut [f64],
+    tau: &mut f64,
+    latent_dim: usize,
+    prior_mean: &mut [f64],
+    prior_sd: &mut [f64],
+) {
+    match param {
+        M2Param::PopulationMean(d) => prior_mean[d] = value,
+        M2Param::PopulationSd(d) => prior_sd[d] = value,
+        _ => set_m2_param(param, value, alpha, b, zeta, tau, latent_dim),
     }
 }
 
@@ -2204,12 +2283,74 @@ pub fn m2_rmsea2(
     q_theta: usize,
     xi_rule: XiRule,
 ) -> Result<M2Result, String> {
+    m2_rmsea2_impl(
+        bank,
+        y,
+        observed,
+        n_persons,
+        prior,
+        q_theta,
+        xi_rule,
+        None,
+        false,
+        false,
+    )
+}
+
+/// Structured single-population M2 with Rust-owned calibration metadata.
+///
+/// `fixed_items` removes every calibration column for an anchored item.
+/// `estimate_population` adds the prior mean/SD nuisance columns, and
+/// `tau_fixed` removes the spatial-distance coefficient column. The numerical
+/// construction stays identical to [`m2_rmsea2`]; only the tangent-space
+/// parameter bookkeeping changes.
+pub fn m2_rmsea2_structured(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    fixed_items: Option<&[bool]>,
+    estimate_population: bool,
+    tau_fixed: bool,
+) -> Result<M2Result, String> {
+    m2_rmsea2_impl(
+        bank,
+        y,
+        observed,
+        n_persons,
+        prior,
+        q_theta,
+        xi_rule,
+        fixed_items,
+        estimate_population,
+        tau_fixed,
+    )
+}
+
+fn m2_rmsea2_impl(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    fixed_items: Option<&[bool]>,
+    estimate_population: bool,
+    tau_fixed: bool,
+) -> Result<M2Result, String> {
     let n_items = bank.b.len();
     if n_items < 3 {
         return Err("M2 needs at least 3 items".into());
     }
     if y.len() != n_persons * n_items || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if fixed_items.is_some_and(|fixed| fixed.len() != n_items) {
+        return Err("fixed_items must have length n_items".into());
     }
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
@@ -2227,7 +2368,17 @@ pub fn m2_rmsea2(
 
     // free item parameters (Delta columns), matching the estimator's count
     let tau_free = kind == crate::InteractionKind::Distance && uses_space;
-    let params = m2_parameters(n_items, free_alpha, uses_space, bank.latent_dim, tau_free);
+    let params = m2_parameters_with_controls(
+        n_items,
+        free_alpha,
+        uses_space,
+        bank.latent_dim,
+        bank.n_dims,
+        tau_free,
+        fixed_items,
+        estimate_population,
+        tau_fixed,
+    );
     let p = params.len();
     if s <= p {
         return Err(format!(
@@ -2244,6 +2395,9 @@ pub fn m2_rmsea2(
     }
     let n_c = complete.len();
     if n_c < p + 2 {
+        if (fixed_items.is_some() || estimate_population || tau_fixed) && n_c < 2 {
+            return Err("each population needs at least two complete cases for M2".into());
+        }
         return Err(format!("too few complete cases for M2: {n_c}"));
     }
     let n_f = n_c as f64;
@@ -2295,7 +2449,12 @@ pub fn m2_rmsea2(
     let zeta0 = bank.zeta.to_vec();
     let tau0 = bank.tau;
     let probs_for =
-        |alpha: &[f64], b: &[f64], zeta: &[f64], tau: f64| -> Result<Vec<f64>, String> {
+        |alpha: &[f64],
+         b: &[f64],
+         zeta: &[f64],
+         tau: f64,
+         prior_for: &PriorSpec|
+         -> Result<Vec<f64>, String> {
             let tb = ItemBank {
                 alpha,
                 b,
@@ -2307,22 +2466,58 @@ pub fn m2_rmsea2(
                 latent_dim: bank.latent_dim,
                 eps_distance: bank.eps_distance,
             };
-            let (pr, _w, _t, _c) = icc_nodes(&tb, prior, q_theta, xi_rule)?;
+            let (pr, _w, _t, _c) = icc_nodes(&tb, prior_for, q_theta, xi_rule)?;
             Ok(pr)
         };
     let mut delta = vec![0.0_f64; s * p];
     let ld = bank.latent_dim;
     for (col, param) in params.iter().enumerate() {
-        let base = m2_param_value(*param, &alpha0, &b0, &zeta0, tau0, ld);
-        let h = 1e-4 * (1.0 + base.abs());
+        let base = m2_structured_param_value(
+            *param,
+            &alpha0,
+            &b0,
+            &zeta0,
+            tau0,
+            ld,
+            &prior.mean,
+            &prior.sd,
+        );
+        let h = match param {
+            M2Param::PopulationSd(d) => {
+                (1e-4 * (1.0 + base.abs())).min(0.25 * prior.sd[*d])
+            }
+            _ => 1e-4 * (1.0 + base.abs()),
+        };
         let mut a = alpha0.clone();
         let mut b = b0.clone();
         let mut z = zeta0.clone();
         let mut t = tau0;
-        set_m2_param(*param, base + h, &mut a, &mut b, &mut z, &mut t, ld);
-        let mom_plus = model_moments(&probs_for(&a, &b, &z, t)?);
-        set_m2_param(*param, base - h, &mut a, &mut b, &mut z, &mut t, ld);
-        let mom_minus = model_moments(&probs_for(&a, &b, &z, t)?);
+        let mut prior_plus = prior.clone();
+        let mut prior_minus = prior.clone();
+        set_m2_structured_param(
+            *param,
+            base + h,
+            &mut a,
+            &mut b,
+            &mut z,
+            &mut t,
+            ld,
+            &mut prior_plus.mean,
+            &mut prior_plus.sd,
+        );
+        let mom_plus = model_moments(&probs_for(&a, &b, &z, t, &prior_plus)?);
+        set_m2_structured_param(
+            *param,
+            base - h,
+            &mut a,
+            &mut b,
+            &mut z,
+            &mut t,
+            ld,
+            &mut prior_minus.mean,
+            &mut prior_minus.sd,
+        );
+        let mom_minus = model_moments(&probs_for(&a, &b, &z, t, &prior_minus)?);
         let inv = 0.5 / h;
         for row in 0..s {
             delta[row * p + col] = (mom_plus[row] - mom_minus[row]) * inv;

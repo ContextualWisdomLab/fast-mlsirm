@@ -92,9 +92,11 @@ def _xlogx_over_y(x: float, y: float) -> float:
 
 
 def _core_module():
-    """The compiled Rust core, when built — the compute path for every
-    statistic here (the NumPy bodies below are the parity reference and
-    fallback)."""
+    """Return the compiled Rust core used by public numerical paths.
+
+    NumPy implementations below are explicit parity/reference helpers. They
+    are never selected implicitly by public dispatch.
+    """
     try:
         from . import _core  # type: ignore
 
@@ -1812,20 +1814,62 @@ def m2(
         return m2_cmle_rasch(y0, np.asarray(params.b, dtype=float), observed0)
 
     if estimate_population or fixed_items is not None or tau_fixed:
-        return _m2_single_population(
-            y0,
-            observed0,
-            d_of_i,
-            params,
-            model,
-            q_theta,
-            q_xi,
-            eps_distance,
+        fixed = None
+        if fixed_items is not None:
+            fixed_raw = np.asarray(fixed_items)
+            if fixed_raw.shape != (y0.shape[1],):
+                raise ValueError(f"fixed_items must have shape ({y0.shape[1]},)")
+            if not np.all((fixed_raw == 0) | (fixed_raw == 1)):
+                raise ValueError("fixed_items must contain only boolean values")
+            fixed = np.ascontiguousarray(fixed_raw.astype(bool))
+        core = _core_module()
+        if core is None or not hasattr(core, "m2_structured_stat"):
+            raise RuntimeError(
+                "structured fit statistics require the compiled Rust core"
+            )
+        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+        res = core.m2_structured_stat(
+            np.where(observed0, y0, 0.0).ravel(),
+            observed0.ravel(),
+            int(y0.shape[0]),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
             prior_mean,
             prior_sd,
-            estimate_population=estimate_population,
-            fixed_items=fixed_items,
-            tau_fixed=tau_fixed,
+            q_theta=int(q_theta),
+            xi_rule="gh",
+            q_xi=int(q_xi),
+            fixed_items=fixed,
+            estimate_population=bool(estimate_population),
+            tau_fixed=bool(tau_fixed),
+        )
+        return M2Result(
+            m2=float(res["m2"]),
+            df=float(res["df"]),
+            p_value=float(res["p_value"]),
+            rmsea2=float(res["rmsea2"]),
+            rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
+            rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
+            srmsr=float(res["srmsr"]),
+            null_m2=float(res["null_m2"]),
+            null_df=float(res["null_df"]),
+            cfi=float(res["cfi"]),
+            tli=float(res["tli"]),
+            n_moments=int(res["n_moments"]),
+            n_parameters=int(res["n_parameters"]),
+            n_complete=int(res["n_complete"]),
+            inference_note=(
+                "single-population MMLE M2 with estimated mean/SD nuisance columns"
+                if estimate_population
+                else "single-population MMLE M2 with fixed calibration columns excluded"
+            ),
         )
 
     core = _core_module()
