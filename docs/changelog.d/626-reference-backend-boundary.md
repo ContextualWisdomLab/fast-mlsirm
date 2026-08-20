@@ -1,4 +1,6 @@
-### Changed
+# Production backend boundary
+
+## Changed
 
 - Restrict production `FitConfig` and CLI backend selection to Rust (`rust` or
   fail-closed `auto`). Move the NumPy parity fit behind the explicit
