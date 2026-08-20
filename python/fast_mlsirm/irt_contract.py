@@ -17,6 +17,32 @@ MIN_OBSERVED_PER_ITEM = 3
 MIN_ITEM_DISTINCT_VALUES = 2
 MIN_FACTOR_ANCHOR_ITEMS = 2
 _FitResultT = TypeVar("_FitResultT")
+_TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = tuple(
+    np.dtype(code).type
+    for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
+)
+
+
+def _is_exact_numpy_integer_scalar_type(value_type: type) -> bool:
+    """Return whether ``value_type`` is a package-trusted NumPy integer type."""
+    return any(
+        value_type is trusted_type
+        for trusted_type in _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES
+    )
+
+
+def _readiness_integer(value: object, name: str, minimum: int) -> int:
+    """Normalize one inert readiness integer without caller-controlled coercion."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif _is_exact_numpy_integer_scalar_type(value_type):
+        normalized = int(value)
+    else:
+        raise TypeError(f"{name} must be an integer >= {minimum}")
+    if normalized < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return normalized
 
 
 def validate_irt_response_matrix(
@@ -106,24 +132,14 @@ def validate_irt_experiment_readiness(
     )
     n_persons, n_items = matrix.shape
 
-    def _validate_integer(value: object, name: str, minimum: int) -> int:
-        if not isinstance(value, (int, np.integer)) or isinstance(
-            value, (bool, np.bool_)
-        ):
-            raise TypeError(f"{name} must be an integer >= {minimum}")
-        normalized = int(value)
-        if normalized < minimum:
-            raise ValueError(f"{name} must be at least {minimum}")
-        return normalized
-
-    min_persons = _validate_integer(min_persons, "min_persons", 1)
+    min_persons = _readiness_integer(min_persons, "min_persons", 1)
     if n_persons < min_persons:
         raise ValueError(
             f"IRT experiment requires at least {min_persons} persons; "
             f"received {n_persons}"
         )
 
-    min_observed_per_item = _validate_integer(
+    min_observed_per_item = _readiness_integer(
         min_observed_per_item, "min_observed_per_item", 1
     )
     if min_observed_per_item > n_persons:
@@ -131,7 +147,7 @@ def validate_irt_experiment_readiness(
             f"min_observed_per_item cannot exceed the number of persons ({n_persons})"
         )
 
-    min_item_distinct_values = _validate_integer(
+    min_item_distinct_values = _readiness_integer(
         min_item_distinct_values, "min_item_distinct_values", 2
     )
     if item_type == "polytomous" and min_item_distinct_values > int(n_categories):
@@ -185,12 +201,13 @@ def validate_irt_experiment_readiness(
             raise ValueError(
                 "factor_ids must contain one factor label for each item"
             )
-        min_items_per_factor = _validate_integer(
+        min_items_per_factor = _readiness_integer(
             min_items_per_factor, "min_items_per_factor", 1
         )
         labels = factor_ids.tolist() if isinstance(factor_ids, np.ndarray) else factor_ids
 
         def _memberships(label: object) -> tuple[object, ...]:
+            """Normalize one item label into unique factor memberships."""
             if isinstance(label, np.ndarray):
                 if label.ndim == 0:
                     values = (label.item(),)
