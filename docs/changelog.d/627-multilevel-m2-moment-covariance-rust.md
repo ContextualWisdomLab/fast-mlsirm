@@ -1,5 +1,7 @@
 # Multilevel M2 moment and covariance ownership
 
+## Fixed
+
 - Move multigroup and multilevel M2 population-moment integration into the
   Rust/PyO3 numerical boundary, including the shared cluster-intercept
   reduction.

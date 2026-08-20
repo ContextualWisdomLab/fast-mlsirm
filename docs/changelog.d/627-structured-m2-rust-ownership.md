@@ -1,5 +1,7 @@
 # Structured M2 Rust ownership
 
+## Fixed
+
 - Route public single-population `m2()` calls that include estimated population
   moments, anchored items, or a fixed spatial coefficient through the Rust/PyO3
   M2 kernel. Missing structured native capability now fails closed instead of
