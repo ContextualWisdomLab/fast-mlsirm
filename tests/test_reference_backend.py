@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import FitConfig, fit
+from fast_mlsirm.backend import _reference_backend_scope
 from fast_mlsirm.reference import fit_reference
 
 
@@ -32,6 +33,26 @@ def test_public_fit_has_no_reference_authority_keyword() -> None:
             FitConfig(backend="numpy", max_iter=1, n_restarts=1),
             _allow_reference_backend=True,
         )
+
+
+def test_public_fit_rejects_numpy_inside_reference_scope() -> None:
+    """Importable reference scope cannot authorize NumPy through public fit."""
+    with _reference_backend_scope():
+        with pytest.raises(ValueError, match="production backend"):
+            fit(
+                np.array(
+                    [[0.0, 1.0, 0.0, 1.0], [1.0, 0.0, 1.0, 0.0]],
+                    dtype=np.float64,
+                ),
+                np.array([0, 0, 0, 0], dtype=np.int64),
+                FitConfig(
+                    model="MLS2PLM",
+                    latent_dim=1,
+                    max_iter=1,
+                    n_restarts=1,
+                    backend="numpy",
+                ),
+            )
 
 
 def test_named_reference_fit_owns_numpy_scope() -> None:
