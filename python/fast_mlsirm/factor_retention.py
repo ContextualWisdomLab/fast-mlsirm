@@ -36,6 +36,24 @@ class FactorRetentionDecision(str, Enum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
+def _require_method(value: object) -> None:
+    """Admit only the closed package-owned factor-retention method enum."""
+    if type(value) is not FactorRetentionMethod:
+        raise TypeError("method must be a FactorRetentionMethod")
+
+
+def _require_candidate_count(value: object) -> None:
+    """Validate one candidate count without invoking caller numeric protocols."""
+    if type(value) is not int:
+        raise ValueError("candidate_count must be a positive integer")
+    if value <= 0:
+        raise ValueError("candidate_count must be a positive integer")
+    if value > MAX_FACTOR_CANDIDATE_COUNT:
+        raise ValueError(
+            "candidate_count exceeds maximum governed factor candidate count"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class FactorRetentionEvidence:
     """One supported method's already-computed candidate factor count."""
@@ -45,16 +63,8 @@ class FactorRetentionEvidence:
 
     def __post_init__(self) -> None:
         """Fail closed on untyped methods and unbounded candidate counts."""
-        if not isinstance(self.method, FactorRetentionMethod):
-            raise TypeError("method must be a FactorRetentionMethod")
-        if type(self.candidate_count) is not int:
-            raise ValueError("candidate_count must be a positive integer")
-        if self.candidate_count <= 0:
-            raise ValueError("candidate_count must be a positive integer")
-        if self.candidate_count > MAX_FACTOR_CANDIDATE_COUNT:
-            raise ValueError(
-                "candidate_count exceeds maximum governed factor candidate count"
-            )
+        _require_method(self.method)
+        _require_candidate_count(self.candidate_count)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,10 +119,14 @@ def govern_factor_retention(
             raise ValueError(iterable_message) from None
         if type(record) is not FactorRetentionEvidence:
             raise TypeError("evidence entries must be FactorRetentionEvidence")
-        if record.method in seen_methods:
+        method = record.method
+        candidate_count = record.candidate_count
+        _require_method(method)
+        _require_candidate_count(candidate_count)
+        if method in seen_methods:
             raise ValueError("duplicate factor-retention method evidence")
-        seen_methods.add(record.method)
-        records.append(record)
+        seen_methods.add(method)
+        records.append(FactorRetentionEvidence(method, candidate_count))
 
     ordered = tuple(sorted(records, key=lambda record: record.method.value))
     if not ordered:
