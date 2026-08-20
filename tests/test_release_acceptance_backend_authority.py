@@ -110,3 +110,13 @@ def test_buyer_documents_describe_rust_production_and_named_numpy_reference() ->
     assert "PyO3 binding for the Rust production backend" in readme
     assert "fast_mlsirm.fit_reference" in commercial
     assert "fit --reference" in storyboard
+
+
+def test_fit_config_has_no_public_numpy_opt_in() -> None:
+    """Production configuration cannot re-enable NumPy through a public flag."""
+    from fast_mlsirm.config import FitConfig
+
+    with pytest.raises(TypeError, match="allow_reference_backend"):
+        FitConfig(backend="numpy").validate(allow_reference_backend=True)
+    with pytest.raises(ValueError, match="production backend"):
+        FitConfig(backend="numpy").validate()

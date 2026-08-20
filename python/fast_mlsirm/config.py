@@ -4,7 +4,12 @@ import math
 import operator
 from dataclasses import dataclass
 
-from .backend import normalize_backend, normalize_device, normalize_production_backend
+from .backend import (
+    _REFERENCE_BACKEND_ACTIVE,
+    normalize_backend,
+    normalize_device,
+    normalize_production_backend,
+)
 
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"}
@@ -200,15 +205,16 @@ class FitConfig:
         """Return the model name upper-cased for case-insensitive matching."""
         return self.model.upper()
 
-    def validate(self, *, allow_reference_backend: bool = False) -> None:
+    def validate(self) -> None:
         """Validate all fit settings, raising ``ValueError`` on any violation.
 
         Checks the model/optimizer/estimator vocabularies, the latent-space and
         L-BFGS-history bounds, the per-field and aggregate optimizer-work caps,
         finiteness/positivity of the float controls, the supported
         Gauss-Hermite node counts, and the latent-space integration rule and
-        its point/seed ranges. NumPy is accepted only when the explicit
-        reference API asks for ``allow_reference_backend``.
+        its point/seed ranges. NumPy is accepted only while the explicit
+        reference API owns the current fitting scope; production configuration
+        remains Rust-only.
         """
         model = self.normalized_model()
         if model not in VALID_MODELS:
@@ -275,7 +281,7 @@ class FitConfig:
             raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
         if not (0 <= xi_seed <= (1 << 64) - 1):
             raise ValueError("xi_seed must fit an unsigned 64-bit integer")
-        if allow_reference_backend:
+        if _REFERENCE_BACKEND_ACTIVE.get():
             normalize_backend(self.backend)
         else:
             normalize_production_backend(self.backend)

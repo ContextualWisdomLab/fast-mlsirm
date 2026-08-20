@@ -92,10 +92,22 @@ def resolve_backend(name: str) -> str:
 
 
 def resolve_reference_backend(name: str = "numpy") -> str:
-    """Resolve NumPy only while the named reference fitting API owns authority."""
+    """Resolve an explicitly requested NumPy parity kernel.
+
+    This low-level resolver intentionally has no fitting-scope requirement so
+    callers can compare the Rust kernel with the independent NumPy kernel.
+    High-level reference fitting uses :func:`_resolve_scoped_reference_backend`
+    to keep NumPy out of the production fitting contract.
+    """
     backend = normalize_backend(name)
     if backend not in VALID_REFERENCE_BACKENDS:
         raise ValueError("reference backend must be 'numpy'")
+    return backend
+
+
+def _resolve_scoped_reference_backend(name: str = "numpy") -> str:
+    """Resolve NumPy only while the named reference fitting API is active."""
+    backend = resolve_reference_backend(name)
     if not _REFERENCE_BACKEND_ACTIVE.get():
         raise RuntimeError(
             "NumPy fitting is available only through fast_mlsirm.fit_reference"

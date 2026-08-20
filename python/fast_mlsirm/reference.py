@@ -40,5 +40,4 @@ def fit_reference(
             cluster_id=cluster_id,
             anchors=anchors,
             covariate=covariate,
-            _allow_reference_backend=True,
         )

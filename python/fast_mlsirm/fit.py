@@ -4,7 +4,12 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import normalize_device, resolve_backend, resolve_reference_backend
+from .backend import (
+    _REFERENCE_BACKEND_ACTIVE,
+    _resolve_scoped_reference_backend,
+    normalize_device,
+    resolve_backend,
+)
 from .config import FitConfig, PenaltyConfig
 from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
@@ -46,7 +51,6 @@ def fit(
     cluster_id: np.ndarray | None = None,
     anchors: dict | None = None,
     covariate: dict | None = None,
-    _allow_reference_backend: bool = False,
 ) -> FitResult:
     """Fit a latent-space model.
 
@@ -103,10 +107,10 @@ def fit(
     https://doi.org/10.1080/01621459.1990.10474930
     """
     config = config or FitConfig()
-    config.validate(allow_reference_backend=_allow_reference_backend)
+    config.validate()
     backend = (
-        resolve_reference_backend(config.backend)
-        if _allow_reference_backend
+        _resolve_scoped_reference_backend(config.backend)
+        if _REFERENCE_BACKEND_ACTIVE.get()
         else resolve_backend(config.backend)
     )
     # The device is a sub-option of the Rust backend; the reference path ignores it.
@@ -162,7 +166,7 @@ def fit(
             # space is not estimated — unchanged public behavior). Use the
             # spatial models or a population structure for the full marginal
             # latent-space fit.
-            if _allow_reference_backend:
+            if backend == "numpy":
                 raise RuntimeError(
                     "NumPy reference is unavailable for plain unidimensional MMLE; "
                     "use the production Rust fit"

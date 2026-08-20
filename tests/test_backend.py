@@ -63,8 +63,10 @@ def test_auto_backend_resolves_to_rust_when_core_is_available(monkeypatch):
     assert backend.resolve_backend("auto") == "rust"
 
 
-def test_explicit_numpy_reference_backend_requires_named_reference_scope(monkeypatch):
-    """NumPy resolution is available only inside the named reference API scope."""
+def test_explicit_numpy_reference_backend_keeps_low_level_parity_scope_guarded(
+    monkeypatch,
+):
+    """Low-level parity stays explicit while high-level fitting remains scoped."""
     calls: list[None] = []
 
     def unexpected_core_load():
@@ -73,14 +75,13 @@ def test_explicit_numpy_reference_backend_requires_named_reference_scope(monkeyp
 
     monkeypatch.setattr(backend, "_load_core", unexpected_core_load)
 
-    with pytest.raises(RuntimeError, match="fit_reference"):
-        backend.resolve_reference_backend()
+    assert backend.resolve_reference_backend() == "numpy"
 
     with backend._reference_backend_scope():
-        assert backend.resolve_reference_backend() == "numpy"
+        assert backend._resolve_scoped_reference_backend() == "numpy"
 
     with pytest.raises(RuntimeError, match="fit_reference"):
-        backend.resolve_reference_backend()
+        backend._resolve_scoped_reference_backend()
     assert calls == []
 
 
