@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .backend import normalize_production_backend
 from .config import FitConfig
 from .fit import fit as _fit_internal
 from .types import FitResult
@@ -20,10 +21,15 @@ def fit(
     covariate: dict | None = None,
 ) -> FitResult:
     """Fit a latent-space model through the production Rust-owned backend."""
+    production_config = config or FitConfig()
+    # Enforce the production backend contract at the exported entry point.
+    # The internal reference scope is deliberately irrelevant here: callers
+    # that import it cannot turn the public fit surface into a NumPy path.
+    normalize_production_backend(production_config.backend)
     return _fit_internal(
         responses,
         factor_id,
-        config,
+        production_config,
         mask=mask,
         group_id=group_id,
         cluster_id=cluster_id,
