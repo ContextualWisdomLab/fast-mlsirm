@@ -49,6 +49,21 @@ class ConformanceExecutionStatus(str, Enum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class ConformanceEnvironmentKind(str, Enum):
+    """Immutable environment artifact represented by the environment digest."""
+
+    CONTAINER_IMAGE = "container_image"
+    ENVIRONMENT_LOCK = "environment_lock"
+
+
+class ConformanceRedistributionStatus(str, Enum):
+    """Redistribution boundary for conformance evidence and derived artifacts."""
+
+    REDISTRIBUTABLE = "redistributable"
+    METADATA_ONLY = "metadata_only"
+    RESTRICTED_NO_REDISTRIBUTION = "restricted_no_redistribution"
+
+
 _EXECUTED_STATUSES = {
     ConformanceExecutionStatus.PASSED,
     ConformanceExecutionStatus.FAILED,
@@ -149,15 +164,21 @@ class ConformanceRunProvenance:
 
     harness_commit: str
     environment_sha256: str
+    environment_kind: ConformanceEnvironmentKind
+    operating_system: str
+    architecture: str
     rng_algorithm: str
     rng_seeds: tuple[int, ...]
     mapping_schema_version: str
     mapping_sha256: str
+    model_configuration_sha256: str
+    convergence_controls_sha256: str
     tolerance_sha256: str
     tolerance_rationale: str
     raw_output_sha256: str | None
     normalized_output_sha256: str | None
     license_classification: str
+    redistribution_status: ConformanceRedistributionStatus
 
     def __post_init__(self) -> None:
         """Normalize exact reproducibility identities without raw result content."""
@@ -173,6 +194,8 @@ class ConformanceRunProvenance:
         for field_name in (
             "environment_sha256",
             "mapping_sha256",
+            "model_configuration_sha256",
+            "convergence_controls_sha256",
             "tolerance_sha256",
         ):
             object.__setattr__(
@@ -180,6 +203,25 @@ class ConformanceRunProvenance:
                 field_name,
                 _fingerprint(getattr(self, field_name), field_name),
             )
+        object.__setattr__(
+            self,
+            "environment_kind",
+            _enum_value(
+                self.environment_kind,
+                ConformanceEnvironmentKind,
+                "environment_kind",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "operating_system",
+            _text(self.operating_system, "operating_system", maximum=128),
+        )
+        object.__setattr__(
+            self,
+            "architecture",
+            _text(self.architecture, "architecture", maximum=128),
+        )
         object.__setattr__(
             self,
             "rng_algorithm",
@@ -216,18 +258,33 @@ class ConformanceRunProvenance:
             "license_classification",
             _identifier(self.license_classification, "license_classification"),
         )
+        object.__setattr__(
+            self,
+            "redistribution_status",
+            _enum_value(
+                self.redistribution_status,
+                ConformanceRedistributionStatus,
+                "redistribution_status",
+            ),
+        )
 
     def to_manifest(self) -> dict[str, object]:
         """Return revalidated source-free reproducibility metadata."""
         sealed = _run_provenance(self)
         return {
+            "architecture": sealed.architecture,
+            "convergence_controls_sha256": sealed.convergence_controls_sha256,
+            "environment_kind": sealed.environment_kind.value,
             "environment_sha256": sealed.environment_sha256,
             "harness_commit": sealed.harness_commit,
             "license_classification": sealed.license_classification,
             "mapping_schema_version": sealed.mapping_schema_version,
             "mapping_sha256": sealed.mapping_sha256,
+            "model_configuration_sha256": sealed.model_configuration_sha256,
             "normalized_output_sha256": sealed.normalized_output_sha256,
+            "operating_system": sealed.operating_system,
             "raw_output_sha256": sealed.raw_output_sha256,
+            "redistribution_status": sealed.redistribution_status.value,
             "rng_algorithm": sealed.rng_algorithm,
             "rng_seeds": list(sealed.rng_seeds),
             "tolerance_rationale": sealed.tolerance_rationale,
@@ -242,15 +299,21 @@ def _run_provenance(value: object) -> ConformanceRunProvenance:
     return ConformanceRunProvenance(
         harness_commit=value.harness_commit,
         environment_sha256=value.environment_sha256,
+        environment_kind=value.environment_kind,
+        operating_system=value.operating_system,
+        architecture=value.architecture,
         rng_algorithm=value.rng_algorithm,
         rng_seeds=value.rng_seeds,
         mapping_schema_version=value.mapping_schema_version,
         mapping_sha256=value.mapping_sha256,
+        model_configuration_sha256=value.model_configuration_sha256,
+        convergence_controls_sha256=value.convergence_controls_sha256,
         tolerance_sha256=value.tolerance_sha256,
         tolerance_rationale=value.tolerance_rationale,
         raw_output_sha256=value.raw_output_sha256,
         normalized_output_sha256=value.normalized_output_sha256,
         license_classification=value.license_classification,
+        redistribution_status=value.redistribution_status,
     )
 
 
@@ -657,9 +720,11 @@ __all__ = [
     "ComparisonEngine",
     "ConformanceCapability",
     "ConformanceCoverageStatus",
+    "ConformanceEnvironmentKind",
     "ConformanceEvidence",
     "ConformanceExecutionStatus",
     "ConformanceInventory",
     "ConformanceLayer",
+    "ConformanceRedistributionStatus",
     "ConformanceRunProvenance",
 ]
