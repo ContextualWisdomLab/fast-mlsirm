@@ -28,13 +28,16 @@ class _DataProbe:
     """Array-like whose materialization callbacks must remain untouched."""
 
     def __init__(self, counter: _CallbackCounter) -> None:
+        """Attach the callback counter used by every materialization probe."""
         self._counter = counter
 
     @property
     def shape(self):
+        """Fail if validation inspects the caller-provided shape."""
         self._counter.hit()
 
     def __array__(self, *_args, **_kwargs):
+        """Fail if NumPy materializes the caller-provided object."""
         self._counter.hit()
 
 
@@ -42,12 +45,15 @@ class _IndexProvider:
     """Arbitrary integer protocol provider that is not a trusted control type."""
 
     def __init__(self, counter: _CallbackCounter) -> None:
+        """Attach the callback counter used by conversion protocol probes."""
         self._counter = counter
 
     def __index__(self) -> int:
+        """Fail if validation invokes the arbitrary integer protocol."""
         self._counter.hit()
 
     def __int__(self) -> int:
+        """Fail if validation invokes arbitrary integer conversion."""
         self._counter.hit()
 
 
@@ -55,9 +61,11 @@ class _FloatProvider:
     """Arbitrary float protocol provider that is not a trusted control type."""
 
     def __init__(self, counter: _CallbackCounter) -> None:
+        """Attach the callback counter used by conversion protocol probes."""
         self._counter = counter
 
     def __float__(self) -> float:
+        """Fail if validation invokes arbitrary float conversion."""
         self._counter.hit()
 
 
@@ -66,12 +74,15 @@ def _hostile_int(counter: _CallbackCounter) -> int:
 
     class HostileInt(int):
         def __int__(self):
+            """Fail if conversion invokes the hostile integer override."""
             counter.hit()
 
         def __index__(self):
+            """Fail if indexing invokes the hostile integer override."""
             counter.hit()
 
         def __repr__(self):
+            """Fail if diagnostics reflect the hostile integer."""
             counter.hit()
 
     return HostileInt(0)
@@ -82,15 +93,18 @@ def _hostile_float(counter: _CallbackCounter) -> float:
 
     class HostileFloat(float):
         def __float__(self):
+            """Fail if conversion invokes the hostile float override."""
             counter.hit()
 
         def __repr__(self):
+            """Fail if diagnostics reflect the hostile float."""
             counter.hit()
 
     return HostileFloat(0.0)
 
 
 def _call_standardized(data, *, general_factor=0, zero_tolerance=0.0):
+    """Call the standardized-loading public bifactor entry point."""
     return scoreability.bifactor_scoreability(
         data,
         data,
@@ -100,6 +114,7 @@ def _call_standardized(data, *, general_factor=0, zero_tolerance=0.0):
 
 
 def _call_logit(data, *, general_factor=0, zero_tolerance=0.0):
+    """Call the logit-slope public bifactor entry point."""
     return scoreability.bifactor_scoreability_from_logit_slopes(
         data,
         general_factor=general_factor,
@@ -108,6 +123,7 @@ def _call_logit(data, *, general_factor=0, zero_tolerance=0.0):
 
 
 def _call_valid_standardized(*, general_factor=0, zero_tolerance=0.0):
+    """Call standardized scoring with a valid small loading matrix."""
     loadings = np.asarray([[0.60, 0.20], [0.70, 0.30]], dtype=np.float64)
     uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
     return scoreability.bifactor_scoreability(
@@ -119,6 +135,7 @@ def _call_valid_standardized(*, general_factor=0, zero_tolerance=0.0):
 
 
 def _call_valid_logit(*, general_factor=0, zero_tolerance=0.0):
+    """Call logit-slope scoring with a valid small slope matrix."""
     slopes = np.asarray([[1.0, 0.2], [1.1, 0.3]], dtype=np.float64)
     return scoreability.bifactor_scoreability_from_logit_slopes(
         slopes,
@@ -203,6 +220,7 @@ def test_trusted_numpy_controls_are_normalized_to_builtin_scalars(monkeypatch):
             general_factor: int,
             zero_tolerance: float,
         ):
+            """Record normalized controls before simulating native failure."""
             assert slopes.dtype == np.float64
             assert type(general_factor) is int
             assert type(zero_tolerance) is float
@@ -236,5 +254,7 @@ def test_validly_typed_zero_tolerance_domain_errors_remain_rust_owned(
     zero_tolerance,
 ):
     """Trusted tolerance values retain the compiled core's semantic domain contract."""
-    with pytest.raises(ValueError, match="zero_tolerance must be finite and non-negative"):
+    with pytest.raises(
+        ValueError, match="zero_tolerance must be finite and non-negative"
+    ):
         entrypoint(zero_tolerance=zero_tolerance)
