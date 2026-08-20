@@ -143,6 +143,9 @@ class ComparisonEngine:
     license_classification: str
 
     def __post_init__(self) -> None:
+        """Normalize a sealed package-owned engine record."""
+        if type(self) is not ComparisonEngine:
+            raise ValueError("ComparisonEngine must be an exact package record")
         object.__setattr__(self, "engine_id", _identifier(self.engine_id, "engine_id"))
         object.__setattr__(
             self,
@@ -198,6 +201,9 @@ class ConformanceEvidence:
     limitation: str | None = None
 
     def __post_init__(self) -> None:
+        """Normalize a sealed package-owned evidence record."""
+        if type(self) is not ConformanceEvidence:
+            raise ValueError("ConformanceEvidence must be an exact package record")
         object.__setattr__(
             self,
             "evidence_id",
@@ -321,6 +327,9 @@ class ConformanceCapability:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        """Normalize a sealed package-owned capability record."""
+        if type(self) is not ConformanceCapability:
+            raise ValueError("ConformanceCapability must be an exact package record")
         object.__setattr__(
             self,
             "capability_id",
@@ -431,6 +440,9 @@ class ConformanceInventory:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        """Normalize a sealed package-owned inventory record."""
+        if type(self) is not ConformanceInventory:
+            raise ValueError("ConformanceInventory must be an exact package record")
         object.__setattr__(
             self,
             "package_version",
