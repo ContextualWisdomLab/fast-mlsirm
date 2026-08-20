@@ -55,6 +55,16 @@ def test_public_fit_rejects_numpy_inside_reference_scope() -> None:
             )
 
 
+def test_reference_rejects_invalid_config_before_dataclass_replace() -> None:
+    """The reference API owns a stable validation error for invalid configs."""
+    with pytest.raises(ValueError, match="config must be a FitConfig or None"):
+        fit_reference(
+            np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
+            np.array([0, 0], dtype=np.int64),
+            object(),  # type: ignore[arg-type]
+        )
+
+
 def test_named_reference_fit_owns_numpy_scope() -> None:
     """The named reference API can run NumPy without a compiled Rust module."""
     result = fit_reference(
