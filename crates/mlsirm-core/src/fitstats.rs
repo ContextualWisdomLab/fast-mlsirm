@@ -2346,6 +2346,7 @@ fn m2_rmsea2_impl(
     if n_items < 3 {
         return Err("M2 needs at least 3 items".into());
     }
+    validate_prior(prior, bank.n_dims)?;
     if y.len() != n_persons * n_items || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
