@@ -21,7 +21,11 @@ def test_normalize_device_rejects_unknown_name():
 
 
 def test_reference_backend_stays_explicitly_numpy():
-    assert backend.resolve_reference_backend() == "numpy"
+    """NumPy resolution requires the explicit reference authority scope."""
+    with pytest.raises(RuntimeError, match="fit_reference"):
+        backend.resolve_reference_backend()
+    with backend._reference_backend_scope():
+        assert backend.resolve_reference_backend() == "numpy"
 
 
 def test_production_backend_rejects_numpy_reference_name():
