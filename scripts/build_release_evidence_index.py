@@ -64,7 +64,7 @@ def _source_commit(repo_root: Path) -> str:
         raise RuntimeError("source commit lookup failed") from exc
 
     source_commit = completed.stdout.strip()
-    if len(source_commit) != 40 or any(
+    if len(source_commit) not in {40, 64} or any(
         character not in "0123456789abcdef" for character in source_commit
     ):
         raise RuntimeError("source commit lookup returned invalid identity")
