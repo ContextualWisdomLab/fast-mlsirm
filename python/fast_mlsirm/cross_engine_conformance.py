@@ -14,7 +14,7 @@ MAX_COLLECTION_VALUES = 128
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 _FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-_GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_GIT_SHA_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _SEMANTIC_VERSION_PATTERN = re.compile(
     r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
 )
@@ -82,10 +82,12 @@ def _optional_fingerprint(value: object | None, name: str) -> str | None:
 
 
 def _git_sha(value: object, name: str) -> str:
-    """Validate one immutable full Git commit SHA-1 identity."""
-    normalized = _text(value, name, maximum=40)
+    """Validate one immutable full Git SHA-1 or SHA-256 identity."""
+    normalized = _text(value, name, maximum=64)
     if _GIT_SHA_PATTERN.fullmatch(normalized) is None:
-        raise ValueError(f"{name} must be a full lowercase 40-character Git SHA")
+        raise ValueError(
+            f"{name} must be a full lowercase 40- or 64-character Git SHA"
+        )
     return normalized
 
 

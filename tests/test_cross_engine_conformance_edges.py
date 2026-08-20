@@ -116,8 +116,9 @@ def test_identifier_and_digest_helpers_cover_valid_and_invalid_shapes() -> None:
     assert conformance._optional_fingerprint(_SHA_B, "digest") == _SHA_B
 
     assert conformance._git_sha(_SOURCE_COMMIT, "commit") == _SOURCE_COMMIT
-    with pytest.raises(ValueError, match="full lowercase 40-character Git SHA"):
+    with pytest.raises(ValueError, match="full lowercase 40- or 64-character Git SHA"):
         conformance._git_sha("0" * 39, "commit")
+    assert conformance._git_sha("0" * 64, "commit") == "0" * 64
 
 
 def test_version_and_schema_helpers_fail_closed() -> None:
