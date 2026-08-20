@@ -13,6 +13,7 @@ SCHEMA_VERSION = "1.0"
 MAX_TEXT_LENGTH = 4_096
 MAX_COLLECTION_VALUES = 128
 MAX_MANIFEST_JSON_BYTES = 1_048_576
+MAX_MANIFEST_NESTING = 128
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 _FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -902,6 +903,22 @@ def _reject_json_constant(value: str) -> object:
     raise ValueError(f"manifest JSON contains unsupported constant: {value}")
 
 
+def _validate_manifest_nesting(value: object) -> None:
+    """Reject parsed JSON containers deeper than the replay contract allows."""
+    stack: list[tuple[object, int]] = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if type(current) is dict:
+            children = dict.values(current)
+        elif type(current) is list:
+            children = current
+        else:
+            continue
+        if depth >= MAX_MANIFEST_NESTING:
+            raise ValueError("manifest JSON nesting is too deep")
+        stack.extend((child, depth + 1) for child in children)
+
+
 @dataclass(frozen=True, slots=True)
 class ConformanceInventory:
     """Content-addressed inventory of independent conformance coverage."""
@@ -1026,6 +1043,7 @@ class ConformanceInventory:
             raise ValueError("manifest JSON must contain valid JSON") from exc
         except RecursionError as exc:
             raise ValueError("manifest JSON nesting is too deep") from exc
+        _validate_manifest_nesting(parsed)
         return cls.from_manifest(parsed)
 
 
