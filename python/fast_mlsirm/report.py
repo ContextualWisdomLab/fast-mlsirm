@@ -917,8 +917,8 @@ tbody tr:hover {
   color: var(--teal);
 }
 
-.exact-values > summary:focus,
-.export-block > summary:focus {
+.exact-values > summary:focus:not(:focus-visible),
+.export-block > summary:focus:not(:focus-visible) {
   outline: none;
 }
 
