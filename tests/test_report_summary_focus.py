@@ -29,12 +29,18 @@ def _render_report(tmp_path: Path) -> str:
     return output.read_text(encoding="utf-8")
 
 
-def test_disclosure_summary_suppresses_pointer_focus_outline(tmp_path: Path) -> None:
-    """Mouse-focused disclosure summaries must not keep the UA outline."""
+def test_disclosure_summary_suppresses_pointer_focus_without_blanket_focus_rule(
+    tmp_path: Path,
+) -> None:
+    """Pointer focus is suppressed without erasing generic keyboard focus."""
     html = _render_report(tmp_path)
-    selector = ".exact-values > summary:focus,\n.export-block > summary:focus {"
+    selector = (
+        ".exact-values > summary:focus:not(:focus-visible),\n"
+        ".export-block > summary:focus:not(:focus-visible) {"
+    )
 
     assert html.count(selector) == 1
+    assert ".exact-values > summary:focus,\n.export-block > summary:focus {" not in html
     rule = html.split(selector, maxsplit=1)[1].split("}", maxsplit=1)[0]
     assert "outline: none;" in rule
 
@@ -42,7 +48,10 @@ def test_disclosure_summary_suppresses_pointer_focus_outline(tmp_path: Path) -> 
 def test_disclosure_summary_retains_keyboard_focus_indicator(tmp_path: Path) -> None:
     """The pointer rule must not erase the explicit keyboard focus treatment."""
     html = _render_report(tmp_path)
-    pointer_selector = ".exact-values > summary:focus,\n.export-block > summary:focus {"
+    pointer_selector = (
+        ".exact-values > summary:focus:not(:focus-visible),\n"
+        ".export-block > summary:focus:not(:focus-visible) {"
+    )
     keyboard_selector = (
         ".exact-values > summary:focus-visible,\n"
         ".export-block > summary:focus-visible {"
