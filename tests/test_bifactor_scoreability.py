@@ -226,6 +226,13 @@ def test_plain_nested_sequences_keep_the_public_array_like_contract():
     assert result.factor_item_counts == (4, 2, 2)
 
 
+def test_numpy_row_sequences_keep_the_public_array_like_contract():
+    """Lists of one-dimensional NumPy rows remain valid two-dimensional inputs."""
+    loadings = [row.copy() for row in _loadings()]
+    result = bifactor_scoreability(loadings, _uniquenesses())
+    assert result.factor_item_counts == (4, 2, 2)
+
+
 @pytest.mark.parametrize("loadings", [[], [0.7, 0.4], [[[0.7, 0.4]]]])
 def test_plain_sequences_reject_non_matrix_shapes_before_core(loadings):
     """Empty, one-dimensional, and three-dimensional lists fail closed."""
