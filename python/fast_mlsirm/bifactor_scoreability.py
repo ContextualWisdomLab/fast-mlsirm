@@ -19,6 +19,47 @@ MAX_BIFACTOR_ITEMS = 1_000_000
 MAX_BIFACTOR_FACTORS = 64
 MAX_BIFACTOR_WORK_UNITS = 50_000_000
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_REAL_SCALAR_TYPES = _NUMPY_INTEGER_SCALAR_TYPES + (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+
+
+def _general_factor_control(value: object) -> int:
+    """Normalize one trusted general-factor index without caller callbacks."""
+    value_type = type(value)
+    if value_type is not int and not any(
+        value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        raise ValueError("general_factor must be an integer")
+    return int(value)
+
+
+def _zero_tolerance_control(value: object) -> float:
+    """Normalize one trusted structural-zero tolerance without caller callbacks."""
+    value_type = type(value)
+    if value_type is not int and value_type is not float and not any(
+        value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES
+    ):
+        raise ValueError("zero_tolerance must be a real number")
+    return float(value)
+
 
 @dataclass(frozen=True)
 class BifactorScoreabilityResult:
@@ -239,6 +280,8 @@ def bifactor_scoreability(
     predictive validation, recovery, invariance, and substantive validity
     remain separate evidence requirements.
     """
+    general_factor = _general_factor_control(general_factor)
+    zero_tolerance = _zero_tolerance_control(zero_tolerance)
     loading_matrix = _matrix(loadings, "loadings")
     uniqueness_vector = _uniqueness_vector(
         uniquenesses,
@@ -276,6 +319,8 @@ def bifactor_scoreability_from_logit_slopes(
     The same bounded CPU work and advertised-shape inspection contract as
     :func:`bifactor_scoreability` applies.
     """
+    general_factor = _general_factor_control(general_factor)
+    zero_tolerance = _zero_tolerance_control(zero_tolerance)
     slope_matrix = _matrix(logit_slopes, "logit_slopes")
     raw = bifactor_core().bifactor_indices_from_logit_slopes(
         slope_matrix,
