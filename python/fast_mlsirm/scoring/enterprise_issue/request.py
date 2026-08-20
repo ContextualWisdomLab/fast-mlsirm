@@ -18,7 +18,6 @@ from ..assessment import AssessmentSpec
 from ..authorization import build_scoring_request
 from ..execution import EvidenceReference, ObservationGranularity, ScoringRequest
 from .contracts import (
-    MAX_ENTERPRISE_ISSUE_EVIDENCE,
     MAX_ENTERPRISE_STAKEHOLDERS,
     AtomicIssueRecord,
     CandidateIntervention,
