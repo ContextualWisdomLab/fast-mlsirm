@@ -18,8 +18,6 @@ from .assessment import AssessmentSpec
 from .execution import (
     EngineDescriptor,
     EngineKind,
-    EvidenceReference,
-    FixtureOutcome,
     ObservationGranularity,
     ScoreObservation,
     ScoringRequest,
