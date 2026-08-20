@@ -135,7 +135,30 @@ def _evidence_tuple(values: object) -> tuple[ValidationEvidence, ...]:
     for index, value in enumerate(values):
         if type(value) is not ValidationEvidence:
             raise ValueError(f"evidence[{index}] must be a ValidationEvidence")
-        normalized.append(value)
+        if type(value.evidence_id) is not str:
+            raise ValueError(f"evidence[{index}].evidence_id must be a string")
+        if type(value.evidence_class) is not EvidenceClass:
+            raise ValueError(
+                f"evidence[{index}].evidence_class must be an EvidenceClass"
+            )
+        if type(value.status) is not EvidenceStatus:
+            raise ValueError(f"evidence[{index}].status must be an EvidenceStatus")
+        if type(value.available_time) is not str:
+            raise ValueError(f"evidence[{index}].available_time must be a string")
+        if value.artifact_sha256 is not None and type(value.artifact_sha256) is not str:
+            raise ValueError(f"evidence[{index}].artifact_sha256 must be a string")
+        if value.limitation is not None and type(value.limitation) is not str:
+            raise ValueError(f"evidence[{index}].limitation must be a string")
+        normalized.append(
+            ValidationEvidence(
+                evidence_id=value.evidence_id,
+                evidence_class=value.evidence_class,
+                status=value.status,
+                available_time=value.available_time,
+                artifact_sha256=value.artifact_sha256,
+                limitation=value.limitation,
+            )
+        )
     if len({item.evidence_id for item in normalized}) != len(normalized):
         raise ValueError("evidence_id values must be unique")
     return tuple(sorted(normalized, key=lambda item: item.evidence_id))
