@@ -186,6 +186,7 @@ def test_resolve_model_rejects_hostile_metaclass_hash_before_callback():
 
 
 def test_resolve_model_rejects_exploratory_subclass_before_attribute_callback():
+    """Reject exploratory subclasses before reading caller-controlled fields."""
     calls: list[str] = []
 
     class HostileExploratory(ExploratoryModel):
@@ -205,6 +206,7 @@ def test_resolve_model_rejects_exploratory_subclass_before_attribute_callback():
 
 
 def test_resolve_model_rejects_confirmatory_subclass_before_attribute_callback():
+    """Reject confirmatory subclasses before reading loading-pattern metadata."""
     calls: list[str] = []
 
     class HostileConfirmatory(ConfirmatoryModel):
