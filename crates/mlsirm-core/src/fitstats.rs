@@ -1768,6 +1768,14 @@ enum M2Param {
     PopulationSd(usize),
 }
 
+/// Optional structured-M2 controls that change only the Delta parameter map.
+#[derive(Clone, Copy, Default)]
+struct M2StructuredControls<'a> {
+    fixed_items: Option<&'a [bool]>,
+    estimate_population: bool,
+    tau_fixed: bool,
+}
+
 #[cfg(test)]
 fn m2_parameters(
     n_items: usize,
@@ -1783,9 +1791,7 @@ fn m2_parameters(
         latent_dim,
         latent_dim,
         tau_free,
-        None,
-        false,
-        false,
+        M2StructuredControls::default(),
     )
 }
 
@@ -1796,13 +1802,11 @@ fn m2_parameters_with_controls(
     latent_dim: usize,
     population_dims: usize,
     tau_free: bool,
-    fixed_items: Option<&[bool]>,
-    estimate_population: bool,
-    tau_fixed: bool,
+    controls: M2StructuredControls<'_>,
 ) -> Vec<M2Param> {
     let mut params = Vec::new();
     for i in 0..n_items {
-        if fixed_items.is_some_and(|fixed| fixed[i]) {
+        if controls.fixed_items.is_some_and(|fixed| fixed[i]) {
             continue;
         }
         params.push(M2Param::B(i));
@@ -1815,10 +1819,10 @@ fn m2_parameters_with_controls(
             }
         }
     }
-    if tau_free && !tau_fixed {
+    if tau_free && !controls.tau_fixed {
         params.push(M2Param::Tau);
     }
-    if estimate_population {
+    if controls.estimate_population {
         for d in 0..population_dims.max(1) {
             params.push(M2Param::PopulationMean(d));
         }
@@ -2533,9 +2537,7 @@ pub fn m2_rmsea2(
         prior,
         q_theta,
         xi_rule,
-        None,
-        false,
-        false,
+        M2StructuredControls::default(),
     )
 }
 
@@ -2566,9 +2568,11 @@ pub fn m2_rmsea2_structured(
         prior,
         q_theta,
         xi_rule,
-        fixed_items,
-        estimate_population,
-        tau_fixed,
+        M2StructuredControls {
+            fixed_items,
+            estimate_population,
+            tau_fixed,
+        },
     )
 }
 
@@ -2580,9 +2584,7 @@ fn m2_rmsea2_impl(
     prior: &PriorSpec,
     q_theta: usize,
     xi_rule: XiRule,
-    fixed_items: Option<&[bool]>,
-    estimate_population: bool,
-    tau_fixed: bool,
+    controls: M2StructuredControls<'_>,
 ) -> Result<M2Result, String> {
     let n_items = bank.b.len();
     if n_items < 3 {
@@ -2592,7 +2594,10 @@ fn m2_rmsea2_impl(
     if y.len() != n_persons * n_items || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
-    if fixed_items.is_some_and(|fixed| fixed.len() != n_items) {
+    if controls
+        .fixed_items
+        .is_some_and(|fixed| fixed.len() != n_items)
+    {
         return Err("fixed_items must have length n_items".into());
     }
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
@@ -2618,9 +2623,7 @@ fn m2_rmsea2_impl(
         bank.latent_dim,
         bank.n_dims,
         tau_free,
-        fixed_items,
-        estimate_population,
-        tau_fixed,
+        controls,
     );
     let p = params.len();
     if s <= p {
@@ -2638,7 +2641,9 @@ fn m2_rmsea2_impl(
     }
     let n_c = complete.len();
     if n_c < p + 2 {
-        if (fixed_items.is_some() || estimate_population || tau_fixed) && n_c < 2 {
+        if (controls.fixed_items.is_some() || controls.estimate_population || controls.tau_fixed)
+            && n_c < 2
+        {
             return Err("each population needs at least two complete cases for M2".into());
         }
         return Err(format!("too few complete cases for M2: {n_c}"));

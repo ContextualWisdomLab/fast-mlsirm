@@ -86,9 +86,11 @@ fn structured_m2_parameter_controls_cover_population_and_anchor_columns() {
         2,
         2,
         true,
-        None,
-        true,
-        false,
+        M2StructuredControls {
+            fixed_items: None,
+            estimate_population: true,
+            tau_fixed: false,
+        },
     );
     let mut alpha = vec![3.0];
     let mut b = vec![2.0];
@@ -126,9 +128,11 @@ fn structured_m2_parameter_controls_cover_population_and_anchor_columns() {
             2,
             2,
             true,
-            Some(&[true]),
-            false,
-            true,
+            M2StructuredControls {
+                fixed_items: Some(&[true]),
+                estimate_population: false,
+                tau_fixed: true,
+            },
         )
         .len(),
         0
