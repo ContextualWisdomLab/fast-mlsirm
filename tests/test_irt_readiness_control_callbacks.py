@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 
@@ -74,7 +76,7 @@ def test_readiness_integer_controls_reject_subclasses_without_callbacks(
     control_name: str,
     valid_value: int,
     extra_kwargs: dict[str, object],
-    hostile_factory,
+    hostile_factory: Callable[[int, list[str]], object],
 ) -> None:
     callbacks: list[str] = []
     hostile_value = hostile_factory(valid_value, callbacks)
@@ -103,6 +105,15 @@ def test_readiness_integer_controls_preserve_concrete_numpy_scalars() -> None:
     )
 
     assert matrix.shape == (6, 2)
+
+
+def test_readiness_integer_controls_preserve_minimum_domain_errors() -> None:
+    with pytest.raises(ValueError, match="min_persons must be at least 1"):
+        validate_irt_experiment_readiness(
+            _READY_BINARY,
+            "dichotomous",
+            min_persons=0,
+        )
 
 
 def test_readiness_integer_controls_do_not_dispatch_integer_protocols() -> None:
