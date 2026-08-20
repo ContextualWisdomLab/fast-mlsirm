@@ -60,7 +60,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return HEAD SHA, failing closed when Git metadata lookup times out."""
+    """Return the exact HEAD SHA, failing closed when Git provenance is unavailable."""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -72,9 +72,15 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except Exception:
-        return "unknown"
-    return completed.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("source commit lookup failed") from exc
+
+    source_commit = completed.stdout.strip()
+    if len(source_commit) not in {40, 64} or any(
+        character not in "0123456789abcdef" for character in source_commit
+    ):
+        raise RuntimeError("source commit lookup returned invalid identity")
+    return source_commit
 
 
 def _add_file(
