@@ -14,10 +14,12 @@ class _HostileEnumText(str):
     callback_count = 0
 
     def __hash__(self) -> int:
+        """Fail if enum admission attempts to hash hostile wire text."""
         type(self).callback_count += 1
         raise AssertionError("hostile enum text must not be hashed")
 
     def __eq__(self, other: object) -> bool:
+        """Fail if enum admission attempts to compare hostile wire text."""
         type(self).callback_count += 1
         raise AssertionError("hostile enum text must not be compared")
 
@@ -28,10 +30,12 @@ class _HostileEnumObject:
     callback_count = 0
 
     def __hash__(self) -> int:
+        """Fail if enum admission attempts to hash an arbitrary object."""
         type(self).callback_count += 1
         raise AssertionError("hostile enum object must not be hashed")
 
     def __eq__(self, other: object) -> bool:
+        """Fail if enum admission attempts to compare an arbitrary object."""
         type(self).callback_count += 1
         raise AssertionError("hostile enum object must not be compared")
 
