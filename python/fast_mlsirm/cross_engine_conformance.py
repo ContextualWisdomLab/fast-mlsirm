@@ -1008,7 +1008,10 @@ class ConformanceInventory:
         """Strictly parse bounded JSON and replay its canonical inventory manifest."""
         if type(value) is not str:
             raise ValueError("manifest JSON must be a string")
-        payload = value.encode("utf-8")
+        try:
+            payload = value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("manifest JSON must be UTF-8 encodable") from exc
         if len(payload) > MAX_MANIFEST_JSON_BYTES:
             raise ValueError(
                 f"manifest JSON must contain at most {MAX_MANIFEST_JSON_BYTES} bytes"
@@ -1021,6 +1024,8 @@ class ConformanceInventory:
             )
         except json.JSONDecodeError as exc:
             raise ValueError("manifest JSON must contain valid JSON") from exc
+        except RecursionError as exc:
+            raise ValueError("manifest JSON nesting is too deep") from exc
         return cls.from_manifest(parsed)
 
 
