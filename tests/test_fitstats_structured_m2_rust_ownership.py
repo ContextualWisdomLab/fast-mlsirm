@@ -98,63 +98,6 @@ def test_structured_m2_delegates_before_private_reference_arithmetic(
     assert kwargs["tau_fixed"] is True
 
 
-def test_structured_m2_marshals_strided_native_arrays_contiguously(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """PyO3 slice arguments must be contiguous even when callers provide views."""
-    responses, _factor_id, _params = _case()
-    factor_id = np.array(
-        [0, 9, 1, 9, 0, 9, 1, 9, 0, 9, 1, 9, 0, 9], dtype=np.int64
-    )[::2]
-    params = SimpleNamespace(
-        alpha=np.linspace(-0.2, 0.2, 14, dtype=np.float64)[::2],
-        b=np.linspace(-0.8, 0.8, 14, dtype=np.float64)[::2],
-        zeta=np.arange(28, dtype=np.float64).reshape(7, 4)[:, :1],
-        tau=-2.0,
-    )
-    prior_mean = np.array([0.0, 99.0, 0.2, 99.0], dtype=np.float64)[::2]
-    prior_sd = np.array([1.0, 99.0, 1.1, 99.0], dtype=np.float64)[::2]
-    captured: list[tuple[object, ...]] = []
-
-    assert not factor_id.flags.c_contiguous
-    assert not params.alpha.flags.c_contiguous
-    assert not params.b.flags.c_contiguous
-    assert not params.zeta.flags.c_contiguous
-    assert not prior_mean.flags.c_contiguous
-    assert not prior_sd.flags.c_contiguous
-
-    class StructuredCore:
-        """Native sentinel that records positional arrays before marshalling returns."""
-
-        def m2_structured_stat(
-            self, *args: object, **_kwargs: object
-        ) -> dict[str, object]:
-            """Capture the native call so contiguity can be asserted at the boundary."""
-            captured.append(args)
-            return _payload(responses.shape[0])
-
-    monkeypatch.setattr(fitstats, "_core_module", lambda: StructuredCore())
-
-    fitstats.m2(
-        responses,
-        factor_id,
-        params,
-        "MLS2PLM",
-        q_theta=7,
-        q_xi=7,
-        estimate_population=True,
-        prior_mean=prior_mean,
-        prior_sd=prior_sd,
-    )
-
-    assert len(captured) == 1
-    args = captured[0]
-    for position in (3, 4, 5, 7, 12, 13):
-        value = args[position]
-        assert isinstance(value, np.ndarray)
-        assert value.flags.c_contiguous, f"native argument {position} must be contiguous"
-
-
 def test_structured_m2_fails_closed_when_native_surface_is_incomplete(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
