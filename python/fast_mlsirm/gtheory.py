@@ -185,14 +185,14 @@ def gtheory_pi(
     this asks how many judge items are needed for a dependable rating.
 
     """
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
-    if x.ndim != 2:
-        raise ValueError("data must be a 2-D persons x items array")
-    n_p, n_i = x.shape
     primes = [
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    if x.ndim != 2:
+        raise ValueError("data must be a 2-D persons x items array")
+    n_p, n_i = x.shape
     core = _core_or_raise("gtheory_pi")
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
 
@@ -215,10 +215,6 @@ def gtheory_pio(
     policies match :func:`gtheory_pi`.
 
     """
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
-    if x.ndim != 3:
-        raise ValueError("data must be a 3-D persons x items x occasions array")
-    n_p, n_i, n_o = x.shape
     message = "n_prime entries must be pairs of positive integers"
     pairs = [
         (
@@ -227,6 +223,10 @@ def gtheory_pio(
         )
         for a, b in n_prime
     ]
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    if x.ndim != 3:
+        raise ValueError("data must be a 3-D persons x items x occasions array")
+    n_p, n_i, n_o = x.shape
     core = _core_or_raise("gtheory_pio")
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
@@ -283,6 +283,11 @@ def phi_lambda(
     panel classifies systems against a fixed quality threshold.
 
     """
+    parsed_cut = _finite_real_control(cut, "cut must be a finite real scalar")
+    primes = [
+        _positive_integer_control(v, "n_i_prime entries must be positive integers")
+        for v in n_i_prime
+    ]
     x = np.asarray(data)
     if np.iscomplexobj(x):
         raise ValueError("data must be real-valued")
@@ -290,11 +295,6 @@ def phi_lambda(
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     n_p, n_i = x.shape
-    parsed_cut = _finite_real_control(cut, "cut must be a finite real scalar")
-    primes = [
-        _positive_integer_control(v, "n_i_prime entries must be positive integers")
-        for v in n_i_prime
-    ]
     core = _core_or_raise("phi_lambda")
     res = core.phi_lambda(
         x.reshape(-1),
