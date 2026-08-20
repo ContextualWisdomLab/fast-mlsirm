@@ -1,8 +1,8 @@
 # Product and technical gap baseline
 
-Status: **Non-authoritative point-in-time product-completion inventory**  
-Observed at: **2026-08-20**  
-Protected-main basis: **`04d0bc21a2a20693bcf16108cd76d394fe844d23`**  
+Status: **Non-authoritative point-in-time product-completion inventory**<br>
+Observed at: **2026-08-20**<br>
+Protected-main basis: **`04d0bc21a2a20693bcf16108cd76d394fe844d23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
 ## 1. Purpose and authority
