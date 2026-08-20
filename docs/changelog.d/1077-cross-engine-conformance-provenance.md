@@ -1,4 +1,6 @@
-### Added
+# Cross-engine conformance provenance
+
+## Added
 
 - Add optional run-level conformance provenance for the isolated harness
   commit, environment, RNG seeds, parameter-mapping schema, tolerance
