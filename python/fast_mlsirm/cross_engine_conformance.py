@@ -7,6 +7,7 @@ from enum import Enum
 import hashlib
 import json
 import re
+import unicodedata
 
 SCHEMA_VERSION = "1.0"
 MAX_TEXT_LENGTH = 4_096
@@ -52,7 +53,7 @@ def _text(value: object, name: str, *, maximum: int = MAX_TEXT_LENGTH) -> str:
     """Normalize bounded exact built-in text without caller callback dispatch."""
     if type(value) is not str:
         raise ValueError(f"{name} must be a string")
-    normalized = value.strip()
+    normalized = unicodedata.normalize("NFC", value).strip()
     if not normalized:
         raise ValueError(f"{name} must not be empty")
     if len(normalized) > maximum:
