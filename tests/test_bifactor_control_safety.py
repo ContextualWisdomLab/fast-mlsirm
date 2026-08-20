@@ -73,6 +73,8 @@ def _hostile_int(counter: _CallbackCounter) -> int:
     """Return an int subclass whose conversion hooks must never execute."""
 
     class HostileInt(int):
+        """Reject every conversion path that could execute caller code."""
+
         def __int__(self):
             """Fail if conversion invokes the hostile integer override."""
             counter.hit()
@@ -92,6 +94,8 @@ def _hostile_float(counter: _CallbackCounter) -> float:
     """Return a float subclass whose conversion hooks must never execute."""
 
     class HostileFloat(float):
+        """Reject every conversion path that could execute caller code."""
+
         def __float__(self):
             """Fail if conversion invokes the hostile float override."""
             counter.hit()
@@ -214,6 +218,8 @@ def test_trusted_numpy_controls_are_normalized_to_builtin_scalars(monkeypatch):
     seen: list[tuple[int, float]] = []
 
     class FakeCore:
+        """Capture normalized controls without requiring the compiled core."""
+
         def bifactor_indices_from_logit_slopes(
             self,
             slopes: np.ndarray,
