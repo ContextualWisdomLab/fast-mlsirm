@@ -43,6 +43,14 @@ def test_ignored_rust_shards_allow_long_recovery_evidence_to_finish():
     assert 'FAST_MLSIRM_STATISTICAL_TEST_TIMEOUT_SECONDS: "7200"' in rust_ignored
 
 
+def test_statistical_studies_declare_the_secret_boundary():
+    """The evidence workflow documents the reviewed secret-input policy."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    assert "Secret boundary:" in text
+    assert "${{ secrets.NAME }}" in text
+    assert "never hardcode" in text
+
+
 def test_statistical_studies_are_read_only_and_never_rewrite_source():
     """Scientific evidence runs reviewed code and cannot commit replacements."""
     text = _STUDIES.read_text(encoding="utf-8")

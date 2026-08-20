@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# Secret boundary: this evidence workflow intentionally consumes no secret
+# inputs. If a future study needs credentials, pass them only through an
+# explicitly reviewed `${{ secrets.NAME }}` value in `env`; never hardcode,
+# interpolate into command arguments, or print a credential.
+
 concurrency:
   group: statistical-studies-${{ github.ref }}
   cancel-in-progress: false
