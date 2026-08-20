@@ -128,7 +128,7 @@ def test_version_and_schema_helpers_fail_closed() -> None:
         conformance._semantic_version("01.2.3", "version")
 
     assert conformance._schema_version("1.0") == "1.0"
-    with pytest.raises(ValueError, match="schema_version must be '1.0'"):
+    with pytest.raises(ValueError, match=r"schema_version must be '1\.0'"):
         conformance._schema_version("2.0")
 
 
@@ -353,7 +353,7 @@ def test_capability_normalizes_serialized_status_and_manifest() -> None:
 
 def test_capability_rejects_bad_schema_and_coverage_state() -> None:
     """Capability schema and coverage enums fail closed."""
-    with pytest.raises(ValueError, match="schema_version must be '1.0'"):
+    with pytest.raises(ValueError, match=r"schema_version must be '1\.0'"):
         _capability(schema_version="2.0")
 
     with pytest.raises(ValueError, match="coverage_status must be one of"):
@@ -427,7 +427,7 @@ def test_inventory_rejects_bad_package_commit_and_schema_versions() -> None:
             source_commit="f" * 39,
             capabilities=(capability,),
         )
-    with pytest.raises(ValueError, match="schema_version must be '1.0'"):
+    with pytest.raises(ValueError, match=r"schema_version must be '1\.0'"):
         ConformanceInventory(
             package_version="0.8.0",
             source_commit=_SOURCE_COMMIT,
