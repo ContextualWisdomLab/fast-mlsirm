@@ -108,9 +108,9 @@ def _capability(
 
 
 def _run_provenance() -> ConformanceRunProvenance:
-    """Build one source-free run reproducibility record."""
+    """Build one fully content-addressed run reproducibility record."""
     return ConformanceRunProvenance(
-        harness_commit="0" * 40,
+        harness_commit=_SOURCE_COMMIT,
         environment_sha256=_SHA_C,
         rng_algorithm="pcg64_dxsm",
         rng_seeds=(17, 23),
@@ -118,8 +118,8 @@ def _run_provenance() -> ConformanceRunProvenance:
         mapping_sha256=_SHA_D,
         tolerance_sha256=_SHA_A,
         tolerance_rationale="fixed-parameter double-precision comparison",
-        raw_output_sha256=None,
-        normalized_output_sha256=None,
+        raw_output_sha256=_SHA_B,
+        normalized_output_sha256=_SHA_C,
         license_classification="synthetic_or_open",
     )
 
@@ -136,15 +136,18 @@ def test_inventory_is_deterministic_source_free_and_json_serializable() -> None:
             ),
         ),
     )
+    provenance = _run_provenance()
     first = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=[first_capability, second_capability],
+        run_provenance=provenance,
     )
     second = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=(second_capability, first_capability),
+        run_provenance=provenance,
     )
 
     assert first == second
@@ -160,7 +163,7 @@ def test_inventory_is_deterministic_source_free_and_json_serializable() -> None:
 
 
 def test_inventory_preserves_run_level_reproducibility_metadata() -> None:
-    """The inventory can bind hashes, seeds, tolerance, and license metadata."""
+    """The inventory binds hashes, seeds, tolerance, and license metadata."""
     inventory = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
@@ -174,8 +177,8 @@ def test_inventory_preserves_run_level_reproducibility_metadata() -> None:
         "license_classification": "synthetic_or_open",
         "mapping_schema_version": "1.0.0",
         "mapping_sha256": _SHA_D,
-        "normalized_output_sha256": None,
-        "raw_output_sha256": None,
+        "normalized_output_sha256": _SHA_C,
+        "raw_output_sha256": _SHA_B,
         "rng_algorithm": "pcg64_dxsm",
         "rng_seeds": [17, 23],
         "tolerance_rationale": "fixed-parameter double-precision comparison",
@@ -371,10 +374,12 @@ def test_mutated_nested_engine_is_revalidated_before_text_callbacks() -> None:
 
 def test_fingerprint_changes_when_evidence_verdict_changes() -> None:
     """Execution verdicts participate in immutable inventory provenance."""
+    provenance = _run_provenance()
     passed = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=(_capability(),),
+        run_provenance=provenance,
     )
     failed = ConformanceInventory(
         package_version="0.8.0",
@@ -388,6 +393,7 @@ def test_fingerprint_changes_when_evidence_verdict_changes() -> None:
                 ),
             ),
         ),
+        run_provenance=provenance,
     )
 
     assert passed.inventory_fingerprint != failed.inventory_fingerprint
