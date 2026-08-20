@@ -146,13 +146,13 @@ def _prepare_dichotomous_diagnostic_inputs(responses, factor_id, mask):
 
 def _bank_args(params, factor_id, model, n_dims, eps_distance):
     """Assemble the item-bank keyword arguments the Rust ICC kernels expect."""
-    zeta = np.asarray(params.zeta, dtype=np.float64)
+    zeta = np.ascontiguousarray(params.zeta, dtype=np.float64)
     return dict(
-        alpha=np.asarray(params.alpha, dtype=np.float64),
-        b=np.asarray(params.b, dtype=np.float64),
-        zeta=zeta.ravel(),
+        alpha=np.ascontiguousarray(params.alpha, dtype=np.float64),
+        b=np.ascontiguousarray(params.b, dtype=np.float64),
+        zeta=np.ascontiguousarray(zeta.ravel()),
         tau=float(params.tau),
-        factor_id=np.asarray(factor_id, dtype=np.int64),
+        factor_id=np.ascontiguousarray(factor_id, dtype=np.int64),
         model=model,
         n_dims=int(n_dims),
         latent_dim=int(zeta.shape[1]),
@@ -1856,8 +1856,8 @@ def m2(
             prior_sd = np.std(theta, axis=0, ddof=1)
         else:
             prior_sd = np.ones(n_dims)
-    prior_mean = np.asarray(prior_mean, dtype=float)
-    prior_sd = np.asarray(prior_sd, dtype=float)
+    prior_mean = np.ascontiguousarray(prior_mean, dtype=float)
+    prior_sd = np.ascontiguousarray(prior_sd, dtype=float)
     if prior_mean.shape != (n_dims,) or prior_sd.shape != (n_dims,):
         raise ValueError(f"prior_mean/prior_sd must both have shape ({n_dims},)")
     if np.any(~np.isfinite(prior_mean)) or np.any(~np.isfinite(prior_sd)):
