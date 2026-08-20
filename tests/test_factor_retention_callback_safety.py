@@ -49,3 +49,45 @@ def test_evidence_subclass_is_rejected_without_record_attribute_callback() -> No
         govern_factor_retention((record,))
 
     assert callbacks == []
+
+
+def test_forged_exact_record_revalidates_method_before_hash_callback() -> None:
+    """Exact records cannot smuggle callback-capable method fields into aggregation."""
+    callbacks: list[str] = []
+
+    class HostileMethod:
+        def __hash__(self) -> int:
+            callbacks.append("hash")
+            raise AssertionError("factor-retention method hash callback executed")
+
+    record = object.__new__(FactorRetentionEvidence)
+    object.__setattr__(record, "method", HostileMethod())
+    object.__setattr__(record, "candidate_count", 2)
+
+    with pytest.raises(TypeError, match="FactorRetentionMethod"):
+        govern_factor_retention((record,))
+
+    assert callbacks == []
+
+
+def test_forged_exact_record_revalidates_count_before_comparison_callback() -> None:
+    """Exact records cannot smuggle integer subclasses past aggregation admission."""
+    callbacks: list[str] = []
+
+    class HostileInt(int):
+        def __lt__(self, other: object) -> bool:
+            callbacks.append("lt")
+            raise AssertionError("factor-retention count comparison callback executed")
+
+        def __gt__(self, other: object) -> bool:
+            callbacks.append("gt")
+            raise AssertionError("factor-retention count comparison callback executed")
+
+    record = object.__new__(FactorRetentionEvidence)
+    object.__setattr__(record, "method", FactorRetentionMethod.PARALLEL_ANALYSIS)
+    object.__setattr__(record, "candidate_count", HostileInt(2))
+
+    with pytest.raises(ValueError, match="positive integer"):
+        govern_factor_retention((record,))
+
+    assert callbacks == []
