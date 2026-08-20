@@ -52,5 +52,5 @@ def test_hover_does_not_dim_unrelated_chart_or_table_content(tmp_path: Path) -> 
 def test_focus_containers_suppress_mouse_click_outlines(tmp_path: Path) -> None:
     """Semantic focus containers must suppress mouse click outlines."""
     html = _render_report(tmp_path)
-    assert ".table-wrap:focus {\n  outline: none;\n}" in html
-    assert ".export-block pre:focus {\n  outline: none;\n}" in html
+    assert ".table-wrap:focus:not(:focus-visible) {\n  outline: none;\n}" in html
+    assert ".export-block pre:focus:not(:focus-visible) {\n  outline: none;\n}" in html
