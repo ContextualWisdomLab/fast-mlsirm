@@ -13,6 +13,16 @@ def _unexpected_core_discovery(name: str) -> object:
     raise AssertionError(f"invalid G-theory control reached Rust discovery: {name}")
 
 
+class _UnexpectedArrayMaterialization:
+    """Fail if invalid semantic controls reach caller-owned array conversion."""
+
+    calls = 0
+
+    def __array__(self, *args, **kwargs):
+        type(self).calls += 1
+        raise AssertionError("invalid G-theory control reached data materialization")
+
+
 def _pi_data() -> np.ndarray:
     """Return a minimal two-dimensional score matrix."""
     return np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
@@ -62,3 +72,36 @@ def test_phi_lambda_rejects_invalid_size_before_core_discovery(monkeypatch) -> N
 
     with pytest.raises(ValueError, match=r"n_i_prime entries must be positive integers"):
         gtheory.phi_lambda(_pi_data(), 0.5, n_i_prime=[0])
+
+
+def test_gtheory_pi_rejects_invalid_size_before_data_materialization() -> None:
+    """Invalid one-facet D-study sizes must fail before caller array callbacks."""
+    _UnexpectedArrayMaterialization.calls = 0
+
+    with pytest.raises(ValueError, match=r"n_i_prime entries must be positive integers"):
+        gtheory.gtheory_pi(_UnexpectedArrayMaterialization(), n_i_prime=[0])
+
+    assert _UnexpectedArrayMaterialization.calls == 0
+
+
+def test_gtheory_pio_rejects_invalid_pair_before_data_materialization() -> None:
+    """Invalid two-facet D-study pairs must fail before caller array callbacks."""
+    _UnexpectedArrayMaterialization.calls = 0
+
+    with pytest.raises(
+        ValueError,
+        match=r"n_prime entries must be pairs of positive integers",
+    ):
+        gtheory.gtheory_pio(_UnexpectedArrayMaterialization(), n_prime=[(2, 0)])
+
+    assert _UnexpectedArrayMaterialization.calls == 0
+
+
+def test_phi_lambda_rejects_invalid_cut_before_data_materialization() -> None:
+    """Invalid mastery cuts must fail before caller array callbacks."""
+    _UnexpectedArrayMaterialization.calls = 0
+
+    with pytest.raises(ValueError, match=r"cut must be a finite real scalar"):
+        gtheory.phi_lambda(_UnexpectedArrayMaterialization(), np.inf, n_i_prime=[2])
+
+    assert _UnexpectedArrayMaterialization.calls == 0
