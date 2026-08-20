@@ -38,7 +38,9 @@ def render_diagnostics_report(
         raise ValueError("diagnostics JSON must contain an object")
 
     report_type = _diagnostics_type(payload)
-    resolved_title = title or _default_title(report_type)
+    if title is not None and type(title) is not str:
+        raise ValueError("title must be a string or None")
+    resolved_title = title if title else _default_title(report_type)
 
     out = Path(output_path)
     if out.suffix.lower() != ".html":
