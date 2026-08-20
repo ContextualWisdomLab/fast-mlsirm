@@ -180,3 +180,48 @@ def test_phi_lambda_preserves_numpy_real_and_integer_controls(monkeypatch) -> No
     assert core.cut == 0.5
     assert core.primes == [2]
     assert result.phi == [0.5]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: gtheory.gtheory_pi(_pi_data(), n_i_prime=[gtheory.MAX_GTHEORY_PRIME_SIZE + 1]),
+        lambda: gtheory.gtheory_pio(
+            _pio_data(), n_prime=[(gtheory.MAX_GTHEORY_PRIME_SIZE + 1, 2)]
+        ),
+        lambda: gtheory.phi_lambda(
+            _pi_data(), 0.5, n_i_prime=[gtheory.MAX_GTHEORY_PRIME_SIZE + 1]
+        ),
+    ],
+)
+def test_public_dstudy_sizes_are_bounded_before_core(monkeypatch, call) -> None:
+    """D-study sizes above the output-safety bound never reach Rust."""
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"values must be <="):
+        call()
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: gtheory.gtheory_pi(np.array([[0.0, np.nan], [1.0, 0.0]])),
+        lambda: gtheory.gtheory_pio(
+            np.array(
+                [
+                    [[0.0, 1.0], [1.0, 0.0]],
+                    [[1.0, 0.0], [0.0, np.inf]],
+                ]
+            )
+        ),
+        lambda: gtheory.phi_lambda(
+            np.array([[0.0, 1.0], [np.inf, 0.0]]), 0.5
+        ),
+    ],
+)
+def test_public_score_arrays_are_finite_before_core(monkeypatch, call) -> None:
+    """Non-finite score arrays fail at the Python boundary before Rust."""
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"data must contain only finite real values"):
+        call()

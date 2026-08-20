@@ -49,6 +49,10 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
     np.longdouble,
 )
 
+# Keep public D-study scalar controls below the same bound used by the rubric
+# pilot handoff, so a caller cannot request an unbounded native result table.
+MAX_GTHEORY_PRIME_SIZE = 1_000_000
+
 
 def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
     """Return whether ``value`` has one exact trusted type without callbacks."""
@@ -82,6 +86,10 @@ def _positive_integer_control(value: object, message: str) -> int:
         raise ValueError(message)
     if parsed <= 0:
         raise ValueError(message)
+    if parsed > MAX_GTHEORY_PRIME_SIZE:
+        raise ValueError(
+            f"{message}; values must be <= {MAX_GTHEORY_PRIME_SIZE}"
+        )
     return parsed
 
 
@@ -192,6 +200,8 @@ def gtheory_pi(
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
+    if not np.isfinite(x).all():
+        raise ValueError("data must contain only finite real values")
     n_p, n_i = x.shape
     core = _core_or_raise("gtheory_pi")
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
@@ -226,6 +236,8 @@ def gtheory_pio(
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 3:
         raise ValueError("data must be a 3-D persons x items x occasions array")
+    if not np.isfinite(x).all():
+        raise ValueError("data must contain only finite real values")
     n_p, n_i, n_o = x.shape
     core = _core_or_raise("gtheory_pio")
     return _to_result(
@@ -294,6 +306,8 @@ def phi_lambda(
     x = np.ascontiguousarray(x, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
+    if not np.isfinite(x).all():
+        raise ValueError("data must contain only finite real values")
     n_p, n_i = x.shape
     core = _core_or_raise("phi_lambda")
     res = core.phi_lambda(
