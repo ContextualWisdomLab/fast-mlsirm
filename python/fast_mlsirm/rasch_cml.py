@@ -40,6 +40,8 @@ def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
     n_persons, n_items = y.shape
     if n_items < 2:
         raise ValueError("need at least 2 items")
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
         raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
@@ -145,6 +147,8 @@ def andersen_lr_test(
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
+    if np.iscomplexobj(g):
+        raise ValueError("group labels must be finite non-negative integers")
     gf = np.asarray(g, dtype=np.float64)
     if not np.all(np.isfinite(gf)) or np.any(gf != np.floor(gf)) or np.any(gf < 0):
         raise ValueError("group labels must be finite non-negative integers")
