@@ -44,6 +44,7 @@ class _HostileTuple(tuple):
 
 
 def _engine() -> ComparisonEngine:
+    """Build the minimal engine record used by replay-integrity fixtures."""
     return ComparisonEngine(
         engine_id="mirt_engine",
         engine_version="1.44.0",
@@ -53,6 +54,7 @@ def _engine() -> ComparisonEngine:
 
 
 def _evidence() -> ConformanceEvidence:
+    """Build one executed evidence record for mutation-replay tests."""
     return ConformanceEvidence(
         evidence_id="rasch_probability_check",
         engine=_engine(),
@@ -67,6 +69,7 @@ def _evidence() -> ConformanceEvidence:
 
 
 def _capability() -> ConformanceCapability:
+    """Build one executed capability record for mutation-replay tests."""
     return ConformanceCapability(
         capability_id="rasch_probability",
         public_entrypoint="fast_mlsirm.rasch.probability",
