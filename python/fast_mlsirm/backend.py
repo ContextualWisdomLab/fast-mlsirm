@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from types import ModuleType
 
 
@@ -15,6 +18,10 @@ VALID_BACKENDS = VALID_PRODUCTION_BACKENDS
 # low-level parity kernels and the explicit fit_reference API.
 VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
+_REFERENCE_BACKEND_ACTIVE: ContextVar[bool] = ContextVar(
+    "fast_mlsirm_reference_backend_active",
+    default=False,
+)
 
 
 def _normalize_builtin_text(value: object, *, field: str) -> str:
@@ -22,6 +29,16 @@ def _normalize_builtin_text(value: object, *, field: str) -> str:
     if type(value) is not str:
         raise ValueError(f"{field} must be a built-in string")
     return value.strip().lower()
+
+
+@contextmanager
+def _reference_backend_scope() -> Iterator[None]:
+    """Temporarily authorize NumPy resolution for the named reference API only."""
+    token = _REFERENCE_BACKEND_ACTIVE.set(True)
+    try:
+        yield
+    finally:
+        _REFERENCE_BACKEND_ACTIVE.reset(token)
 
 
 def normalize_backend(name: str) -> str:
@@ -75,10 +92,14 @@ def resolve_backend(name: str) -> str:
 
 
 def resolve_reference_backend(name: str = "numpy") -> str:
-    """Resolve the explicitly named, non-production parity backend."""
+    """Resolve NumPy only while the named reference fitting API owns authority."""
     backend = normalize_backend(name)
     if backend not in VALID_REFERENCE_BACKENDS:
         raise ValueError("reference backend must be 'numpy'")
+    if not _REFERENCE_BACKEND_ACTIVE.get():
+        raise RuntimeError(
+            "NumPy fitting is available only through fast_mlsirm.fit_reference"
+        )
     return backend
 
 
