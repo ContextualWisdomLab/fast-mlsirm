@@ -451,9 +451,9 @@ repeated blank-looking report sections or placeholder-only columns.
 ## Repository Layout
 
 ```text
-python/fast_mlsirm/       Python public API and reference backend
+python/fast_mlsirm/       Python public API, orchestration, and reference API
 crates/mlsirm-core/       Rust likelihood and gradient core
-crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
+crates/fast-mlsirm-py/    PyO3 binding for the Rust production backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
 examples/enterprise_demo/ Synthetic procurement evidence manifests

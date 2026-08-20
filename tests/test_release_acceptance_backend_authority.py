@@ -91,3 +91,22 @@ def test_release_acceptance_guide_does_not_promise_rustless_auto_mode() -> None:
     assert "If Rust backend is unavailable" not in guide
     assert "the script validates the default `auto` path only" not in guide
     assert "`--backend auto` requires the compiled Rust core" in guide
+
+
+def test_buyer_documents_describe_rust_production_and_named_numpy_reference() -> None:
+    """Buyer materials must not sell the obsolete optional-Rust architecture."""
+    commercial = (ROOT / "docs" / "commercial_readiness.md").read_text(
+        encoding="utf-8"
+    )
+    storyboard = (ROOT / "docs" / "buyer_demo_storyboard.md").read_text(
+        encoding="utf-8"
+    )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    for document in (commercial, storyboard, readme):
+        assert "optional Rust/PyO3" not in document
+    assert "Rust/PyO3 production backend" in commercial
+    assert "Rust/PyO3 is the required production" in storyboard
+    assert "PyO3 binding for the Rust production backend" in readme
+    assert "fast_mlsirm.fit_reference" in commercial
+    assert "fit --reference" in storyboard
