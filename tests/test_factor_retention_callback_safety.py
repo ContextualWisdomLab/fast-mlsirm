@@ -16,6 +16,8 @@ def test_candidate_count_subclass_is_rejected_without_comparison_callback() -> N
     callbacks: list[str] = []
 
     class HostileInt(int):
+        """Record whether admission invokes an integer comparison hook."""
+
         def __le__(self, other: object) -> bool:
             callbacks.append("le")
             raise AssertionError("candidate_count comparison callback executed")
@@ -35,6 +37,8 @@ def test_evidence_subclass_is_rejected_without_record_attribute_callback() -> No
     callbacks: list[str] = []
 
     class HostileEvidence(FactorRetentionEvidence):
+        """Record whether admission reads fields from a record subclass."""
+
         def __getattribute__(self, name: str):
             if name in {"method", "candidate_count"}:
                 callbacks.append(name)
@@ -56,6 +60,8 @@ def test_forged_exact_record_revalidates_method_before_hash_callback() -> None:
     callbacks: list[str] = []
 
     class HostileMethod:
+        """Record whether set admission hashes an untrusted method value."""
+
         def __hash__(self) -> int:
             callbacks.append("hash")
             raise AssertionError("factor-retention method hash callback executed")
@@ -75,6 +81,8 @@ def test_forged_exact_record_revalidates_count_before_comparison_callback() -> N
     callbacks: list[str] = []
 
     class HostileInt(int):
+        """Record whether aggregation compares an untrusted count value."""
+
         def __lt__(self, other: object) -> bool:
             callbacks.append("lt")
             raise AssertionError("factor-retention count comparison callback executed")
