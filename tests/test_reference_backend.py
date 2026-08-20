@@ -52,6 +52,23 @@ def test_public_fit_rejects_config_subclass_before_truthiness_callback() -> None
         )
 
 
+def test_public_fit_validates_config_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid semantic controls must fail before compiled-core discovery."""
+
+    def _unexpected_core_discovery() -> None:
+        raise AssertionError("native core discovery preceded config validation")
+
+    monkeypatch.setattr("fast_mlsirm.backend._load_core", _unexpected_core_discovery)
+    with pytest.raises(ValueError, match="max_iter must be >= 1"):
+        fit(
+            np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
+            np.array([0, 0], dtype=np.int64),
+            FitConfig(max_iter=0),
+        )
+
+
 def test_public_fit_rejects_numpy_inside_reference_scope() -> None:
     """Importable reference scope cannot authorize NumPy through public fit."""
     with _reference_backend_scope():
