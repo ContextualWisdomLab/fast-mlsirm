@@ -49,6 +49,13 @@ class ConformanceExecutionStatus(str, Enum):
     NOT_APPLICABLE = "not_applicable"
 
 
+_EXECUTED_STATUSES = {
+    ConformanceExecutionStatus.PASSED,
+    ConformanceExecutionStatus.FAILED,
+    ConformanceExecutionStatus.INDETERMINATE,
+}
+
+
 def _text(value: object, name: str, *, maximum: int = MAX_TEXT_LENGTH) -> str:
     """Normalize bounded exact built-in text without caller callback dispatch."""
     if type(value) is not str:
@@ -158,7 +165,11 @@ class ConformanceRunProvenance:
             raise ValueError(
                 "ConformanceRunProvenance must be an exact package record"
             )
-        object.__setattr__(self, "harness_commit", _git_sha(self.harness_commit, "harness_commit"))
+        object.__setattr__(
+            self,
+            "harness_commit",
+            _git_sha(self.harness_commit, "harness_commit"),
+        )
         for field_name in (
             "environment_sha256",
             "mapping_sha256",
@@ -365,11 +376,7 @@ class ConformanceEvidence:
                 _text(self.limitation, "limitation"),
             )
 
-        executed = self.execution_status in {
-            ConformanceExecutionStatus.PASSED,
-            ConformanceExecutionStatus.FAILED,
-            ConformanceExecutionStatus.INDETERMINATE,
-        }
+        executed = self.execution_status in _EXECUTED_STATUSES
         if executed and self.artifact_sha256 is None:
             raise ValueError("artifact_sha256 is required for an executed status")
         if not executed and self.artifact_sha256 is not None:
@@ -484,15 +491,7 @@ class ConformanceCapability:
         if self.coverage_status in {
             ConformanceCoverageStatus.COVERED,
             ConformanceCoverageStatus.PARTIALLY_COVERED,
-        } and not any(
-            row.execution_status
-            in {
-                ConformanceExecutionStatus.PASSED,
-                ConformanceExecutionStatus.FAILED,
-                ConformanceExecutionStatus.INDETERMINATE,
-            }
-            for row in evidence
-        ):
+        } and not any(row.execution_status in _EXECUTED_STATUSES for row in evidence):
             raise ValueError("covered capability requires executed evidence")
         if self.coverage_status in {
             ConformanceCoverageStatus.NO_INDEPENDENT_ENGINE,
@@ -562,6 +561,15 @@ def _capability_values(values: object) -> tuple[ConformanceCapability, ...]:
     return tuple(sorted(normalized, key=lambda row: row.capability_id))
 
 
+def _has_executed_evidence(capabilities: tuple[ConformanceCapability, ...]) -> bool:
+    """Return whether a sealed capability set contains any executed evidence."""
+    return any(
+        evidence.execution_status in _EXECUTED_STATUSES
+        for capability in capabilities
+        for evidence in capability.evidence
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ConformanceInventory:
     """Content-addressed inventory of independent conformance coverage."""
@@ -586,14 +594,24 @@ class ConformanceInventory:
             "source_commit",
             _git_sha(self.source_commit, "source_commit"),
         )
-        object.__setattr__(
-            self,
-            "capabilities",
-            _capability_values(self.capabilities),
-        )
+        capabilities = _capability_values(self.capabilities)
+        object.__setattr__(self, "capabilities", capabilities)
         object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
+
+        provenance = None
         if self.run_provenance is not None:
-            object.__setattr__(self, "run_provenance", _run_provenance(self.run_provenance))
+            provenance = _run_provenance(self.run_provenance)
+            object.__setattr__(self, "run_provenance", provenance)
+
+        if _has_executed_evidence(capabilities):
+            if provenance is None:
+                raise ValueError("run_provenance is required for executed evidence")
+            if provenance.raw_output_sha256 is None:
+                raise ValueError("raw_output_sha256 is required for executed evidence")
+            if provenance.normalized_output_sha256 is None:
+                raise ValueError(
+                    "normalized_output_sha256 is required for executed evidence"
+                )
 
     def _manifest_without_fingerprint(self) -> dict[str, object]:
         """Return revalidated content used to derive immutable inventory identity."""
