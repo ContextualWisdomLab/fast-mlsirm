@@ -2214,30 +2214,23 @@ fn solve_decreasing_root(
     0.5 * (lo + hi)
 }
 
-/// Integrate simple-structure item-set margins over independent trait
-/// dimensions conditional on the common latent-space node. `icc_nodes` stores
-/// one trait axis because each item loads on one factor; products spanning
-/// distinct factors must therefore be integrated separately, not evaluated at
-/// the same trait node.
-fn factorized_trait_moments(
+/// Evaluate simple-structure item-set margins from a probability grid.
+///
+/// The probability tensor is row-major `(item, trait_node, space_node)`.
+/// Products spanning distinct factors are integrated over independent trait
+/// nodes and then over the shared latent-space node. This is the numerical
+/// ownership boundary used by the multigroup and multilevel M2 paths.
+fn factorized_trait_moments_weighted_impl(
     probs: &[f64],
-    weights: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
     q_theta: usize,
     factor_id: &[usize],
     n_dims: usize,
     item_sets: &[Vec<usize>],
 ) -> Vec<f64> {
-    let n_x = weights.len() / q_theta;
-    let cell = weights.len();
-    let mut trait_weights = vec![0.0_f64; q_theta];
-    let mut space_weights = vec![0.0_f64; n_x];
-    for t in 0..q_theta {
-        for x in 0..n_x {
-            let weight = weights[t * n_x + x];
-            trait_weights[t] += weight;
-            space_weights[x] += weight;
-        }
-    }
+    let n_x = space_weights.len();
+    let cell = q_theta * n_x;
     item_sets
         .iter()
         .map(|set| {
@@ -2265,6 +2258,255 @@ fn factorized_trait_moments(
             total
         })
         .collect()
+}
+
+fn factorized_trait_moments_joint(
+    probs: &[f64],
+    weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Vec<f64> {
+    let n_x = weights.len() / q_theta;
+    let mut trait_weights = vec![0.0_f64; q_theta];
+    let mut space_weights = vec![0.0_f64; n_x];
+    for t in 0..q_theta {
+        for x in 0..n_x {
+            let weight = weights[t * n_x + x];
+            trait_weights[t] += weight;
+            space_weights[x] += weight;
+        }
+    }
+    factorized_trait_moments_weighted_impl(
+        probs,
+        &trait_weights,
+        &space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    )
+}
+
+fn validate_factorized_moment_inputs(
+    probs: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Result<usize, String> {
+    if q_theta == 0 || trait_weights.len() != q_theta {
+        return Err("trait weights must have positive length q_theta".into());
+    }
+    if space_weights.is_empty() {
+        return Err("space weights must be non-empty".into());
+    }
+    if n_dims == 0 || factor_id.is_empty() {
+        return Err("factor dimensions and item ids must be non-empty".into());
+    }
+    let n_x = space_weights.len();
+    let cell = q_theta
+        .checked_mul(n_x)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    let expected = factor_id
+        .len()
+        .checked_mul(cell)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    if probs.len() != expected {
+        return Err("probability grid length does not match item and node dimensions".into());
+    }
+    if !trait_weights
+        .iter()
+        .chain(space_weights)
+        .chain(probs)
+        .all(|value| value.is_finite())
+    {
+        return Err("factorized moment inputs must be finite".into());
+    }
+    if factor_id.iter().any(|&dimension| dimension >= n_dims) {
+        return Err("factor_id values must be in 0..n_dims-1".into());
+    }
+    for set in item_sets {
+        if set.iter().any(|&item| item >= factor_id.len()) {
+            return Err("item-set indices must be within the item bank".into());
+        }
+    }
+    Ok(n_x)
+}
+
+/// Integrate simple-structure item-set margins over independent trait
+/// dimensions conditional on one shared latent-space node.
+pub fn factorized_trait_moments(
+    probs: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Result<Vec<f64>, String> {
+    validate_factorized_moment_inputs(
+        probs,
+        trait_weights,
+        space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    )?;
+    Ok(factorized_trait_moments_weighted_impl(
+        probs,
+        trait_weights,
+        space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    ))
+}
+
+/// Integrate simple-structure item-set margins over a shared cluster
+/// intercept and independent residual trait dimensions.
+pub fn factorized_multilevel_moments(
+    probs: &[f64],
+    cluster_weights: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
+    q_u: usize,
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Result<Vec<f64>, String> {
+    if q_u == 0 || cluster_weights.len() != q_u {
+        return Err("cluster weights must have positive length q_u".into());
+    }
+    if !cluster_weights.iter().all(|value| value.is_finite()) {
+        return Err("cluster weights must be finite".into());
+    }
+    let n_x = space_weights.len();
+    if n_x == 0 {
+        return Err("space weights must be non-empty".into());
+    }
+    let cell = q_theta
+        .checked_mul(n_x)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    let per_cluster = factor_id
+        .len()
+        .checked_mul(cell)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    let expected = q_u
+        .checked_mul(per_cluster)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    if probs.len() != expected {
+        return Err("multilevel probability grid length does not match node dimensions".into());
+    }
+    validate_factorized_moment_inputs(
+        &probs[..per_cluster],
+        trait_weights,
+        space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    )?;
+    let mut result = vec![0.0_f64; item_sets.len()];
+    for cluster in 0..q_u {
+        let start = cluster * per_cluster;
+        let moments = factorized_trait_moments_weighted_impl(
+            &probs[start..start + per_cluster],
+            trait_weights,
+            space_weights,
+            q_theta,
+            factor_id,
+            n_dims,
+            item_sets,
+        );
+        for (result_value, moment) in result.iter_mut().zip(moments) {
+            *result_value += cluster_weights[cluster] * moment;
+        }
+    }
+    if !result.iter().all(|value| value.is_finite()) {
+        return Err("multilevel moments must be finite".into());
+    }
+    Ok(result)
+}
+
+/// Estimate the covariance of cluster totals for first- and second-order
+/// observed moments. The denominator and finite-sample correction match the
+/// existing Python cluster-robust M2 implementation.
+pub fn cluster_moment_covariance(
+    z_rows: &[f64],
+    model_moments: &[f64],
+    cluster_id: &[usize],
+    n_rows: usize,
+    n_moments: usize,
+    n_clusters: usize,
+) -> Result<Vec<f64>, String> {
+    let row_elements = n_rows
+        .checked_mul(n_moments)
+        .ok_or_else(|| "cluster covariance dimensions overflow".to_string())?;
+    if n_rows == 0 || n_moments == 0 || z_rows.len() != row_elements {
+        return Err("cluster covariance row dimensions are inconsistent".into());
+    }
+    if model_moments.len() != n_moments || cluster_id.len() != n_rows {
+        return Err("cluster covariance inputs have inconsistent lengths".into());
+    }
+    if n_clusters <= n_moments || n_clusters < 2 {
+        return Err(format!(
+            "cluster-robust M2 needs more clusters than moments ({n_clusters} <= {n_moments})"
+        ));
+    }
+    if !z_rows
+        .iter()
+        .chain(model_moments)
+        .all(|value| value.is_finite())
+    {
+        return Err("cluster covariance inputs must be finite".into());
+    }
+    if cluster_id.iter().any(|&cluster| cluster >= n_clusters) {
+        return Err("cluster ids must be within the compact cluster range".into());
+    }
+    let total_elements = n_clusters
+        .checked_mul(n_moments)
+        .ok_or_else(|| "cluster covariance dimensions overflow".to_string())?;
+    let covariance_elements = n_moments
+        .checked_mul(n_moments)
+        .ok_or_else(|| "cluster covariance dimensions overflow".to_string())?;
+    let mut totals = vec![0.0_f64; total_elements];
+    for row in 0..n_rows {
+        let cluster = cluster_id[row];
+        for moment in 0..n_moments {
+            totals[cluster * n_moments + moment] +=
+                z_rows[row * n_moments + moment] - model_moments[moment];
+        }
+    }
+    let mut means = vec![0.0_f64; n_moments];
+    for cluster in 0..n_clusters {
+        for moment in 0..n_moments {
+            means[moment] += totals[cluster * n_moments + moment];
+        }
+    }
+    for mean in &mut means {
+        *mean /= n_clusters as f64;
+    }
+    let scale = n_clusters as f64 / ((n_clusters - 1) as f64 * n_rows as f64);
+    let mut covariance = vec![0.0_f64; covariance_elements];
+    for left in 0..n_moments {
+        for right in 0..n_moments {
+            let mut value = 0.0_f64;
+            for cluster in 0..n_clusters {
+                let base = cluster * n_moments;
+                value += (totals[base + left] - means[left])
+                    * (totals[base + right] - means[right]);
+            }
+            covariance[left * n_moments + right] = scale * value;
+        }
+    }
+    Ok(covariance)
 }
 
 /// M2 statistic (order-2 residuals), df, p-value, RMSEA2 (+ 90% CI), and the
@@ -2422,7 +2664,7 @@ fn m2_rmsea2_impl(
     // node probabilities at the fitted parameters + node weights
     let (probs0, weights, _theta, _cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
     let model_moments = |probs: &[f64]| -> Vec<f64> {
-        factorized_trait_moments(
+        factorized_trait_moments_joint(
             probs,
             &weights,
             q_theta,
@@ -2432,7 +2674,7 @@ fn m2_rmsea2_impl(
         )
     };
     let pi_set = |probs: &[f64], set: &[usize]| -> f64 {
-        factorized_trait_moments(
+        factorized_trait_moments_joint(
             probs,
             &weights,
             q_theta,
