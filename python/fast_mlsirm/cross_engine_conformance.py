@@ -369,6 +369,19 @@ class ConformanceCapability:
         } and not evidence:
             raise ValueError("covered capability requires evidence")
         if self.coverage_status in {
+            ConformanceCoverageStatus.COVERED,
+            ConformanceCoverageStatus.PARTIALLY_COVERED,
+        } and not any(
+            row.execution_status
+            in {
+                ConformanceExecutionStatus.PASSED,
+                ConformanceExecutionStatus.FAILED,
+                ConformanceExecutionStatus.INDETERMINATE,
+            }
+            for row in evidence
+        ):
+            raise ValueError("covered capability requires executed evidence")
+        if self.coverage_status in {
             ConformanceCoverageStatus.NO_INDEPENDENT_ENGINE,
             ConformanceCoverageStatus.NOT_COMPARABLE,
         } and evidence:

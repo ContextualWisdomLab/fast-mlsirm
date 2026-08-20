@@ -9,6 +9,8 @@ release or sole correctness dependency.
 The inventory distinguishes capability coverage from execution status:
 
 - `covered` and `partially_covered` require independent evidence;
+- both statuses also require at least one executed evidence row; a planned or
+  unavailable run cannot be presented as completed coverage;
 - `no_independent_engine`, `not_comparable` and `planned` remain explicit;
 - `passed`, `failed`, `indeterminate`, `not_executed` and `not_applicable` are
   preserved rather than collapsed into a green result.

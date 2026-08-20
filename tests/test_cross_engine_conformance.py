@@ -200,6 +200,21 @@ def test_coverage_states_fail_closed_on_contradictory_evidence() -> None:
     )
     assert planned.coverage_status is ConformanceCoverageStatus.PLANNED
 
+    for coverage_status in (
+        ConformanceCoverageStatus.COVERED,
+        ConformanceCoverageStatus.PARTIALLY_COVERED,
+    ):
+        with pytest.raises(ValueError, match="requires executed evidence"):
+            _capability(
+                coverage_status=coverage_status,
+                evidence=(
+                    _evidence(
+                        execution_status=ConformanceExecutionStatus.NOT_EXECUTED,
+                        artifact_sha256=None,
+                    ),
+                ),
+            )
+
 
 def test_duplicate_capabilities_and_evidence_are_rejected() -> None:
     """Inventory identities remain unique at both hierarchy levels."""
