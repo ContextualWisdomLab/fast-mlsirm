@@ -18,14 +18,18 @@ class _ResponseSentinel:
 
 
 class _HostileInt(int):
+    """Integer subclass that fails if validation invokes callbacks."""
+
     callbacks = 0
 
     @classmethod
     def reset(cls) -> None:
+        """Reset the callback counter before one admission test."""
         cls.callbacks = 0
 
     @classmethod
     def _boom(cls, *args, **kwargs):  # noqa: ANN002, ANN003
+        """Raise when package validation dispatches to caller behavior."""
         cls.callbacks += 1
         raise AssertionError("caller integer callback executed")
 
@@ -39,14 +43,18 @@ class _HostileInt(int):
 
 
 class _HostileFloat(float):
+    """Floating-point subclass that fails if validation invokes callbacks."""
+
     callbacks = 0
 
     @classmethod
     def reset(cls) -> None:
+        """Reset the callback counter before one admission test."""
         cls.callbacks = 0
 
     @classmethod
     def _boom(cls, *args, **kwargs):  # noqa: ANN002, ANN003
+        """Raise when package validation dispatches to caller behavior."""
         cls.callbacks += 1
         raise AssertionError("caller floating callback executed")
 
@@ -58,6 +66,8 @@ class _HostileFloat(float):
 
 
 class _HashTrap:
+    """Object that fails if validation hashes or compares it."""
+
     callbacks = 0
 
     def __hash__(self) -> int:
@@ -70,7 +80,10 @@ class _HashTrap:
 
 
 class _FakeCore:
+    """Minimal Rust-core sentinel that records normalized RSM controls."""
+
     def __init__(self) -> None:
+        """Initialize the call-recording slot."""
         self.controls: tuple[int, int, int, float] | None = None
 
     def fit_rsm(
@@ -84,6 +97,7 @@ class _FakeCore:
         max_iter,
         tol,
     ):
+        """Record controls and return the smallest valid fit result."""
         self.controls = (n_cat, q_theta, max_iter, tol)
         return {
             "item_location": np.zeros(n_items),
@@ -97,6 +111,7 @@ class _FakeCore:
 
 
 def _responses() -> np.ndarray:
+    """Return a small valid ordinal response matrix."""
     return np.array(
         [
             [0.0, 1.0, 2.0],
@@ -107,6 +122,7 @@ def _responses() -> np.ndarray:
 
 
 def test_n_cat_subclass_rejected_without_callbacks_or_data_work() -> None:
+    """Reject hostile category counts before callbacks or response access."""
     _HostileInt.reset()
     with pytest.raises(TypeError, match="n_cat must be an integer >= 2"):
         fit_rsm(_ResponseSentinel(), n_cat=_HostileInt(3))
@@ -114,6 +130,7 @@ def test_n_cat_subclass_rejected_without_callbacks_or_data_work() -> None:
 
 
 def test_q_theta_untrusted_values_rejected_without_hash_or_numeric_callbacks() -> None:
+    """Reject hostile quadrature controls before hashing or numeric callbacks."""
     _HostileInt.reset()
     _HashTrap.callbacks = 0
     with pytest.raises(ValueError, match="q_theta must be one of"):
@@ -125,6 +142,7 @@ def test_q_theta_untrusted_values_rejected_without_hash_or_numeric_callbacks() -
 
 
 def test_max_iter_subclass_rejected_without_callbacks_or_data_work() -> None:
+    """Reject hostile iteration limits before callbacks or response access."""
     _HostileInt.reset()
     with pytest.raises(ValueError, match="max_iter must be an integer"):
         fit_rsm(_ResponseSentinel(), n_cat=3, max_iter=_HostileInt(10))
@@ -132,6 +150,7 @@ def test_max_iter_subclass_rejected_without_callbacks_or_data_work() -> None:
 
 
 def test_tol_subclass_rejected_without_callbacks_or_data_work() -> None:
+    """Reject hostile tolerances before callbacks or response access."""
     _HostileFloat.reset()
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
         fit_rsm(_ResponseSentinel(), n_cat=3, tol=_HostileFloat(1e-6))
@@ -139,6 +158,7 @@ def test_tol_subclass_rejected_without_callbacks_or_data_work() -> None:
 
 
 def test_existing_numpy_scalar_compatibility_is_preserved() -> None:
+    """Preserve supported NumPy scalar controls after normalization."""
     core = _FakeCore()
     with patch("fast_mlsirm.fitstats._core_module", return_value=core):
         fit_rsm(
@@ -159,6 +179,7 @@ def test_existing_numpy_scalar_compatibility_is_preserved() -> None:
 
 
 def test_numpy_integer_contract_remains_narrow_for_n_cat_and_max_iter() -> None:
+    """Keep the deliberate NumPy integer admission contract narrow."""
     with pytest.raises(TypeError, match="n_cat must be an integer >= 2"):
         fit_rsm(_ResponseSentinel(), n_cat=np.int64(3))
     with pytest.raises(ValueError, match="max_iter must be an integer"):
