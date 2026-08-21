@@ -136,7 +136,12 @@ def fit_facets(
     if not math.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
-    y = np.asarray(responses, dtype=np.float64)
+    response_array = np.asarray(responses)
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    y = response_array.astype(np.float64, copy=False)
     if y.ndim != 3:
         raise ValueError("responses must be a 3-D persons x items x raters array")
     n_persons, n_items, n_raters = y.shape
