@@ -129,7 +129,7 @@ def test_validate_source_commit_rejects_string_subclass_without_callbacks() -> N
 
 @pytest.mark.parametrize("valuation_claim", [True, "false"])
 def test_build_gate_manifest_rejects_valuation_claims(valuation_claim: object) -> None:
-    with pytest.raises(ValueError, match="valuation_claim|valuation claim"):
+    with pytest.raises(ValueError, match=r"valuation_claim|valuation claim"):
         GATE.build_gate_manifest(
             source_commit=SOURCE_COMMIT,
             valuation_claim=valuation_claim,
@@ -178,6 +178,47 @@ def test_write_gate_manifest_rejects_symlinked_parent(
         GATE.write_gate_manifest(manifest, Path("linked") / "gate.json")
 
     assert not (tmp_path / "real" / "gate.json").exists()
+
+
+def test_main_rejects_directory_output_with_json_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The CLI returns its stable failure payload for a directory target."""
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = GATE.main(["--source-commit", SOURCE_COMMIT, "--out", "."])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.err) == {
+        "error": "output path must name a regular file",
+        "status": "failed",
+    }
+    assert captured.out == ""
+
+
+def test_main_rejects_regular_file_parent_with_json_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The CLI converts a non-directory parent failure into JSON evidence."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "parent").write_text("not a directory", encoding="utf-8")
+
+    exit_code = GATE.main(
+        ["--source-commit", SOURCE_COMMIT, "--out", str(Path("parent") / "gate.json")]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.err) == {
+        "error": "manifest output could not be written",
+        "status": "failed",
+    }
+    assert captured.out == ""
 
 
 def test_main_writes_canonical_manifest(

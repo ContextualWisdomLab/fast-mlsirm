@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -38,6 +39,8 @@ def _safe_output_path(output_path: Path) -> Path:
     candidate = Path(output_path)
     if candidate.is_absolute():
         raise ValueError("output path must be relative to the current working directory")
+    if ".." in candidate.parts:
+        raise ValueError("output path must remain within the current working directory")
 
     probe = root
     for part in candidate.parts:
@@ -50,6 +53,8 @@ def _safe_output_path(output_path: Path) -> Path:
         resolved.relative_to(root)
     except ValueError:
         raise ValueError("output path must remain within the current working directory") from None
+    if resolved.exists() and not resolved.is_file():
+        raise ValueError("output path must name a regular file")
     return resolved
 
 
@@ -138,15 +143,56 @@ def build_gate_manifest(
     }
 
 
-def write_gate_manifest(manifest: dict[str, Any], output_path: Path) -> None:
-    """Write a gate manifest as deterministic UTF-8 JSON."""
+def _write_manifest_descriptor(output_path: Path, content: str) -> None:
+    """Write content through no-follow directory descriptors on POSIX."""
+    if (
+        os.name != "posix"
+        or os.open not in os.supports_dir_fd
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+    ):
+        raise ValueError("descriptor-safe manifest output requires POSIX dirfd support")
+    components = output_path.parts
+    if not components:
+        raise ValueError("output path must name a regular file")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory_fd = os.open(".", directory_flags)
+    try:
+        for component in components[:-1]:
+            try:
+                os.mkdir(component, 0o755, dir_fd=directory_fd)
+            except FileExistsError:
+                pass
+            next_directory_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_directory_fd
+        file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+        file_fd = os.open(components[-1], file_flags, 0o644, dir_fd=directory_fd)
+        try:
+            stream = os.fdopen(file_fd, "w", encoding="utf-8")
+        except BaseException:
+            os.close(file_fd)
+            raise
+        with stream:
+            stream.write(content)
+    finally:
+        try:
+            os.close(directory_fd)
+        except OSError:
+            pass
 
-    safe_path = _safe_output_path(output_path)
-    safe_path.parent.mkdir(parents=True, exist_ok=True)
-    safe_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+
+def write_gate_manifest(manifest: dict[str, Any], output_path: Path) -> None:
+    """Write deterministic UTF-8 JSON through a validated relative path."""
+
+    _safe_output_path(output_path)
+    content = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    try:
+        _write_manifest_descriptor(Path(output_path), content)
+    except ValueError:
+        raise
+    except OSError:
+        raise ValueError("manifest output could not be written") from None
 
 
 def build_parser() -> argparse.ArgumentParser:
