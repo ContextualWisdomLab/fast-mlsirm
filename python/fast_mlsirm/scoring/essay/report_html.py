@@ -249,6 +249,8 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
   body { background: white; color: black; }
   .skip-link { display: none !important; }
   section, .table-scroll { break-inside: avoid; }
+  .table-scroll, pre { overflow: visible; }
+  pre { max-height: none; }
 }
 """.strip()
 
