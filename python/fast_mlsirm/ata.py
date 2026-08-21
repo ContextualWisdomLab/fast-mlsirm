@@ -224,6 +224,7 @@ def _validated_content_constraints(
     """Validate content constraint maps and finite-domain count semantics."""
 
     def _one(raw: dict[str, int] | None) -> dict[str, int]:
+        """Normalize one optional content-count map without coercion callbacks."""
         if raw is None:
             return {}
         if not isinstance(raw, dict):
