@@ -116,16 +116,13 @@ def resolve_timeout_seconds(
 
 def _validate_command(command: Sequence[str]) -> list[str]:
     """Return a plain argument vector after rejecting malformed command fields."""
-    if isinstance(command, (str, bytes)) or not command:
+    if type(command) not in {list, tuple} or not command:
         raise ValueError("command must be a non-empty sequence of strings")
-    materialized = list(command)
-    if not materialized or not all(
-        isinstance(part, str) and part for part in materialized
-    ):
+    if not all(type(part) is str and part for part in command):
         raise ValueError(
             "command must be a non-empty sequence of non-empty strings"
         )
-    return materialized
+    return list(command)
 
 
 def _posix_process_group_exists(process_group_id: int) -> bool:
