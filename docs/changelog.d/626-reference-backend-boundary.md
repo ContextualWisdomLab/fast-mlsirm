@@ -6,3 +6,6 @@
   fail-closed `auto`). Move the NumPy parity fit behind the explicit
   `fast_mlsirm.fit_reference` API and `fit --reference` mode, preserving
   testable parity without allowing an implicit production owner switch.
+- Record the resolved Rust backend for the plain unidimensional MMLE fast path
+  so CLI JSON and saved fit summaries report the execution owner rather than
+  the unresolved `auto` selector.
