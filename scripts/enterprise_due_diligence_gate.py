@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import sys
 import tempfile
 import warnings
@@ -154,6 +155,8 @@ def _write_manifest_descriptor(
         os.name != "posix"
         or os.open not in os.supports_dir_fd
         or os.mkdir not in os.supports_dir_fd
+        or os.rename not in os.supports_dir_fd
+        or os.unlink not in os.supports_dir_fd
         or not hasattr(os, "O_DIRECTORY")
         or not hasattr(os, "O_NOFOLLOW")
     ):
@@ -174,6 +177,7 @@ def _write_manifest_descriptor(
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
         return
+
     components = output_path.parts
     if not components:
         raise ValueError("output path must name a regular file")
@@ -188,15 +192,59 @@ def _write_manifest_descriptor(
             next_directory_fd = os.open(component, directory_flags, dir_fd=directory_fd)
             os.close(directory_fd)
             directory_fd = next_directory_fd
-        file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-        file_fd = os.open(components[-1], file_flags, 0o644, dir_fd=directory_fd)
+
+        temporary_name: str | None = None
+        temporary_fd: int | None = None
+        temporary_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         try:
-            stream = os.fdopen(file_fd, "w", encoding="utf-8")
-        except BaseException:
-            os.close(file_fd)
-            raise
-        with stream:
-            stream.write(content)
+            for _ in range(128):
+                candidate = f".{components[-1]}.{secrets.token_hex(16)}.tmp"
+                try:
+                    temporary_fd = os.open(
+                        candidate,
+                        temporary_flags,
+                        0o600,
+                        dir_fd=directory_fd,
+                    )
+                except FileExistsError:
+                    continue
+                temporary_name = candidate
+                break
+            else:
+                raise ValueError("manifest output could not be written")
+
+            assert temporary_fd is not None
+            try:
+                stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
+            except BaseException:
+                os.close(temporary_fd)
+                temporary_fd = None
+                raise
+            temporary_fd = None
+            with stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+
+            assert temporary_name is not None
+            os.rename(
+                temporary_name,
+                components[-1],
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+            )
+            temporary_name = None
+        finally:
+            if temporary_fd is not None:
+                try:
+                    os.close(temporary_fd)
+                except OSError:
+                    pass
+            if temporary_name is not None:
+                try:
+                    os.unlink(temporary_name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
     finally:
         try:
             os.close(directory_fd)
