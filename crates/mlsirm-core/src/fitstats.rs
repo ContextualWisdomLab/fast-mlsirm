@@ -2074,6 +2074,9 @@ pub fn projected_m2(
     if !n.is_finite() {
         return Err("n must be finite".to_string());
     }
+    if n <= 0.0 {
+        return Err("n must be positive".to_string());
+    }
     if e.iter().any(|value| !value.is_finite()) {
         return Err("residual values must be finite".to_string());
     }
