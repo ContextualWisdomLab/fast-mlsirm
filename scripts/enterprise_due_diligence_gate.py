@@ -31,6 +31,28 @@ LEGACY_GATE_ALIASES = frozenset(
 _GIT_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
+def _safe_output_path(output_path: Path) -> Path:
+    """Resolve one output path below the current directory without symlinks."""
+
+    root = Path.cwd().resolve()
+    candidate = Path(output_path)
+    if candidate.is_absolute():
+        raise ValueError("output path must be relative to the current working directory")
+
+    probe = root
+    for part in candidate.parts:
+        probe /= part
+        if probe.is_symlink():
+            raise ValueError("output path must not contain symbolic links")
+
+    resolved = (root / candidate).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        raise ValueError("output path must remain within the current working directory") from None
+    return resolved
+
+
 def normalize_gate_name(value: str) -> str:
     """Return the canonical gate name and warn for a supported legacy alias."""
 
@@ -119,8 +141,9 @@ def build_gate_manifest(
 def write_gate_manifest(manifest: dict[str, Any], output_path: Path) -> None:
     """Write a gate manifest as deterministic UTF-8 JSON."""
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
+    safe_path = _safe_output_path(output_path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+    safe_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
