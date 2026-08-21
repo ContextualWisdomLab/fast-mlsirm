@@ -267,7 +267,13 @@ def oakes_standard_errors(
     ff = raw_factors.astype(np.float64)
     if not np.all(np.isfinite(ff)) or np.any(ff < 0) or np.any(ff != np.floor(ff)):
         raise ValueError("factor_id must be finite non-negative integers")
-    factors = raw_factors.astype(np.int64)
+    try:
+        with np.errstate(invalid="ignore", over="ignore"):
+            factors = raw_factors.astype(np.int64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError("factor_id must fit signed 64-bit integers") from exc
+    if not np.array_equal(factors.astype(np.float64), ff):
+        raise ValueError("factor_id must fit signed 64-bit integers")
     n_dims = int(factors.max()) + 1 if factors.size else 0
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")
