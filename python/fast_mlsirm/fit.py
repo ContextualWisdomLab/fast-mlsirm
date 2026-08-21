@@ -38,7 +38,14 @@ def _compact_population_labels(raw, n_persons: int, name: str):
         raise ValueError(f"{name} must be finite")
     if _np.any(fl < 0) or _np.any(fl != _np.floor(fl)):
         raise ValueError(f"{name} must be non-negative integers")
-    uniq, remapped = _np.unique(arr.astype(_np.int64), return_inverse=True)
+    try:
+        with _np.errstate(invalid="ignore", over="ignore"):
+            int_labels = arr.astype(_np.int64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must fit in signed 64-bit integers") from exc
+    if not _np.array_equal(int_labels.astype(_np.float64), fl):
+        raise ValueError(f"{name} must fit in signed 64-bit integers")
+    uniq, remapped = _np.unique(int_labels, return_inverse=True)
     return remapped.astype(_np.int64), int(uniq.size)
 
 
