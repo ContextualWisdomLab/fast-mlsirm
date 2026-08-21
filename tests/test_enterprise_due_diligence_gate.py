@@ -136,23 +136,57 @@ def test_build_gate_manifest_rejects_valuation_claims(valuation_claim: object) -
         )
 
 
-def test_write_gate_manifest_is_deterministic(tmp_path: Path) -> None:
+def test_write_gate_manifest_is_deterministic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
     manifest = GATE.build_gate_manifest(
         source_commit=SOURCE_COMMIT,
         currency_code="usd",
         scenario_amount=25,
     )
-    output_path = tmp_path / "nested" / "gate.json"
+    output_path = Path("nested") / "gate.json"
 
     GATE.write_gate_manifest(manifest, output_path)
 
-    assert output_path.read_text(encoding="utf-8").endswith("\n")
-    assert json.loads(output_path.read_text(encoding="utf-8")) == manifest
-    assert output_path.read_text(encoding="utf-8").splitlines()[1].strip().startswith('"currency_code"')
+    written_path = tmp_path / output_path
+    assert written_path.read_text(encoding="utf-8").endswith("\n")
+    assert json.loads(written_path.read_text(encoding="utf-8")) == manifest
+    assert written_path.read_text(encoding="utf-8").splitlines()[1].strip().startswith('"currency_code"')
 
 
-def test_main_writes_canonical_manifest(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    output_path = tmp_path / "gate.json"
+def test_write_gate_manifest_rejects_path_traversal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Output validation must prevent writes outside the invocation directory."""
+    monkeypatch.chdir(tmp_path)
+    manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
+
+    with pytest.raises(ValueError, match="remain within the current working directory"):
+        GATE.write_gate_manifest(manifest, Path("..") / "outside.json")
+
+    assert not (tmp_path.parent / "outside.json").exists()
+
+
+def test_write_gate_manifest_rejects_symlinked_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Output validation must not follow a symlinked destination directory."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "real").mkdir()
+    (tmp_path / "linked").symlink_to(tmp_path / "real", target_is_directory=True)
+    manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
+
+    with pytest.raises(ValueError, match="symbolic links"):
+        GATE.write_gate_manifest(manifest, Path("linked") / "gate.json")
+
+    assert not (tmp_path / "real" / "gate.json").exists()
+
+
+def test_main_writes_canonical_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    output_path = Path("gate.json")
 
     exit_code = GATE.main(
         [
@@ -181,9 +215,11 @@ def test_main_writes_canonical_manifest(tmp_path: Path, capsys: pytest.CaptureFi
 
 def test_main_supports_deprecated_flag_during_migration(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output_path = tmp_path / "legacy.json"
+    monkeypatch.chdir(tmp_path)
+    output_path = Path("legacy.json")
 
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
@@ -206,9 +242,11 @@ def test_main_supports_deprecated_flag_during_migration(
 
 def test_main_returns_stable_failure_payload_for_invalid_input(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output_path = tmp_path / "invalid.json"
+    monkeypatch.chdir(tmp_path)
+    output_path = Path("invalid.json")
 
     exit_code = GATE.main(
         [
@@ -233,9 +271,11 @@ def test_main_returns_stable_failure_payload_for_invalid_input(
 
 def test_main_fails_closed_for_abbreviated_source_identity(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output_path = tmp_path / "abbreviated.json"
+    monkeypatch.chdir(tmp_path)
+    output_path = Path("abbreviated.json")
 
     exit_code = GATE.main(
         [
