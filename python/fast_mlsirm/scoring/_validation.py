@@ -67,9 +67,9 @@ class AssessmentSpecError(ValueError):
 
     def __init__(self, code: str, path: str, message: str) -> None:
         """Store bounded machine metadata without caller-controlled values."""
-        if not isinstance(code, str) or _ERROR_CODE_PATTERN.fullmatch(code) is None:
+        if type(code) is not str or _ERROR_CODE_PATTERN.fullmatch(code) is None:
             raise ValueError("code must use two-or-more-token lower snake_case")
-        if not isinstance(path, str) or not path.startswith("$"):
+        if type(path) is not str or not path.startswith("$"):
             raise ValueError("path must begin with '$'")
         if len(path) > MAX_ERROR_PATH_LENGTH:
             raise ValueError(
@@ -77,7 +77,7 @@ class AssessmentSpecError(ValueError):
             )
         if not path.isprintable():
             raise ValueError("path must not contain control characters")
-        if not isinstance(message, str) or not message.strip():
+        if type(message) is not str or not message.strip():
             raise ValueError("message must not be empty")
         if len(message) > MAX_ERROR_MESSAGE_LENGTH:
             raise ValueError(
@@ -298,9 +298,9 @@ def bounded_values(
 
 
 def fingerprint(value: Any, name: str, path: str | None = None) -> str:
-    """Return a validated lowercase SHA-256 fingerprint."""
+    """Return a validated exact built-in lowercase SHA-256 fingerprint."""
     resolved_path = path or f"$.{name}"
-    if not isinstance(value, str) or FINGERPRINT_PATTERN.fullmatch(value) is None:
+    if type(value) is not str or FINGERPRINT_PATTERN.fullmatch(value) is None:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -369,7 +369,7 @@ def sorted_fingerprints(
 
 def _metadata_key(value: Any, path: str) -> str:
     """Return one bounded safe metadata key without reflecting its value."""
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise assessment_error(
             "invalid_metadata_key",
             path,
@@ -478,9 +478,9 @@ def freeze_json_value(
             path,
             f"metadata exceeds the maximum node count of {MAX_METADATA_NODES}",
         )
-    if value is None or isinstance(value, bool):
+    if value is None or type(value) is bool:
         return value
-    if isinstance(value, int):
+    if type(value) is int:
         if not MIN_SIGNED_INTEGER <= value <= MAX_SIGNED_INTEGER:
             raise assessment_error(
                 "integer_out_of_range",
@@ -488,7 +488,7 @@ def freeze_json_value(
                 "integer metadata must fit the signed 64-bit range",
             )
         return value
-    if isinstance(value, float):
+    if type(value) is float:
         if not math.isfinite(value):
             raise assessment_error(
                 "non_finite_metadata_number",
@@ -496,7 +496,7 @@ def freeze_json_value(
                 "numeric metadata must be finite",
             )
         return 0.0 if value == 0.0 else value
-    if isinstance(value, str):
+    if type(value) is str:
         if len(value) > MAX_METADATA_TEXT_LENGTH:
             raise assessment_error(
                 "metadata_text_too_long",
