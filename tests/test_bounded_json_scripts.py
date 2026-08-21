@@ -143,8 +143,8 @@ def test_invalid_utf8_malformed_json_and_decoder_recursion(
 
     valid = _write(tmp_path / "valid-object.json", b"{}")
 
-    def raise_recursion(_: str) -> object:
-        """Simulate a JSON decoder stack exhaustion."""
+    def raise_recursion(*args: object, **kwargs: object) -> object:
+        """Simulate a JSON decoder stack exhaustion for any decoder options."""
         raise RecursionError("decoder stack exhausted")
 
     monkeypatch.setattr(_bounded_json.json, "loads", raise_recursion)
