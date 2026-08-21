@@ -67,7 +67,7 @@ class SelectionUtilityResult:
     ``xc`` is the standard-normal predictor cutoff ``Phi^-1(1 - sr)``;
     ``ux`` the selection intensity ``phi(xc)/sr`` (mean standardized
     predictor of those selected); ``pux = rxy * ux`` the Naylor-Shine mean
-    standardized criterion of those selected); ``utility_gain`` the BCG
+    standardized criterion of those selected; ``utility_gain`` the BCG
     gain ``n * period * sdy * pux - cost_total``."""
 
     xc: float
