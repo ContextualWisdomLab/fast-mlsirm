@@ -12,8 +12,8 @@ import argparse
 import json
 import os
 import secrets
+import stat
 import sys
-import tempfile
 import warnings
 from pathlib import Path
 from typing import Any, Sequence
@@ -145,6 +145,17 @@ def build_gate_manifest(
     }
 
 
+def _portable_existing_mode(validated_path: Path) -> int | None:
+    """Return an existing regular target's permissions for atomic replacement."""
+    try:
+        target_stat = validated_path.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(target_stat.st_mode):
+        raise ValueError("output path must name a regular file")
+    return stat.S_IMODE(target_stat.st_mode)
+
+
 def _write_manifest_descriptor(
     output_path: Path,
     content: str,
@@ -157,23 +168,54 @@ def _write_manifest_descriptor(
         or os.mkdir not in os.supports_dir_fd
         or os.rename not in os.supports_dir_fd
         or os.unlink not in os.supports_dir_fd
+        or os.stat not in os.supports_dir_fd
+        or not hasattr(os, "fchmod")
         or not hasattr(os, "O_DIRECTORY")
         or not hasattr(os, "O_NOFOLLOW")
     ):
         validated_path.parent.mkdir(parents=True, exist_ok=True)
+        existing_mode = _portable_existing_mode(validated_path)
         temporary_path: Path | None = None
+        temporary_fd: int | None = None
+        temporary_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         try:
-            with tempfile.NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                dir=validated_path.parent,
-                prefix=f".{validated_path.name}.",
-                delete=False,
-            ) as temporary_file:
-                temporary_path = Path(temporary_file.name)
-                temporary_file.write(content)
+            for _ in range(128):
+                candidate = validated_path.parent / (
+                    f".{validated_path.name}.{secrets.token_hex(16)}.tmp"
+                )
+                try:
+                    temporary_fd = os.open(candidate, temporary_flags, 0o666)
+                except FileExistsError:
+                    continue
+                temporary_path = candidate
+                break
+            else:
+                raise ValueError("manifest output could not be written")
+
+            assert temporary_fd is not None
+            try:
+                stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
+            except BaseException:
+                os.close(temporary_fd)
+                temporary_fd = None
+                raise
+            temporary_fd = None
+            with stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+
+            assert temporary_path is not None
+            if existing_mode is not None:
+                os.chmod(temporary_path, existing_mode)
             os.replace(temporary_path, validated_path)
+            temporary_path = None
         finally:
+            if temporary_fd is not None:
+                try:
+                    os.close(temporary_fd)
+                except OSError:
+                    pass
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
         return
@@ -193,6 +235,19 @@ def _write_manifest_descriptor(
             os.close(directory_fd)
             directory_fd = next_directory_fd
 
+        try:
+            target_stat = os.stat(
+                components[-1],
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            existing_mode = None
+        else:
+            if not stat.S_ISREG(target_stat.st_mode):
+                raise ValueError("output path must name a regular file")
+            existing_mode = stat.S_IMODE(target_stat.st_mode)
+
         temporary_name: str | None = None
         temporary_fd: int | None = None
         temporary_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
@@ -203,7 +258,7 @@ def _write_manifest_descriptor(
                     temporary_fd = os.open(
                         candidate,
                         temporary_flags,
-                        0o600,
+                        0o666,
                         dir_fd=directory_fd,
                     )
                 except FileExistsError:
@@ -214,6 +269,8 @@ def _write_manifest_descriptor(
                 raise ValueError("manifest output could not be written")
 
             assert temporary_fd is not None
+            if existing_mode is not None:
+                os.fchmod(temporary_fd, existing_mode)
             try:
                 stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
             except BaseException:
