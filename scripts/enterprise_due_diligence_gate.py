@@ -28,12 +28,7 @@ LEGACY_GATE_ALIASES = frozenset(
         "require_20b_product",
     }
 )
-
-
-def _contains_control_character(value: str) -> bool:
-    """Return whether *value* contains an ASCII control character."""
-
-    return any(ord(character) < 32 or ord(character) == 127 for character in value)
+_GIT_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def normalize_gate_name(value: str) -> str:
@@ -73,16 +68,15 @@ def validate_scenario_amount(value: int) -> int:
 
 
 def validate_source_commit(value: str) -> str:
-    """Validate a bounded, printable source-commit identifier."""
+    """Validate a callback-free canonical full Git object identity."""
 
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("source_commit must not be empty")
-    if len(normalized) > 128:
-        raise ValueError("source_commit must not exceed 128 characters")
-    if _contains_control_character(normalized):
-        raise ValueError("source_commit must not contain control characters")
-    return normalized
+    if (
+        type(value) is not str
+        or len(value) not in (40, 64)
+        or any(character not in _GIT_HEX_DIGITS for character in value)
+    ):
+        raise ValueError("source_commit must be a canonical lowercase full Git object identity")
+    return value
 
 
 def build_gate_manifest(
@@ -153,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--source-commit",
         required=True,
-        help="Commit or immutable source identifier represented by the evidence.",
+        help="Canonical lowercase full SHA-1 or SHA-256 Git object identity.",
     )
     parser.add_argument(
         "--out",
