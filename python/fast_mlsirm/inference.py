@@ -254,11 +254,16 @@ def oakes_standard_errors(
     from .objective import prepare_response
 
     config = config or FitConfig(model=result.model, estimator="mmle")
-    y, observed = prepare_response(np.asarray(responses, dtype=float), mask)
+    raw_responses = np.asarray(responses)
+    if np.iscomplexobj(raw_responses):
+        raise ValueError("responses must be real-valued")
+    y, observed = prepare_response(raw_responses, mask)
     n_persons, n_items = y.shape
     raw_factors = np.asarray(factor_id)
     if raw_factors.ndim != 1 or raw_factors.shape != (n_items,):
         raise ValueError("factor_id must be a 1-D array with one entry per item")
+    if np.iscomplexobj(raw_factors):
+        raise ValueError("factor_id must be real-valued integers")
     ff = raw_factors.astype(np.float64)
     if not np.all(np.isfinite(ff)) or np.any(ff < 0) or np.any(ff != np.floor(ff)):
         raise ValueError("factor_id must be finite non-negative integers")
