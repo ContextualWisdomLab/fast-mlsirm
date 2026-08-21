@@ -26,6 +26,60 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uintp,
     np.ulonglong,
 )
+_NUMPY_FLOAT_SCALAR_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+_SUPPORTED_RT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted type without callbacks."""
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _validated_positive_real(value: object, name: str, *, allow_none: bool = False) -> float | None:
+    """Normalize one positive finite control after exact scalar admission."""
+    if allow_none and value is None:
+        return None
+    value_type = type(value)
+    if not (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        raise ValueError(f"{name} must be positive and finite")
+    try:
+        validated = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be positive and finite") from exc
+    if not np.isfinite(validated) or validated <= 0.0:
+        raise ValueError(f"{name} must be positive and finite")
+    return validated
+
+
+def _validated_boolean(value: object, name: str) -> bool:
+    """Normalize one exact Python/NumPy Boolean without truth-value dispatch."""
+    value_type = type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a Boolean")
+
+
+def _validated_quadrature(value: object) -> int:
+    """Return one supported exact Gauss-Hermite node count without narrowing."""
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
+        raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
+    if validated not in _SUPPORTED_RT_QUADRATURE_POINTS:
+        raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
+    return validated
 
 
 @dataclass
@@ -60,7 +114,7 @@ def _validated_max_iter(value: int) -> int:
     value_type = type(value)
     if value_type is int:
         validated = value
-    elif any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
         raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
@@ -101,6 +155,22 @@ def fit_response_times(
     from .fitstats import _core_module
 
     validated_max_iter = _validated_max_iter(max_iter)
+    validated_tol = _validated_positive_real(tol, "tol")
+    validated_var_floor = _validated_positive_real(var_floor, "var_floor")
+    validated_sigma_floor = _validated_positive_real(sigma_floor, "sigma_floor")
+    validated_fix_sigma_tau = _validated_positive_real(
+        fix_sigma_tau,
+        "fix_sigma_tau",
+        allow_none=True,
+    )
+    validated_require_convergence = _validated_boolean(
+        require_convergence,
+        "require_convergence",
+    )
+    assert validated_tol is not None
+    assert validated_var_floor is not None
+    assert validated_sigma_floor is not None
+
     core = _core_module()
     if core is None or not hasattr(core, "fit_rt_lognormal"):
         raise RuntimeError("fit_response_times requires the compiled Rust core")
@@ -112,9 +182,15 @@ def fit_response_times(
     obs_arg = None if observed.all() else observed.reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)  # masked entries get a valid placeholder
     res = core.fit_rt_lognormal(
-        tt, obs_arg, int(n_persons), int(n_items),
-        validated_max_iter, float(tol), float(var_floor), float(sigma_floor),
-        None if fix_sigma_tau is None else float(fix_sigma_tau),
+        tt,
+        obs_arg,
+        int(n_persons),
+        int(n_items),
+        validated_max_iter,
+        validated_tol,
+        validated_var_floor,
+        validated_sigma_floor,
+        validated_fix_sigma_tau,
     )
     fit = RtFit(
         alpha=np.asarray(res["alpha"], dtype=np.float64),
@@ -134,9 +210,10 @@ def fit_response_times(
         message = (
             "response-time calibration did not converge: "
             f"reason={fit.termination_reason}, iterations={fit.n_iter}/{validated_max_iter}, "
-            f"final_loglik_change={fit.final_loglik_change:.12g}, tolerance={tol:.12g}"
+            f"final_loglik_change={fit.final_loglik_change:.12g}, "
+            f"tolerance={validated_tol:.12g}"
         )
-        if require_convergence:
+        if validated_require_convergence:
             raise RuntimeError(message)
         warnings.warn(message, RuntimeWarning, stacklevel=2)
     return fit
@@ -167,6 +244,7 @@ def fit_speed_accuracy(
     ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
     :func:`fit_response_times`). At least one paired observation and one observed
     item with non-zero accuracy discrimination are required to identify ``rho``.
+    ``q`` must be an exact Python/NumPy integer in ``{7, 11, 15, 21, 31, 41}``, and
     ``max_iter`` obeys the same exact integer ``1..MAX_MAX_ITER`` resource bound as
     standalone RT calibration. Returns a dict with ``rho``, ``sigma_tau``,
     ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,
@@ -184,7 +262,20 @@ def fit_speed_accuracy(
     """
     from .fitstats import _core_module
 
+    validated_q = _validated_quadrature(q)
     validated_max_iter = _validated_max_iter(max_iter)
+    validated_tol = _validated_positive_real(tol, "tol")
+    validated_fix_sigma_tau = _validated_positive_real(
+        fix_sigma_tau,
+        "fix_sigma_tau",
+        allow_none=True,
+    )
+    validated_require_convergence = _validated_boolean(
+        require_convergence,
+        "require_convergence",
+    )
+    assert validated_tol is not None
+
     core = _core_module()
     if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
         raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
@@ -198,12 +289,19 @@ def fit_speed_accuracy(
     uu = np.where(observed, u, 0.0).reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)
     res = core.fit_speed_accuracy_covariance(
-        uu, tt, obs_arg,
-        np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64),
-        np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
-        int(n_persons), int(n_items),
-        int(q), validated_max_iter, float(tol),
-        None if fix_sigma_tau is None else float(fix_sigma_tau),
+        uu,
+        tt,
+        obs_arg,
+        np.asarray(a, dtype=np.float64),
+        np.asarray(b, dtype=np.float64),
+        np.asarray(alpha, dtype=np.float64),
+        np.asarray(beta, dtype=np.float64),
+        int(n_persons),
+        int(n_items),
+        validated_q,
+        validated_max_iter,
+        validated_tol,
+        validated_fix_sigma_tau,
     )
     fit = {
         "rho": float(res["rho"]),
@@ -222,9 +320,10 @@ def fit_speed_accuracy(
         message = (
             "joint speed-accuracy calibration did not converge: "
             f"reason={fit['termination_reason']}, iterations={fit['n_iter']}/{validated_max_iter}, "
-            f"final_loglik_change={fit['final_loglik_change']:.12g}, tolerance={tol:.12g}"
+            f"final_loglik_change={fit['final_loglik_change']:.12g}, "
+            f"tolerance={validated_tol:.12g}"
         )
-        if require_convergence:
+        if validated_require_convergence:
             raise RuntimeError(message)
         warnings.warn(message, RuntimeWarning, stacklevel=2)
     return fit
