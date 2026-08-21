@@ -1,0 +1,136 @@
+"""Trust-boundary regressions for the public KSIRT analysis wrapper."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+import fast_mlsirm.fitstats as fitstats
+from fast_mlsirm import ksirt
+
+
+class _HostileKernel(str):
+    """String subclass whose semantic callbacks must never run."""
+
+    def __eq__(self, other: object) -> bool:
+        raise AssertionError("kernel equality callback executed")
+
+    def __hash__(self) -> int:
+        raise AssertionError("kernel hash callback executed")
+
+
+class _HostileInteger(int):
+    """Integer subclass whose conversion callbacks must never run."""
+
+    def __int__(self) -> int:
+        raise AssertionError("nevalpoints int callback executed")
+
+    def __index__(self) -> int:
+        raise AssertionError("nevalpoints index callback executed")
+
+
+class _ResponseSentinel:
+    """Response provider that proves invalid controls fail before data work."""
+
+    def __array__(self, *args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("responses were materialized")
+
+
+def _forbid_core(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail if compiled-core discovery occurs before Python admission."""
+
+    def _unexpected_core() -> object:
+        raise AssertionError("compiled core was discovered")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+
+def test_ksirt_rejects_hostile_kernel_before_data_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Kernel semantics are admitted without caller callbacks or data work."""
+    _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="kernel must be gaussian, quadratic, or uniform"):
+        ksirt.ksirt_analysis(_ResponseSentinel(), kernel=_HostileKernel("gaussian"))
+
+
+def test_ksirt_rejects_hostile_nevalpoints_before_data_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evaluation-grid size is admitted without implicit integer coercion."""
+    _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="nevalpoints must be an integer"):
+        ksirt.ksirt_analysis(_ResponseSentinel(), nevalpoints=_HostileInteger(51))
+
+
+def test_ksirt_rejects_complex_responses_before_real_narrowing_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Imaginary response evidence cannot be discarded by float64 coercion."""
+    _forbid_core(monkeypatch)
+    responses = np.array([[0.0 + 1.0j], [1.0 + 0.0j]], dtype=np.complex128)
+
+    with pytest.raises(ValueError, match="responses must be real-valued"):
+        ksirt.ksirt_analysis(responses)
+
+
+def test_ksirt_rejects_complex_bandwidth_before_real_narrowing_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Imaginary bandwidth evidence cannot be discarded by float64 coercion."""
+    _forbid_core(monkeypatch)
+    responses = np.array([[0.0], [1.0]], dtype=np.float64)
+    bandwidth = np.array([0.5 + 1.0j], dtype=np.complex128)
+
+    with pytest.raises(ValueError, match="bandwidth must be real-valued"):
+        ksirt.ksirt_analysis(responses, bandwidth=bandwidth)
+
+
+def test_ksirt_preserves_concrete_numpy_integer_grid_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Supported NumPy integer controls normalize to inert built-in integers."""
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def ksirt_occ(
+            self,
+            responses: np.ndarray,
+            n_persons: int,
+            n_items: int,
+            kernel: str,
+            nevalpoints: int,
+            bandwidth: list[float] | None,
+        ) -> dict[str, object]:
+            captured.update(
+                responses=responses,
+                n_persons=n_persons,
+                n_items=n_items,
+                kernel=kernel,
+                nevalpoints=nevalpoints,
+                bandwidth=bandwidth,
+            )
+            return {
+                "theta": [-0.5, 0.5],
+                "grid": [-1.0, 0.0, 1.0],
+                "bandwidth": [0.5],
+                "options": [[0.0, 1.0]],
+                "occ": [[0.8, 0.5, 0.2, 0.2, 0.5, 0.8]],
+                "expected": [[0.2, 0.5, 0.8]],
+                "expected_total": [0.2, 0.5, 0.8],
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    result = ksirt.ksirt_analysis(
+        np.array([[0.0], [1.0]], dtype=np.float32),
+        nevalpoints=np.int64(3),
+        bandwidth=np.array([0.5], dtype=np.float32),
+    )
+
+    assert captured["nevalpoints"] == 3
+    assert type(captured["nevalpoints"]) is int
+    assert captured["kernel"] == "gaussian"
+    assert result.grid.shape == (3,)
