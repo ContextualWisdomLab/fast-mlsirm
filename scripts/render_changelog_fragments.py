@@ -39,7 +39,10 @@ def fragment_paths(directory: Path = FRAGMENT_DIR) -> tuple[Path, ...]:
 
 def parse_fragment(path: Path) -> tuple[str, dict[str, tuple[str, ...]]]:
     """Parse one fragment into a title and validated release-note sections."""
-    lines = path.read_text(encoding="utf-8").splitlines()
+    content = path.read_text(encoding="utf-8")
+    if BEGIN_MARKER in content or END_MARKER in content:
+        raise ValueError(f"{path}: fragment contains reserved fragment marker")
+    lines = content.splitlines()
     if not lines or not lines[0].startswith("# "):
         raise ValueError(f"{path}: first line must be a level-one title")
     title = lines[0][2:].strip()
