@@ -163,15 +163,19 @@ def _core_module():
 
 
 def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, np.ndarray]:
-    """Validate polytomous responses (``NaN`` = missing) and return
+    """Validate polytomous responses (``NaN``/``-1`` = missing) and return
     ``(int64 categories with missing filled to 0, boolean observed mask)``."""
     n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
-    yf = np.asarray(responses, dtype=np.float64)
+    try:
+        yf = np.asarray(responses, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("responses must be numeric") from None
     if yf.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     if np.any(np.isinf(yf)):
-        raise ValueError("responses may only use NaN for missing values")
-    observed = ~np.isnan(yf)
+        raise ValueError("responses may only use NaN or -1 for missing values")
+    missing = np.isnan(yf) | (yf == -1.0)
+    observed = ~missing
     obs_vals = yf[observed]
     if obs_vals.size and (
         np.any(obs_vals != np.floor(obs_vals)) or obs_vals.min() < 0 or obs_vals.max() >= n_cat
@@ -214,8 +218,8 @@ def fit_polytomous(
     """Fit a unidimensional GRM or GPCM by marginal MLE (compute in Rust).
 
     ``responses`` is a persons x items array of integer categories
-    ``0..n_cat-1``; ``NaN`` marks a missing response (marginalized out of the
-    likelihood). ``model`` is ``"grm"`` (default) or ``"gpcm"``.
+    ``0..n_cat-1``; ``NaN`` or ``-1`` marks a missing response (marginalized out
+    of the likelihood). ``model`` is ``"grm"`` (default) or ``"gpcm"``.
     ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. The returned
     convergence fields describe the observed-data likelihood at the returned
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
@@ -292,8 +296,8 @@ def score_polytomous(
 ) -> dict[str, np.ndarray]:
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
-    a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` marks a
-    missing response. The posterior mean and standard deviation are evaluated
+    a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` or ``-1`` marks
+    a missing response. The posterior mean and standard deviation are evaluated
     on a standard-normal quadrature grid (Bock & Mislevy, 1982). Returns
     ``{"theta_eap", "theta_sd"}``.
 
