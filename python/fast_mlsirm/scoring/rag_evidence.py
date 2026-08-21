@@ -101,36 +101,21 @@ def _replay_limitations(
     value: RAGEvidenceRegimeLimitations,
 ) -> RAGEvidenceRegimeLimitations:
     """Re-establish exact factory-derived state before manifest projection."""
-    if type(value) is not RAGEvidenceRegimeLimitations:
-        raise assessment_error(
-            "invalid_rag_evidence_limitations",
-            "$",
-            "RAG evidence limitations must retain factory-derived state",
-        )
-    regime = value.regime
-    limitation_codes = value.limitation_codes
-    if type(regime) is not RAGEvidenceRegime or type(limitation_codes) is not tuple:
-        raise assessment_error(
-            "invalid_rag_evidence_limitations",
-            "$",
-            "RAG evidence limitations must retain factory-derived state",
-        )
-    if any(type(code) is not str for code in limitation_codes):
-        raise assessment_error(
-            "invalid_rag_evidence_limitations",
-            "$",
-            "RAG evidence limitations must retain factory-derived state",
-        )
-    expected = _REGIME_LIMITATIONS[regime]
-    if limitation_codes != expected:
+    if (
+        type(value) is not RAGEvidenceRegimeLimitations
+        or type(value.regime) is not RAGEvidenceRegime
+        or type(value.limitation_codes) is not tuple
+        or any(type(code) is not str for code in value.limitation_codes)
+        or value.limitation_codes != _REGIME_LIMITATIONS[value.regime]
+    ):
         raise assessment_error(
             "invalid_rag_evidence_limitations",
             "$",
             "RAG evidence limitations must retain factory-derived state",
         )
     return RAGEvidenceRegimeLimitations(
-        regime=regime,
-        limitation_codes=expected,
+        regime=value.regime,
+        limitation_codes=_REGIME_LIMITATIONS[value.regime],
         _limitations_token=_RAG_EVIDENCE_LIMITATIONS_TOKEN,
     )
 
