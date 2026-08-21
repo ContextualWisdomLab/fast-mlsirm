@@ -181,7 +181,7 @@ def _positive_pr_number(value: object) -> int | None:
 
 
 def _normalized_list(payload: Any) -> list[dict[str, Any]]:
-    """Return only object entries from one decoded JSON list."""
+    """Return object entries from one decoded JSON list without hiding corruption."""
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
@@ -296,10 +296,21 @@ def capture_pr_queue_snapshot(
         errors.append(_malformed_payload_error(repo_command, "repository payload was not an object"))
 
     identities = _normalized_list(identity_payload)
-    if identity_error is None and not isinstance(identity_payload, list):
-        errors.append(
-            _malformed_payload_error(identity_command, "open PR identity payload was not a list")
-        )
+    if identity_error is None:
+        if not isinstance(identity_payload, list):
+            errors.append(
+                _malformed_payload_error(
+                    identity_command,
+                    "open PR identity payload was not a list",
+                )
+            )
+        elif len(identities) != len(identity_payload):
+            errors.append(
+                _malformed_payload_error(
+                    identity_command,
+                    "open PR identity payload contained non-object entries",
+                )
+            )
     if len(identities) > OPEN_PR_CAP:
         errors.append(
             _command_error(
@@ -351,11 +362,22 @@ def capture_pr_queue_snapshot(
             continue
         open_prs.append(detail)
 
-    if history_error is None and not isinstance(history_payload, list):
-        errors.append(
-            _malformed_payload_error(history_command, "PR history payload was not a list")
-        )
     pr_history = _normalized_list(history_payload)
+    if history_error is None:
+        if not isinstance(history_payload, list):
+            errors.append(
+                _malformed_payload_error(
+                    history_command,
+                    "PR history payload was not a list",
+                )
+            )
+        elif len(pr_history) != len(history_payload):
+            errors.append(
+                _malformed_payload_error(
+                    history_command,
+                    "PR history payload contained non-object entries",
+                )
+            )
 
     base_sha = ""
     if default_branch:
@@ -387,6 +409,7 @@ def capture_pr_queue_snapshot(
                     _malformed_payload_error(base_command, "default-branch payload was not an object")
                 )
 
+    open_identity_count = len(identity_payload) if isinstance(identity_payload, list) else 0
     return {
         "mode": "live-split-enrichment",
         "capture_version": 1,
@@ -394,7 +417,7 @@ def capture_pr_queue_snapshot(
         "default_branch": default_branch,
         "base_sha": base_sha,
         "repo_snapshot": repo_payload,
-        "open_pr_identity_count": len(_normalized_list(identity_payload)),
+        "open_pr_identity_count": open_identity_count,
         "open_prs": open_prs,
         "pr_history": pr_history,
         "errors": errors,
