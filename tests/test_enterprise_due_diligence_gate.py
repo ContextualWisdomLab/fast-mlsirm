@@ -10,6 +10,7 @@ import pytest
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "enterprise_due_diligence_gate.py"
+SOURCE_COMMIT = "a" * 40
 
 
 def _load_module() -> ModuleType:
@@ -25,7 +26,7 @@ GATE = _load_module()
 
 
 def test_build_gate_manifest_is_currency_explicit_and_not_a_valuation_claim() -> None:
-    manifest = GATE.build_gate_manifest(source_commit="abc123")
+    manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
 
     assert manifest == {
         "currency_code": "KRW",
@@ -39,7 +40,7 @@ def test_build_gate_manifest_is_currency_explicit_and_not_a_valuation_claim() ->
         "scenario_amount": 2_000_000_000,
         "scenario_name": "krw_2000000000_procurement_scenario",
         "schema_version": "1.0.0",
-        "source_commit": "abc123",
+        "source_commit": SOURCE_COMMIT,
         "valuation_claim": False,
     }
 
@@ -85,35 +86,62 @@ def test_validate_scenario_amount_accepts_positive_integer() -> None:
     assert GATE.validate_scenario_amount(1) == 1
 
 
+@pytest.mark.parametrize("source_commit", ["b" * 40, "c" * 64])
+def test_validate_source_commit_accepts_full_sha1_and_sha256(source_commit: str) -> None:
+    assert GATE.validate_source_commit(source_commit) == source_commit
+
+
 @pytest.mark.parametrize(
-    "source_commit, message",
+    "source_commit",
     [
-        ("   ", "must not be empty"),
-        ("a" * 129, "must not exceed 128"),
-        ("abc\n123", "control characters"),
-        ("abc\x7f123", "control characters"),
+        "",
+        "   ",
+        "abc123",
+        "a" * 39,
+        "a" * 41,
+        "a" * 63,
+        "a" * 65,
+        "A" * 40,
+        "g" * 40,
+        f" {SOURCE_COMMIT}",
+        f"{SOURCE_COMMIT} ",
+        "a" * 20 + "\n" + "a" * 19,
     ],
 )
-def test_validate_source_commit_rejects_unsafe_values(source_commit: str, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
+def test_validate_source_commit_rejects_noncanonical_identity(source_commit: str) -> None:
+    with pytest.raises(ValueError, match="canonical lowercase full Git object identity"):
         GATE.validate_source_commit(source_commit)
 
 
-def test_validate_source_commit_trims_printable_identifier() -> None:
-    assert GATE.validate_source_commit("  abc123  ") == "abc123"
+def test_validate_source_commit_rejects_string_subclass_without_callbacks() -> None:
+    callbacks: list[str] = []
+
+    class HostileCommit(str):
+        def strip(self, *args: object, **kwargs: object) -> str:
+            callbacks.append("strip")
+            return super().strip(*args, **kwargs)
+
+    with pytest.raises(ValueError, match="canonical lowercase full Git object identity"):
+        GATE.validate_source_commit(HostileCommit(SOURCE_COMMIT))
+
+    assert callbacks == []
 
 
 @pytest.mark.parametrize("valuation_claim", [True, "false"])
 def test_build_gate_manifest_rejects_valuation_claims(valuation_claim: object) -> None:
     with pytest.raises(ValueError, match="valuation_claim|valuation claim"):
         GATE.build_gate_manifest(
-            source_commit="abc123",
+            source_commit=SOURCE_COMMIT,
             valuation_claim=valuation_claim,
         )
 
 
 def test_write_gate_manifest_is_deterministic(tmp_path: Path) -> None:
-    manifest = GATE.build_gate_manifest(source_commit="abc123", currency_code="usd", scenario_amount=25)
+    manifest = GATE.build_gate_manifest(
+        source_commit=SOURCE_COMMIT,
+        currency_code="usd",
+        scenario_amount=25,
+    )
     output_path = tmp_path / "nested" / "gate.json"
 
     GATE.write_gate_manifest(manifest, output_path)
@@ -129,7 +157,7 @@ def test_main_writes_canonical_manifest(tmp_path: Path, capsys: pytest.CaptureFi
     exit_code = GATE.main(
         [
             "--source-commit",
-            "abc123",
+            SOURCE_COMMIT,
             "--currency-code",
             "usd",
             "--scenario-amount",
@@ -162,7 +190,7 @@ def test_main_supports_deprecated_flag_during_migration(
         exit_code = GATE.main(
             [
                 "--source-commit",
-                "abc123",
+                SOURCE_COMMIT,
                 "--require-20b-product",
                 "--out",
                 str(output_path),
@@ -185,7 +213,7 @@ def test_main_returns_stable_failure_payload_for_invalid_input(
     exit_code = GATE.main(
         [
             "--source-commit",
-            "abc123",
+            SOURCE_COMMIT,
             "--currency-code",
             "invalid",
             "--out",
@@ -198,6 +226,31 @@ def test_main_returns_stable_failure_payload_for_invalid_input(
     assert captured.out == ""
     assert json.loads(captured.err) == {
         "error": "currency_code must be exactly three ASCII letters",
+        "status": "failed",
+    }
+    assert not output_path.exists()
+
+
+def test_main_fails_closed_for_abbreviated_source_identity(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "abbreviated.json"
+
+    exit_code = GATE.main(
+        [
+            "--source-commit",
+            "abc123",
+            "--out",
+            str(output_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "error": "source_commit must be a canonical lowercase full Git object identity",
         "status": "failed",
     }
     assert not output_path.exists()
