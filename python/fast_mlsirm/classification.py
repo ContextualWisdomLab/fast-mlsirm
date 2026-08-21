@@ -57,7 +57,11 @@ def _normalize_cutscores(cutscores: Sequence[float]) -> list[float]:
 
     message = "cutscores entries must be finite real scalars"
     normalized: list[float] = []
-    for value in cutscores:
+    try:
+        iterator = iter(cutscores)
+    except TypeError as error:
+        raise ValueError(message) from error
+    for value in iterator:
         if isinstance(value, (bool, np.bool_)):
             raise ValueError(message)
         value_type = type(value)
