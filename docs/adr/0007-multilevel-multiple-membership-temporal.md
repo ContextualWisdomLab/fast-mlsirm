@@ -7,7 +7,12 @@ Date: 2026-08-09
 
 Psychometric and AI-evaluation observations commonly sit inside schools, teams, organizations, prompts, testlets, documents, clients, time periods or other overlapping contexts. Repeated observations also evolve over time. Flattening those structures into independent rows can produce atomistic fallacy, understate uncertainty, confound stable traits with context effects and drift, and misinterpret temporal dependence.
 
-A current open PR contains reusable contract work for nested, cross-classified, multiple-membership and longitudinal designs, but it is not yet protected-integrated. Numerical estimators for the full structures are not accepted production behavior. Therefore this ADR remains Proposed.
+Reusable contracts plus a Rust-owned respondent state layer define a supported
+longitudinal handoff. ADR-0019 adds a separate joint MAP hierarchical
+continuous-time AR(1) Rasch slice on that handoff. This ADR remains Proposed
+until those boundaries are protected-integrated. Fox and Glas Gibbs sampling,
+Jeon and Rabe-Hesketh adaptive-quadrature ML, estimated multiple-membership
+`u_h`, and GPU recurrent-state parity are not accepted production behavior.
 
 ## Decision
 
@@ -22,6 +27,19 @@ The architecture treats the following as distinct, explicit structures:
 - discrete occasion-step autoregression;
 - future continuous-time state transitions;
 - rater/model/prompt drift.
+
+The ADR-0018 state-layer boundary remains deliberately narrower: independent
+per-respondent OLS trends are fitted by Rust on exact day-scaled offsets, and
+stationary AR(1) states produce discrete-sequence predictions from a
+caller-supplied coefficient. The latter uses sequence gaps, not elapsed
+milliseconds, so irregular calendar spacing cannot be silently treated as a
+continuous-time decay. Those predictors do not estimate population
+random-effects distributions or AR-coefficient uncertainty.
+
+ADR-0019 is a separate joint MAP slice. It estimates shared
+`(mu, tau, lambda)`, shrinks person-occasion states toward `mu`, and uses
+elapsed days in an Ornstein–Uhlenbeck / continuous-time AR(1) transition.
+It does not estimate crossed or multiple-membership `u_h`.
 
 ### Contract rules
 
@@ -61,6 +79,8 @@ This architecture avoids forcing product-specific tenant/org structures into the
 - governed contracts merged to protected main;
 - architecture/serialization tests pass;
 - at least one Rust estimator or clear handoff contract exists for a supported multilevel/temporal inference use case;
+- the state-layer recovery fixture reports slope recovery, missing-occasion
+  behavior, AR transition RMSE, and equality across worker counts;
 - recovery evidence meets the numerical release rule.
 
 ## References
