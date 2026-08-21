@@ -167,7 +167,13 @@ def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, n
     ``(int64 categories with missing filled to 0, boolean observed mask)``."""
     n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
     try:
-        yf = np.asarray(responses, dtype=np.float64)
+        raw = np.asarray(responses)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("responses must be numeric") from None
+    if np.iscomplexobj(raw):
+        raise ValueError("responses must be real-valued")
+    try:
+        yf = np.asarray(raw, dtype=np.float64)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("responses must be numeric") from None
     if yf.ndim != 2:
