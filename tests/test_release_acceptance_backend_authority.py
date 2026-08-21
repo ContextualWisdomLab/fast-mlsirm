@@ -46,7 +46,7 @@ def test_release_acceptance_rejects_numpy_auto_backend(tmp_path, monkeypatch) ->
     monkeypatch.setattr(module, "read_json_object", fake_read_json_object)
 
     with pytest.raises(
-        RuntimeError, match="automatic release acceptance fit must use Rust backend"
+        RuntimeError, match="fit auto backend must resolve to rust"
     ):
         module._run_acceptance(args)
 

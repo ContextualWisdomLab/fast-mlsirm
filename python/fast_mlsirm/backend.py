@@ -12,19 +12,30 @@ VALID_BACKENDS = {"numpy", "rust", "auto"}
 # when a GPU is present and fall back to the identical Rust CPU path otherwise.
 VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
+# Stable, non-reflective auto-resolution error. Do not interpolate paths,
+# ABI details, environment data, or import exception text into this text.
+AUTO_BACKEND_UNAVAILABLE_MESSAGE = (
+    "compiled Rust core is required for automatic backend resolution; "
+    "install a wheel or editable build that provides fast_mlsirm._core, "
+    "or pass backend='numpy' only for the explicit reference/parity path"
+)
 
 
 def normalize_backend(name: str) -> str:
-    """Lower-case and validate a backend name against ``{numpy, rust, auto}``."""
-    backend = str(name).strip().lower()
+    """Lower-case and validate an exact built-in backend control string."""
+    if type(name) is not str:
+        raise ValueError("backend must be an exact built-in string")
+    backend = name.strip().lower()
     if backend not in VALID_BACKENDS:
         raise ValueError(f"backend must be one of {sorted(VALID_BACKENDS)}")
     return backend
 
 
 def normalize_device(name: str) -> str:
-    """Lower-case and validate a Rust-backend device against ``{cpu, gpu, auto}``."""
-    device = str(name).strip().lower()
+    """Lower-case and validate an exact built-in Rust-device control string."""
+    if type(name) is not str:
+        raise ValueError("rust_device must be an exact built-in string")
+    device = name.strip().lower()
     if device not in VALID_DEVICES:
         raise ValueError(f"rust_device must be one of {sorted(VALID_DEVICES)}")
     return device
@@ -48,7 +59,7 @@ def resolve_backend(name: str) -> str:
             raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
         return "rust"
     if core is None:
-        raise RuntimeError("compiled Rust core is required for automatic backend resolution")
+        raise RuntimeError(AUTO_BACKEND_UNAVAILABLE_MESSAGE)
     return "rust"
 
 
@@ -61,7 +72,18 @@ def load_rust_core() -> ModuleType:
 
 
 def _load_core() -> ModuleType | None:
-    """Import ``fast_mlsirm._core`` if it is installed, else return ``None``."""
+    """Import the Rust core or normalize native loader failures.
+
+    A missing extension is represented as ``None`` so the public resolver can
+    retain its existing missing-core messages. If discovery succeeds but the
+    native module cannot be loaded, fail closed with a package-owned error and
+    preserve the loader exception as the cause for operator diagnostics.
+    """
     if importlib.util.find_spec(CORE_MODULE) is None:
         return None
-    return importlib.import_module(CORE_MODULE)
+    try:
+        return importlib.import_module(CORE_MODULE)
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(
+            "compiled Rust core is present but could not be imported"
+        ) from exc

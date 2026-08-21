@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
-import operator
 from dataclasses import dataclass
+
+import numpy as np
 
 from .backend import normalize_backend, normalize_device
 
@@ -40,6 +41,36 @@ MAX_SIM_DIMS = 50
 MAX_SIM_ITEMS_PER_DIM = 1_000
 MAX_SIM_CELLS = 20_000_000
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+
+
+def _trusted_integer(value: object, name: str) -> int:
+    """Return one package-trusted integer without caller-controlled coercion."""
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def _store_trusted_integer(instance: object, name: str, value: int) -> None:
+    """Write one trusted built-in integer onto a frozen dataclass field."""
+    object.__setattr__(instance, name, value)
+
 
 @dataclass(frozen=True)
 class MLS2PLMConfig:
@@ -61,6 +92,10 @@ class MLS2PLMConfig:
     seed: int = 1
     dtype: str = "float64"
 
+    def __post_init__(self) -> None:
+        """Reject invalid simulation controls at construction."""
+        self.validate()
+
     @property
     def n_items(self) -> int:
         """Total item count (``n_dims * items_per_dim``)."""
@@ -71,42 +106,40 @@ class MLS2PLMConfig:
 
         Enforces integer/positivity constraints, the memory-safety size caps,
         a positive-definite trait equicorrelation from ``phi``, a finite
-        non-negative ``gamma``, and a supported ``dtype``.
+        non-negative ``gamma``, and a supported ``dtype``. Trusted integer
+        controls, including ``seed``, are stored back as built-in ``int``
+        values so later size products and RNG seeding cannot wrap.
         """
-        for name, value in (
-            ("n_persons", self.n_persons),
-            ("n_dims", self.n_dims),
-            ("items_per_dim", self.items_per_dim),
-            ("latent_dim", self.latent_dim),
-        ):
-            if isinstance(value, bool):
-                raise ValueError(f"{name} must be an integer")
-            try:
-                operator.index(value)
-            except TypeError as exc:
-                raise ValueError(f"{name} must be an integer") from exc
-        if self.n_persons < 1:
+        n_persons = _trusted_integer(self.n_persons, "n_persons")
+        n_dims = _trusted_integer(self.n_dims, "n_dims")
+        items_per_dim = _trusted_integer(self.items_per_dim, "items_per_dim")
+        latent_dim = _trusted_integer(self.latent_dim, "latent_dim")
+        seed = _trusted_integer(self.seed, "seed")
+
+        if n_persons < 1:
             raise ValueError("n_persons must be >= 1")
-        if self.n_dims < 1:
+        if n_dims < 1:
             raise ValueError("n_dims must be >= 1")
-        if self.items_per_dim < 1:
+        if items_per_dim < 1:
             raise ValueError("items_per_dim must be >= 1")
-        if self.n_persons > MAX_SIM_PERSONS:
+        if n_persons > MAX_SIM_PERSONS:
             raise ValueError(f"n_persons must be <= {MAX_SIM_PERSONS}")
-        if self.n_dims > MAX_SIM_DIMS:
+        if n_dims > MAX_SIM_DIMS:
             raise ValueError(f"n_dims must be <= {MAX_SIM_DIMS}")
-        if self.items_per_dim > MAX_SIM_ITEMS_PER_DIM:
+        if items_per_dim > MAX_SIM_ITEMS_PER_DIM:
             raise ValueError(f"items_per_dim must be <= {MAX_SIM_ITEMS_PER_DIM}")
-        if self.n_persons * self.n_items > MAX_SIM_CELLS:
+        n_items = n_dims * items_per_dim
+        simulation_cells = n_persons * n_items
+        if simulation_cells > MAX_SIM_CELLS:
             raise ValueError(
-                f"n_persons x n_items ({self.n_persons * self.n_items}) exceeds the "
+                f"n_persons x n_items ({simulation_cells}) exceeds the "
                 f"{MAX_SIM_CELLS}-cell simulation budget"
             )
-        if self.latent_dim < 1:
+        if latent_dim < 1:
             raise ValueError("latent_dim must be >= 1")
-        if self.latent_dim > MAX_LATENT_DIM:
+        if latent_dim > MAX_LATENT_DIM:
             raise ValueError(f"latent_dim must be <= {MAX_LATENT_DIM}")
-        if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
+        if not (-1.0 / max(n_dims - 1, 1) < self.phi < 1.0):
             raise ValueError("phi must produce a positive-definite equicorrelation matrix")
         try:
             gamma_is_finite = math.isfinite(self.gamma)
@@ -118,6 +151,11 @@ class MLS2PLMConfig:
             raise ValueError("gamma must be >= 0")
         if self.dtype not in {"float32", "float64"}:
             raise ValueError("dtype must be float32 or float64")
+        _store_trusted_integer(self, "n_persons", n_persons)
+        _store_trusted_integer(self, "n_dims", n_dims)
+        _store_trusted_integer(self, "items_per_dim", items_per_dim)
+        _store_trusted_integer(self, "latent_dim", latent_dim)
+        _store_trusted_integer(self, "seed", seed)
 
 
 @dataclass(frozen=True)
@@ -166,8 +204,9 @@ class FitConfig:
     lbfgs_history: int = 10
     verbose: int = 0
     # Rust is the primary numeric path: "auto" resolves to the compiled
-    # ``fast_mlsirm._core`` (Rust/PyO3) kernel when available and transparently
-    # falls back to the pure-numpy reference implementation otherwise.
+    # ``fast_mlsirm._core`` (Rust/PyO3) kernel when available and fails closed
+    # otherwise. Automatic resolution never silently selects NumPy. Pass
+    # backend="numpy" only for the explicit reference/parity path.
     backend: str = "auto"
     # Device for the Rust backend: "cpu", "gpu", or "auto". A sub-option of the
     # rust backend, not a separate compute-backend axis. "auto" (default) uses
@@ -196,6 +235,10 @@ class FitConfig:
     # cf. the ZI count-model guidance of Perumean-Chaney et al. (2013).
     zero_inflation: bool = False
 
+    def __post_init__(self) -> None:
+        """Reject invalid fit controls at construction."""
+        self.validate()
+
     def normalized_model(self) -> str:
         """Return the model name upper-cased for case-insensitive matching."""
         return self.model.upper()
@@ -207,12 +250,16 @@ class FitConfig:
         L-BFGS-history bounds, the per-field and aggregate optimizer-work caps,
         finiteness/positivity of the float controls, the supported
         Gauss-Hermite node counts, and the latent-space integration rule and
-        its point/seed ranges.
+        its point/seed ranges. Trusted integer controls, including ``seed``
+        and ``verbose``, are stored back as built-in ``int`` values.
         """
         model = self.normalized_model()
         if model not in VALID_MODELS:
             raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
-        if not (1 <= self.latent_dim <= MAX_LATENT_DIM):
+        latent_dim = _trusted_integer(self.latent_dim, "latent_dim")
+        seed = _trusted_integer(self.seed, "seed")
+        verbose = _trusted_integer(self.verbose, "verbose")
+        if not (1 <= latent_dim <= MAX_LATENT_DIM):
             raise ValueError(f"latent_dim must be >= 1 and <= {MAX_LATENT_DIM}")
         if self.optimizer not in VALID_OPTIMIZERS:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
@@ -220,26 +267,24 @@ class FitConfig:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
         if model == "BIFAC2PLM" and self.estimator == "jmle":
             raise ValueError("BIFAC2PLM requires estimator 'mmle'")
-        if isinstance(self.lbfgs_history, bool):
-            raise ValueError("lbfgs_history must be an integer")
-        try:
-            lbfgs_history = operator.index(self.lbfgs_history)
-        except TypeError as exc:
-            raise ValueError("lbfgs_history must be an integer") from exc
+
+        lbfgs_history = _trusted_integer(self.lbfgs_history, "lbfgs_history")
         if not (1 <= lbfgs_history <= MAX_LBFGS_HISTORY):
             raise ValueError(
                 f"lbfgs_history must be >= 1 and <= {MAX_LBFGS_HISTORY}"
             )
-        if not (1 <= self.max_iter <= MAX_MAX_ITER):
+        max_iter = _trusted_integer(self.max_iter, "max_iter")
+        if not (1 <= max_iter <= MAX_MAX_ITER):
             raise ValueError(f"max_iter must be >= 1 and <= {MAX_MAX_ITER}")
-        if not (1 <= self.n_restarts <= MAX_RESTARTS):
+        n_restarts = _trusted_integer(self.n_restarts, "n_restarts")
+        if not (1 <= n_restarts <= MAX_RESTARTS):
             raise ValueError(f"n_restarts must be >= 1 and <= {MAX_RESTARTS}")
-        if self.max_iter * self.n_restarts > MAX_AGGREGATE_ITERS:
+        aggregate_iters = max_iter * n_restarts
+        if aggregate_iters > MAX_AGGREGATE_ITERS:
             raise ValueError(
-                f"max_iter x n_restarts ({self.max_iter * self.n_restarts}) exceeds the "
+                f"max_iter x n_restarts ({aggregate_iters}) exceeds the "
                 f"aggregate optimizer-work budget {MAX_AGGREGATE_ITERS}"
             )
-        # non-finite floats (NaN/Inf) slip past bare `<= 0` comparisons
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
             raise ValueError("learning_rate must be > 0 and finite")
         if not math.isfinite(self.init_gamma) or self.init_gamma <= 0:
@@ -252,27 +297,36 @@ class FitConfig:
             not math.isfinite(self.gradient_clip) or self.gradient_clip <= 0
         ):
             raise ValueError("gradient_clip must be > 0 and finite, or None")
+
         supported_q = {7, 11, 15, 21, 31, 41}
-        for name in ("q_theta", "q_xi", "q_u"):
-            if getattr(self, name) not in supported_q:
+        q_theta = _trusted_integer(self.q_theta, "q_theta")
+        q_xi = _trusted_integer(self.q_xi, "q_xi")
+        q_u = _trusted_integer(self.q_u, "q_u")
+        for name, quadrature_nodes in (("q_theta", q_theta), ("q_xi", q_xi), ("q_u", q_u)):
+            if quadrature_nodes not in supported_q:
                 raise ValueError(f"{name} must be one of {sorted(supported_q)}")
-        if not (1 <= self.m_steps <= MAX_M_STEPS):
+        m_steps = _trusted_integer(self.m_steps, "m_steps")
+        if not (1 <= m_steps <= MAX_M_STEPS):
             raise ValueError(f"m_steps must be >= 1 and <= {MAX_M_STEPS}")
         if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
             raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
-        for name in ("xi_points", "xi_seed"):
-            value = getattr(self, name)
-            if isinstance(value, bool):
-                raise ValueError(f"{name} must be an integer")
-            try:
-                operator.index(value)
-            except TypeError as exc:
-                raise ValueError(f"{name} must be an integer") from exc
-        xi_points = operator.index(self.xi_points)
-        xi_seed = operator.index(self.xi_seed)
+        xi_points = _trusted_integer(self.xi_points, "xi_points")
+        xi_seed = _trusted_integer(self.xi_seed, "xi_seed")
         if not (1 <= xi_points <= MAX_XI_POINTS):
             raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
         if not (0 <= xi_seed <= (1 << 64) - 1):
             raise ValueError("xi_seed must fit an unsigned 64-bit integer")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)
+        _store_trusted_integer(self, "latent_dim", latent_dim)
+        _store_trusted_integer(self, "seed", seed)
+        _store_trusted_integer(self, "verbose", verbose)
+        _store_trusted_integer(self, "lbfgs_history", lbfgs_history)
+        _store_trusted_integer(self, "max_iter", max_iter)
+        _store_trusted_integer(self, "n_restarts", n_restarts)
+        _store_trusted_integer(self, "q_theta", q_theta)
+        _store_trusted_integer(self, "q_xi", q_xi)
+        _store_trusted_integer(self, "q_u", q_u)
+        _store_trusted_integer(self, "m_steps", m_steps)
+        _store_trusted_integer(self, "xi_points", xi_points)
+        _store_trusted_integer(self, "xi_seed", xi_seed)
