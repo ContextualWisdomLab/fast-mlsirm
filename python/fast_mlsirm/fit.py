@@ -178,7 +178,7 @@ def fit(
                     "NumPy reference is unavailable for plain unidimensional MMLE; "
                     "use the production Rust fit"
                 )
-            return _fit_mmle(y, observed, model, config)
+            return _fit_mmle(y, observed, model, config, backend)
         return _fit_mmle_marginal(
             y, observed, factors, n_dims, model, config, backend, device,
             group_id=group_id, cluster_id=cluster_id, anchors=anchors,
@@ -197,7 +197,6 @@ def fit(
         )
         if best is None or candidate.objective < best.objective:
             best = candidate
-
     if best is None:
         raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
@@ -208,6 +207,7 @@ def _fit_mmle(
     observed: np.ndarray,
     model: str,
     config: FitConfig,
+    backend: str,
 ) -> FitResult:
     """Marginal MLE (EM) — robust to missing data. Unidimensional 2PL measurement.
 
@@ -254,7 +254,7 @@ def _fit_mmle(
         params=params,
         model=model,
         optimizer="mmle_em/rust",
-        backend=config.backend,
+        backend=backend,
         rust_device=config.rust_device,
         objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
         loglik_trace=[float(v) for v in loglik_trace],
