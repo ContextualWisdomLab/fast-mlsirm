@@ -26,6 +26,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest of one benchmark evidence file."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -58,10 +59,12 @@ def _source_commit(repo_root: Path) -> str:
 
 
 def _content_security_policy() -> str:
+    """Return the restrictive policy used by the self-contained benchmark report."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _format_value(value: Any) -> str:
+    """Format a benchmark value for a human-readable report cell."""
     if isinstance(value, bool):
         return "go" if value else "failed"
     if value is None:
@@ -72,6 +75,7 @@ def _format_value(value: Any) -> str:
 
 
 def _step_files(step: dict[str, Any]) -> list[str]:
+    """Extract declared artifact paths from one acceptance step."""
     files = step.get("files")
     if not isinstance(files, dict):
         return []
@@ -79,6 +83,7 @@ def _step_files(step: dict[str, Any]) -> list[str]:
 
 
 def _observed_backends(steps: list[dict[str, Any]]) -> list[str]:
+    """Return the sorted backend identities observed in fit steps."""
     observed: set[str] = set()
     for step in steps:
         if step.get("command") != "fit":
@@ -92,6 +97,7 @@ def _observed_backends(steps: list[dict[str, Any]]) -> list[str]:
 
 
 def _required_backends(benchmark: dict[str, Any]) -> list[str]:
+    """Return the sorted backend identities required by benchmark scenarios."""
     scenarios = benchmark.get("scenarios", [])
     if not isinstance(scenarios, list):
         return []
@@ -106,6 +112,7 @@ def _required_backends(benchmark: dict[str, Any]) -> list[str]:
 def _artifact_coverage(
     benchmark: dict[str, Any], steps: list[dict[str, Any]]
 ) -> dict[str, Any]:
+    """Compare required benchmark artifacts with acceptance outputs on disk."""
     required = benchmark.get("required_artifacts", [])
     if not isinstance(required, list):
         required = []
@@ -125,6 +132,7 @@ def _artifact_coverage(
 
 
 def _command_durations(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project acceptance steps into stable benchmark duration rows."""
     rows: list[dict[str, Any]] = []
     for index, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
@@ -144,6 +152,7 @@ def _command_durations(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _render_rows(
     rows: list[dict[str, Any]], columns: list[tuple[str, str]]
 ) -> list[str]:
+    """Render benchmark records as escaped accessible HTML table rows."""
     rendered = []
     for row in rows:
         cells = []
@@ -158,6 +167,7 @@ def _render_rows(
 
 
 def _render_report_html(report: dict[str, Any]) -> str:
+    """Render benchmark evidence as a portable accessible HTML report."""
     command_rows = _render_rows(
         report.get("command_durations", []),
         [
@@ -266,6 +276,7 @@ def _render_report_html(report: dict[str, Any]) -> str:
 
 
 def _report_css() -> str:
+    """Return the small inline stylesheet used by the benchmark report."""
     return """
 :root {
   color: #172026;
@@ -416,6 +427,7 @@ tbody tr:last-child td {
 
 
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
+    """Build and return benchmark evidence from acceptance and scenario manifests."""
     repo_root = Path(args.repo_root).resolve()
     acceptance_path = Path(args.acceptance).resolve()
     benchmark_manifest_path = Path(args.benchmark_manifest).resolve()
@@ -477,6 +489,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Create the command-line parser for benchmark report generation."""
     parser = argparse.ArgumentParser(
         description="Build fast-mlsirm benchmark evidence from release acceptance output."
     )
@@ -500,6 +513,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run benchmark report generation and print a machine-readable summary."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
