@@ -220,6 +220,7 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .details-grid dt { font-weight: 700; }
 .details-grid dd { margin: 0; overflow-wrap: anywhere; }
 .table-scroll { overflow-x: auto; }
+.table-scroll:focus, pre:focus { outline: none; }
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
