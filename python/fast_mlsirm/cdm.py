@@ -30,6 +30,16 @@ _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
 _CDM_MODELS = frozenset(("dina", "dino"))
 
 
+def _response_array(value: np.ndarray) -> np.ndarray:
+    """Materialize accepted real response storage without lossy coercion."""
+    response_array = np.asarray(value)
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    return response_array.astype(np.float64, copy=False)
+
+
 def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return the flattened values/mask for 0/1 data with NaN-only missingness."""
     if np.isinf(y).any():
@@ -174,13 +184,13 @@ def fit_cdm(
             disorders using cognitive diagnosis models. *Psychological Methods,
             11*(3), 287–305. https://doi.org/10.1037/1082-989X.11.3.287
     """
-    y = np.asarray(responses, dtype=np.float64)
+    model = _validate_model_selector(model)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    model = _validate_model_selector(model)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -281,12 +291,12 @@ def fit_gdina(
             diagnosis modeling. *Journal of Statistical Software, 93*(14), 1-26.
             https://doi.org/10.18637/jss.v093.i14
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
