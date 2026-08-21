@@ -15,6 +15,13 @@ def _unexpected_core_discovery():
     raise AssertionError("compiled core must not be discovered for invalid public input")
 
 
+class _HostileFloat:
+    """Sentinel proving DETECT does not numerically coerce object storage."""
+
+    def __float__(self):
+        raise AssertionError("caller numeric conversion must not execute")
+
+
 def test_detect_rejects_invalid_response_shape_before_core_discovery(monkeypatch):
     """Malformed DETECT responses fail locally before touching the native loader."""
 
@@ -32,6 +39,48 @@ def test_detect_rejects_nonbinary_responses_before_core_discovery(monkeypatch):
 
     with pytest.raises(ValueError, match="exactly 0 or 1"):
         detect_analysis(responses, np.array([0, 1]))
+
+
+def test_detect_rejects_complex_responses_before_lossy_coercion(monkeypatch):
+    """Imaginary response evidence is never projected onto binary real data."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[0.0 + 1.0j, 0.0], [1.0, 0.0]], dtype=np.complex128)
+
+    with pytest.raises(ValueError, match="responses must be real-valued"):
+        detect_analysis(responses, np.array([0, 1]))
+
+
+def test_detect_rejects_object_responses_before_element_coercion(monkeypatch):
+    """Object response storage fails before caller numeric conversion callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[_HostileFloat(), 0], [1, 0]], dtype=object)
+
+    with pytest.raises(ValueError, match="responses must be a numeric array"):
+        detect_analysis(responses, np.array([0, 1]))
+
+
+def test_detect_rejects_complex_cluster_before_lossy_coercion(monkeypatch):
+    """Imaginary partition labels cannot be projected onto a real partition."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float64)
+    cluster = np.array([0.0 + 1.0j, 1.0], dtype=np.complex128)
+
+    with pytest.raises(ValueError, match="cluster labels must be real integers"):
+        detect_analysis(responses, cluster)
+
+
+def test_detect_rejects_object_cluster_before_element_coercion(monkeypatch):
+    """Object partition storage fails before caller numeric conversion callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float64)
+    cluster = np.array([_HostileFloat(), 1], dtype=object)
+
+    with pytest.raises(ValueError, match="cluster labels must be a numeric array"):
+        detect_analysis(responses, cluster)
 
 
 def test_dimtest_rejects_invalid_partition_before_core_discovery(monkeypatch):
@@ -59,6 +108,25 @@ def test_detect_valid_input_discovers_core_only_at_dispatch_boundary(monkeypatch
 
     with pytest.raises(RuntimeError, match="detect_analysis requires the compiled Rust core"):
         detect_analysis(responses, np.array([0, 1], dtype=np.int64))
+
+    assert calls == 1
+
+
+def test_detect_accepts_integer_valued_float_cluster_at_dispatch_boundary(monkeypatch):
+    """Ordinary integer-valued floating labels retain their historical contract."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    responses = np.zeros((2, 2), dtype=np.float64)
+
+    with pytest.raises(RuntimeError, match="detect_analysis requires the compiled Rust core"):
+        detect_analysis(responses, np.array([10.0, 20.0], dtype=np.float64))
 
     assert calls == 1
 
