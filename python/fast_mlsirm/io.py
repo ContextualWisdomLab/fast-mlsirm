@@ -301,8 +301,16 @@ def _load_json_bounded(
             result[key] = value
         return result
 
-    kwargs = {} if parse_constant is None else {"parse_constant": parse_constant}
-    kwargs["object_pairs_hook"] = reject_duplicate_members
+    def reject_nonfinite_constant(_literal: str):
+        """Reject Python JSON decoder extensions outside interoperable JSON."""
+        raise ValueError(f"{source} contains a non-finite JSON numeric value")
+
+    kwargs = {
+        "parse_constant": (
+            reject_nonfinite_constant if parse_constant is None else parse_constant
+        ),
+        "object_pairs_hook": reject_duplicate_members,
+    }
     return json.loads(content, **kwargs)
 
 
