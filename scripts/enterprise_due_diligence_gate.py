@@ -34,6 +34,8 @@ _GIT_HEX_DIGITS = frozenset("0123456789abcdef")
 def normalize_gate_name(value: str) -> str:
     """Return the canonical gate name and warn for a supported legacy alias."""
 
+    if type(value) is not str:
+        raise ValueError("gate_name must be an exact built-in string")
     normalized = value.strip().lower().replace("-", "_")
     if normalized == CANONICAL_GATE_NAME:
         return CANONICAL_GATE_NAME
@@ -53,6 +55,8 @@ def normalize_gate_name(value: str) -> str:
 def validate_currency_code(value: str) -> str:
     """Validate and normalize an ISO-4217-style three-letter currency code."""
 
+    if type(value) is not str:
+        raise ValueError("currency_code must be an exact built-in string")
     normalized = value.strip().upper()
     if len(normalized) != 3 or not normalized.isascii() or not normalized.isalpha():
         raise ValueError("currency_code must be exactly three ASCII letters")
@@ -60,9 +64,9 @@ def validate_currency_code(value: str) -> str:
 
 
 def validate_scenario_amount(value: int) -> int:
-    """Validate a positive procurement scenario amount without accepting booleans."""
+    """Validate a positive procurement scenario amount without accepting subclasses."""
 
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+    if type(value) is not int or value <= 0:
         raise ValueError("scenario_amount must be a positive integer")
     return value
 
