@@ -167,7 +167,10 @@ def test_exact_numpy_controls_and_real_responses_reach_dispatch_boundary(monkeyp
         return None
 
     monkeypatch.setattr(fitstats, "_core_module", missing_core)
-    responses = np.array([[0.0, 1.0], [1.0, 2.0], [2.0, np.nan]], dtype=np.float64)
+    responses = np.array(
+        [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [np.nan, 0.0]],
+        dtype=np.float64,
+    )
 
     with pytest.raises(RuntimeError, match="fit_grm requires the compiled Rust core"):
         fit_grm(
