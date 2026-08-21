@@ -57,16 +57,17 @@ def _drain_bounded(
 
 def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
     """Terminate and bounded-reap the owned process tree."""
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    elif process.poll() is None:
-        try:
-            process.kill()
-        except ProcessLookupError:
-            pass
+    if process.poll() is None:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
     try:
         process.wait(timeout=_PROCESS_REAP_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
