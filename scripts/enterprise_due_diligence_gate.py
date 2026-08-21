@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import warnings
 from pathlib import Path
 from typing import Any, Sequence
@@ -143,15 +144,36 @@ def build_gate_manifest(
     }
 
 
-def _write_manifest_descriptor(output_path: Path, content: str) -> None:
-    """Write content through no-follow directory descriptors on POSIX."""
+def _write_manifest_descriptor(
+    output_path: Path,
+    content: str,
+    validated_path: Path,
+) -> None:
+    """Write content with descriptor safety or an atomic portable fallback."""
     if (
         os.name != "posix"
         or os.open not in os.supports_dir_fd
+        or os.mkdir not in os.supports_dir_fd
         or not hasattr(os, "O_DIRECTORY")
         or not hasattr(os, "O_NOFOLLOW")
     ):
-        raise ValueError("descriptor-safe manifest output requires POSIX dirfd support")
+        validated_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=validated_path.parent,
+                prefix=f".{validated_path.name}.",
+                delete=False,
+            ) as temporary_file:
+                temporary_file.write(content)
+                temporary_path = Path(temporary_file.name)
+            os.replace(temporary_path, validated_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+        return
     components = output_path.parts
     if not components:
         raise ValueError("output path must name a regular file")
@@ -185,13 +207,13 @@ def _write_manifest_descriptor(output_path: Path, content: str) -> None:
 def write_gate_manifest(manifest: dict[str, Any], output_path: Path) -> None:
     """Write deterministic UTF-8 JSON through a validated relative path."""
 
-    _safe_output_path(output_path)
+    validated_path = _safe_output_path(output_path)
     content = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     try:
-        _write_manifest_descriptor(Path(output_path), content)
+        _write_manifest_descriptor(Path(output_path), content, validated_path)
     except ValueError:
         raise
-    except OSError:
+    except (NotImplementedError, OSError):
         raise ValueError("manifest output could not be written") from None
 
 

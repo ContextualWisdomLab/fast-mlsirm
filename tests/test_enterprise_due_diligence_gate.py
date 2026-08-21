@@ -153,6 +153,22 @@ def test_write_gate_manifest_is_deterministic(tmp_path: Path, monkeypatch: pytes
     assert written_path.read_text(encoding="utf-8").splitlines()[1].strip().startswith('"currency_code"')
 
 
+def test_write_gate_manifest_uses_atomic_portable_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Manifest writes remain available when POSIX descriptor flags are absent."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delattr(GATE.os, "O_NOFOLLOW", raising=False)
+    manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
+
+    GATE.write_gate_manifest(manifest, Path("portable") / "gate.json")
+
+    assert json.loads(
+        (tmp_path / "portable" / "gate.json").read_text(encoding="utf-8")
+    ) == manifest
+
+
 def test_write_gate_manifest_rejects_path_traversal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Output validation must prevent writes outside the invocation directory."""
     monkeypatch.chdir(tmp_path)
