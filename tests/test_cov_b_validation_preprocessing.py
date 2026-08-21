@@ -81,6 +81,17 @@ def test_irtree_expand_rejects_wrong_shape_node_dims():
         preprocessing.irtree_expand(responses, mapping, node_dims=np.array([0, 1]))
 
 
+def test_irtree_expand_rejects_complex_node_dims_before_lossy_coercion():
+    responses = np.array([[0.0], [1.0]])
+    mapping = np.array([[0.0, 1.0]])
+    with pytest.raises(ValueError, match="node_dims must be real-valued"):
+        preprocessing.irtree_expand(
+            responses,
+            mapping,
+            node_dims=np.array([0.0 + 1.0j]),
+        )
+
+
 def test_irtree_expand_rejects_non_numeric_node_dims():
     responses = np.array([[0.0], [1.0]])
     mapping = np.array([[0.0, 1.0]])
