@@ -62,7 +62,7 @@ def _unexpected_core_discovery():
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "message"),
+    ("override", "message"),
     [
         ({"n_cat": 1}, "n_cat must be between"),
         ({"q": 13}, "q must be one of"),
@@ -73,15 +73,17 @@ def _unexpected_core_discovery():
     ],
 )
 def test_invalid_semantic_controls_fail_before_response_materialization(
-    monkeypatch, kwargs, message
+    monkeypatch, override, message
 ):
     """Resource/model controls are rejected before caller response array protocols."""
 
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     _ArraySentinel.reset()
+    kwargs = {"n_cat": 3}
+    kwargs.update(override)
 
     with pytest.raises(ValueError, match=message):
-        fit_grm(_ArraySentinel(), n_cat=3, **kwargs)
+        fit_grm(_ArraySentinel(), **kwargs)
 
     assert _ArraySentinel.calls == 0
 
@@ -92,16 +94,18 @@ def test_hostile_integer_subclasses_fail_without_callbacks(monkeypatch, name):
 
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     _HostileInt.reset()
-    kwargs = {name: _HostileInt(21 if name == "q" else 3)}
+    kwargs = {"n_cat": 3}
+    value = 21 if name == "q" else 3
     if name == "max_iter":
-        kwargs[name] = _HostileInt(5)
+        value = 5
     elif name == "xi_points":
-        kwargs[name] = _HostileInt(100)
+        value = 100
     elif name == "xi_seed":
-        kwargs[name] = _HostileInt(7)
+        value = 7
+    kwargs[name] = _HostileInt(value)
 
     with pytest.raises(ValueError):
-        fit_grm(_ArraySentinel(), n_cat=3, **kwargs)
+        fit_grm(_ArraySentinel(), **kwargs)
 
     assert _HostileInt.calls == 0
 
