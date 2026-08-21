@@ -119,11 +119,45 @@ def test_process_tree_termination_reaps_the_owned_child(monkeypatch: pytest.Monk
         def __init__(self) -> None:
             self.wait_timeouts: list[float | None] = []
 
+        def poll(self) -> None:
+            return None
+
         def wait(self, timeout: float | None = None) -> None:
             self.wait_timeouts.append(timeout)
 
     process = FakeProcess()
     monkeypatch.setattr(bounded.os, "killpg", lambda *_args: None)
+
+    bounded._terminate_process_tree(process)  # type: ignore[arg-type]
+
+    assert process.wait_timeouts == [bounded._PROCESS_REAP_TIMEOUT_SECONDS]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
+def test_process_tree_termination_does_not_resignal_reaped_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated cleanup must never signal a process group after the child is reaped."""
+    from scripts import _bounded_subprocess as bounded
+
+    class ReapedProcess:
+        pid = 4242
+
+        def __init__(self) -> None:
+            self.wait_timeouts: list[float | None] = []
+
+        def poll(self) -> int:
+            return 0
+
+        def wait(self, timeout: float | None = None) -> None:
+            self.wait_timeouts.append(timeout)
+
+    process = ReapedProcess()
+
+    def fail_if_signalled(*_args: object) -> None:
+        raise AssertionError("reaped process group must not be signalled")
+
+    monkeypatch.setattr(bounded.os, "killpg", fail_if_signalled)
 
     bounded._terminate_process_tree(process)  # type: ignore[arg-type]
 
