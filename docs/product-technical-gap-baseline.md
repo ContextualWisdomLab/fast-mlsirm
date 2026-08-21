@@ -1,7 +1,7 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-20**<br>
+Observed at: **2026-08-21T08:32:44Z**<br>
 Protected-main basis: **`04d0bc21a2a20693bcf16108cd76d394fe844d23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
@@ -241,26 +241,41 @@ This baseline reuses the repository’s canonical capability vocabulary:
 For live PR rows, **RECHECK_REQUIRED** is only a snapshot annotation. It is not a
 new canonical capability-maturity state.
 
-## 7. Representative current pull-request evidence
+## 7. Current pull-request evidence
 
-This table is intentionally **not exhaustive**. It records high-leverage live
-work observed on 2026-08-20 against protected
+The following table records high-leverage live work observed on
+2026-08-21T08:32:44Z against protected
 `main@04d0bc21a2a20693bcf16108cd76d394fe844d23`. Every row is
-**IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth.
+**IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
+check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
-| [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) | `1f9055bbc2e87648194b61aa13248611e54b8167` | configuration integer hardening plus Rust-required automatic backend and buyer/runtime truth | open, non-draft and mergeable at observation; current-head checks/reviews must be re-fetched; overlaps canonical product docs |
-| [#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | `ce188a2ab882e333400c6c3018183837799f7ae1` | isolates NumPy parity behind explicit `fit_reference`/CLI reference surfaces | open at the snapshot; re-fetch readiness, reviews, checks, and the overlap with #951/#626 before acting; do not create two backend authorities |
-| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `ed9868c1b3636d0470dc82367e80a43036483018` | Rust continuous-time/AR longitudinal Rasch estimator and recovery evidence | open, non-draft and mergeable at observation; exact source/review/check evidence must survive integration |
-| [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) | `34697b6df58c1424654bc890571a3dfbe806fd97` | crossed and weighted multiple-membership estimator | GitHub metadata reported non-draft at observation, while the PR body declares it stacked and not independently merge-ready before #1005; re-fetch and preserve both scientific slices explicitly |
-| [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | `42b849c4c05c4464205c3afe71e39ce8c0cdae2a` | relation-aware structural model-selection governor | open, non-draft and mergeable at observation; depends on accepted likelihood/recovery/scoreability evidence rather than policy alone |
-| [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | `27a831865c2f1ee42710dceb27a2e074c13ad254` | governed item-bank lifecycle JSON/HTML reports and replay hardening | open, non-draft and mergeable at observation; report integrity does not itself complete calibration/linking/exposure/drift evidence |
-| [#1012](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1012) | `64e6dad6a62b2b391c0632c7a2a93cc2fdce0ca8` | durable 500-rep GRM recovery evidence workflow | open, non-draft and mergeable at observation; workflow evidence must remain bound to the unchanged scientific source and exact head |
-| [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | `8b5bb0351dae5db97b666cc6c0b2423b79209f76` | bounded statistical-study deadline increase | open, non-draft and mergeable at observation; longer deadlines must still produce terminal, retained, fail-closed evidence rather than hiding nonconvergence |
+| [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) | `286bd2dbba5da8348643b6ad8145967972813ae9` | configuration integer hardening plus Rust-required automatic backend and runtime truth | open, non-draft at observation; re-fetch checks/reviews and overlap with #1070/#626 before acting |
+| [#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | `e47f9e6b257c6dbabff77702588d60bbb5cc5fea` | isolates NumPy parity behind explicit `fit_reference`/CLI reference surfaces | open at observation; preserve one backend authority with #951/#626 |
+| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `fd7b511e62c1f0a24190ef3fa65b06db50e6e32e` | Rust continuous-time/AR longitudinal Rasch estimator and recovery evidence | open, non-draft at observation; preserve exact recovery evidence through integration |
+| [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) | `34697b6df58c1424654bc890571a3dfbe806fd97` | crossed and weighted multiple-membership estimator | draft and stacked at observation; do not merge independently before its declared predecessor evidence is integrated |
+| [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | `3aec7c0293a6e85652fbf3c5bbc3c45513f357f4` | relation-aware structural model-selection governor | open at observation; requires relation, scoreability, held-out and recovery evidence |
+| [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | `27a831865c2f1ee42710dceb27a2e074c13ad254` | governed item-bank lifecycle JSON/HTML reports and replay hardening | open, non-draft at observation; report integrity does not itself complete calibration/linking/exposure/drift evidence |
+| [#1012](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1012) | `64e6dad6a62b2b391c0632c7a2a93cc2fdce0ca8` | durable 500-rep GRM recovery evidence workflow | open, non-draft at observation; workflow evidence must remain bound to the exact source and head |
+| [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | `47c1af6721a44493bc470d7aed71be2a99983ba7` | bounded statistical-study deadline increase | open, non-draft at observation; longer deadlines must still produce terminal, retained evidence |
+| [#1015](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1015) | `5a855b731f9857d4a177263f94c9987952be224c` | bounded subprocess capture and process-tree integrity | open, non-draft at observation; current head includes descendant pipe cleanup and awaits fresh checks/reviews |
+| [#1002](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1002) | `36e0bdd71535e56fe1329f31c2cd74d0749c64d8` | accessible report focus behavior | open, non-draft at observation; terminal checks do not replace current formal approvals |
+| [#1064](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1064) | `dc65d76c2d4641bf95c98cd581316224ee32e8d2` | exact model-spec record admission | open, non-draft at observation; required checks are green but formal approval remains required |
+| [#1081](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1081) | `4f14a754a1e016edd9a81bbd4ad4bfa367f8f4cc` | cross-engine conformance inventory and executed evidence | open, non-draft at observation; current source findings are addressed, but exact-head approval is still required |
+| [#1079](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1079) | `e6674e78b28b17c52398d8b451bc999a4e078d6d` | this product/technical gap baseline | open, non-draft at observation; documentation-only and awaiting the current OpenCode formal result |
+| [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130) | `890ba99f3d3a8f2f51898860bbc86f968b6e42e3` | ADR binding the Figma design-file identity | open, non-draft at observation; downstream design evidence is not protected-main truth until merged |
+| [#1145](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1145) | `64bfa8d932ad533182ec5d9a17e749821e41b8fb` | procurement provenance hardening stacked on #1015 | draft and based on pending head `5a855b73`; restack only after the root PR's normal transition |
 
-Additional open work can change this dependency graph at any time. A completion
-or merge decision must begin with a fresh repository-wide PR and writer sweep.
+At this observation, GitHub REST enumerated **74 open pull requests**. The
+complete number inventory was:
+
+`#1145, #1140, #1138, #1136, #1134, #1132, #1130, #1129, #1127, #1126, #1122, #1120, #1118, #1116, #1114, #1112, #1110, #1108, #1106, #1104, #1102, #1100, #1097, #1095, #1093, #1091, #1088, #1085, #1084, #1081, #1080, #1079, #1076, #1074, #1072, #1071, #1070, #1065, #1064, #1062, #1061, #1060, #1058, #1056, #1052, #1050, #1048, #1046, #1043, #1041, #1037, #1035, #1033, #1031, #1029, #1026, #1025, #1020, #1019, #1015, #1014, #1013, #1012, #1011, #1009, #1008, #1006, #1005, #1003, #1002, #998, #997, #992, #951`.
+
+This list is a reproducible snapshot, not a merge instruction. A completion or
+merge decision must begin with a fresh repository-wide PR and writer sweep,
+including exact head/base, dependency stack, reviews, unresolved threads,
+required Checks, and active path ownership.
 
 ## 8. Product and technical gap matrix
 
@@ -278,6 +293,7 @@ or merge decision must begin with a fresh repository-wide PR and writer sweep.
 | GAP-10 | P1 | Publish capacity/performance envelopes instead of isolated speed claims | [#403](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/403), [#563](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/563) | representative N×item×dimension×facet×time workloads report latency, throughput, peak RSS/VRAM, failure ceilings and CPU/GPU parity |
 | GAP-11 | P0 operations | Eliminate orphaned workflow identities and retain complete terminal statistical/release evidence | [#809](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/809), PR [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | complete paginated workflow registry is reconciled; supported workflows remain; statistical studies terminate with durable evidence |
 | GAP-12 | P1 product | Prove one buyer-visible vertical through a downstream host while preserving repository ownership | [#397](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/397), [#404](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/404), [#607](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/607), [#584](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/584) | source evidence → governed observations → Rust calibration → uncertainty/fairness/validation → accessible report → downstream human decision is replayable end to end |
+| GAP-13 | P1 downstream UI | When a hosted consumer has a web surface, make UI states and interactions auditable rather than treating a static screenshot as product evidence | [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130), [`docs/figma_product_design_packet.md`](figma_product_design_packet.md), Storybook interaction-testing guidance | ADR records the exact Figma file ID; a Storybook inventory covers the ten UI/UX dimensions below; each high-risk story has an event-driven interaction assertion and an accessibility result |
 
 ## 9. Ordered completion sequence
 
@@ -416,6 +432,47 @@ through the owning downstream product. The first accepted vertical must include:
 - missing, abstained, failed, excluded, not-applicable and indeterminate remain
   distinct; and
 - reports expose limitations and next actions, not only a score or badge.
+
+### 10.6 UI/UX, Figma, and Storybook boundary
+
+The protected `fast-mlsirm` package has no web frontend or Storybook workspace;
+it is a reusable numerical/core-contract library. A downstream product that
+adds a web surface must own its UI implementation, design tokens, Storybook
+inventory, and Figma file. This repository must not acquire a UI dependency or
+pretend that a screenshot proves an interaction contract.
+
+The existing buyer-review design packet records Figma file ID
+`qD34PfMH8Kr41tFdqLCkem` in
+[`docs/figma_product_design_packet.md`](figma_product_design_packet.md). The
+ADR binding that identity is [active PR #1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130),
+not protected-main truth until merged. A future Figma-backed change must keep
+the file ID in its ADR and keep Code Connect disabled unless a separate
+architecture decision authorizes it.
+
+For a downstream Storybook, each story is both a named visual state and a
+replayable test case. The story starts from explicit props/context, its
+`play` function emits a realistic user event, and assertions inspect the
+observable result (role, accessible name, text, focus, callback, URL, or
+machine-readable value). Required scene/edge coverage is:
+
+| UI/UX dimension | Required scene and event evidence |
+| --- | --- |
+| Accessibility | keyboard-only focus order, accessible names/roles, screen-reader state, contrast, reduced-motion, and an automated WCAG 2.2 audit |
+| Touch & Interaction | pointer, touch, keyboard, disabled, loading, cancellation, double-submit, and focus-restoration events |
+| Performance | empty, representative, and upper-bound datasets with render/interaction budgets and no unbounded DOM growth |
+| Style Selection | design-token default, dark/high-contrast, error/success, and token-regression snapshots |
+| Layout & Responsive | narrow/wide viewport, zoom, long labels, overflow, RTL, and orientation changes |
+| Typography & Color | long/localized text, font fallback, contrast, color-independent status, and numeric formatting |
+| Animation | entrance, interruption, timeout, reduced-motion, and state-change completion without hiding content |
+| Forms & Feedback | blank, invalid, server error, retry, async pending, success, and keyboard submit flows |
+| Navigation Patterns | deep link, back/forward, unsaved state, modal escape, route failure, and restored focus/scroll |
+| Charts & Data | no data, one point, dense data, outlier, tooltip keyboard access, exact-value table, and export/error states |
+
+This inventory is a downstream acceptance contract, not a claim that this
+library currently ships a UI. Storybook's official interaction-testing model
+uses stories plus `play` functions to simulate clicks, typing and submission
+and assert the result; the corresponding evidence is linked in
+[`docs/doctoring/ui-ux-storybook-evidence.md`](doctoring/ui-ux-storybook-evidence.md).
 
 ## 11. Claim register
 
