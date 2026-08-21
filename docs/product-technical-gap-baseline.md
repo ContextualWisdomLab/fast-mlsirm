@@ -604,9 +604,6 @@ Morris, T. P., White, I. R., & Crowther, M. J. (2019). Using simulation studies
 to evaluate statistical methods. *Statistics in Medicine, 38*(11), 2074–2102.
 https://doi.org/10.1002/sim.8086
 
-Preston-Werner, T. (2013). *Semantic Versioning 2.0.0*.
-https://semver.org/spec/v2.0.0.html
-
 National Institute of Standards and Technology. (2022). *Secure software
 development framework (SSDF) version 1.1: Recommendations for mitigating the
 risk of software vulnerabilities* (NIST SP 800-218).
