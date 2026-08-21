@@ -58,6 +58,14 @@ def _validated_positive_real(value: object, name: str, *, allow_none: bool = Fal
     return validated
 
 
+def _required_positive_real(value: object, name: str) -> float:
+    """Return a required positive real without optimization-sensitive guards."""
+    validated = _validated_positive_real(value, name)
+    if validated is None:
+        raise ValueError(f"{name} must be positive and finite")
+    return validated
+
+
 def _validated_boolean(value: object, name: str) -> bool:
     """Normalize one exact Python/NumPy Boolean without truth-value dispatch."""
     value_type = type(value)
@@ -155,9 +163,9 @@ def fit_response_times(
     from .fitstats import _core_module
 
     validated_max_iter = _validated_max_iter(max_iter)
-    validated_tol = _validated_positive_real(tol, "tol")
-    validated_var_floor = _validated_positive_real(var_floor, "var_floor")
-    validated_sigma_floor = _validated_positive_real(sigma_floor, "sigma_floor")
+    validated_tol = _required_positive_real(tol, "tol")
+    validated_var_floor = _required_positive_real(var_floor, "var_floor")
+    validated_sigma_floor = _required_positive_real(sigma_floor, "sigma_floor")
     validated_fix_sigma_tau = _validated_positive_real(
         fix_sigma_tau,
         "fix_sigma_tau",
@@ -167,9 +175,6 @@ def fit_response_times(
         require_convergence,
         "require_convergence",
     )
-    assert validated_tol is not None
-    assert validated_var_floor is not None
-    assert validated_sigma_floor is not None
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_rt_lognormal"):
@@ -264,7 +269,7 @@ def fit_speed_accuracy(
 
     validated_q = _validated_quadrature(q)
     validated_max_iter = _validated_max_iter(max_iter)
-    validated_tol = _validated_positive_real(tol, "tol")
+    validated_tol = _required_positive_real(tol, "tol")
     validated_fix_sigma_tau = _validated_positive_real(
         fix_sigma_tau,
         "fix_sigma_tau",
@@ -274,7 +279,6 @@ def fit_speed_accuracy(
         require_convergence,
         "require_convergence",
     )
-    assert validated_tol is not None
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
