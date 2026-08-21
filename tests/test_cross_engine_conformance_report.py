@@ -18,7 +18,10 @@ from fast_mlsirm.cross_engine_conformance import (
     ConformanceRedistributionStatus,
     ConformanceRunProvenance,
 )
-from fast_mlsirm.cross_engine_report import render_conformance_report
+from fast_mlsirm.cross_engine_report import (
+    render_conformance_long_form_json,
+    render_conformance_report,
+)
 
 
 _SHA_A = "a" * 64
@@ -187,3 +190,57 @@ def test_report_renders_explicit_no_engine_and_no_run_states() -> None:
     assert "No independent engine evidence rows are recorded for this inventory." in html_text
     assert "No run provenance is recorded because this inventory contains no executed evidence." in html_text
     assert "Not recorded" in html_text
+
+
+def test_long_form_json_is_deterministic_and_provenance_bound() -> None:
+    """Downloadable rows retain immutable inventory and engine-evidence identity."""
+    inventory = _executed_inventory()
+    payload = _canonical_json(inventory)
+
+    first = render_conformance_long_form_json(payload)
+    second = render_conformance_long_form_json(payload)
+
+    assert first == second
+    rows = json.loads(first)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["inventory_fingerprint"] == inventory.inventory_fingerprint
+    assert row["package_version"] == inventory.package_version
+    assert row["source_commit"] == inventory.source_commit
+    assert row["schema_version"] == inventory.schema_version
+    assert row["capability_id"] == "dichotomous_probability"
+    assert row["coverage_status"] == "partially_covered"
+    assert row["evidence_id"] == "mirt_fixed_equation"
+    assert row["engine_id"] == "r_mirt"
+    assert row["execution_status"] == "passed"
+    assert row["parameter_mapping_sha256"] == _SHA_A
+    assert row["fixture_sha256"] == _SHA_B
+    assert row["environment_sha256"] == _SHA_C
+    assert row["artifact_sha256"] == _SHA_D
+    assert row["limitation"] == "<script>alert('x')</script> equation-only evidence"
+
+
+def test_long_form_json_preserves_explicit_no_engine_state() -> None:
+    """A long-form table must not drop or greenwash capabilities without evidence."""
+    inventory = _no_engine_inventory()
+
+    rows = json.loads(render_conformance_long_form_json(_canonical_json(inventory)))
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["inventory_fingerprint"] == inventory.inventory_fingerprint
+    assert row["capability_id"] == "high_stakes_decision"
+    assert row["coverage_status"] == "no_independent_engine"
+    assert row["execution_status"] == "not_executed"
+    assert row["evidence_id"] is None
+    assert row["engine_id"] is None
+    assert row["limitation"] == "No independent engine evidence row is recorded for this capability."
+
+
+def test_long_form_json_rejects_tampered_manifest_before_projection() -> None:
+    """Flattening must use the same strict replay boundary as the human report."""
+    manifest = _executed_inventory().to_manifest()
+    manifest["inventory_fingerprint"] = "9" * 64
+
+    with pytest.raises(ValueError, match="inventory_fingerprint"):
+        render_conformance_long_form_json(json.dumps(manifest))
