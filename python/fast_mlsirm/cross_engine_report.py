@@ -239,6 +239,96 @@ def _render_evidence(manifest: dict[str, object]) -> str:
     return "\n".join(rows)
 
 
+def _long_form_rows(manifest: dict[str, object]) -> list[dict[str, object | None]]:
+    """Flatten canonical capability/evidence records without numerical reinterpretation."""
+    capabilities = manifest["capabilities"]
+    if type(capabilities) is not list:  # defensive; strict replay should make this unreachable
+        raise ValueError("capabilities must be a canonical list")
+    provenance = {
+        "inventory_fingerprint": manifest["inventory_fingerprint"],
+        "package_version": manifest["package_version"],
+        "source_commit": manifest["source_commit"],
+        "schema_version": manifest["schema_version"],
+    }
+    rows: list[dict[str, object | None]] = []
+    for capability in capabilities:
+        if type(capability) is not dict:
+            raise ValueError("capability must be a canonical dictionary")
+        capability_fields = {
+            "capability_id": capability["capability_id"],
+            "public_entrypoint": capability["public_entrypoint"],
+            "coverage_status": capability["coverage_status"],
+            "estimand": capability["estimand"],
+            "likelihood_family": capability["likelihood_family"],
+            "parameterization": capability["parameterization"],
+            "identification": capability["identification"],
+            "comparison_scope": capability["comparison_scope"],
+        }
+        evidence_values = capability["evidence"]
+        if type(evidence_values) is not list:
+            raise ValueError("capability evidence must be a canonical list")
+        if not evidence_values:
+            rows.append(
+                {
+                    **provenance,
+                    **capability_fields,
+                    "evidence_id": None,
+                    "engine_id": None,
+                    "engine_version": None,
+                    "engine_source_reference": None,
+                    "engine_license_classification": None,
+                    "layer": None,
+                    "execution_status": "not_executed",
+                    "parameter_mapping_version": None,
+                    "parameter_mapping_sha256": None,
+                    "fixture_sha256": None,
+                    "environment_sha256": None,
+                    "artifact_sha256": None,
+                    "limitation": "No independent engine evidence row is recorded for this capability.",
+                }
+            )
+            continue
+        for evidence in evidence_values:
+            if type(evidence) is not dict:
+                raise ValueError("evidence must be a canonical dictionary")
+            engine = evidence["engine"]
+            if type(engine) is not dict:
+                raise ValueError("engine must be a canonical dictionary")
+            rows.append(
+                {
+                    **provenance,
+                    **capability_fields,
+                    "evidence_id": evidence["evidence_id"],
+                    "engine_id": engine["engine_id"],
+                    "engine_version": engine["engine_version"],
+                    "engine_source_reference": engine["source_reference"],
+                    "engine_license_classification": engine["license_classification"],
+                    "layer": evidence["layer"],
+                    "execution_status": evidence["execution_status"],
+                    "parameter_mapping_version": evidence["parameter_mapping_version"],
+                    "parameter_mapping_sha256": evidence["parameter_mapping_sha256"],
+                    "fixture_sha256": evidence["fixture_sha256"],
+                    "environment_sha256": evidence["environment_sha256"],
+                    "artifact_sha256": evidence["artifact_sha256"],
+                    "limitation": evidence["limitation"],
+                }
+            )
+    return rows
+
+
+def render_conformance_long_form_json(manifest_json: str) -> str:
+    """Render downloadable long-form capability × engine evidence as strict JSON.
+
+    Input is replayed through :meth:`ConformanceInventory.from_json` before any
+    projection. The output is a deterministic, provenance-bound table encoded
+    as JSON; it performs no comparison, alignment, scoring, or statistical
+    calculation and preserves explicit non-executed/no-engine states.
+    """
+    inventory = ConformanceInventory.from_json(manifest_json)
+    rows = _long_form_rows(inventory.to_manifest())
+    return json.dumps(rows, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+
+
 def render_conformance_report(manifest_json: str) -> tuple[str, str]:
     """Render strict conformance JSON as standalone accessible HTML plus JSON.
 
@@ -293,4 +383,4 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
     return "\n".join(body), canonical_json
 
 
-__all__ = ["render_conformance_report"]
+__all__ = ["render_conformance_long_form_json", "render_conformance_report"]
