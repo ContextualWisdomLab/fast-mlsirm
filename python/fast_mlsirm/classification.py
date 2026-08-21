@@ -4,10 +4,80 @@ work happens in the Rust core; this module only validates and marshals."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
+
+
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+
+
+def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value`` has one exact trusted type without callbacks."""
+
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _trusted_numpy_integer(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy integer type."""
+
+    return _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES)
+
+
+def _trusted_numpy_float(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy float type."""
+
+    return _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES)
+
+
+def _normalize_cutscores(cutscores: Sequence[float]) -> list[float]:
+    """Materialize finite trusted cut scores without caller coercion hooks."""
+
+    message = "cutscores entries must be finite real scalars"
+    normalized: list[float] = []
+    try:
+        iterator = iter(cutscores)
+    except TypeError as error:
+        raise ValueError(message) from error
+    for value in iterator:
+        if isinstance(value, (bool, np.bool_)):
+            raise ValueError(message)
+        value_type = type(value)
+        if value_type is int or value_type is float:
+            try:
+                parsed = float(value)
+            except OverflowError as error:
+                raise ValueError(message) from error
+        elif _trusted_numpy_integer(value) or _trusted_numpy_float(value):
+            parsed = float(value)
+        else:
+            raise ValueError(message)
+        if not math.isfinite(parsed):
+            raise ValueError(message)
+        normalized.append(parsed)
+    return normalized
 
 
 @dataclass
@@ -175,6 +245,7 @@ def rudner_classification(
     fail given the calibration's standard errors.
 
     """
+    cuts = _normalize_cutscores(cutscores)
     core = _core_or_raise("rudner_classification")
     t = np.ascontiguousarray(np.asarray(theta, dtype=np.float64).reshape(-1))
     s = np.ascontiguousarray(np.asarray(sem, dtype=np.float64).reshape(-1))
@@ -185,7 +256,6 @@ def rudner_classification(
             np.asarray(weights, dtype=np.float64).reshape(-1)
         )
     )
-    cuts = [float(c) for c in cutscores]
     res = core.rudner_classification(t, s, w, cuts)
     return _to_result(res, len(cuts), t.shape[0])
 
@@ -212,6 +282,7 @@ def lee_classification(
     documented in the Rust core). ``weights`` defaults to uniform.
 
     """
+    cuts = _normalize_cutscores(cutscores)
     core = _core_or_raise("lee_classification")
     p = np.ascontiguousarray(np.asarray(probs, dtype=np.float64))
     if p.ndim != 2:
@@ -224,7 +295,6 @@ def lee_classification(
             np.asarray(weights, dtype=np.float64).reshape(-1)
         )
     )
-    cuts = [float(c) for c in cutscores]
     res = core.lee_classification(
         p.reshape(-1), int(n_points), int(n_items), w, cuts
     )
