@@ -11,9 +11,12 @@ def _hostile_text(value: str) -> tuple[str, type[str]]:
     """Return a string subclass whose text callbacks must never execute."""
 
     class HostileText(str):
+        """Record forbidden normalization callbacks without executing them."""
+
         calls = 0
 
         def strip(self, *args: object, **kwargs: object) -> str:
+            """Record an unexpected normalization callback."""
             type(self).calls += 1
             raise AssertionError("caller strip callback executed")
 
