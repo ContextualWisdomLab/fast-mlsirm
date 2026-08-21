@@ -22,6 +22,7 @@ def _installed_core_that_fails_to_import(
     failure = exception_type("dlopen failed: incompatible compiled extension")
 
     def fail_import(_name: str):
+        """Raise the controlled native-loader failure for the fixture."""
         raise failure
 
     monkeypatch.setattr(backend.importlib, "import_module", fail_import)
