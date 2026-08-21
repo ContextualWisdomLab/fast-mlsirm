@@ -298,9 +298,9 @@ def bounded_values(
 
 
 def fingerprint(value: Any, name: str, path: str | None = None) -> str:
-    """Return a validated lowercase SHA-256 fingerprint."""
+    """Return a validated exact built-in lowercase SHA-256 fingerprint."""
     resolved_path = path or f"$.{name}"
-    if not isinstance(value, str) or FINGERPRINT_PATTERN.fullmatch(value) is None:
+    if type(value) is not str or FINGERPRINT_PATTERN.fullmatch(value) is None:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
