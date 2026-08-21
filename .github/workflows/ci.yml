@@ -169,7 +169,7 @@ jobs:
       # --require-hashes for editable/local installs, so the fuzz extras
       # (atheris plus test-only hypothesis) are resolved from the pinned pip
       # above rather than a hash-locked requirements file.
-      - run: python -m pip install -e .[fuzz]
+      - run: python -m pip install -e '.[fuzz]'
       - name: Fuzz load_factor_csv (CSV parser)
         run: |
           python fuzz/atheris/fuzz_load_factor_csv.py \
