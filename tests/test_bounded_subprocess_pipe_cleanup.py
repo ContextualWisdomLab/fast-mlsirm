@@ -30,5 +30,8 @@ def test_successful_bounded_capture_closes_parent_pipes(
     )
 
     assert completed.returncode == 0
-    assert completed.stdout == "ok\n"
+    assert completed.stdout.strip() == "ok"
     assert len(closed_processes) == 1
+    process = closed_processes[0]
+    assert process.stdout.closed  # type: ignore[attr-defined]
+    assert process.stderr.closed  # type: ignore[attr-defined]
