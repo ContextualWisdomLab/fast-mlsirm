@@ -80,13 +80,15 @@ def _nevalpoints_control(value: object) -> int:
 
 
 def _real_float_array(value: object, name: str) -> np.ndarray:
-    """Materialize one array without silently projecting complex evidence."""
+    """Materialize trusted numeric storage without lossy/callback coercion."""
     try:
         raw = np.asarray(value)
     except (TypeError, ValueError, OverflowError):
-        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+        raise ValueError(f"{name} must be a numeric array") from None
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
+    if raw.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError(f"{name} must be a numeric array")
     try:
         return np.asarray(raw, dtype=np.float64)
     except (TypeError, ValueError, OverflowError):
@@ -122,8 +124,8 @@ def ksirt_analysis(
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
-    or compiled-core discovery, and complex-valued response/bandwidth evidence
-    is rejected before real-valued marshalling.
+    or compiled-core discovery. Complex-valued and object-dtype response or
+    bandwidth evidence is rejected before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
