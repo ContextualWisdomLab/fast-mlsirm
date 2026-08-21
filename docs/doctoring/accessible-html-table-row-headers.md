@@ -42,6 +42,21 @@ header semantics where a cell is not actually a header is itself a structural
 failure. Therefore row-header markup is a domain decision, not a blanket first-
 column transform.
 
+## Print and export contract
+
+Screen rendering keeps wide tables and canonical JSON keyboard-accessible in
+scroll containers. Static media cannot provide that scrolling interaction. The
+CSS Overflow Module Level 3 therefore advises authors to adjust print layout so
+relevant overflow is simultaneously visible. The shared report stylesheet uses
+`@media print` to preserve that distinction: table wrappers and canonical JSON
+switch to `overflow: visible`, and the screen-only `32rem` JSON height cap is
+removed. Screen overflow behavior remains unchanged.
+
+This matters to the commercial audit surface because the canonical JSON is the
+exact-value alternative for reconstruction. Printing or exporting a report to
+PDF must not silently replace a complete on-screen audit payload with a clipped
+subset.
+
 ## Verification
 
 Focused tests exercise complete rendered artifacts and verify that:
@@ -49,8 +64,9 @@ Focused tests exercise complete rendered artifacts and verify that:
 1. score-report criterion outcomes start with `<th scope="row">` while evidence-reference cells remain data cells;
 2. facets-calibration task, rater, respondent, category/iteration identity axes emit `<th scope="row">`;
 3. validation-evidence metric identities emit `<th scope="row">`;
-4. canonical JSON in the same artifacts continues to reconstruct the exact governed reports; and
-5. invalid row-header indices and header/row width drift fail closed.
+4. canonical JSON in the same artifacts continues to reconstruct the exact governed reports;
+5. invalid row-header indices and header/row width drift fail closed; and
+6. print media removes scroll clipping and the canonical-JSON height cap while retaining screen overflow behavior.
 
 The tests operate on final standalone artifacts rather than asserting only a
 helper substring, so they cover the production composition path and the exact
@@ -68,6 +84,9 @@ separate evidence.
 
 World Wide Web Consortium. (2023). *Web Content Accessibility Guidelines
 (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
+
+World Wide Web Consortium. (2025, October 7). *CSS Overflow Module Level 3*
+(Working Draft). https://www.w3.org/TR/css-overflow-3/
 
 World Wide Web Consortium, Web Accessibility Initiative. (2019, July 27).
 *Tables with two headers*. https://www.w3.org/WAI/tutorials/tables/two-headers/
