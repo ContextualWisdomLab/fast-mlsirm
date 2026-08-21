@@ -13,8 +13,8 @@ def _result() -> dict[str, object]:
     """Return a minimal shape-consistent trusted-core GRM result."""
 
     return {
-        "slope": [1.0],
-        "threshold": [0.0],
+        "slope": [1.0, 1.0],
+        "threshold": [0.0, 0.0],
         "theta": [0.0, 0.0],
         "n_cat": 2,
         "loglik_trace": [0.0],
@@ -50,10 +50,12 @@ def test_real_categories_preserve_existing_native_marshalling(monkeypatch):
             return _result()
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
-    fitted = fit_grm(np.array([[0.0], [1.0]], dtype=np.float32), n_cat=2, max_iter=1)
+    fitted = fit_grm(
+        np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32), n_cat=2, max_iter=1
+    )
 
     args = captured["args"]
-    np.testing.assert_array_equal(args[0], np.array([0, 1], dtype=np.int64))
-    np.testing.assert_array_equal(args[1], np.array([True, True], dtype=bool))
-    assert args[3:6] == (2, 1, 1)
+    np.testing.assert_array_equal(args[0], np.array([0, 1, 1, 0], dtype=np.int64))
+    np.testing.assert_array_equal(args[1], np.array([True, True, True, True], dtype=bool))
+    assert args[3:6] == (2, 2, 1)
     assert fitted.n_cat == 2
