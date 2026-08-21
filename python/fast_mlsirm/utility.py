@@ -92,7 +92,10 @@ def _coerce_finite_real(value: object, *, name: str) -> float:
     """Return a trusted finite real scalar without invoking caller protocols."""
     if type(value) not in _TRUSTED_REAL_SCALAR_TYPES:
         raise ValueError(f"{name} must be a finite real number")
-    marshaled = float(value)
+    try:
+        marshaled = float(value)
+    except OverflowError:
+        raise ValueError(f"{name} must be a finite real number") from None
     if not math.isfinite(marshaled):
         raise ValueError(f"{name} must be a finite real number")
     return marshaled

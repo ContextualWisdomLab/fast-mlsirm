@@ -75,6 +75,13 @@ def test_utility_rejects_boolean_and_nonfinite_controls(call, value) -> None:
         call(value)
 
 
+@pytest.mark.parametrize("call", _UTILITY_CONTROL_CALLS)
+def test_utility_rejects_unrepresentable_builtin_integers(call) -> None:
+    """Exact huge integers must become stable package-owned validation errors."""
+    with pytest.raises(ValueError, match="must be a finite real number"):
+        call(10**400)
+
+
 def test_numpy_real_scalars_preserve_native_results() -> None:
     """Trusted NumPy real scalars produce the same Rust-owned results as floats."""
     py_utility = selection_utility(10.0, 2.0, 0.4, 0.5, 1.0, 2.0)
