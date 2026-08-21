@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from fast_mlsirm.config import MAX_MAX_ITER, MAX_XI_POINTS
 from fast_mlsirm.twopl import fit_2pl
 
 
@@ -108,6 +109,50 @@ def test_fit_2pl_rejects_controls_before_callbacks_or_data(
         fit_2pl(responses, **{name: value})
 
     assert value.calls == []
+    assert responses.calls == []
+    assert core_calls == []
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"q": 13}, "q must be one of"),
+        ({"max_iter": 0}, "max_iter must be in"),
+        ({"max_iter": MAX_MAX_ITER + 1}, "max_iter must be in"),
+        ({"tol": 0.0}, "tol must be finite and > 0"),
+        ({"tol": float("nan")}, "tol must be finite and > 0"),
+        ({"tol": float("inf")}, "tol must be finite and > 0"),
+        ({"estimate_corr": 1}, "estimate_corr must be a boolean"),
+        ({"xi_seed": -1}, "xi_seed must be in"),
+        ({"xi_seed": 2**64}, "xi_seed must be in"),
+        ({"node_rule": "qmc", "xi_points": 0}, "xi_points must be in"),
+        (
+            {"node_rule": "mc", "xi_points": MAX_XI_POINTS + 1},
+            "xi_points must be in",
+        ),
+    ],
+)
+def test_fit_2pl_rejects_control_boundaries_before_data(
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    """Domain failures remain pre-data and pre-native, not only type failures."""
+
+    responses = _ExplosiveResponses()
+    core_calls: list[str] = []
+
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: core_calls.append("core") or None,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        fit_2pl(responses, **kwargs)
+
     assert responses.calls == []
     assert core_calls == []
 
