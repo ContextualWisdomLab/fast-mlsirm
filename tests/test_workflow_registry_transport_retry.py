@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
 import pytest
 
 import scripts.audit_workflow_registry as audit
+
+
+def test_parse_args_accepts_repository_and_output_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Parse the two required CLI inputs used by the read-only audit."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["audit_workflow_registry", "--repo", "owner/repo", "--out", "report.json"],
+    )
+
+    args = audit._parse_args()
+
+    assert args.repo == "owner/repo"
+    assert str(args.out) == "report.json"
 
 
 @pytest.mark.parametrize("status", [403, 404, 429, 500, 502, 503, 504])

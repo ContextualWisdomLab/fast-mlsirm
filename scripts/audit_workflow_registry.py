@@ -438,6 +438,7 @@ def audit_workflow_registry(
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse the required repository slug and evidence output path."""
     parser = argparse.ArgumentParser(
         description="Audit GitHub Actions registry drift against protected default branch."
     )
