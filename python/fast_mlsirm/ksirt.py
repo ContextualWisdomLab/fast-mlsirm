@@ -10,6 +10,23 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_TRUSTED_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
+
+
 @dataclass
 class KsirtResult:
     """Kernel-smoothed option characteristic curves.
@@ -29,6 +46,51 @@ class KsirtResult:
     occ: list[np.ndarray]
     expected: list[np.ndarray]
     expected_total: np.ndarray
+
+
+def _kernel_control(value: object) -> str:
+    """Return a trusted KSIRT kernel name without caller-owned callbacks."""
+    value_type = type(value)
+    if value_type is str:
+        normalized = value
+    elif value_type is np.str_:
+        normalized = str(value)
+    else:
+        raise ValueError("kernel must be gaussian, quadratic, or uniform")
+    if normalized not in _KSIRT_KERNELS:
+        raise ValueError("kernel must be gaussian, quadratic, or uniform")
+    return normalized
+
+
+def _nevalpoints_control(value: object) -> int:
+    """Return a bounded evaluation-grid size without implicit coercion."""
+    value_type = type(value)
+    if value_type is int:
+        parsed = value
+    elif any(value_type is trusted for trusted in _TRUSTED_NUMPY_INTEGER_TYPES):
+        parsed = int(value)
+    else:
+        raise ValueError("nevalpoints must be an integer")
+    if parsed < 2:
+        raise ValueError("nevalpoints must be at least 2")
+    if parsed > 100_000:
+        # trust boundary: nevalpoints drives Rust-side allocations
+        raise ValueError("nevalpoints must be at most 100000")
+    return parsed
+
+
+def _real_float_array(value: object, name: str) -> np.ndarray:
+    """Materialize one array without silently projecting complex evidence."""
+    try:
+        raw = np.asarray(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+    if np.iscomplexobj(raw):
+        raise ValueError(f"{name} must be real-valued")
+    try:
+        return np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be numeric and convertible to float64") from None
 
 
 def ksirt_analysis(
@@ -59,7 +121,9 @@ def ksirt_analysis(
     numeric responses; each column's distinct values form that item's
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
-    item.
+    item. Semantic controls are normalized before caller array materialization
+    or compiled-core discovery, and complex-valued response/bandwidth evidence
+    is rejected before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
@@ -71,22 +135,10 @@ def ksirt_analysis(
             611-630. https://doi.org/10.1007/BF02294494 (as cited in Mazza
             et al., 2014)
     """
-    from .fitstats import _core_module
+    kernel_value = _kernel_control(kernel)
+    nevalpoints_value = _nevalpoints_control(nevalpoints)
 
-    core = _core_module()
-    if core is None or not hasattr(core, "ksirt_occ"):
-        raise RuntimeError("ksirt_analysis requires the compiled Rust core")
-
-    if kernel not in ("gaussian", "quadratic", "uniform"):
-        raise ValueError("kernel must be gaussian, quadratic, or uniform")
-    nevalpoints = int(nevalpoints)
-    if nevalpoints < 2:
-        raise ValueError("nevalpoints must be at least 2")
-    if nevalpoints > 100_000:
-        # trust boundary: nevalpoints drives Rust-side allocations
-        raise ValueError("nevalpoints must be at most 100000")
-
-    y = np.asarray(responses, dtype=np.float64)
+    y = _real_float_array(responses, "responses")
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -97,15 +149,26 @@ def ksirt_analysis(
 
     bw = None
     if bandwidth is not None:
-        bw_arr = np.asarray(bandwidth, dtype=np.float64).reshape(-1)
+        bw_arr = _real_float_array(bandwidth, "bandwidth").reshape(-1)
         if bw_arr.shape[0] != n_items:
             raise ValueError("bandwidth must supply one value per item")
         if not np.all(np.isfinite(bw_arr)) or np.any(bw_arr <= 0.0):
             raise ValueError("bandwidths must be finite and positive")
         bw = [float(v) for v in bw_arr]
 
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "ksirt_occ"):
+        raise RuntimeError("ksirt_analysis requires the compiled Rust core")
+
     res = core.ksirt_occ(
-        y.reshape(-1), int(n_persons), int(n_items), kernel, nevalpoints, bw
+        y.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        kernel_value,
+        nevalpoints_value,
+        bw,
     )
     grid = np.asarray(res["grid"], dtype=np.float64)
     q = grid.shape[0]
