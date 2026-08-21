@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import pytest
 
 from fast_mlsirm._multilevel_core_loader import multilevel_core
+from fast_mlsirm.multilevel import estimation as estimation_module
 from fast_mlsirm.multilevel import (
     LongitudinalStateKind,
     build_longitudinal_design,
@@ -57,6 +60,16 @@ def _design(n_persons: int, n_occasions: int, irregular: bool = False):
     )
 
 
+class _OversizedItemSequence(Sequence[float]):
+    """Expose an oversized length without allowing item iteration."""
+
+    def __getitem__(self, index: int) -> float:
+        raise AssertionError(f"item sequence was materialized at index {index}")
+
+    def __len__(self) -> int:
+        return 4_097
+
+
 def test_public_fit_recovers_states_across_seeds_and_is_worker_invariant() -> None:
     """Multi-seed recovery stays inside honest MAP RMSE/coverage bounds."""
     design = _design(8, 3, irregular=True)
@@ -93,7 +106,9 @@ def test_public_fit_recovers_states_across_seeds_and_is_worker_invariant() -> No
         np.testing.assert_allclose(result["state"], single["state"], atol=1e-8)
         assert result["estimand_scope"] == "joint_map_hierarchical_ctar_rasch"
         assert result["transition_kind"] == "continuous_time_ar1_ou"
-        assert result["interval_kind"] == "wald_measurement_observed_information"
+        assert result["interval_kind"] == (
+            "wald_conditional_hyperparameter_observed_information"
+        )
         assert result["engine"] == "rust_cpu_multithreaded"
         assert result["population_random_effects_estimated"] is True
         assert result["ar_coefficient_estimated"] is True
@@ -244,6 +259,11 @@ def test_simulate_and_fit_reject_invalid_generating_controls() -> None:
         )
     with pytest.raises(ValueError, match="sum to zero"):
         simulate_hierarchical_longitudinal_irt(design, item_intercepts=[0.1, 0.2])
+    for decay_rate in (float("nan"), 0.0, -0.1):
+        with pytest.raises(ValueError, match="decay_rate"):
+            simulate_hierarchical_longitudinal_irt(
+                _design(1, 1), item_intercepts=[-0.2, 0.2], decay_rate=decay_rate
+            )
     with pytest.raises(ValueError, match="non-negative"):
         simulate_hierarchical_longitudinal_irt(
             design, item_intercepts=[-0.2, 0.2], seed=-1
@@ -276,11 +296,31 @@ def test_simulator_rejects_unrepresentable_controls(name: str, value: object) ->
 def test_raw_binding_bounds_hierarchical_axes() -> None:
     """The raw extension bounds occasion and item axes before native work."""
     core = multilevel_core()
+    with pytest.raises(ValueError, match="row_offsets exceeds"):
+        core.fit_hierarchical_ctar_rasch(
+            np.zeros(100_002, dtype=np.uint64),
+            np.array([0], dtype=np.int64),
+            np.zeros((1, 2), dtype=np.float64),
+            1,
+            1,
+            1e-4,
+            1e-3,
+        )
     with pytest.raises(ValueError, match="occasion axis exceeds"):
         core.fit_hierarchical_ctar_rasch(
             np.array([0, 1], dtype=np.uint64),
             np.array([0], dtype=np.int64),
             np.zeros((100_001, 2), dtype=np.float64),
+            1,
+            1,
+            1e-4,
+            1e-3,
+        )
+    with pytest.raises(ValueError, match="time offsets exceed"):
+        core.fit_hierarchical_ctar_rasch(
+            np.array([0, 1], dtype=np.uint64),
+            np.zeros(100_001, dtype=np.int64),
+            np.zeros((1, 2), dtype=np.float64),
             1,
             1,
             1e-4,
@@ -306,6 +346,16 @@ def test_raw_binding_bounds_hierarchical_axes() -> None:
             0.4,
             1,
         )
+    with pytest.raises(ValueError, match="row_offsets exceeds"):
+        core.simulate_hierarchical_ctar_rasch(
+            np.zeros(100_002, dtype=np.uint64),
+            np.array([0], dtype=np.int64),
+            np.array([-0.2, 0.2], dtype=np.float64),
+            0.0,
+            0.5,
+            0.4,
+            1,
+        )
     with pytest.raises(ValueError, match="time offsets exceed"):
         core.simulate_hierarchical_ctar_rasch(
             np.array([0, 100_001], dtype=np.uint64),
@@ -315,4 +365,20 @@ def test_raw_binding_bounds_hierarchical_axes() -> None:
             0.5,
             0.4,
             1,
+        )
+
+
+def test_python_wrapper_bounds_before_copying_or_materializing() -> None:
+    """Python wrappers enforce native dimensions before allocation or iteration."""
+    with pytest.raises(ValueError, match="occasion axis exceeds"):
+        estimation_module._validate_binary_response_matrix(
+            np.empty((100_001, 2), dtype=np.float64), 100_001
+        )
+    with pytest.raises(ValueError, match="item axis exceeds"):
+        estimation_module._validate_binary_response_matrix(
+            np.empty((1, 4_097), dtype=np.float64), 1
+        )
+    with pytest.raises(ValueError, match="item_intercepts exceeds"):
+        simulate_hierarchical_longitudinal_irt(
+            _design(1, 1), item_intercepts=_OversizedItemSequence()
         )

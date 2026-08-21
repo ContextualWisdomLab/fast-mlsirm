@@ -44,6 +44,8 @@ _NUMPY_REAL_SCALAR_TYPES = _NUMPY_INTEGER_SCALAR_TYPES + (
     np.longdouble,
 )
 _MAX_NATIVE_INTEGER = int(np.iinfo(np.uintp).max)
+_MAX_HIERARCHICAL_OCCASIONS = 100_000
+_MAX_HIERARCHICAL_ITEMS = 4_096
 
 
 def _trusted_nonnegative_integer(value: object, name: str) -> int:
@@ -225,7 +227,13 @@ def _observed_value(values: Mapping[str, float], occasion_id: str) -> float:
         raw, (int, float, np.integer, np.floating)
     ):
         raise ValueError(f"values[{occasion_id!r}] must be a real number")
-    return float(raw)
+    try:
+        normalized = float(raw)
+    except OverflowError:
+        raise ValueError(f"values[{occasion_id!r}] must be finite and representable") from None
+    if np.isinf(normalized):
+        raise ValueError(f"values[{occasion_id!r}] must be finite or NaN")
+    return normalized
 
 
 def fit_longitudinal_state(
@@ -270,8 +278,7 @@ def fit_longitudinal_state(
         ``LongitudinalDesign``, a caller observation cannot be read or
         converted safely, or the Rust-side state contract is invalid.
     """
-    if worker_count < 1:
-        raise ValueError("worker_count must be at least one")
+    worker_count = _trusted_positive_integer(worker_count, "worker_count")
     if type(design) is not LongitudinalDesign:
         raise ValueError("design must be an exact LongitudinalDesign")
     _ = design.design_fingerprint
@@ -340,13 +347,23 @@ def _validate_binary_response_matrix(
         raise ValueError("responses must be a two-dimensional occasion-by-item matrix")
     if responses.shape[0] != n_occasions:
         raise ValueError("responses rows must align with the sealed occasion order")
+    if responses.shape[0] > _MAX_HIERARCHICAL_OCCASIONS:
+        raise ValueError(
+            "responses occasion axis exceeds maximum supported length of "
+            f"{_MAX_HIERARCHICAL_OCCASIONS}"
+        )
     if responses.shape[1] < 2:
         raise ValueError("hierarchical CT-AR Rasch requires at least two items")
+    if responses.shape[1] > _MAX_HIERARCHICAL_ITEMS:
+        raise ValueError(
+            "responses item axis exceeds maximum supported length of "
+            f"{_MAX_HIERARCHICAL_ITEMS}"
+        )
     if responses.dtype == np.bool_ or np.issubdtype(responses.dtype, np.bool_):
         raise ValueError("responses must be 0, 1, or NaN rather than Boolean values")
     try:
         matrix = np.ascontiguousarray(responses, dtype=np.float64)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("responses could not be converted to float64 safely") from None
     finite = np.isfinite(matrix)
     invalid = finite & (matrix != 0.0) & (matrix != 1.0)
@@ -419,9 +436,10 @@ def fit_hierarchical_longitudinal_irt(
     Returns
     -------
     dict
-        Joint MAP states, Wald intervals, item intercepts, estimated
-        population mean/sd/decay, unit-day AR coefficient, counts, engine
-        identity, fingerprints, and normative estimand metadata.
+        Joint MAP states, conditional hyperparameter Wald intervals with fixed
+        item/state nuisance blocks, item intercepts, estimated population
+        mean/sd/decay, unit-day AR coefficient, counts, engine identity,
+        fingerprints, and normative estimand metadata.
 
     Raises
     ------
@@ -544,9 +562,23 @@ def simulate_hierarchical_longitudinal_irt(
         item_intercepts, (Sequence, np.ndarray)
     ):
         raise ValueError("item_intercepts must be a sequence of real numbers")
+    if isinstance(item_intercepts, np.ndarray):
+        if item_intercepts.ndim != 1:
+            raise ValueError("item_intercepts must contain at least two finite values")
+        item_count = item_intercepts.size
+    else:
+        try:
+            item_count = len(item_intercepts)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("item_intercepts could not be sized safely") from None
+    if item_count > _MAX_HIERARCHICAL_ITEMS:
+        raise ValueError(
+            "item_intercepts exceeds maximum supported length of "
+            f"{_MAX_HIERARCHICAL_ITEMS}"
+        )
     try:
         intercepts = np.asarray(list(item_intercepts), dtype=np.float64)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("item_intercepts could not be converted safely") from None
     if intercepts.ndim != 1 or intercepts.size < 2:
         raise ValueError("item_intercepts must contain at least two finite values")

@@ -20,3 +20,5 @@
   native dispatch so Python callers receive package-owned validation errors.
 - Enforced finite, identified sum-zero Rasch item intercepts in the simulator
   before generating recovery data.
+- Labeled hyperparameter intervals as conditional on fixed item/state nuisance
+  blocks and aligned CT-AR gradients with the active variance branch.

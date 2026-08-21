@@ -196,6 +196,8 @@ def test_state_fit_rejects_invalid_worker_count_and_foreign_design() -> None:
     design = _single_occasion_design()
     with pytest.raises(ValueError, match="worker_count"):
         fit_longitudinal_state(design, {}, worker_count=0)
+    with pytest.raises(ValueError, match="worker_count"):
+        fit_longitudinal_state(design, {}, worker_count=10**400)
 
     class ForeignDesign:
         """Represent an object that was not produced by the package factory."""
@@ -245,3 +247,13 @@ def test_state_fit_accepts_real_numeric_scalars(value: object) -> None:
     )
     np.testing.assert_allclose(result["intercepts"], [float(value)])
     assert result["observed_count"] == 1
+
+
+@pytest.mark.parametrize("value", [10**400, float("inf"), float("-inf")])
+def test_state_fit_rejects_unrepresentable_or_infinite_observations(value: object) -> None:
+    """Overflow and infinities cannot cross the longitudinal numeric boundary."""
+    with pytest.raises(ValueError, match="finite"):
+        fit_longitudinal_state(
+            _single_occasion_design(),
+            {"occasion_guard": value},  # type: ignore[dict-item]
+        )

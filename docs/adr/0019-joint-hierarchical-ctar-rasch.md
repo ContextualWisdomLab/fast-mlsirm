@@ -69,7 +69,7 @@ Normative metadata:
 
 - `estimand_scope = "joint_map_hierarchical_ctar_rasch"`
 - `transition_kind = "continuous_time_ar1_ou"`
-- `interval_kind = "wald_measurement_observed_information"`
+- `interval_kind = "wald_conditional_hyperparameter_observed_information"`
 - `engine = "rust_cpu_multithreaded"`
 - `population_random_effects_estimated = True`
 - `ar_coefficient_estimated = True`
@@ -81,9 +81,11 @@ State standard errors use the person-block measurement observed information
 only. The hierarchical prior regularizes the joint MAP point estimates; it is
 not treated as known truth when forming Wald state intervals.
 Hyperparameter standard errors use a 3×3 finite-difference Hessian on
-`(mu, log tau, log lambda)` plus the delta method for `tau` and `lambda`.
-Intervals are Wald 95% intervals. Identification flags are returned rather
-than invented when the Hessian is not usable.
+`(mu, log tau, log lambda)` plus the delta method for `tau` and `lambda`, while
+holding fitted item intercepts and latent states fixed. They are conditional
+observed-information Wald 95% intervals, not profile or marginal intervals.
+Identification flags are returned rather than invented when the Hessian is not
+usable.
 
 The `#976` OLS/AR entry point and its metadata remain unchanged.
 
@@ -121,7 +123,9 @@ The `#976` OLS/AR entry point and its metadata remain unchanged.
 ### Costs / risks
 
 - Joint MAP shrinks `tau` and person states toward `mu`.
-- Wald observed-information intervals are local and can be unidentified.
+- Conditional Wald observed-information intervals are local and can be
+  unidentified; profile intervals would require re-optimizing item and state
+  nuisance blocks for every hyperparameter perturbation.
 - Crossed / multiple-membership structure still requires a later joint model.
 
 ## Alternatives considered

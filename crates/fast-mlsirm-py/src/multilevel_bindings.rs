@@ -232,8 +232,20 @@ fn py_fit_hierarchical_ctar_rasch<'py>(
             "responses item axis exceeds maximum supported length of {MAX_HIERARCHICAL_ITEMS}"
         )));
     }
-    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
-    let time_offsets = time_offsets_milliseconds.as_slice()?.to_vec();
+    let row_offsets_view = row_offsets.as_slice()?;
+    if row_offsets_view.len() > MAX_ROW_OFFSETS {
+        return Err(PyValueError::new_err(format!(
+            "row_offsets exceeds maximum supported length of {MAX_ROW_OFFSETS}"
+        )));
+    }
+    let row_offsets = checked_usize_values(row_offsets_view, "row_offsets")?;
+    let time_offsets_view = time_offsets_milliseconds.as_slice()?;
+    if time_offsets_view.len() > MAX_HIERARCHICAL_OCCASIONS {
+        return Err(PyValueError::new_err(format!(
+            "time offsets exceed maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
+        )));
+    }
+    let time_offsets = time_offsets_view.to_vec();
     let responses = responses.as_slice()?.to_vec();
     let n_items = shape[1];
     let config = HierarchicalCtarRaschConfig {
@@ -328,7 +340,13 @@ fn py_simulate_hierarchical_ctar_rasch<'py>(
     }
     let item_intercepts = item_intercepts_view.to_vec();
     let n_items = item_intercepts.len();
-    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
+    let row_offsets_view = row_offsets.as_slice()?;
+    if row_offsets_view.len() > MAX_ROW_OFFSETS {
+        return Err(PyValueError::new_err(format!(
+            "row_offsets exceeds maximum supported length of {MAX_ROW_OFFSETS}"
+        )));
+    }
+    let row_offsets = checked_usize_values(row_offsets_view, "row_offsets")?;
     let time_offsets_view = time_offsets_milliseconds.as_slice()?;
     if time_offsets_view.len() > MAX_HIERARCHICAL_OCCASIONS {
         return Err(PyValueError::new_err(format!(

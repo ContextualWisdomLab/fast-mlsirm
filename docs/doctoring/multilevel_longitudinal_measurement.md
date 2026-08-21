@@ -77,7 +77,8 @@ The implementation:
 - fits the state layer with Rust-only arithmetic and deterministic respondent
   sharding, reporting independent OLS or caller-supplied AR estimand metadata;
 - fits a separate joint MAP hierarchical CT-AR Rasch slice with estimated
-  `(mu, tau, lambda)`, Wald observed-information intervals, and explicit
+  `(mu, tau, lambda)`, conditional hyperparameter observed-information Wald
+  intervals, and explicit
   exclusion of multiple-membership random effects and GPU parity;
 - reports state RMSE, observed/transition counts, and worker-count-invariant
   results;

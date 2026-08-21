@@ -57,7 +57,7 @@ const ITEM_MEAN_TOLERANCE: f64 = 1e-10;
 const WALD_Z: f64 = 1.959963984540054;
 const ESTIMAND_SCOPE: &str = "joint_map_hierarchical_ctar_rasch";
 const TRANSITION_KIND: &str = "continuous_time_ar1_ou";
-const INTERVAL_KIND: &str = "wald_measurement_observed_information";
+const INTERVAL_KIND: &str = "wald_conditional_hyperparameter_observed_information";
 const ENGINE: &str = "rust_cpu_multithreaded";
 
 /// Configuration for [`fit_hierarchical_ctar_rasch`].
@@ -106,13 +106,14 @@ pub struct HierarchicalCtarRaschFit {
     pub decay_rate: f64,
     /// Unit-day AR coefficient `exp(-decay_rate)`.
     pub unit_time_ar_coefficient: f64,
-    /// Standard errors for `[mean, sd, decay]` when identified.
+    /// Conditional observed-information standard errors for `[mean, sd, decay]`;
+    /// fitted item intercepts and latent states are held fixed.
     pub hyperparameter_se: [f64; 3],
-    /// Lower 95% Wald bounds for `[mean, sd, decay]`.
+    /// Lower 95% conditional Wald bounds for `[mean, sd, decay]`.
     pub hyperparameter_lower: [f64; 3],
-    /// Upper 95% Wald bounds for `[mean, sd, decay]`.
+    /// Upper 95% conditional Wald bounds for `[mean, sd, decay]`.
     pub hyperparameter_upper: [f64; 3],
-    /// Whether the hyperparameter observed Hessian produced finite SEs.
+    /// Whether the conditional hyperparameter observed Hessian produced finite SEs.
     pub hyperparameter_intervals_identified: bool,
     /// Whether every person-block state Hessian produced finite SEs.
     pub state_intervals_identified: bool,
@@ -149,21 +150,42 @@ pub fn ctar_phi(decay_rate: f64, delta_days: f64) -> Result<f64, String> {
 
 /// Stationary OU transition variance for an elapsed interval.
 pub fn ctar_variance(population_variance: f64, decay_rate: f64, delta_days: f64) -> Result<f64, String> {
+    Ok(ctar_variance_with_derivatives(population_variance, decay_rate, delta_days)?.0)
+}
+
+fn ctar_variance_with_derivatives(
+    population_variance: f64,
+    decay_rate: f64,
+    delta_days: f64,
+) -> Result<(f64, f64, f64), String> {
     if !population_variance.is_finite() || population_variance <= 0.0 {
         return Err("population variance must be finite and strictly positive".to_string());
     }
     let phi = ctar_phi(decay_rate, delta_days)?;
     let two_lambda_delta = 2.0 * decay_rate * delta_days;
-    let one_minus_phi2 = if two_lambda_delta < 1e-8 {
-        two_lambda_delta - 0.5 * two_lambda_delta * two_lambda_delta
+    let (one_minus_phi2, d_one_minus_phi2_d_log_decay) = if two_lambda_delta < 1e-8 {
+        (
+            two_lambda_delta - 0.5 * two_lambda_delta * two_lambda_delta,
+            two_lambda_delta - two_lambda_delta * two_lambda_delta,
+        )
     } else {
-        1.0 - phi * phi
+        (
+            1.0 - phi * phi,
+            two_lambda_delta * phi * phi,
+        )
     };
-    let variance = population_variance * one_minus_phi2;
-    if !variance.is_finite() || variance <= 0.0 {
+    let raw_variance = population_variance * one_minus_phi2;
+    if !raw_variance.is_finite() || raw_variance <= 0.0 {
         return Err("continuous-time transition variance is degenerate".to_string());
     }
-    Ok(variance.max(MIN_TRANSITION_VARIANCE))
+    if raw_variance <= MIN_TRANSITION_VARIANCE {
+        return Ok((MIN_TRANSITION_VARIANCE, 0.0, 0.0));
+    }
+    Ok((
+        raw_variance,
+        2.0 * raw_variance,
+        population_variance * d_one_minus_phi2_d_log_decay,
+    ))
 }
 
 /// Unit-day AR coefficient implied by a positive decay rate.
@@ -388,7 +410,8 @@ fn person_objective(
     for occasion in 1..state.len() {
         let delta = days_from_millis(times[occasion])? - days_from_millis(times[occasion - 1])?;
         let phi = ctar_phi(decay, delta)?;
-        let transition_variance = ctar_variance(variance, decay, delta)?;
+        let (transition_variance, d_var_d_log_sd, d_var_d_log_decay) =
+            ctar_variance_with_derivatives(variance, decay, delta)?;
         let mean = unpacked.mean + phi * (state[occasion - 1] - unpacked.mean);
         let resid = state[occasion] - mean;
         nll += 0.5 * resid * resid / transition_variance + 0.5 * transition_variance.ln();
@@ -400,10 +423,9 @@ fn person_objective(
         state_grad[occasion - 1] += d_nll_d_mean * phi;
         mean_grad += d_nll_d_mean * (1.0 - phi);
         let d_mean_d_phi = state[occasion - 1] - unpacked.mean;
-        let d_var_d_phi = -2.0 * phi * variance;
-        let d_nll_d_phi = d_nll_d_mean * d_mean_d_phi + d_nll_d_var * d_var_d_phi;
-        log_decay_grad += d_nll_d_phi * (-delta * phi * decay);
-        log_sd_grad += d_nll_d_var * (1.0 - phi * phi) * 2.0 * variance;
+        log_decay_grad += d_nll_d_mean * d_mean_d_phi * (-delta * phi * decay)
+            + d_nll_d_var * d_var_d_log_decay;
+        log_sd_grad += d_nll_d_var * d_var_d_log_sd;
         transition_count += 1;
     }
     if !nll.is_finite() {
@@ -978,6 +1000,9 @@ pub fn simulate_hierarchical_ctar_rasch(
     if !population_mean.is_finite() || !population_sd.is_finite() || population_sd <= 0.0 {
         return Err("simulator population parameters must be finite with positive sd".to_string());
     }
+    if !decay_rate.is_finite() || decay_rate <= 0.0 {
+        return Err("decay_rate must be finite and strictly positive".to_string());
+    }
     let n_occasions = time_offsets_milliseconds.len();
     let n_persons = validate_offsets(row_offsets, n_occasions)?;
     let mut rng = Lcg(seed | 1);
@@ -1137,6 +1162,75 @@ mod tests {
                     .nll
         ) / (2.0 * step);
         assert!((analytic.log_decay_grad - decay_numeric).abs() < 1e-5);
+    }
+
+    #[test]
+    fn active_transition_variance_gradients_match_series_and_floor() {
+        let responses = [1.0, 0.0, 0.0, 1.0];
+        for (log_sd, log_decay) in [
+            (0.0, (1e-3_f64).ln()),
+            (MIN_LOG_SD, MIN_LOG_DECAY),
+        ] {
+            let times = [0, 1];
+            let unpacked = Unpacked {
+                mean: 0.3,
+                log_sd,
+                log_decay,
+                items: vec![-0.1, 0.1],
+                state: vec![0.3, 0.3],
+            };
+            let analytic =
+                person_objective(&times, &responses, 2, &unpacked, &unpacked.state).unwrap();
+            let step = 1e-6;
+            let mut plus_sd = unpacked.clone();
+            plus_sd.log_sd += step;
+            let mut minus_sd = unpacked.clone();
+            minus_sd.log_sd -= step;
+            let sd_numeric = (person_objective(
+                &times,
+                &responses,
+                2,
+                &plus_sd,
+                &plus_sd.state,
+            )
+            .unwrap()
+            .nll
+                - person_objective(
+                    &times,
+                    &responses,
+                    2,
+                    &minus_sd,
+                    &minus_sd.state,
+                )
+                .unwrap()
+                .nll)
+                / (2.0 * step);
+            let mut plus_decay = unpacked.clone();
+            plus_decay.log_decay += step;
+            let mut minus_decay = unpacked.clone();
+            minus_decay.log_decay -= step;
+            let decay_numeric = (person_objective(
+                &times,
+                &responses,
+                2,
+                &plus_decay,
+                &plus_decay.state,
+            )
+            .unwrap()
+            .nll
+                - person_objective(
+                    &times,
+                    &responses,
+                    2,
+                    &minus_decay,
+                    &minus_decay.state,
+                )
+                .unwrap()
+                .nll)
+                / (2.0 * step);
+            assert!((analytic.log_sd_grad - sd_numeric).abs() < 1e-5, "{sd_numeric}");
+            assert!((analytic.log_decay_grad - decay_numeric).abs() < 1e-5, "{decay_numeric}");
+        }
     }
 
     #[test]
@@ -1320,7 +1414,24 @@ mod tests {
             HierarchicalCtarRaschConfig::default()
         )
         .unwrap_err()
-        .contains("at least one observed"));
+            .contains("at least one observed"));
+        let single_occasion_offsets = [0, 1];
+        let single_occasion_times = [0];
+        let single_occasion_items = [-0.1, 0.1];
+        for decay_rate in [f64::NAN, 0.0, -0.1] {
+            assert!(simulate_hierarchical_ctar_rasch(
+                &single_occasion_offsets,
+                &single_occasion_times,
+                2,
+                0.0,
+                0.5,
+                decay_rate,
+                &single_occasion_items,
+                1,
+            )
+            .unwrap_err()
+            .contains("decay_rate"));
+        }
         assert!(fit_hierarchical_ctar_rasch(
             &offsets,
             &times,
