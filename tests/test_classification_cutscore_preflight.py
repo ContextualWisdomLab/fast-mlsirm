@@ -54,6 +54,20 @@ def test_lee_rejects_untrusted_cut_before_core_and_without_callback(monkeypatch)
     assert _HostileFloat.calls == 0
 
 
+def test_rudner_rejects_non_iterable_cutscores_with_stable_value_error(
+    monkeypatch,
+) -> None:
+    """Malformed cut-score containers fail at the public validation boundary."""
+    monkeypatch.setattr(classification, "_core_or_raise", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match=r"cutscores entries must be finite real scalars"):
+        classification.rudner_classification(
+            np.array([0.0]),
+            np.array([1.0]),
+            None,  # type: ignore[arg-type]
+        )
+
+
 @pytest.mark.parametrize(
     "cut",
     [True, np.bool_(False), np.inf, np.float64(np.nan), 10**400],
@@ -71,6 +85,15 @@ def test_rudner_rejects_invalid_cut_identity_or_finiteness_before_core(
             np.array([1.0]),
             [cut],
         )
+
+
+def test_extended_precision_cut_outside_float_range_is_stable_value_error() -> None:
+    """Trusted NumPy reals outside float64 range retain the benign error contract."""
+    if np.finfo(np.longdouble).max <= np.finfo(np.float64).max:
+        pytest.skip("platform longdouble does not extend float64 range")
+
+    with pytest.raises(ValueError, match=r"cutscores entries must be finite real scalars"):
+        classification._normalize_cutscores([np.longdouble(np.finfo(np.longdouble).max)])
 
 
 def test_trusted_builtin_and_numpy_cut_scores_normalize_to_builtin_floats() -> None:
