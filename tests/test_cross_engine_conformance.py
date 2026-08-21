@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -15,6 +16,7 @@ from fast_mlsirm.cross_engine_conformance import (
     ConformanceExecutionStatus,
     ConformanceInventory,
     ConformanceLayer,
+    ConformanceRunProvenance,
 )
 
 _SHA_A = "a" * 64
@@ -105,6 +107,29 @@ def _capability(
     )
 
 
+def _run_provenance() -> ConformanceRunProvenance:
+    """Build one fully content-addressed run reproducibility record."""
+    return ConformanceRunProvenance(
+        harness_commit=_SOURCE_COMMIT,
+        environment_sha256=_SHA_C,
+        environment_kind="environment_lock",
+        operating_system="linux",
+        architecture="x86_64",
+        rng_algorithm="pcg64_dxsm",
+        rng_seeds=(17, 23),
+        mapping_schema_version="1.0.0",
+        mapping_sha256=_SHA_D,
+        model_configuration_sha256=_SHA_B,
+        convergence_controls_sha256=_SHA_C,
+        tolerance_sha256=_SHA_A,
+        tolerance_rationale="fixed-parameter double-precision comparison",
+        raw_output_sha256=_SHA_B,
+        normalized_output_sha256=_SHA_C,
+        license_classification="synthetic_or_open",
+        redistribution_status="redistributable",
+    )
+
+
 def test_inventory_is_deterministic_source_free_and_json_serializable() -> None:
     """Normalized capability order yields one content-addressed manifest."""
     first_capability = _capability(capability_id="rasch_probability")
@@ -117,15 +142,18 @@ def test_inventory_is_deterministic_source_free_and_json_serializable() -> None:
             ),
         ),
     )
+    provenance = _run_provenance()
     first = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=[first_capability, second_capability],
+        run_provenance=provenance,
     )
     second = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=(second_capability, first_capability),
+        run_provenance=provenance,
     )
 
     assert first == second
@@ -138,6 +166,88 @@ def test_inventory_is_deterministic_source_free_and_json_serializable() -> None:
     ]
     assert "raw_response" not in json.dumps(manifest)
     assert json.loads(json.dumps(manifest, ensure_ascii=False)) == manifest
+
+
+def test_inventory_preserves_run_level_reproducibility_metadata() -> None:
+    """The inventory binds runtime, control, hash, seed, and license metadata."""
+    inventory = ConformanceInventory(
+        package_version="0.8.0",
+        source_commit=_SOURCE_COMMIT,
+        capabilities=(_capability(),),
+        run_provenance=_run_provenance(),
+    )
+
+    assert inventory.to_manifest()["run_provenance"] == {
+        "architecture": "x86_64",
+        "convergence_controls_sha256": _SHA_C,
+        "environment_kind": "environment_lock",
+        "environment_sha256": _SHA_C,
+        "harness_commit": _SOURCE_COMMIT,
+        "license_classification": "synthetic_or_open",
+        "mapping_schema_version": "1.0.0",
+        "mapping_sha256": _SHA_D,
+        "model_configuration_sha256": _SHA_B,
+        "normalized_output_sha256": _SHA_C,
+        "operating_system": "linux",
+        "raw_output_sha256": _SHA_B,
+        "redistribution_status": "redistributable",
+        "rng_algorithm": "pcg64_dxsm",
+        "rng_seeds": [17, 23],
+        "tolerance_rationale": "fixed-parameter double-precision comparison",
+        "tolerance_sha256": _SHA_A,
+    }
+
+
+def test_run_provenance_rejects_malformed_controls_and_nested_records() -> None:
+    """Run provenance rejects malformed identities before manifest hashing."""
+    provenance = _run_provenance()
+    with pytest.raises(ValueError, match="Git SHA"):
+        replace(provenance, harness_commit="bad")
+    with pytest.raises(ValueError, match="rng_seeds must be a list or tuple"):
+        replace(provenance, rng_seeds=object())
+    with pytest.raises(ValueError, match="at most 128"):
+        replace(provenance, rng_seeds=tuple(range(129)))
+    with pytest.raises(ValueError, match="non-negative built-in integers"):
+        replace(provenance, rng_seeds=(True,))
+    with pytest.raises(ValueError, match="canonical semantic version"):
+        replace(provenance, mapping_schema_version="v1")
+    with pytest.raises(ValueError, match="tolerance_rationale must not be empty"):
+        replace(provenance, tolerance_rationale=" ")
+    with pytest.raises(ValueError, match="raw_output_sha256 must be"):
+        replace(provenance, raw_output_sha256="bad")
+    with pytest.raises(ValueError, match="license_classification must use"):
+        replace(provenance, license_classification="open")
+    with pytest.raises(ValueError, match="run_provenance must be"):
+        ConformanceInventory(
+            package_version="0.8.0",
+            source_commit=_SOURCE_COMMIT,
+            capabilities=(_capability(),),
+            run_provenance=object(),  # type: ignore[arg-type]
+        )
+
+
+def test_run_provenance_record_rejects_subclasses_before_field_access() -> None:
+    """Nested run-provenance subclasses cannot bypass exact-record admission."""
+    provenance = _run_provenance()
+
+    class HostileProvenance(ConformanceRunProvenance):
+        """Subclass used to verify exact run-provenance admission."""
+
+    with pytest.raises(ValueError, match="exact package record"):
+        HostileProvenance(
+            **{
+                field: getattr(provenance, field)
+                for field in provenance.__dataclass_fields__
+            }
+        )
+    hostile = object.__new__(HostileProvenance)
+    with pytest.raises(ValueError, match="run_provenance must be"):
+        ConformanceInventory(
+            package_version="0.8.0",
+            source_commit=_SOURCE_COMMIT,
+            capabilities=(_capability(),),
+            run_provenance=hostile,  # type: ignore[arg-type]
+        )
 
 
 def test_not_executed_remains_distinct_from_passed() -> None:
@@ -276,10 +386,12 @@ def test_mutated_nested_engine_is_revalidated_before_text_callbacks() -> None:
 
 def test_fingerprint_changes_when_evidence_verdict_changes() -> None:
     """Execution verdicts participate in immutable inventory provenance."""
+    provenance = _run_provenance()
     passed = ConformanceInventory(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=(_capability(),),
+        run_provenance=provenance,
     )
     failed = ConformanceInventory(
         package_version="0.8.0",
@@ -293,6 +405,7 @@ def test_fingerprint_changes_when_evidence_verdict_changes() -> None:
                 ),
             ),
         ),
+        run_provenance=provenance,
     )
 
     assert passed.inventory_fingerprint != failed.inventory_fingerprint

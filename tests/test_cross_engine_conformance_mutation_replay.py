@@ -8,10 +8,13 @@ from fast_mlsirm.cross_engine_conformance import (
     ComparisonEngine,
     ConformanceCapability,
     ConformanceCoverageStatus,
+    ConformanceEnvironmentKind,
     ConformanceEvidence,
     ConformanceExecutionStatus,
     ConformanceInventory,
     ConformanceLayer,
+    ConformanceRedistributionStatus,
+    ConformanceRunProvenance,
 )
 
 _SHA_A = "a" * 64
@@ -83,6 +86,29 @@ def _capability() -> ConformanceCapability:
     )
 
 
+def _run_provenance() -> ConformanceRunProvenance:
+    """Build execution provenance required by the executed fixture evidence."""
+    return ConformanceRunProvenance(
+        harness_commit=_SOURCE_COMMIT,
+        environment_sha256=_SHA_C,
+        environment_kind=ConformanceEnvironmentKind.ENVIRONMENT_LOCK,
+        operating_system="linux",
+        architecture="x86_64",
+        rng_algorithm="pcg64_dxsm",
+        rng_seeds=(17,),
+        mapping_schema_version="1.0.0",
+        mapping_sha256=_SHA_D,
+        model_configuration_sha256=_SHA_A,
+        convergence_controls_sha256=_SHA_B,
+        tolerance_sha256=_SHA_C,
+        tolerance_rationale="fixed-parameter mutation replay",
+        raw_output_sha256=_SHA_A,
+        normalized_output_sha256=_SHA_B,
+        license_classification="synthetic_or_open",
+        redistribution_status=ConformanceRedistributionStatus.METADATA_ONLY,
+    )
+
+
 def test_engine_manifest_revalidates_exact_record_after_post_init_mutation() -> None:
     """A forged exact engine cannot emit a noncanonical identity after creation."""
     engine = _engine()
@@ -122,6 +148,7 @@ def test_inventory_manifest_rejects_mutated_container_before_iteration_callback(
         package_version="0.8.0",
         source_commit=_SOURCE_COMMIT,
         capabilities=(_capability(),),
+        run_provenance=_run_provenance(),
     )
     _HostileTuple.callbacks = 0
     object.__setattr__(inventory, "capabilities", _HostileTuple((_capability(),)))
