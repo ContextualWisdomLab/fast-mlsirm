@@ -27,6 +27,31 @@ def test_bounded_capture_rejects_stdout_overflow() -> None:
         )
 
 
+def test_bounded_capture_rejects_missing_capture_pipes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pipe setup failures remain explicit when Python assertions are optimized away."""
+    class MissingPipes:
+        stdout = None
+        stderr = None
+
+        def kill(self) -> None:
+            """Record the required cleanup operation."""
+
+        def wait(self) -> None:
+            """Record the required reap operation."""
+
+    monkeypatch.setattr(governance.subprocess, "Popen", lambda *args, **kwargs: MissingPipes())
+
+    from scripts._bounded_subprocess import run_bounded_capture
+
+    with pytest.raises(RuntimeError, match="requires stdout and stderr pipes"):
+        run_bounded_capture(
+            [sys.executable, "-c", ""],
+            timeout_seconds=5,
+            max_stdout_bytes=64,
+            max_stderr_bytes=64,
+        )
+
+
 def test_bounded_capture_rejects_stderr_overflow() -> None:
     """The shared runner must cap stderr independently from stdout."""
     from scripts._bounded_subprocess import run_bounded_capture

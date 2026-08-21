@@ -119,8 +119,10 @@ def run_bounded_capture(
         text=False,
         start_new_session=os.name == "posix",
     )
-    assert process.stdout is not None
-    assert process.stderr is not None
+    if process.stdout is None or process.stderr is None:
+        process.kill()
+        process.wait()
+        raise RuntimeError("bounded capture requires stdout and stderr pipes")
 
     stdout = bytearray()
     stderr = bytearray()
