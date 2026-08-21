@@ -242,6 +242,8 @@ def test_simulate_and_fit_reject_invalid_generating_controls() -> None:
         simulate_hierarchical_longitudinal_irt(
             design, item_intercepts=[0.1, float("nan")]
         )
+    with pytest.raises(ValueError, match="sum to zero"):
+        simulate_hierarchical_longitudinal_irt(design, item_intercepts=[0.1, 0.2])
     with pytest.raises(ValueError, match="non-negative"):
         simulate_hierarchical_longitudinal_irt(
             design, item_intercepts=[-0.2, 0.2], seed=-1
@@ -249,6 +251,25 @@ def test_simulate_and_fit_reject_invalid_generating_controls() -> None:
     with pytest.raises(ValueError, match="converted safely"):
         simulate_hierarchical_longitudinal_irt(
             design, item_intercepts=[object(), object()]  # type: ignore[list-item]
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("population_mean", 10**400),
+        ("population_sd", 10**400),
+        ("decay_rate", 10**400),
+        ("seed", 10**400),
+    ],
+)
+def test_simulator_rejects_unrepresentable_controls(name: str, value: object) -> None:
+    """Simulator controls fail with package errors before native dispatch."""
+    with pytest.raises(ValueError, match=name):
+        simulate_hierarchical_longitudinal_irt(
+            _design(1, 2),
+            item_intercepts=[-0.2, 0.2],
+            **{name: value},
         )
 
 

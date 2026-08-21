@@ -16,3 +16,7 @@
 - Added multi-seed true-parameter recovery, irregular-time, missing-response,
   worker-determinism, and fail-closed marshalling tests with APA 7 ADR and
   doctoring.
+- Normalized oversized integer and non-finite real execution controls before
+  native dispatch so Python callers receive package-owned validation errors.
+- Enforced finite, identified sum-zero Rasch item intercepts in the simulator
+  before generating recovery data.

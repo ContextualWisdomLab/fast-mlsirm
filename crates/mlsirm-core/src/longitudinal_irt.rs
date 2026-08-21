@@ -53,6 +53,7 @@ const MIN_LOG_SD: f64 = -4.0;
 const MAX_LOG_SD: f64 = 2.5;
 const MIN_LOG_DECAY: f64 = -5.0;
 const MAX_LOG_DECAY: f64 = 2.0;
+const ITEM_MEAN_TOLERANCE: f64 = 1e-10;
 const WALD_Z: f64 = 1.959963984540054;
 const ESTIMAND_SCOPE: &str = "joint_map_hierarchical_ctar_rasch";
 const TRANSITION_KIND: &str = "continuous_time_ar1_ou";
@@ -951,6 +952,17 @@ pub fn simulate_hierarchical_ctar_rasch(
     if item_intercepts.len() != n_items {
         return Err("item_intercepts length must equal n_items".to_string());
     }
+    if item_intercepts.iter().any(|value| !value.is_finite()) {
+        return Err("item_intercepts must be finite".to_string());
+    }
+    let item_mean = item_intercepts.iter().sum::<f64>() / n_items as f64;
+    let item_scale = item_intercepts
+        .iter()
+        .map(|value| value.abs())
+        .fold(1.0_f64, f64::max);
+    if !item_mean.is_finite() || item_mean.abs() > ITEM_MEAN_TOLERANCE * item_scale {
+        return Err("item_intercepts must sum to zero".to_string());
+    }
     if !population_mean.is_finite() || !population_sd.is_finite() || population_sd <= 0.0 {
         return Err("simulator population parameters must be finite with positive sd".to_string());
     }
@@ -1515,6 +1527,34 @@ mod tests {
             simulate_hierarchical_ctar_rasch(&[0, 1], &[0], 2, 0.0, 0.5, 0.4, &[0.0], 1)
                 .unwrap_err()
                 .contains("item_intercepts")
+        );
+        assert!(
+            simulate_hierarchical_ctar_rasch(
+                &[0, 1],
+                &[0],
+                2,
+                0.0,
+                0.5,
+                0.4,
+                &[0.1, 0.2],
+                1,
+            )
+                .unwrap_err()
+                .contains("sum to zero")
+        );
+        assert!(
+            simulate_hierarchical_ctar_rasch(
+                &[0, 1],
+                &[0],
+                2,
+                0.0,
+                0.5,
+                0.4,
+                &[f64::NAN, 0.0],
+                1
+            )
+            .unwrap_err()
+            .contains("finite")
         );
         assert!(
             simulate_hierarchical_ctar_rasch(&[0, 1], &[0], 2, 0.0, 0.0, 0.4, &[0.0, 0.0], 1)

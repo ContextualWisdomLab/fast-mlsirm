@@ -43,10 +43,11 @@ _NUMPY_REAL_SCALAR_TYPES = _NUMPY_INTEGER_SCALAR_TYPES + (
     np.float64,
     np.longdouble,
 )
+_MAX_NATIVE_INTEGER = int(np.iinfo(np.uintp).max)
 
 
-def _trusted_positive_integer(value: object, name: str) -> int:
-    """Return one positive execution integer without caller coercion callbacks."""
+def _trusted_nonnegative_integer(value: object, name: str) -> int:
+    """Return one native-width non-negative integer without caller callbacks."""
     value_type = type(value)
     if value_type is int:
         normalized = value
@@ -54,21 +55,39 @@ def _trusted_positive_integer(value: object, name: str) -> int:
         normalized = int(value)
     else:
         raise ValueError(f"{name} must be an integer")
+    if normalized < 0 or normalized > _MAX_NATIVE_INTEGER:
+        raise ValueError(f"{name} must be a non-negative native integer")
+    return normalized
+
+
+def _trusted_positive_integer(value: object, name: str) -> int:
+    """Return one positive execution integer without caller coercion callbacks."""
+    normalized = _trusted_nonnegative_integer(value, name)
     if normalized < 1:
         raise ValueError(f"{name} must be at least one")
     return normalized
 
 
+def _trusted_finite_real(value: object, name: str) -> float:
+    """Return one finite execution real without caller coercion callbacks."""
+    value_type = type(value)
+    if value_type is not int and value_type is not float and not any(
+        value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES
+    ):
+        raise ValueError(f"{name} must be a real number")
+    try:
+        normalized = float(value)
+    except OverflowError:
+        raise ValueError(f"{name} must be finite and representable") from None
+    if not np.isfinite(normalized):
+        raise ValueError(f"{name} must be finite")
+    return normalized
+
+
 def _trusted_positive_real(value: object, name: str) -> float:
     """Return one positive finite execution real without caller coercion callbacks."""
-    value_type = type(value)
-    if value_type is int or value_type is float:
-        normalized = float(value)
-    elif any(value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES):
-        normalized = float(value)
-    else:
-        raise ValueError(f"{name} must be a real number")
-    if not np.isfinite(normalized) or normalized <= 0.0:
+    normalized = _trusted_finite_real(value, name)
+    if normalized <= 0.0:
         raise ValueError(f"{name} must be finite and strictly positive")
     return normalized
 
@@ -496,7 +515,8 @@ def simulate_hierarchical_longitudinal_irt(
     design:
         A package-built ``LongitudinalDesign`` supplying occasion times.
     item_intercepts:
-        Generating Rasch item intercepts.
+        Generating finite Rasch item intercepts whose mean is zero for the
+        identified Rasch scale.
     population_mean:
         Generating population mean of the latent-state process.
     population_sd:
@@ -532,8 +552,14 @@ def simulate_hierarchical_longitudinal_irt(
         raise ValueError("item_intercepts must contain at least two finite values")
     if not np.all(np.isfinite(intercepts)):
         raise ValueError("item_intercepts must be finite")
-    if seed < 0:
-        raise ValueError("seed must be a non-negative integer")
+    item_mean = float(np.mean(intercepts, dtype=np.float64))
+    item_scale = max(1.0, float(np.max(np.abs(intercepts))))
+    if not np.isfinite(item_mean) or abs(item_mean) > 1e-10 * item_scale:
+        raise ValueError("item_intercepts must sum to zero")
+    population_mean = _trusted_finite_real(population_mean, "population_mean")
+    population_sd = _trusted_positive_real(population_sd, "population_sd")
+    decay_rate = _trusted_positive_real(decay_rate, "decay_rate")
+    seed = _trusted_nonnegative_integer(seed, "seed")
     row_offsets, ordered_occasions, time_offsets = _ordered_longitudinal_rows(design)
     core = multilevel_core()
     result = core.simulate_hierarchical_ctar_rasch(

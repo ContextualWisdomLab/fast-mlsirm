@@ -43,6 +43,17 @@ def test_integer_execution_controls_fail_closed_before_callbacks(name: str) -> N
     assert value.calls == 0
 
 
+@pytest.mark.parametrize("name", ["worker_count", "max_iter"])
+def test_integer_execution_controls_reject_unrepresentable_values(name: str) -> None:
+    """Huge built-in integers must not leak native conversion OverflowError."""
+    with pytest.raises(ValueError, match=name):
+        fit_hierarchical_longitudinal_irt(
+            object(),
+            np.zeros((1, 2), dtype=np.float64),
+            **{name: 10**400},
+        )
+
+
 @pytest.mark.parametrize("name", ["tolerance", "hessian_step"])
 def test_real_execution_controls_fail_closed_before_callbacks(name: str) -> None:
     """Real controls reject alien conversion protocols with package errors."""
@@ -54,6 +65,17 @@ def test_real_execution_controls_fail_closed_before_callbacks(name: str) -> None
             **{name: value},
         )
     assert value.calls == 0
+
+
+@pytest.mark.parametrize("name", ["tolerance", "hessian_step"])
+def test_real_execution_controls_reject_unrepresentable_values(name: str) -> None:
+    """Huge built-in integers must become package-owned real-control errors."""
+    with pytest.raises(ValueError, match=name):
+        fit_hierarchical_longitudinal_irt(
+            object(),
+            np.zeros((1, 2), dtype=np.float64),
+            **{name: 10**400},
+        )
 
 
 @pytest.mark.parametrize(
