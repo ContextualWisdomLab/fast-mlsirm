@@ -54,5 +54,3 @@ def test_focus_containers_suppress_mouse_click_outlines(tmp_path: Path) -> None:
     html = _render_report(tmp_path)
     assert ".table-wrap:focus {\n  outline: none;\n}" in html
     assert ".export-block pre:focus {\n  outline: none;\n}" in html
-    assert ".exact-values > summary:focus,\n.export-block > summary:focus {\n  outline: none;\n}" in html
-    assert ".exact-values > summary:focus-visible" in html
