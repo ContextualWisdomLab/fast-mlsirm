@@ -149,15 +149,24 @@ def observed_information(
     return np.asarray(flat, dtype=np.float64).reshape(n, n)
 
 
+def _real_square_matrix(value: np.ndarray, name: str) -> np.ndarray:
+    """Validate a real square matrix before lossless float64 marshalling."""
+    raw = np.asarray(value)
+    if np.iscomplexobj(raw):
+        raise ValueError(f"{name} must be real-valued")
+    matrix = np.ascontiguousarray(np.asarray(raw, dtype=np.float64))
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError(f"{name} must be a square matrix")
+    return matrix
+
+
 def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float | bool | np.ndarray]:
     """Check whether the Hessian/information matrix is positive definite.
 
     Eigenvalue diagnostics are owned by the compiled Rust core
     (``second_order_test``); Python validates shape and marshals the matrix.
     """
-    matrix = np.ascontiguousarray(np.asarray(hessian, dtype=np.float64))
-    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-        raise ValueError("hessian must be a square matrix")
+    matrix = _real_square_matrix(hessian, "hessian")
     from . import _core as core
 
     result = core.second_order_test(matrix, float(tol))
@@ -178,9 +187,7 @@ def vcov_from_hessian(hessian: np.ndarray, rcond: float = 1e-10) -> np.ndarray:
     """
     from . import _core  # type: ignore
 
-    matrix = np.ascontiguousarray(np.asarray(hessian, dtype=np.float64))
-    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-        raise ValueError("hessian must be a square matrix")
+    matrix = _real_square_matrix(hessian, "hessian")
     n = int(matrix.shape[0])
     flat = _core.vcov_from_hessian(matrix, float(rcond))
     vcov = np.asarray(flat, dtype=np.float64).reshape(n, n)
@@ -196,9 +203,7 @@ def standard_errors_from_vcov(vcov: np.ndarray) -> np.ndarray:
     """
     from . import _core  # type: ignore
 
-    matrix = np.ascontiguousarray(np.asarray(vcov, dtype=np.float64))
-    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-        raise ValueError("vcov must be a square matrix")
+    matrix = _real_square_matrix(vcov, "vcov")
     return np.asarray(
         _core.standard_errors_from_vcov(matrix),
         dtype=np.float64,
