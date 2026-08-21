@@ -39,22 +39,70 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_REAL_SCALAR_TYPES = (
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
 
 
 def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
-    """Validate that ``value`` is an integer in ``[lower, upper]`` and return it."""
-    if (
-        not isinstance(value, (int, np.integer))
-        or isinstance(value, (bool, np.bool_))
-        or not lower <= int(value) <= upper
-    ):
+    """Validate one trusted integer in ``[lower, upper]`` before coercion."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
         raise ValueError(f"{name} must be an integer between {lower} and {upper}")
-    return int(value)
+    if not lower <= normalized <= upper:
+        raise ValueError(f"{name} must be an integer between {lower} and {upper}")
+    return normalized
 
 
 def _quadrature_points(value) -> int:
     """Validate and return the Gauss-Hermite quadrature node count ``q_theta``."""
     return _bounded_integer(value, "q_theta", 1, MAX_POLY_QUADRATURE_POINTS)
+
+
+def _normalized_model(value: object) -> str:
+    """Normalize an exact built-in model selector without caller callbacks."""
+    if type(value) is not str:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    normalized = value.strip().lower()
+    if normalized not in VALID_POLY_MODELS:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    return normalized
+
+
+def _trusted_positive_tolerance(value: object) -> float:
+    """Normalize one exact trusted real scalar before response materialization."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        normalized = float(value)
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES):
+        normalized = float(value)
+    else:
+        raise ValueError("tol must be finite and > 0")
+    if not np.isfinite(normalized) or normalized <= 0:
+        raise ValueError("tol must be finite and > 0")
+    return normalized
 
 
 @dataclass
@@ -169,25 +217,13 @@ def fit_polytomous(
     *The Annals of Statistics, 11*(1), 95–103.
     https://doi.org/10.1214/aos/1176346060
     """
-    m = str(model).lower()
-    if m not in VALID_POLY_MODELS:
-        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
+    m = _normalized_model(model)
+    n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    q_theta = _quadrature_points(q_theta)
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        not isinstance(max_iter, (int, np.integer))
-        or isinstance(max_iter, (bool, np.bool_))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
-        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
+    max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    tol = _trusted_positive_tolerance(tol)
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     validation_y = np.where(observed, y_int, np.nan)

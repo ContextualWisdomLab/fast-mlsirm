@@ -1111,6 +1111,8 @@ def test_fit_gpcm_rejects_unbounded_category_count_before_quadrature():
 
 
 class _RejectPolytomousCore:
+    """Native sentinel proving rejected controls stop before Rust dispatch."""
+
     def fit_gpcm(self, *_args):
         raise AssertionError("unsafe input reached native fit_gpcm")
 
@@ -1122,6 +1124,85 @@ class _RejectPolytomousCore:
 
     def fit_poly_lsirm(self, *_args):
         raise AssertionError("unsafe input reached native fit_poly_lsirm")
+
+
+class _CallbackText(str):
+    """Text subclass whose normalization callbacks must never execute."""
+
+    def __new__(cls, value: str):
+        instance = super().__new__(cls, value)
+        instance.callbacks = []
+        return instance
+
+    def strip(self, *_args, **_kwargs):
+        self.callbacks.append("strip")
+        raise AssertionError("model normalization callback executed")
+
+    def lower(self):
+        self.callbacks.append("lower")
+        raise AssertionError("model normalization callback executed")
+
+
+class _CallbackInteger(int):
+    """Integer subclass whose conversion and comparison callbacks are hostile."""
+
+    def __new__(cls, value: int):
+        instance = super().__new__(cls, value)
+        instance.callbacks = []
+        return instance
+
+    def __int__(self):
+        self.callbacks.append("int")
+        raise AssertionError("integer conversion callback executed")
+
+    def __le__(self, _other):
+        self.callbacks.append("le")
+        raise AssertionError("integer comparison callback executed")
+
+
+class _CallbackReal(float):
+    """Real subclass whose conversion callback must not reach tolerance checks."""
+
+    def __new__(cls, value: float):
+        instance = super().__new__(cls, value)
+        instance.callbacks = []
+        return instance
+
+    def __float__(self):
+        self.callbacks.append("float")
+        raise AssertionError("real conversion callback executed")
+
+
+class _RejectResponseArray:
+    """Response sentinel proving semantic controls precede array materialization."""
+
+    def __array__(self, *_args, **_kwargs):
+        raise AssertionError("responses materialized before control validation")
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "attribute"),
+    [
+        ({"model": _CallbackText("grm")}, "model"),
+        ({"n_cat": _CallbackInteger(2)}, "n_cat"),
+        ({"q_theta": _CallbackInteger(21)}, "q_theta"),
+        ({"max_iter": _CallbackInteger(1)}, "max_iter"),
+        ({"tol": _CallbackReal(1e-6)}, "tol"),
+    ],
+)
+def test_unidimensional_polytomous_rejects_callback_controls_before_materialization(
+    monkeypatch, kwargs, attribute
+):
+    """Reject hostile semantic controls before response or Rust boundary work."""
+    from fast_mlsirm import polytomous
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolytomousCore())
+    controls = {"n_cat": 2, "q_theta": 21, "max_iter": 1, "tol": 1e-6}
+    controls.update(kwargs)
+    hostile = kwargs[attribute]
+    with pytest.raises(ValueError):
+        polytomous.fit_polytomous(_RejectResponseArray(), **controls)
+    assert hostile.callbacks == []
 
 
 @pytest.mark.parametrize("family", ["gpcm", "grm"])
