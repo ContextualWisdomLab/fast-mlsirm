@@ -369,7 +369,7 @@ def sorted_fingerprints(
 
 def _metadata_key(value: Any, path: str) -> str:
     """Return one bounded safe metadata key without reflecting its value."""
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise assessment_error(
             "invalid_metadata_key",
             path,
@@ -478,9 +478,9 @@ def freeze_json_value(
             path,
             f"metadata exceeds the maximum node count of {MAX_METADATA_NODES}",
         )
-    if value is None or isinstance(value, bool):
+    if value is None or type(value) is bool:
         return value
-    if isinstance(value, int):
+    if type(value) is int:
         if not MIN_SIGNED_INTEGER <= value <= MAX_SIGNED_INTEGER:
             raise assessment_error(
                 "integer_out_of_range",
@@ -488,7 +488,7 @@ def freeze_json_value(
                 "integer metadata must fit the signed 64-bit range",
             )
         return value
-    if isinstance(value, float):
+    if type(value) is float:
         if not math.isfinite(value):
             raise assessment_error(
                 "non_finite_metadata_number",
@@ -496,7 +496,7 @@ def freeze_json_value(
                 "numeric metadata must be finite",
             )
         return 0.0 if value == 0.0 else value
-    if isinstance(value, str):
+    if type(value) is str:
         if len(value) > MAX_METADATA_TEXT_LENGTH:
             raise assessment_error(
                 "metadata_text_too_long",
