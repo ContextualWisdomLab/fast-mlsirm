@@ -54,7 +54,10 @@ def test_lee_rejects_untrusted_cut_before_core_and_without_callback(monkeypatch)
     assert _HostileFloat.calls == 0
 
 
-@pytest.mark.parametrize("cut", [True, np.bool_(False), np.inf, np.float64(np.nan)])
+@pytest.mark.parametrize(
+    "cut",
+    [True, np.bool_(False), np.inf, np.float64(np.nan), 10**400],
+)
 def test_rudner_rejects_invalid_cut_identity_or_finiteness_before_core(
     monkeypatch,
     cut: object,

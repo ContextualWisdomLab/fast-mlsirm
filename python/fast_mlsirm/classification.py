@@ -62,7 +62,10 @@ def _normalize_cutscores(cutscores: Sequence[float]) -> list[float]:
             raise ValueError(message)
         value_type = type(value)
         if value_type is int or value_type is float:
-            parsed = float(value)
+            try:
+                parsed = float(value)
+            except OverflowError as error:
+                raise ValueError(message) from error
         elif _trusted_numpy_integer(value) or _trusted_numpy_float(value):
             parsed = float(value)
         else:
