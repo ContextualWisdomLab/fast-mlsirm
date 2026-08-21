@@ -102,3 +102,9 @@ def test_sx2_trusted_numpy_controls_remain_supported() -> None:
     assert normalized[:2] == (21, 11)
     assert all(type(value) is int for value in normalized[:2])
     assert all(type(value) is float for value in normalized[2:])
+
+
+def test_sx2_rejects_unrepresentable_builtin_integer_as_value_error() -> None:
+    """An exact but non-float-representable integer fails with the stable contract."""
+    with pytest.raises(ValueError, match="min_expected must be a finite number"):
+        fitstats_module._validate_sx2_controls(7, 7, 10**400, 0.05, 0.1)

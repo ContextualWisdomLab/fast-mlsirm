@@ -49,7 +49,10 @@ def _trusted_real(value: Any, name: str) -> float:
     """Return one exact trusted real scalar without caller conversion hooks."""
     value_type = type(value)
     if value_type is int or value_type is float:
-        return float(value)
+        try:
+            return float(value)
+        except OverflowError as error:
+            raise ValueError(f"{name} must be a finite number") from error
     if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return float(value)
     if any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
