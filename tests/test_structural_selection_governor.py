@@ -228,7 +228,10 @@ def test_candidate_identifiers_reject_str_subclasses_without_callbacks() -> None
     callbacks = 0
 
     class HostileStr(str):
+        """String subclass whose normalization callback must remain unreachable."""
+
         def strip(self, chars=None):  # type: ignore[override]
+            """Record an unexpected callback instead of normalizing text."""
             nonlocal callbacks
             callbacks += 1
             raise AssertionError("caller callback executed")
