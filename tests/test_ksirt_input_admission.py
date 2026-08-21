@@ -29,6 +29,13 @@ class _HostileInteger(int):
         raise AssertionError("nevalpoints index callback executed")
 
 
+class _HostileNumber:
+    """Object-dtype numeric provider whose conversion must never execute."""
+
+    def __float__(self) -> float:
+        raise AssertionError("object numeric conversion callback executed")
+
+
 class _ResponseSentinel:
     """Response provider that proves invalid controls fail before data work."""
 
@@ -85,6 +92,32 @@ def test_ksirt_rejects_complex_bandwidth_before_real_narrowing_or_core(
     bandwidth = np.array([0.5 + 1.0j], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="bandwidth must be real-valued"):
+        ksirt.ksirt_analysis(responses, bandwidth=bandwidth)
+
+
+def test_ksirt_rejects_object_responses_without_numeric_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Object arrays cannot execute element conversion during admission."""
+    _forbid_core(monkeypatch)
+    responses = np.array(
+        [[_HostileNumber()], [_HostileNumber()]],
+        dtype=object,
+    )
+
+    with pytest.raises(ValueError, match="responses must be a numeric array"):
+        ksirt.ksirt_analysis(responses)
+
+
+def test_ksirt_rejects_object_bandwidth_without_numeric_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Object bandwidths cannot execute element conversion during admission."""
+    _forbid_core(monkeypatch)
+    responses = np.array([[0.0], [1.0]], dtype=np.float64)
+    bandwidth = np.array([_HostileNumber()], dtype=object)
+
+    with pytest.raises(ValueError, match="bandwidth must be a numeric array"):
         ksirt.ksirt_analysis(responses, bandwidth=bandwidth)
 
 
