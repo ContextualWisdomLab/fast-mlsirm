@@ -90,7 +90,10 @@ def test_mokken_rejects_object_responses_without_element_callbacks(
     """Object storage cannot execute per-element numeric conversion callbacks."""
     _forbid_core(monkeypatch)
     responses = np.array(
-        [[_HostileNumber(), _HostileNumber()], [_HostileNumber(), _HostileNumber()]],
+        [
+            [_HostileNumber(), _HostileNumber()],
+            [_HostileNumber(), _HostileNumber()],
+        ],
         dtype=object,
     )
 
@@ -98,7 +101,10 @@ def test_mokken_rejects_object_responses_without_element_callbacks(
         mokken.mokken_analysis(responses)
 
 
-@pytest.mark.parametrize("overflow", [np.uint64(1 << 63), np.uint64((1 << 64) - 1)])
+@pytest.mark.parametrize(
+    "overflow",
+    [np.uint64(1 << 63), np.uint64((1 << 64) - 1)],
+)
 def test_mokken_rejects_signed_int64_narrowing_overflow_before_core(
     monkeypatch: pytest.MonkeyPatch,
     overflow: np.uint64,
@@ -106,6 +112,17 @@ def test_mokken_rejects_signed_int64_narrowing_overflow_before_core(
     """Unsigned category identities cannot wrap into signed Rust scores."""
     _forbid_core(monkeypatch)
     responses = np.array([[0, overflow], [1, 0]], dtype=np.uint64)
+
+    with pytest.raises(ValueError, match="responses exceed signed int64 range"):
+        mokken.mokken_analysis(responses)
+
+
+def test_mokken_rejects_float_at_signed_int64_upper_boundary_before_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A floating 2**63 category is rejected before signed narrowing."""
+    _forbid_core(monkeypatch)
+    responses = np.array([[0.0, float(1 << 63)], [1.0, 0.0]], dtype=np.float64)
 
     with pytest.raises(ValueError, match="responses exceed signed int64 range"):
         mokken.mokken_analysis(responses)
