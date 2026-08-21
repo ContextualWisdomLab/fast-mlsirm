@@ -21,6 +21,7 @@ _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
 _legacy_init.icc = _reliability.icc
 _legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
+_legacy_init.bratt_mm = _scaling.bratt_mm
 _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
