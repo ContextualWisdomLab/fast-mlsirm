@@ -39,7 +39,10 @@ def test_bounded_capture_rejects_missing_capture_pipes(monkeypatch: pytest.Monke
         def wait(self) -> None:
             """Record the required reap operation."""
 
-    monkeypatch.setattr(governance.subprocess, "Popen", lambda *args, **kwargs: MissingPipes())
+    monkeypatch.setattr(
+        "scripts._bounded_subprocess.subprocess.Popen",
+        lambda *args, **kwargs: MissingPipes(),
+    )
 
     from scripts._bounded_subprocess import run_bounded_capture
 
@@ -109,6 +112,26 @@ def test_bounded_capture_deadline_kills_pipe_inheriting_descendants() -> None:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
+def test_bounded_capture_reports_descendant_overflow_before_timeout() -> None:
+    """A descendant-held pipe must preserve overflow precedence over timeout."""
+    from scripts._bounded_subprocess import run_bounded_capture
+
+    grandchild = "import sys, time; sys.stdout.write('x' * 4096); sys.stdout.flush(); time.sleep(2)"
+    child = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {grandchild!r}]); "
+        "sys.exit(0)"
+    )
+    with pytest.raises(BoundedSubprocessOutputError, match="stdout"):
+        run_bounded_capture(
+            [sys.executable, "-c", child],
+            timeout_seconds=1.0,
+            max_stdout_bytes=64,
+            max_stderr_bytes=1024,
+        )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
 def test_process_tree_termination_reaps_the_owned_child(monkeypatch: pytest.MonkeyPatch) -> None:
     """The kill path must reap the direct child within its bounded cleanup window."""
     from scripts import _bounded_subprocess as bounded
@@ -159,6 +182,36 @@ def test_process_tree_termination_does_not_resignal_reaped_child(
 
     monkeypatch.setattr(bounded.os, "killpg", fail_if_signalled)
 
+    bounded._terminate_process_tree(process)  # type: ignore[arg-type]
+
+    assert process.wait_timeouts == [bounded._PROCESS_REAP_TIMEOUT_SECONDS]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
+def test_process_tree_cleanup_ignores_signal_permission_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup signal failures must not replace the bounded subprocess error."""
+    from scripts import _bounded_subprocess as bounded
+
+    class LiveProcess:
+        pid = 4242
+
+        def __init__(self) -> None:
+            self.wait_timeouts: list[float | None] = []
+
+        def poll(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> None:
+            self.wait_timeouts.append(timeout)
+
+    process = LiveProcess()
+
+    def deny_signal(*_args: object) -> None:
+        raise PermissionError("signal denied")
+
+    monkeypatch.setattr(bounded.os, "killpg", deny_signal)
     bounded._terminate_process_tree(process)  # type: ignore[arg-type]
 
     assert process.wait_timeouts == [bounded._PROCESS_REAP_TIMEOUT_SECONDS]
@@ -287,3 +340,43 @@ def test_procurement_overflow_is_snapshot_error(monkeypatch: pytest.MonkeyPatch)
     assert snapshot["repo"]["returncode"] == 75
     assert snapshot["repo"]["data"] is None
     assert "stdout" in snapshot["repo"]["stderr"]
+
+
+def test_procurement_lines_snapshot_success_is_structured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successful text output becomes non-empty, whitespace-trimmed evidence lines."""
+    monkeypatch.setattr(
+        procurement,
+        "run_bounded_capture",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, "v1\n\n v2 \n", " warning \n"
+        ),
+    )
+
+    snapshot = procurement._bounded_lines_snapshot(["gh", "release", "list"])
+
+    assert snapshot == {
+        "ok": True,
+        "returncode": 0,
+        "lines": ["v1", " v2 "],
+        "stderr": "warning",
+    }
+
+
+def test_procurement_lines_snapshot_timeout_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timed-out text commands produce the stable empty-lines error schema."""
+    monkeypatch.setattr(
+        procurement,
+        "run_bounded_capture",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(args[0], 1)
+        ),
+    )
+
+    snapshot = procurement._bounded_lines_snapshot(["gh", "release", "list"])
+
+    assert snapshot["ok"] is False
+    assert snapshot["returncode"] == 124
+    assert snapshot["lines"] == []
+    assert "timed out" in snapshot["stderr"]

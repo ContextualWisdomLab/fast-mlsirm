@@ -39,8 +39,17 @@ def _drain_bounded(
     buffer: bytearray,
     overflow: threading.Event,
 ) -> None:
-    """Drain one binary pipe without retaining more than ``limit_bytes + 1`` bytes."""
-    read = getattr(stream, "read")
+    """Drain one binary pipe without retaining more than ``limit_bytes + 1`` bytes.
+
+    ``BufferedReader.read`` may wait for the requested chunk size even when a
+    smaller payload is already available. ``read1`` observes the pipe promptly,
+    which keeps overflow detection independent from a descendant holding the
+    write end open.
+    """
+    if hasattr(stream, "read1"):
+        read = stream.read1  # type: ignore[attr-defined]
+    else:
+        read = stream.read  # type: ignore[attr-defined]
     while True:
         try:
             chunk = read(_READ_CHUNK_BYTES)
@@ -70,12 +79,12 @@ def _terminate_process_tree(
         if os.name == "posix":
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except OSError:
                 pass
         else:
             try:
                 process.kill()
-            except ProcessLookupError:
+            except OSError:
                 pass
     try:
         process.wait(timeout=_PROCESS_REAP_TIMEOUT_SECONDS)
@@ -194,6 +203,7 @@ def run_bounded_capture(
     for reader in readers:
         reader.join(timeout=_remaining(deadline))
         if reader.is_alive():
+            overflowed = overflowed or stdout_overflow.is_set() or stderr_overflow.is_set()
             if not overflowed:
                 timed_out = True
             _terminate_process_tree(process, terminate_descendants=True)
