@@ -19,6 +19,8 @@ MAX_JSON_DEPTH: Final = 128
 _READ_CHUNK_BYTES: Final = 64 * 1024
 _SAFE_OPEN_ERROR = "JSON input could not be opened as a stable regular file"
 _UNSTABLE_PATH_ERROR = "JSON input path changed during the bounded read"
+_DUPLICATE_MEMBER_ERROR = "JSON input contains a duplicate JSON object member"
+_NONFINITE_NUMBER_ERROR = "JSON input contains a non-finite JSON numeric value"
 
 
 def _positive_limit(value: object, field_name: str) -> int:
@@ -115,6 +117,30 @@ def _validate_json_depth(content: bytes, *, max_depth: int) -> None:
             depth -= 1
 
 
+def _reject_nonfinite_constant(_: str) -> None:
+    """Reject Python's non-standard JSON numeric constants without reflection."""
+    raise ValueError(_NONFINITE_NUMBER_ERROR)
+
+
+def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build one JSON object while rejecting repeated member names."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(_DUPLICATE_MEMBER_ERROR)
+        result[key] = value
+    return result
+
+
+def _loads_interoperable_json(content: str) -> Any:
+    """Decode one JSON value using unambiguous RFC-compatible semantics."""
+    return json.loads(
+        content,
+        object_pairs_hook=_reject_duplicate_members,
+        parse_constant=_reject_nonfinite_constant,
+    )
+
+
 def read_json_object(
     path: Path,
     *,
@@ -147,7 +173,7 @@ def read_json_object(
     except UnicodeDecodeError:
         raise ValueError("JSON input is not valid UTF-8") from None
     try:
-        payload = json.loads(text)
+        payload = _loads_interoperable_json(text)
     except json.JSONDecodeError:
         raise ValueError("JSON input is not valid JSON") from None
     except RecursionError as exc:
@@ -187,7 +213,7 @@ def parse_json_bounded(
     _validate_json_depth(encoded, max_depth=depth_limit)
 
     try:
-        return json.loads(content)
+        return _loads_interoperable_json(content)
     except json.JSONDecodeError:
         raise ValueError("JSON input is not valid JSON") from None
     except RecursionError as exc:
