@@ -719,13 +719,10 @@ def _axis_fit(
     item fit, ``axis=1`` for person fit).
     """
     count = observed.sum(axis=axis).astype(np.float64)
-    # Optimized reduction: cast boolean mask and use np.einsum to avoid N x J intermediate array allocations
-    obs_f = observed.astype(y.dtype, copy=False)
-    subscript = "ij,ij->j" if axis == 0 else "ij,ij->i"
-    score = np.einsum(subscript, y, obs_f)
-    expected = np.einsum(subscript, prob, obs_f)
+    score = (y * observed).sum(axis=axis)
+    expected = (prob * observed).sum(axis=axis)
     raw = residual.sum(axis=axis)
-    variance_sum = np.einsum(subscript, variance, obs_f)
+    variance_sum = (variance * observed).sum(axis=axis)
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
@@ -734,8 +731,7 @@ def _axis_fit(
         "expected_score": expected,
         "raw_residual": raw,
         "standardized_residual": raw / np.sqrt(safe_variance),
-        # Optimized distance computation: replace np.sum(x * x) with np.einsum to avoid intermediate array allocation
-        "infit_mnsq": np.einsum(subscript, residual, residual) / safe_variance,
+        "infit_mnsq": (residual * residual).sum(axis=axis) / safe_variance,
         "outfit_mnsq": pearson_sq.sum(axis=axis) / safe_count,
     }
 

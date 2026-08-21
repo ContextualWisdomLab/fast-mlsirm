@@ -645,9 +645,7 @@ def _initial_params(
         theta[:, d] = standardize(x[:, d])
 
     item_counts = np.maximum(observed.sum(axis=0), 1)
-    # Optimized reduction: cast boolean mask and use np.einsum to avoid N x J intermediate array allocations
-    obs_f = observed.astype(y.dtype, copy=False)
-    item_means = np.einsum("ij,ij->j", y, obs_f) / item_counts
+    item_means = (y * observed).sum(axis=0) / item_counts
     b = logit(item_means)
     alpha = rng.normal(0.0, 0.02, size=n_items)
 
