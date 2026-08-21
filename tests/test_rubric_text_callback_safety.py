@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from fast_mlsirm.rubric import ResponseFormat, RubricLevel, RubricSpecification
+from fast_mlsirm.rubric import (
+    ItemBankEvidenceKind,
+    ItemBankEvidenceReference,
+    ResponseFormat,
+    RubricLevel,
+    RubricSpecification,
+)
 
 
 def _hostile_text(value: str) -> tuple[str, type[str]]:
@@ -111,3 +117,32 @@ def test_builtin_rubric_text_still_normalizes() -> None:
     assert level.label == "not_met"
     assert level.descriptor == "Requirement is not met."
     assert level.observable_indicators == ("missing evidence",)
+
+
+def test_item_bank_enum_rejects_string_subclass_before_enum_lookup() -> None:
+    """Item-bank evidence kind admission must not dispatch hostile string hooks."""
+
+    class HostileKind(str):
+        """Record forbidden equality and hash callbacks during enum lookup."""
+
+        calls = 0
+
+        def __eq__(self, other: object) -> bool:
+            """Record an equality callback that must never execute."""
+            type(self).calls += 1
+            raise AssertionError("caller equality callback executed")
+
+        def __hash__(self) -> int:
+            """Record a hash callback that must never execute."""
+            type(self).calls += 1
+            raise AssertionError("caller hash callback executed")
+
+    value = HostileKind(ItemBankEvidenceKind.CALIBRATION.value)
+    with pytest.raises(ValueError, match="evidence_kind must be one of"):
+        ItemBankEvidenceReference(
+            evidence_kind=value,
+            evidence_id="calibration_evidence_alpha",
+            evidence_fingerprint="a" * 64,
+        )
+
+    assert HostileKind.calls == 0
