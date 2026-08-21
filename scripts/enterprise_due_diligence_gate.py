@@ -167,8 +167,8 @@ def _write_manifest_descriptor(
                 prefix=f".{validated_path.name}.",
                 delete=False,
             ) as temporary_file:
-                temporary_file.write(content)
                 temporary_path = Path(temporary_file.name)
+                temporary_file.write(content)
             os.replace(temporary_path, validated_path)
         finally:
             if temporary_path is not None:

@@ -169,6 +169,47 @@ def test_write_gate_manifest_uses_atomic_portable_fallback(
     ) == manifest
 
 
+def test_write_gate_manifest_cleans_failed_portable_temporary_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed portable write must not leave an orphan temporary manifest."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delattr(GATE.os, "O_NOFOLLOW", raising=False)
+    manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
+    original_named_temporary_file = GATE.tempfile.NamedTemporaryFile
+
+    class FailingTemporaryFile:
+        """Wrap one real temporary file while failing its content write."""
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._context = original_named_temporary_file(*args, **kwargs)
+            self._file = None
+
+        def __enter__(self) -> "FailingTemporaryFile":
+            self._file = self._context.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> object:
+            return self._context.__exit__(*args)
+
+        @property
+        def name(self) -> str:
+            assert self._file is not None
+            return self._file.name
+
+        def write(self, content: str) -> int:
+            del content
+            raise OSError("injected portable write failure")
+
+    monkeypatch.setattr(GATE.tempfile, "NamedTemporaryFile", FailingTemporaryFile)
+
+    with pytest.raises(ValueError, match="manifest output could not be written"):
+        GATE.write_gate_manifest(manifest, Path("portable") / "gate.json")
+
+    assert list((tmp_path / "portable").iterdir()) == []
+
+
 def test_write_gate_manifest_rejects_path_traversal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Output validation must prevent writes outside the invocation directory."""
     monkeypatch.chdir(tmp_path)
