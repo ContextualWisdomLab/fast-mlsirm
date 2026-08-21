@@ -144,6 +144,7 @@ def test_fit_polytomous_rejects_invalid_controls_before_core_discovery(
     _BombResponses.calls = 0
 
     def _bomb_core():
+        """Fail if native-core lookup precedes control validation."""
         raise AssertionError("native core discovered before control rejection")
 
     monkeypatch.setattr(polytomous, "_core_module", _bomb_core)
@@ -157,6 +158,35 @@ def test_fit_polytomous_control_validators_preserve_numpy_scalars() -> None:
     """Concrete NumPy controls remain normalizable to package-owned primitives."""
     assert polytomous._bounded_integer(np.int64(3), "n_cat", 2, 64) == 3
     assert polytomous._quadrature_points(np.int64(21)) == 21
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "args", "kwargs"),
+    [
+        ("fit_lsirm_polytomous", (_BombResponses(), _HostileInt(3)), {}),
+        ("fit_nominal_polytomous", (_BombResponses(), _HostileInt(3)), {}),
+        (
+            "dif_polytomous",
+            (_BombResponses(), np.zeros(1, dtype=np.int64), _HostileInt(2)),
+            {},
+        ),
+        ("score_polytomous", (_BombResponses(), None), {"q_theta": _HostileInt(21)}),
+    ],
+)
+def test_sibling_entrypoints_reject_integer_subclasses_before_materialization(
+    entrypoint: str,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+) -> None:
+    """Every public polytomous entry point shares the exact-type trust boundary."""
+    _BombResponses.calls = 0
+    _HostileInt.calls = 0
+
+    with pytest.raises(ValueError, match="integer|q_theta"):
+        getattr(polytomous, entrypoint)(*args, **kwargs)
+
+    assert _HostileInt.calls == 0
+    _assert_no_response_work()
 
 
 def test_poly_int_and_mask_normalizes_both_missing_sentinels() -> None:
