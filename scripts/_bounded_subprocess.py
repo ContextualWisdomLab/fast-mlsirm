@@ -55,9 +55,18 @@ def _drain_bounded(
             overflow.set()
 
 
-def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
-    """Terminate and bounded-reap the owned process tree."""
-    if process.poll() is None:
+def _terminate_process_tree(
+    process: subprocess.Popen[bytes],
+    *,
+    terminate_descendants: bool = False,
+) -> None:
+    """Terminate and bounded-reap the owned process tree.
+
+    A live process group is terminated after the direct child exits only when
+    a capture reader still proves that a descendant owns the pipe. The default
+    keeps repeated cleanup from signalling a reaped process group.
+    """
+    if process.poll() is None or (terminate_descendants and os.name == "posix"):
         if os.name == "posix":
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -187,7 +196,7 @@ def run_bounded_capture(
         if reader.is_alive():
             if not overflowed:
                 timed_out = True
-            _terminate_process_tree(process)
+            _terminate_process_tree(process, terminate_descendants=True)
             _close_capture_pipes(process)
             break
 
