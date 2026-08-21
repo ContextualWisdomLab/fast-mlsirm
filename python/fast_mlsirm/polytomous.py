@@ -201,10 +201,16 @@ def _nonnegative_integer_vector(values, name: str) -> np.ndarray:
         not np.all(np.isfinite(numeric))
         or np.any(numeric < 0)
         or np.any(numeric != np.floor(numeric))
-        or np.any(numeric > np.iinfo(np.int64).max)
     ):
         raise ValueError(f"{name} must contain non-negative integers")
-    return raw.astype(np.int64)
+    try:
+        with np.errstate(invalid="ignore", over="ignore"):
+            narrowed = raw.astype(np.int64)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must contain non-negative integers") from None
+    if np.any(narrowed < 0) or not np.array_equal(narrowed.astype(np.float64), numeric):
+        raise ValueError(f"{name} must contain non-negative integers")
+    return narrowed
 
 
 def fit_polytomous(
