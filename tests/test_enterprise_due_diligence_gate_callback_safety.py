@@ -71,7 +71,7 @@ def test_build_gate_manifest_rejects_scenario_int_subclass_without_callbacks() -
             callbacks.append("le")
             return super().__le__(other)
 
-    with pytest.raises(ValueError, match="scenario_amount must be a positive exact built-in integer"):
+    with pytest.raises(ValueError, match="scenario_amount must be a positive integer"):
         GATE.build_gate_manifest(
             source_commit=SOURCE_COMMIT,
             scenario_amount=HostileScenario(25),
