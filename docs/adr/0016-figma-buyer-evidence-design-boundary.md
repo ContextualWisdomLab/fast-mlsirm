@@ -1,7 +1,7 @@
 # ADR-0016: Figma buyer-evidence design boundary
 
-Status: Accepted  
-Date: 2026-08-21  
+Status: Accepted
+Date: 2026-08-21
 Decision owners: fast-mlsirm maintainers
 
 ## Context
@@ -66,6 +66,5 @@ requires a superseding ADR rather than silently changing this file.
 
 ## References
 
-Figma. (n.d.). *Figma design platform*. Retrieved August 21, 2026, from
+Figma. (n.d.). *Figma Help Center*. Retrieved August 21, 2026, from
 <https://help.figma.com/hc/en-us>
-
