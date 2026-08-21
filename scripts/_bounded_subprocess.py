@@ -12,6 +12,7 @@ from pathlib import Path
 
 _READ_CHUNK_BYTES = 64 * 1024
 _DATA_ERROR_RETURN_CODE = 65
+_PROCESS_REAP_TIMEOUT_SECONDS = 5.0
 
 
 class BoundedSubprocessOutputError(RuntimeError):
@@ -55,18 +56,23 @@ def _drain_bounded(
 
 
 def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
-    """Terminate the owned process tree without signalling the caller process."""
+    """Terminate and bounded-reap the owned process tree."""
     if os.name == "posix":
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
-            return
-        return
-    if process.poll() is None:
+            pass
+    elif process.poll() is None:
         try:
             process.kill()
         except ProcessLookupError:
-            return
+            pass
+    try:
+        process.wait(timeout=_PROCESS_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        # The caller still has a hard deadline; leave pipe cleanup to the
+        # existing close path if a hostile child ignores the bounded reap.
+        pass
 
 
 def _close_capture_pipes(process: subprocess.Popen[bytes]) -> None:

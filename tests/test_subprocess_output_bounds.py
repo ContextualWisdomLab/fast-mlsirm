@@ -108,6 +108,28 @@ def test_bounded_capture_deadline_kills_pipe_inheriting_descendants() -> None:
     assert time.monotonic() - started < 1.0
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group ownership contract")
+def test_process_tree_termination_reaps_the_owned_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The kill path must reap the direct child within its bounded cleanup window."""
+    from scripts import _bounded_subprocess as bounded
+
+    class FakeProcess:
+        pid = 4242
+
+        def __init__(self) -> None:
+            self.wait_timeouts: list[float | None] = []
+
+        def wait(self, timeout: float | None = None) -> None:
+            self.wait_timeouts.append(timeout)
+
+    process = FakeProcess()
+    monkeypatch.setattr(bounded.os, "killpg", lambda *_args: None)
+
+    bounded._terminate_process_tree(process)  # type: ignore[arg-type]
+
+    assert process.wait_timeouts == [bounded._PROCESS_REAP_TIMEOUT_SECONDS]
+
+
 def test_governance_parse_failure_is_stable_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Malformed successful gh output must not crash the governance builder."""
     monkeypatch.setattr(
