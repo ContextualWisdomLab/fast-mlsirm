@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from types import SimpleNamespace
 
@@ -141,3 +142,43 @@ def test_run_gh_api_normalizes_spawn_failures_without_retry_or_detail_leak(
     assert error.stderr == "GitHub CLI transport unavailable"
     assert "SECRET_LOCAL" not in str(error)
     assert calls == 1
+
+
+def test_main_writes_failed_json_and_exit_code_for_github_api_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Turn a live GitHub transport failure into the documented JSON evidence."""
+    output_path = tmp_path / "workflow-registry.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "audit_workflow_registry",
+            "--repo",
+            "owner/repo",
+            "--out",
+            str(output_path),
+        ],
+    )
+    monkeypatch.setattr(
+        audit,
+        "audit_workflow_registry",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            audit.GitHubApiError(
+                endpoint="repos/owner/repo",
+                returncode=503,
+                stderr="temporary upstream failure",
+            )
+        ),
+    )
+
+    assert audit.main() == 2
+
+    evidence = json.loads(output_path.read_text(encoding="utf-8"))
+    assert evidence["status"] == "failed"
+    assert evidence["repository"] == "owner/repo"
+    assert evidence["errors"] == [
+        "GitHub API request failed for repos/owner/repo: "
+        "exit 503: temporary upstream failure"
+    ]
