@@ -77,6 +77,7 @@ def test_limitations_replay_rejects_rebound_container_before_callbacks() -> None
 
     class HostileTuple(tuple):
         def __iter__(self):  # type: ignore[override]
+            """Fail if package replay invokes caller-controlled iteration."""
             callbacks.append("iter")
             raise AssertionError("hostile limitation iteration executed")
 
