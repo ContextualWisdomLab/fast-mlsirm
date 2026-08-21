@@ -204,6 +204,7 @@ def run_bounded_capture(
         _close_capture_pipes(process)
         raise BoundedSubprocessOutputError("stderr", max_stderr_bytes)
 
+    _close_capture_pipes(process)
     stderr_text = stderr.decode("utf-8", errors="replace")
     try:
         stdout_text = stdout.decode("utf-8", errors="strict")
