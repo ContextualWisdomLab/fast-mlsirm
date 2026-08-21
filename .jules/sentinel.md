@@ -35,3 +35,18 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** External `subprocess.run` calls without timeouts can hang indefinitely during GitHub CLI network or provider failures, stalling repository automation.
 **Learning:** Command duration is a separate resource bound from JSON size/depth. A bounded parser cannot terminate a child process that never returns.
 **Prevention:** Supply an explicit timeout for external repository-automation subprocesses and convert `subprocess.TimeoutExpired` into stable fail-closed evidence rather than hanging indefinitely.
+
+## 2026-08-21 - [Bounded Capture Pipe and Process-Tree Cleanup]
+**Vulnerability:** Repository automation can deadlock or retain descendants when
+stdout/stderr pipes are inherited by a child process after the direct command
+exits. Unbounded diagnostics can also exhaust memory or hide the original
+fail-closed error when cleanup signalling fails.
+
+**Learning:** A subprocess boundary needs independent byte limits, one absolute
+deadline, concurrent pipe draining, strict machine-output decoding, and cleanup
+that reaps the owned child without assuming signal delivery always succeeds.
+
+**Prevention:** Keep stdout and stderr bounded, terminate the POSIX process
+group when a reader proves a descendant owns a capture pipe, bounded-reap the
+direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
+errors for governance and procurement evidence.
