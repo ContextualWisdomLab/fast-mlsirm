@@ -67,9 +67,9 @@ class AssessmentSpecError(ValueError):
 
     def __init__(self, code: str, path: str, message: str) -> None:
         """Store bounded machine metadata without caller-controlled values."""
-        if not isinstance(code, str) or _ERROR_CODE_PATTERN.fullmatch(code) is None:
+        if type(code) is not str or _ERROR_CODE_PATTERN.fullmatch(code) is None:
             raise ValueError("code must use two-or-more-token lower snake_case")
-        if not isinstance(path, str) or not path.startswith("$"):
+        if type(path) is not str or not path.startswith("$"):
             raise ValueError("path must begin with '$'")
         if len(path) > MAX_ERROR_PATH_LENGTH:
             raise ValueError(
@@ -77,7 +77,7 @@ class AssessmentSpecError(ValueError):
             )
         if not path.isprintable():
             raise ValueError("path must not contain control characters")
-        if not isinstance(message, str) or not message.strip():
+        if type(message) is not str or not message.strip():
             raise ValueError("message must not be empty")
         if len(message) > MAX_ERROR_MESSAGE_LENGTH:
             raise ValueError(
