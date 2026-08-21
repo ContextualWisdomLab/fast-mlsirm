@@ -70,7 +70,12 @@ def detect_analysis(
             structure. *Psychometrika, 64*(2), 213-249. (as cited in
             Robitzsch, 2024)
     """
-    y = np.asarray(responses, dtype=np.float64)
+    response_array = np.asarray(responses)
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    y = response_array.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -82,12 +87,16 @@ def detect_analysis(
         raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
     c = np.asarray(cluster).reshape(-1)
+    if np.iscomplexobj(c):
+        raise ValueError("cluster labels must be real integers")
+    if c.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("cluster labels must be a numeric array")
     if c.shape[0] != n_items:
         raise ValueError("cluster must assign one label per item")
     I64_MAX = np.iinfo(np.int64).max
     I64_MIN = np.iinfo(np.int64).min
     if not np.issubdtype(c.dtype, np.integer):
-        cf = np.asarray(cluster, dtype=np.float64).reshape(-1)
+        cf = c.astype(np.float64, copy=False)
         if not np.all(np.isfinite(cf)) or np.any(cf != np.round(cf)):
             raise ValueError("cluster labels must be integers")
         # Reject labels outside i64 before casting: astype(np.int64) on an
