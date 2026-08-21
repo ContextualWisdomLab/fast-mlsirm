@@ -138,7 +138,10 @@ def fit_mhrm(
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
             Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
-    y = np.asarray(responses, dtype=np.float64)
+    response_input = np.asarray(responses)
+    if np.iscomplexobj(response_input):
+        raise ValueError("responses must be real-valued")
+    y = np.asarray(response_input, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
