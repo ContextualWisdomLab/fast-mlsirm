@@ -38,6 +38,7 @@ POLICY_FILES = [
 
 
 def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest of a file's bytes."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -51,6 +52,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
+    """Resolve a relative input path against the evidence repository root."""
     path = Path(value)
     if path.is_absolute():
         return path
@@ -58,6 +60,7 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 
 def _metadata_dict(text: str) -> dict[str, str]:
+    """Extract the package metadata fields used by procurement checks."""
     parsed = Parser().parsestr(text)
     return {
         key: parsed.get(key, "")
@@ -66,6 +69,7 @@ def _metadata_dict(text: str) -> dict[str, str]:
 
 
 def parse_wheel(path: Path) -> dict[str, Any]:
+    """Inspect a wheel for required metadata members and its digest."""
     required = {"METADATA": None, "WHEEL": None, "RECORD": None}
     metadata: dict[str, str] = {}
     members: list[str] = []
@@ -101,6 +105,7 @@ def parse_wheel(path: Path) -> dict[str, Any]:
 
 
 def parse_sdist(path: Path) -> dict[str, Any]:
+    """Inspect a source distribution for its package metadata and digest."""
     metadata: dict[str, str] = {}
     pkg_info_name = None
     if not path.exists():
@@ -133,6 +138,7 @@ def parse_sdist(path: Path) -> dict[str, Any]:
 
 
 def _project_metadata(repo_root: Path) -> dict[str, str]:
+    """Read the normalized project identity from pyproject.toml."""
     pyproject = repo_root / "pyproject.toml"
     try:
         import tomllib
@@ -148,6 +154,7 @@ def _project_metadata(repo_root: Path) -> dict[str, str]:
 
 
 def _parse_project_metadata(text: str) -> dict[str, str]:
+    """Parse project identity fields when tomllib is unavailable."""
     in_project = False
     values = {"name": "", "version": "", "requires_python": ""}
     for raw_line in text.splitlines():
@@ -189,6 +196,7 @@ def _source_commit(repo_root: Path) -> str:
 def _check(
     name: str, category: str, ok: bool, detail: str, **metadata: Any
 ) -> dict[str, Any]:
+    """Build one serializable due-diligence check record."""
     payload: dict[str, Any] = {
         "name": name,
         "category": category,
@@ -200,6 +208,7 @@ def _check(
 
 
 def _policy_checks(repo_root: Path) -> list[dict[str, Any]]:
+    """Check that required policy and CI files exist and are non-empty."""
     checks = []
     for relative in POLICY_FILES:
         path = repo_root / relative
@@ -228,6 +237,7 @@ def _policy_checks(repo_root: Path) -> list[dict[str, Any]]:
 def _commercial_checks(
     path: Path, *, contract_value_krw: int
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Validate the commercial release manifest and required artifact digests."""
     if not path.exists():
         return {}, [
             _check(
@@ -277,6 +287,7 @@ def _commercial_checks(
 
 
 def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
+    """Capture bounded live or explicitly offline GitHub release evidence."""
     if offline:
         return {"mode": "offline", "repo": repo, "checks": {"snapshot_recorded": True}}
     snapshot: dict[str, Any] = {"mode": "live", "repo": repo}
@@ -328,6 +339,7 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
 
 
 def _github_checks(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert a GitHub snapshot into repository-state check records."""
     if snapshot.get("mode") == "offline":
         return [
             _check(
@@ -372,10 +384,12 @@ def _github_checks(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _content_security_policy() -> str:
+    """Return the restrictive CSP used by the generated HTML report."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _report_css() -> str:
+    """Return the self-contained accessible stylesheet for the report."""
     return """
 :root { color: #172026; background: #f5f7f8; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 * { box-sizing: border-box; }
@@ -429,6 +443,7 @@ code { overflow-wrap: anywhere; }
 
 
 def _render_report(manifest: dict[str, Any]) -> str:
+    """Render the procurement manifest as an escaped standalone HTML report."""
     checks = manifest.get("checks", [])
     rows = []
     for check in checks:
@@ -497,6 +512,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
 
 
 def build_procurement_due_diligence(args: argparse.Namespace) -> dict[str, Any]:
+    """Build package, policy, GitHub, and release evidence under the output directory."""
     repo_root = Path(args.repo_root).resolve()
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
     commercial_path = _resolve_path(
@@ -593,6 +609,7 @@ def build_procurement_due_diligence(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Create the command-line parser for procurement evidence generation."""
     parser = argparse.ArgumentParser(
         description="Build procurement due-diligence evidence for fast-mlsirm."
     )
@@ -628,6 +645,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run procurement evidence generation and return a process exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
