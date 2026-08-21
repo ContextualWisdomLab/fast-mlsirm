@@ -34,7 +34,10 @@ def irtree_expand(
     node ``n`` of every item loads on dimension ``node_dims[n]`` (default:
     dimension ``n``, one trait per tree node, the canonical IRTree structure).
     """
-    y = np.asarray(responses, dtype=float)
+    response_values = np.asarray(responses)
+    if np.iscomplexobj(response_values):
+        raise ValueError("responses must be real-valued")
+    y = np.asarray(response_values, dtype=float)
     if y.ndim != 2:
         raise ValueError("responses must be a persons x items matrix")
     n_persons, n_items = y.shape
@@ -43,7 +46,10 @@ def irtree_expand(
     if np.any(np.isinf(y)):
         raise ValueError("responses must contain integer categories or NaN")
 
-    t = np.asarray(mapping, dtype=float)
+    mapping_values = np.asarray(mapping)
+    if np.iscomplexobj(mapping_values):
+        raise ValueError("mapping must be real-valued")
+    t = np.asarray(mapping_values, dtype=float)
     if t.ndim != 2:
         raise ValueError("mapping must be nodes x categories")
     n_nodes, n_cats = t.shape
@@ -89,6 +95,8 @@ def irtree_expand(
     node_dims_arr = np.asarray(node_dims)
     if node_dims_arr.shape != (n_nodes,):
         raise ValueError("node_dims must have one entry per tree node")
+    if np.iscomplexobj(node_dims_arr):
+        raise ValueError("node_dims must be real-valued integer indices")
     try:
         nd = node_dims_arr.astype(np.float64)
     except (TypeError, ValueError, OverflowError) as exc:
