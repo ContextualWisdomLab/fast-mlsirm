@@ -35,7 +35,6 @@ class _HostileText(str):
         raise AssertionError("hostile strip callback executed")
 
 
-
 def _engine() -> ComparisonEngine:
     """Return one isolated comparison-engine identity."""
     return ComparisonEngine(
@@ -100,15 +99,21 @@ def _provenance() -> ConformanceRunProvenance:
     return ConformanceRunProvenance(
         harness_commit=_SOURCE_COMMIT,
         environment_sha256=_SHA_C,
+        environment_kind="environment_lock",
+        operating_system="linux",
+        architecture="x86_64",
         rng_algorithm="pcg64_dxsm",
         rng_seeds=(17, 23),
         mapping_schema_version="1.0.0",
         mapping_sha256=_SHA_D,
+        model_configuration_sha256=_SHA_A,
+        convergence_controls_sha256=_SHA_B,
         tolerance_sha256=_SHA_A,
         tolerance_rationale="fixed-parameter double-precision comparison",
         raw_output_sha256=_SHA_B,
         normalized_output_sha256=_SHA_C,
         license_classification="synthetic_or_open",
+        redistribution_status="redistributable",
     )
 
 
