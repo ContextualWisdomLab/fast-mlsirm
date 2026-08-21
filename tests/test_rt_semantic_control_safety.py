@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+
 import numpy as np
 import pytest
 
@@ -180,3 +183,10 @@ def test_fit_speed_accuracy_rejects_truth_protocol_before_native_dispatch(
         )
 
     assert _HostileBoolProtocol.calls == 0
+
+
+@pytest.mark.parametrize("function", [fit_response_times, fit_speed_accuracy])
+def test_rt_public_calibrators_do_not_use_runtime_asserts(function) -> None:
+    """Runtime validation must remain active under Python optimization flags."""
+    tree = ast.parse(inspect.getsource(function))
+    assert not any(isinstance(node, ast.Assert) for node in ast.walk(tree))
