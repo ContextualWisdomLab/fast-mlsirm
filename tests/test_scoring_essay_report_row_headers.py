@@ -60,3 +60,23 @@ def test_validation_report_marks_metric_identity_as_row_header(tmp_path: Path) -
     metric_id = report.metrics[0].metric_id
     assert _row_header(metric_id) in html
     assert f"<td>{escape(metric_id)}</td>" not in html
+
+
+def test_print_styles_keep_scrollable_exact_value_evidence_visible(
+    tmp_path: Path,
+) -> None:
+    """Printed report evidence must not remain clipped inside screen scroll boxes."""
+    report = _FACETS_FIXTURES["build_report"]()
+    output = tmp_path / "facets-print-evidence.html"
+
+    render_essay_facets_calibration_report_html(
+        report,
+        output,
+        output_root=tmp_path,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert ".table-scroll { overflow-x: auto; }" in html
+    assert "@media print {" in html
+    assert ".table-scroll, pre { overflow: visible; }" in html
+    assert "pre { max-height: none; }" in html
