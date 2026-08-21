@@ -109,7 +109,10 @@ def fit_grm(
     # Fail closed on hostile node_rule before any core import or coercion.
     node_rule = normalize_node_rule(node_rule)
 
-    y = np.asarray(responses, dtype=np.float64)
+    raw = np.asarray(responses)
+    if np.iscomplexobj(raw):
+        raise ValueError("responses must be real-valued")
+    y = np.asarray(raw, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
