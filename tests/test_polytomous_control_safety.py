@@ -157,3 +157,22 @@ def test_fit_polytomous_control_validators_preserve_numpy_scalars() -> None:
     """Concrete NumPy controls remain normalizable to package-owned primitives."""
     assert polytomous._bounded_integer(np.int64(3), "n_cat", 2, 64) == 3
     assert polytomous._quadrature_points(np.int64(21)) == 21
+
+
+def test_poly_int_and_mask_normalizes_both_missing_sentinels() -> None:
+    """NaN and -1 must both become unobserved before category validation."""
+    responses = np.array([[0.0, -1.0], [np.nan, 2.0]], dtype=np.float64)
+
+    y_int, observed = polytomous._poly_int_and_mask(responses, 3)
+
+    np.testing.assert_array_equal(y_int, np.array([[0, 0], [0, 2]], dtype=np.int64))
+    np.testing.assert_array_equal(
+        observed,
+        np.array([[True, False], [False, True]], dtype=np.bool_),
+    )
+
+
+def test_poly_int_and_mask_normalizes_conversion_failure() -> None:
+    """Malformed response objects must fail through the package-owned contract."""
+    with pytest.raises(ValueError, match=r"^responses must be numeric$"):
+        polytomous._poly_int_and_mask(object(), 3)
