@@ -1,0 +1,181 @@
+"""Trust-boundary regressions for compensatory 2PL semantic controls."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import numpy as np
+import pytest
+
+from fast_mlsirm.twopl import fit_2pl
+
+
+class _ExplosiveResponses:
+    """Response sentinel that records forbidden materialization."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def __array__(self, *_args: object, **_kwargs: object) -> np.ndarray:
+        self.calls.append("array")
+        raise AssertionError("responses were materialized before control rejection")
+
+
+class _HostileInt(int):
+    """Integer subclass whose conversion hooks must never execute."""
+
+    def __new__(cls, value: int) -> _HostileInt:
+        instance = super().__new__(cls, value)
+        instance.calls = []
+        return instance
+
+    def __int__(self) -> int:
+        self.calls.append("int")
+        raise AssertionError("integer conversion callback executed")
+
+    def __float__(self) -> float:
+        self.calls.append("float")
+        raise AssertionError("float conversion callback executed")
+
+    def __index__(self) -> int:
+        self.calls.append("index")
+        raise AssertionError("index conversion callback executed")
+
+    def __array__(self, *_args: object, **_kwargs: object) -> np.ndarray:
+        self.calls.append("array")
+        raise AssertionError("array conversion callback executed")
+
+
+class _HostileFloat(float):
+    """Floating subclass whose conversion hook must never execute."""
+
+    def __new__(cls, value: float) -> _HostileFloat:
+        instance = super().__new__(cls, value)
+        instance.calls = []
+        return instance
+
+    def __float__(self) -> float:
+        self.calls.append("float")
+        raise AssertionError("float conversion callback executed")
+
+    def __array__(self, *_args: object, **_kwargs: object) -> np.ndarray:
+        self.calls.append("array")
+        raise AssertionError("array conversion callback executed")
+
+
+class _HostileBoolProtocol:
+    """Arbitrary truth-value provider that must not cross admission."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def __bool__(self) -> bool:
+        self.calls.append("bool")
+        raise AssertionError("boolean conversion callback executed")
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        ("q", _HostileInt(21), "q must be a finite integer"),
+        ("max_iter", _HostileInt(10), "max_iter must be a finite integer"),
+        ("xi_points", _HostileInt(100), "xi_points must be a finite integer"),
+        ("xi_seed", _HostileInt(7), "xi_seed must be a non-negative integer"),
+        ("tol", _HostileFloat(1e-6), "tol must be finite and > 0"),
+        ("estimate_corr", _HostileBoolProtocol(), "estimate_corr must be a boolean"),
+    ],
+)
+def test_fit_2pl_rejects_controls_before_callbacks_or_data(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: Any,
+    message: str,
+) -> None:
+    """Rejected controls execute no caller callback, data work, or core discovery."""
+
+    responses = _ExplosiveResponses()
+    core_calls: list[str] = []
+
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: core_calls.append("core") or None,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        fit_2pl(responses, **{name: value})
+
+    assert value.calls == []
+    assert responses.calls == []
+    assert core_calls == []
+
+
+def test_fit_2pl_normalizes_supported_numpy_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concrete NumPy scalar controls remain compatible and reach Rust as built-ins."""
+
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def fit_2pl(
+            self,
+            _yy: np.ndarray,
+            _observed: np.ndarray,
+            _pattern: np.ndarray,
+            n_persons: int,
+            n_items: int,
+            n_dims: int,
+            q: int,
+            estimate_corr: bool,
+            max_iter: int,
+            tol: float,
+            node_rule: str,
+            xi_points: int,
+            xi_seed: int,
+        ) -> dict[str, object]:
+            captured.update(
+                q=q,
+                estimate_corr=estimate_corr,
+                max_iter=max_iter,
+                tol=tol,
+                node_rule=node_rule,
+                xi_points=xi_points,
+                xi_seed=xi_seed,
+            )
+            return {
+                "loading": np.ones(n_items * n_dims),
+                "intercept": np.zeros(n_items),
+                "theta": np.zeros(n_persons * n_dims),
+                "corr": np.eye(n_dims),
+                "loglik_trace": np.array([-2.0, -1.0]),
+                "n_iter": 2,
+                "converged": True,
+                "n_parameters": n_items * (n_dims + 1),
+                "termination_reason": "converged",
+                "final_loglik_change": 1.0,
+            }
+
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    fit_2pl(
+        np.array([[0.0, 1.0], [1.0, 0.0]]),
+        q=np.int64(21),
+        estimate_corr=np.bool_(False),
+        max_iter=np.int64(2),
+        tol=np.float64(1e-6),
+        xi_points=np.int64(100),
+        xi_seed=np.uint64(7),
+    )
+
+    assert type(captured["q"]) is int
+    assert type(captured["estimate_corr"]) is bool
+    assert type(captured["max_iter"]) is int
+    assert type(captured["tol"]) is float
+    assert type(captured["node_rule"]) is str
+    assert type(captured["xi_points"]) is int
+    assert type(captured["xi_seed"]) is int
