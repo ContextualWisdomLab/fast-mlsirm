@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.multilevel import fit_hierarchical_longitudinal_irt
+from fast_mlsirm._multilevel_core_loader import multilevel_core
 
 
 class _HostileOrder:
@@ -94,4 +95,36 @@ def test_nonnumeric_execution_controls_raise_value_error(name: str, value: str) 
             object(),
             np.zeros((1, 2), dtype=np.float64),
             **{name: value},
+        )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["row_offsets", "sequence_indices", "time_offsets_milliseconds", "values"],
+)
+def test_raw_longitudinal_binding_bounds_before_materialization(name: str) -> None:
+    """The raw Rust entrypoint rejects oversized vectors before copying them."""
+    try:
+        core = multilevel_core()
+    except ImportError as exc:
+        pytest.skip(f"Rust extension unavailable in this checkout: {exc}")
+    arrays = {
+        "row_offsets": np.zeros(1, dtype=np.uint64),
+        "sequence_indices": np.zeros(1, dtype=np.uint64),
+        "time_offsets_milliseconds": np.zeros(1, dtype=np.int64),
+        "values": np.zeros(1, dtype=np.float64),
+    }
+    arrays[name] = np.zeros(
+        100_002 if name == "row_offsets" else 100_001,
+        dtype=arrays[name].dtype,
+    )
+    with pytest.raises(ValueError, match=name):
+        core.fit_longitudinal_state(
+            arrays["row_offsets"],
+            arrays["sequence_indices"],
+            arrays["time_offsets_milliseconds"],
+            arrays["values"],
+            "random_intercept_slope",
+            None,
+            1,
         )

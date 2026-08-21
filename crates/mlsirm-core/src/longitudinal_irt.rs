@@ -644,6 +644,18 @@ fn tridiagonal_inverse_diagonal(diag: &[f64], off: &[f64]) -> Result<Vec<f64>, S
         return Err("state Hessian entries must be finite".to_string());
     }
     let mut variances = vec![0.0; n];
+    if off.iter().all(|value| *value == 0.0) {
+        for (index, &value) in diag.iter().enumerate() {
+            if value.abs() < 1e-12 {
+                return Err("conditional state information is singular".to_string());
+            }
+            variances[index] = 1.0 / value;
+            if !variances[index].is_finite() || variances[index] <= 0.0 {
+                return Err("conditional state information is not positive definite".to_string());
+            }
+        }
+        return Ok(variances);
+    }
     for column in 0..n {
         let mut rhs = vec![0.0; n];
         rhs[column] = 1.0;
@@ -1521,6 +1533,10 @@ mod tests {
             .contains("singular"));
         let solved = solve_tridiagonal(&[2.0, 2.0], &[-1.0], &[1.0, 0.0]).unwrap();
         assert!((solved[0] - 2.0 / 3.0).abs() < 1e-12);
+        assert_eq!(
+            tridiagonal_inverse_diagonal(&[2.0, 4.0], &[0.0]).unwrap(),
+            vec![0.5, 0.25]
+        );
         let (lower, upper) = wald_interval(0.0, 1.0);
         assert!((upper - lower - 2.0 * WALD_Z).abs() < 1e-12);
         assert!(

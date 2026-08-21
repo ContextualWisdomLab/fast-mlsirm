@@ -130,10 +130,34 @@ fn py_fit_longitudinal_state<'py>(
     ar_coefficient: Option<f64>,
     worker_count: usize,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let row_offsets = checked_usize_values(row_offsets.as_slice()?, "row_offsets")?;
-    let sequence_indices = checked_usize_values(sequence_indices.as_slice()?, "sequence_indices")?;
-    let time_offsets = time_offsets_milliseconds.as_slice()?.to_vec();
-    let values = values.as_slice()?.to_vec();
+    let row_offsets_view = row_offsets.as_slice()?;
+    if row_offsets_view.len() > MAX_ROW_OFFSETS {
+        return Err(PyValueError::new_err(format!(
+            "row_offsets exceeds maximum supported length of {MAX_ROW_OFFSETS}"
+        )));
+    }
+    let sequence_indices_view = sequence_indices.as_slice()?;
+    if sequence_indices_view.len() > MAX_HIERARCHICAL_OCCASIONS {
+        return Err(PyValueError::new_err(format!(
+            "sequence_indices exceeds maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
+        )));
+    }
+    let time_offsets_view = time_offsets_milliseconds.as_slice()?;
+    if time_offsets_view.len() > MAX_HIERARCHICAL_OCCASIONS {
+        return Err(PyValueError::new_err(format!(
+            "time_offsets_milliseconds exceeds maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
+        )));
+    }
+    let values_view = values.as_slice()?;
+    if values_view.len() > MAX_HIERARCHICAL_OCCASIONS {
+        return Err(PyValueError::new_err(format!(
+            "values exceeds maximum supported length of {MAX_HIERARCHICAL_OCCASIONS}"
+        )));
+    }
+    let row_offsets = checked_usize_values(row_offsets_view, "row_offsets")?;
+    let sequence_indices = checked_usize_values(sequence_indices_view, "sequence_indices")?;
+    let time_offsets = time_offsets_view.to_vec();
+    let values = values_view.to_vec();
     let state_kind = state_kind.to_owned();
     let fit = py
         .detach(move || {
