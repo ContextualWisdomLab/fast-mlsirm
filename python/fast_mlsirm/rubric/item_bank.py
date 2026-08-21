@@ -117,12 +117,14 @@ def _fingerprint(value: Any, name: str) -> str:
 
 def _enum_value(value: Any, enum_type: type[Enum], name: str) -> Enum:
     """Normalize an exact enum member or its serialized value."""
-    if isinstance(value, enum_type):
+    choices = [member.value for member in enum_type]
+    if type(value) is enum_type:
         return value
+    if type(value) is not str:
+        raise ValueError(f"{name} must be one of {choices}")
     try:
         return enum_type(value)
     except (TypeError, ValueError) as exc:
-        choices = [member.value for member in enum_type]
         raise ValueError(f"{name} must be one of {choices}") from exc
 
 
@@ -174,7 +176,7 @@ def _normalize_evidence_references(
             minimum=0,
             maximum=_MAX_EVIDENCE_REFERENCES,
         )
-    except ValueError as exc:
+    except ValueError:
         if error_type is ItemBankLifecycleError:
             raise ItemBankLifecycleError(
                 "invalid_evidence_references",
@@ -604,7 +606,7 @@ def transition_item_bank_record(
     current = _verify_current_record(current_record)
     try:
         target = _enum_value(target_state, ItemBankLifecycleState, "target_state")
-    except ValueError as exc:
+    except ValueError:
         raise ItemBankLifecycleError(
             "invalid_target_state",
             "$.target_state",
@@ -664,7 +666,7 @@ def transition_item_bank_record(
                     )
                 )
             )
-        except ValueError as exc:
+        except ValueError:
             raise ItemBankLifecycleError(
                 "invalid_approved_use",
                 "$.approved_use_ids",
@@ -693,7 +695,7 @@ def transition_item_bank_record(
             transition_reason_id,
             "transition_reason_id",
         )
-    except ValueError as exc:
+    except ValueError:
         raise ItemBankLifecycleError(
             "invalid_transition_reason",
             "$.transition_reason_id",
