@@ -39,22 +39,91 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
+_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted concrete scalar type."""
+    return any(value_type is trusted_type for trusted_type in trusted_types)
 
 
 def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
-    """Validate that ``value`` is an integer in ``[lower, upper]`` and return it."""
-    if (
-        not isinstance(value, (int, np.integer))
-        or isinstance(value, (bool, np.bool_))
-        or not lower <= int(value) <= upper
-    ):
+    """Validate an exact supported integer in ``[lower, upper]`` and return it."""
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
         raise ValueError(f"{name} must be an integer between {lower} and {upper}")
-    return int(value)
+    if not lower <= validated <= upper:
+        raise ValueError(f"{name} must be an integer between {lower} and {upper}")
+    return validated
 
 
 def _quadrature_points(value) -> int:
     """Validate and return the Gauss-Hermite quadrature node count ``q_theta``."""
     return _bounded_integer(value, "q_theta", 1, MAX_POLY_QUADRATURE_POINTS)
+
+
+def _fit_quadrature_points(value) -> int:
+    """Return one exact supported calibration Gauss-Hermite node count."""
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    return validated
+
+
+def _fit_model(value) -> str:
+    """Normalize one exact built-in GRM/GPCM model selector."""
+    if type(value) is not str:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    normalized = value.lower()
+    if normalized not in VALID_POLY_MODELS:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    return normalized
+
+
+def _positive_real(value, name: str) -> float:
+    """Normalize one exact trusted positive finite real scalar."""
+    value_type = type(value)
+    if not (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        raise ValueError(f"{name} must be finite and > 0")
+    try:
+        validated = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and > 0") from exc
+    if not np.isfinite(validated) or validated <= 0.0:
+        raise ValueError(f"{name} must be finite and > 0")
+    return validated
 
 
 @dataclass
@@ -96,13 +165,7 @@ def _core_module():
 def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, np.ndarray]:
     """Validate polytomous responses (``NaN`` = missing) and return
     ``(int64 categories with missing filled to 0, boolean observed mask)``."""
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    n_cat = int(n_cat)
+    n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
     yf = np.asarray(responses, dtype=np.float64)
     if yf.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -169,32 +232,18 @@ def fit_polytomous(
     *The Annals of Statistics, 11*(1), 95–103.
     https://doi.org/10.1214/aos/1176346060
     """
-    m = str(model).lower()
-    if m not in VALID_POLY_MODELS:
-        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    if q_theta not in {7, 11, 15, 21, 31, 41}:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        not isinstance(max_iter, (int, np.integer))
-        or isinstance(max_iter, (bool, np.bool_))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
-        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
+    m = _fit_model(model)
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    validated_q_theta = _fit_quadrature_points(q_theta)
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
 
-    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
     validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
         validation_y,
         "polytomous",
-        n_categories=int(n_cat),
+        n_categories=validated_n_cat,
     )
 
     core = _core_module()
@@ -207,12 +256,12 @@ def fit_polytomous(
         y_int.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(n_cat),
+        validated_n_cat,
         obs_arg,
         m,
-        int(q_theta),
-        int(max_iter),
-        float(tol),
+        validated_q_theta,
+        validated_max_iter,
+        validated_tol,
     )
     slope = np.asarray(res["slope"], dtype=np.float64)
     cat_params = np.asarray(res["cat_params"], dtype=np.float64)
