@@ -13,9 +13,11 @@ class _FloatProvider:
     """Hostile arbitrary float protocol provider used to detect callbacks."""
 
     def __init__(self, calls: list[str]) -> None:
+        """Record the callback sink without invoking caller conversion."""
         self._calls = calls
 
     def __float__(self) -> float:
+        """Record an attempted conversion and return a hostile NaN."""
         self._calls.append("__float__")
         return float("nan")
 
@@ -26,6 +28,7 @@ class _FloatSubclass(float):
     calls: list[str] = []
 
     def __float__(self) -> float:
+        """Record an attempted subclass conversion and return a hostile NaN."""
         type(self).calls.append("__float__")
         return float("nan")
 
@@ -75,6 +78,7 @@ def test_casewise_values_preserve_genuine_numpy_scalar_compatibility(
         *,
         bic_correction: bool,
     ) -> dict[str, float]:
+        """Capture normalized NumPy scalars instead of invoking Rust."""
         observed["a"] = values_a
         observed["b"] = values_b
         assert (k_a, k_b, bic_correction) == (1, 1, False)
