@@ -139,6 +139,23 @@ def test_reliability_rejects_excess_sequence_rank_before_numpy_materialization(
         invoke()
 
 
+def test_cronbach_alpha_rejects_cyclic_sequence_before_numpy_materialization(
+    monkeypatch,
+):
+    """A self-referential list must terminate at the known-rank boundary."""
+    cyclic: list[object] = []
+    cyclic.append(cyclic)
+
+    def _materialization_must_not_run(*args, **kwargs):
+        raise AssertionError("NumPy materialization ran for cyclic evidence")
+
+    monkeypatch.setattr(np, "asarray", _materialization_must_not_run)
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match="data must be a 2-D array"):
+        reliability.cronbach_alpha(cyclic)
+
+
 def test_cronbach_alpha_preserves_plain_sequence_numeric_compatibility(monkeypatch):
     """Exact built-in sequences with trusted real scalars remain valid evidence."""
     seen: dict[str, object] = {}
@@ -154,10 +171,11 @@ def test_cronbach_alpha_preserves_plain_sequence_numeric_compatibility(monkeypat
         lambda: SimpleNamespace(cronbach_alpha=_cronbach_alpha),
     )
 
+    row = [1, np.float32(2.0)]
     result = reliability.cronbach_alpha(
         [
-            [1, np.float32(2.0)],
-            [np.int16(2), 3.0],
+            row,
+            row,
             [3, np.float64(4.0)],
         ]
     )
