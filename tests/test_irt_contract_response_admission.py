@@ -1,0 +1,82 @@
+"""Regression coverage for callback-safe IRT response admission."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fast_mlsirm.irt_contract import (
+    fit_irt_experiment,
+    validate_irt_response_matrix,
+)
+
+
+class _ArrayProvider:
+    """Hostile array provider that must never run during admission."""
+
+    calls = 0
+
+    def __array__(self, dtype=None):
+        """Fail loudly if NumPy protocol dispatch occurs before trust admission."""
+        del dtype
+        type(self).calls += 1
+        raise AssertionError("caller array protocol executed")
+
+
+def test_response_matrix_rejects_array_provider_before_callback() -> None:
+    """Arbitrary array providers must fail closed without protocol execution."""
+    _ArrayProvider.calls = 0
+
+    with pytest.raises(ValueError, match="responses must be a real numeric matrix"):
+        validate_irt_response_matrix(_ArrayProvider(), "dichotomous")
+
+    assert _ArrayProvider.calls == 0
+
+
+def test_response_matrix_rejects_complex_before_lossy_float_cast() -> None:
+    """Imaginary response evidence must never be projected onto the real axis."""
+    responses = np.array(
+        [[0.0 + 1.0j, 1.0], [1.0, 0.0], [0.0, 1.0]],
+        dtype=np.complex128,
+    )
+
+    with pytest.raises(ValueError, match="responses must be a real numeric matrix"):
+        validate_irt_response_matrix(responses, "dichotomous")
+
+
+def test_fit_rejects_complex_before_fit_callable() -> None:
+    """Production readiness must reject lossy evidence before numerical fitting."""
+    responses = np.array(
+        [
+            [0.0 + 1.0j, 1.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+        ],
+        dtype=np.complex128,
+    )
+    calls = 0
+
+    def _fit(_matrix, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("fit callable executed")
+
+    with pytest.raises(ValueError, match="responses must be a real numeric matrix"):
+        fit_irt_experiment(_fit, responses, "dichotomous")
+
+    assert calls == 0
+
+
+def test_builtin_matrix_with_numpy_scalars_remains_supported() -> None:
+    """Ordinary nested containers retain supported concrete NumPy scalar cells."""
+    responses = [
+        [np.int16(0), np.float32(1.0)],
+        [np.uint8(1), np.float64(0.0)],
+    ]
+
+    matrix = validate_irt_response_matrix(responses, "dichotomous")
+
+    assert matrix.dtype == np.float64
+    assert matrix.tolist() == [[0.0, 1.0], [1.0, 0.0]]
