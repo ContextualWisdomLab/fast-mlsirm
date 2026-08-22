@@ -88,8 +88,8 @@ def _boolean(value: Any, name: str) -> bool:
 
 
 def _reject_masked_array(value: Any, name: str) -> None:
-    """Reject NumPy masked-array evidence without invoking array protocols."""
-    if isinstance(value, np.ma.MaskedArray):
+    """Reject exact NumPy masked-array evidence without caller callbacks."""
+    if builtins.type(value) is np.ma.MaskedArray:
         raise ValueError(f"{name} must not be a masked array")
 
 
@@ -199,7 +199,7 @@ def install(reliability_module: ModuleType) -> None:
             raise ValueError("r0 must be in [0, 1)")
         if not 0.0 < conf_level_value < 1.0:
             raise ValueError("conf_level must be in (0, 1)")
-        if isinstance(ratings, np.ma.MaskedArray):
+        if builtins.type(ratings) is np.ma.MaskedArray:
             raise ValueError("masked arrays are not supported; use NaN for missing")
         ratings_value = _real_numeric_array(
             ratings,
