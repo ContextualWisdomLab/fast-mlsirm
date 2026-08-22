@@ -888,40 +888,34 @@ def ci_classify(
             categories. *Educational and Psychological Measurement, 60*(5),
             713-734. (NOT read; historical.)
     """
-    from . import _core
+    theta_cut = _as_real_scalar("theta_cut", theta_cut)
+    if not np.isfinite(theta_cut):
+        raise ValueError("theta_cut must be finite")
+    z_crit = _as_real_scalar("z_crit", z_crit)
+    if not np.isfinite(z_crit) or z_crit <= 0.0:
+        raise ValueError("z_crit must be finite and > 0")
 
-    # Reject complex input BEFORE the dtype casts: the casts would silently
-    # discard imaginary parts (complex laundering).
-    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
-        if arr is not None and np.iscomplexobj(np.asarray(arr)):
-            raise ValueError(f"{name} must be real-valued")
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
-    resp = np.asarray(responses)
-    if resp.ndim != 1:
-        raise ValueError("responses must be a 1-D array")
-    if resp.dtype == np.bool_:
-        resp = resp.astype(np.uint8)
-    else:
-        resp_f = np.asarray(resp, dtype=np.float64)
-        if not np.all(np.isin(resp_f, (0.0, 1.0))):
-            raise ValueError("responses must contain only 0 and 1")
-        resp = resp_f.astype(np.uint8)
+    responses = _as_binary_response_array("responses", responses)
+
+    from . import _core
+
     r = _core.py_ci_classify(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(resp),
-        float(theta_cut),
-        float(z_crit),
+        a,
+        b,
+        c,
+        responses,
+        theta_cut,
+        z_crit,
     )
     return {
         "decision": str(r["decision"]),
