@@ -95,6 +95,16 @@ def test_detect_rejects_indirectly_cyclic_cluster_list():
         detect_analysis(_binary(), outer)
 
 
+def test_detect_preserves_shared_acyclic_response_rows():
+    responses = _binary().tolist()
+    responses[1] = responses[0]
+
+    result = detect_analysis(responses, np.array([0, 0, 0, 1, 1, 1]))
+
+    assert isinstance(result, DetectResult)
+    assert result.n_pairs == 15
+
+
 def test_dimtest_happy_path():
     y = _binary(n_persons=300, n_items=15)
     res = dimtest(y, at1=np.array([0, 1, 2, 3]), at2=np.array([4, 5, 6, 7]))
