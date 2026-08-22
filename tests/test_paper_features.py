@@ -6675,7 +6675,7 @@ class TestSprtClassify:
     def test_rejects_bad_responses(self):
         from fast_mlsirm import sprt_classify
 
-        with pytest.raises(ValueError, match="0 and 1"):
+        with pytest.raises(ValueError, match="0 or 1"):
             sprt_classify(
                 np.array([1.0, 1.0]),
                 np.zeros(2),
@@ -6683,7 +6683,7 @@ class TestSprtClassify:
                 theta_cut=0.0,
                 delta=0.5,
             )
-        with pytest.raises(ValueError, match="0 and 1"):
+        with pytest.raises(ValueError, match="0 or 1"):
             sprt_classify(
                 np.array([1.0, 1.0]),
                 np.zeros(2),
@@ -6695,7 +6695,7 @@ class TestSprtClassify:
     def test_rejects_complex_input(self):
         from fast_mlsirm import sprt_classify
 
-        with pytest.raises(ValueError, match="real-valued"):
+        with pytest.raises(ValueError, match="real numeric array"):
             sprt_classify(
                 np.array([1.0 + 1j, 1.0]),
                 np.zeros(2),
