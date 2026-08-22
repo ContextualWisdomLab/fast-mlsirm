@@ -17,6 +17,60 @@ MIN_OBSERVED_PER_ITEM = 3
 MIN_ITEM_DISTINCT_VALUES = 2
 MIN_FACTOR_ANCHOR_ITEMS = 2
 _FitResultT = TypeVar("_FitResultT")
+_TRUSTED_RESPONSE_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+
+
+def _real_numeric_response_matrix(
+    responses: Iterable[Iterable[float]] | np.ndarray,
+) -> np.ndarray:
+    """Marshal trusted real response storage without caller numeric callbacks."""
+    if type(responses) is np.ndarray:
+        source = responses
+    elif type(responses) in (list, tuple):
+        stack = list(responses)
+        while stack:
+            current = stack.pop()
+            if type(current) in (list, tuple):
+                stack.extend(current)
+                continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in {"b", "i", "u", "f"}:
+                    raise ValueError("responses must be a real numeric matrix")
+                continue
+            if type(current) not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+                raise ValueError("responses must be a real numeric matrix")
+        try:
+            source = np.asarray(responses)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("responses must be a real numeric matrix") from exc
+    else:
+        raise ValueError("responses must be a real numeric matrix")
+
+    if source.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError("responses must be a real numeric matrix")
+    try:
+        return np.ascontiguousarray(source, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("responses must be a real numeric matrix") from exc
 
 
 def validate_irt_response_matrix(
@@ -50,10 +104,7 @@ def validate_irt_response_matrix(
             f"2..{MAX_POLYTOMOUS_CATEGORIES}"
         )
 
-    try:
-        matrix = np.asarray(responses, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("responses must be numeric") from exc
+    matrix = _real_numeric_response_matrix(responses)
     if matrix.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items matrix")
     n_persons, n_items = matrix.shape
@@ -265,10 +316,7 @@ def _normalize_experiment_responses(
     mask: object | None,
 ) -> np.ndarray:
     """Apply public fitter missing-response semantics before readiness checks."""
-    try:
-        matrix = np.asarray(responses, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("responses must be numeric") from exc
+    matrix = _real_numeric_response_matrix(responses)
     if mask is None:
         active = np.ones(matrix.shape, dtype=bool)
     else:
