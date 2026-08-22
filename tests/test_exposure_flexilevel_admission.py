@@ -206,3 +206,14 @@ def test_flexilevel_distribution_preserves_real_numeric_probabilities() -> None:
         np.array([0.2, 0.5, 0.8], dtype=np.float32)
     )
     assert np.isclose(float(np.sum(result["probs"])), 1.0)
+
+
+def test_flexilevel_distribution_preserves_numpy_scalars_in_plain_sequences() -> None:
+    """Trusted NumPy scalar probability sequences retain array-like compatibility."""
+
+    for probabilities in (
+        [np.float64(0.2), np.float64(0.5), np.float64(0.8)],
+        (np.float32(0.2), np.int16(0), np.uint8(1)),
+    ):
+        result = exposure.flexilevel_score_distribution(probabilities)
+        assert np.isclose(float(np.sum(result["probs"])), 1.0)
