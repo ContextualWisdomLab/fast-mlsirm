@@ -40,10 +40,13 @@ _USIZE_MAX = int(np.iinfo(np.uintp).max)
 
 
 def _exact_bool(value: Any, name: str) -> bool:
-    """Return an exact built-in bool without invoking caller callbacks."""
-    if builtins.type(value) is not bool:
-        raise ValueError(f"{name} must be an exact bool")
-    return value
+    """Normalize a concrete Python/NumPy bool without caller callbacks."""
+    value_type = builtins.type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a bool")
 
 
 def _real(value: Any, name: str) -> float:
@@ -105,7 +108,7 @@ def install(dif_module: ModuleType) -> None:
     ) -> Any:
         """Validate logistic DIF controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
-        iterations = _usize(max_iter, "max_iter", minimum=1)
+        iterations = _usize(max_iter, "max_iter", minimum=0)
         return original_logistic(
             responses,
             group,
@@ -148,7 +151,7 @@ def install(dif_module: ModuleType) -> None:
     ) -> Any:
         """Validate purified logistic controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
-        iterations = _usize(max_iter, "max_iter", minimum=1)
+        iterations = _usize(max_iter, "max_iter", minimum=0)
         rounds = _usize(max_rounds, "max_rounds", minimum=1)
         anchors = _usize(min_anchor_items, "min_anchor_items", minimum=0)
         return original_logistic_purified(
