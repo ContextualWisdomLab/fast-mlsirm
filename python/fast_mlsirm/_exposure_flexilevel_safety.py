@@ -17,6 +17,7 @@ from ._exposure_array_safety import exact_ndarray
 
 _USIZE_MAX = int(np.iinfo(np.uintp).max)
 _REAL_NUMERIC_KINDS = frozenset({"b", "i", "u", "f"})
+_BUILTIN_REAL_SCALAR_TYPES = frozenset({bool, int, float})
 
 
 def _binary_responses(
@@ -28,9 +29,10 @@ def _binary_responses(
     """Admit exact flexilevel response storage before ``uint8`` marshalling."""
 
     expected = n_persons * n_items
-    array = exact_ndarray(value, message="responses must be a real numeric array")
+    message = "responses must be a real numeric array (real-valued evidence required)"
+    array = exact_ndarray(value, message=message)
     if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
-        raise ValueError("responses must be a real numeric array")
+        raise ValueError(message)
     if array.ndim == 2:
         if array.shape != (n_persons, n_items):
             raise ValueError(
@@ -47,23 +49,43 @@ def _binary_responses(
     return np.ascontiguousarray(array, dtype=np.uint8)
 
 
+def _probability_source(value: object) -> np.ndarray:
+    """Admit inert array storage or a plain built-in scalar sequence."""
+
+    message = "p must be a real numeric array (real-valued evidence required)"
+    if type(value) is np.ndarray:
+        return value
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError(message)
+    # Preserve the long-standing list/tuple public API without invoking
+    # caller-defined numeric/array protocols: every element must itself be an
+    # exact built-in real scalar before NumPy sees the sequence.
+    if any(type(item) not in _BUILTIN_REAL_SCALAR_TYPES for item in value):
+        raise ValueError(message)
+    return np.asarray(value)
+
+
 def _probabilities(value: object) -> np.ndarray:
     """Admit one odd real probability vector before ``float64`` marshalling."""
 
-    array = exact_ndarray(value, message="p must be a real numeric array")
+    message = "p must be a real numeric array (real-valued evidence required)"
+    array = _probability_source(value)
     if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
-        raise ValueError("p must be a real numeric array")
+        raise ValueError(message)
     if array.ndim != 1:
         raise ValueError("p must be a 1-D array")
     if array.size < 3 or array.size % 2 == 0:
         raise ValueError("p length must be odd and at least 3")
     normalized = np.ascontiguousarray(array, dtype=np.float64)
-    if (
-        not np.isfinite(normalized).all()
-        or (normalized < 0.0).any()
-        or (normalized > 1.0).any()
-    ):
-        raise ValueError("p must contain finite values in [0, 1]")
+    invalid = np.flatnonzero(
+        ~np.isfinite(normalized) | (normalized < 0.0) | (normalized > 1.0)
+    )
+    if invalid.size:
+        index = int(invalid[0])
+        raise ValueError(
+            f"p[{index}] must be finite and in [0, 1]; "
+            "p must contain finite values in [0, 1]"
+        )
     return normalized
 
 
