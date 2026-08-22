@@ -109,6 +109,7 @@ def link_fixed_item_parameters(
     target_alpha = _real_numeric_array(target.alpha, name="target.alpha")
     target_b = _real_numeric_array(target.b, name="target.b")
     for arr, nm in (
+        (source_theta, "source.theta"),
         (source_alpha, "source.alpha"),
         (source_b, "source.b"),
         (target_alpha, "target.alpha"),
