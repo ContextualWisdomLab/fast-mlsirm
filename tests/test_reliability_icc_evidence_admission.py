@@ -75,6 +75,8 @@ def test_icc_preserves_trusted_sequence_compatibility(monkeypatch):
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: SimpleNamespace(icc=_icc))
 
+    r0 = np.float32(0.1)
+    conf_level = np.float64(0.9)
     result = reliability.icc(
         [
             [np.float32(1.0), 2],
@@ -84,13 +86,19 @@ def test_icc_preserves_trusted_sequence_compatibility(monkeypatch):
         model="twoway",
         type="agreement",
         unit="average",
-        r0=np.float32(0.1),
-        conf_level=np.float64(0.9),
+        r0=r0,
+        conf_level=conf_level,
     )
 
     assert result.value == pytest.approx(0.5)
     assert seen["shape"] == (3, 2)
-    assert seen["controls"] == ("twoway", "agreement", "average", 0.1, 0.9)
+    assert seen["controls"] == (
+        "twoway",
+        "agreement",
+        "average",
+        float(r0),
+        float(conf_level),
+    )
     assert isinstance(seen["flat"], np.ndarray)
     assert seen["flat"].dtype == np.float64
 
