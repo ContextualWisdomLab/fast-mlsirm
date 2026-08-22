@@ -112,6 +112,34 @@ def test_reliability_rejects_arbitrary_array_provider_without_callback(
 
 
 @pytest.mark.parametrize(
+    "invoke",
+    [
+        lambda value: reliability.guttman_lambdas(value),
+        lambda value: reliability.tenberge_mu(value),
+        lambda value: reliability.cronbach_alpha(value),
+        lambda value: reliability.separation_reliability(
+            value, np.array([0.01, 0.02], dtype=np.float64)
+        ),
+        lambda value: reliability.separation_reliability(
+            np.array([0.1, 0.2], dtype=np.float64), value
+        ),
+    ],
+)
+def test_reliability_masked_arrays_use_actionable_nan_guidance_before_native(
+    monkeypatch, invoke
+):
+    """All reliability adapters should reject masks with the same actionable contract."""
+    masked = np.ma.array([0.1, 0.2], mask=[False, True])
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(
+        ValueError,
+        match="masked arrays are not supported; use NaN for missing",
+    ):
+        invoke(masked)
+
+
+@pytest.mark.parametrize(
     ("invoke", "message"),
     [
         (
