@@ -13,11 +13,36 @@ from typing import Any, Callable
 
 import numpy as np
 
-from ._exposure_array_safety import exact_ndarray
+from ._exposure_array_safety import _TRUSTED_REAL_SCALAR_TYPES
 
 _USIZE_MAX = int(np.iinfo(np.uintp).max)
 _REAL_NUMERIC_KINDS = frozenset({"b", "i", "u", "f"})
 _BUILTIN_REAL_SCALAR_TYPES = frozenset({bool, int, float})
+
+
+def _response_source(value: object, *, message: str) -> np.ndarray:
+    """Admit inert ndarray or plain 1-D/2-D response sequences."""
+
+    if type(value) is np.ndarray:
+        return value
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError(message)
+
+    if all(type(item) in _TRUSTED_REAL_SCALAR_TYPES for item in value):
+        return np.asarray(value)
+
+    if any(type(row) is not list and type(row) is not tuple for row in value):
+        raise ValueError(message)
+    if any(
+        any(type(item) not in _TRUSTED_REAL_SCALAR_TYPES for item in row)
+        for row in value
+    ):
+        raise ValueError(message)
+
+    row_lengths = {len(row) for row in value}
+    if len(row_lengths) > 1:
+        raise ValueError(message)
+    return np.asarray(value)
 
 
 def _binary_responses(
@@ -26,11 +51,11 @@ def _binary_responses(
     n_persons: int,
     n_items: int,
 ) -> np.ndarray:
-    """Admit exact flexilevel response storage before ``uint8`` marshalling."""
+    """Admit callback-safe flexilevel responses before ``uint8`` marshalling."""
 
     expected = n_persons * n_items
     message = "responses must be a real numeric array (real-valued evidence required)"
-    array = exact_ndarray(value, message=message)
+    array = _response_source(value, message=message)
     if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
         raise ValueError(message)
     if array.ndim == 2:
