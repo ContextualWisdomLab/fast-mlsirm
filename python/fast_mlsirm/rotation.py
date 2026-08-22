@@ -23,6 +23,7 @@ from typing import Final
 
 import numpy as np
 
+from ._rotation_controls import boolean, integer, optional_integer, optional_real, real
 from ._rotation_core_loader import rotation_core
 
 
@@ -113,7 +114,7 @@ def available_rotation_criteria() -> tuple[RotationCriterionInfo, ...]:
 def _method_name(value: str) -> str:
     """Normalize a public criterion identifier without silently guessing."""
 
-    if not isinstance(value, str) or not value.strip():
+    if type(value) is not str or not value.strip():
         raise ValueError("criterion must be a non-empty string")
     return value.strip().lower().replace("-", "_")
 
@@ -246,6 +247,21 @@ def rotate_factor_loadings(
     matrix = _matrix(loadings, "loadings")
     method = _method_name(criterion)
     resolved_mode = _mode_name(method, mode)
+    normalized = boolean(normalize, name="normalize")
+    starts = integer(n_starts, name="n_starts")
+    normalized_seed = integer(seed, name="seed")
+    iterations = integer(max_iter, name="max_iter")
+    normalized_tolerance = real(tolerance, name="tolerance")
+    window = integer(function_window, name="function_window")
+    line_search = integer(max_line_search, name="max_line_search")
+    normalized_basin_tolerance = real(basin_tolerance, name="basin_tolerance")
+    threads = integer(max_threads, name="max_threads")
+    normalized_kappa = optional_real(kappa, name="kappa")
+    normalized_gamma = optional_real(gamma, name="gamma")
+    normalized_delta = optional_real(delta, name="delta")
+    normalized_simplimax_zeros = optional_integer(
+        simplimax_zeros, name="simplimax_zeros"
+    )
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
     _validate_weights(method, weight_matrix)
@@ -253,19 +269,19 @@ def rotate_factor_loadings(
         matrix,
         method,
         resolved_mode,
-        bool(normalize),
-        int(n_starts),
-        int(seed),
-        int(max_iter),
-        float(tolerance),
-        int(function_window),
-        int(max_line_search),
-        float(basin_tolerance),
-        int(max_threads),
-        kappa,
-        gamma,
-        delta,
-        simplimax_zeros,
+        normalized,
+        starts,
+        normalized_seed,
+        iterations,
+        normalized_tolerance,
+        window,
+        line_search,
+        normalized_basin_tolerance,
+        threads,
+        normalized_kappa,
+        normalized_gamma,
+        normalized_delta,
+        normalized_simplimax_zeros,
         target_matrix,
         weight_matrix,
     )
@@ -287,16 +303,22 @@ def rotation_criterion_value_gradient(
 
     matrix = _matrix(loadings, "loadings")
     method = _method_name(criterion)
+    normalized_kappa = optional_real(kappa, name="kappa")
+    normalized_gamma = optional_real(gamma, name="gamma")
+    normalized_delta = optional_real(delta, name="delta")
+    normalized_simplimax_zeros = optional_integer(
+        simplimax_zeros, name="simplimax_zeros"
+    )
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
     _validate_weights(method, weight_matrix)
     value, gradient = rotation_core().rotation_criterion_value_gradient(
         matrix,
         method,
-        kappa,
-        gamma,
-        delta,
-        simplimax_zeros,
+        normalized_kappa,
+        normalized_gamma,
+        normalized_delta,
+        normalized_simplimax_zeros,
         target_matrix,
         weight_matrix,
     )
