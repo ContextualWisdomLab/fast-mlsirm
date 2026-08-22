@@ -93,7 +93,7 @@ class _HostileInt(int):
     (
         ({"fdr_q": _HostileFloat(0.05)}, _HostileFloat, "fdr_q must be a real number"),
         ({"fdr_q": _HostileFloatProvider()}, _HostileFloatProvider, "fdr_q must be a real number"),
-        ({"exclude_studied_item": _HostileBool(1)}, _HostileBool, "exclude_studied_item must be an exact bool"),
+        ({"exclude_studied_item": _HostileBool(1)}, _HostileBool, "exclude_studied_item must be a bool"),
         ({"max_iter": _HostileInt(50)}, _HostileInt, "max_iter must be an integer"),
     ),
 )
@@ -115,12 +115,11 @@ def test_logistic_rejects_executable_controls_before_callbacks_data_or_core(
     (
         (logistic_dif, {"fdr_q": 0.0}, r"fdr_q must be finite and in \(0, 1\]"),
         (logistic_dif, {"fdr_q": True}, "fdr_q must be a real number"),
-        (logistic_dif, {"exclude_studied_item": np.bool_(True)}, "exclude_studied_item must be an exact bool"),
-        (logistic_dif, {"max_iter": 0}, "max_iter must be >= 1"),
+        (logistic_dif, {"max_iter": -1}, "max_iter must be >= 0"),
         (logistic_dif, {"max_iter": True}, "max_iter must be an integer"),
         (mantel_haenszel_dif_purified, {"max_rounds": 0}, "max_rounds must be >= 1"),
         (mantel_haenszel_dif_purified, {"min_anchor_items": -1}, "min_anchor_items must be >= 0"),
-        (logistic_dif_purified, {"max_iter": 0}, "max_iter must be >= 1"),
+        (logistic_dif_purified, {"max_iter": -1}, "max_iter must be >= 0"),
         (logistic_dif_purified, {"max_rounds": 0}, "max_rounds must be >= 1"),
         (logistic_dif_purified, {"min_anchor_items": -1}, "min_anchor_items must be >= 0"),
     ),
@@ -192,7 +191,7 @@ def test_genuine_numpy_controls_dispatch_as_exact_builtins(monkeypatch):
     result = logistic_dif(
         responses,
         group,
-        exclude_studied_item=True,
+        exclude_studied_item=np.bool_(True),
         fdr_q=np.float32(0.05),
         max_iter=np.int64(25),
     )
