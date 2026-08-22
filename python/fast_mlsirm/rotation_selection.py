@@ -13,6 +13,7 @@ from typing import Sequence
 
 import numpy as np
 
+from ._rotation_controls import boolean, integer, optional_integer, optional_real, real
 from ._rotation_core_loader import rotation_core
 from .rotation import (
     RotationSolution,
@@ -77,7 +78,7 @@ _POLICIES = frozenset(
 def _policy_name(value: str) -> str:
     """Normalize and validate a decision policy identifier."""
 
-    if not isinstance(value, str) or not value.strip():
+    if type(value) is not str or not value.strip():
         raise ValueError("policy must be a non-empty string")
     normalized = value.strip().lower().replace("-", "_")
     if normalized not in _POLICIES:
@@ -197,6 +198,21 @@ def select_rotation_criterion(
     names = _candidate_names(candidates)
     resolved_mode = _mode_name("geomin", mode)
     resolved_policy = _policy_name(policy)
+    normalized = boolean(normalize, name="normalize")
+    starts = integer(n_starts, name="n_starts")
+    normalized_seed = integer(seed, name="seed")
+    iterations = integer(max_iter, name="max_iter")
+    normalized_tolerance = real(tolerance, name="tolerance")
+    window = integer(function_window, name="function_window")
+    line_search = integer(max_line_search, name="max_line_search")
+    normalized_basin_tolerance = real(basin_tolerance, name="basin_tolerance")
+    threads = integer(max_threads, name="max_threads")
+    normalized_kappa = optional_real(kappa, name="kappa")
+    normalized_gamma = optional_real(gamma, name="gamma")
+    normalized_delta = optional_real(delta, name="delta")
+    normalized_simplimax_zeros = optional_integer(
+        simplimax_zeros, name="simplimax_zeros"
+    )
     bootstraps = _bootstrap_array(bootstrap_loadings, matrix.shape)
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
@@ -208,19 +224,19 @@ def select_rotation_criterion(
         list(names),
         resolved_mode,
         resolved_policy,
-        bool(normalize),
-        int(n_starts),
-        int(seed),
-        int(max_iter),
-        float(tolerance),
-        int(function_window),
-        int(max_line_search),
-        float(basin_tolerance),
-        int(max_threads),
-        kappa,
-        gamma,
-        delta,
-        simplimax_zeros,
+        normalized,
+        starts,
+        normalized_seed,
+        iterations,
+        normalized_tolerance,
+        window,
+        line_search,
+        normalized_basin_tolerance,
+        threads,
+        normalized_kappa,
+        normalized_gamma,
+        normalized_delta,
+        normalized_simplimax_zeros,
         target_matrix,
         weight_matrix,
         bootstraps,
