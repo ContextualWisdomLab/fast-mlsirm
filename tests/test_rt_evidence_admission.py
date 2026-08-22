@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import fitstats
+import fast_mlsirm.rt as rt_module
 from fast_mlsirm.rt import fit_response_times, fit_speed_accuracy, rt_person_fit
 
 
@@ -195,3 +196,56 @@ def test_fit_response_times_preserves_plain_sequence_evidence_until_rust(
 
     with pytest.raises(RuntimeError, match="reached Rust boundary"):
         fit_response_times([[1.0, 1.5], [1.2, 1.8]])  # type: ignore[arg-type]
+
+
+def test_fit_response_times_rejects_excess_sequence_rank_before_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rank-three built-in evidence is rejected before NumPy can recurse into it."""
+
+    def _bomb_asarray(*args, **kwargs):
+        raise AssertionError("NumPy materialization reached before rank rejection")
+
+    monkeypatch.setattr(rt_module.np, "asarray", _bomb_asarray)
+
+    with pytest.raises(ValueError, match="response-time maximum rank"):
+        fit_response_times([[[1.0]]])  # type: ignore[arg-type]
+
+
+def test_fit_response_times_rejects_excess_sequence_axis_before_stack_growth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A huge flat sequence is rejected from its length before element traversal."""
+
+    def _bomb_asarray(*args, **kwargs):
+        raise AssertionError("NumPy materialization reached before axis rejection")
+
+    monkeypatch.setattr(rt_module.np, "asarray", _bomb_asarray)
+    times = [1.0] * 100_001
+
+    with pytest.raises(ValueError, match="response-time maximum axis length 100000"):
+        fit_response_times(times)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "shape, message",
+    [
+        ((100_001, 1), "response-time maximum axis length 100000"),
+        ((100_000, 201), "response-time maximum element count 20000000"),
+    ],
+)
+def test_fit_response_times_rejects_oversized_ndarray_before_contiguous_copy(
+    monkeypatch: pytest.MonkeyPatch,
+    shape: tuple[int, int],
+    message: str,
+) -> None:
+    """Existing ndarray metadata is bounded before any potentially large copy."""
+    source = np.broadcast_to(np.array(1.0, dtype=np.float64), shape)
+
+    def _bomb_contiguous(*args, **kwargs):
+        raise AssertionError("contiguous copy reached before resource rejection")
+
+    monkeypatch.setattr(rt_module.np, "ascontiguousarray", _bomb_contiguous)
+
+    with pytest.raises(ValueError, match=message):
+        fit_response_times(source)
