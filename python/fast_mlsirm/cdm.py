@@ -392,12 +392,12 @@ def validate_q_matrix(
             Measurement, 45*(4), 343-362.
             https://doi.org/10.1111/j.1745-3984.2008.00069.x
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(provisional_q, "provisional_q", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -504,12 +504,12 @@ def gdina_wald_selection(
             selection, and attribute classification. *Applied Psychological
             Measurement, 40*(3), 200–217. https://doi.org/10.1177/0146621615621717
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -603,20 +603,20 @@ def fit_ho_cdm(
     are identified. ``attr_slope`` is anchored non-negative.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
-    ``q_matrix`` is an items x attributes 0/1 array; ``model`` is ``"dina"`` or ``"dino"``.
+    ``q_matrix`` is an items x attributes 0/1 array; ``model`` is ``\"dina\"`` or ``\"dino\"``.
 
     References (APA 7th ed.):
         de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
             cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
             https://doi.org/10.1007/BF02295640
     """
+    model = _validate_model_selector(model)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    model = _validate_model_selector(model)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -728,12 +728,12 @@ def fit_ho_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -867,6 +867,7 @@ def fit_seq_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -874,7 +875,6 @@ def fit_seq_gdina(
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
 
@@ -985,6 +985,7 @@ def fit_seq_gdina_qr(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
             179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -1008,7 +1009,6 @@ def fit_seq_gdina_qr(
     sq, n_attributes = _validate_q_matrix_input(step_q, "step_q", n_step_rows)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
 
