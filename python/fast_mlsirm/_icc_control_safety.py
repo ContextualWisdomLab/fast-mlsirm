@@ -87,6 +87,12 @@ def _boolean(value: Any, name: str) -> bool:
     raise TypeError(f"{name} must be a bool")
 
 
+def _reject_masked_array(value: Any, name: str) -> None:
+    """Reject NumPy masked-array evidence without invoking array protocols."""
+    if isinstance(value, np.ma.MaskedArray):
+        raise ValueError(f"{name} must not be a masked array")
+
+
 def _trusted_sequence_tree(value: Any, *, allow_bool: bool) -> bool:
     """Return whether an exact list/tuple tree contains only trusted reals."""
     stack = [value]
@@ -114,6 +120,7 @@ def _real_numeric_array(
     ndim: int,
     *,
     allow_bool: bool = True,
+    dimension_error: str | None = None,
 ) -> np.ndarray:
     """Marshal inert real-numeric evidence without arbitrary array callbacks."""
     value_type = builtins.type(value)
@@ -134,6 +141,8 @@ def _real_numeric_array(
     if not allow_bool and arr.dtype.kind == "b":
         raise ValueError(f"{name} must be real numeric evidence")
     if arr.ndim != ndim:
+        if dimension_error is not None:
+            raise ValueError(dimension_error)
         dimension = "2-D" if ndim == 2 else "1-D"
         raise ValueError(f"{name} must be a {dimension} array")
     try:
@@ -215,13 +224,25 @@ def install(reliability_module: ModuleType) -> None:
     @wraps(original_separation)
     def safe_separation_reliability(measures: Any, se: Any) -> Any:
         """Validate person-measure evidence before native discovery."""
-        measures_value = _real_numeric_array(measures, "measures", 1)
-        se_value = _real_numeric_array(se, "se", 1)
+        dimension_error = "measures and se must be 1-D arrays"
+        measures_value = _real_numeric_array(
+            measures,
+            "measures",
+            1,
+            dimension_error=dimension_error,
+        )
+        se_value = _real_numeric_array(
+            se,
+            "se",
+            1,
+            dimension_error=dimension_error,
+        )
         return original_separation(measures_value, se_value)
 
     @wraps(original_mean_cor)
     def safe_mean_pairwise_cor(ratings: Any, fisher: bool = True) -> Any:
-        """Validate Fisher control and Pearson-rater evidence before Rust."""
+        """Validate masked evidence, Fisher control, and Pearson ratings."""
+        _reject_masked_array(ratings, "ratings")
         fisher_value = _boolean(fisher, "fisher")
         ratings_value = _real_numeric_array(
             ratings,
@@ -233,7 +254,8 @@ def install(reliability_module: ModuleType) -> None:
 
     @wraps(original_mean_rho)
     def safe_mean_pairwise_rho(ratings: Any, fisher: bool = True) -> Any:
-        """Validate Fisher control and Spearman-rater evidence before Rust."""
+        """Validate masked evidence, Fisher control, and Spearman ratings."""
+        _reject_masked_array(ratings, "ratings")
         fisher_value = _boolean(fisher, "fisher")
         ratings_value = _real_numeric_array(
             ratings,
