@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
-import operator
 from dataclasses import dataclass
+
+import numpy as np
 
 from .backend import normalize_backend, normalize_device
 
@@ -40,6 +41,35 @@ MAX_SIM_DIMS = 50
 MAX_SIM_ITEMS_PER_DIM = 1_000
 MAX_SIM_CELLS = 20_000_000
 
+_NUMPY_INTEGER_TYPES = frozenset(
+    {
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.int_,
+        np.uint,
+        np.intp,
+        np.uintp,
+        np.longlong,
+        np.ulonglong,
+    }
+)
+
+
+def _trusted_integer(value: object, *, name: str) -> int:
+    """Return a callback-free package-trusted integer as a built-in ``int``."""
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if value_type in _NUMPY_INTEGER_TYPES:
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
 
 @dataclass(frozen=True)
 class MLS2PLMConfig:
@@ -73,40 +103,33 @@ class MLS2PLMConfig:
         a positive-definite trait equicorrelation from ``phi``, a finite
         non-negative ``gamma``, and a supported ``dtype``.
         """
-        for name, value in (
-            ("n_persons", self.n_persons),
-            ("n_dims", self.n_dims),
-            ("items_per_dim", self.items_per_dim),
-            ("latent_dim", self.latent_dim),
-        ):
-            if isinstance(value, bool):
-                raise ValueError(f"{name} must be an integer")
-            try:
-                operator.index(value)
-            except TypeError as exc:
-                raise ValueError(f"{name} must be an integer") from exc
-        if self.n_persons < 1:
+        n_persons = _trusted_integer(self.n_persons, name="n_persons")
+        n_dims = _trusted_integer(self.n_dims, name="n_dims")
+        items_per_dim = _trusted_integer(self.items_per_dim, name="items_per_dim")
+        latent_dim = _trusted_integer(self.latent_dim, name="latent_dim")
+        if n_persons < 1:
             raise ValueError("n_persons must be >= 1")
-        if self.n_dims < 1:
+        if n_dims < 1:
             raise ValueError("n_dims must be >= 1")
-        if self.items_per_dim < 1:
+        if items_per_dim < 1:
             raise ValueError("items_per_dim must be >= 1")
-        if self.n_persons > MAX_SIM_PERSONS:
+        if n_persons > MAX_SIM_PERSONS:
             raise ValueError(f"n_persons must be <= {MAX_SIM_PERSONS}")
-        if self.n_dims > MAX_SIM_DIMS:
+        if n_dims > MAX_SIM_DIMS:
             raise ValueError(f"n_dims must be <= {MAX_SIM_DIMS}")
-        if self.items_per_dim > MAX_SIM_ITEMS_PER_DIM:
+        if items_per_dim > MAX_SIM_ITEMS_PER_DIM:
             raise ValueError(f"items_per_dim must be <= {MAX_SIM_ITEMS_PER_DIM}")
-        if self.n_persons * self.n_items > MAX_SIM_CELLS:
+        n_items = n_dims * items_per_dim
+        if n_persons * n_items > MAX_SIM_CELLS:
             raise ValueError(
-                f"n_persons x n_items ({self.n_persons * self.n_items}) exceeds the "
+                f"n_persons x n_items ({n_persons * n_items}) exceeds the "
                 f"{MAX_SIM_CELLS}-cell simulation budget"
             )
-        if self.latent_dim < 1:
+        if latent_dim < 1:
             raise ValueError("latent_dim must be >= 1")
-        if self.latent_dim > MAX_LATENT_DIM:
+        if latent_dim > MAX_LATENT_DIM:
             raise ValueError(f"latent_dim must be <= {MAX_LATENT_DIM}")
-        if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
+        if not (-1.0 / max(n_dims - 1, 1) < self.phi < 1.0):
             raise ValueError("phi must produce a positive-definite equicorrelation matrix")
         try:
             gamma_is_finite = math.isfinite(self.gamma)
@@ -220,12 +243,7 @@ class FitConfig:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
         if model == "BIFAC2PLM" and self.estimator == "jmle":
             raise ValueError("BIFAC2PLM requires estimator 'mmle'")
-        if isinstance(self.lbfgs_history, bool):
-            raise ValueError("lbfgs_history must be an integer")
-        try:
-            lbfgs_history = operator.index(self.lbfgs_history)
-        except TypeError as exc:
-            raise ValueError("lbfgs_history must be an integer") from exc
+        lbfgs_history = _trusted_integer(self.lbfgs_history, name="lbfgs_history")
         if not (1 <= lbfgs_history <= MAX_LBFGS_HISTORY):
             raise ValueError(
                 f"lbfgs_history must be >= 1 and <= {MAX_LBFGS_HISTORY}"
@@ -260,16 +278,8 @@ class FitConfig:
             raise ValueError(f"m_steps must be >= 1 and <= {MAX_M_STEPS}")
         if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
             raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
-        for name in ("xi_points", "xi_seed"):
-            value = getattr(self, name)
-            if isinstance(value, bool):
-                raise ValueError(f"{name} must be an integer")
-            try:
-                operator.index(value)
-            except TypeError as exc:
-                raise ValueError(f"{name} must be an integer") from exc
-        xi_points = operator.index(self.xi_points)
-        xi_seed = operator.index(self.xi_seed)
+        xi_points = _trusted_integer(self.xi_points, name="xi_points")
+        xi_seed = _trusted_integer(self.xi_seed, name="xi_seed")
         if not (1 <= xi_points <= MAX_XI_POINTS):
             raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
         if not (0 <= xi_seed <= (1 << 64) - 1):
