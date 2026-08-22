@@ -164,6 +164,24 @@ def test_fit_response_times_rejects_deeply_nested_evidence_before_native(
         fit_response_times(nested)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("row_factory", [list, tuple])
+def test_fit_response_times_preserves_shared_acyclic_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    row_factory,
+) -> None:
+    """Reusing one row is acyclic and must remain valid sequence evidence."""
+
+    class _ReachedCore:
+        def fit_rt_lognormal(self, *args, **kwargs):
+            raise RuntimeError("reached Rust boundary")
+
+    row = row_factory((1.0, 1.5))
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _ReachedCore())
+
+    with pytest.raises(RuntimeError, match="reached Rust boundary"):
+        fit_response_times([row, row])  # type: ignore[arg-type]
+
+
 def test_fit_response_times_preserves_plain_sequence_evidence_until_rust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
