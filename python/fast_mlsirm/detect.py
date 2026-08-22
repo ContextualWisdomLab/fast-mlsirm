@@ -32,6 +32,7 @@ _TRUSTED_DETECT_SCALAR_TYPES = frozenset(
         np.longdouble,
     }
 )
+_MAX_DETECT_SEQUENCE_CELLS = 20_000_000
 
 
 def _trusted_numeric_array(
@@ -46,15 +47,30 @@ def _trusted_numeric_array(
     elif type(value) in (list, tuple):
         stack = [(value, False)]
         active_container_ids: set[int] = set()
+        expanded_cells: dict[int, int] = {}
         while stack:
             current, leaving = stack.pop()
             if type(current) in (list, tuple):
                 current_id = id(current)
                 if leaving:
+                    total_cells = 0
+                    for child in current:
+                        child_type = type(child)
+                        if child_type in (list, tuple):
+                            total_cells += expanded_cells[id(child)]
+                        elif child_type is np.ndarray:
+                            total_cells += int(child.size)
+                        else:
+                            total_cells += 1
+                        if total_cells > _MAX_DETECT_SEQUENCE_CELLS:
+                            raise ValueError(numeric_error)
+                    expanded_cells[current_id] = total_cells
                     active_container_ids.remove(current_id)
                     continue
                 if current_id in active_container_ids:
                     raise ValueError(numeric_error)
+                if current_id in expanded_cells:
+                    continue
                 active_container_ids.add(current_id)
                 stack.append((current, True))
                 stack.extend((child, False) for child in reversed(current))
