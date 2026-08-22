@@ -221,8 +221,8 @@ def sympson_hetter(
     if not np.isfinite(r_max) or not (0.0 < r_max <= 1.0):
         raise ValueError("r_max must be finite and in (0, 1]")
     tol = _as_real_scalar("tol", tol)
-    if not np.isfinite(tol) or tol <= 0.0:
-        raise ValueError("tol must be finite and greater than 0")
+    if not np.isfinite(tol) or tol < 0.0:
+        raise ValueError("tol must be finite and non-negative")
 
     a = _as_real_numeric_array("a", a)
     b = _as_real_numeric_array("b", b)
