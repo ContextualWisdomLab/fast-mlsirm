@@ -40,11 +40,13 @@ def _trusted_numeric_array(
     *,
     numeric_error: str,
     complex_error: str,
+    resource_error: str | None = None,
 ) -> np.ndarray:
     """Materialize inert real numeric storage without caller conversion hooks."""
+    resource_message = resource_error or numeric_error
     if type(value) is np.ndarray:
         if value.size > _MAX_DETECT_SEQUENCE_CELLS:
-            raise ValueError(numeric_error)
+            raise ValueError(resource_message)
         array = value
     elif type(value) in (list, tuple):
         stack = [(value, False)]
@@ -65,7 +67,7 @@ def _trusted_numeric_array(
                         else:
                             total_cells += 1
                         if total_cells > _MAX_DETECT_SEQUENCE_CELLS:
-                            raise ValueError(numeric_error)
+                            raise ValueError(resource_message)
                     expanded_cells[current_id] = total_cells
                     active_container_ids.remove(current_id)
                     continue
@@ -162,6 +164,9 @@ def detect_analysis(
         responses,
         numeric_error="responses must be a numeric array",
         complex_error="responses must be real-valued",
+        resource_error=(
+            f"responses exceed the {_MAX_DETECT_SEQUENCE_CELLS:,}-cell resource limit"
+        ),
     )
     y = response_array.astype(np.float64, copy=False)
     if y.ndim != 2:
@@ -178,6 +183,10 @@ def detect_analysis(
         cluster,
         numeric_error="cluster labels must be a numeric array",
         complex_error="cluster labels must be real integers",
+        resource_error=(
+            "cluster labels exceed "
+            f"the {_MAX_DETECT_SEQUENCE_CELLS:,}-cell resource limit"
+        ),
     ).reshape(-1)
     if c.shape[0] != n_items:
         raise ValueError("cluster must assign one label per item")
@@ -284,6 +293,9 @@ def dimtest(
         responses,
         numeric_error="responses must be a numeric array",
         complex_error="responses must be real-valued",
+        resource_error=(
+            f"responses exceed the {_MAX_DETECT_SEQUENCE_CELLS:,}-cell resource limit"
+        ),
     )
     y = resp.astype(np.float64, copy=False)
     if y.ndim != 2:
@@ -300,6 +312,10 @@ def dimtest(
             a,
             numeric_error=f"{name} indices must be a numeric array",
             complex_error=f"{name} indices must be real integers",
+            resource_error=(
+                f"{name} indices exceed "
+                f"the {_MAX_DETECT_SEQUENCE_CELLS:,}-cell resource limit"
+            ),
         ).reshape(-1)
         af = arr.astype(np.float64, copy=False)
         if arr.size == 0 or not np.all(np.isfinite(af)) or np.any(af != np.round(af)):
