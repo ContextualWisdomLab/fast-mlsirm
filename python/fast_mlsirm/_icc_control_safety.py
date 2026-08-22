@@ -90,7 +90,7 @@ def _boolean(value: Any, name: str) -> bool:
 def _reject_masked_array(value: Any, name: str) -> None:
     """Reject exact NumPy masked-array evidence without caller callbacks."""
     if builtins.type(value) is np.ma.MaskedArray:
-        raise ValueError(f"{name} must not be a masked array")
+        raise ValueError("masked arrays are not supported; use NaN for missing")
 
 
 def _trusted_sequence_tree(
@@ -199,8 +199,7 @@ def install(reliability_module: ModuleType) -> None:
             raise ValueError("r0 must be in [0, 1)")
         if not 0.0 < conf_level_value < 1.0:
             raise ValueError("conf_level must be in (0, 1)")
-        if builtins.type(ratings) is np.ma.MaskedArray:
-            raise ValueError("masked arrays are not supported; use NaN for missing")
+        _reject_masked_array(ratings, "ratings")
         ratings_value = _real_numeric_array(
             ratings,
             "ratings",
@@ -229,23 +228,28 @@ def install(reliability_module: ModuleType) -> None:
             raise ValueError("n_sample_splits must be >= 1")
         if seed_value < 0:
             raise ValueError("seed must be non-negative")
+        _reject_masked_array(data, "data")
         data_value = _real_numeric_array(data, "data", 2)
         return original_guttman(data_value, n_sample_splits=split_value, seed=seed_value)
 
     @wraps(original_tenberge)
     def safe_tenberge_mu(data: Any) -> Any:
         """Validate ten Berge raw evidence before native discovery."""
+        _reject_masked_array(data, "data")
         return original_tenberge(_real_numeric_array(data, "data", 2))
 
     @wraps(original_alpha)
     def safe_cronbach_alpha(data: Any) -> Any:
         """Validate alpha raw evidence before native discovery."""
+        _reject_masked_array(data, "data")
         return original_alpha(_real_numeric_array(data, "data", 2))
 
     @wraps(original_separation)
     def safe_separation_reliability(measures: Any, se: Any) -> Any:
         """Validate person-measure evidence before native discovery."""
         dimension_error = "measures and se must be 1-D arrays"
+        _reject_masked_array(measures, "measures")
+        _reject_masked_array(se, "se")
         measures_value = _real_numeric_array(
             measures,
             "measures",
