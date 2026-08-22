@@ -78,7 +78,7 @@ def _trusted_numeric_evidence(
                 for trusted_type in _NUMPY_COMPLEX_SCALAR_TYPES
             ):
                 raise ValueError(complex_error)
-            if current_type is bool:
+            if current_type is bool or current_type is np.bool_:
                 if allow_bool:
                     continue
                 raise ValueError(type_error)
