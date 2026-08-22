@@ -34,7 +34,7 @@ def _real_numeric_source_array(
     if value_type is np.ndarray:
         arr = value
     elif value_type is list or value_type is tuple:
-        trusted, excess_rank = _trusted_sequence_tree(
+        trusted, excess_rank, _contains_bool = _trusted_sequence_tree(
             value,
             allow_bool=False,
             max_depth=2,
