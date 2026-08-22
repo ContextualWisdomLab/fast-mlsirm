@@ -121,6 +121,28 @@ def _as_real_numeric_array(name: str, value: object) -> np.ndarray:
     return np.ascontiguousarray(array, dtype=np.float64)
 
 
+def _as_real_scalar(name: str, value: object) -> float:
+    """Normalize a package-trusted real scalar without caller conversion hooks."""
+
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        return float(value)
+    if _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES) or _has_exact_type(
+        value, _NUMPY_FLOAT_SCALAR_TYPES
+    ):
+        return float(value)
+    raise ValueError(f"{name} must be a real scalar")
+
+
+def _as_boolean_array(name: str, value: object) -> np.ndarray:
+    """Admit Boolean storage before native mask marshalling."""
+
+    array = np.asarray(value)
+    if array.dtype != np.bool_:
+        raise ValueError(f"{name} must be a boolean array")
+    return np.ascontiguousarray(array, dtype=np.bool_)
+
+
 @dataclass
 class SympsonHetterResult:
     """Sympson-Hetter calibration output.
@@ -333,26 +355,23 @@ def kl_information(
             catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
-    from . import _core
+    theta0 = _as_real_scalar("theta0", theta0)
+    delta = _as_real_scalar("delta", delta)
 
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    return np.asarray(
-        _core.py_kl_information(
-            np.ascontiguousarray(a),
-            np.ascontiguousarray(b),
-            np.ascontiguousarray(c),
-            float(theta0),
-            float(delta),
-        )
-    )
+
+    from . import _core
+
+    return np.asarray(_core.py_kl_information(a, b, c, theta0, delta))
 
 
 def kl_select(
@@ -379,28 +398,24 @@ def kl_select(
     sources and references.
     """
     n_administered = _as_int("n_administered", n_administered, minimum=1)
+    theta0 = _as_real_scalar("theta0", theta0)
+    r = _as_real_scalar("r", r)
 
-    from . import _core
-
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
-    mask = np.asarray(administered, dtype=np.bool_)
+    else:
+        c = _as_real_numeric_array("c", c)
+    mask = _as_boolean_array("administered", administered)
     if c.ndim != 1 or mask.ndim != 1:
         raise ValueError("c and administered must be 1-D arrays")
-    res = _core.py_kl_select(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(mask),
-        float(theta0),
-        n_administered,
-        float(r),
-    )
+
+    from . import _core
+
+    res = _core.py_kl_select(a, b, c, mask, theta0, n_administered, r)
     return {
         "index": np.asarray(res["index"]),
         "selected": int(res["selected"]),
