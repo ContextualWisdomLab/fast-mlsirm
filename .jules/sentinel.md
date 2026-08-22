@@ -30,3 +30,8 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** The functions `parse_generated_item_candidate` and `_contract_object` used `json.loads` directly on string payloads before strictly enforcing depth limits over the string itself. A maliciously nested JSON string (e.g. `{"a": {"a": ...}}`) could exceed the Python maximum recursion limit, crashing the process with a `RecursionError` and causing a Denial of Service (DoS) attack, because Python's built-in `json.loads` recurses natively while decoding.
 **Learning:** Checking for JSON nested depth after decoding using `json.loads` (or implicitly relying on string size constraints) is insufficient to prevent recursion crashes on deep but compact objects. Depth checking must happen by scanning the raw string stream prior to any decoding engine invocations.
 **Prevention:** Always implement a character-level depth limit scanner (`_validate_raw_json_depth`) and enforce it on raw strings before passing them to `json.loads`.
+
+## 2024-05-27 - Unbounded JSON Loading in Scripts
+**Vulnerability:** `scripts/build_pr_queue_governance.py`와 `scripts/build_procurement_due_diligence.py`에서 `json.loads`를 사용하여 서브프로세스의 출력을 제한 없이 로드하고 있었습니다.
+**Learning:** 크기가 크거나 깊게 중첩된 JSON 페이로드를 처리할 때 메모리 고갈이나 재귀 제한 초과로 인한 서비스 거부(DoS) 공격에 노출될 수 있습니다.
+**Prevention:** 외부 출력을 파싱할 때는 항상 크기와 깊이가 제한된 `parse_json_bounded` 함수(또는 이에 상응하는 안전한 유틸리티)를 사용하여 DoS 취약점을 방지해야 합니다.
