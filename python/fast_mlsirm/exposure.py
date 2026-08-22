@@ -705,7 +705,8 @@ def epv_select(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         Magis, D., & Raiche, G. (2012). Random generation of response
-            patterns under computerized adaptive testing with the R package catR. *Journal of Statistical Software, 48*(8), 1-31.
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
     mu = _as_real_scalar("mu", mu)
