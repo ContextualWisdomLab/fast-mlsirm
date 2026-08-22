@@ -621,43 +621,61 @@ def ccat_select(
             catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
-    from . import _core
+    # Scalar controls fail closed before any caller-owned array is materialized.
+    theta0 = _as_real_scalar("theta0", theta0)
 
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    groups = np.asarray(groups)
-    if groups.ndim != 1:
+
+    groups_source = np.asarray(groups)
+    if (
+        np.iscomplexobj(groups_source)
+        or groups_source.dtype.kind not in {"b", "i", "u", "f"}
+    ):
+        raise ValueError("groups must be a real numeric array")
+    if groups_source.ndim != 1:
         raise ValueError("groups must be a 1-D array")
-    # Validate BEFORE the uintp cast: casting would silently truncate
-    # non-integers, wrap negatives, and drop imaginary parts.
-    if np.iscomplexobj(groups):
+    if groups_source.dtype.kind == "f":
+        if (
+            not np.isfinite(groups_source).all()
+            or (groups_source < 0).any()
+            or (groups_source != np.floor(groups_source)).any()
+        ):
+            raise ValueError("groups must contain non-negative integers")
+    elif groups_source.dtype.kind == "i" and (groups_source < 0).any():
         raise ValueError("groups must contain non-negative integers")
-    gf = groups.astype(np.float64)
-    if not np.isfinite(gf).all() or (gf < 0).any() or (gf != np.floor(gf)).any():
+    with np.errstate(invalid="ignore", over="ignore"):
+        groups_marshaled = np.ascontiguousarray(groups_source, dtype=np.uintp)
+    if not np.array_equal(
+        groups_marshaled.astype(groups_source.dtype, copy=False), groups_source
+    ):
         raise ValueError("groups must contain non-negative integers")
-    targets = np.asarray(targets, dtype=np.float64)
+
+    targets = _as_real_numeric_array("targets", targets)
     if targets.ndim != 1:
         raise ValueError("targets must be a 1-D array")
-    administered = np.asarray(administered)
+    administered = _as_boolean_array("administered", administered)
     if administered.ndim != 1:
         raise ValueError("administered must be a 1-D array")
-    if administered.dtype != np.bool_:
-        raise ValueError("administered must be a boolean array")
+
+    from . import _core
+
     r = _core.py_ccat_select(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(groups, dtype=np.uintp),
-        np.ascontiguousarray(targets),
-        np.ascontiguousarray(administered),
-        float(theta0),
+        a,
+        b,
+        c,
+        groups_marshaled,
+        targets,
+        administered,
+        theta0,
     )
     return {
         "selected": int(r["selected"]),
