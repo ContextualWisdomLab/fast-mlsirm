@@ -144,6 +144,43 @@ def test_icc_preserves_trusted_sequence_compatibility(monkeypatch):
     assert seen["flat"].dtype == np.float64
 
 
+def test_icc_preserves_exact_ndarray_rows_inside_builtin_sequence(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def _icc(flat, n_subjects, n_raters, model, kind, unit, r0, conf_level):
+        seen["flat"] = flat
+        seen["shape"] = (n_subjects, n_raters)
+        return {
+            "value": 0.5,
+            "subjects": n_subjects,
+            "raters": n_raters,
+            "fvalue": 2.0,
+            "df1": 2.0,
+            "df2": 3.0,
+            "p_value": 0.2,
+            "lbound": 0.1,
+            "ubound": 0.8,
+        }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: SimpleNamespace(icc=_icc))
+
+    result = reliability.icc(
+        [
+            np.array([1.0, 2.0], dtype=np.float32),
+            np.array([2, 1], dtype=np.int16),
+            np.array([3.0, 4.0], dtype=np.float64),
+        ]
+    )
+
+    assert result.value == pytest.approx(0.5)
+    assert seen["shape"] == (3, 2)
+    assert isinstance(seen["flat"], np.ndarray)
+    assert seen["flat"].dtype == np.float64
+    np.testing.assert_array_equal(
+        seen["flat"], np.array([1.0, 2.0, 2.0, 1.0, 3.0, 4.0], dtype=np.float64)
+    )
+
+
 def test_icc_safety_installer_is_idempotent():
     original_icc = reliability.icc
     try:
