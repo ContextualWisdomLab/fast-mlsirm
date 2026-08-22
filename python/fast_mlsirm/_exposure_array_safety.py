@@ -1,9 +1,10 @@
-"""Inert NumPy-container admission for exposure APIs.
+"""Callback-safe container admission for exposure APIs.
 
-The exposure public surface is typed in terms of ``numpy.ndarray``. Establish
-that package-owned container identity before any ``np.asarray`` call so a
-caller-defined ``__array__`` provider cannot execute code during validation.
-All numerical psychometric work remains in the existing Rust core.
+The historical exposure surface accepts NumPy arrays and ordinary built-in
+array-like sequences. Establish a package-trusted container/scalar boundary
+before any ``np.asarray`` call so caller-defined ``__array__`` or numeric
+protocols cannot execute during validation. All numerical psychometric work
+remains in the existing Rust core.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from typing import Any, Callable
 import numpy as np
 
 _REAL_NUMERIC_KINDS = frozenset({"b", "i", "u", "f"})
+_BUILTIN_REAL_SCALAR_TYPES = frozenset({bool, int, float})
+_BUILTIN_BOOLEAN_SCALAR_TYPES = frozenset({bool})
 
 
 def exact_ndarray(value: object, *, message: str) -> np.ndarray:
@@ -25,25 +28,60 @@ def exact_ndarray(value: object, *, message: str) -> np.ndarray:
     return value
 
 
+def _safe_array_source(
+    value: object,
+    *,
+    message: str,
+    scalar_types: frozenset[type[object]],
+) -> np.ndarray:
+    """Admit an exact ndarray or a plain one-dimensional built-in sequence."""
+
+    if type(value) is np.ndarray:
+        return value
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError(message)
+    # Exact list/tuple identity makes iteration inert.  Inspect every element's
+    # exact scalar identity before NumPy sees the sequence, so compatibility
+    # does not reopen caller-defined conversion protocols.
+    if any(type(item) not in scalar_types for item in value):
+        raise ValueError(message)
+    return np.asarray(value)
+
+
 def install(exposure_module: ModuleType) -> None:
     """Replace exposure array admission helpers and guard inline CCAT groups."""
 
     def real_numeric_array(name: str, value: object) -> np.ndarray:
-        array = exact_ndarray(value, message=f"{name} must be a real numeric array")
+        message = f"{name} must be a real numeric array"
+        array = _safe_array_source(
+            value,
+            message=message,
+            scalar_types=_BUILTIN_REAL_SCALAR_TYPES,
+        )
         if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
-            raise ValueError(f"{name} must be a real numeric array")
+            raise ValueError(message)
         return np.ascontiguousarray(array, dtype=np.float64)
 
     def boolean_array(name: str, value: object) -> np.ndarray:
-        array = exact_ndarray(value, message=f"{name} must be a boolean array")
+        message = f"{name} must be a boolean array"
+        array = _safe_array_source(
+            value,
+            message=message,
+            scalar_types=_BUILTIN_BOOLEAN_SCALAR_TYPES,
+        )
         if array.dtype != np.bool_:
-            raise ValueError(f"{name} must be a boolean array")
+            raise ValueError(message)
         return np.ascontiguousarray(array, dtype=np.bool_)
 
     def binary_response_array(name: str, value: object) -> np.ndarray:
-        array = exact_ndarray(value, message=f"{name} must be a real numeric array")
+        message = f"{name} must be a real numeric array"
+        array = _safe_array_source(
+            value,
+            message=message,
+            scalar_types=_BUILTIN_REAL_SCALAR_TYPES,
+        )
         if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
-            raise ValueError(f"{name} must be a real numeric array")
+            raise ValueError(message)
         if array.ndim != 1:
             raise ValueError(f"{name} must be a 1-D array")
         values = np.ascontiguousarray(array, dtype=np.float64)
@@ -75,8 +113,10 @@ def install(exposure_module: ModuleType) -> None:
         # value again, but only after it has been normalized to an inert
         # package-owned float.
         theta0_value = exposure_module._as_real_scalar("theta0", theta0)
-        groups_value = exact_ndarray(
-            groups, message="groups must be a real numeric array"
+        groups_value = _safe_array_source(
+            groups,
+            message="groups must be a real numeric array",
+            scalar_types=_BUILTIN_REAL_SCALAR_TYPES,
         )
         return original_ccat(
             a,
