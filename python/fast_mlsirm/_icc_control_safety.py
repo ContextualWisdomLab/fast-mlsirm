@@ -320,3 +320,10 @@ def install(reliability_module: ModuleType) -> None:
         legacy_module.separation_reliability = safe_separation_reliability
         legacy_module.mean_pairwise_cor = safe_mean_pairwise_cor
         legacy_module.mean_pairwise_rho = safe_mean_pairwise_rho
+
+    # Keep the same reliability writer responsible for adjacent rater APIs.
+    # Import lazily after this module is fully initialized to avoid a module
+    # import cycle; the child adapter imports shared inert-admission helpers.
+    from ._rater_evidence_safety import install as _install_rater_evidence_safety
+
+    _install_rater_evidence_safety(reliability_module)
