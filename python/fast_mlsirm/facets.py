@@ -57,6 +57,51 @@ def _real_control(value: object, name: str) -> float:
     raise ValueError(f"{name} must be a real number")
 
 
+def _response_array(value: object) -> np.ndarray:
+    """Materialize inert real-numeric response evidence without array callbacks."""
+    value_type = type(value)
+    if value_type is np.ndarray:
+        response_array = value
+    elif value_type is list or value_type is tuple:
+        stack: list[tuple[object, int]] = [(value, 0)]
+        while stack:
+            current, depth = stack.pop()
+            current_type = type(current)
+            if current_type is list or current_type is tuple:
+                next_depth = depth + 1
+                if next_depth > 3:
+                    raise ValueError(
+                        "responses must be a 3-D persons x items x raters array"
+                    )
+                stack.extend((child, next_depth) for child in current)
+                continue
+            if current_type is bool or current_type is np.bool_:
+                continue
+            if current_type is int or current_type is float:
+                continue
+            if any(
+                current_type is trusted_type
+                for trusted_type in (
+                    *_NUMPY_INTEGER_SCALAR_TYPES,
+                    *_NUMPY_FLOAT_SCALAR_TYPES,
+                )
+            ):
+                continue
+            raise ValueError("responses must be a numeric array")
+        try:
+            response_array = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("responses must be a numeric array") from exc
+    else:
+        raise ValueError("responses must be a numeric array")
+
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    return response_array
+
+
 @dataclass
 class FacetsFit:
     """Fitted many-facet Rasch model (Linacre, 1989).
@@ -136,11 +181,7 @@ def fit_facets(
     if not math.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
-    response_array = np.asarray(responses)
-    if np.iscomplexobj(response_array):
-        raise ValueError("responses must be real-valued")
-    if response_array.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError("responses must be a numeric array")
+    response_array = _response_array(responses)
     y = response_array.astype(np.float64, copy=False)
     if y.ndim != 3:
         raise ValueError("responses must be a 3-D persons x items x raters array")
