@@ -156,25 +156,14 @@ def detect_analysis(
         cf = c.astype(np.float64, copy=False)
         if not np.all(np.isfinite(cf)) or np.any(cf != np.round(cf)):
             raise ValueError("cluster labels must be integers")
-        # Reject labels outside i64 before casting: astype(np.int64) on an
-        # out-of-range float silently wraps/saturates, which would collapse
-        # distinct labels and change the partition (equality-only contract).
         if np.any(cf < -(2.0**63)) or np.any(cf >= 2.0**63):
             raise ValueError("cluster labels must fit in a 64-bit integer")
         c = cf.astype(np.int64)
     else:
-        # Also enforce i64 bounds for integer dtypes that can exceed i64
-        # range. Unsigned types are always >= 0, so only the upper bound can
-        # be violated; avoid comparing unsigned arrays to negative values to
-        # prevent NumPy mixed-signedness promotion surprises. Signed types
-        # narrower than or equal to i64 are always in range.
         if np.issubdtype(c.dtype, np.unsignedinteger):
             if np.any(c > I64_MAX):
                 raise ValueError("cluster labels must fit in a 64-bit integer")
         elif np.any(c < I64_MIN) or np.any(c > I64_MAX):
-            # Unreachable for a NumPy signed-integer array: no signed dtype is
-            # wider than int64, so a value cannot fall outside [I64_MIN, I64_MAX].
-            # Kept as a defensive guard.
             raise ValueError("cluster labels must fit in a 64-bit integer")  # pragma: no cover
         c = c.astype(np.int64)
 
@@ -260,11 +249,11 @@ def dimtest(
             trait unidimensionality. *Psychometrika, 52*(4), 589-617. (NOT
             read; as described by Nandakumar & Stout, 1993)
     """
-    resp = np.asarray(responses)
-    if np.iscomplexobj(resp):
-        raise ValueError("responses must be real-valued")
-    if resp.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError("responses must be a numeric array")
+    resp = _trusted_numeric_array(
+        responses,
+        numeric_error="responses must be a numeric array",
+        complex_error="responses must be real-valued",
+    )
     y = resp.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -276,12 +265,12 @@ def dimtest(
 
     def _index_set(a: np.ndarray, name: str) -> list[int]:
         """Validate and return an item-index selection as a list of ints."""
-        arr = np.asarray(a).reshape(-1)
-        if np.iscomplexobj(arr):
-            raise ValueError(f"{name} indices must be real integers")
-        if arr.dtype.kind not in ("b", "i", "u", "f"):
-            raise ValueError(f"{name} indices must be a numeric array")
-        af = arr.astype(np.float64)
+        arr = _trusted_numeric_array(
+            a,
+            numeric_error=f"{name} indices must be a numeric array",
+            complex_error=f"{name} indices must be real integers",
+        ).reshape(-1)
+        af = arr.astype(np.float64, copy=False)
         if arr.size == 0 or not np.all(np.isfinite(af)) or np.any(af != np.round(af)):
             raise ValueError(f"{name} indices must be non-empty integers")
         if np.any(af < 0) or np.any(af >= n_items):
