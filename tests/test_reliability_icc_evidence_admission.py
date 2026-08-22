@@ -54,6 +54,20 @@ def test_icc_preserves_boolean_ratings_rejection_before_native(monkeypatch):
         reliability.icc(np.array([[True, False], [False, True]], dtype=np.bool_))
 
 
+def test_icc_preserves_masked_array_diagnostic_before_native(monkeypatch):
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+    ratings = np.ma.array(
+        [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0]],
+        mask=[[False, False], [False, True], [False, False]],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="masked arrays are not supported; use NaN for missing",
+    ):
+        reliability.icc(ratings)
+
+
 def test_icc_preserves_trusted_sequence_compatibility(monkeypatch):
     seen: dict[str, object] = {}
 
