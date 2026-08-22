@@ -21,6 +21,16 @@ class _ProviderBomb:
         raise AssertionError("caller __array__ callback executed")
 
 
+class _FloatSubclassBomb(float):
+    """A numeric subclass whose conversion callback must never be executed."""
+
+    callbacks = 0
+
+    def __float__(self) -> float:
+        type(self).callbacks += 1
+        raise AssertionError("caller numeric callback executed")
+
+
 def _guard_native_discovery(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Record any compiled-core discovery attempted during rejected admission."""
 
@@ -70,6 +80,30 @@ def test_shared_array_admission_rejects_protocol_providers_without_callbacks(
     with pytest.raises(ValueError, match=message):
         invoke(_ProviderBomb())
     assert _ProviderBomb.callbacks == 0
+
+
+def test_shared_array_admission_preserves_plain_builtin_sequences() -> None:
+    """Plain built-in sequences retain their historical array-like compatibility."""
+
+    real = exposure._as_real_numeric_array("a", [1, 2.5])
+    mask = exposure._as_boolean_array("administered", [True, False])
+    binary = exposure._as_binary_response_array("responses", (1, 0.0))
+
+    assert np.array_equal(real, np.array([1.0, 2.5]))
+    assert real.dtype == np.float64 and real.flags.c_contiguous
+    assert np.array_equal(mask, np.array([True, False]))
+    assert mask.dtype == np.bool_ and mask.flags.c_contiguous
+    assert np.array_equal(binary, np.array([1, 0], dtype=np.uint8))
+    assert binary.flags.c_contiguous
+
+
+def test_plain_sequence_admission_rejects_numeric_subclasses_without_callbacks() -> None:
+    """Sequence compatibility must not reopen caller-defined scalar conversion."""
+
+    _FloatSubclassBomb.callbacks = 0
+    with pytest.raises(ValueError, match="a must be a real numeric array"):
+        exposure._as_real_numeric_array("a", [1.0, _FloatSubclassBomb(2.0)])
+    assert _FloatSubclassBomb.callbacks == 0
 
 
 def test_ccat_groups_reject_array_provider_before_callback_or_core(
