@@ -32,13 +32,15 @@ def _core_discovery_must_not_run() -> SimpleNamespace:
     "ratings",
     [
         [[True, False], [False, True]],
+        [[True, 0], [1, False]],
         [[np.bool_(True), np.bool_(False)], [np.bool_(False), np.bool_(True)]],
+        [[np.bool_(True), np.int16(0)], [np.int16(1), np.bool_(False)]],
     ],
 )
 def test_boolean_rating_sequences_preserve_historical_diagnostic(
     monkeypatch, invoke, ratings
 ):
-    """Trusted Boolean sequences should use the established ratings diagnostic."""
+    """Any trusted Boolean sequence leaf should keep the ratings diagnostic."""
     monkeypatch.setattr(fitstats, "_core_module", _core_discovery_must_not_run)
 
     with pytest.raises(ValueError, match="ratings must be numeric, not boolean"):
