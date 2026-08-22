@@ -97,6 +97,27 @@ def test_shared_array_admission_preserves_plain_builtin_sequences() -> None:
     assert binary.flags.c_contiguous
 
 
+def test_shared_array_admission_preserves_concrete_numpy_scalars_in_sequences() -> None:
+    """Concrete NumPy scalar identities remain safe array-like compatibility."""
+
+    real = exposure._as_real_numeric_array(
+        "a", [np.int16(1), np.float32(2.5)]
+    )
+    mask = exposure._as_boolean_array(
+        "administered", (np.bool_(True), np.bool_(False))
+    )
+    binary = exposure._as_binary_response_array(
+        "responses", [np.uint8(1), np.float64(0.0)]
+    )
+
+    assert np.array_equal(real, np.array([1.0, 2.5]))
+    assert real.dtype == np.float64 and real.flags.c_contiguous
+    assert np.array_equal(mask, np.array([True, False]))
+    assert mask.dtype == np.bool_ and mask.flags.c_contiguous
+    assert np.array_equal(binary, np.array([1, 0], dtype=np.uint8))
+    assert binary.flags.c_contiguous
+
+
 def test_plain_sequence_admission_rejects_numeric_subclasses_without_callbacks() -> None:
     """Sequence compatibility must not reopen caller-defined scalar conversion."""
 
