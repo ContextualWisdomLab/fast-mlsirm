@@ -68,8 +68,13 @@ def install(exposure_module: ModuleType) -> None:
         administered: np.ndarray,
         theta0: float,
     ) -> dict:
-        """Reject arbitrary group array providers before the legacy wrapper."""
+        """Reject unsafe CCAT controls/providers before legacy validation."""
 
+        # Preserve the public contract that semantic controls fail before any
+        # caller-owned array work.  The wrapped implementation validates this
+        # value again, but only after it has been normalized to an inert
+        # package-owned float.
+        theta0_value = exposure_module._as_real_scalar("theta0", theta0)
         groups_value = exact_ndarray(
             groups, message="groups must be a real numeric array"
         )
@@ -80,7 +85,7 @@ def install(exposure_module: ModuleType) -> None:
             groups=groups_value,
             targets=targets,
             administered=administered,
-            theta0=theta0,
+            theta0=theta0_value,
         )
 
     exposure_module.ccat_select = safe_ccat_select
