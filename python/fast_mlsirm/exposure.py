@@ -112,6 +112,15 @@ def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> i
     return iv
 
 
+def _as_real_numeric_array(name: str, value: object) -> np.ndarray:
+    """Admit real numeric caller storage before native ``float64`` marshalling."""
+
+    array = np.asarray(value)
+    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError(f"{name} must be a real numeric array")
+    return np.ascontiguousarray(array, dtype=np.float64)
+
+
 @dataclass
 class SympsonHetterResult:
     """Sympson-Hetter calibration output.
@@ -163,13 +172,14 @@ def sympson_hetter(
     seed = _as_int("seed", seed, maximum=2**64 - 1)
     q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
 
-    from . import _core
-
-    a = np.ascontiguousarray(a, dtype=np.float64)
-    b = np.ascontiguousarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if c is None:
         c = np.zeros_like(a)
-    c = np.ascontiguousarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
+
+    from . import _core
 
     r = _core.py_sympson_hetter(
         a,
@@ -256,13 +266,14 @@ def a_stratified(
     seed = _as_int("seed", seed, maximum=2**64 - 1)
     q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
 
-    from . import _core
-
-    a = np.ascontiguousarray(a, dtype=np.float64)
-    b = np.ascontiguousarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if c is None:
         c = np.zeros_like(a)
-    c = np.ascontiguousarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
+
+    from . import _core
 
     r = _core.py_a_stratified(
         a,
