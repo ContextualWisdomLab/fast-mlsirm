@@ -110,3 +110,16 @@ def test_builtin_matrix_with_numpy_scalars_remains_supported() -> None:
 
     assert matrix.dtype == np.float64
     assert matrix.tolist() == [[0.0, 1.0], [1.0, 0.0]]
+
+
+def test_builtin_matrix_with_exact_numpy_rows_remains_supported() -> None:
+    """Built-in matrices may contain exact real-numeric ndarray rows."""
+    responses = [
+        np.array([0, 1], dtype=np.int16),
+        np.array([1.0, 0.0], dtype=np.float32),
+    ]
+
+    matrix = validate_irt_response_matrix(responses, "dichotomous")
+
+    assert matrix.dtype == np.float64
+    assert matrix.tolist() == [[0.0, 1.0], [1.0, 0.0]]
