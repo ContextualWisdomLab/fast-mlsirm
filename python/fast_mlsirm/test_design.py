@@ -85,9 +85,17 @@ def _content_labels(value: object, *, expected_shape: tuple[int, ...]) -> list[s
     if array.dtype.kind == "U":
         return list(array.tolist())
     if array.dtype.kind == "O":
-        labels = array.tolist()
-        if not isinstance(labels, list) or any(type(label) is not str for label in labels):
+        raw_labels = array.tolist()
+        if not isinstance(raw_labels, list):
             raise ValueError("content must contain string labels")
+        labels = []
+        for label in raw_labels:
+            if type(label) is str:
+                labels.append(label)
+            elif type(label) is np.str_:
+                labels.append(str(label))
+            else:
+                raise ValueError("content must contain string labels")
         return labels
     raise ValueError("content must contain string labels")
 
