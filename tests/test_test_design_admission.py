@@ -85,6 +85,21 @@ def test_non_text_content_rejected_without_stringification() -> None:
     assert _StringTrap.callbacks == 0
 
 
+def test_mixed_builtin_content_sequence_rejected_before_native_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fast_mlsirm
+
+    class _CoreTrap:
+        @staticmethod
+        def assemble_test_form_greedy(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise AssertionError("native assembly executed for invalid content labels")
+
+    monkeypatch.setattr(fast_mlsirm, "_core", _CoreTrap())
+    with pytest.raises(ValueError, match="content must contain string labels"):
+        assemble_test_form(np.array([3.0, 2.0, 1.0]), 2, content=["a", 1, "b"])
+
+
 def test_unsigned_exclusion_overflow_rejected_before_signed_narrowing() -> None:
     exclude = np.array([np.iinfo(np.uint64).max], dtype=np.uint64)
     with pytest.raises(ValueError, match="exclude must contain valid item indices"):
