@@ -195,6 +195,8 @@ def install(reliability_module: ModuleType) -> None:
             raise ValueError("r0 must be in [0, 1)")
         if not 0.0 < conf_level_value < 1.0:
             raise ValueError("conf_level must be in (0, 1)")
+        if isinstance(ratings, np.ma.MaskedArray):
+            raise ValueError("masked arrays are not supported; use NaN for missing")
         ratings_value = _real_numeric_array(
             ratings,
             "ratings",
