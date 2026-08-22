@@ -45,9 +45,13 @@ def _trusted_numeric_array(
         array = value
     elif type(value) in (list, tuple):
         stack = list(value)
+        seen_container_ids = {id(value)}
         while stack:
             current = stack.pop()
             if type(current) in (list, tuple):
+                if id(current) in seen_container_ids:
+                    raise ValueError(numeric_error)
+                seen_container_ids.add(id(current))
                 stack.extend(current)
                 continue
             if type(current) is np.ndarray:

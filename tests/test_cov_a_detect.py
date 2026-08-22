@@ -80,6 +80,21 @@ def test_detect_rejects_unsigned_cluster_over_i64():
         detect_analysis(_binary(), bad)
 
 
+def test_detect_rejects_self_referential_response_list():
+    responses = []
+    responses.append(responses)
+    with pytest.raises(ValueError):
+        detect_analysis(responses, np.array([0, 0, 0, 1, 1, 1]))
+
+
+def test_detect_rejects_indirectly_cyclic_cluster_list():
+    inner = []
+    outer = [inner]
+    inner.append(outer)
+    with pytest.raises(ValueError):
+        detect_analysis(_binary(), outer)
+
+
 def test_dimtest_happy_path():
     y = _binary(n_persons=300, n_items=15)
     res = dimtest(y, at1=np.array([0, 1, 2, 3]), at2=np.array([4, 5, 6, 7]))
