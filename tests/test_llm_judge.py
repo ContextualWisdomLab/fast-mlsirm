@@ -183,6 +183,41 @@ def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     assert payload["answer"] == "Use a staged release with rollback."
 
 
+def test_direct_judge_derives_score_from_weighted_criteria_not_self_report() -> None:
+    """A misleading self-reported aggregate score must not decide acceptance.
+
+    The runtime must not trust the model's own top-level "score" field: it
+    must derive the accepted score from the per-criterion scores and their
+    configured weights, exactly like the category_count branch already does.
+    Otherwise a criterion's weight has no effect on the outcome, and a model
+    that reports a high aggregate score while giving a low score on the
+    heavily-weighted criterion would be wrongly accepted.
+    """
+    weighted_criteria = [
+        JudgeCriterion(
+            "task_alignment", "The answer directly addresses the task.", weight=3.0
+        ),
+        JudgeCriterion(
+            "factual_support", "The answer avoids unsupported claims.", weight=1.0
+        ),
+    ]
+    misleading_payload = json.dumps({
+        "score": 0.9,
+        "accepted": True,
+        "rationale": "The response looks strong overall.",
+        "criterion_scores": {"task_alignment": 0.2, "factual_support": 0.9},
+    })
+    result = ContextualOrchestratorJudge(_FakeOrchestrator(misleading_payload)).judge(
+        task="Explain the release plan.",
+        answer="Use a staged release with rollback.",
+        criteria=weighted_criteria,
+    )
+    # weighted average = (3 * 0.2 + 1 * 0.9) / 4 = 0.375, not the
+    # self-reported 0.9.
+    assert result.score == pytest.approx(0.375)
+    assert result.accepted is False
+
+
 def test_direct_judge_does_not_expose_provider_exception_text() -> None:
     sentinel = "provider-output-secret"
     with pytest.raises(JudgeFormatError, match="^judge call failed$") as exc_info:

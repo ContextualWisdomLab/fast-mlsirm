@@ -1136,7 +1136,13 @@ class ContextualOrchestratorJudge:
                     for criterion in normalized_criteria
                 ) / total_weight
             else:
-                score = _score(parsed.get("score"), "score")
+                # Validate the redundant field's shape, but derive the accepted score
+                # from the per-criterion weights below rather than trusting it -- same
+                # principle as the category_count branch above: an LLM's self-reported
+                # aggregate is not cross-checked against its own per-criterion scores,
+                # so a criterion's configured weight would otherwise have no effect on
+                # the accept/reject decision.
+                _score(parsed.get("score"), "score")
                 raw_criterion_scores = parsed.get("criterion_scores", {})
                 if not isinstance(raw_criterion_scores, Mapping):
                     raise JudgeFormatError("criterion_scores must be an object")
@@ -1151,6 +1157,11 @@ class ContextualOrchestratorJudge:
                     )
                     for criterion_id in expected_ids
                 }
+                total_weight = sum(criterion.weight for criterion in normalized_criteria)
+                score = sum(
+                    criterion.weight * criterion_scores[criterion.criterion_id]
+                    for criterion in normalized_criteria
+                ) / total_weight
         except (JudgeFormatError, ValueError) as exc:
             if not isinstance(exc, JudgeFormatError):
                 exc = JudgeFormatError(str(exc))
