@@ -22,6 +22,16 @@ class _HostileArrayProvider:
         raise AssertionError("caller-controlled __array__ callback executed")
 
 
+class _HostileClassSpoof:
+    def __init__(self) -> None:
+        self.class_reads = 0
+
+    @property
+    def __class__(self):
+        self.class_reads += 1
+        raise AssertionError("caller-controlled __class__ callback executed")
+
+
 def _native_discovery_must_not_run():
     raise AssertionError("compiled-core discovery ran before ICC ratings admission")
 
@@ -34,6 +44,22 @@ def test_icc_rejects_array_provider_without_callback_or_native(monkeypatch):
         reliability.icc(hostile)
 
     assert hostile.calls == 0
+
+
+@pytest.mark.parametrize(
+    "api",
+    (reliability.icc, reliability.mean_pairwise_cor, reliability.mean_pairwise_rho),
+)
+def test_reliability_mask_probe_rejects_class_spoof_without_callback_or_native(
+    monkeypatch, api
+):
+    hostile = _HostileClassSpoof()
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match="real numeric"):
+        api(hostile)
+
+    assert hostile.class_reads == 0
 
 
 def test_icc_rejects_complex_ratings_before_native(monkeypatch):
