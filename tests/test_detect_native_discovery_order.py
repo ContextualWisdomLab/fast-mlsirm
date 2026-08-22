@@ -199,6 +199,26 @@ def test_detect_accepts_builtin_sequences_at_dispatch_boundary(monkeypatch):
     assert calls == 1
 
 
+def test_detect_accepts_platform_numpy_integer_aliases_at_dispatch_boundary(monkeypatch):
+    """Concrete NumPy integer aliases retain the historical numeric sequence contract."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    responses = [[np.longlong(0), np.ulonglong(1)], [np.intp(1), np.uintp(0)]]
+    cluster = (np.longlong(10), np.ulonglong(20))
+
+    with pytest.raises(RuntimeError, match="detect_analysis requires the compiled Rust core"):
+        detect_analysis(responses, cluster)
+
+    assert calls == 1
+
+
 def test_dimtest_valid_input_discovers_core_only_at_dispatch_boundary(monkeypatch):
     """A valid DIMTEST request still reaches core discovery after validation."""
 
