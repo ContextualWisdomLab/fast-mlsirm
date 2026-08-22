@@ -25,9 +25,18 @@ class _HostileGroupNumber:
         raise AssertionError("group element conversion must not execute")
 
 
+class _ReachedCore(RuntimeError):
+    """Sentinel proving trusted group evidence passed package admission."""
+
+
 def _unexpected_core_discovery():
     """Fail if invalid group evidence reaches compiled-core discovery."""
     raise AssertionError("compiled core must not be discovered for invalid group evidence")
+
+
+def _expected_core_discovery():
+    """Stop after trusted group evidence reaches the compiled-core boundary."""
+    raise _ReachedCore("trusted group evidence reached compiled-core discovery")
 
 
 def _responses() -> np.ndarray:
@@ -54,4 +63,20 @@ def test_text_group_storage_is_not_reinterpreted_as_population_identity(monkeypa
     group = np.array(["0", "1"], dtype=np.str_)
 
     with pytest.raises(ValueError, match="group must be a numeric array"):
+        delta_plot(_responses(), group)
+
+
+@pytest.mark.parametrize(
+    "group",
+    [
+        np.array([False, True], dtype=np.bool_),
+        np.array([0, 1], dtype=np.int64),
+        np.array([0.0, 1.0], dtype=np.float32),
+    ],
+)
+def test_trusted_zero_one_group_storage_reaches_rust_boundary(monkeypatch, group):
+    """Boolean and ordinary numeric 0/1 populations keep their public path."""
+    monkeypatch.setattr(fitstats, "_core_module", _expected_core_discovery)
+
+    with pytest.raises(_ReachedCore, match="trusted group evidence"):
         delta_plot(_responses(), group)
