@@ -30,8 +30,35 @@ _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
 _CDM_MODELS = frozenset(("dina", "dino"))
 
 
+def _reject_untrusted_response_container(value: object) -> None:
+    """Reject callback-bearing providers before any array-protocol conversion.
+
+    Only ``numpy.ndarray`` or a plain ``list``/``tuple`` nesting of numeric
+    scalars is accepted; walking the input here, before ``np.asarray`` is
+    ever called on it, means a hostile ``__array__`` provider (top-level or
+    nested inside a built-in sequence) is never invoked.
+    """
+    if isinstance(value, np.ndarray):
+        return
+    stack = [value]
+    seen_ids: set[int] = set()
+    while stack:
+        item = stack.pop()
+        if isinstance(item, (list, tuple)):
+            item_id = id(item)
+            if item_id in seen_ids:
+                raise ValueError("responses must be a trusted NumPy array or built-in sequence")
+            seen_ids.add(item_id)
+            stack.extend(item)
+            continue
+        if isinstance(item, (bool, int, float, complex, *_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)):
+            continue
+        raise ValueError("responses must be a trusted NumPy array or built-in sequence")
+
+
 def _response_array(value: np.ndarray) -> np.ndarray:
     """Materialize accepted real response storage without lossy coercion."""
+    _reject_untrusted_response_container(value)
     response_array = np.asarray(value)
     if np.iscomplexobj(response_array):
         raise ValueError("responses must be real-valued")
