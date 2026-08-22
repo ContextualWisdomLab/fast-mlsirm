@@ -58,6 +58,16 @@ def test_detect_rejects_complex_responses_before_lossy_coercion(monkeypatch):
         detect_analysis(responses, np.array([0, 1]))
 
 
+def test_detect_rejects_complex_sequence_with_complex_diagnostic(monkeypatch):
+    """Complex list evidence reports the same real-valued contract as arrays."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = [[0.0 + 1.0j, 0.0], [1.0, 0.0]]
+
+    with pytest.raises(ValueError, match="responses must be real-valued"):
+        detect_analysis(responses, [0, 1])
+
+
 def test_detect_rejects_object_responses_before_element_coercion(monkeypatch):
     """Object response storage fails before caller numeric conversion callbacks."""
 
