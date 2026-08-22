@@ -23,6 +23,17 @@ class _ArrayProvider:
         raise AssertionError("caller array protocol executed")
 
 
+class _FloatCell:
+    """Hostile object-array cell that must never receive numeric conversion."""
+
+    calls = 0
+
+    def __float__(self):
+        """Fail loudly if object storage reaches numeric coercion."""
+        type(self).calls += 1
+        raise AssertionError("caller numeric conversion executed")
+
+
 def test_response_matrix_rejects_array_provider_before_callback() -> None:
     """Arbitrary array providers must fail closed without protocol execution."""
     _ArrayProvider.calls = 0
@@ -31,6 +42,25 @@ def test_response_matrix_rejects_array_provider_before_callback() -> None:
         validate_irt_response_matrix(_ArrayProvider(), "dichotomous")
 
     assert _ArrayProvider.calls == 0
+
+
+def test_response_matrix_rejects_object_cells_before_numeric_callback() -> None:
+    """Object storage must be rejected before per-cell numeric conversion."""
+    _FloatCell.calls = 0
+    responses = np.array([[_FloatCell(), 1], [0, 1]], dtype=object)
+
+    with pytest.raises(ValueError, match="responses must be a real numeric matrix"):
+        validate_irt_response_matrix(responses, "dichotomous")
+
+    assert _FloatCell.calls == 0
+
+
+def test_response_matrix_rejects_textual_categories() -> None:
+    """Text that merely looks numeric must not become category evidence."""
+    responses = np.array([["0", "1"], ["1", "0"]])
+
+    with pytest.raises(ValueError, match="responses must be a real numeric matrix"):
+        validate_irt_response_matrix(responses, "dichotomous")
 
 
 def test_response_matrix_rejects_complex_before_lossy_float_cast() -> None:
