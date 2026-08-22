@@ -96,7 +96,7 @@ def _reject_masked_array(value: Any, name: str) -> None:
 def _trusted_sequence_tree(
     value: Any, *, allow_bool: bool, max_depth: int
 ) -> tuple[bool, bool]:
-    """Return trusted-scalar and excess-rank state for an exact sequence tree."""
+    """Return trusted-evidence and excess-rank state for an exact sequence tree."""
     stack = [(value, 0)]
     while stack:
         current, depth = stack.pop()
@@ -106,6 +106,14 @@ def _trusted_sequence_tree(
             if next_depth > max_depth:
                 return False, True
             stack.extend((child, next_depth) for child in current)
+            continue
+        if current_type is np.ndarray:
+            if depth + current.ndim > max_depth:
+                return False, True
+            if np.iscomplexobj(current) or current.dtype.kind not in "biuf":
+                return False, False
+            if not allow_bool and current.dtype.kind == "b":
+                return False, False
             continue
         if current_type is bool or current_type is np.bool_:
             if allow_bool:
