@@ -22,6 +22,13 @@ class _HostileFloat:
         raise AssertionError("caller numeric conversion must not execute")
 
 
+class _HostileArrayProvider:
+    """Sentinel proving DETECT rejects array protocols before NumPy dispatch."""
+
+    def __array__(self, *args, **kwargs):
+        raise AssertionError("caller array conversion must not execute")
+
+
 def test_detect_rejects_invalid_response_shape_before_core_discovery(monkeypatch):
     """Malformed DETECT responses fail locally before touching the native loader."""
 
@@ -61,6 +68,15 @@ def test_detect_rejects_object_responses_before_element_coercion(monkeypatch):
         detect_analysis(responses, np.array([0, 1]))
 
 
+def test_detect_rejects_array_provider_responses_without_callbacks(monkeypatch):
+    """Arbitrary response array providers fail before caller conversion callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="responses must be a numeric array"):
+        detect_analysis(_HostileArrayProvider(), np.array([0, 1]))
+
+
 def test_detect_rejects_complex_cluster_before_lossy_coercion(monkeypatch):
     """Imaginary partition labels cannot be projected onto a real partition."""
 
@@ -81,6 +97,16 @@ def test_detect_rejects_object_cluster_before_element_coercion(monkeypatch):
 
     with pytest.raises(ValueError, match="cluster labels must be a numeric array"):
         detect_analysis(responses, cluster)
+
+
+def test_detect_rejects_array_provider_cluster_without_callbacks(monkeypatch):
+    """Arbitrary cluster array providers fail before caller conversion callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float64)
+
+    with pytest.raises(ValueError, match="cluster labels must be a numeric array"):
+        detect_analysis(responses, _HostileArrayProvider())
 
 
 def test_dimtest_rejects_invalid_partition_before_core_discovery(monkeypatch):
@@ -127,6 +153,26 @@ def test_detect_accepts_integer_valued_float_cluster_at_dispatch_boundary(monkey
 
     with pytest.raises(RuntimeError, match="detect_analysis requires the compiled Rust core"):
         detect_analysis(responses, np.array([10.0, 20.0], dtype=np.float64))
+
+    assert calls == 1
+
+
+def test_detect_accepts_builtin_sequences_at_dispatch_boundary(monkeypatch):
+    """Plain response/cluster sequences keep the historical array-like contract."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    responses = [[np.int16(0), np.float32(1.0)], [1, 0]]
+    cluster = (np.uint8(10), np.float64(20.0))
+
+    with pytest.raises(RuntimeError, match="detect_analysis requires the compiled Rust core"):
+        detect_analysis(responses, cluster)
 
     assert calls == 1
 
