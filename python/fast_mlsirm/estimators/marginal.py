@@ -253,6 +253,8 @@ def _preflight_xi_node_count(
             raise ValueError("xi_points must be an exact built-in integer")
         if xi_points < 1:
             raise ValueError("xi_points must be a positive integer")
+        if xi_points > 1_000_000:
+            raise ValueError("xi_points exceeds the maximum allowed nodes for QMC/MC rules")
         return xi_points
     # Tensor Gauss-Hermite product rule.
     if type(q_xi) is not int or isinstance(q_xi, bool):

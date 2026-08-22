@@ -30,3 +30,8 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** The functions `parse_generated_item_candidate` and `_contract_object` used `json.loads` directly on string payloads before strictly enforcing depth limits over the string itself. A maliciously nested JSON string (e.g. `{"a": {"a": ...}}`) could exceed the Python maximum recursion limit, crashing the process with a `RecursionError` and causing a Denial of Service (DoS) attack, because Python's built-in `json.loads` recurses natively while decoding.
 **Learning:** Checking for JSON nested depth after decoding using `json.loads` (or implicitly relying on string size constraints) is insufficient to prevent recursion crashes on deep but compact objects. Depth checking must happen by scanning the raw string stream prior to any decoding engine invocations.
 **Prevention:** Always implement a character-level depth limit scanner (`_validate_raw_json_depth`) and enforce it on raw strings before passing them to `json.loads`.
+
+## 2024-08-22 - QMC/MC 룰을 위한 xi_points 매개변수 상한 부재 수정
+**Vulnerability:** QMC/MC 노드 생성 시 `xi_points` 인수에 상한 검사가 없어서 악의적인 입력(예: 10억)으로 인한 과도한 메모리 할당 및 서비스 거부(DoS) 공격이 가능했습니다.
+**Learning:** 리소스 제한 없이 자원을 할당(CWE-770)하는 패턴은 공격 벡터가 됩니다. 외부 입력으로 인해 제어되는 파라미터는 리소스를 할당하기 전에 항상 합리적인 상한선(예: Tensor 그리드 노드 제한)을 가져야 합니다.
+**Prevention:** 자원을 소모하는 배열 생성 루틴 등에 전달되는 파라미터에는 언제나 적절한 최댓값을 강제하고 초과 시 `ValueError`를 발생시키도록 입력 검증(input validation)을 구현합니다.
