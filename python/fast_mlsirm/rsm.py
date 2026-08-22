@@ -97,6 +97,14 @@ def _trusted_positive_tolerance(value: float) -> float:
     return normalized
 
 
+def _real_numeric_response_matrix(value: object) -> np.ndarray:
+    """Admit real numeric response storage before ``float64`` marshalling."""
+    array = np.asarray(value)
+    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError("responses must be a real numeric array")
+    return np.ascontiguousarray(array, dtype=np.float64)
+
+
 def fit_rsm(
     responses: np.ndarray,
     n_cat: int | None = None,
@@ -130,7 +138,7 @@ def fit_rsm(
     max_iter = _trusted_iteration_cap(max_iter)
     tol = _trusted_positive_tolerance(tol)
 
-    y = np.asarray(responses, dtype=np.float64)
+    y = _real_numeric_response_matrix(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
