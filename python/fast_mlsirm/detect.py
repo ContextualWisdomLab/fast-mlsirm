@@ -43,6 +43,8 @@ def _trusted_numeric_array(
 ) -> np.ndarray:
     """Materialize inert real numeric storage without caller conversion hooks."""
     if type(value) is np.ndarray:
+        if value.size > _MAX_DETECT_SEQUENCE_CELLS:
+            raise ValueError(numeric_error)
         array = value
     elif type(value) in (list, tuple):
         stack = [(value, False)]
