@@ -103,7 +103,9 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     elif kind == "i":
         if np.any(raw < 0):
             raise ValueError("responses must be non-negative integer scores")
-    elif kind == "u" and raw.size and np.any(raw > _INT64_MAX):
+    elif kind == "u" and raw.size and np.any(raw > np.uint64(_INT64_MAX)):
+        # Keep the boundary in an unsigned NumPy scalar so NumPy 1.x value-based
+        # promotion cannot round INT64_MAX through float64 before comparison.
         raise ValueError("responses exceed signed int64 range")
 
     try:
