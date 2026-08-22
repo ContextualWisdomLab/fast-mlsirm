@@ -6,7 +6,9 @@ from typing import Any
 
 import numpy as np
 
+import fast_mlsirm as fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
+from fast_mlsirm import dif as dif_module
 from fast_mlsirm.dif import logistic_dif, logistic_dif_purified
 
 
@@ -108,3 +110,9 @@ def test_purified_logistic_preserves_zero_iteration_native_domain(monkeypatch):
     assert type(max_iter) is int and max_iter == 0
     assert type(max_rounds) is int and max_rounds == 1
     assert type(min_anchor_items) is int and min_anchor_items == 0
+
+
+def test_package_aliases_share_hardened_dif_functions():
+    assert fast_mlsirm.logistic_dif is dif_module.logistic_dif
+    assert fast_mlsirm.mantel_haenszel_dif_purified is dif_module.mantel_haenszel_dif_purified
+    assert fast_mlsirm.logistic_dif_purified is dif_module.logistic_dif_purified
