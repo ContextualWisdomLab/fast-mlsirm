@@ -144,7 +144,7 @@ def test_reliability_masked_arrays_use_actionable_nan_guidance_before_native(
     [
         (
             lambda: reliability.cronbach_alpha([[[1.0]]]),
-            "data must be a 2-D array",
+            "data must be a 2-D persons x items array",
         ),
         (
             lambda: reliability.separation_reliability([[0.1]], [0.01]),
@@ -180,7 +180,7 @@ def test_cronbach_alpha_rejects_cyclic_sequence_before_numpy_materialization(
     monkeypatch.setattr(np, "asarray", _materialization_must_not_run)
     monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
 
-    with pytest.raises(ValueError, match="data must be a 2-D array"):
+    with pytest.raises(ValueError, match="data must be a 2-D persons x items array"):
         reliability.cronbach_alpha(cyclic)
 
 
