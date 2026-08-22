@@ -38,17 +38,21 @@ def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
     return any(value_type is trusted_type for trusted_type in trusted_types)
 
 
-def _validated_positive_real(value: object, name: str, *, allow_none: bool = False) -> float | None:
-    """Normalize one positive finite control after exact scalar admission."""
-    if allow_none and value is None:
-        return None
-    value_type = type(value)
-    if not (
+def _is_trusted_real_type(value_type: type) -> bool:
+    """Return whether a scalar type is package-trusted real numeric storage."""
+    return (
         value_type is int
         or value_type is float
         or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
         or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
-    ):
+    )
+
+
+def _validated_positive_real(value: object, name: str, *, allow_none: bool = False) -> float | None:
+    """Normalize one positive finite control after exact scalar admission."""
+    if allow_none and value is None:
+        return None
+    if not _is_trusted_real_type(type(value)):
         raise ValueError(f"{name} must be positive and finite")
     try:
         validated = float(value)
@@ -64,6 +68,32 @@ def _required_positive_real(value: object, name: str) -> float:
     validated = _validated_positive_real(value, name)
     if validated is None:
         raise ValueError(f"{name} must be positive and finite")
+    return validated
+
+
+def _validated_open_unit_real(value: object, name: str) -> float:
+    """Normalize one trusted finite real strictly inside the unit interval."""
+    if not _is_trusted_real_type(type(value)):
+        raise ValueError(f"{name} must be in (0, 1)")
+    try:
+        validated = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be in (0, 1)") from exc
+    if not np.isfinite(validated) or not 0.0 < validated < 1.0:
+        raise ValueError(f"{name} must be in (0, 1)")
+    return validated
+
+
+def _validated_nonnegative_real(value: object, name: str) -> float:
+    """Normalize one trusted finite non-negative real control."""
+    if not _is_trusted_real_type(type(value)):
+        raise ValueError(f"{name} must be finite and non-negative")
+    try:
+        validated = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and non-negative") from exc
+    if not np.isfinite(validated) or validated < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative")
     return validated
 
 
@@ -94,14 +124,7 @@ def _validated_quadrature(value: object) -> int:
 def _is_trusted_real_scalar(value: object) -> bool:
     """Return whether one scalar can be marshalled without caller callbacks."""
     value_type = type(value)
-    return (
-        value_type is bool
-        or value_type is int
-        or value_type is float
-        or value_type is np.bool_
-        or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
-        or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
-    )
+    return value_type is bool or value_type is np.bool_ or _is_trusted_real_type(value_type)
 
 
 def _validate_real_sequence(value: object, name: str) -> None:
@@ -427,6 +450,8 @@ def rt_person_fit(
     """
     from .fitstats import _core_module
 
+    validated_alpha_level = _validated_open_unit_real(alpha_level, "alpha_level")
+    validated_z_fast = _validated_nonnegative_real(z_fast, "z_fast")
     t = _validated_real_array(times, "times")
     alpha_arr = _validated_real_array(alpha, "alpha")
     beta_arr = _validated_real_array(beta, "beta")
@@ -447,8 +472,8 @@ def rt_person_fit(
         int(n_items),
         alpha_arr,
         beta_arr,
-        float(alpha_level),
-        float(z_fast),
+        validated_alpha_level,
+        validated_z_fast,
     )
     return {
         "w": np.asarray(res["w"], dtype=np.float64),
