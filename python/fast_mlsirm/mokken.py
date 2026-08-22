@@ -61,6 +61,12 @@ def _real_control(name: str, value: object) -> float:
         parsed = float(value)
     elif any(value_type is trusted for trusted in _TRUSTED_NUMPY_REAL_TYPES):
         parsed = float(value)
+    elif (
+        value_type is np.ndarray
+        and value.ndim == 0
+        and value.dtype.kind in ("i", "u", "f")
+    ):
+        parsed = float(value.item())
     else:
         raise ValueError(f"{name} must be a real number")
     if not np.isfinite(parsed):
