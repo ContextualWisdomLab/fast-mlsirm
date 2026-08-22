@@ -542,7 +542,8 @@ mod resource_limit_tests {
                 0.05,
                 1.645,
             )
-            .unwrap_err(),
+            .err()
+            .expect("oversized response-time person-fit shape must fail"),
             "response-time evidence exceeds the 20000000-cell budget"
         );
     }
