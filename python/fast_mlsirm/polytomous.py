@@ -167,7 +167,13 @@ def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, n
     ``(int64 categories with missing filled to 0, boolean observed mask)``."""
     n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
     try:
-        yf = np.asarray(responses, dtype=np.float64)
+        raw = np.asarray(responses)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("responses must be numeric") from None
+    if np.iscomplexobj(raw):
+        raise ValueError("responses must be real-valued")
+    try:
+        yf = np.asarray(raw, dtype=np.float64)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("responses must be numeric") from None
     if yf.ndim != 2:
@@ -201,10 +207,16 @@ def _nonnegative_integer_vector(values, name: str) -> np.ndarray:
         not np.all(np.isfinite(numeric))
         or np.any(numeric < 0)
         or np.any(numeric != np.floor(numeric))
-        or np.any(numeric > np.iinfo(np.int64).max)
     ):
         raise ValueError(f"{name} must contain non-negative integers")
-    return raw.astype(np.int64)
+    try:
+        with np.errstate(invalid="ignore", over="ignore"):
+            narrowed = raw.astype(np.int64)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must contain non-negative integers") from None
+    if np.any(narrowed < 0) or not np.array_equal(narrowed.astype(np.float64), numeric):
+        raise ValueError(f"{name} must contain non-negative integers")
+    return narrowed
 
 
 def fit_polytomous(
