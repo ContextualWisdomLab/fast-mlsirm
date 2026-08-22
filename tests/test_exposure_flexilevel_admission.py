@@ -187,6 +187,18 @@ def test_flexilevel_preserves_supported_binary_response_storage() -> None:
         assert int(result["n_administered"]) == 2
 
 
+def test_flexilevel_preserves_plain_sequence_binary_response_storage() -> None:
+    """Plain list/tuple response array-likes remain callback-safe and supported."""
+
+    for responses in (
+        [1, 0, 1],
+        [[True, False, True]],
+        ((np.int16(1), np.float32(0.0), np.uint8(1)),),
+    ):
+        result = exposure.flexilevel_administer(responses, n_persons=1, n_items=3)
+        assert int(result["n_administered"]) == 2
+
+
 def test_flexilevel_distribution_preserves_real_numeric_probabilities() -> None:
     """Valid probabilities continue to reach the Rust recursion unchanged."""
 
