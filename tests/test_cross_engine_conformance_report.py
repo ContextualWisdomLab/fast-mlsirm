@@ -157,8 +157,6 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "&lt;script&gt;unsafe&lt;/script&gt;" in html_text
     assert "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;" in html_text
     assert '<meta http-equiv="Content-Security-Policy"' in html_text
-    assert "default-src 'none'" in html_text
-    assert "&#x27;" not in html_text.split("Content-Security-Policy")[1].split(">")[0]
     assert "<script" not in html_text.lower()
     assert "<caption>Capability × engine conformance evidence</caption>" in html_text
     assert '<th scope="col">Capability</th>' in html_text

@@ -350,7 +350,7 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         '<html lang="en">',
         "<head>",
         '<meta charset="utf-8">',
-        f'<meta http-equiv="Content-Security-Policy" content="{_CSP}">',
+        f'<meta http-equiv="Content-Security-Policy" content="{escape(_CSP, quote=True)}">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cross-engine conformance evidence</title>",
         "</head>",
