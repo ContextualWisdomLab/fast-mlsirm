@@ -146,7 +146,7 @@ def fit_mixture(
     seed_int = _bounded_integer(seed, "seed", 0, _MAX_U64)
 
     raw_y = np.asarray(responses)
-    if np.iscomplexobj(raw_y):
+    if np.iscomplexobj(raw_y) or raw_y.dtype.kind not in {"b", "i", "u", "f"}:
         raise ValueError("responses must be real-valued")
     y = np.asarray(raw_y, dtype=np.float64)
     if y.ndim != 2:
