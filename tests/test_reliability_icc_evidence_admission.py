@@ -10,6 +10,7 @@ import pytest
 import fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import reliability
+from fast_mlsirm import _icc_control_safety as icc_control_safety
 
 
 class _HostileArrayProvider:
@@ -115,6 +116,15 @@ def test_icc_preserves_trusted_sequence_compatibility(monkeypatch):
     )
     assert isinstance(seen["flat"], np.ndarray)
     assert seen["flat"].dtype == np.float64
+
+
+def test_icc_safety_installer_is_idempotent():
+    original_icc = reliability.icc
+    try:
+        icc_control_safety.install(reliability)
+        assert reliability.icc is original_icc
+    finally:
+        reliability.icc = original_icc
 
 
 def test_top_level_icc_export_uses_hardened_adapter():
