@@ -78,18 +78,17 @@ def test_detect_rejects_array_provider_responses_without_callbacks(monkeypatch):
 
 
 def test_detect_rejects_oversized_exact_ndarray_before_extra_materialization():
-    """Exact ndarray evidence receives the same logical-cell ceiling as sequences."""
+    """Oversized exact arrays fail with an explicit resource-limit diagnostic."""
     oversized = np.broadcast_to(
         np.array(0, dtype=np.uint8),
-        (20_000_001,),
+        (1, 20_000_001),
     )
 
-    with pytest.raises(ValueError, match="responses must be a numeric array"):
-        _trusted_numeric_array(
-            oversized,
-            numeric_error="responses must be a numeric array",
-            complex_error="responses must be real-valued",
-        )
+    with pytest.raises(
+        ValueError,
+        match="responses exceed the 20,000,000-cell resource limit",
+    ):
+        detect_analysis(oversized, np.array([0], dtype=np.int64))
 
 
 def test_detect_rejects_complex_cluster_before_lossy_coercion(monkeypatch):
