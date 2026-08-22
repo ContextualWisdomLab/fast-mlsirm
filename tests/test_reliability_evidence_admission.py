@@ -23,6 +23,17 @@ class _HostileArrayProvider:
         raise AssertionError("caller-controlled __array__ callback executed")
 
 
+class _HostileTruthProvider:
+    """Truth provider that must never execute while a Boolean control is admitted."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __bool__(self):
+        self.calls += 1
+        raise AssertionError("caller-controlled truth callback executed")
+
+
 def _native_discovery_must_not_run():
     raise AssertionError("compiled-core discovery ran before evidence admission")
 
@@ -36,6 +47,8 @@ def _core_that_must_not_dispatch() -> SimpleNamespace:
         tenberge_mu=_dispatch,
         cronbach_alpha=_dispatch,
         separation_reliability=_dispatch,
+        mean_pairwise_cor=_dispatch,
+        mean_pairwise_rho=_dispatch,
     )
 
 
@@ -157,9 +170,86 @@ def test_separation_reliability_preserves_plain_sequence_numeric_compatibility(
     assert seen["se"].dtype == np.float64
 
 
+@pytest.mark.parametrize(
+    "invoke",
+    [
+        lambda value: reliability.mean_pairwise_cor(value),
+        lambda value: reliability.mean_pairwise_rho(value),
+    ],
+)
+def test_pairwise_reliability_rejects_array_provider_without_callback(
+    monkeypatch, invoke
+):
+    """Rater evidence must be inert before NumPy or Rust sees it."""
+    hostile = _HostileArrayProvider()
+    monkeypatch.setattr(fitstats, "_core_module", _core_that_must_not_dispatch)
+
+    with pytest.raises(ValueError, match="real numeric"):
+        invoke(hostile)
+
+    assert hostile.calls == 0
+
+
+@pytest.mark.parametrize(
+    "invoke",
+    [
+        lambda value: reliability.mean_pairwise_cor([[1.0, 2.0], [2.0, 1.0]], fisher=value),
+        lambda value: reliability.mean_pairwise_rho([[1.0, 2.0], [2.0, 1.0]], fisher=value),
+    ],
+)
+def test_pairwise_reliability_rejects_hostile_fisher_before_data_or_native(
+    monkeypatch, invoke
+):
+    """Invalid Fisher controls must fail before ratings access or core discovery."""
+    hostile = _HostileTruthProvider()
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(TypeError, match="fisher must be a bool"):
+        invoke(hostile)
+
+    assert hostile.calls == 0
+
+
+def test_mean_pairwise_cor_preserves_trusted_sequence_and_numpy_bool(monkeypatch):
+    """Trusted sequence ratings and concrete NumPy Boolean controls stay valid."""
+    seen: dict[str, object] = {}
+
+    def _mean_pairwise_cor(flat, n_subjects, n_raters, fisher):
+        seen["flat"] = flat
+        seen["shape"] = (n_subjects, n_raters)
+        seen["fisher"] = fisher
+        return {
+            "value": 0.25,
+            "statistic": 0.5,
+            "p_value": 0.6,
+            "dropped": 0,
+            "subjects": n_subjects,
+            "raters": n_raters,
+        }
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: SimpleNamespace(mean_pairwise_cor=_mean_pairwise_cor),
+    )
+
+    result = reliability.mean_pairwise_cor(
+        [[1, np.float32(2.0)], [2.0, np.int16(1)], [3, np.float64(4.0)], [4, 3]],
+        fisher=np.bool_(True),
+    )
+
+    assert result.value == pytest.approx(0.25)
+    assert seen["shape"] == (4, 2)
+    assert seen["fisher"] is True
+    assert isinstance(seen["flat"], np.ndarray)
+    assert seen["flat"].dtype == np.float64
+
+
 def test_top_level_reliability_exports_use_hardened_adapters():
     """Historical package exports must not retain pre-install reliability callables."""
     assert fast_mlsirm.guttman_lambdas is reliability.guttman_lambdas
     assert fast_mlsirm.tenberge_mu is reliability.tenberge_mu
     assert fast_mlsirm.cronbach_alpha is reliability.cronbach_alpha
     assert fast_mlsirm.separation_reliability is reliability.separation_reliability
+    assert fast_mlsirm.mean_pairwise_cor is reliability.mean_pairwise_cor
+    assert fast_mlsirm.mean_pairwise_rho is reliability.mean_pairwise_rho
