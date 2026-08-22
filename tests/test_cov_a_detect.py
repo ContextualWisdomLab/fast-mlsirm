@@ -7,6 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import fast_mlsirm.detect as detect_module
 from fast_mlsirm.detect import DetectResult, DimtestResult, detect_analysis, dimtest
 
 
@@ -103,6 +104,27 @@ def test_detect_preserves_shared_acyclic_response_rows():
 
     assert isinstance(result, DetectResult)
     assert result.n_pairs == 15
+
+
+def test_detect_bounds_compressed_shared_dag_before_numpy_materialization(monkeypatch):
+    leaf = [0.0, 1.0]
+    responses = leaf
+    for _ in range(6):
+        responses = [responses, responses]
+
+    monkeypatch.setattr(detect_module, "_MAX_DETECT_SEQUENCE_CELLS", 64, raising=False)
+
+    def _materialization_must_not_run(*args, **kwargs):
+        raise AssertionError("NumPy materialization ran before shared-DAG resource admission")
+
+    monkeypatch.setattr(detect_module.np, "asarray", _materialization_must_not_run)
+
+    with pytest.raises(ValueError, match="numeric array"):
+        detect_module._trusted_numeric_array(
+            responses,
+            numeric_error="responses must be a numeric array",
+            complex_error="responses must be real-valued",
+        )
 
 
 def test_dimtest_happy_path():
