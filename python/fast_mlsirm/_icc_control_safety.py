@@ -93,25 +93,30 @@ def _reject_masked_array(value: Any, name: str) -> None:
         raise ValueError(f"{name} must not be a masked array")
 
 
-def _trusted_sequence_tree(value: Any, *, allow_bool: bool) -> bool:
-    """Return whether an exact list/tuple tree contains only trusted reals."""
-    stack = [value]
+def _trusted_sequence_tree(
+    value: Any, *, allow_bool: bool, max_depth: int
+) -> tuple[bool, bool]:
+    """Return trusted-scalar and excess-rank state for an exact sequence tree."""
+    stack = [(value, 0)]
     while stack:
-        current = stack.pop()
+        current, depth = stack.pop()
         current_type = builtins.type(current)
         if current_type is list or current_type is tuple:
-            stack.extend(current)
+            next_depth = depth + 1
+            if next_depth > max_depth:
+                return False, True
+            stack.extend((child, next_depth) for child in current)
             continue
         if current_type is bool or current_type is np.bool_:
             if allow_bool:
                 continue
-            return False
+            return False, False
         if current_type is int or current_type is float:
             continue
         if any(current_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES):
             continue
-        return False
-    return True
+        return False, False
+    return True, False
 
 
 def _real_numeric_array(
@@ -127,7 +132,17 @@ def _real_numeric_array(
     if value_type is np.ndarray:
         arr = value
     elif value_type is list or value_type is tuple:
-        if not _trusted_sequence_tree(value, allow_bool=allow_bool):
+        trusted, excess_rank = _trusted_sequence_tree(
+            value,
+            allow_bool=allow_bool,
+            max_depth=ndim,
+        )
+        if excess_rank:
+            if dimension_error is not None:
+                raise ValueError(dimension_error)
+            dimension = "2-D" if ndim == 2 else "1-D"
+            raise ValueError(f"{name} must be a {dimension} array")
+        if not trusted:
             raise ValueError(f"{name} must be real numeric evidence")
         try:
             arr = np.asarray(value)
