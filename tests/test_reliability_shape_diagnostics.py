@@ -74,4 +74,4 @@ def test_shape_rejection_precedes_native_dispatch_even_with_core_present(monkeyp
         ValueError,
         match="ratings must be a 2-D subjects x raters array",
     ):
-        reliability.icc([[1.0, 2.0, 3.0]])[0]  # pragma: no cover
+        reliability.icc([[[1.0]]])
