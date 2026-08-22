@@ -100,8 +100,15 @@ def test_mixed_builtin_content_sequence_rejected_before_native_dispatch(
         assemble_test_form(np.array([3.0, 2.0, 1.0]), 2, content=["a", 1, "b"])
 
 
-def test_unsigned_exclusion_overflow_rejected_before_signed_narrowing() -> None:
-    exclude = np.array([np.iinfo(np.uint64).max], dtype=np.uint64)
+@pytest.mark.parametrize(
+    "overflow_index",
+    (np.uint64(2**63), np.uint64(np.iinfo(np.uint64).max)),
+)
+def test_unsigned_exclusion_overflow_rejected_before_signed_narrowing(
+    overflow_index: np.uint64,
+) -> None:
+    """Signed-64 overflow stays rejected across NumPy promotion semantics."""
+    exclude = np.array([overflow_index], dtype=np.uint64)
     with pytest.raises(ValueError, match="exclude must contain valid item indices"):
         assemble_test_form(np.array([3.0, 2.0, 1.0]), 2, exclude=exclude)
 
