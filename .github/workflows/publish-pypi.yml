@@ -131,7 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" dist/* --repo "${{ github.repository }}" --clobber
+        run: gh release upload "$RELEASE_TAG" dist/* --repo "${{ github.repository }}"
 
   publish-pypi:
     name: publish to PyPI
