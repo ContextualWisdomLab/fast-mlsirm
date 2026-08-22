@@ -1,13 +1,14 @@
-"""Inert semantic-control validation for the public ICC adapter.
+"""Callback-free validation adapters for public reliability APIs.
 
-The ICC formulas and all result-affecting arithmetic remain Rust-owned. This
-module only establishes exact trusted scalar identities and parameter ranges
-before the legacy adapter can discover the native core or materialize ratings.
+All reliability formulas and result-affecting arithmetic remain Rust-owned.
+This module establishes exact trusted scalar/evidence identities before legacy
+adapters can discover the native core or materialize caller-controlled data.
 """
 
 from __future__ import annotations
 
 import builtins
+import sys
 from functools import wraps
 from types import ModuleType
 from typing import Any, Callable
@@ -62,11 +63,124 @@ def _real(value: Any, name: str) -> float:
     return normalized
 
 
-def install(reliability_module: ModuleType) -> None:
-    """Wrap ``reliability.icc`` with callback-free semantic validation."""
-    original: Callable[..., Any] = reliability_module.icc
+def _integer(value: Any, name: str) -> int:
+    """Normalize one exact trusted integer scalar without caller callbacks."""
+    value_type = builtins.type(value)
+    if value_type is int:
+        return value
+    if any(
+        value_type is scalar_type
+        for scalar_type in _NUMPY_REAL_SCALAR_TYPES
+        if np.dtype(scalar_type).kind in "iu"
+    ):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
 
-    @wraps(original)
+
+def _boolean(value: Any, name: str) -> bool:
+    """Normalize one exact Boolean scalar without truth-value callbacks."""
+    value_type = builtins.type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise TypeError(f"{name} must be a bool")
+
+
+def _reject_masked_array(value: Any, name: str) -> None:
+    """Reject exact NumPy masked-array evidence without caller callbacks."""
+    if builtins.type(value) is np.ma.MaskedArray:
+        raise ValueError(f"{name} must not be a masked array")
+
+
+def _trusted_sequence_tree(
+    value: Any, *, allow_bool: bool, max_depth: int
+) -> tuple[bool, bool]:
+    """Return trusted-scalar and excess-rank state for an exact sequence tree."""
+    stack = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        current_type = builtins.type(current)
+        if current_type is list or current_type is tuple:
+            next_depth = depth + 1
+            if next_depth > max_depth:
+                return False, True
+            stack.extend((child, next_depth) for child in current)
+            continue
+        if current_type is bool or current_type is np.bool_:
+            if allow_bool:
+                continue
+            return False, False
+        if current_type is int or current_type is float:
+            continue
+        if any(current_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES):
+            continue
+        return False, False
+    return True, False
+
+
+def _real_numeric_array(
+    value: Any,
+    name: str,
+    ndim: int,
+    *,
+    allow_bool: bool = True,
+    dimension_error: str | None = None,
+) -> np.ndarray:
+    """Marshal inert real-numeric evidence without arbitrary array callbacks."""
+    value_type = builtins.type(value)
+    if value_type is np.ndarray:
+        arr = value
+    elif value_type is list or value_type is tuple:
+        trusted, excess_rank = _trusted_sequence_tree(
+            value,
+            allow_bool=allow_bool,
+            max_depth=ndim,
+        )
+        if excess_rank:
+            if dimension_error is not None:
+                raise ValueError(dimension_error)
+            dimension = "2-D" if ndim == 2 else "1-D"
+            raise ValueError(f"{name} must be a {dimension} array")
+        if not trusted:
+            raise ValueError(f"{name} must be real numeric evidence")
+        try:
+            arr = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name} must be real numeric evidence") from exc
+    else:
+        raise ValueError(f"{name} must be real numeric evidence")
+
+    if np.iscomplexobj(arr) or arr.dtype.kind not in "biuf":
+        raise ValueError(f"{name} must be real numeric evidence")
+    if not allow_bool and arr.dtype.kind == "b":
+        raise ValueError(f"{name} must be real numeric evidence")
+    if arr.ndim != ndim:
+        if dimension_error is not None:
+            raise ValueError(dimension_error)
+        dimension = "2-D" if ndim == 2 else "1-D"
+        raise ValueError(f"{name} must be a {dimension} array")
+    try:
+        return np.ascontiguousarray(arr, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be real numeric evidence") from exc
+
+
+def install(reliability_module: ModuleType) -> None:
+    """Install callback-free control and evidence validation adapters once."""
+    current_icc: Callable[..., Any] = reliability_module.icc
+    if getattr(current_icc, "__fast_mlsirm_icc_control_hardened__", False):
+        return
+
+    original_icc: Callable[..., Any] = current_icc
+    original_guttman: Callable[..., Any] = reliability_module.guttman_lambdas
+    original_tenberge: Callable[..., Any] = reliability_module.tenberge_mu
+    original_alpha: Callable[..., Any] = reliability_module.cronbach_alpha
+    original_separation: Callable[..., Any] = reliability_module.separation_reliability
+    original_mean_cor: Callable[..., Any] = reliability_module.mean_pairwise_cor
+    original_mean_rho: Callable[..., Any] = reliability_module.mean_pairwise_rho
+
+    @wraps(original_icc)
     def safe_icc(
         ratings: Any,
         model: str = "oneway",
@@ -75,7 +189,7 @@ def install(reliability_module: ModuleType) -> None:
         r0: float = 0.0,
         conf_level: float = 0.95,
     ) -> Any:
-        """Validate ICC controls before native discovery or ratings access."""
+        """Validate ICC controls and ratings before native discovery."""
         model_value = _choice(model, "model", ("oneway", "twoway"))
         type_value = _choice(type, "type", ("consistency", "agreement"))
         unit_value = _choice(unit, "unit", ("single", "average"))
@@ -85,8 +199,16 @@ def install(reliability_module: ModuleType) -> None:
             raise ValueError("r0 must be in [0, 1)")
         if not 0.0 < conf_level_value < 1.0:
             raise ValueError("conf_level must be in (0, 1)")
-        return original(
+        if builtins.type(ratings) is np.ma.MaskedArray:
+            raise ValueError("masked arrays are not supported; use NaN for missing")
+        ratings_value = _real_numeric_array(
             ratings,
+            "ratings",
+            2,
+            allow_bool=False,
+        )
+        return original_icc(
+            ratings_value,
             model=model_value,
             type=type_value,
             unit=unit_value,
@@ -94,4 +216,95 @@ def install(reliability_module: ModuleType) -> None:
             conf_level=conf_level_value,
         )
 
+    @wraps(original_guttman)
+    def safe_guttman_lambdas(
+        data: Any,
+        n_sample_splits: int = 15000,
+        seed: int = 1,
+    ) -> Any:
+        """Validate Guttman controls and raw evidence before native discovery."""
+        split_value = _integer(n_sample_splits, "n_sample_splits")
+        seed_value = _integer(seed, "seed")
+        if split_value < 1:
+            raise ValueError("n_sample_splits must be >= 1")
+        if seed_value < 0:
+            raise ValueError("seed must be non-negative")
+        data_value = _real_numeric_array(data, "data", 2)
+        return original_guttman(data_value, n_sample_splits=split_value, seed=seed_value)
+
+    @wraps(original_tenberge)
+    def safe_tenberge_mu(data: Any) -> Any:
+        """Validate ten Berge raw evidence before native discovery."""
+        return original_tenberge(_real_numeric_array(data, "data", 2))
+
+    @wraps(original_alpha)
+    def safe_cronbach_alpha(data: Any) -> Any:
+        """Validate alpha raw evidence before native discovery."""
+        return original_alpha(_real_numeric_array(data, "data", 2))
+
+    @wraps(original_separation)
+    def safe_separation_reliability(measures: Any, se: Any) -> Any:
+        """Validate person-measure evidence before native discovery."""
+        dimension_error = "measures and se must be 1-D arrays"
+        measures_value = _real_numeric_array(
+            measures,
+            "measures",
+            1,
+            dimension_error=dimension_error,
+        )
+        se_value = _real_numeric_array(
+            se,
+            "se",
+            1,
+            dimension_error=dimension_error,
+        )
+        return original_separation(measures_value, se_value)
+
+    @wraps(original_mean_cor)
+    def safe_mean_pairwise_cor(ratings: Any, fisher: bool = True) -> Any:
+        """Validate masked evidence, Fisher control, and Pearson ratings."""
+        _reject_masked_array(ratings, "ratings")
+        fisher_value = _boolean(fisher, "fisher")
+        ratings_value = _real_numeric_array(
+            ratings,
+            "ratings",
+            2,
+            allow_bool=False,
+        )
+        return original_mean_cor(ratings_value, fisher=fisher_value)
+
+    @wraps(original_mean_rho)
+    def safe_mean_pairwise_rho(ratings: Any, fisher: bool = True) -> Any:
+        """Validate masked evidence, Fisher control, and Spearman ratings."""
+        _reject_masked_array(ratings, "ratings")
+        fisher_value = _boolean(fisher, "fisher")
+        ratings_value = _real_numeric_array(
+            ratings,
+            "ratings",
+            2,
+            allow_bool=False,
+        )
+        return original_mean_rho(ratings_value, fisher=fisher_value)
+
+    safe_icc.__fast_mlsirm_icc_control_hardened__ = True
     reliability_module.icc = safe_icc
+    reliability_module.guttman_lambdas = safe_guttman_lambdas
+    reliability_module.tenberge_mu = safe_tenberge_mu
+    reliability_module.cronbach_alpha = safe_cronbach_alpha
+    reliability_module.separation_reliability = safe_separation_reliability
+    reliability_module.mean_pairwise_cor = safe_mean_pairwise_cor
+    reliability_module.mean_pairwise_rho = safe_mean_pairwise_rho
+
+    # ``_legacy_init`` copies public symbols before this installer runs. Rebind
+    # the evidence-hardened reliability entry points so the top-level package
+    # surface cannot retain pre-install function objects.
+    legacy_name = f"{reliability_module.__package__}._legacy_init"
+    legacy_module = sys.modules.get(legacy_name)
+    if legacy_module is not None:
+        legacy_module.icc = safe_icc
+        legacy_module.guttman_lambdas = safe_guttman_lambdas
+        legacy_module.tenberge_mu = safe_tenberge_mu
+        legacy_module.cronbach_alpha = safe_cronbach_alpha
+        legacy_module.separation_reliability = safe_separation_reliability
+        legacy_module.mean_pairwise_cor = safe_mean_pairwise_cor
+        legacy_module.mean_pairwise_rho = safe_mean_pairwise_rho
