@@ -73,6 +73,19 @@ def test_fixed_link_rejects_object_parameter_before_element_conversion():
     assert _FloatBomb.calls == 0
 
 
+@pytest.mark.parametrize("invalid_theta", [np.nan, np.inf, -np.inf])
+def test_fixed_link_rejects_nonfinite_source_theta_before_rust(monkeypatch, invalid_theta):
+    source = _params(seed=7)
+    target = _params(seed=8)
+    import fast_mlsirm._core as core
+
+    monkeypatch.setattr(core, "link_fixed_item_parameters", _native_link_fail)
+    source.theta[0, 0] = invalid_theta
+
+    with pytest.raises(ValueError, match="source.theta must be finite"):
+        link_fixed_item_parameters(source, target, np.array([0, 1, 2]))
+
+
 @pytest.mark.parametrize("field", ["a_old", "b_old", "a_new", "b_new"])
 def test_irt_link_rejects_complex_evidence_before_native_discovery(monkeypatch, field):
     import fast_mlsirm.fitstats as fitstats
