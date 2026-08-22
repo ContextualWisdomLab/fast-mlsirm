@@ -7,8 +7,9 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from fast_mlsirm import dif
+import fast_mlsirm as fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
+from fast_mlsirm import dif
 
 
 class _HostileArray:
@@ -199,3 +200,9 @@ def test_public_dif_controls_normalize_supported_numpy_scalars(monkeypatch):
         assert type(value) in (bool, float, int)
     for value in core.logistic_purified_controls:
         assert type(value) in (bool, float, int)
+
+
+def test_package_aliases_share_hardened_dif_functions():
+    assert fast_mlsirm.logistic_dif is dif.logistic_dif
+    assert fast_mlsirm.mantel_haenszel_dif_purified is dif.mantel_haenszel_dif_purified
+    assert fast_mlsirm.logistic_dif_purified is dif.logistic_dif_purified
