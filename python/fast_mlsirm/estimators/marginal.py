@@ -501,9 +501,9 @@ def _build_tables(
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
-    logp1 = _log_sigmoid(eta)
     logp0 = _log_sigmoid(-eta)
-    n_ctx, n_items = eta.shape[0], eta.shape[1]
+    logp1 = logp0 + eta
+    n_ctx = eta.shape[0]
     c0 = np.zeros((n_ctx, n_dims, eta.shape[2], eta.shape[3]))
     for d in range(n_dims):
         c0[:, d] = logp0[:, factor_id == d].sum(axis=1)
@@ -671,7 +671,7 @@ def _item_q(
     for item ``i`` and subtracts the MAP ridge penalties on its active
     parameters. This is the per-item M-step objective the ascent maximizes.
     """
-    q = float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))
+    q = float(np.sum(r_i * eta + n_i * _log_sigmoid(-eta)))
     q -= 0.5 * pen["lambda_b"] * b_i * b_i
     if free_alpha:
         da = alpha_i - pen["mu_alpha"]
@@ -1116,7 +1116,7 @@ def fit_marginal_numpy(
                         - np.exp(tau_c) * dist[None, :, None, :]
                     )
                     qv = float(
-                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
+                        np.sum(rbar * e + n_all * _log_sigmoid(-e))
                     )
                     qv -= 0.5 * pen["lambda_b"] * float(b @ b)
                     if free_alpha:
@@ -1178,7 +1178,7 @@ def fit_marginal_numpy(
                     """Expected-count objective as a function of covariate slope ``delta_c``."""
                     e = eta_delta(delta_c)
                     return float(
-                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
+                        np.sum(rbar * e + n_all * _log_sigmoid(-e))
                     )
 
                 cur = q_of_delta(delta)

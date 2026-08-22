@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-08-22 - Optimize _log_sigmoid calculations in marginal MMLE loops
+**Learning:** Calling `_log_sigmoid(-eta)` and `_log_sigmoid(eta)` both internally compute `np.logaddexp`, which is an expensive transcendental operation. By algebraically simplifying expressions utilizing the identity `log(sigmoid(x)) - log(sigmoid(-x)) = x`, one can rewrite `logp1 = _log_sigmoid(eta)` as `logp1 = _log_sigmoid(-eta) + eta` and `r * _log_sigmoid(eta) + (n-r) * _log_sigmoid(-eta)` as `r * eta + n * _log_sigmoid(-eta)`. This cuts the number of `np.logaddexp` evaluations in half within the performance-critical EM inner loops.
+**Action:** When mathematically optimizing numerically stable expressions involving `logaddexp` or `_log_sigmoid`, identify symmetric paired calls with `x` and `-x` and rewrite them to perform the more computationally expensive operation only once.
