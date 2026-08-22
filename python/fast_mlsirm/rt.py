@@ -31,6 +31,12 @@ _NUMPY_FLOAT_SCALAR_TYPES = tuple(
 )
 _SUPPORTED_RT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
+# RT calibration/person-fit materialize several dense arrays at once. Keep the
+# same 100k-axis / 20M-cell envelope used by the package's dense simulation
+# safety contract, and mirror these values at the Rust boundary.
+_RT_MAX_ARRAY_RANK = 2
+_RT_MAX_AXIS_LENGTH = 100_000
+_RT_MAX_ELEMENTS = 20_000_000
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -127,41 +133,89 @@ def _is_trusted_real_scalar(value: object) -> bool:
     return value_type is bool or value_type is np.bool_ or _is_trusted_real_type(value_type)
 
 
+def _validate_array_resource_bounds(source: np.ndarray, name: str, *, nesting_depth: int = 0) -> int:
+    """Validate RT rank/axis/element metadata before any dense conversion."""
+    if nesting_depth + source.ndim > _RT_MAX_ARRAY_RANK:
+        raise ValueError(f"{name} exceeds response-time maximum rank {_RT_MAX_ARRAY_RANK}")
+    if any(axis > _RT_MAX_AXIS_LENGTH for axis in source.shape):
+        raise ValueError(
+            f"{name} exceeds response-time maximum axis length {_RT_MAX_AXIS_LENGTH}"
+        )
+    if source.size > _RT_MAX_ELEMENTS:
+        raise ValueError(
+            f"{name} exceeds response-time maximum element count {_RT_MAX_ELEMENTS}"
+        )
+    return int(source.size)
+
+
 def _validate_real_sequence(value: object, name: str) -> None:
-    """Validate one built-in nested real-numeric sequence without coercion."""
-    stack: list[tuple[object, bool]] = [(value, False)]
+    """Validate a bounded built-in nested real-numeric sequence without coercion."""
+    # Iterator frames keep traversal memory O(rank) instead of pushing every
+    # element of a caller-owned container onto the explicit stack at once.
+    stack: list[tuple[str, object, int]] = [("visit", value, 0)]
     active_container_ids: set[int] = set()
+    total_elements = 0
     while stack:
-        current, leaving = stack.pop()
+        action, current, depth = stack.pop()
+        if action == "leave":
+            active_container_ids.remove(id(current))
+            continue
+        if action == "iterate":
+            iterator = current
+            try:
+                element = next(iterator)  # type: ignore[arg-type]
+            except StopIteration:
+                continue
+            stack.append(("iterate", iterator, depth))
+            stack.append(("visit", element, depth))
+            continue
+
         current_type = type(current)
         if current_type is list or current_type is tuple:
+            rank = depth + 1
+            if rank > _RT_MAX_ARRAY_RANK:
+                raise ValueError(
+                    f"{name} exceeds response-time maximum rank {_RT_MAX_ARRAY_RANK}"
+                )
+            if len(current) > _RT_MAX_AXIS_LENGTH:
+                raise ValueError(
+                    f"{name} exceeds response-time maximum axis length {_RT_MAX_AXIS_LENGTH}"
+                )
             current_id = id(current)
-            if leaving:
-                active_container_ids.remove(current_id)
-                continue
-            # An explicit stack (heap-allocated) replaces recursion so nesting
-            # depth cannot exhaust Python's call stack. Track only containers on
-            # the active ancestor path: true cycles are rejected, while a valid
-            # shared/diamond sub-sequence may appear in multiple sibling branches.
             if current_id in active_container_ids:
                 raise ValueError(f"{name} must be a real numeric array")
             active_container_ids.add(current_id)
-            stack.append((current, True))
-            stack.extend((element, False) for element in current)
+            stack.append(("leave", current, depth))
+            stack.append(("iterate", iter(current), rank))
             continue
         if current_type is np.ndarray:
+            total_elements += _validate_array_resource_bounds(
+                current,
+                name,
+                nesting_depth=depth,
+            )
+            if total_elements > _RT_MAX_ELEMENTS:
+                raise ValueError(
+                    f"{name} exceeds response-time maximum element count {_RT_MAX_ELEMENTS}"
+                )
             if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
                 raise ValueError(f"{name} must be a real numeric array")
             continue
         if not _is_trusted_real_scalar(current):
             raise ValueError(f"{name} must be a real numeric array")
+        total_elements += 1
+        if total_elements > _RT_MAX_ELEMENTS:
+            raise ValueError(
+                f"{name} exceeds response-time maximum element count {_RT_MAX_ELEMENTS}"
+            )
 
 
 def _validated_real_array(value: object, name: str) -> np.ndarray:
-    """Materialize trusted real-numeric evidence without lossy/callback coercion."""
+    """Materialize bounded trusted real evidence without lossy/callback coercion."""
     value_type = type(value)
     if value_type is np.ndarray:
         source = value
+        _validate_array_resource_bounds(source, name)
         if source.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
             raise ValueError(f"{name} must be a real numeric array")
     elif value_type is list or value_type is tuple:
@@ -170,6 +224,7 @@ def _validated_real_array(value: object, name: str) -> np.ndarray:
             source = np.asarray(value)
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError(f"{name} must be a real numeric array") from exc
+        _validate_array_resource_bounds(source, name)
         if source.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
             raise ValueError(f"{name} must be a real numeric array")
     else:
