@@ -37,7 +37,12 @@ def _response_array(value: np.ndarray) -> np.ndarray:
         raise ValueError("responses must be real-valued")
     if response_array.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("responses must be a numeric array")
-    return response_array.astype(np.float64, copy=False)
+    with np.errstate(over="ignore", invalid="ignore"):
+        converted = response_array.astype(np.float64, copy=False)
+        round_tripped = converted.astype(response_array.dtype, copy=False)
+    if not np.array_equal(response_array, round_tripped, equal_nan=True):
+        raise ValueError("responses must be exactly representable as float64")
+    return converted
 
 
 def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -603,7 +608,7 @@ def fit_ho_cdm(
     are identified. ``attr_slope`` is anchored non-negative.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
-    ``q_matrix`` is an items x attributes 0/1 array; ``model`` is ``\"dina\"`` or ``\"dino\"``.
+    ``q_matrix`` is an items x attributes 0/1 array; ``model`` is ``"dina"`` or ``"dino"``.
 
     References (APA 7th ed.):
         de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
