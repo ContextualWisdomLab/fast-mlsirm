@@ -15,6 +15,16 @@ def _unexpected_core() -> object:
     raise AssertionError("compiled core discovered before mixture response validation")
 
 
+class _HostileReal:
+    """Object-storage element whose numeric conversion must never execute."""
+
+    callbacks = 0
+
+    def __float__(self) -> float:
+        type(self).callbacks += 1
+        raise AssertionError("caller __float__ executed during mixture admission")
+
+
 @pytest.mark.parametrize(
     "responses",
     [
@@ -32,6 +42,33 @@ def test_fit_mixture_rejects_complex_responses_before_native_discovery(
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
         fit_mixture(responses)
+
+
+def test_fit_mixture_rejects_object_complex_with_package_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Object-dtype complex evidence must not leak a raw NumPy cast error."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    responses = np.array([[0.0 + 1.0j, 1.0], [1.0, 0.0]], dtype=object)
+
+    with pytest.raises(ValueError, match="responses must be real-valued"):
+        fit_mixture(responses)
+
+
+def test_fit_mixture_rejects_object_storage_without_element_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Object response storage fails before caller-defined numeric callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    _HostileReal.callbacks = 0
+    responses = np.array([[_HostileReal(), 1.0], [1.0, 0.0]], dtype=object)
+
+    with pytest.raises(ValueError, match="responses must be real-valued"):
+        fit_mixture(responses)
+
+    assert _HostileReal.callbacks == 0
 
 
 @pytest.mark.parametrize("bad_value", [float("inf"), float("-inf")])
