@@ -129,17 +129,27 @@ def _is_trusted_real_scalar(value: object) -> bool:
 
 def _validate_real_sequence(value: object, name: str) -> None:
     """Validate one built-in nested real-numeric sequence without coercion."""
-    value_type = type(value)
-    if value_type is list or value_type is tuple:
-        for element in value:
-            _validate_real_sequence(element, name)
-        return
-    if value_type is np.ndarray:
-        if value.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+    stack = [value]
+    seen_container_ids = set()
+    while stack:
+        current = stack.pop()
+        current_type = type(current)
+        if current_type is list or current_type is tuple:
+            # An explicit stack (heap-allocated) replaces recursion so nesting
+            # depth cannot exhaust Python's call stack; the identity check
+            # rejects a self-referential or otherwise cyclic container instead
+            # of looping forever walking the same elements again.
+            if id(current) in seen_container_ids:
+                raise ValueError(f"{name} must be a real numeric array")
+            seen_container_ids.add(id(current))
+            stack.extend(current)
+            continue
+        if current_type is np.ndarray:
+            if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+                raise ValueError(f"{name} must be a real numeric array")
+            continue
+        if not _is_trusted_real_scalar(current):
             raise ValueError(f"{name} must be a real numeric array")
-        return
-    if not _is_trusted_real_scalar(value):
-        raise ValueError(f"{name} must be a real numeric array")
 
 
 def _validated_real_array(value: object, name: str) -> np.ndarray:

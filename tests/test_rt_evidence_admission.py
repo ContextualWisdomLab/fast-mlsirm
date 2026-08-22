@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pytest
 
@@ -135,6 +137,31 @@ def test_rt_person_fit_rejects_complex_evidence_before_native(
 
     with pytest.raises(ValueError, match=rf"{field} must be a real numeric array"):
         rt_person_fit(values["times"], values["alpha"], values["beta"])
+
+
+def test_fit_response_times_rejects_self_referential_evidence_before_native(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A self-referential times list rejects instead of exhausting the stack."""
+    monkeypatch.setattr(fitstats, "_core_module", _bomb_core)
+    times: list = []
+    times.append(times)
+
+    with pytest.raises(ValueError, match="times must be a real numeric array"):
+        fit_response_times(times)  # type: ignore[arg-type]
+
+
+def test_fit_response_times_rejects_deeply_nested_evidence_before_native(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A nested-list depth beyond Python's recursion limit rejects, not crashes."""
+    monkeypatch.setattr(fitstats, "_core_module", _bomb_core)
+    nested: object = 1.0
+    for _ in range(sys.getrecursionlimit() + 50):
+        nested = [nested]
+
+    with pytest.raises(ValueError, match="times must be a real numeric array"):
+        fit_response_times(nested)  # type: ignore[arg-type]
 
 
 def test_fit_response_times_preserves_plain_sequence_evidence_until_rust(
