@@ -107,6 +107,7 @@ def test_cli_fit_json_output(tmp_path, capsys):
 
 
 def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
+    pytest.importorskip("fast_mlsirm._core")
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
@@ -135,9 +136,9 @@ def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
         assert main() == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["backend"] in {"numpy", "rust"}
+    assert payload["backend"] == "rust"
     summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
-    assert summary["backend"] == payload["backend"]
+    assert summary["backend"] == "rust"
 
 def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     pytest.importorskip("fast_mlsirm._core")
