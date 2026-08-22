@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import reliability
 
@@ -154,3 +155,11 @@ def test_separation_reliability_preserves_plain_sequence_numeric_compatibility(
     assert isinstance(seen["se"], np.ndarray)
     assert seen["measures"].dtype == np.float64
     assert seen["se"].dtype == np.float64
+
+
+def test_top_level_reliability_exports_use_hardened_adapters():
+    """Historical package exports must not retain pre-install reliability callables."""
+    assert fast_mlsirm.guttman_lambdas is reliability.guttman_lambdas
+    assert fast_mlsirm.tenberge_mu is reliability.tenberge_mu
+    assert fast_mlsirm.cronbach_alpha is reliability.cronbach_alpha
+    assert fast_mlsirm.separation_reliability is reliability.separation_reliability
