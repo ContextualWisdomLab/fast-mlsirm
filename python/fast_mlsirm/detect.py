@@ -8,6 +8,92 @@ from dataclasses import dataclass
 
 import numpy as np
 
+_TRUSTED_DETECT_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.intp,
+        np.longlong,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.uintp,
+        np.ulonglong,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+_MAX_DETECT_SEQUENCE_CELLS = 20_000_000
+
+
+def _trusted_numeric_array(
+    value,
+    *,
+    numeric_error: str,
+    complex_error: str,
+) -> np.ndarray:
+    """Materialize inert real numeric storage without caller conversion hooks."""
+    if type(value) is np.ndarray:
+        array = value
+    elif type(value) in (list, tuple):
+        stack = [(value, False)]
+        active_container_ids: set[int] = set()
+        expanded_cells: dict[int, int] = {}
+        while stack:
+            current, leaving = stack.pop()
+            if type(current) in (list, tuple):
+                current_id = id(current)
+                if leaving:
+                    total_cells = 0
+                    for child in current:
+                        child_type = type(child)
+                        if child_type in (list, tuple):
+                            total_cells += expanded_cells[id(child)]
+                        elif child_type is np.ndarray:
+                            total_cells += int(child.size)
+                        else:
+                            total_cells += 1
+                        if total_cells > _MAX_DETECT_SEQUENCE_CELLS:
+                            raise ValueError(numeric_error)
+                    expanded_cells[current_id] = total_cells
+                    active_container_ids.remove(current_id)
+                    continue
+                if current_id in active_container_ids:
+                    raise ValueError(numeric_error)
+                if current_id in expanded_cells:
+                    continue
+                active_container_ids.add(current_id)
+                stack.append((current, True))
+                stack.extend((child, False) for child in reversed(current))
+                continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+                    raise ValueError(numeric_error)
+                continue
+            if type(current) not in _TRUSTED_DETECT_SCALAR_TYPES:
+                raise ValueError(numeric_error)
+        try:
+            array = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(numeric_error) from exc
+    else:
+        raise ValueError(numeric_error)
+
+    if np.iscomplexobj(array):
+        raise ValueError(complex_error)
+    if array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError(numeric_error)
+    return array
+
 
 @dataclass
 class DetectResult:
@@ -70,7 +156,12 @@ def detect_analysis(
             structure. *Psychometrika, 64*(2), 213-249. (as cited in
             Robitzsch, 2024)
     """
-    y = np.asarray(responses, dtype=np.float64)
+    response_array = _trusted_numeric_array(
+        responses,
+        numeric_error="responses must be a numeric array",
+        complex_error="responses must be real-valued",
+    )
+    y = response_array.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -81,34 +172,27 @@ def detect_analysis(
     if not np.all(np.isin(y, (0.0, 1.0))):
         raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
-    c = np.asarray(cluster).reshape(-1)
+    c = _trusted_numeric_array(
+        cluster,
+        numeric_error="cluster labels must be a numeric array",
+        complex_error="cluster labels must be real integers",
+    ).reshape(-1)
     if c.shape[0] != n_items:
         raise ValueError("cluster must assign one label per item")
     I64_MAX = np.iinfo(np.int64).max
     I64_MIN = np.iinfo(np.int64).min
     if not np.issubdtype(c.dtype, np.integer):
-        cf = np.asarray(cluster, dtype=np.float64).reshape(-1)
+        cf = c.astype(np.float64, copy=False)
         if not np.all(np.isfinite(cf)) or np.any(cf != np.round(cf)):
             raise ValueError("cluster labels must be integers")
-        # Reject labels outside i64 before casting: astype(np.int64) on an
-        # out-of-range float silently wraps/saturates, which would collapse
-        # distinct labels and change the partition (equality-only contract).
         if np.any(cf < -(2.0**63)) or np.any(cf >= 2.0**63):
             raise ValueError("cluster labels must fit in a 64-bit integer")
         c = cf.astype(np.int64)
     else:
-        # Also enforce i64 bounds for integer dtypes that can exceed i64
-        # range. Unsigned types are always >= 0, so only the upper bound can
-        # be violated; avoid comparing unsigned arrays to negative values to
-        # prevent NumPy mixed-signedness promotion surprises. Signed types
-        # narrower than or equal to i64 are always in range.
         if np.issubdtype(c.dtype, np.unsignedinteger):
             if np.any(c > I64_MAX):
                 raise ValueError("cluster labels must fit in a 64-bit integer")
         elif np.any(c < I64_MIN) or np.any(c > I64_MAX):
-            # Unreachable for a NumPy signed-integer array: no signed dtype is
-            # wider than int64, so a value cannot fall outside [I64_MIN, I64_MAX].
-            # Kept as a defensive guard.
             raise ValueError("cluster labels must fit in a 64-bit integer")  # pragma: no cover
         c = c.astype(np.int64)
 
@@ -194,11 +278,11 @@ def dimtest(
             trait unidimensionality. *Psychometrika, 52*(4), 589-617. (NOT
             read; as described by Nandakumar & Stout, 1993)
     """
-    resp = np.asarray(responses)
-    if np.iscomplexobj(resp):
-        raise ValueError("responses must be real-valued")
-    if resp.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError("responses must be a numeric array")
+    resp = _trusted_numeric_array(
+        responses,
+        numeric_error="responses must be a numeric array",
+        complex_error="responses must be real-valued",
+    )
     y = resp.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -210,12 +294,12 @@ def dimtest(
 
     def _index_set(a: np.ndarray, name: str) -> list[int]:
         """Validate and return an item-index selection as a list of ints."""
-        arr = np.asarray(a).reshape(-1)
-        if np.iscomplexobj(arr):
-            raise ValueError(f"{name} indices must be real integers")
-        if arr.dtype.kind not in ("b", "i", "u", "f"):
-            raise ValueError(f"{name} indices must be a numeric array")
-        af = arr.astype(np.float64)
+        arr = _trusted_numeric_array(
+            a,
+            numeric_error=f"{name} indices must be a numeric array",
+            complex_error=f"{name} indices must be real integers",
+        ).reshape(-1)
+        af = arr.astype(np.float64, copy=False)
         if arr.size == 0 or not np.all(np.isfinite(af)) or np.any(af != np.round(af)):
             raise ValueError(f"{name} indices must be non-empty integers")
         if np.any(af < 0) or np.any(af >= n_items):
