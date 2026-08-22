@@ -105,9 +105,14 @@ def _exclude_indices(value: object, *, n_items: int) -> list[int]:
             or np.any(array >= float(2**63))
         ):
             raise ValueError("exclude must contain valid item indices")
-    else:
-        if np.any(array < 0) or np.any(array > np.iinfo(np.int64).max):
+    elif array.dtype.kind == "u":
+        # Compare like-for-like unsigned values so the signed-64 boundary does
+        # not depend on NumPy's version-specific mixed signed/unsigned promotion.
+        unsigned = array.astype(np.uint64, copy=False)
+        if np.any(unsigned > np.uint64(np.iinfo(np.int64).max)):
             raise ValueError("exclude must contain valid item indices")
+    elif np.any(array < 0):
+        raise ValueError("exclude must contain valid item indices")
     indices = np.ascontiguousarray(array, dtype=np.int64)
     if indices.size and np.any(indices >= n_items):
         raise ValueError("exclude must contain valid item indices")
