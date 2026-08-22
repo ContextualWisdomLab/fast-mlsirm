@@ -77,6 +77,16 @@ def _integer(value: Any, name: str) -> int:
     raise ValueError(f"{name} must be an integer")
 
 
+def _boolean(value: Any, name: str) -> bool:
+    """Normalize one exact Boolean scalar without truth-value callbacks."""
+    value_type = builtins.type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise TypeError(f"{name} must be a bool")
+
+
 def _trusted_sequence_tree(value: Any) -> bool:
     """Return whether an exact list/tuple tree contains only trusted reals."""
     stack = [value]
@@ -114,7 +124,7 @@ def _real_numeric_array(value: Any, name: str, ndim: int) -> np.ndarray:
     if np.iscomplexobj(arr) or arr.dtype.kind not in "biuf":
         raise ValueError(f"{name} must be real numeric evidence")
     if arr.ndim != ndim:
-        dimension = "2-D persons x items" if ndim == 2 else "1-D"
+        dimension = "2-D" if ndim == 2 else "1-D"
         raise ValueError(f"{name} must be a {dimension} array")
     try:
         return np.ascontiguousarray(arr, dtype=np.float64)
@@ -129,6 +139,8 @@ def install(reliability_module: ModuleType) -> None:
     original_tenberge: Callable[..., Any] = reliability_module.tenberge_mu
     original_alpha: Callable[..., Any] = reliability_module.cronbach_alpha
     original_separation: Callable[..., Any] = reliability_module.separation_reliability
+    original_mean_cor: Callable[..., Any] = reliability_module.mean_pairwise_cor
+    original_mean_rho: Callable[..., Any] = reliability_module.mean_pairwise_rho
 
     @wraps(original_icc)
     def safe_icc(
@@ -191,15 +203,31 @@ def install(reliability_module: ModuleType) -> None:
         se_value = _real_numeric_array(se, "se", 1)
         return original_separation(measures_value, se_value)
 
+    @wraps(original_mean_cor)
+    def safe_mean_pairwise_cor(ratings: Any, fisher: bool = True) -> Any:
+        """Validate Fisher control and Pearson-rater evidence before Rust."""
+        fisher_value = _boolean(fisher, "fisher")
+        ratings_value = _real_numeric_array(ratings, "ratings", 2)
+        return original_mean_cor(ratings_value, fisher=fisher_value)
+
+    @wraps(original_mean_rho)
+    def safe_mean_pairwise_rho(ratings: Any, fisher: bool = True) -> Any:
+        """Validate Fisher control and Spearman-rater evidence before Rust."""
+        fisher_value = _boolean(fisher, "fisher")
+        ratings_value = _real_numeric_array(ratings, "ratings", 2)
+        return original_mean_rho(ratings_value, fisher=fisher_value)
+
     reliability_module.icc = safe_icc
     reliability_module.guttman_lambdas = safe_guttman_lambdas
     reliability_module.tenberge_mu = safe_tenberge_mu
     reliability_module.cronbach_alpha = safe_cronbach_alpha
     reliability_module.separation_reliability = safe_separation_reliability
+    reliability_module.mean_pairwise_cor = safe_mean_pairwise_cor
+    reliability_module.mean_pairwise_rho = safe_mean_pairwise_rho
 
     # ``_legacy_init`` copies public symbols before this installer runs. Rebind
-    # only the four evidence-hardened reliability entry points so the top-level
-    # package surface cannot retain a pre-install function object.
+    # the evidence-hardened reliability entry points so the top-level package
+    # surface cannot retain pre-install function objects.
     legacy_name = f"{reliability_module.__package__}._legacy_init"
     legacy_module = sys.modules.get(legacy_name)
     if legacy_module is not None:
@@ -207,3 +235,5 @@ def install(reliability_module: ModuleType) -> None:
         legacy_module.tenberge_mu = safe_tenberge_mu
         legacy_module.cronbach_alpha = safe_cronbach_alpha
         legacy_module.separation_reliability = safe_separation_reliability
+        legacy_module.mean_pairwise_cor = safe_mean_pairwise_cor
+        legacy_module.mean_pairwise_rho = safe_mean_pairwise_rho
