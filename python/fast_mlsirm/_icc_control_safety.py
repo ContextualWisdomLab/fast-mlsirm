@@ -134,6 +134,7 @@ def _real_numeric_array(
     *,
     allow_bool: bool = True,
     dimension_error: str | None = None,
+    preserve_ratings_diagnostics: bool = False,
 ) -> np.ndarray:
     """Marshal inert real-numeric evidence without arbitrary array callbacks."""
     value_type = builtins.type(value)
@@ -159,10 +160,24 @@ def _real_numeric_array(
     else:
         raise ValueError(f"{name} must be real numeric evidence")
 
-    if np.iscomplexobj(arr) or arr.dtype.kind not in "biuf":
-        raise ValueError(f"{name} must be real numeric evidence")
-    if not allow_bool and arr.dtype.kind == "b":
-        raise ValueError(f"{name} must be real numeric evidence")
+    # ICC and pairwise APIs historically expose precise diagnostics once the
+    # top-level ndarray itself is trusted. Preserve those messages without
+    # relaxing the fail-closed boundary for arbitrary array providers.
+    if preserve_ratings_diagnostics:
+        if arr.dtype == object:
+            raise ValueError("object-dtype arrays are not supported; pass a numeric array")
+        if np.iscomplexobj(arr):
+            raise ValueError("ratings must be real-valued")
+        if arr.dtype.kind == "b":
+            raise ValueError("ratings must be numeric, not boolean")
+        if arr.dtype.kind not in "fiu":
+            raise ValueError("ratings must be a numeric array")
+    else:
+        if np.iscomplexobj(arr) or arr.dtype.kind not in "biuf":
+            raise ValueError(f"{name} must be real numeric evidence")
+        if not allow_bool and arr.dtype.kind == "b":
+            raise ValueError(f"{name} must be real numeric evidence")
+
     if arr.ndim != ndim:
         if dimension_error is not None:
             raise ValueError(dimension_error)
@@ -213,6 +228,7 @@ def install(reliability_module: ModuleType) -> None:
             "ratings",
             2,
             allow_bool=False,
+            preserve_ratings_diagnostics=True,
         )
         return original_icc(
             ratings_value,
@@ -282,6 +298,7 @@ def install(reliability_module: ModuleType) -> None:
             "ratings",
             2,
             allow_bool=False,
+            preserve_ratings_diagnostics=True,
         )
         return original_mean_cor(ratings_value, fisher=fisher_value)
 
@@ -295,6 +312,7 @@ def install(reliability_module: ModuleType) -> None:
             "ratings",
             2,
             allow_bool=False,
+            preserve_ratings_diagnostics=True,
         )
         return original_mean_rho(ratings_value, fisher=fisher_value)
 
