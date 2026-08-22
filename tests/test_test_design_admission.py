@@ -100,6 +100,33 @@ def test_mixed_builtin_content_sequence_rejected_before_native_dispatch(
         assemble_test_form(np.array([3.0, 2.0, 1.0]), 2, content=["a", 1, "b"])
 
 
+def test_numpy_string_scalars_have_consistent_sequence_and_object_array_admission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fast_mlsirm
+
+    observed_labels: list[list[str]] = []
+
+    class _Core:
+        @staticmethod
+        def assemble_test_form_greedy(
+            scores, length, labels, min_counts, max_counts, exclude_list  # noqa: ANN001
+        ):
+            observed_labels.append(labels)
+            return [0, 1]
+
+    monkeypatch.setattr(fast_mlsirm, "_core", _Core())
+    expected = ["a", "b", "c"]
+    for content in (
+        [np.str_("a"), np.str_("b"), np.str_("c")],
+        np.array([np.str_("a"), np.str_("b"), np.str_("c")], dtype=object),
+    ):
+        selected = assemble_test_form(np.array([3.0, 2.0, 1.0]), 2, content=content)
+        np.testing.assert_array_equal(selected, [0, 1])
+        assert observed_labels[-1] == expected
+        assert all(type(label) is str for label in observed_labels[-1])
+
+
 @pytest.mark.parametrize(
     "overflow_index",
     (np.uint64(2**63), np.uint64(np.iinfo(np.uint64).max)),
