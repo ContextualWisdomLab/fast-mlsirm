@@ -102,6 +102,18 @@ def test_remaining_rater_text_controls_fail_before_data_or_native(
     assert control.calls == 0
 
 
+def test_finn_preserves_exact_object_array_diagnostic_before_native(monkeypatch):
+    """Hardening must preserve the established exact-object input contract."""
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+    ratings = np.array([[1, object()], [2, object()]], dtype=object)
+
+    with pytest.raises(
+        ValueError,
+        match="object-dtype arrays are not supported; pass a numeric array",
+    ):
+        reliability.finn_coefficient(ratings, 3)
+
+
 def test_remaining_rater_apis_preserve_trusted_sequence_compatibility(monkeypatch):
     """Trusted numeric sequences still reach the unchanged Rust-backed kernels."""
     seen: dict[str, object] = {}
