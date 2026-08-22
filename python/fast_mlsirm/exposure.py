@@ -209,14 +209,20 @@ def sympson_hetter(
     the stopping rule. ``r_max = 1`` reduces exactly to unconstrained
     max-information CAT (no exposure randomization is consumed).
     """
-    # Validate public integer controls before importing the Rust extension so
-    # hostile values fail closed even when the optional core is unavailable.
+    # Establish all scalar control contracts before caller-owned data or the
+    # optional Rust extension can be touched.
     _usize_max = int(np.iinfo(np.uintp).max)
     test_length = _as_int("test_length", test_length, maximum=_usize_max)
     n_simulees = _as_int("n_simulees", n_simulees, maximum=_usize_max)
     max_iter = _as_int("max_iter", max_iter, maximum=_usize_max)
     seed = _as_int("seed", seed, maximum=2**64 - 1)
     q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
+    r_max = _as_real_scalar("r_max", r_max)
+    if not np.isfinite(r_max) or not (0.0 < r_max <= 1.0):
+        raise ValueError("r_max must be finite and in (0, 1]")
+    tol = _as_real_scalar("tol", tol)
+    if not np.isfinite(tol) or tol <= 0.0:
+        raise ValueError("tol must be finite and greater than 0")
 
     a = _as_real_numeric_array("a", a)
     b = _as_real_numeric_array("b", b)
@@ -231,11 +237,11 @@ def sympson_hetter(
         a,
         b,
         c,
-        float(r_max),
+        r_max,
         test_length,
         n_simulees,
         max_iter,
-        float(tol),
+        tol,
         seed,
         q_theta,
     )
