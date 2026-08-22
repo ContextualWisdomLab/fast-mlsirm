@@ -57,12 +57,21 @@ def _trusted_numeric_evidence(
     if value_type is np.ndarray:
         array = value
     elif value_type is list or value_type is tuple:
-        stack = [value]
+        stack: list[tuple[object, bool]] = [(value, False)]
+        active_containers: set[int] = set()
         while stack:
-            current = stack.pop()
+            current, leaving = stack.pop()
             current_type = type(current)
             if current_type is list or current_type is tuple:
-                stack.extend(current)
+                current_id = id(current)
+                if leaving:
+                    active_containers.remove(current_id)
+                    continue
+                if current_id in active_containers:
+                    raise ValueError(type_error)
+                active_containers.add(current_id)
+                stack.append((current, True))
+                stack.extend((child, False) for child in reversed(current))
                 continue
             if current_type is complex or any(
                 current_type is trusted_type
