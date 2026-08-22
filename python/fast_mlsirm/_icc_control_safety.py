@@ -204,6 +204,12 @@ def install(reliability_module: ModuleType) -> None:
     """Install callback-free control and evidence validation adapters once."""
     current_icc: Callable[..., Any] = reliability_module.icc
     if getattr(current_icc, "__fast_mlsirm_icc_control_hardened__", False):
+        # A prior install can have completed the ICC rebinding but failed before
+        # the sibling rater adapter ran. Re-enter that idempotent child installer
+        # so a later install repairs the partially hardened public surface.
+        from ._rater_evidence_safety import install as _install_rater_evidence_safety
+
+        _install_rater_evidence_safety(reliability_module)
         return
 
     original_icc: Callable[..., Any] = current_icc
