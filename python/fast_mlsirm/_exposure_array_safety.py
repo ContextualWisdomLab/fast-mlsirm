@@ -16,8 +16,29 @@ from typing import Any, Callable
 import numpy as np
 
 _REAL_NUMERIC_KINDS = frozenset({"b", "i", "u", "f"})
-_BUILTIN_REAL_SCALAR_TYPES = frozenset({bool, int, float})
-_BUILTIN_BOOLEAN_SCALAR_TYPES = frozenset({bool})
+_NUMPY_REAL_SCALAR_TYPES = frozenset(
+    {
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.intp,
+        np.longlong,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.uintp,
+        np.ulonglong,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+_TRUSTED_REAL_SCALAR_TYPES = frozenset({bool, int, float}) | _NUMPY_REAL_SCALAR_TYPES
+_TRUSTED_BOOLEAN_SCALAR_TYPES = frozenset({bool, np.bool_})
 
 
 def exact_ndarray(value: object, *, message: str) -> np.ndarray:
@@ -40,7 +61,7 @@ def _safe_array_source(
         return value
     if type(value) is not list and type(value) is not tuple:
         raise ValueError(message)
-    # Exact list/tuple identity makes iteration inert.  Inspect every element's
+    # Exact list/tuple identity makes iteration inert. Inspect every element's
     # exact scalar identity before NumPy sees the sequence, so compatibility
     # does not reopen caller-defined conversion protocols.
     if any(type(item) not in scalar_types for item in value):
@@ -56,7 +77,7 @@ def install(exposure_module: ModuleType) -> None:
         array = _safe_array_source(
             value,
             message=message,
-            scalar_types=_BUILTIN_REAL_SCALAR_TYPES,
+            scalar_types=_TRUSTED_REAL_SCALAR_TYPES,
         )
         if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
             raise ValueError(message)
@@ -67,7 +88,7 @@ def install(exposure_module: ModuleType) -> None:
         array = _safe_array_source(
             value,
             message=message,
-            scalar_types=_BUILTIN_BOOLEAN_SCALAR_TYPES,
+            scalar_types=_TRUSTED_BOOLEAN_SCALAR_TYPES,
         )
         if array.dtype != np.bool_:
             raise ValueError(message)
@@ -78,7 +99,7 @@ def install(exposure_module: ModuleType) -> None:
         array = _safe_array_source(
             value,
             message=message,
-            scalar_types=_BUILTIN_REAL_SCALAR_TYPES,
+            scalar_types=_TRUSTED_REAL_SCALAR_TYPES,
         )
         if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
             raise ValueError(message)
@@ -109,14 +130,14 @@ def install(exposure_module: ModuleType) -> None:
         """Reject unsafe CCAT controls/providers before legacy validation."""
 
         # Preserve the public contract that semantic controls fail before any
-        # caller-owned array work.  The wrapped implementation validates this
+        # caller-owned array work. The wrapped implementation validates this
         # value again, but only after it has been normalized to an inert
         # package-owned float.
         theta0_value = exposure_module._as_real_scalar("theta0", theta0)
         groups_value = _safe_array_source(
             groups,
             message="groups must be a real numeric array",
-            scalar_types=_BUILTIN_REAL_SCALAR_TYPES,
+            scalar_types=_TRUSTED_REAL_SCALAR_TYPES,
         )
         return original_ccat(
             a,
