@@ -79,9 +79,10 @@ def test_fit_gpcm_rejects_controls_before_callbacks_or_data(
     """Rejected controls execute no caller callback or response work."""
 
     responses = _ExplosiveResponses()
+    call_kwargs: dict[str, object] = {"n_cat": 3, name: value}
 
     with pytest.raises(ValueError, match=message):
-        fit_gpcm(responses, **{name: value})
+        fit_gpcm(responses, **call_kwargs)
 
     assert value.calls == []
     assert responses.calls == []
@@ -111,9 +112,10 @@ def test_fit_gpcm_rejects_control_domains_before_data(
     """Semantic-domain failures remain pre-data and pre-native."""
 
     responses = _ExplosiveResponses()
+    call_kwargs: dict[str, object] = {"n_cat": 3, **kwargs}
 
     with pytest.raises(ValueError, match=message):
-        fit_gpcm(responses, **kwargs)
+        fit_gpcm(responses, **call_kwargs)
 
     assert responses.calls == []
 
