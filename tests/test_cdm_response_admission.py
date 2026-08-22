@@ -84,6 +84,18 @@ def test_cdm_fits_reject_object_storage_before_element_coercion(monkeypatch, fit
 
 
 @pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
+def test_cdm_fits_reject_callback_bearing_response_providers(monkeypatch, fit):
+    """Top-level and nested array protocols cannot synthesize observed evidence."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    for responses in (_ArraySentinel(), [[_ArraySentinel(), 1], [1, 0]]):
+        _ArraySentinel.reset()
+        with pytest.raises(ValueError, match="trusted NumPy array or built-in sequence"):
+            fit(responses, _q_matrix())
+        assert _ArraySentinel.calls == 0
+
+
+@pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
 def test_cdm_fits_reject_extended_precision_that_collapses_to_binary(monkeypatch, fit):
     """A non-binary long-double value cannot round into accepted float64 evidence."""
 
