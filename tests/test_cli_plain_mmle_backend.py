@@ -11,10 +11,13 @@ import pytest
 from fast_mlsirm.cli import main
 
 
-def test_cli_plain_unidimensional_mmle_auto_reports_rust(tmp_path, capsys) -> None:
+def test_cli_plain_unidimensional_mmle_auto_reports_rust(
+    tmp_path, capsys, monkeypatch
+) -> None:
     """Plain MMLE must report the resolved Rust backend, never the selector ``auto``."""
 
     pytest.importorskip("fast_mlsirm._core")
+    monkeypatch.chdir(tmp_path)
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
