@@ -318,7 +318,47 @@ def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[Jud
         raise ValueError(f"criteria must contain 1..{MAX_JUDGE_CRITERIA} values")
     if len({criterion.criterion_id for criterion in normalized}) != len(normalized):
         raise ValueError("criteria must have unique criterion_id values")
+    # Each individual weight is finite and positive (JudgeCriterion.__post_init__),
+    # but their sum is not: two individually valid weights such as 1e308 overflow
+    # the aggregate to inf, and a weighted score could then silently collapse to
+    # an incorrect finite value (e.g. 0.0) instead of failing closed. Reject that
+    # here, before any contextual-orchestrator transport call.
+    if not math.isfinite(_finite_sum(criterion.weight for criterion in normalized)):
+        raise ValueError("aggregate criterion weight must be finite")
     return tuple(normalized)
+
+
+def _finite_sum(values: Iterable[float]) -> float:
+    """Return a stable sum, or +inf if it would overflow finite float range.
+
+    ``math.fsum`` raises ``OverflowError`` for a genuinely infinite exact sum
+    (unlike the built-in ``sum()``, which silently returns ``inf``); treat
+    that the same as a computed ``inf`` so callers can use one
+    ``math.isfinite`` check regardless of which way the overflow surfaces.
+    """
+    try:
+        return math.fsum(values)
+    except OverflowError:
+        return math.inf
+
+
+def _weighted_average(
+    criterion_scores: Mapping[str, float], criteria: tuple[JudgeCriterion, ...]
+) -> float:
+    """Return the weight-aware mean of validated per-criterion scores.
+
+    Every criterion weight is individually finite and positive
+    (``JudgeCriterion.__post_init__``), and ``_criteria`` already proved the
+    aggregate weight finite before any transport call, so this division is
+    safe. Uses stable package-owned summation, not the built-in ``sum()``,
+    for both the numerator and the denominator.
+    """
+    total_weight = _finite_sum(criterion.weight for criterion in criteria)
+    numerator = _finite_sum(
+        criterion.weight * criterion_scores[criterion.criterion_id]
+        for criterion in criteria
+    )
+    return numerator / total_weight
 
 
 def _validate_category_anchors(
@@ -857,11 +897,7 @@ class ContextualOrchestratorJudge:
                 criterion_id: criterion_categories[criterion_id] / (category_count - 1)
                 for criterion_id in sorted(expected_ids)
             }
-            total_weight = sum(criterion.weight for criterion in normalized_criteria)
-            score = sum(
-                criterion.weight * criterion_scores[criterion.criterion_id]
-                for criterion in normalized_criteria
-            ) / total_weight
+            score = _weighted_average(criterion_scores, normalized_criteria)
             return LLMJudgeResult(
                 score=score,
                 accepted=score >= self.accept_threshold,
@@ -1126,13 +1162,15 @@ class ContextualOrchestratorJudge:
                     criterion_id: criterion_categories[criterion_id] / (category_count - 1)
                     for criterion_id in sorted(expected_ids)
                 }
-                total_weight = sum(criterion.weight for criterion in normalized_criteria)
-                score = sum(
-                    criterion.weight * criterion_scores[criterion.criterion_id]
-                    for criterion in normalized_criteria
-                ) / total_weight
+                score = _weighted_average(criterion_scores, normalized_criteria)
             else:
-                score = _score(parsed.get("score"), "score")
+                # Validate the redundant field's shape, but derive the accepted score
+                # from the per-criterion weights below rather than trusting it -- same
+                # principle as the category_count branch above: an LLM's self-reported
+                # aggregate is not cross-checked against its own per-criterion scores,
+                # so a criterion's configured weight would otherwise have no effect on
+                # the accept/reject decision.
+                _score(parsed.get("score"), "score")
                 raw_criterion_scores = parsed.get("criterion_scores", {})
                 if not isinstance(raw_criterion_scores, Mapping):
                     raise JudgeFormatError("criterion_scores must be an object")
@@ -1147,6 +1185,7 @@ class ContextualOrchestratorJudge:
                     )
                     for criterion_id in expected_ids
                 }
+                score = _weighted_average(criterion_scores, normalized_criteria)
         except (JudgeFormatError, ValueError) as exc:
             if not isinstance(exc, JudgeFormatError):
                 exc = JudgeFormatError(str(exc))
