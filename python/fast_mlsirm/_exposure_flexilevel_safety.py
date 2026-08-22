@@ -13,6 +13,8 @@ from typing import Any, Callable
 
 import numpy as np
 
+from ._exposure_array_safety import exact_ndarray
+
 _USIZE_MAX = int(np.iinfo(np.uintp).max)
 _REAL_NUMERIC_KINDS = frozenset({"b", "i", "u", "f"})
 
@@ -26,7 +28,7 @@ def _binary_responses(
     """Admit exact flexilevel response storage before ``uint8`` marshalling."""
 
     expected = n_persons * n_items
-    array = np.asarray(value)
+    array = exact_ndarray(value, message="responses must be a real numeric array")
     if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
         raise ValueError("responses must be a real numeric array")
     if array.ndim == 2:
@@ -48,7 +50,7 @@ def _binary_responses(
 def _probabilities(value: object) -> np.ndarray:
     """Admit one odd real probability vector before ``float64`` marshalling."""
 
-    array = np.asarray(value)
+    array = exact_ndarray(value, message="p must be a real numeric array")
     if np.iscomplexobj(array) or array.dtype.kind not in _REAL_NUMERIC_KINDS:
         raise ValueError("p must be a real numeric array")
     if array.ndim != 1:
