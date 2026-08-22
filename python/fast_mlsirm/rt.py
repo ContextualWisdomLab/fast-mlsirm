@@ -30,6 +30,7 @@ _NUMPY_FLOAT_SCALAR_TYPES = tuple(
     np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
 )
 _SUPPORTED_RT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
+_REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -88,6 +89,57 @@ def _validated_quadrature(value: object) -> int:
     if validated not in _SUPPORTED_RT_QUADRATURE_POINTS:
         raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
     return validated
+
+
+def _is_trusted_real_scalar(value: object) -> bool:
+    """Return whether one scalar can be marshalled without caller callbacks."""
+    value_type = type(value)
+    return (
+        value_type is bool
+        or value_type is int
+        or value_type is float
+        or value_type is np.bool_
+        or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
+    )
+
+
+def _validate_real_sequence(value: object, name: str) -> None:
+    """Validate one built-in nested real-numeric sequence without coercion."""
+    value_type = type(value)
+    if value_type is list or value_type is tuple:
+        for element in value:
+            _validate_real_sequence(element, name)
+        return
+    if value_type is np.ndarray:
+        if value.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError(f"{name} must be a real numeric array")
+        return
+    if not _is_trusted_real_scalar(value):
+        raise ValueError(f"{name} must be a real numeric array")
+
+
+def _validated_real_array(value: object, name: str) -> np.ndarray:
+    """Materialize trusted real-numeric evidence without lossy/callback coercion."""
+    value_type = type(value)
+    if value_type is np.ndarray:
+        source = value
+        if source.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError(f"{name} must be a real numeric array")
+    elif value_type is list or value_type is tuple:
+        _validate_real_sequence(value, name)
+        try:
+            source = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name} must be a real numeric array") from exc
+        if source.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError(f"{name} must be a real numeric array")
+    else:
+        raise ValueError(f"{name} must be a real numeric array")
+    try:
+        return np.ascontiguousarray(source, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a real numeric array") from exc
 
 
 @dataclass
@@ -175,17 +227,17 @@ def fit_response_times(
         require_convergence,
         "require_convergence",
     )
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_rt_lognormal"):
-        raise RuntimeError("fit_response_times requires the compiled Rust core")
-    t = np.asarray(times, dtype=np.float64)
+    t = _validated_real_array(times, "times")
     if t.ndim != 2:
         raise ValueError("times must be a 2-D persons x items array")
     n_persons, n_items = t.shape
     observed = np.isfinite(t) & (t > 0)
     obs_arg = None if observed.all() else observed.reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)  # masked entries get a valid placeholder
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rt_lognormal"):
+        raise RuntimeError("fit_response_times requires the compiled Rust core")
     res = core.fit_rt_lognormal(
         tt,
         obs_arg,
@@ -279,12 +331,12 @@ def fit_speed_accuracy(
         require_convergence,
         "require_convergence",
     )
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
-        raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
-    u = np.asarray(responses, dtype=np.float64)
-    t = np.asarray(times, dtype=np.float64)
+    u = _validated_real_array(responses, "responses")
+    t = _validated_real_array(times, "times")
+    a_arr = _validated_real_array(a, "a")
+    b_arr = _validated_real_array(b, "b")
+    alpha_arr = _validated_real_array(alpha, "alpha")
+    beta_arr = _validated_real_array(beta, "beta")
     if u.ndim != 2 or t.shape != u.shape:
         raise ValueError("responses and times must be matching 2-D persons x items arrays")
     n_persons, n_items = u.shape
@@ -292,14 +344,18 @@ def fit_speed_accuracy(
     obs_arg = None if observed.all() else observed.reshape(-1)
     uu = np.where(observed, u, 0.0).reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
+        raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
     res = core.fit_speed_accuracy_covariance(
         uu,
         tt,
         obs_arg,
-        np.asarray(a, dtype=np.float64),
-        np.asarray(b, dtype=np.float64),
-        np.asarray(alpha, dtype=np.float64),
-        np.asarray(beta, dtype=np.float64),
+        a_arr,
+        b_arr,
+        alpha_arr,
+        beta_arr,
         int(n_persons),
         int(n_items),
         validated_q,
@@ -371,20 +427,28 @@ def rt_person_fit(
     """
     from .fitstats import _core_module
 
-    core = _core_module()
-    if core is None or not hasattr(core, "rt_person_fit"):
-        raise RuntimeError("rt_person_fit requires the compiled Rust core")
-    t = np.asarray(times, dtype=np.float64)
+    t = _validated_real_array(times, "times")
+    alpha_arr = _validated_real_array(alpha, "alpha")
+    beta_arr = _validated_real_array(beta, "beta")
     if t.ndim != 2:
         raise ValueError("times must be a 2-D persons x items array")
     n_persons, n_items = t.shape
     observed = np.isfinite(t) & (t > 0)
     obs_arg = None if observed.all() else observed.reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rt_person_fit"):
+        raise RuntimeError("rt_person_fit requires the compiled Rust core")
     res = core.rt_person_fit(
-        tt, obs_arg, int(n_persons), int(n_items),
-        np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
-        float(alpha_level), float(z_fast),
+        tt,
+        obs_arg,
+        int(n_persons),
+        int(n_items),
+        alpha_arr,
+        beta_arr,
+        float(alpha_level),
+        float(z_fast),
     )
     return {
         "w": np.asarray(res["w"], dtype=np.float64),
