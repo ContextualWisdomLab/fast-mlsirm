@@ -95,29 +95,27 @@ def test_answer_copying_rejects_arbitrary_array_providers_before_callbacks(
 
 
 @pytest.mark.parametrize(
-    "make_call",
+    ("make_call", "payload"),
     [
-        lambda bad: wollack_omega(
-            bad,
+        (
+            lambda bad: wollack_omega(
+                bad,
+                np.array([0, 1, 2, 0]),
+                _wollack_probs(),
+                3,
+            ),
             np.array([0, 1, 2, 0]),
-            _wollack_probs(),
-            3,
         ),
-        lambda bad: k_index(bad, 0, 1),
-        lambda bad: gbt(bad, np.array([0.25, 0.5, 0.75, 0.5])),
-        lambda bad: k_variants(bad, 0, 1),
+        (lambda bad: k_index(bad, 0, 1), _responses()),
+        (
+            lambda bad: gbt(bad, np.array([0.25, 0.5, 0.75, 0.5])),
+            np.array([1, 0, 1, 0]),
+        ),
+        (lambda bad: k_variants(bad, 0, 1), _responses()),
     ],
 )
-def test_answer_copying_rejects_ndarray_subclasses(make_call):
-    source = (
-        np.array([0, 1, 2, 0])
-        if make_call.__code__.co_firstlineno < 110
-        else _responses()
-    )
-    # Give each call a shape that would otherwise pass its public contract.
-    if "gbt" in make_call.__code__.co_names:
-        source = np.array([1, 0, 1, 0])
-    bad = source.view(_ArraySubclass)
+def test_answer_copying_rejects_ndarray_subclasses(make_call, payload):
+    bad = payload.view(_ArraySubclass)
     with patch("fast_mlsirm.fitstats._core_module", side_effect=_core_forbidden):
         with pytest.raises(ValueError):
             make_call(bad)
