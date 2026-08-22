@@ -62,7 +62,23 @@ def _constraint_counts(value: object, *, name: str) -> dict[str, int]:
 
 
 def _content_labels(value: object, *, expected_shape: tuple[int, ...]) -> list[str]:
-    """Admit exact text labels without invoking caller string conversion."""
+    """Admit text labels without allowing NumPy to stringify mixed sequences."""
+    if type(value) is list or type(value) is tuple:
+        raw_labels = list(value)
+        if (len(raw_labels),) != expected_shape:
+            raise ValueError("content length must match information")
+        labels: list[str] = []
+        for label in raw_labels:
+            if type(label) is str:
+                labels.append(label)
+            elif type(label) is np.str_:
+                labels.append(str(label))
+            else:
+                raise ValueError("content must contain string labels")
+        return labels
+    if isinstance(value, (list, tuple)):
+        raise ValueError("content must contain string labels")
+
     array = np.asarray(value)
     if array.shape != expected_shape:
         raise ValueError("content length must match information")
