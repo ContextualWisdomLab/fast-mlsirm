@@ -141,9 +141,14 @@ def _real_numeric_array(
     if value_type is np.ndarray:
         arr = value
     elif value_type is list or value_type is tuple:
+        # Pure Boolean rating sequences historically reached the dtype-level
+        # ratings diagnostic after ``np.asarray``. Exact built-in/NumPy Boolean
+        # scalars are inert, so admit them only for that diagnostic-preserving
+        # path without reopening caller-defined scalar/container protocols.
+        sequence_allow_bool = allow_bool or preserve_ratings_diagnostics
         trusted, excess_rank = _trusted_sequence_tree(
             value,
-            allow_bool=allow_bool,
+            allow_bool=sequence_allow_bool,
             max_depth=ndim,
         )
         if excess_rank:
