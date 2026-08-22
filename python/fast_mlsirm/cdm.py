@@ -392,7 +392,7 @@ def validate_q_matrix(
             Measurement, 45*(4), 343-362.
             https://doi.org/10.1111/j.1745-3984.2008.00069.x
     """
-    y = np.asarray(responses, dtype=np.float64)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -504,7 +504,7 @@ def gdina_wald_selection(
             selection, and attribute classification. *Applied Psychological
             Measurement, 40*(3), 200–217. https://doi.org/10.1177/0146621615621717
     """
-    y = np.asarray(responses, dtype=np.float64)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -610,7 +610,7 @@ def fit_ho_cdm(
             cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
             https://doi.org/10.1007/BF02295640
     """
-    y = np.asarray(responses, dtype=np.float64)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -728,7 +728,7 @@ def fit_ho_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    y = np.asarray(responses, dtype=np.float64)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -867,7 +867,7 @@ def fit_seq_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    y = np.asarray(responses, dtype=np.float64)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -985,7 +985,7 @@ def fit_seq_gdina_qr(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
             179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    y = np.asarray(responses, dtype=np.float64)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
