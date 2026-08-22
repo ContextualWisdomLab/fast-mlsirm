@@ -7,6 +7,7 @@ from collections.abc import Callable
 import numpy as np
 import pytest
 
+import fast_mlsirm.cdm as cdm
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import fit_cdm, fit_gdina
 
@@ -49,6 +50,12 @@ def _q_matrix() -> np.ndarray:
     """Return a minimal valid item-by-attribute design."""
 
     return np.array([[1], [1]], dtype=np.int64)
+
+
+def _higher_order_q_matrix() -> np.ndarray:
+    """Return a minimal three-attribute design for higher-order entry points."""
+
+    return np.array([[1, 1, 0], [0, 0, 1]], dtype=np.int64)
 
 
 @pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
@@ -96,6 +103,52 @@ def test_invalid_controls_fail_before_response_materialization(
 
     with pytest.raises(ValueError, match=message):
         fit(_ArraySentinel(), _q_matrix(), **kwargs)
+
+    assert _ArraySentinel.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "args", "kwargs", "message"),
+    [
+        (cdm.validate_q_matrix, (_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
+        (cdm.validate_q_matrix, (_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
+        (cdm.gdina_wald_selection, (_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
+        (cdm.gdina_wald_selection, (_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
+        (cdm.fit_ho_cdm, (_higher_order_q_matrix(),), {"model": "other"}, "model must be 'dina' or 'dino'"),
+        (cdm.fit_ho_cdm, (_higher_order_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
+        (cdm.fit_ho_cdm, (_higher_order_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
+        (cdm.fit_ho_gdina, (_higher_order_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
+        (cdm.fit_ho_gdina, (_higher_order_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
+        (cdm.fit_seq_gdina, (_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
+        (cdm.fit_seq_gdina, (_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
+        (
+            cdm.fit_seq_gdina_qr,
+            (np.array([[1], [1]], dtype=np.int64), np.array([1, 1], dtype=np.int64)),
+            {"max_iter": 0},
+            "max_iter must be an integer between",
+        ),
+        (
+            cdm.fit_seq_gdina_qr,
+            (np.array([[1], [1]], dtype=np.int64), np.array([1, 1], dtype=np.int64)),
+            {"tol": 0.0},
+            "tol must be a finite number > 0",
+        ),
+    ],
+)
+def test_sibling_semantic_controls_fail_before_response_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+    entrypoint: Callable[..., object],
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    """Sibling CDM controls must fail before caller response protocols execute."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    _ArraySentinel.reset()
+
+    with pytest.raises(ValueError, match=message):
+        entrypoint(_ArraySentinel(), *args, **kwargs)
 
     assert _ArraySentinel.calls == 0
 
