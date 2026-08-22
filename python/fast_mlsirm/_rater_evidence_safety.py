@@ -50,10 +50,17 @@ def _real_numeric_source_array(
     else:
         raise ValueError(f"{name} must be real numeric evidence")
 
-    if np.iscomplexobj(arr) or arr.dtype.kind not in "fiub":
-        raise ValueError(f"{name} must be real numeric evidence")
+    # Once the top-level container is package-trusted, preserve the historical
+    # public diagnostics rather than collapsing valid ndarray inspection into
+    # the generic untrusted-provider error used before materialization.
+    if arr.dtype == object:
+        raise ValueError("object-dtype arrays are not supported; pass a numeric array")
+    if np.iscomplexobj(arr):
+        raise ValueError(f"{name} must be real-valued")
     if arr.dtype.kind == "b":
-        raise ValueError(f"{name} must be real numeric evidence")
+        raise ValueError(f"{name} must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError(f"{name} must be a numeric array")
     if arr.ndim != 2:
         raise ValueError(dimension_error)
     return arr
