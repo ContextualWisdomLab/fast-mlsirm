@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.fitstats as fitstats
-from fast_mlsirm.detect import detect_analysis, dimtest
+from fast_mlsirm.detect import _trusted_numeric_array, detect_analysis, dimtest
 
 
 def _unexpected_core_discovery():
@@ -75,6 +75,21 @@ def test_detect_rejects_array_provider_responses_without_callbacks(monkeypatch):
 
     with pytest.raises(ValueError, match="responses must be a numeric array"):
         detect_analysis(_HostileArrayProvider(), np.array([0, 1]))
+
+
+def test_detect_rejects_oversized_exact_ndarray_before_extra_materialization():
+    """Exact ndarray evidence receives the same logical-cell ceiling as sequences."""
+    oversized = np.broadcast_to(
+        np.array(0, dtype=np.uint8),
+        (20_000_001,),
+    )
+
+    with pytest.raises(ValueError, match="responses must be a numeric array"):
+        _trusted_numeric_array(
+            oversized,
+            numeric_error="responses must be a numeric array",
+            complex_error="responses must be real-valued",
+        )
 
 
 def test_detect_rejects_complex_cluster_before_lossy_coercion(monkeypatch):
