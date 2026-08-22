@@ -1,9 +1,9 @@
-"""Callback-free serving-export identity admission.
+"""Callback-free serving trust-boundary admission.
 
-The serving artifact is a scientific deployment record: item-to-dimension
-identity must be established before NumPy integer narrowing or Rust-owned
-EAP-sum generation can observe it.  Numerical scoring arithmetic remains in
-the existing Rust-backed serving implementation.
+Serving artifacts are scientific deployment records: their structural controls
+and item-to-dimension identities must be established before caller callbacks,
+NumPy integer narrowing, or Rust-owned scoring can observe them. Numerical
+scoring arithmetic remains in the existing Rust-backed serving implementation.
 """
 
 from __future__ import annotations
@@ -85,11 +85,39 @@ def _factor_id_vector(value: Any, n_items: int) -> np.ndarray:
     return np.ascontiguousarray(value, dtype=np.int64)
 
 
-def install(serving_module: Any) -> None:
-    """Install serving-export factor-identity validation before lossy narrowing."""
-    original: Callable[..., Any] = serving_module.export_serving_bundle
+def _exact_string_keys(mapping: dict[Any, Any]) -> bool:
+    """Return whether an exact built-in mapping contains only inert text keys."""
+    return all(builtins.type(key) is str for key in mapping)
 
-    @wraps(original)
+
+def install(serving_module: Any) -> None:
+    """Install callback-free serving validation and export identity boundaries."""
+    original_validate: Callable[..., Any] = serving_module._validate_bundle
+    original_export: Callable[..., Any] = serving_module.export_serving_bundle
+
+    @wraps(original_validate)
+    def safe_validate_bundle(bundle: Any) -> Any:
+        # Mirror the original validation order far enough to inspect
+        # population.kind only after the preceding top-level contracts are
+        # already known to be inert and valid. Otherwise defer untouched to
+        # the original package-owned error path.
+        if builtins.type(bundle) is dict and _exact_string_keys(bundle):
+            schema_version = bundle.get("schema_version")
+            if (
+                builtins.type(schema_version) is int
+                and schema_version == serving_module.SCHEMA_VERSION
+            ):
+                population = bundle.get("population")
+                if (
+                    builtins.type(population) is dict
+                    and _exact_string_keys(population)
+                ):
+                    kind = population.get("kind")
+                    if kind is not None and builtins.type(kind) is not str:
+                        raise ValueError("bundle population kind must be a string")
+        return original_validate(bundle)
+
+    @wraps(original_export)
     def safe_export_serving_bundle(
         result: Any,
         item_codes: Any,
@@ -98,18 +126,19 @@ def install(serving_module: Any) -> None:
         **kwargs: Any,
     ) -> Any:
         # Preserve the legacy error ordering for unfinished calibrations and
-        # item-code length mismatches.  Only a result that has already crossed
+        # item-code length mismatches. Only a result that has already crossed
         # those two original preconditions reaches the new factor boundary.
         status = getattr(result, "convergence_status", None)
         if builtins.type(status) is not str or status.strip().lower() != "converged":
-            return original(result, item_codes, factor_id, *args, **kwargs)
+            return original_export(result, item_codes, factor_id, *args, **kwargs)
 
         params = result.params
         n_items = len(params.b)
         if len(item_codes) != n_items:
-            return original(result, item_codes, factor_id, *args, **kwargs)
+            return original_export(result, item_codes, factor_id, *args, **kwargs)
 
         factor_value = _factor_id_vector(factor_id, n_items)
-        return original(result, item_codes, factor_value, *args, **kwargs)
+        return original_export(result, item_codes, factor_value, *args, **kwargs)
 
+    serving_module._validate_bundle = safe_validate_bundle
     serving_module.export_serving_bundle = safe_export_serving_bundle
