@@ -88,8 +88,9 @@ def _boolean(value: Any, name: str) -> bool:
 
 
 def _reject_masked_array(value: Any, name: str) -> None:
-    """Reject exact NumPy masked-array evidence without caller callbacks."""
-    if builtins.type(value) is np.ma.MaskedArray:
+    """Reject NumPy masked-array evidence without instance callbacks."""
+    value_type = builtins.type(value)
+    if issubclass(value_type, np.ma.MaskedArray):
         raise ValueError("masked arrays are not supported; use NaN for missing")
 
 
