@@ -6,9 +6,11 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
+from . import exposure as _exposure
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import validation as _validation
+from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._scaling_control_safety import install as _install_scaling_control_safety
@@ -16,14 +18,19 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls only; result arithmetic
 # remains in the existing Rust-backed implementations.
+_install_exposure_flexilevel_safety(_exposure)
 _install_icc_control_safety(_reliability)
 _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
+_legacy_init.flexilevel_administer = _exposure.flexilevel_administer
+_legacy_init.flexilevel_score_distribution = _exposure.flexilevel_score_distribution
 _legacy_init.icc = _reliability.icc
 _legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
 _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
+    _exposure,
+    _install_exposure_flexilevel_safety,
     _install_fleiss_control_safety,
     _install_icc_control_safety,
     _install_scaling_control_safety,
