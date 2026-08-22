@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+import fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import reliability
 
@@ -97,3 +100,81 @@ def test_remaining_rater_text_controls_fail_before_data_or_native(
 
     assert ratings.calls == 0
     assert control.calls == 0
+
+
+def test_remaining_rater_apis_preserve_trusted_sequence_compatibility(monkeypatch):
+    """Trusted numeric sequences still reach the unchanged Rust-backed kernels."""
+    seen: dict[str, object] = {}
+
+    def _kripp(flat, nr, ns, method):
+        seen["kripp"] = (flat, nr, ns, method)
+        return {
+            "value": 0.5,
+            "subjects": ns,
+            "raters": nr,
+            "levels": 2,
+            "nmatchval": 6.0,
+        }
+
+    def _finn(flat, ns, nr, s_levels, model):
+        seen["finn"] = (flat, ns, nr, s_levels, model)
+        return {
+            "value": 0.4,
+            "statistic": 1.5,
+            "df2": 4.0,
+            "p_value": 0.2,
+            "subjects": ns,
+            "raters": nr,
+        }
+
+    def _maxwell(flat, ns, nr):
+        seen["maxwell"] = (flat, ns, nr)
+        return {"value": 0.25, "subjects": ns, "raters": nr}
+
+    def _robinson(flat, ns, nr):
+        seen["robinson"] = (flat, ns, nr)
+        return {"value": 0.75, "subjects": ns, "raters": nr}
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: SimpleNamespace(
+            kripp_alpha=_kripp,
+            finn_coefficient=_finn,
+            maxwell_re=_maxwell,
+            robinson_a=_robinson,
+        ),
+    )
+
+    kripp = reliability.kripp_alpha(
+        [[np.int8(1), 2, 1], [1, np.float32(2.0), np.uint8(2)]],
+        method="nominal",
+    )
+    finn = reliability.finn_coefficient(
+        [[1, np.float32(2.0)], [2, np.int16(1)], [3, np.uint8(2)]],
+        np.int16(5),
+        model="oneway",
+    )
+    maxwell = reliability.maxwell_re(
+        [[np.int8(0), 1], [1, np.uint8(0)]],
+    )
+    robinson = reliability.robinson_a(
+        [[1, np.float32(2.0)], [2, np.int16(3)], [4, np.uint8(5)]],
+    )
+
+    assert kripp.value == pytest.approx(0.5)
+    assert finn.value == pytest.approx(0.4)
+    assert maxwell.value == pytest.approx(0.25)
+    assert robinson.value == pytest.approx(0.75)
+    for key in ("kripp", "finn", "maxwell", "robinson"):
+        flat = seen[key][0]
+        assert isinstance(flat, np.ndarray)
+        assert flat.dtype == np.float64
+
+
+def test_remaining_rater_top_level_exports_use_hardened_adapters():
+    """Historical package exports must use the same hardened callables."""
+    assert fast_mlsirm.kripp_alpha is reliability.kripp_alpha
+    assert fast_mlsirm.finn_coefficient is reliability.finn_coefficient
+    assert fast_mlsirm.maxwell_re is reliability.maxwell_re
+    assert fast_mlsirm.robinson_a is reliability.robinson_a
