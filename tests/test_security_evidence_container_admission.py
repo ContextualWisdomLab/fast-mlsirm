@@ -53,3 +53,19 @@ def test_k_index_rejects_container_subclasses_before_sequence_callbacks():
         with pytest.raises(ValueError, match="responses must be an integer or float array"):
             k_index(responses, 0, 1)
     assert _HostileList.calls == 0
+
+
+def test_k_index_rejects_cyclic_builtin_sequences_before_numpy_materialization():
+    responses = []
+    responses.append(responses)
+    with patch("fast_mlsirm.fitstats._core_module", side_effect=_core_forbidden):
+        with pytest.raises(ValueError, match="responses must be an integer or float array"):
+            k_index(responses, 0, 1)
+
+
+def test_k_index_preserves_acyclic_shared_builtin_rows():
+    row = [1, 0, 1]
+    responses = [row, row, [0, 0, 0]]
+    with patch("fast_mlsirm.fitstats._core_module", return_value=None):
+        with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
+            k_index(responses, 0, 1)
