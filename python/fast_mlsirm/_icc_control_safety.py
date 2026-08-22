@@ -202,6 +202,8 @@ def install(reliability_module: ModuleType) -> None:
     original_separation: Callable[..., Any] = reliability_module.separation_reliability
     original_mean_cor: Callable[..., Any] = reliability_module.mean_pairwise_cor
     original_mean_rho: Callable[..., Any] = reliability_module.mean_pairwise_rho
+    ratings_dimension_error = "ratings must be a 2-D subjects x raters array"
+    data_dimension_error = "data must be a 2-D persons x items array"
 
     @wraps(original_icc)
     def safe_icc(
@@ -228,6 +230,7 @@ def install(reliability_module: ModuleType) -> None:
             "ratings",
             2,
             allow_bool=False,
+            dimension_error=ratings_dimension_error,
             preserve_ratings_diagnostics=True,
         )
         return original_icc(
@@ -253,20 +256,39 @@ def install(reliability_module: ModuleType) -> None:
         if seed_value < 0:
             raise ValueError("seed must be non-negative")
         _reject_masked_array(data, "data")
-        data_value = _real_numeric_array(data, "data", 2)
+        data_value = _real_numeric_array(
+            data,
+            "data",
+            2,
+            dimension_error=data_dimension_error,
+        )
         return original_guttman(data_value, n_sample_splits=split_value, seed=seed_value)
 
     @wraps(original_tenberge)
     def safe_tenberge_mu(data: Any) -> Any:
         """Validate ten Berge raw evidence before native discovery."""
         _reject_masked_array(data, "data")
-        return original_tenberge(_real_numeric_array(data, "data", 2))
+        return original_tenberge(
+            _real_numeric_array(
+                data,
+                "data",
+                2,
+                dimension_error=data_dimension_error,
+            )
+        )
 
     @wraps(original_alpha)
     def safe_cronbach_alpha(data: Any) -> Any:
         """Validate alpha raw evidence before native discovery."""
         _reject_masked_array(data, "data")
-        return original_alpha(_real_numeric_array(data, "data", 2))
+        return original_alpha(
+            _real_numeric_array(
+                data,
+                "data",
+                2,
+                dimension_error=data_dimension_error,
+            )
+        )
 
     @wraps(original_separation)
     def safe_separation_reliability(measures: Any, se: Any) -> Any:
@@ -298,6 +320,7 @@ def install(reliability_module: ModuleType) -> None:
             "ratings",
             2,
             allow_bool=False,
+            dimension_error=ratings_dimension_error,
             preserve_ratings_diagnostics=True,
         )
         return original_mean_cor(ratings_value, fisher=fisher_value)
@@ -312,6 +335,7 @@ def install(reliability_module: ModuleType) -> None:
             "ratings",
             2,
             allow_bool=False,
+            dimension_error=ratings_dimension_error,
             preserve_ratings_diagnostics=True,
         )
         return original_mean_rho(ratings_value, fisher=fisher_value)
