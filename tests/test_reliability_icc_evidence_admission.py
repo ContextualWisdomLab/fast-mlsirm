@@ -62,23 +62,70 @@ def test_reliability_mask_probe_rejects_class_spoof_without_callback_or_native(
     assert hostile.class_reads == 0
 
 
-def test_icc_rejects_complex_ratings_before_native(monkeypatch):
+@pytest.mark.parametrize(
+    ("ratings", "message"),
+    [
+        (
+            np.array([[1.0 + 0.5j, 2.0], [2.0, 1.0], [3.0, 4.0]], dtype=np.complex128),
+            "ratings must be real-valued",
+        ),
+        (
+            np.array([[True, False], [False, True]], dtype=np.bool_),
+            "ratings must be numeric, not boolean",
+        ),
+        (
+            np.array([[object(), object()], [object(), object()]], dtype=object),
+            "object-dtype arrays are not supported; pass a numeric array",
+        ),
+        (
+            np.array([["1", "2"], ["2", "1"]], dtype=np.str_),
+            "ratings must be a numeric array",
+        ),
+    ],
+)
+def test_icc_preserves_trusted_ndarray_diagnostics_before_native(
+    monkeypatch, ratings, message
+):
+    """Callback safety must not erase established diagnostics for inert ndarrays."""
     monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
 
-    with pytest.raises(ValueError, match="real numeric"):
-        reliability.icc(
-            np.array(
-                [[1.0 + 0.5j, 2.0], [2.0, 1.0], [3.0, 4.0]],
-                dtype=np.complex128,
-            )
-        )
+    with pytest.raises(ValueError, match=message):
+        reliability.icc(ratings)
 
 
-def test_icc_preserves_boolean_ratings_rejection_before_native(monkeypatch):
+@pytest.mark.parametrize(
+    "api",
+    (reliability.mean_pairwise_cor, reliability.mean_pairwise_rho),
+)
+@pytest.mark.parametrize(
+    ("ratings", "message"),
+    [
+        (
+            np.array([[1.0 + 0.5j, 2.0], [2.0, 1.0], [3.0, 4.0]], dtype=np.complex128),
+            "ratings must be real-valued",
+        ),
+        (
+            np.array([[True, False], [False, True]], dtype=np.bool_),
+            "ratings must be numeric, not boolean",
+        ),
+        (
+            np.array([[object(), object()], [object(), object()]], dtype=object),
+            "object-dtype arrays are not supported; pass a numeric array",
+        ),
+        (
+            np.array([["1", "2"], ["2", "1"]], dtype=np.str_),
+            "ratings must be a numeric array",
+        ),
+    ],
+)
+def test_pairwise_preserves_trusted_ndarray_diagnostics_before_native(
+    monkeypatch, api, ratings, message
+):
+    """Pairwise wrappers preserve the same inert-ndarray error contract."""
     monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
 
-    with pytest.raises(ValueError, match="real numeric"):
-        reliability.icc(np.array([[True, False], [False, True]], dtype=np.bool_))
+    with pytest.raises(ValueError, match=message):
+        api(ratings)
 
 
 def test_icc_preserves_masked_array_diagnostic_before_native(monkeypatch):
