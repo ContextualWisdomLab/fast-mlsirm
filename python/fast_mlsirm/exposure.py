@@ -134,6 +134,16 @@ def _as_real_scalar(name: str, value: object) -> float:
     raise ValueError(f"{name} must be a real scalar")
 
 
+def _as_boolean_scalar(name: str, value: object) -> bool:
+    """Normalize a package-trusted Boolean scalar without caller truth hooks."""
+
+    if type(value) is bool:
+        return value
+    if type(value) is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean scalar")
+
+
 def _as_boolean_array(name: str, value: object) -> np.ndarray:
     """Admit Boolean storage before native mask marshalling."""
 
@@ -141,6 +151,20 @@ def _as_boolean_array(name: str, value: object) -> np.ndarray:
     if array.dtype != np.bool_:
         raise ValueError(f"{name} must be a boolean array")
     return np.ascontiguousarray(array, dtype=np.bool_)
+
+
+def _as_binary_response_array(name: str, value: object) -> np.ndarray:
+    """Admit real numeric 0/1 storage before native ``uint8`` marshalling."""
+
+    array = np.asarray(value)
+    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError(f"{name} must be a real numeric array")
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a 1-D array")
+    values = np.ascontiguousarray(array, dtype=np.float64)
+    if not np.isin(values, (0.0, 1.0)).all():
+        raise ValueError(f"{name} must contain only 0 or 1")
+    return np.ascontiguousarray(values, dtype=np.uint8)
 
 
 @dataclass
@@ -461,11 +485,16 @@ def owen_update(
             Measurement, 6*(4), 431-444.
             https://doi.org/10.1177/014662168200600405
     """
+    a = _as_real_scalar("a", a)
+    b = _as_real_scalar("b", b)
+    c = _as_real_scalar("c", c)
+    correct = _as_boolean_scalar("correct", correct)
+    mu = _as_real_scalar("mu", mu)
+    sig2 = _as_real_scalar("sig2", sig2)
+
     from . import _core
 
-    return _core.py_owen_update(
-        float(a), float(b), float(c), bool(correct), float(mu), float(sig2)
-    )
+    return _core.py_owen_update(a, b, c, correct, mu, sig2)
 
 
 def owen_cat(
@@ -505,38 +534,34 @@ def owen_cat(
             adaptive testing* (Research Report 96-01). University of Twente.
     """
     test_length = _as_int("test_length", test_length, minimum=1)
+    mu0 = _as_real_scalar("mu0", mu0)
+    sig2_0 = _as_real_scalar("sig2_0", sig2_0)
+    if sig2_stop is not None:
+        sig2_stop = _as_real_scalar("sig2_stop", sig2_stop)
 
-    from . import _core
-
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    responses = np.asarray(responses)
-    if responses.ndim != 1:
-        raise ValueError("responses must be a 1-D array")
-    # Validate BEFORE the uint8 cast: astype(np.uint8) silently truncates
-    # (1.2 -> 1, 0.9 -> 0) and wraps negatives (-1 -> 255), and complex
-    # inputs would silently drop the imaginary part, laundering invalid
-    # inputs past the Rust-side 0/1 check.
-    if np.iscomplexobj(responses):
-        raise ValueError("responses must contain only 0 or 1")
-    if not np.isin(responses.astype(np.float64), (0.0, 1.0)).all():
-        raise ValueError("responses must contain only 0 or 1")
+    responses = _as_binary_response_array("responses", responses)
+
+    from . import _core
+
     r = _core.py_owen_cat(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(responses, dtype=np.uint8),
-        float(mu0),
-        float(sig2_0),
+        a,
+        b,
+        c,
+        responses,
+        mu0,
+        sig2_0,
         test_length,
-        None if sig2_stop is None else float(sig2_stop),
+        sig2_stop,
     )
     return {
         "administered": list(r["administered"]),
@@ -1261,8 +1286,8 @@ def two_stage_route(
     Weiss, 1974, Equation 2; ``a1``/``b1`` are the routing test's mean
     discrimination and difficulty, ``c`` the shared chance level), then
     assigns the measurement test whose mean difficulty ``b_meas[k]`` is
-    closest to that estimate (minimum absolute difference; ties break to
-    the LOWEST index, a derived convention the sources leave unstated).
+    closest to that estimate (minimum absolute difference; ties break to the
+    LOWEST index, a derived convention the sources leave unstated).
     Returns ``(theta1, assigned)``. All numerics run in the Rust core
     (``mlsirm_core::exposure::two_stage_route``); see its module comment
     for the full READ/NOT-READ citation-governance record.
