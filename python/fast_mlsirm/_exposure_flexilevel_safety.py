@@ -17,7 +17,6 @@ from ._exposure_array_safety import _TRUSTED_REAL_SCALAR_TYPES
 
 _USIZE_MAX = int(np.iinfo(np.uintp).max)
 _REAL_NUMERIC_KINDS = frozenset({"b", "i", "u", "f"})
-_BUILTIN_REAL_SCALAR_TYPES = frozenset({bool, int, float})
 
 
 def _response_source(value: object, *, message: str) -> np.ndarray:
@@ -75,7 +74,7 @@ def _binary_responses(
 
 
 def _probability_source(value: object) -> np.ndarray:
-    """Admit inert array storage or a plain built-in scalar sequence."""
+    """Admit inert array storage or a plain trusted-real scalar sequence."""
 
     message = "p must be a real numeric array (real-valued evidence required)"
     if type(value) is np.ndarray:
@@ -83,9 +82,9 @@ def _probability_source(value: object) -> np.ndarray:
     if type(value) is not list and type(value) is not tuple:
         raise ValueError(message)
     # Preserve the long-standing list/tuple public API without invoking
-    # caller-defined numeric/array protocols: every element must itself be an
-    # exact built-in real scalar before NumPy sees the sequence.
-    if any(type(item) not in _BUILTIN_REAL_SCALAR_TYPES for item in value):
+    # caller-defined numeric/array protocols. Match response admission by
+    # accepting only package-trusted built-in or concrete NumPy real scalars.
+    if any(type(item) not in _TRUSTED_REAL_SCALAR_TYPES for item in value):
         raise ValueError(message)
     return np.asarray(value)
 
