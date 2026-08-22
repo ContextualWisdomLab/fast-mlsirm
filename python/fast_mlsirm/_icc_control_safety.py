@@ -167,8 +167,12 @@ def _real_numeric_array(
 
 
 def install(reliability_module: ModuleType) -> None:
-    """Install callback-free control and evidence validation adapters."""
-    original_icc: Callable[..., Any] = reliability_module.icc
+    """Install callback-free control and evidence validation adapters once."""
+    current_icc: Callable[..., Any] = reliability_module.icc
+    if getattr(current_icc, "__fast_mlsirm_icc_control_hardened__", False):
+        return
+
+    original_icc: Callable[..., Any] = current_icc
     original_guttman: Callable[..., Any] = reliability_module.guttman_lambdas
     original_tenberge: Callable[..., Any] = reliability_module.tenberge_mu
     original_alpha: Callable[..., Any] = reliability_module.cronbach_alpha
@@ -282,6 +286,7 @@ def install(reliability_module: ModuleType) -> None:
         )
         return original_mean_rho(ratings_value, fisher=fisher_value)
 
+    safe_icc.__fast_mlsirm_icc_control_hardened__ = True
     reliability_module.icc = safe_icc
     reliability_module.guttman_lambdas = safe_guttman_lambdas
     reliability_module.tenberge_mu = safe_tenberge_mu
