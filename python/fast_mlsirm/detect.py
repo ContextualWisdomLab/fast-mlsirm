@@ -8,6 +8,63 @@ from dataclasses import dataclass
 
 import numpy as np
 
+_TRUSTED_DETECT_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+
+
+def _trusted_numeric_array(
+    value,
+    *,
+    numeric_error: str,
+    complex_error: str,
+) -> np.ndarray:
+    """Materialize inert real numeric storage without caller conversion hooks."""
+    if type(value) is np.ndarray:
+        array = value
+    elif type(value) in (list, tuple):
+        stack = list(value)
+        while stack:
+            current = stack.pop()
+            if type(current) in (list, tuple):
+                stack.extend(current)
+                continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+                    raise ValueError(numeric_error)
+                continue
+            if type(current) not in _TRUSTED_DETECT_SCALAR_TYPES:
+                raise ValueError(numeric_error)
+        try:
+            array = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(numeric_error) from exc
+    else:
+        raise ValueError(numeric_error)
+
+    if np.iscomplexobj(array):
+        raise ValueError(complex_error)
+    if array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError(numeric_error)
+    return array
+
 
 @dataclass
 class DetectResult:
@@ -70,11 +127,11 @@ def detect_analysis(
             structure. *Psychometrika, 64*(2), 213-249. (as cited in
             Robitzsch, 2024)
     """
-    response_array = np.asarray(responses)
-    if np.iscomplexobj(response_array):
-        raise ValueError("responses must be real-valued")
-    if response_array.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError("responses must be a numeric array")
+    response_array = _trusted_numeric_array(
+        responses,
+        numeric_error="responses must be a numeric array",
+        complex_error="responses must be real-valued",
+    )
     y = response_array.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -86,11 +143,11 @@ def detect_analysis(
     if not np.all(np.isin(y, (0.0, 1.0))):
         raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
-    c = np.asarray(cluster).reshape(-1)
-    if np.iscomplexobj(c):
-        raise ValueError("cluster labels must be real integers")
-    if c.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError("cluster labels must be a numeric array")
+    c = _trusted_numeric_array(
+        cluster,
+        numeric_error="cluster labels must be a numeric array",
+        complex_error="cluster labels must be real integers",
+    ).reshape(-1)
     if c.shape[0] != n_items:
         raise ValueError("cluster must assign one label per item")
     I64_MAX = np.iinfo(np.int64).max
