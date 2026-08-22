@@ -161,7 +161,7 @@ def test_fit_response_times_rejects_deeply_nested_evidence_before_native(
     for _ in range(sys.getrecursionlimit() + 50):
         nested = [nested]
 
-    with pytest.raises(ValueError, match="times must be a real numeric array"):
+    with pytest.raises(ValueError, match="response-time maximum rank"):
         fit_response_times(nested)  # type: ignore[arg-type]
 
 
