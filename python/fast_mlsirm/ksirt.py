@@ -24,6 +24,23 @@ _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.uintp,
     np.ulonglong,
 )
+_TRUSTED_REAL_SEQUENCE_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        complex,
+        np.bool_,
+        *_TRUSTED_NUMPY_INTEGER_TYPES,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+        np.complex64,
+        np.complex128,
+        np.clongdouble,
+    }
+)
 _KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
 
 
@@ -79,12 +96,35 @@ def _nevalpoints_control(value: object) -> int:
     return parsed
 
 
+def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
+    """Materialize only inert numeric array/sequence identities."""
+    if type(value) is np.ndarray:
+        raw = value
+    elif type(value) in (list, tuple):
+        stack: list[object] = [value]
+        while stack:
+            current = stack.pop()
+            if type(current) in (list, tuple):
+                stack.extend(current)
+                continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+                    raise ValueError(f"{name} must be a numeric array")
+                continue
+            if type(current) not in _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES:
+                raise ValueError(f"{name} must be a numeric array")
+        try:
+            raw = np.asarray(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{name} must be a numeric array") from None
+    else:
+        raise ValueError(f"{name} must be a numeric array")
+    return raw
+
+
 def _real_float_array(value: object, name: str) -> np.ndarray:
-    """Materialize trusted numeric storage without lossy/callback coercion."""
-    try:
-        raw = np.asarray(value)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError(f"{name} must be a numeric array") from None
+    """Materialize trusted real numeric storage without caller callbacks."""
+    raw = _trusted_numeric_storage(value, name)
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
@@ -124,8 +164,10 @@ def ksirt_analysis(
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
-    or compiled-core discovery. Complex-valued and object-dtype response or
-    bandwidth evidence is rejected before real-valued marshalling.
+    or compiled-core discovery. Evidence admission accepts exact NumPy arrays
+    or plain built-in list/tuple trees of trusted concrete numeric scalars;
+    callback-bearing providers, complex values, and object/text storage fail
+    before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
