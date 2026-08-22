@@ -32,6 +32,14 @@ _TRUSTED_DETECT_SCALAR_TYPES = frozenset(
         np.longdouble,
     }
 )
+_TRUSTED_DETECT_COMPLEX_SCALAR_TYPES = frozenset(
+    {
+        complex,
+        np.complex64,
+        np.complex128,
+        np.clongdouble,
+    }
+)
 _MAX_DETECT_SEQUENCE_CELLS = 20_000_000
 
 
@@ -83,6 +91,8 @@ def _trusted_numeric_array(
                 if current.dtype.kind not in ("b", "i", "u", "f", "c"):
                     raise ValueError(numeric_error)
                 continue
+            if type(current) in _TRUSTED_DETECT_COMPLEX_SCALAR_TYPES:
+                raise ValueError(complex_error)
             if type(current) not in _TRUSTED_DETECT_SCALAR_TYPES:
                 raise ValueError(numeric_error)
         try:
