@@ -43,6 +43,23 @@ def test_release_builds_are_bound_to_the_published_version() -> None:
     assert text.count("maturin-version: v1.14.1") == 2
 
 
+def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
+    wheels = _job_block(_workflow_text(), "wheels")
+
+    # The extension is not built with PyO3 abi3, so a CPython 3.12 wheel cannot
+    # satisfy 3.13/3.14 callers. Each release platform must build all currently
+    # evidenced supported CPython versions instead of forcing newer callers to
+    # compile the sdist with a local Rust toolchain.
+    for version in ("3.12", "3.13", "3.14"):
+        assert wheels.count(f'python-version: "{version}"') == 4
+        assert wheels.count(f"interpreter: python{version}") == 2
+
+    assert wheels.count("interpreter: python\n") == 6
+    assert "python-version: ${{ matrix.python-version }}" in wheels
+    assert "args: --release --out dist -i ${{ matrix.interpreter }}" in wheels
+    assert "name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
+
+
 def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     publish_text = _workflow_text()
     release_text = _release_tag_workflow_text()
