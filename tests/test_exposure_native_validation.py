@@ -64,12 +64,12 @@ def test_ci_native_retains_public_domain_guards(
         _core.py_ci_classify(a, b, c, responses, theta_cut, z_crit)
 
 
-@pytest.mark.parametrize(("r_max", "tol"), [(0.0, 0.02), (0.25, 0.0)])
-def test_sympson_native_retains_public_domain_guards(
+@pytest.mark.parametrize(("r_max", "tol"), [(0.0, 0.02), (0.25, -0.01)])
+def test_sympson_native_retains_shared_domain_guards(
     r_max: float,
     tol: float,
 ) -> None:
-    """Exercise Rust Sympson-Hetter domains beneath mirrored Python guards."""
+    """Exercise Rust Sympson-Hetter backstops shared with Python admission."""
 
     from fast_mlsirm import _core
 
