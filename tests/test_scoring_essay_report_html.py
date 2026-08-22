@@ -89,7 +89,8 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert '<a class="skip-link" href="#main-content">' in first
     assert '<main id="main-content" tabindex="-1">' in first
     assert 'tabindex="0" role="region"' in first
-    assert "default-src &#x27;none&#x27;" in first
+    assert "default-src 'none'" in first
+    assert "&#x27;" not in first.split('Content-Security-Policy')[1].split('>')[0]
     assert "script-src" not in first
     assert "No structural review trigger was emitted." in first
     assert 'class="empty-state" role="status"' in first

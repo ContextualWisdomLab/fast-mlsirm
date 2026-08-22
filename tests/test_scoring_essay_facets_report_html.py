@@ -62,7 +62,8 @@ def test_renderer_writes_deterministic_accessible_source_text_free_artifact(
     assert 'href="#main-content"' in first
     assert 'tabindex="0" role="region"' in first
     assert "Content-Security-Policy" in first
-    assert "default-src &#x27;none&#x27;" in first
+    assert "default-src 'none'" in first
+    assert "&#x27;" not in first.split('Content-Security-Policy')[1].split('>')[0]
     assert "<script" not in first.lower()
     assert "https://" not in first
     assert report.report_fingerprint in first

@@ -42,7 +42,8 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     assert "No chartable values were recorded for this section." not in html
     assert "<table>" in html
     assert 'http-equiv="Content-Security-Policy"' in html
-    assert "default-src &#x27;none&#x27;" in html
+    assert "default-src 'none'" in html
+    assert "&#x27;" not in html.split('Content-Security-Policy')[1].split('>')[0]
     assert 'role="region" aria-label="Item Fit diagnostics table" tabindex="0"' in html
     assert "<caption>Item Fit diagnostics table</caption>" in html
 

@@ -96,7 +96,7 @@ def _render_html(
             "<head>",
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            f'<meta http-equiv="Content-Security-Policy" content="{_content_security_policy()}">',
             f"<title>{escape(title)}</title>",
             "<style>",
             _css(),

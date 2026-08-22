@@ -274,7 +274,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
             "<head>",
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            f'<meta http-equiv="Content-Security-Policy" content="{_content_security_policy()}">',
             "<title>fast-mlsirm Buyer Evidence Review</title>",
             "<style>",
             _report_css(),

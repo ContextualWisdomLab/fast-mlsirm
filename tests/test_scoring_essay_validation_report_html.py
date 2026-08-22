@@ -50,7 +50,8 @@ def test_report_renders_deterministic_accessible_exact_evidence(tmp_path: Path) 
     assert '<a class="skip-link" href="#main-content">' in first
     assert '<main id="main-content" tabindex="-1">' in first
     assert 'tabindex="0" role="region"' in first
-    assert "default-src &#x27;none&#x27;" in first
+    assert "default-src 'none'" in first
+    assert "&#x27;" not in first.split('Content-Security-Policy')[1].split('>')[0]
     assert "script-src" not in first
     assert '<section class="review-required"' in first
     assert "Human interpretation required" in first
