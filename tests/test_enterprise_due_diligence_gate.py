@@ -173,36 +173,30 @@ def test_write_gate_manifest_cleans_failed_portable_temporary_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed portable write must not leave an orphan temporary manifest."""
+    """A failed portable descriptor write must not leave an orphan manifest."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delattr(GATE.os, "O_NOFOLLOW", raising=False)
     manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
-    original_named_temporary_file = GATE.tempfile.NamedTemporaryFile
+    original_fdopen = GATE.os.fdopen
 
-    class FailingTemporaryFile:
-        """Wrap one real temporary file while failing its content write."""
+    class FailingStream:
+        """Wrap the real descriptor stream while failing its content write."""
 
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            self._context = original_named_temporary_file(*args, **kwargs)
-            self._file = None
+        def __init__(self, file_descriptor: int, *args: object, **kwargs: object) -> None:
+            self._stream = original_fdopen(file_descriptor, *args, **kwargs)
 
-        def __enter__(self) -> "FailingTemporaryFile":
-            self._file = self._context.__enter__()
+        def __enter__(self) -> "FailingStream":
+            self._stream.__enter__()
             return self
 
         def __exit__(self, *args: object) -> object:
-            return self._context.__exit__(*args)
-
-        @property
-        def name(self) -> str:
-            assert self._file is not None
-            return self._file.name
+            return self._stream.__exit__(*args)
 
         def write(self, content: str) -> int:
             del content
             raise OSError("injected portable write failure")
 
-    monkeypatch.setattr(GATE.tempfile, "NamedTemporaryFile", FailingTemporaryFile)
+    monkeypatch.setattr(GATE.os, "fdopen", FailingStream)
 
     with pytest.raises(ValueError, match="manifest output could not be written"):
         GATE.write_gate_manifest(manifest, Path("portable") / "gate.json")
