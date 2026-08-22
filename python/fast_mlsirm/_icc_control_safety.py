@@ -87,7 +87,7 @@ def _boolean(value: Any, name: str) -> bool:
     raise TypeError(f"{name} must be a bool")
 
 
-def _trusted_sequence_tree(value: Any) -> bool:
+def _trusted_sequence_tree(value: Any, *, allow_bool: bool) -> bool:
     """Return whether an exact list/tuple tree contains only trusted reals."""
     stack = [value]
     while stack:
@@ -96,9 +96,11 @@ def _trusted_sequence_tree(value: Any) -> bool:
         if current_type is list or current_type is tuple:
             stack.extend(current)
             continue
-        if current_type is bool or current_type is int or current_type is float:
-            continue
-        if current_type is np.bool_:
+        if current_type is bool or current_type is np.bool_:
+            if allow_bool:
+                continue
+            return False
+        if current_type is int or current_type is float:
             continue
         if any(current_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES):
             continue
@@ -106,13 +108,19 @@ def _trusted_sequence_tree(value: Any) -> bool:
     return True
 
 
-def _real_numeric_array(value: Any, name: str, ndim: int) -> np.ndarray:
+def _real_numeric_array(
+    value: Any,
+    name: str,
+    ndim: int,
+    *,
+    allow_bool: bool = True,
+) -> np.ndarray:
     """Marshal inert real-numeric evidence without arbitrary array callbacks."""
     value_type = builtins.type(value)
     if value_type is np.ndarray:
         arr = value
     elif value_type is list or value_type is tuple:
-        if not _trusted_sequence_tree(value):
+        if not _trusted_sequence_tree(value, allow_bool=allow_bool):
             raise ValueError(f"{name} must be real numeric evidence")
         try:
             arr = np.asarray(value)
@@ -122,6 +130,8 @@ def _real_numeric_array(value: Any, name: str, ndim: int) -> np.ndarray:
         raise ValueError(f"{name} must be real numeric evidence")
 
     if np.iscomplexobj(arr) or arr.dtype.kind not in "biuf":
+        raise ValueError(f"{name} must be real numeric evidence")
+    if not allow_bool and arr.dtype.kind == "b":
         raise ValueError(f"{name} must be real numeric evidence")
     if arr.ndim != ndim:
         dimension = "2-D" if ndim == 2 else "1-D"
@@ -151,7 +161,7 @@ def install(reliability_module: ModuleType) -> None:
         r0: float = 0.0,
         conf_level: float = 0.95,
     ) -> Any:
-        """Validate ICC controls before native discovery or ratings access."""
+        """Validate ICC controls and ratings before native discovery."""
         model_value = _choice(model, "model", ("oneway", "twoway"))
         type_value = _choice(type, "type", ("consistency", "agreement"))
         unit_value = _choice(unit, "unit", ("single", "average"))
@@ -161,8 +171,14 @@ def install(reliability_module: ModuleType) -> None:
             raise ValueError("r0 must be in [0, 1)")
         if not 0.0 < conf_level_value < 1.0:
             raise ValueError("conf_level must be in (0, 1)")
-        return original_icc(
+        ratings_value = _real_numeric_array(
             ratings,
+            "ratings",
+            2,
+            allow_bool=False,
+        )
+        return original_icc(
+            ratings_value,
             model=model_value,
             type=type_value,
             unit=unit_value,
@@ -207,14 +223,24 @@ def install(reliability_module: ModuleType) -> None:
     def safe_mean_pairwise_cor(ratings: Any, fisher: bool = True) -> Any:
         """Validate Fisher control and Pearson-rater evidence before Rust."""
         fisher_value = _boolean(fisher, "fisher")
-        ratings_value = _real_numeric_array(ratings, "ratings", 2)
+        ratings_value = _real_numeric_array(
+            ratings,
+            "ratings",
+            2,
+            allow_bool=False,
+        )
         return original_mean_cor(ratings_value, fisher=fisher_value)
 
     @wraps(original_mean_rho)
     def safe_mean_pairwise_rho(ratings: Any, fisher: bool = True) -> Any:
         """Validate Fisher control and Spearman-rater evidence before Rust."""
         fisher_value = _boolean(fisher, "fisher")
-        ratings_value = _real_numeric_array(ratings, "ratings", 2)
+        ratings_value = _real_numeric_array(
+            ratings,
+            "ratings",
+            2,
+            allow_bool=False,
+        )
         return original_mean_rho(ratings_value, fisher=fisher_value)
 
     reliability_module.icc = safe_icc
@@ -231,6 +257,7 @@ def install(reliability_module: ModuleType) -> None:
     legacy_name = f"{reliability_module.__package__}._legacy_init"
     legacy_module = sys.modules.get(legacy_name)
     if legacy_module is not None:
+        legacy_module.icc = safe_icc
         legacy_module.guttman_lambdas = safe_guttman_lambdas
         legacy_module.tenberge_mu = safe_tenberge_mu
         legacy_module.cronbach_alpha = safe_cronbach_alpha
