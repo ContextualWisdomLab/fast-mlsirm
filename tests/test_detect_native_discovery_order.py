@@ -119,6 +119,28 @@ def test_dimtest_rejects_invalid_partition_before_core_discovery(monkeypatch):
         dimtest(responses, np.array([], dtype=np.int64), np.array([2, 3]))
 
 
+def test_dimtest_rejects_array_provider_responses_without_callbacks(monkeypatch):
+    """DIMTEST response providers fail before caller array conversion callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="responses must be a numeric array"):
+        dimtest(_HostileArrayProvider(), [0, 1, 2, 3], [4, 5, 6, 7])
+
+
+@pytest.mark.parametrize("slot", ["at1", "at2"])
+def test_dimtest_rejects_array_provider_index_sets_without_callbacks(monkeypatch, slot):
+    """DIMTEST subtest providers fail before caller array conversion callbacks."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.zeros((40, 10), dtype=np.float64)
+    at1 = _HostileArrayProvider() if slot == "at1" else [0, 1, 2, 3]
+    at2 = _HostileArrayProvider() if slot == "at2" else [4, 5, 6, 7]
+
+    with pytest.raises(ValueError, match=rf"{slot} indices must be a numeric array"):
+        dimtest(responses, at1, at2)
+
+
 def test_detect_valid_input_discovers_core_only_at_dispatch_boundary(monkeypatch):
     """A valid request still discovers the compiled core exactly when dispatch is needed."""
 
@@ -192,5 +214,26 @@ def test_dimtest_valid_input_discovers_core_only_at_dispatch_boundary(monkeypatc
 
     with pytest.raises(RuntimeError, match="dimtest requires the compiled Rust core"):
         dimtest(responses, np.array([0, 1]), np.array([2, 3]))
+
+    assert calls == 1
+
+
+def test_dimtest_accepts_builtin_sequences_at_dispatch_boundary(monkeypatch):
+    """Plain DIMTEST evidence sequences remain accepted up to Rust dispatch."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    responses = tuple(tuple(np.uint8(0) for _ in range(10)) for _ in range(40))
+    at1 = [np.int16(0), np.int32(1), np.int64(2), 3]
+    at2 = (np.uint8(4), np.uint16(5), np.float32(6.0), np.float64(7.0))
+
+    with pytest.raises(RuntimeError, match="dimtest requires the compiled Rust core"):
+        dimtest(responses, at1, at2)
 
     assert calls == 1
