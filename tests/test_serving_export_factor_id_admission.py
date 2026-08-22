@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -111,3 +112,38 @@ def test_export_preserves_trusted_integer_valued_factor_sequence(monkeypatch):
     assert factor_id.tolist() == [0, 1]
     assert bundle["n_dims"] == 2
     assert [item["factor_id"] for item in bundle["items"]] == [0, 1]
+
+
+def test_export_normalizes_trusted_numpy_quadrature_controls_for_json(
+    monkeypatch, tmp_path
+):
+    """Trusted NumPy integer controls must produce a self-serializable bundle."""
+    seen: dict[str, object] = {}
+
+    def _eapsum_tables(alpha, b, zeta, tau, factor_id, *args, **kwargs):
+        seen["q_theta"] = kwargs["q_theta"]
+        seen["q_xi"] = kwargs["q_xi"]
+        return []
+
+    monkeypatch.setattr(
+        serving,
+        "_core_module",
+        lambda: SimpleNamespace(eapsum_tables=_eapsum_tables),
+    )
+    path = tmp_path / "bundle.json"
+
+    bundle = serving.export_serving_bundle(
+        _result(),
+        ["q0", "q1"],
+        (0, 1),
+        path=path,
+        q_theta=np.int64(21),
+        q_xi=np.uint8(11),
+    )
+
+    assert type(bundle["quadrature"]["q_theta"]) is int
+    assert type(bundle["quadrature"]["q_xi"]) is int
+    assert type(seen["q_theta"]) is int
+    assert type(seen["q_xi"]) is int
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["quadrature"] == {"q_theta": 21, "q_xi": 11}
