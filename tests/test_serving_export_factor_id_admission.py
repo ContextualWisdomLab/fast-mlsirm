@@ -52,7 +52,7 @@ def _result() -> FitResult:
 
 
 def _core_must_not_be_discovered() -> None:
-    raise AssertionError("invalid factor identity reached compiled-core discovery")
+    raise AssertionError("invalid serving evidence reached compiled-core discovery")
 
 
 @pytest.mark.parametrize(
@@ -112,6 +112,25 @@ def test_export_preserves_trusted_integer_valued_factor_sequence(monkeypatch):
     assert factor_id.tolist() == [0, 1]
     assert bundle["n_dims"] == 2
     assert [item["factor_id"] for item in bundle["items"]] == [0, 1]
+
+
+@pytest.mark.parametrize("control_name", ["q_theta", "q_xi"])
+def test_export_rejects_hostile_quadrature_integer_before_native_discovery(
+    monkeypatch, control_name
+):
+    """Quadrature integer protocols must not execute before package admission."""
+    hostile = _HostileInteger()
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match=control_name):
+        serving.export_serving_bundle(
+            _result(),
+            ["q0", "q1"],
+            (0, 1),
+            **{control_name: hostile},
+        )
+
+    assert hostile.calls == 0
 
 
 def test_export_normalizes_trusted_numpy_quadrature_controls_for_json(
