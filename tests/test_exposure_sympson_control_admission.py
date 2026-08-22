@@ -70,11 +70,10 @@ def test_sympson_hetter_rejects_hostile_real_controls_before_data_or_native(
         ("r_max", float("nan"), r"r_max must be finite and in \(0, 1\]"),
         ("r_max", float("inf"), r"r_max must be finite and in \(0, 1\]"),
         ("r_max", float("-inf"), r"r_max must be finite and in \(0, 1\]"),
-        ("tol", 0.0, r"tol must be finite and greater than 0"),
-        ("tol", -0.01, r"tol must be finite and greater than 0"),
-        ("tol", float("nan"), r"tol must be finite and greater than 0"),
-        ("tol", float("inf"), r"tol must be finite and greater than 0"),
-        ("tol", float("-inf"), r"tol must be finite and greater than 0"),
+        ("tol", -0.01, r"tol must be finite and non-negative"),
+        ("tol", float("nan"), r"tol must be finite and non-negative"),
+        ("tol", float("inf"), r"tol must be finite and non-negative"),
+        ("tol", float("-inf"), r"tol must be finite and non-negative"),
     ],
 )
 def test_sympson_hetter_rejects_invalid_real_domains_before_data_or_native(
@@ -99,6 +98,45 @@ def test_sympson_hetter_rejects_invalid_real_domains_before_data_or_native(
         )
 
     assert _UnexpectedArray.callbacks == 0
+
+
+def test_sympson_hetter_accepts_zero_tolerance_at_native_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zero tolerance preserves the Rust finite non-negative contract exactly."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class _Core:
+        def py_sympson_hetter(self, *args: object) -> dict[str, object]:
+            captured["args"] = args
+            return {
+                "k": np.array([1.0]),
+                "exposure": np.array([0.25]),
+                "selection": np.array([0.5]),
+                "max_exposure": 0.25,
+                "n_iter": 1,
+                "converged": False,
+                "history_max_exposure": np.array([0.25]),
+            }
+
+    monkeypatch.setattr(fast_mlsirm, "_core", _Core(), raising=False)
+
+    result = exposure.sympson_hetter(
+        np.array([1.0]),
+        np.array([0.0]),
+        r_max=1.0,
+        test_length=1,
+        n_simulees=1,
+        max_iter=1,
+        tol=0.0,
+        q_theta=3,
+    )
+
+    args = captured["args"]
+    assert type(args[7]) is float
+    assert args[7] == 0.0
+    assert result.converged is False
 
 
 def test_sympson_hetter_normalizes_supported_numpy_real_controls(
