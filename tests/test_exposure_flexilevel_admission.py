@@ -92,7 +92,9 @@ def test_flexilevel_rejects_flat_size_mismatch_before_core(
 
     discoveries = _guard_native_discovery(monkeypatch)
 
-    with pytest.raises(ValueError, match="responses size must equal n_persons \* n_items"):
+    with pytest.raises(
+        ValueError, match=r"responses size must equal n_persons \* n_items"
+    ):
         exposure.flexilevel_administer(
             np.array([0, 1, 0, 1], dtype=np.int8), n_persons=1, n_items=3
         )
