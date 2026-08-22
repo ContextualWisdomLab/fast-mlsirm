@@ -47,6 +47,7 @@ def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
     assert "GH_TOKEN: ${{ github.token }}" in assets
     assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in assets
     assert 'gh release upload "$RELEASE_TAG"' in assets
+    assert "--clobber" not in assets
     assert "secrets.PIPY_TOKEN" not in assets
 
     assert "environment: pypi" in publish
