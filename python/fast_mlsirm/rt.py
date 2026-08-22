@@ -129,20 +129,25 @@ def _is_trusted_real_scalar(value: object) -> bool:
 
 def _validate_real_sequence(value: object, name: str) -> None:
     """Validate one built-in nested real-numeric sequence without coercion."""
-    stack = [value]
-    seen_container_ids = set()
+    stack: list[tuple[object, bool]] = [(value, False)]
+    active_container_ids: set[int] = set()
     while stack:
-        current = stack.pop()
+        current, leaving = stack.pop()
         current_type = type(current)
         if current_type is list or current_type is tuple:
+            current_id = id(current)
+            if leaving:
+                active_container_ids.remove(current_id)
+                continue
             # An explicit stack (heap-allocated) replaces recursion so nesting
-            # depth cannot exhaust Python's call stack; the identity check
-            # rejects a self-referential or otherwise cyclic container instead
-            # of looping forever walking the same elements again.
-            if id(current) in seen_container_ids:
+            # depth cannot exhaust Python's call stack. Track only containers on
+            # the active ancestor path: true cycles are rejected, while a valid
+            # shared/diamond sub-sequence may appear in multiple sibling branches.
+            if current_id in active_container_ids:
                 raise ValueError(f"{name} must be a real numeric array")
-            seen_container_ids.add(id(current))
-            stack.extend(current)
+            active_container_ids.add(current_id)
+            stack.append((current, True))
+            stack.extend((element, False) for element in current)
             continue
         if current_type is np.ndarray:
             if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
