@@ -52,6 +52,10 @@ def _real_numeric_response_matrix(
             if type(current) in (list, tuple):
                 stack.extend(current)
                 continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in {"b", "i", "u", "f"}:
+                    raise ValueError("responses must be a real numeric matrix")
+                continue
             if type(current) not in _TRUSTED_RESPONSE_SCALAR_TYPES:
                 raise ValueError("responses must be a real numeric matrix")
         try:
