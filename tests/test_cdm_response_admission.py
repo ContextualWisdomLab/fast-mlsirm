@@ -83,6 +83,21 @@ def test_cdm_fits_reject_object_storage_before_element_coercion(monkeypatch, fit
     assert _HostileFloat.calls == 0
 
 
+@pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
+def test_cdm_fits_reject_extended_precision_that_collapses_to_binary(monkeypatch, fit):
+    """A non-binary long-double value cannot round into accepted float64 evidence."""
+
+    if np.finfo(np.longdouble).eps >= np.finfo(np.float64).eps:
+        pytest.skip("platform longdouble does not exceed float64 precision")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    almost_one = np.nextafter(np.longdouble(1), np.longdouble(0))
+    responses = np.array([[almost_one, 1], [1, 0]], dtype=np.longdouble)
+
+    with pytest.raises(ValueError, match="exactly representable as float64"):
+        fit(responses, _q_matrix())
+
+
 @pytest.mark.parametrize(
     ("fit", "kwargs", "message"),
     [
@@ -110,17 +125,72 @@ def test_invalid_controls_fail_before_response_materialization(
 @pytest.mark.parametrize(
     ("entrypoint", "args", "kwargs", "message"),
     [
-        (cdm.validate_q_matrix, (_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
-        (cdm.validate_q_matrix, (_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
-        (cdm.gdina_wald_selection, (_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
-        (cdm.gdina_wald_selection, (_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
-        (cdm.fit_ho_cdm, (_higher_order_q_matrix(),), {"model": "other"}, "model must be 'dina' or 'dino'"),
-        (cdm.fit_ho_cdm, (_higher_order_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
-        (cdm.fit_ho_cdm, (_higher_order_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
-        (cdm.fit_ho_gdina, (_higher_order_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
-        (cdm.fit_ho_gdina, (_higher_order_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
-        (cdm.fit_seq_gdina, (_q_matrix(),), {"max_iter": 0}, "max_iter must be an integer between"),
-        (cdm.fit_seq_gdina, (_q_matrix(),), {"tol": 0.0}, "tol must be a finite number > 0"),
+        (
+            cdm.validate_q_matrix,
+            (_q_matrix(),),
+            {"max_iter": 0},
+            "max_iter must be an integer between",
+        ),
+        (
+            cdm.validate_q_matrix,
+            (_q_matrix(),),
+            {"tol": 0.0},
+            "tol must be a finite number > 0",
+        ),
+        (
+            cdm.gdina_wald_selection,
+            (_q_matrix(),),
+            {"max_iter": 0},
+            "max_iter must be an integer between",
+        ),
+        (
+            cdm.gdina_wald_selection,
+            (_q_matrix(),),
+            {"tol": 0.0},
+            "tol must be a finite number > 0",
+        ),
+        (
+            cdm.fit_ho_cdm,
+            (_higher_order_q_matrix(),),
+            {"model": "other"},
+            "model must be 'dina' or 'dino'",
+        ),
+        (
+            cdm.fit_ho_cdm,
+            (_higher_order_q_matrix(),),
+            {"max_iter": 0},
+            "max_iter must be an integer between",
+        ),
+        (
+            cdm.fit_ho_cdm,
+            (_higher_order_q_matrix(),),
+            {"tol": 0.0},
+            "tol must be a finite number > 0",
+        ),
+        (
+            cdm.fit_ho_gdina,
+            (_higher_order_q_matrix(),),
+            {"max_iter": 0},
+            "max_iter must be an integer between",
+        ),
+        (
+            cdm.fit_ho_gdina,
+            (_higher_order_q_matrix(),),
+            {"tol": 0.0},
+            "tol must be a finite number > 0",
+        ),
+        (
+            cdm.fit_seq_gdina,
+            (_q_matrix(),),
+            {"max_iter": 0},
+            "max_iter must be an integer between",
+        ),
+        (
+            cdm.fit_seq_gdina,
+            (_q_matrix(),),
+            {"tol": 0.0},
+            "tol must be a finite number > 0",
+        ),
         (
             cdm.fit_seq_gdina_qr,
             (np.array([[1], [1]], dtype=np.int64), np.array([1, 1], dtype=np.int64)),
