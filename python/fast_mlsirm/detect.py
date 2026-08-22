@@ -44,15 +44,20 @@ def _trusted_numeric_array(
     if type(value) is np.ndarray:
         array = value
     elif type(value) in (list, tuple):
-        stack = list(value)
-        seen_container_ids = {id(value)}
+        stack = [(value, False)]
+        active_container_ids: set[int] = set()
         while stack:
-            current = stack.pop()
+            current, leaving = stack.pop()
             if type(current) in (list, tuple):
-                if id(current) in seen_container_ids:
+                current_id = id(current)
+                if leaving:
+                    active_container_ids.remove(current_id)
+                    continue
+                if current_id in active_container_ids:
                     raise ValueError(numeric_error)
-                seen_container_ids.add(id(current))
-                stack.extend(current)
+                active_container_ids.add(current_id)
+                stack.append((current, True))
+                stack.extend((child, False) for child in reversed(current))
                 continue
             if type(current) is np.ndarray:
                 if current.dtype.kind not in ("b", "i", "u", "f", "c"):
