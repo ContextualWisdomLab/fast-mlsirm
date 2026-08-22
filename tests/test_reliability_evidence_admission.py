@@ -111,6 +111,34 @@ def test_reliability_rejects_arbitrary_array_provider_without_callback(
     assert hostile.calls == 0
 
 
+@pytest.mark.parametrize(
+    ("invoke", "message"),
+    [
+        (
+            lambda: reliability.cronbach_alpha([[[1.0]]]),
+            "data must be a 2-D array",
+        ),
+        (
+            lambda: reliability.separation_reliability([[0.1]], [0.01]),
+            "measures and se must be 1-D arrays",
+        ),
+    ],
+)
+def test_reliability_rejects_excess_sequence_rank_before_numpy_materialization(
+    monkeypatch, invoke, message
+):
+    """Known-rank scientific evidence must fail before NumPy can materialize it."""
+
+    def _materialization_must_not_run(*args, **kwargs):
+        raise AssertionError("NumPy materialization ran for excess-rank evidence")
+
+    monkeypatch.setattr(np, "asarray", _materialization_must_not_run)
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match=message):
+        invoke()
+
+
 def test_cronbach_alpha_preserves_plain_sequence_numeric_compatibility(monkeypatch):
     """Exact built-in sequences with trusted real scalars remain valid evidence."""
     seen: dict[str, object] = {}
