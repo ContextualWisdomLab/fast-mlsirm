@@ -1,18 +1,23 @@
 name: Publish Package
 
-# Builds hash-pinnable sdist + wheel artifacts for a published GitHub Release
-# and publishes them to PyPI. This exists so downstream consumers can depend on
-# fast-mlsirm through a normal versioned package with uv/pip hash pinning.
+# Builds hash-pinnable sdist + wheel artifacts for a verified immutable release
+# tag and publishes them to PyPI. The canonical release-tag workflow dispatches
+# this workflow explicitly because events created with GITHUB_TOKEN do not
+# recursively start ordinary event-triggered workflows.
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Immutable release tag to build and publish (for example v0.9.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-pypi-${{ github.event.release.tag_name }}
+  group: publish-pypi-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
@@ -23,14 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
       - name: Require release tag to match project version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           python - <<'PY'
           import os
@@ -55,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -95,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -130,7 +135,7 @@ jobs:
       - name: Attach release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: gh release upload "$RELEASE_TAG" dist/* --repo "${{ github.repository }}"
 
   publish-pypi:
