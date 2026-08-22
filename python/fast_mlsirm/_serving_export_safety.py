@@ -85,6 +85,16 @@ def _factor_id_vector(value: Any, n_items: int) -> np.ndarray:
     return np.ascontiguousarray(value, dtype=np.int64)
 
 
+def _quadrature_integer(value: Any, *, label: str) -> int:
+    """Normalize one trusted integer quadrature control to a JSON-safe int."""
+    value_type = builtins.type(value)
+    if value_type is int:
+        return value
+    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_TYPES):
+        return int(value)
+    raise ValueError(f"{label} must be an integer")
+
+
 def _exact_string_keys(mapping: dict[Any, Any]) -> bool:
     """Return whether an exact built-in mapping contains only inert text keys."""
     return all(builtins.type(key) is str for key in mapping)
@@ -122,23 +132,59 @@ def install(serving_module: Any) -> None:
         result: Any,
         item_codes: Any,
         factor_id: Any,
-        *args: Any,
-        **kwargs: Any,
+        path: Any = None,
+        q_theta: Any = 21,
+        q_xi: Any = 11,
+        eps_distance: Any = 1e-8,
+        screening_audit: Any = None,
+        dim_names: Any = None,
     ) -> Any:
         # Preserve the legacy error ordering for unfinished calibrations and
         # item-code length mismatches. Only a result that has already crossed
-        # those two original preconditions reaches the new factor boundary.
+        # those two original preconditions reaches the new trust boundaries.
         status = getattr(result, "convergence_status", None)
         if builtins.type(status) is not str or status.strip().lower() != "converged":
-            return original_export(result, item_codes, factor_id, *args, **kwargs)
+            return original_export(
+                result,
+                item_codes,
+                factor_id,
+                path,
+                q_theta,
+                q_xi,
+                eps_distance,
+                screening_audit,
+                dim_names,
+            )
 
         params = result.params
         n_items = len(params.b)
         if len(item_codes) != n_items:
-            return original_export(result, item_codes, factor_id, *args, **kwargs)
+            return original_export(
+                result,
+                item_codes,
+                factor_id,
+                path,
+                q_theta,
+                q_xi,
+                eps_distance,
+                screening_audit,
+                dim_names,
+            )
 
         factor_value = _factor_id_vector(factor_id, n_items)
-        return original_export(result, item_codes, factor_value, *args, **kwargs)
+        q_theta_value = _quadrature_integer(q_theta, label="q_theta")
+        q_xi_value = _quadrature_integer(q_xi, label="q_xi")
+        return original_export(
+            result,
+            item_codes,
+            factor_value,
+            path,
+            q_theta_value,
+            q_xi_value,
+            eps_distance,
+            screening_audit,
+            dim_names,
+        )
 
     serving_module._validate_bundle = safe_validate_bundle
     serving_module.export_serving_bundle = safe_export_serving_bundle
