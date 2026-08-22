@@ -136,7 +136,7 @@ def fit_crm(
     tol_value = _positive_real(tol, "tol")
 
     raw = np.asarray(responses)
-    if np.iscomplexobj(raw):
+    if np.iscomplexobj(raw) or raw.dtype == object:
         raise ValueError("responses must be real-valued")
     y = np.asarray(raw, dtype=np.float64)
     if y.ndim != 2:
