@@ -703,35 +703,26 @@ def epv_select(
             catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
-    from . import _core
+    mu = _as_real_scalar("mu", mu)
+    sig2 = _as_real_scalar("sig2", sig2)
 
-    # Reject complex input BEFORE the float64 casts: the casts would silently
-    # discard imaginary parts (complex laundering).
-    for name, arr in (("a", a), ("b", b), ("c", c)):
-        if arr is not None and np.iscomplexobj(np.asarray(arr)):
-            raise ValueError(f"{name} must be real-valued")
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    administered = np.asarray(administered)
+    administered = _as_boolean_array("administered", administered)
     if administered.ndim != 1:
         raise ValueError("administered must be a 1-D array")
-    if administered.dtype != np.bool_:
-        raise ValueError("administered must be a boolean array")
-    r = _core.py_epv_select(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(administered),
-        float(mu),
-        float(sig2),
-    )
+
+    from . import _core
+
+    r = _core.py_epv_select(a, b, c, administered, mu, sig2)
     return {
         "selected": int(r["selected"]),
         "epv": np.asarray(r["epv"]),
