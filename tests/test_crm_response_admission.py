@@ -55,6 +55,83 @@ def test_object_complex_responses_use_package_error_before_native_discovery(monk
         crm.fit_crm(responses)
 
 
+def test_array_provider_rejected_without_protocol_or_native_execution(monkeypatch):
+    """Caller array protocols cannot synthesize the observed CRM response matrix."""
+
+    callbacks = 0
+
+    class HostileArrayProvider:
+        def __array__(self, dtype=None):
+            del dtype
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller __array__ executed during CRM admission")
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered before provider rejection")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in response matrix"):
+        crm.fit_crm(HostileArrayProvider())
+
+    assert callbacks == 0
+
+
+def test_numeric_subclass_rejected_without_conversion_or_native_execution(monkeypatch):
+    """Caller numeric subclasses cannot execute conversion while ratings are admitted."""
+
+    callbacks = 0
+
+    class HostileFloat(float):
+        def __float__(self):
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller __float__ executed during CRM admission")
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered before numeric-subclass rejection")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in response matrix"):
+        crm.fit_crm([[HostileFloat(0.25)], [0.75]])
+
+    assert callbacks == 0
+
+
+def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monkeypatch):
+    """Ordinary built-in rows with concrete NumPy reals remain compatible."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_crm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    fitted = crm.fit_crm([[np.float32(0.25)], [np.float64(0.75)]], max_iter=1)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.25, 0.75], dtype=np.float64))
+    np.testing.assert_array_equal(args[1], np.array([True, True], dtype=bool))
+    assert args[2:4] == (2, 1)
+    assert fitted.n_parameters == 3
+
+
+def test_text_response_storage_rejected_before_native_discovery(monkeypatch):
+    """Textual numerics are evidence strings, not continuous response values."""
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered before text-storage rejection")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+
+    with pytest.raises(ValueError, match="responses must be a real numeric array"):
+        crm.fit_crm(np.array([["0.25"], ["0.75"]]))
+
+
 def test_real_responses_preserve_existing_native_marshalling(monkeypatch):
     """Ordinary real-valued response arrays keep the existing Rust dispatch shape."""
 
