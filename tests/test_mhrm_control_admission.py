@@ -101,6 +101,23 @@ def test_invalid_control_precedes_response_admission(monkeypatch):
         mhrm.fit_mhrm(_ResponseShouldNotBeTouched(), max_cycles=object())
 
 
+@pytest.mark.parametrize(
+    ("controls", "message"),
+    [
+        ({"max_cycles": -1}, "require 0 < burn_in < max_cycles"),
+        ({"max_cycles": 2, "burn_in": -1}, "require 0 < burn_in < max_cycles"),
+        ({"max_cycles": 2, "burn_in": 1, "mh_steps": -1}, "mh_steps must be positive"),
+    ],
+)
+def test_native_unsigned_control_domains_fail_before_response_admission(monkeypatch, controls, message):
+    """Values that cannot enter Rust usize controls fail before caller response work."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match=message):
+        mhrm.fit_mhrm(_ResponseShouldNotBeTouched(), **controls)
+
+
 def test_callback_bearing_numeric_and_text_controls_fail_without_callbacks(monkeypatch):
     """Caller conversion protocols cannot define MH-RM estimator controls."""
 
