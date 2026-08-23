@@ -157,6 +157,39 @@ def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monk
     assert fitted.loading.shape == (2, 1)
 
 
+def test_builtin_matrix_preserves_exact_numpy_row_compatibility(monkeypatch):
+    """Exact numeric ndarray rows remain valid inside an inert built-in matrix."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        """Capture trusted MH-RM arguments without running stochastic arithmetic."""
+
+        def fit_mhrm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    responses = [
+        np.array([0, 1], dtype=np.int16),
+        np.array([1, 0], dtype=np.uint8),
+    ]
+    fitted = mhrm.fit_mhrm(
+        responses,
+        1,
+        max_cycles=2,
+        burn_in=1,
+        mh_steps=1,
+        estimate_se=False,
+    )
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0, 1, 1, 0], dtype=np.int64))
+    np.testing.assert_array_equal(args[1], np.array([True, True, True, True]))
+    assert args[3:6] == (2, 2, 1)
+    assert fitted.loading.shape == (2, 1)
+
+
 def test_real_responses_preserve_existing_native_marshalling(monkeypatch):
     """Ordinary real response matrices keep their existing integer Rust payload."""
 
