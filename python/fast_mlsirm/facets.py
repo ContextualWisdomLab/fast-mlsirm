@@ -124,8 +124,6 @@ def _response_array(value: object) -> np.ndarray:
                 if next_depth >= 3:
                     raise ValueError(dimension_error)
                 child_length = len(child)
-                if child_length == 0:
-                    raise ValueError(nonempty_error)
                 if next_depth == 1:
                     if expected_items is None:
                         expected_items = child_length
@@ -165,6 +163,14 @@ def _response_array(value: object) -> np.ndarray:
             logical_cells += 1
             if logical_cells > _MAX_FACETS_RESPONSE_CELLS:
                 raise ValueError(resource_error)
+
+        if (
+            expected_items is None
+            or expected_items == 0
+            or expected_raters is None
+            or expected_raters == 0
+        ):
+            raise ValueError(nonempty_error)
 
         try:
             response_array = np.asarray(value)
