@@ -671,7 +671,9 @@ def _item_q(
     for item ``i`` and subtracts the MAP ridge penalties on its active
     parameters. This is the per-item M-step objective the ascent maximizes.
     """
-    q = float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))
+    # Optimized: Use mathematical identity `_log_sigmoid(x) - _log_sigmoid(-x) = x`
+    # to simplify the expression, and use `np.vdot` to avoid intermediate array allocations.
+    q = float(np.vdot(r_i, eta) + np.vdot(n_i, _log_sigmoid(-eta)))
     q -= 0.5 * pen["lambda_b"] * b_i * b_i
     if free_alpha:
         da = alpha_i - pen["mu_alpha"]
@@ -1115,9 +1117,9 @@ def fit_marginal_numpy(
                         + off_all
                         - np.exp(tau_c) * dist[None, :, None, :]
                     )
-                    qv = float(
-                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
-                    )
+                    # Optimized: Use mathematical identity `_log_sigmoid(x) - _log_sigmoid(-x) = x`
+                    # and `np.vdot` to avoid intermediate array allocations.
+                    qv = float(np.vdot(rbar, e) + np.vdot(n_all, _log_sigmoid(-e)))
                     qv -= 0.5 * pen["lambda_b"] * float(b @ b)
                     if free_alpha:
                         da = alpha - pen["mu_alpha"]
@@ -1177,9 +1179,9 @@ def fit_marginal_numpy(
                 def q_of_delta(delta_c: float) -> float:
                     """Expected-count objective as a function of covariate slope ``delta_c``."""
                     e = eta_delta(delta_c)
-                    return float(
-                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
-                    )
+                    # Optimized: Use mathematical identity `_log_sigmoid(x) - _log_sigmoid(-x) = x`
+                    # and `np.vdot` to avoid intermediate array allocations.
+                    return float(np.vdot(rbar, e) + np.vdot(n_all, _log_sigmoid(-e)))
 
                 cur = q_of_delta(delta)
                 step = 1.0
