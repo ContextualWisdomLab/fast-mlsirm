@@ -16,6 +16,7 @@ MIN_IRT_PERSONS = 5
 MIN_OBSERVED_PER_ITEM = 3
 MIN_ITEM_DISTINCT_VALUES = 2
 MIN_FACTOR_ANCHOR_ITEMS = 2
+MAX_IRT_RESPONSE_CELLS = 20_000_000
 _FitResultT = TypeVar("_FitResultT")
 _TRUSTED_RESPONSE_SCALAR_TYPES = frozenset(
     {
@@ -86,6 +87,50 @@ def _validate_item_contract(
         )
 
 
+def _preflight_numeric_tree(value: object, *, error: str) -> None:
+    """Validate built-in numeric trees without caller callbacks or cycle loops."""
+    stack: list[tuple[bool, object]] = [(True, value)]
+    active_containers: set[int] = set()
+    while stack:
+        entering, current = stack.pop()
+        current_type = type(current)
+        if current_type in (list, tuple):
+            identity = id(current)
+            if entering:
+                if identity in active_containers:
+                    raise ValueError(f"{error}; cyclic list/tuple containers are not supported")
+                active_containers.add(identity)
+                stack.append((False, current))
+                stack.extend((True, child) for child in reversed(current))
+            else:
+                active_containers.remove(identity)
+            continue
+        if current_type is np.ndarray:
+            if current.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError(error)
+            continue
+        if current_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            raise ValueError(error)
+
+
+def _validate_response_shape(source: np.ndarray) -> None:
+    """Reject rank/resource-invalid response shapes before dense conversion."""
+    if source.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items matrix")
+    n_persons, n_items = source.shape
+    if n_persons < 1:
+        raise ValueError("responses must contain at least one person")
+    if n_items < MIN_IRT_ITEMS:
+        raise ValueError(
+            "IRT responses must contain at least two item columns; "
+            "a scalar or one-item result is not an IRT experiment"
+        )
+    if source.size > MAX_IRT_RESPONSE_CELLS:
+        raise ValueError(
+            f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+        )
+
+
 def _real_numeric_response_matrix(
     responses: Iterable[Iterable[float]] | np.ndarray,
 ) -> np.ndarray:
@@ -93,18 +138,7 @@ def _real_numeric_response_matrix(
     if type(responses) is np.ndarray:
         source = responses
     elif type(responses) in (list, tuple):
-        stack = list(responses)
-        while stack:
-            current = stack.pop()
-            if type(current) in (list, tuple):
-                stack.extend(current)
-                continue
-            if type(current) is np.ndarray:
-                if current.dtype.kind not in {"b", "i", "u", "f"}:
-                    raise ValueError("responses must be a real numeric matrix")
-                continue
-            if type(current) not in _TRUSTED_RESPONSE_SCALAR_TYPES:
-                raise ValueError("responses must be a real numeric matrix")
+        _preflight_numeric_tree(responses, error="responses must be a real numeric matrix")
         try:
             source = np.asarray(responses)
         except (TypeError, ValueError) as exc:
@@ -114,6 +148,7 @@ def _real_numeric_response_matrix(
 
     if source.dtype.kind not in {"b", "i", "u", "f"}:
         raise ValueError("responses must be a real numeric matrix")
+    _validate_response_shape(source)
     try:
         return np.ascontiguousarray(source, dtype=np.float64)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -125,18 +160,7 @@ def _trusted_mask_matrix(mask: object, shape: tuple[int, ...]) -> np.ndarray:
     if type(mask) is np.ndarray:
         source = mask
     elif type(mask) in (list, tuple):
-        stack = list(mask)
-        while stack:
-            current = stack.pop()
-            if type(current) in (list, tuple):
-                stack.extend(current)
-                continue
-            if type(current) is np.ndarray:
-                if current.dtype.kind not in {"b", "i", "u", "f"}:
-                    raise ValueError("mask must be Boolean or numeric evidence")
-                continue
-            if type(current) not in _TRUSTED_RESPONSE_SCALAR_TYPES:
-                raise ValueError("mask must be Boolean or numeric evidence")
+        _preflight_numeric_tree(mask, error="mask must be Boolean or numeric evidence")
         try:
             source = np.asarray(mask)
         except (TypeError, ValueError) as exc:
