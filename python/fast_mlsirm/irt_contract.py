@@ -89,25 +89,31 @@ def _validate_item_contract(
 
 def _preflight_numeric_tree(value: object, *, error: str) -> None:
     """Validate and bound built-in numeric trees without caller callbacks."""
-    stack: list[tuple[bool, object]] = [(True, value)]
+    stack: list[tuple[object, int | None]] = [(value, None)]
     active_containers: set[int] = set()
     logical_cells = 0
     visited_nodes = 0
     structural_limit = 2 * MAX_IRT_RESPONSE_CELLS + 1
     while stack:
-        entering, current = stack.pop()
+        current, next_index = stack.pop()
         current_type = type(current)
         if current_type in (list, tuple):
             identity = id(current)
-            if entering:
+            if next_index is None:
                 visited_nodes += 1
                 if visited_nodes > structural_limit:
                     raise ValueError(f"{error}; evidence exceeds the structural-work limit")
                 if identity in active_containers:
                     raise ValueError(f"{error}; cyclic list/tuple containers are not supported")
                 active_containers.add(identity)
-                stack.append((False, current))
-                stack.extend((True, child) for child in reversed(current))
+                if len(current) == 0:
+                    active_containers.remove(identity)
+                else:
+                    stack.append((current, 1))
+                    stack.append((current[0], None))
+            elif next_index < len(current):
+                stack.append((current, next_index + 1))
+                stack.append((current[next_index], None))
             else:
                 active_containers.remove(identity)
             continue
