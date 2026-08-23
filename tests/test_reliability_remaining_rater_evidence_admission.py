@@ -184,6 +184,18 @@ def test_remaining_rater_apis_preserve_trusted_sequence_compatibility(monkeypatc
         assert flat.dtype == np.float64
 
 
+def test_kripp_alpha_rejects_oversized_view_before_native_discovery(monkeypatch):
+    """Rater evidence shares the reliability logical-cell resource ceiling."""
+    oversized = np.broadcast_to(
+        np.array([[1.0]], dtype=np.float64),
+        (2, 10_000_001),
+    )
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match="reliability evidence exceeds 20000000 cells"):
+        reliability.kripp_alpha(oversized)
+
+
 def test_remaining_rater_top_level_exports_use_hardened_adapters():
     """Historical package exports must use the same hardened callables."""
     assert fast_mlsirm.kripp_alpha is reliability.kripp_alpha
