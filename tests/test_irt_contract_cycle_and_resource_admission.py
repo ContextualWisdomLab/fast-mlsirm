@@ -82,3 +82,26 @@ def test_oversized_response_rejected_before_contiguous_materialization(monkeypat
 
     with pytest.raises(ValueError, match="20,000,000"):
         irt_contract.validate_irt_response_matrix(responses, "dichotomous")
+
+
+def test_empty_container_fanout_has_bounded_preflight_work(monkeypatch) -> None:
+    """Zero-cell container fan-out must remain bounded before NumPy materialization."""
+    monkeypatch.setattr(irt_contract, "MAX_IRT_RESPONSE_CELLS", 2)
+    responses = [[], [], [], [], [], []]
+
+    with pytest.raises(ValueError, match="structural-work"):
+        irt_contract.validate_irt_response_matrix(responses, "dichotomous")
+
+
+def test_oversized_nested_numpy_row_rejected_before_numpy_materialization(monkeypatch) -> None:
+    """Logical cells hidden in an inert NumPy row must count before sequence stacking."""
+    row = np.broadcast_to(np.array([0], dtype=np.int8), (20_000_001,))
+    responses = [row]
+
+    def fail_materialization(*_args, **_kwargs):
+        raise AssertionError("NumPy sequence materialization must not run")
+
+    monkeypatch.setattr(irt_contract.np, "asarray", fail_materialization)
+
+    with pytest.raises(ValueError, match="20,000,000"):
+        irt_contract.validate_irt_response_matrix(responses, "dichotomous")
