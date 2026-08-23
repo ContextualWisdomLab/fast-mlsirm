@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 
 import numpy as np
@@ -56,6 +57,20 @@ class _HostileInt(int):
     def __float__(self) -> float:
         type(self).calls += 1
         raise AssertionError("caller float conversion executed")
+
+
+class _HostileList(list):
+    """List subclass whose iteration callback must never execute."""
+
+    calls = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.calls = 0
+
+    def __iter__(self):
+        type(self).calls += 1
+        raise AssertionError("caller container iteration executed")
 
 
 def _unexpected_core_discovery():
@@ -151,6 +166,31 @@ def test_cdm_fits_preserve_trusted_sequence_compatibility(monkeypatch, fit):
             fit(responses, _q_matrix())
 
     assert calls == len(cases)
+
+
+def test_cdm_module_reload_preserves_callback_safe_response_guard(monkeypatch):
+    """Reloading the CDM module must not reactivate a weaker local guard."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    reloaded = importlib.reload(cdm)
+
+    _HostileList.reset()
+    hostile = _HostileList([[0, 1], [1, 0]])
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in sequence"):
+        reloaded.fit_cdm(hostile, _q_matrix())
+    assert _HostileList.calls == 0
+
+    shared_row = [0, 1]
+    with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
+        reloaded.fit_cdm([shared_row, shared_row], _q_matrix())
+    assert calls == 1
 
 
 @pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
