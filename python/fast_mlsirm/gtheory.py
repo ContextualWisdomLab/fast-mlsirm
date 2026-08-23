@@ -118,6 +118,12 @@ def _validate_real_sequence(value: list | tuple) -> None:
             stack.append((current, True))
             stack.extend((child, False) for child in reversed(current))
             continue
+        if current_type is np.ndarray:
+            if current.dtype.kind == "c":
+                raise ValueError("data must be real-valued")
+            if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+                raise ValueError("data must be a real numeric array")
+            continue
         if current_type is complex or _trusted_numpy_complex(current):
             raise ValueError("data must be real-valued")
         if not _trusted_real_scalar(current):
