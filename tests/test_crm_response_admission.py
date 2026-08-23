@@ -132,6 +132,20 @@ def test_text_response_storage_rejected_before_native_discovery(monkeypatch):
         crm.fit_crm(np.array([["0.25"], ["0.75"]]))
 
 
+@pytest.mark.parametrize("infinite", [np.inf, -np.inf])
+def test_infinite_responses_are_not_reclassified_as_missing(monkeypatch, infinite):
+    """Only NaN is missing; either sign of infinity is invalid observed evidence."""
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered after infinity was treated as missing")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+    responses = np.array([[0.25], [infinite]], dtype=np.float64)
+
+    with pytest.raises(ValueError, match="responses may only use NaN for missing values"):
+        crm.fit_crm(responses)
+
+
 def test_real_responses_preserve_existing_native_marshalling(monkeypatch):
     """Ordinary real-valued response arrays keep the existing Rust dispatch shape."""
 
