@@ -39,6 +39,7 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = (
     *_NUMPY_FLOAT_TYPES,
     *_NUMPY_COMPLEX_TYPES,
 )
+_TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -67,6 +68,11 @@ def _trusted_response_array(responses: object) -> np.ndarray:
         item_type = type(item)
 
         if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            frames.pop()
+            continue
+        if item_type is np.ndarray:
+            if item.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
+                raise ValueError(error)
             frames.pop()
             continue
 
