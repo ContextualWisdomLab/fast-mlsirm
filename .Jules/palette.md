@@ -23,3 +23,6 @@
 ## 2026-08-04 - Status Semantics and Numeric Alignment for Reports
 **Learning:** Explicit status semantics can make conditionally rendered empty states easier to discover with assistive technology, while tabular numerals improve visual comparison of metric columns. Focus-reveal behavior must not depend only on `:focus-visible`, and hover styling must not reduce the contrast of unrelated rows.
 **Action:** Use `role="status"` for genuine conditionally rendered status messages, apply `font-variant-numeric: tabular-nums` to numeric report tables, reveal skip links on `:focus`, retain a visible `:focus-visible` indicator, and avoid opacity-based dimming of non-hovered content.
+## 2026-08-04 - Native Summary Element Focus Handling
+**Learning:** Native `<summary>` elements show default browser focus outlines when clicked with a mouse, which can be visually jarring. Setting `outline: none;` on their standard `:focus` pseudo-class while keeping a strong `:focus-visible` outline ensures a smooth mouse experience without sacrificing keyboard accessibility.
+**Action:** Always pair `:focus-visible` outlines with an explicit `outline: none;` on `:focus` for generic focusable elements like `<summary>` to improve both mouse and keyboard interactions.
