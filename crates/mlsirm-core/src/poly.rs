@@ -196,6 +196,70 @@ pub enum PolyModel {
     Gpcm,
 }
 
+/// Batched category probabilities and expected integer category scores for a
+/// fitted unidimensional GRM or GPCM item bank.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolytomousPredictions {
+    pub probabilities: Vec<f64>,
+    pub expected: Vec<f64>,
+}
+
+pub fn polytomous_predictions(
+    theta: &[f64],
+    slope: &[f64],
+    cat_params: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+) -> Result<PolytomousPredictions, String> {
+    if theta.is_empty() || theta.iter().any(|value| !value.is_finite()) {
+        return Err("theta must be a non-empty finite vector".into());
+    }
+    if n_items == 0 || n_cat < 2 {
+        return Err("n_items must be positive and n_cat must be at least 2".into());
+    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
+    let cells = crate::checked_mul_usize(
+        theta.len(),
+        n_items,
+        "theta count * n_items exceeds the prediction buffer size",
+    )?;
+    let probability_cells = crate::checked_mul_usize(
+        cells,
+        n_cat,
+        "prediction cells * n_cat exceeds the probability buffer size",
+    )?;
+    let mut probabilities = Vec::with_capacity(probability_cells);
+    let mut expected = Vec::with_capacity(cells);
+    let scores: Vec<f64> = (0..n_cat).map(|category| category as f64).collect();
+    for &person_theta in theta {
+        for item in 0..n_items {
+            let base = slope[item] * person_theta;
+            let params = &cat_params[item * (n_cat - 1)..(item + 1) * (n_cat - 1)];
+            let logprobs = match model {
+                PolyModel::Grm => grm_logprobs(base, params),
+                PolyModel::Gpcm => {
+                    let mut intercepts = Vec::with_capacity(n_cat);
+                    intercepts.push(0.0);
+                    intercepts.extend_from_slice(params);
+                    gpcm_logprobs(base, &scores, &intercepts)
+                }
+            };
+            let mut mean = 0.0;
+            for (category, logprob) in logprobs.into_iter().enumerate() {
+                let probability = logprob.exp();
+                probabilities.push(probability);
+                mean += category as f64 * probability;
+            }
+            expected.push(mean);
+        }
+    }
+    Ok(PolytomousPredictions {
+        probabilities,
+        expected,
+    })
+}
+
 /// Result of [`fit_poly_unidim`]. `slope[i]` is item `i`'s discrimination `a_i`;
 /// `cat_params[i]` holds the `K-1` free category parameters (GPCM additive
 /// intercepts, or GRM cumulative thresholds). `n_iter` counts completed M-steps;

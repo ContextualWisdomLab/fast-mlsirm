@@ -218,7 +218,7 @@ from .serving import (bank_information as bank_information,
                       load_serving_bundle as load_serving_bundle,
                       score_respondents as score_respondents)
 from .preprocessing import irtree_expand as irtree_expand
-from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous
+from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, polytomous_category_probabilities as polytomous_category_probabilities, polytomous_expected_response as polytomous_expected_response, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous
 from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as logistic_dif,
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
@@ -515,6 +515,8 @@ __all__ = [  # noqa: RUF022
     "fit_polytomous",
     "score_polytomous",
     "information_polytomous",
+    "polytomous_category_probabilities",
+    "polytomous_expected_response",
     "fit_lsirm_polytomous",
     "PolyLsirmFit",
     "polytomous_information_criteria",
