@@ -6,6 +6,8 @@ from types import ModuleType
 
 import numpy as np
 
+from .config import MAX_POLYTOMOUS_CATEGORIES
+
 
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
@@ -156,6 +158,16 @@ def _prediction_cells_from_shapes(
     return int(theta_shape[0]) * int(slope_shape[0]) * (int(cat_params_shape[1]) + 1)
 
 
+def _raise_if_invalid_category_shape(cat_params_shape: tuple[int, ...] | None) -> None:
+    """Replay the fitted-model category ceiling from trusted shape metadata."""
+
+    if cat_params_shape is None or len(cat_params_shape) != 2:
+        return
+    n_cat = int(cat_params_shape[1]) + 1
+    if n_cat > MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(f"n_cat must be in 2..={MAX_POLYTOMOUS_CATEGORIES}")
+
+
 def _raise_if_oversized_prediction_grid(cells: int | None) -> None:
     """Fail closed when a provable prediction grid exceeds the public budget."""
 
@@ -199,10 +211,12 @@ def install(module: ModuleType) -> None:
 
         # Establish every field's callback/rank/resource contract before any
         # one field reaches NumPy materialization. Shape metadata also makes
-        # the joint output budget decidable before float64 copies are possible.
+        # the fitted category domain and joint output budget decidable before
+        # float64 copies are possible.
         theta_shape = _preflight(theta, "theta", 1)
         slope_shape = _preflight(fit.slope, "fit.slope", 1)
         cat_params_shape = _preflight(fit.cat_params, "fit.cat_params", 2)
+        _raise_if_invalid_category_shape(cat_params_shape)
         _raise_if_oversized_prediction_grid(
             _prediction_cells_from_shapes(theta_shape, slope_shape, cat_params_shape)
         )
