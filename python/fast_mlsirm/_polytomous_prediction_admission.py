@@ -102,7 +102,7 @@ def _preflight(value: object, name: str) -> None:
 
 
 def _real_numeric_array(value: object, name: str) -> np.ndarray:
-    """Materialize trusted evidence only when float64 conversion is lossless."""
+    """Admit trusted evidence and verify lossless float64 representation."""
 
     _preflight(value, name)
     raw = np.asarray(value)
@@ -119,7 +119,7 @@ def _real_numeric_array(value: object, name: str) -> np.ndarray:
         lossless = np.array_equal(raw, round_tripped)
     if not lossless:
         raise ValueError(f"{name} must be exactly representable as float64")
-    return np.ascontiguousarray(converted)
+    return converted
 
 
 def install(module: ModuleType) -> None:
@@ -153,6 +153,9 @@ def install(module: ModuleType) -> None:
                     f"{_MAX_PREDICTION_CELLS:,} prediction-cell limit"
                 )
 
+        trusted_theta = np.ascontiguousarray(trusted_theta)
+        trusted_slope = np.ascontiguousarray(trusted_slope)
+        trusted_cat_params = np.ascontiguousarray(trusted_cat_params)
         trusted_fit = module.PolytomousFit(
             fit.model,
             trusted_slope,
