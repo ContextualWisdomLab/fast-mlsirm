@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import ModuleType
 
 import numpy as np
@@ -240,12 +241,10 @@ def install(module: ModuleType) -> None:
         trusted_theta = np.ascontiguousarray(trusted_theta)
         trusted_slope = np.ascontiguousarray(trusted_slope)
         trusted_cat_params = np.ascontiguousarray(trusted_cat_params)
-        trusted_fit = module.PolytomousFit(
-            fit.model,
-            trusted_slope,
-            trusted_cat_params,
-            fit.loglik,
-            fit.n_iter,
+        trusted_fit = replace(
+            fit,
+            slope=trusted_slope,
+            cat_params=trusted_cat_params,
         )
         return current(trusted_fit, trusted_theta)
 
