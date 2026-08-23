@@ -116,10 +116,9 @@ def _preflight(value: object, name: str, max_ndim: int) -> None:
         add_to_parent(count, subtree_rank)
 
 
-def _real_numeric_array(value: object, name: str, max_ndim: int) -> np.ndarray:
-    """Admit trusted evidence and verify lossless float64 representation."""
+def _real_numeric_array(value: object, name: str) -> np.ndarray:
+    """Materialize preflighted evidence and verify lossless float64 representation."""
 
-    _preflight(value, name, max_ndim)
     raw = np.asarray(value)
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
@@ -148,9 +147,16 @@ def install(module: ModuleType) -> None:
         if type(fit) is not module.PolytomousFit:
             raise TypeError("fit must be a PolytomousFit")
 
-        trusted_theta = _real_numeric_array(theta, "theta", 1)
-        trusted_slope = _real_numeric_array(fit.slope, "fit.slope", 1)
-        trusted_cat_params = _real_numeric_array(fit.cat_params, "fit.cat_params", 2)
+        # Establish every field's callback/rank/resource contract before any
+        # one field reaches NumPy materialization. This keeps a later invalid
+        # item parameter from being preceded by unrelated caller data work.
+        _preflight(theta, "theta", 1)
+        _preflight(fit.slope, "fit.slope", 1)
+        _preflight(fit.cat_params, "fit.cat_params", 2)
+
+        trusted_theta = _real_numeric_array(theta, "theta")
+        trusted_slope = _real_numeric_array(fit.slope, "fit.slope")
+        trusted_cat_params = _real_numeric_array(fit.cat_params, "fit.cat_params")
 
         if (
             trusted_theta.ndim == 1
