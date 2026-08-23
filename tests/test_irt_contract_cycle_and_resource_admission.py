@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tracemalloc
 
 import numpy as np
 import pytest
@@ -91,6 +92,22 @@ def test_empty_container_fanout_has_bounded_preflight_work(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="structural-work"):
         irt_contract.validate_irt_response_matrix(responses, "dichotomous")
+
+
+def test_wide_fanout_does_not_allocate_a_sibling_sized_traversal_stack(monkeypatch) -> None:
+    """Structural rejection must keep transient traversal memory independent of fan-out."""
+    monkeypatch.setattr(irt_contract, "MAX_IRT_RESPONSE_CELLS", 2)
+    responses = [[] for _ in range(100_000)]
+
+    tracemalloc.start()
+    try:
+        with pytest.raises(ValueError, match="structural-work"):
+            irt_contract.validate_irt_response_matrix(responses, "dichotomous")
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 2_000_000
 
 
 def test_oversized_nested_numpy_row_rejected_before_numpy_materialization(monkeypatch) -> None:
