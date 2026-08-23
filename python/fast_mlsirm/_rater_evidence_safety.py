@@ -103,9 +103,13 @@ def _real_numeric_source_array(
     if value_type is np.ndarray:
         arr = value
     elif value_type is list or value_type is tuple:
+        # Exact built-in/NumPy Boolean leaves are inert. Admit them through
+        # callback-free preflight so NumPy can preserve the historical public
+        # contract: pure-Boolean sequences retain the Boolean-specific error,
+        # while mixed Boolean+numeric sequences keep normal numeric promotion.
         trusted, excess_rank, _contains_bool = _trusted_sequence_tree(
             value,
-            allow_bool=False,
+            allow_bool=True,
             max_depth=2,
         )
         if excess_rank:
