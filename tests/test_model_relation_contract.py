@@ -191,3 +191,31 @@ def test_classifier_rejects_unowned_transport_objects() -> None:
 
     with pytest.raises(TypeError, match="ModelRelationEvidence"):
         classify(object())  # type: ignore[arg-type]
+
+
+def test_classifier_rejects_evidence_subclass_before_field_callbacks() -> None:
+    """Caller-defined evidence records must be rejected before any field read."""
+    _, _, Evidence, classify = _surface()
+    callbacks = {"count": 0}
+    watched = {
+        "parameter_embedding",
+        "null_on_boundary",
+        "unidentified_under_null",
+        "nonlinear_constraints",
+        "parameter_spaces_overlap",
+        "formal_distinguishability",
+    }
+
+    class HostileEvidence(Evidence):
+        def __getattribute__(self, name: str):
+            if name in watched:
+                callbacks["count"] += 1
+                raise AssertionError(f"unexpected evidence callback: {name}")
+            return super().__getattribute__(name)
+
+    hostile = object.__new__(HostileEvidence)
+
+    with pytest.raises(TypeError, match="evidence must be ModelRelationEvidence"):
+        classify(hostile)
+
+    assert callbacks["count"] == 0
