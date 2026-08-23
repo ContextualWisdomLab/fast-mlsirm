@@ -122,6 +122,7 @@ def test_phi_lambda_rejects_invalid_cut_before_data_materialization() -> None:
     [
         (gtheory.gtheory_pi, {"n_i_prime": [2]}),
         (gtheory.gtheory_pio, {"n_prime": [(2, 2)]}),
+        (gtheory.phi_lambda, {"cut": 0.5, "n_i_prime": [2]}),
     ],
 )
 def test_gtheory_rejects_arbitrary_array_provider_before_callbacks_and_core(
