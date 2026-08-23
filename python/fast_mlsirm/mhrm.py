@@ -19,6 +19,81 @@ from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _MAX_DIMS = 64
+_NUMPY_INTEGER_TYPES = tuple(
+    np.dtype(name).type
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
+)
+_NUMPY_FLOAT_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+_NUMPY_COMPLEX_TYPES = tuple(
+    np.dtype(name).type for name in ("complex64", "complex128", "clongdouble")
+)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+    *_NUMPY_COMPLEX_TYPES,
+)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one package-trusted scalar identity."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _trusted_response_array(responses: object) -> np.ndarray:
+    """Materialize MH-RM responses only after callback-free identity preflight."""
+
+    if type(responses) is np.ndarray:
+        return responses
+
+    error = "responses must be a trusted NumPy array or built-in response matrix"
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(error)
+
+    frames: list[list[object]] = [[responses, 0, False]]
+    active_container_ids: set[int] = set()
+    validated_container_ids: set[int] = set()
+
+    while frames:
+        frame = frames[-1]
+        item = frame[0]
+        item_type = type(item)
+
+        if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            frames.pop()
+            continue
+
+        if item_type is not list and item_type is not tuple:
+            raise ValueError(error)
+
+        item_id = id(item)
+        if not bool(frame[2]):
+            if item_id in validated_container_ids:
+                frames.pop()
+                continue
+            if item_id in active_container_ids:
+                raise ValueError(error)
+            active_container_ids.add(item_id)
+            frame[2] = True
+
+        child_index = int(frame[1])
+        if child_index < len(item):
+            frame[1] = child_index + 1
+            frames.append([item[child_index], 0, False])
+            continue
+
+        active_container_ids.remove(item_id)
+        validated_container_ids.add(item_id)
+        frames.pop()
+
+    return np.asarray(responses)
 
 
 @dataclass
@@ -138,10 +213,12 @@ def fit_mhrm(
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
             Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
-    response_input = np.asarray(responses)
-    if np.iscomplexobj(response_input):
+    response_input = _trusted_response_array(responses)
+    if np.iscomplexobj(response_input) or response_input.dtype == object:
         raise ValueError("responses must be real-valued")
-    y = np.asarray(response_input, dtype=np.float64)
+    if response_input.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a real numeric array")
+    y = response_input.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
