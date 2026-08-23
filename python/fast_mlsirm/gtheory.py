@@ -48,6 +48,12 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
     np.float64,
     np.longdouble,
 )
+_NUMPY_COMPLEX_SCALAR_TYPES = (
+    np.complex64,
+    np.complex128,
+    np.clongdouble,
+)
+_REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
 
 # Keep public D-study scalar controls below the same bound used by the rubric
 # pilot handoff, so a caller cannot request an unbounded native result table.
@@ -71,6 +77,75 @@ def _trusted_numpy_float(value: object) -> bool:
     """Return whether ``value`` has an exact package-trusted NumPy float type."""
 
     return _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES)
+
+
+def _trusted_numpy_complex(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy complex type."""
+
+    return _has_exact_type(value, _NUMPY_COMPLEX_SCALAR_TYPES)
+
+
+def _trusted_real_scalar(value: object) -> bool:
+    """Return whether one evidence cell is an inert real numeric scalar."""
+
+    value_type = type(value)
+    return (
+        value_type is bool
+        or value_type is int
+        or value_type is float
+        or value_type is np.bool_
+        or _trusted_numpy_integer(value)
+        or _trusted_numpy_float(value)
+    )
+
+
+def _validate_real_sequence(value: list | tuple) -> None:
+    """Preflight a built-in score tree without executing coercion callbacks."""
+
+    stack: list[tuple[object, bool]] = [(value, False)]
+    active_container_ids: set[int] = set()
+    while stack:
+        current, leaving = stack.pop()
+        current_type = type(current)
+        if leaving:
+            active_container_ids.remove(id(current))
+            continue
+        if current_type is list or current_type is tuple:
+            current_id = id(current)
+            if current_id in active_container_ids:
+                raise ValueError("data must be a real numeric array")
+            active_container_ids.add(current_id)
+            stack.append((current, True))
+            stack.extend((child, False) for child in reversed(current))
+            continue
+        if current_type is complex or _trusted_numpy_complex(current):
+            raise ValueError("data must be real-valued")
+        if not _trusted_real_scalar(current):
+            raise ValueError("data must be a real numeric array")
+
+
+def _validated_real_data(data: object) -> np.ndarray:
+    """Marshal inert real score evidence to contiguous ``float64`` storage."""
+
+    data_type = type(data)
+    if data_type is np.ndarray:
+        if data.dtype.kind == "c":
+            raise ValueError("data must be real-valued")
+        if data.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError("data must be a real numeric array")
+        return np.ascontiguousarray(data, dtype=np.float64)
+    if data_type is list or data_type is tuple:
+        _validate_real_sequence(data)
+        try:
+            array = np.asarray(data)
+        except (TypeError, ValueError) as error:
+            raise ValueError("data must be a real numeric array") from error
+        if array.dtype.kind == "c":
+            raise ValueError("data must be real-valued")
+        if array.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError("data must be a real numeric array")
+        return np.ascontiguousarray(array, dtype=np.float64)
+    raise ValueError("data must be a real numeric array")
 
 
 def _positive_integer_control(value: object, message: str) -> int:
@@ -197,7 +272,7 @@ def gtheory_pi(
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    x = _validated_real_data(data)
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     if not np.isfinite(x).all():
@@ -233,7 +308,7 @@ def gtheory_pio(
         )
         for a, b in n_prime
     ]
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    x = _validated_real_data(data)
     if x.ndim != 3:
         raise ValueError("data must be a 3-D persons x items x occasions array")
     if not np.isfinite(x).all():
@@ -300,10 +375,7 @@ def phi_lambda(
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
-    x = np.asarray(data)
-    if np.iscomplexobj(x):
-        raise ValueError("data must be real-valued")
-    x = np.ascontiguousarray(x, dtype=np.float64)
+    x = _validated_real_data(data)
     if x.ndim != 2:
         raise ValueError("data must be a 2-D persons x items array")
     if not np.isfinite(x).all():
