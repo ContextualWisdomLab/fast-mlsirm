@@ -29,6 +29,7 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
 _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
 _TRUSTED_RESPONSE_SCALAR_TYPES = (
     bool,
+    np.bool_,
     int,
     float,
     *_NUMPY_INTEGER_SCALAR_TYPES,
