@@ -55,9 +55,10 @@ _NUMPY_COMPLEX_SCALAR_TYPES = (
 )
 _REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
 
-# Keep public D-study scalar controls below the same bound used by the rubric
-# pilot handoff, so a caller cannot request an unbounded native result table.
+# Keep each public D-study size below the rubric pilot handoff ceiling.
 MAX_GTHEORY_PRIME_SIZE = 1_000_000
+# Bound the number of D-study result rows independently from prime magnitude.
+MAX_GTHEORY_D_STUDY_ROWS = 10_000
 # Keep dense G-theory score marshalling within the repository's established
 # scientific-evidence envelope before allocating a contiguous float64 copy.
 MAX_GTHEORY_SCORE_CELLS = 20_000_000
@@ -107,6 +108,14 @@ def _raise_score_resource_limit() -> None:
 
     raise ValueError(
         f"data exceeds the {MAX_GTHEORY_SCORE_CELLS}-cell G-theory limit"
+    )
+
+
+def _raise_dstudy_row_resource_limit() -> None:
+    """Raise the stable G-theory D-study result-row resource diagnostic."""
+
+    raise ValueError(
+        f"D-study requests exceed the {MAX_GTHEORY_D_STUDY_ROWS}-row G-theory limit"
     )
 
 
@@ -239,6 +248,8 @@ def _positive_integer_vector(value: object) -> list[int]:
 
     if type(value) is not list and type(value) is not tuple:
         raise ValueError("n_i_prime must be a list or tuple")
+    if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
+        _raise_dstudy_row_resource_limit()
     message = "n_i_prime entries must be positive integers"
     return [_positive_integer_control(entry, message) for entry in value]
 
@@ -248,6 +259,8 @@ def _positive_integer_pairs(value: object) -> list[tuple[int, int]]:
 
     if type(value) is not list and type(value) is not tuple:
         raise ValueError("n_prime must be a list or tuple of pairs")
+    if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
+        _raise_dstudy_row_resource_limit()
     message = "n_prime entries must be pairs of positive integers"
     pairs: list[tuple[int, int]] = []
     for pair in value:
