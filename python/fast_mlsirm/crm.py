@@ -31,6 +31,7 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = (
     *_NUMPY_FLOAT_TYPES,
     *_NUMPY_COMPLEX_TYPES,
 )
+_TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -91,6 +92,11 @@ def _trusted_response_array(responses: object) -> np.ndarray:
         item_type = type(item)
 
         if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            frames.pop()
+            continue
+        if item_type is np.ndarray:
+            if item.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
+                raise ValueError(error)
             frames.pop()
             continue
 
@@ -191,7 +197,7 @@ def fit_crm(
 
     q_theta_value = _trusted_integer(q_theta, "q_theta")
     if q_theta_value not in _SUPPORTED_Q_THETA:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, or 41")
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, or 81")
     max_iter_value = _trusted_integer(max_iter, "max_iter")
     if not 1 <= max_iter_value <= MAX_MAX_ITER:
         raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
