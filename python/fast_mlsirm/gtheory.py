@@ -128,38 +128,43 @@ def _validate_real_sequence(
 ) -> None:
     """Preflight a bounded built-in score tree without coercion callbacks."""
 
-    stack: list[tuple[object, bool, int]] = [(value, False, 1)]
+    stack: list[tuple[list | tuple, int, int]] = [(value, 0, 1)]
     active_container_ids: set[int] = set()
     logical_cells = 0
     while stack:
-        current, leaving, depth = stack.pop()
-        current_type = type(current)
-        if leaving:
-            active_container_ids.remove(id(current))
-            continue
-        if current_type is list or current_type is tuple:
+        current, child_index, depth = stack[-1]
+        if child_index == 0:
             if expected_ndim is not None and depth > expected_ndim:
                 raise ValueError(dimension_error or "data has invalid dimensionality")
             current_id = id(current)
             if current_id in active_container_ids:
                 raise ValueError("data must be a real numeric array")
             active_container_ids.add(current_id)
-            stack.append((current, True, depth))
-            stack.extend((child, False, depth + 1) for child in reversed(current))
+        if child_index >= len(current):
+            active_container_ids.remove(id(current))
+            stack.pop()
             continue
-        if current_type is np.ndarray:
-            if current.dtype.kind == "c":
+
+        child = current[child_index]
+        stack[-1] = (current, child_index + 1, depth)
+        child_depth = depth + 1
+        child_type = type(child)
+        if child_type is list or child_type is tuple:
+            stack.append((child, 0, child_depth))
+            continue
+        if child_type is np.ndarray:
+            if child.dtype.kind == "c":
                 raise ValueError("data must be real-valued")
-            if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            if child.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
                 raise ValueError("data must be a real numeric array")
-            effective_ndim = (depth - 1) + current.ndim
+            effective_ndim = (child_depth - 1) + child.ndim
             if expected_ndim is not None and effective_ndim > expected_ndim:
                 raise ValueError(dimension_error or "data has invalid dimensionality")
-            logical_cells += current.size
+            logical_cells += child.size
         else:
-            if current_type is complex or _trusted_numpy_complex(current):
+            if child_type is complex or _trusted_numpy_complex(child):
                 raise ValueError("data must be real-valued")
-            if not _trusted_real_scalar(current):
+            if not _trusted_real_scalar(child):
                 raise ValueError("data must be a real numeric array")
             logical_cells += 1
         if logical_cells > MAX_GTHEORY_SCORE_CELLS:
