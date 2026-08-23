@@ -2366,9 +2366,9 @@ pub fn poly_s_x2(
             let lp = match model {
                 PolyModel::Gpcm => {
                     let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
-                    let mut ic = vec![0.0_f64; n_cat];
-                    ic[1..].copy_from_slice(cp);
-                    gpcm_logprobs(base, &scores, &ic)
+                    let mut intercepts = vec![0.0_f64; n_cat];
+                    intercepts[1..].copy_from_slice(cp);
+                    gpcm_logprobs(base, &scores, &intercepts)
                 }
                 PolyModel::Grm => grm_logprobs(base, cp),
             };
