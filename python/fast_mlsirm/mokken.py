@@ -29,6 +29,7 @@ _TRUSTED_NUMPY_REAL_TYPES = (
     np.float64,
     np.longdouble,
 )
+_TRUSTED_RESPONSE_SCALAR_TYPES = (bool, int, float) + _TRUSTED_NUMPY_REAL_TYPES
 _INT64_MAX = (1 << 63) - 1
 _INT64_EXCLUSIVE_UPPER_FLOAT = float(1 << 63)
 
@@ -74,10 +75,34 @@ def _real_control(name: str, value: object) -> float:
     return parsed
 
 
+def _trusted_score_source(responses: object) -> object:
+    """Admit inert response containers before NumPy can invoke protocols."""
+    if type(responses) is np.ndarray:
+        return responses
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError("responses must be a numeric array")
+
+    for row in responses:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            continue
+        if row_type is list or row_type is tuple:
+            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
+                raise ValueError("responses must be a numeric array")
+            continue
+        # Preserve the historical flat built-in-sequence path long enough for
+        # the established 2-D dimensionality diagnostic, without accepting
+        # caller-defined numeric/container subclasses.
+        if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            raise ValueError("responses must be a numeric array")
+    return responses
+
+
 def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     """Validate score storage losslessly before signed-int64 marshalling."""
+    source = _trusted_score_source(responses)
     try:
-        raw = np.asarray(responses)
+        raw = np.asarray(source)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("responses must be a numeric array") from None
     if raw.ndim != 2:
