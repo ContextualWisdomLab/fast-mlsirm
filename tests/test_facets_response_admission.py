@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from fast_mlsirm import fitstats
 import fast_mlsirm.facets as facets_module
+from fast_mlsirm import fitstats
 from fast_mlsirm.facets import fit_facets
 
 
