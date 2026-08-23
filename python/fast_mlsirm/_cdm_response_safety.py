@@ -41,9 +41,9 @@ def _reject_untrusted_response_container(value: object) -> None:
 
     The trusted transport vocabulary is deliberately explicit: one exact NumPy
     array, or an exact built-in list/tuple tree whose leaves are package-known
-    numeric scalar identities or exact NumPy arrays.  Sequence traversal tracks
+    numeric scalar identities or exact NumPy arrays. Sequence traversal tracks
     only active ancestors, so true cycles fail closed while repeated/shared rows
-    remain valid.  No caller-defined ``__array__``, numeric, or container protocol
+    remain valid. No caller-defined ``__array__``, numeric, or container protocol
     is invoked during this admission pass.
     """
 
@@ -70,7 +70,10 @@ def _reject_untrusted_response_container(value: object) -> None:
             stack.extend((child, False) for child in reversed(item))
             continue
 
-        if any(item_type is scalar_type for scalar_type in _TRUSTED_RESPONSE_SCALAR_TYPES):
+        if any(
+            item_type is scalar_type
+            for scalar_type in _TRUSTED_RESPONSE_SCALAR_TYPES
+        ):
             continue
 
         raise ValueError(_ERROR)
