@@ -9,10 +9,37 @@ from typing import Sequence
 import numpy as np
 
 _ERROR = "cutscores entries must be finite real scalars"
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
 
 
-def _normalize(module: ModuleType, cutscores: Sequence[float]) -> list[float]:
-    """Normalize trusted cut scores while containing platform float overflow."""
+def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value`` has one exact trusted scalar type."""
+
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def normalize_cutscores(cutscores: Sequence[float]) -> list[float]:
+    """Normalize finite trusted cut scores without caller coercion hooks."""
 
     try:
         iterator = iter(cutscores)
@@ -21,14 +48,14 @@ def _normalize(module: ModuleType, cutscores: Sequence[float]) -> list[float]:
 
     normalized: list[float] = []
     for value in iterator:
-        if isinstance(value, (bool, np.bool_)):
-            raise ValueError(_ERROR)
         value_type = type(value)
+        if value_type is bool or value_type is np.bool_:
+            raise ValueError(_ERROR)
         if not (
             value_type is int
             or value_type is float
-            or module._trusted_numpy_integer(value)
-            or module._trusted_numpy_float(value)
+            or _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES)
+            or _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES)
         ):
             raise ValueError(_ERROR)
         try:
@@ -42,11 +69,6 @@ def _normalize(module: ModuleType, cutscores: Sequence[float]) -> list[float]:
 
 
 def install(module: ModuleType) -> None:
-    """Install overflow-stable cut-score admission on the classification module."""
+    """Bind the canonical cut-score normalizer on the classification module."""
 
-    def normalize(cutscores: Sequence[float]) -> list[float]:
-        """Normalize cut scores using the current classification trust helpers."""
-
-        return _normalize(module, cutscores)
-
-    module._normalize_cutscores = normalize
+    module._normalize_cutscores = normalize_cutscores
