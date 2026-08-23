@@ -72,6 +72,15 @@ def _reject_untrusted_numeric_container(value: object, *, error: str) -> None:
         raise ValueError(error)
 
 
+def _reject_untrusted_q_matrix_container(value: object, name: str) -> None:
+    """Reject callback-bearing Q-matrix providers before NumPy materialization."""
+
+    _reject_untrusted_numeric_container(
+        value,
+        error=f"{name} must be a trusted NumPy array or built-in sequence",
+    )
+
+
 def _install_q_matrix_guard(module: ModuleType) -> None:
     """Wrap the canonical Q-matrix validator with callback-free container admission."""
 
@@ -80,10 +89,7 @@ def _install_q_matrix_guard(module: ModuleType) -> None:
         return
 
     def validate_q_matrix_input(value: object, name: str, n_items: int):
-        _reject_untrusted_numeric_container(
-            value,
-            error=f"{name} must be a trusted NumPy array or built-in sequence",
-        )
+        _reject_untrusted_q_matrix_container(value, name)
         return current(value, name, n_items)
 
     setattr(validate_q_matrix_input, _Q_GUARD_MARKER, True)
