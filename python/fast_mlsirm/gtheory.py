@@ -263,6 +263,13 @@ def _positive_integer_vector(value: object) -> list[int]:
             _positive_integer_control(value[index], message)
             for index in range(value.shape[0])
         ]
+    if value_type is range:
+        if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
+            _raise_dstudy_row_resource_limit()
+        return [
+            _positive_integer_control(value[index], message)
+            for index in range(len(value))
+        ]
     if value_type is not list and value_type is not tuple:
         raise ValueError("n_i_prime must be a list or tuple")
     if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
