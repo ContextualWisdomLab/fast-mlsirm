@@ -219,3 +219,32 @@ def test_classifier_rejects_evidence_subclass_before_field_callbacks() -> None:
         classify(hostile)
 
     assert callbacks["count"] == 0
+
+
+def test_classifier_replays_validation_after_post_init_mutation() -> None:
+    """Frozen-record mutation must not bypass Boolean evidence admission."""
+    _, _, Evidence, classify = _surface()
+    callbacks = {"count": 0}
+
+    class HostileTruth:
+        def __bool__(self) -> bool:
+            callbacks["count"] += 1
+            raise AssertionError("unexpected truthiness callback")
+
+    evidence = Evidence(parameter_embedding=True)
+    object.__setattr__(evidence, "parameter_embedding", HostileTruth())
+
+    with pytest.raises(TypeError, match="parameter_embedding"):
+        classify(evidence)
+
+    assert callbacks["count"] == 0
+
+
+def test_classifier_replays_cross_field_invariants_after_post_init_mutation() -> None:
+    """Post-init contradiction must fail closed instead of selecting a procedure."""
+    _, _, Evidence, classify = _surface()
+    evidence = Evidence(parameter_embedding=True)
+    object.__setattr__(evidence, "parameter_spaces_overlap", True)
+
+    with pytest.raises(ValueError, match="relation evidence"):
+        classify(evidence)
