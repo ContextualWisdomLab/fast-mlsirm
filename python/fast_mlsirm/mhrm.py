@@ -335,7 +335,7 @@ def fit_mhrm(
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
 
     if max_cycles_int <= 0 or burn_in_int < 0 or burn_in_int >= max_cycles_int:
-        raise ValueError("require 0 < burn_in < max_cycles")
+        raise ValueError("require 0 <= burn_in < max_cycles")
     if mh_steps_int <= 0:
         raise ValueError("mh_steps must be positive")
     if proposal_sd_float <= 0.0:
