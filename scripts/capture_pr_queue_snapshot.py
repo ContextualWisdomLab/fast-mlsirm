@@ -30,6 +30,8 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         def parse_json_bounded(content: str, **_: Any) -> Any:
             """Parse JSON when the repository helper is unavailable in isolation."""
+            if len(content) > 32 * 1024 * 1024:
+                raise ValueError('JSON input exceeds maximum allowed size')
             return json.loads(content)
 
 
