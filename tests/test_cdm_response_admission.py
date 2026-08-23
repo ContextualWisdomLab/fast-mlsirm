@@ -366,3 +366,41 @@ def test_valid_real_evidence_reaches_native_dispatch_boundary(monkeypatch, fit):
         fit(responses, _q_matrix())
 
     assert calls == 1
+
+
+@pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
+def test_cdm_fits_reject_callback_bearing_q_matrix_providers(monkeypatch, fit):
+    """Q-matrix array protocols cannot synthesize item-to-attribute evidence."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = np.array([[0, 1], [1, 0]], dtype=np.int8)
+    for q_matrix in (_ArraySentinel(), [[_ArraySentinel()], [1]]):
+        _ArraySentinel.reset()
+        with pytest.raises(ValueError, match="q_matrix must be a trusted NumPy array or built-in sequence"):
+            fit(responses, q_matrix)
+        assert _ArraySentinel.calls == 0
+
+
+@pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
+def test_cdm_fits_preserve_trusted_q_matrix_sequence_compatibility(monkeypatch, fit):
+    """Inert NumPy rows and concrete NumPy scalar Q evidence remain supported."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    responses = np.array([[0, 1], [1, 0]], dtype=np.int8)
+    q_matrices = (
+        [np.array([1], dtype=np.int8), np.array([1], dtype=np.uint8)],
+        [[np.bool_(True)], [np.int16(1)]],
+    )
+
+    for q_matrix in q_matrices:
+        with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
+            fit(responses, q_matrix)
+
+    assert calls == len(q_matrices)
