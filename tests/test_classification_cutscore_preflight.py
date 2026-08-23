@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.classification as classification
+from fast_mlsirm import _classification_cutscore_safety as cutscore_safety
 
 
 class _HostileFloat(float):
@@ -23,6 +24,11 @@ class _HostileFloat(float):
 def _unexpected_core_discovery(name: str) -> object:
     """Fail if an invalid cut-score reaches native capability discovery."""
     raise AssertionError(f"invalid cut-score reached Rust discovery: {name}")
+
+
+def test_classification_uses_canonical_cutscore_normalizer() -> None:
+    """The classification module must not retain a divergent fallback validator."""
+    assert classification._normalize_cutscores is cutscore_safety.normalize_cutscores
 
 
 def test_rudner_rejects_untrusted_cut_before_core_and_without_callback(
