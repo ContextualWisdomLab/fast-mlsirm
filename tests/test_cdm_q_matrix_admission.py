@@ -107,6 +107,14 @@ reloaded = importlib.reload(cdm)
 responses = np.array([[0, 1], [1, 0]], dtype=np.int8)
 
 try:
+    reloaded._validate_q_matrix_input(ArraySentinel(), "q_matrix", 2)
+except ValueError as exc:
+    assert "q_matrix must be a trusted NumPy array or built-in sequence" in str(exc)
+else:
+    raise AssertionError("direct Q-matrix validation accepted a callback-bearing provider after reload")
+assert ArraySentinel.calls == 0
+
+try:
     reloaded.fit_cdm(responses, ArraySentinel())
 except ValueError as exc:
     assert "q_matrix must be a trusted NumPy array or built-in sequence" in str(exc)
