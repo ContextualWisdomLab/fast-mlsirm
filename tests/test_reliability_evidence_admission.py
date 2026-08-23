@@ -319,6 +319,42 @@ def test_mean_pairwise_cor_preserves_trusted_sequence_and_numpy_bool(monkeypatch
     assert seen["flat"].dtype == np.float64
 
 
+def test_cronbach_alpha_rejects_oversized_ndarray_before_dense_allocation(monkeypatch):
+    """Large logical views must fail before contiguous float64 allocation."""
+    oversized = np.broadcast_to(
+        np.array([[1.0]], dtype=np.float64),
+        (1, 20_000_001),
+    )
+
+    def _allocation_must_not_run(*args, **kwargs):
+        raise AssertionError("dense float64 allocation ran for oversized evidence")
+
+    monkeypatch.setattr(np, "ascontiguousarray", _allocation_must_not_run)
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match="reliability evidence exceeds 20000000 cells"):
+        reliability.cronbach_alpha(oversized)
+
+
+def test_cronbach_alpha_rejects_oversized_nested_array_before_materialization(
+    monkeypatch,
+):
+    """Nested exact ndarray leaves count toward the pre-materialization cell bound."""
+    oversized_row = np.broadcast_to(
+        np.array([1.0], dtype=np.float64),
+        (20_000_001,),
+    )
+
+    def _materialization_must_not_run(*args, **kwargs):
+        raise AssertionError("NumPy materialization ran for oversized nested evidence")
+
+    monkeypatch.setattr(np, "asarray", _materialization_must_not_run)
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match="reliability evidence exceeds 20000000 cells"):
+        reliability.cronbach_alpha([oversized_row])
+
+
 def test_top_level_reliability_exports_use_hardened_adapters():
     """Historical package exports must not retain pre-install reliability callables."""
     assert fast_mlsirm.guttman_lambdas is reliability.guttman_lambdas
