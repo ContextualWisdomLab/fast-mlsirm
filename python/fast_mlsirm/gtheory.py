@@ -234,6 +234,34 @@ def _finite_real_control(value: object, message: str) -> float:
     return parsed
 
 
+def _positive_integer_vector(value: object) -> list[int]:
+    """Normalize inert one-facet D-study size containers without callbacks."""
+
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError("n_i_prime must be a list or tuple")
+    message = "n_i_prime entries must be positive integers"
+    return [_positive_integer_control(entry, message) for entry in value]
+
+
+def _positive_integer_pairs(value: object) -> list[tuple[int, int]]:
+    """Normalize inert two-facet D-study size pairs without caller iteration."""
+
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError("n_prime must be a list or tuple of pairs")
+    message = "n_prime entries must be pairs of positive integers"
+    pairs: list[tuple[int, int]] = []
+    for pair in value:
+        if (type(pair) is not list and type(pair) is not tuple) or len(pair) != 2:
+            raise ValueError(message)
+        pairs.append(
+            (
+                _positive_integer_control(pair[0], message),
+                _positive_integer_control(pair[1], message),
+            )
+        )
+    return pairs
+
+
 @dataclass
 class GTheoryDStudyRow:
     """One D-study column: proposed facet sizes with the resulting error
@@ -317,10 +345,7 @@ def gtheory_pi(
     this asks how many judge items are needed for a dependable rating.
 
     """
-    primes = [
-        _positive_integer_control(v, "n_i_prime entries must be positive integers")
-        for v in n_i_prime
-    ]
+    primes = _positive_integer_vector(n_i_prime)
     dimension_error = "data must be a 2-D persons x items array"
     x = _validated_real_data(
         data,
@@ -354,14 +379,7 @@ def gtheory_pio(
     policies match :func:`gtheory_pi`.
 
     """
-    message = "n_prime entries must be pairs of positive integers"
-    pairs = [
-        (
-            _positive_integer_control(a, message),
-            _positive_integer_control(b, message),
-        )
-        for a, b in n_prime
-    ]
+    pairs = _positive_integer_pairs(n_prime)
     dimension_error = "data must be a 3-D persons x items x occasions array"
     x = _validated_real_data(
         data,
@@ -430,10 +448,7 @@ def phi_lambda(
 
     """
     parsed_cut = _finite_real_control(cut, "cut must be a finite real scalar")
-    primes = [
-        _positive_integer_control(v, "n_i_prime entries must be positive integers")
-        for v in n_i_prime
-    ]
+    primes = _positive_integer_vector(n_i_prime)
     dimension_error = "data must be a 2-D persons x items array"
     x = _validated_real_data(
         data,
