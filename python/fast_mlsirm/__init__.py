@@ -6,13 +6,9 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
-from . import classification as _classification
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import validation as _validation
-from ._classification_cutscore_safety import (
-    install as _install_classification_cutscore_safety,
-)
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._scaling_control_safety import install as _install_scaling_control_safety
@@ -20,7 +16,6 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls only; result arithmetic
 # remains in the existing Rust-backed implementations.
-_install_classification_cutscore_safety(_classification)
 _install_icc_control_safety(_reliability)
 _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
@@ -29,8 +24,6 @@ _legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
 _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
-    _classification,
-    _install_classification_cutscore_safety,
     _install_fleiss_control_safety,
     _install_icc_control_safety,
     _install_scaling_control_safety,
