@@ -39,6 +39,7 @@ _RESPONSE_RESOURCE_ERROR = (
     f"responses exceed the {_MAX_CDM_EVIDENCE_CELLS}-cell CDM evidence budget"
 )
 _Q_GUARD_MARKER = "__fast_mlsirm_q_matrix_container_guard__"
+_RESPONSE_ARRAY_MARKER = "__fast_mlsirm_response_array_guard__"
 
 
 def _reject_untrusted_numeric_container(
@@ -131,6 +132,30 @@ def _reject_untrusted_q_matrix_container(value: object, name: str) -> None:
     )
 
 
+def _materialize_response_array(value: object) -> np.ndarray:
+    """Materialize trusted responses with lossless, NumPy-floor-safe comparison."""
+
+    _reject_untrusted_response_container(value)
+    response_array = np.asarray(value)
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    with np.errstate(over="ignore", invalid="ignore"):
+        converted = response_array.astype(np.float64, copy=False)
+        round_tripped = converted.astype(response_array.dtype, copy=False)
+    if response_array.dtype.kind == "f":
+        is_lossless = np.array_equal(response_array, round_tripped, equal_nan=True)
+    else:
+        # NumPy 1.24's ``equal_nan=True`` path can call ``isnan`` on boolean
+        # arrays. Non-floating admitted dtypes cannot contain NaN, so ordinary
+        # exact equality is sufficient and remains valid across the declared floor.
+        is_lossless = np.array_equal(response_array, round_tripped)
+    if not is_lossless:
+        raise ValueError("responses must be exactly representable as float64")
+    return converted
+
+
 def _install_q_matrix_guard(module: ModuleType) -> None:
     """Wrap the canonical Q-matrix validator with callback-free container admission."""
 
@@ -146,8 +171,18 @@ def _install_q_matrix_guard(module: ModuleType) -> None:
     module._validate_q_matrix_input = validate_q_matrix_input
 
 
+def _install_response_array_guard(module: ModuleType) -> None:
+    """Install the canonical lossless response materializer on the CDM module."""
+
+    current = module._response_array
+    if getattr(current, _RESPONSE_ARRAY_MARKER, False):
+        return
+    setattr(_materialize_response_array, _RESPONSE_ARRAY_MARKER, True)
+    module._response_array = _materialize_response_array
+
+
 def _reject_untrusted_response_container(value: object) -> None:
-    """Reject unsafe response evidence and repair reload-time Q guarding.
+    """Reject unsafe response evidence and repair reload-time CDM guards.
 
     The trusted transport vocabulary is deliberately explicit: one exact NumPy
     array, or an exact built-in list/tuple tree whose leaves are package-known
@@ -161,13 +196,14 @@ def _reject_untrusted_response_container(value: object) -> None:
 
     Direct ``fast_mlsirm.cdm`` reloads replace module globals without rerunning
     package initialization. Because every public CDM calibration path admits
-    responses before Q-matrix evidence, repairing the Q validator here preserves
-    the same callback-safe boundary after such a reload.
+    responses before Q-matrix evidence, repairing the response and Q validators
+    here restores the canonical functions for subsequent calls after such a reload.
     """
 
     from . import cdm as module
 
     _install_q_matrix_guard(module)
+    _install_response_array_guard(module)
     _reject_untrusted_numeric_container(
         value,
         error=_RESPONSE_ERROR,
@@ -179,4 +215,5 @@ def install(module: ModuleType) -> None:
     """Install callback-safe response and Q-matrix evidence guards."""
 
     _install_q_matrix_guard(module)
+    _install_response_array_guard(module)
     module._reject_untrusted_response_container = _reject_untrusted_response_container
