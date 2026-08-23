@@ -81,3 +81,25 @@ def test_gtheory_pi_rejects_oversized_exact_view_before_contiguous_copy(
         match=rf"data exceeds the {gtheory.MAX_GTHEORY_SCORE_CELLS}-cell G-theory limit",
     ):
         gtheory.gtheory_pi(oversized, n_i_prime=[2])
+
+
+def test_gtheory_pi_rejects_oversized_exact_row_before_numpy_materialization(
+    monkeypatch,
+) -> None:
+    """Trusted sequence rows share the logical-cell bound before np.asarray."""
+    oversized_row = np.broadcast_to(
+        np.array(0.0, dtype=np.float64),
+        (gtheory.MAX_GTHEORY_SCORE_CELLS + 1,),
+    )
+
+    def unexpected_asarray(*args, **kwargs):
+        raise AssertionError("oversized G-theory row reached np.asarray")
+
+    monkeypatch.setattr(gtheory.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(gtheory, "_core_or_raise", _unexpected_core_discovery)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"data exceeds the {gtheory.MAX_GTHEORY_SCORE_CELLS}-cell G-theory limit",
+    ):
+        gtheory.gtheory_pi([oversized_row], n_i_prime=[2])
