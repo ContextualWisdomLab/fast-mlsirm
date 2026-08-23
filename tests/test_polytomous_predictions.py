@@ -11,6 +11,11 @@ from fast_mlsirm import (
 )
 
 
+class _ArrayProvider:
+    def __array__(self, *args, **kwargs):
+        raise AssertionError("caller __array__ callback executed")
+
+
 @pytest.mark.parametrize(
     ("model", "cat_params"),
     [
@@ -49,3 +54,41 @@ def test_public_polytomous_predictions_bound_output_before_native_dispatch(monke
     monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
     with pytest.raises(ValueError, match="20,000,000.*prediction"):
         polytomous_category_probabilities(fit, theta)
+
+
+@pytest.mark.parametrize("field", ["theta", "slope", "cat_params"])
+def test_public_polytomous_predictions_reject_array_providers_before_callbacks(
+    monkeypatch, field
+):
+    """Caller array protocols must not run while prediction evidence is admitted."""
+
+    theta = np.array([0.0])
+    slope = np.array([1.0])
+    cat_params = np.array([[0.0]])
+    if field == "theta":
+        theta = _ArrayProvider()
+    elif field == "slope":
+        slope = _ArrayProvider()
+    else:
+        cat_params = _ArrayProvider()
+    fit = PolytomousFit("grm", slope, cat_params, 0.0, 0)
+
+    def unexpected_core_discovery():
+        raise AssertionError("untrusted evidence reached compiled-core discovery")
+
+    monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in sequence"):
+        polytomous_category_probabilities(fit, theta)
+
+
+def test_public_polytomous_predictions_reject_complex_before_native_dispatch(monkeypatch):
+    """Do not silently project complex theta evidence onto the real line."""
+
+    fit = PolytomousFit("gpcm", np.array([1.0]), np.array([[0.0]]), 0.0, 0)
+
+    def unexpected_core_discovery():
+        raise AssertionError("complex evidence reached compiled-core discovery")
+
+    monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
+    with pytest.raises(ValueError, match="real-valued"):
+        polytomous_expected_response(fit, np.array([0.0 + 1.0j]))
