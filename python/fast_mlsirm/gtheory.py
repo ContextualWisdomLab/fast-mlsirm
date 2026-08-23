@@ -58,6 +58,9 @@ _REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
 # Keep public D-study scalar controls below the same bound used by the rubric
 # pilot handoff, so a caller cannot request an unbounded native result table.
 MAX_GTHEORY_PRIME_SIZE = 1_000_000
+# Keep dense G-theory score marshalling within the repository's established
+# scientific-evidence envelope before allocating a contiguous float64 copy.
+MAX_GTHEORY_SCORE_CELLS = 20_000_000
 
 
 def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
@@ -99,39 +102,67 @@ def _trusted_real_scalar(value: object) -> bool:
     )
 
 
-def _validate_real_sequence(value: list | tuple) -> None:
-    """Preflight a built-in score tree without executing coercion callbacks."""
+def _raise_score_resource_limit() -> None:
+    """Raise the stable G-theory score-evidence resource diagnostic."""
 
-    stack: list[tuple[object, bool]] = [(value, False)]
+    raise ValueError(
+        f"data exceeds the {MAX_GTHEORY_SCORE_CELLS}-cell G-theory limit"
+    )
+
+
+def _validate_real_sequence(
+    value: list | tuple,
+    *,
+    expected_ndim: int | None = None,
+    dimension_error: str | None = None,
+) -> None:
+    """Preflight a bounded built-in score tree without coercion callbacks."""
+
+    stack: list[tuple[object, bool, int]] = [(value, False, 1)]
     active_container_ids: set[int] = set()
+    logical_cells = 0
     while stack:
-        current, leaving = stack.pop()
+        current, leaving, depth = stack.pop()
         current_type = type(current)
         if leaving:
             active_container_ids.remove(id(current))
             continue
         if current_type is list or current_type is tuple:
+            if expected_ndim is not None and depth > expected_ndim:
+                raise ValueError(dimension_error or "data has invalid dimensionality")
             current_id = id(current)
             if current_id in active_container_ids:
                 raise ValueError("data must be a real numeric array")
             active_container_ids.add(current_id)
-            stack.append((current, True))
-            stack.extend((child, False) for child in reversed(current))
+            stack.append((current, True, depth))
+            stack.extend((child, False, depth + 1) for child in reversed(current))
             continue
         if current_type is np.ndarray:
             if current.dtype.kind == "c":
                 raise ValueError("data must be real-valued")
             if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
                 raise ValueError("data must be a real numeric array")
-            continue
-        if current_type is complex or _trusted_numpy_complex(current):
-            raise ValueError("data must be real-valued")
-        if not _trusted_real_scalar(current):
-            raise ValueError("data must be a real numeric array")
+            effective_ndim = (depth - 1) + current.ndim
+            if expected_ndim is not None and effective_ndim > expected_ndim:
+                raise ValueError(dimension_error or "data has invalid dimensionality")
+            logical_cells += current.size
+        else:
+            if current_type is complex or _trusted_numpy_complex(current):
+                raise ValueError("data must be real-valued")
+            if not _trusted_real_scalar(current):
+                raise ValueError("data must be a real numeric array")
+            logical_cells += 1
+        if logical_cells > MAX_GTHEORY_SCORE_CELLS:
+            _raise_score_resource_limit()
 
 
-def _validated_real_data(data: object) -> np.ndarray:
-    """Marshal inert real score evidence to contiguous ``float64`` storage."""
+def _validated_real_data(
+    data: object,
+    *,
+    expected_ndim: int | None = None,
+    dimension_error: str | None = None,
+) -> np.ndarray:
+    """Marshal bounded inert real score evidence to contiguous ``float64``."""
 
     data_type = type(data)
     if data_type is np.ndarray:
@@ -139,9 +170,17 @@ def _validated_real_data(data: object) -> np.ndarray:
             raise ValueError("data must be real-valued")
         if data.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
             raise ValueError("data must be a real numeric array")
+        if expected_ndim is not None and data.ndim != expected_ndim:
+            raise ValueError(dimension_error or "data has invalid dimensionality")
+        if data.size > MAX_GTHEORY_SCORE_CELLS:
+            _raise_score_resource_limit()
         return np.ascontiguousarray(data, dtype=np.float64)
     if data_type is list or data_type is tuple:
-        _validate_real_sequence(data)
+        _validate_real_sequence(
+            data,
+            expected_ndim=expected_ndim,
+            dimension_error=dimension_error,
+        )
         try:
             array = np.asarray(data)
         except (TypeError, ValueError) as error:
@@ -150,6 +189,10 @@ def _validated_real_data(data: object) -> np.ndarray:
             raise ValueError("data must be real-valued")
         if array.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
             raise ValueError("data must be a real numeric array")
+        if expected_ndim is not None and array.ndim != expected_ndim:
+            raise ValueError(dimension_error or "data has invalid dimensionality")
+        if array.size > MAX_GTHEORY_SCORE_CELLS:
+            _raise_score_resource_limit()
         return np.ascontiguousarray(array, dtype=np.float64)
     raise ValueError("data must be a real numeric array")
 
@@ -278,9 +321,14 @@ def gtheory_pi(
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
-    x = _validated_real_data(data)
+    dimension_error = "data must be a 2-D persons x items array"
+    x = _validated_real_data(
+        data,
+        expected_ndim=2,
+        dimension_error=dimension_error,
+    )
     if x.ndim != 2:
-        raise ValueError("data must be a 2-D persons x items array")
+        raise ValueError(dimension_error)
     if not np.isfinite(x).all():
         raise ValueError("data must contain only finite real values")
     n_p, n_i = x.shape
@@ -314,9 +362,14 @@ def gtheory_pio(
         )
         for a, b in n_prime
     ]
-    x = _validated_real_data(data)
+    dimension_error = "data must be a 3-D persons x items x occasions array"
+    x = _validated_real_data(
+        data,
+        expected_ndim=3,
+        dimension_error=dimension_error,
+    )
     if x.ndim != 3:
-        raise ValueError("data must be a 3-D persons x items x occasions array")
+        raise ValueError(dimension_error)
     if not np.isfinite(x).all():
         raise ValueError("data must contain only finite real values")
     n_p, n_i, n_o = x.shape
@@ -381,9 +434,14 @@ def phi_lambda(
         _positive_integer_control(v, "n_i_prime entries must be positive integers")
         for v in n_i_prime
     ]
-    x = _validated_real_data(data)
+    dimension_error = "data must be a 2-D persons x items array"
+    x = _validated_real_data(
+        data,
+        expected_ndim=2,
+        dimension_error=dimension_error,
+    )
     if x.ndim != 2:
-        raise ValueError("data must be a 2-D persons x items array")
+        raise ValueError(dimension_error)
     if not np.isfinite(x).all():
         raise ValueError("data must contain only finite real values")
     n_p, n_i = x.shape
