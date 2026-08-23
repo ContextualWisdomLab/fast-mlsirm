@@ -197,7 +197,7 @@ def fit_crm(
 
     q_theta_value = _trusted_integer(q_theta, "q_theta")
     if q_theta_value not in _SUPPORTED_Q_THETA:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, or 81")
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, or 41")
     max_iter_value = _trusted_integer(max_iter, "max_iter")
     if not 1 <= max_iter_value <= MAX_MAX_ITER:
         raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
