@@ -64,12 +64,19 @@ def _response_array(value: object) -> np.ndarray:
     resource_error = (
         f"responses must contain at most {_MAX_FACETS_RESPONSE_CELLS:,} logical cells"
     )
+    dimension_error = "responses must be a 3-D persons x items x raters array"
+    nonempty_error = (
+        "responses must contain at least one person, one item and one rater"
+    )
     value_type = type(value)
     if value_type is np.ndarray:
         if value.size > _MAX_FACETS_RESPONSE_CELLS:
             raise ValueError(resource_error)
         response_array = value
     elif value_type is list or value_type is tuple:
+        if len(value) == 0:
+            raise ValueError(nonempty_error)
+
         # A valid non-empty 3-D built-in tree with N scalar cells visits at most
         # N person nodes + N item nodes + N scalar nodes.  Bounding traversal at
         # three times the logical-cell ceiling therefore preserves every valid
@@ -80,12 +87,15 @@ def _response_array(value: object) -> np.ndarray:
         structural_nodes = 0
 
         # Indexed frames keep temporary traversal state proportional to nesting
-        # depth instead of sibling width. The public evidence contract is at
-        # most three-dimensional, so this state remains bounded independently
-        # of the number of ratings in any one dimension.
+        # depth instead of sibling width. The public evidence contract is
+        # exactly persons -> items -> raters -> scalar leaves for built-in
+        # sequences, so rectangularity can also be proven before NumPy sees the
+        # evidence.
         frames: list[list[object]] = [[value, 0, 0]]
         active_container_ids: set[int] = {id(value)}
         logical_cells = 0
+        expected_items: int | None = None
+        expected_raters: int | None = None
 
         while frames:
             frame = frames[-1]
@@ -112,17 +122,29 @@ def _response_array(value: object) -> np.ndarray:
 
             if child_type is list or child_type is tuple:
                 if next_depth >= 3:
-                    raise ValueError(
-                        "responses must be a 3-D persons x items x raters array"
-                    )
+                    raise ValueError(dimension_error)
+                child_length = len(child)
+                if child_length == 0:
+                    raise ValueError(nonempty_error)
+                if next_depth == 1:
+                    if expected_items is None:
+                        expected_items = child_length
+                    elif child_length != expected_items:
+                        raise ValueError(dimension_error)
+                else:
+                    if expected_raters is None:
+                        expected_raters = child_length
+                    elif child_length != expected_raters:
+                        raise ValueError(dimension_error)
                 child_id = id(child)
                 if child_id in active_container_ids:
-                    raise ValueError(
-                        "responses must be a 3-D persons x items x raters array"
-                    )
+                    raise ValueError(dimension_error)
                 active_container_ids.add(child_id)
                 frames.append([child, 0, next_depth])
                 continue
+
+            if depth != 2:
+                raise ValueError(dimension_error)
 
             trusted_scalar = (
                 child_type is bool
