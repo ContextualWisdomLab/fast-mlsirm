@@ -47,45 +47,76 @@ def _reject_untrusted_numeric_container(
     error: str,
     resource_error: str,
 ) -> None:
-    """Reject unsafe providers and over-budget evidence before materialization."""
+    """Reject unsafe providers and over-budget evidence before materialization.
 
-    stack: list[tuple[object, bool]] = [(value, False)]
+    Exact built-in sequence subtrees are counted once and memoized by identity.
+    Repeated references then add the cached logical-cell count at each occurrence,
+    preserving logical multiplicity without exponentially re-traversing a shared
+    acyclic DAG. Only containers on the active traversal path participate in cycle
+    detection, so ordinary shared rows remain valid while true cycles fail closed.
+    """
+
+    # Frames are ``[item, next_child_index, subtotal, entered]``. A sequential
+    # child walk ensures the first occurrence of a shared subtree is fully counted
+    # before a sibling occurrence can reuse its memoized logical size.
+    frames: list[list[object]] = [[value, 0, 0, False]]
     active_container_ids: set[int] = set()
-    logical_cells = 0
+    subtree_cells: dict[int, int] = {}
 
-    while stack:
-        item, leaving = stack.pop()
+    def add_to_parent(count: int) -> None:
+        if count > _MAX_CDM_EVIDENCE_CELLS:
+            raise ValueError(resource_error)
+        if not frames:
+            return
+        parent = frames[-1]
+        subtotal = int(parent[2])
+        if count > _MAX_CDM_EVIDENCE_CELLS - subtotal:
+            raise ValueError(resource_error)
+        parent[2] = subtotal + count
+
+    while frames:
+        frame = frames[-1]
+        item = frame[0]
         item_type = type(item)
 
-        if leaving:
-            active_container_ids.remove(id(item))
-            continue
-
         if item_type is np.ndarray:
-            logical_cells += int(item.size)
-            if logical_cells > _MAX_CDM_EVIDENCE_CELLS:
-                raise ValueError(resource_error)
-            continue
-
-        if item_type is list or item_type is tuple:
-            item_id = id(item)
-            if item_id in active_container_ids:
-                raise ValueError(error)
-            active_container_ids.add(item_id)
-            stack.append((item, True))
-            stack.extend((child, False) for child in reversed(item))
+            frames.pop()
+            add_to_parent(int(item.size))
             continue
 
         if any(
             item_type is scalar_type
             for scalar_type in _TRUSTED_RESPONSE_SCALAR_TYPES
         ):
-            logical_cells += 1
-            if logical_cells > _MAX_CDM_EVIDENCE_CELLS:
-                raise ValueError(resource_error)
+            frames.pop()
+            add_to_parent(1)
             continue
 
-        raise ValueError(error)
+        if item_type is not list and item_type is not tuple:
+            raise ValueError(error)
+
+        item_id = id(item)
+        if not bool(frame[3]):
+            if item_id in subtree_cells:
+                frames.pop()
+                add_to_parent(subtree_cells[item_id])
+                continue
+            if item_id in active_container_ids:
+                raise ValueError(error)
+            active_container_ids.add(item_id)
+            frame[3] = True
+
+        child_index = int(frame[1])
+        if child_index < len(item):
+            frame[1] = child_index + 1
+            frames.append([item[child_index], 0, 0, False])
+            continue
+
+        count = int(frame[2])
+        active_container_ids.remove(item_id)
+        subtree_cells[item_id] = count
+        frames.pop()
+        add_to_parent(count)
 
 
 def _reject_untrusted_q_matrix_container(value: object, name: str) -> None:
@@ -122,10 +153,11 @@ def _reject_untrusted_response_container(value: object) -> None:
     array, or an exact built-in list/tuple tree whose leaves are package-known
     numeric scalar identities or exact NumPy arrays. Sequence traversal tracks
     only active ancestors, so true cycles fail closed while repeated/shared rows
-    remain valid. Logical cells are counted per occurrence, including exact NumPy
-    leaves, so evidence above the package's bounded materialization budget fails
-    before NumPy stacking or ``float64`` allocation. No caller-defined
-    ``__array__``, numeric, or container protocol is invoked during this pass.
+    remain valid. Memoized subtree sizes preserve per-occurrence logical-cell
+    accounting without rewalking shared nested DAGs. Evidence above the package's
+    bounded materialization budget fails before NumPy stacking or ``float64``
+    allocation. No caller-defined ``__array__``, numeric, or container protocol is
+    invoked during this pass.
 
     Direct ``fast_mlsirm.cdm`` reloads replace module globals without rerunning
     package initialization. Because every public CDM calibration path admits
