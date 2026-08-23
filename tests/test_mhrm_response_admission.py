@@ -10,9 +10,9 @@ from fast_mlsirm import mhrm
 
 
 def _unexpected_core() -> object:
-    """Fail if native capability discovery happens after lossy complex narrowing."""
+    """Fail if native capability discovery happens before response admission."""
 
-    raise AssertionError("compiled core discovered after lossy MH-RM response coercion")
+    raise AssertionError("compiled core discovered before MH-RM response admission completed")
 
 
 def _result() -> dict[str, object]:
@@ -48,6 +48,113 @@ def test_complex_responses_fail_before_lossy_cast_or_native_discovery(monkeypatc
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
         mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1)
+
+
+def test_array_provider_rejected_without_protocol_or_native_execution(monkeypatch):
+    """Caller array protocols cannot synthesize the observed MH-RM response matrix."""
+
+    callbacks = 0
+
+    class HostileArrayProvider:
+        def __array__(self, dtype=None):
+            del dtype
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller __array__ executed during MH-RM response admission")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in response matrix"):
+        mhrm.fit_mhrm(HostileArrayProvider(), 1, max_cycles=2, burn_in=1, mh_steps=1)
+
+    assert callbacks == 0
+
+
+def test_numeric_subclass_rejected_without_conversion_or_native_execution(monkeypatch):
+    """Caller numeric subclasses cannot execute conversion while responses are admitted."""
+
+    callbacks = 0
+
+    class HostileFloat(float):
+        def __float__(self):
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller __float__ executed during MH-RM response admission")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in response matrix"):
+        mhrm.fit_mhrm(
+            [[HostileFloat(0.0), 1.0], [1.0, 0.0]],
+            1,
+            max_cycles=2,
+            burn_in=1,
+            mh_steps=1,
+        )
+
+    assert callbacks == 0
+
+
+def test_object_and_text_storage_fail_before_conversion_or_native_discovery(monkeypatch):
+    """Object/text storage is not implicitly converted into MH-RM category evidence."""
+
+    callbacks = 0
+
+    class HostileCell:
+        def __float__(self):
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller __float__ executed during object response admission")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="responses must be real-valued"):
+        mhrm.fit_mhrm(
+            np.array([[0.0, 1.0], [1.0, HostileCell()]], dtype=object),
+            1,
+            max_cycles=2,
+            burn_in=1,
+            mh_steps=1,
+        )
+    assert callbacks == 0
+
+    with pytest.raises(ValueError, match="responses must be a real numeric array"):
+        mhrm.fit_mhrm(
+            np.array([["0", "1"], ["1", "0"]]),
+            1,
+            max_cycles=2,
+            burn_in=1,
+            mh_steps=1,
+        )
+
+
+def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monkeypatch):
+    """Built-in rows with concrete NumPy real scalars retain the integer Rust payload."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        """Capture trusted MH-RM arguments without running stochastic arithmetic."""
+
+        def fit_mhrm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    fitted = mhrm.fit_mhrm(
+        [[np.float32(0.0), np.int16(1)], [np.uint8(1), np.float64(0.0)]],
+        1,
+        max_cycles=2,
+        burn_in=1,
+        mh_steps=1,
+        estimate_se=False,
+    )
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0, 1, 1, 0], dtype=np.int64))
+    np.testing.assert_array_equal(args[1], np.array([True, True, True, True]))
+    assert args[3:6] == (2, 2, 1)
+    assert fitted.loading.shape == (2, 1)
 
 
 def test_real_responses_preserve_existing_native_marshalling(monkeypatch):
