@@ -35,6 +35,10 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = (
     *_NUMPY_FLOAT_SCALAR_TYPES,
 )
 _ALLOWED_Q_THETA = frozenset({7, 11, 15, 21, 31, 41})
+_MAX_RSM_RESPONSE_CELLS = 20_000_000
+_RSM_RESOURCE_ERROR = (
+    f"responses exceed the {_MAX_RSM_RESPONSE_CELLS}-cell RSM evidence budget"
+)
 
 
 @dataclass
@@ -105,17 +109,26 @@ def _trusted_positive_tolerance(value: float) -> float:
 
 
 def _trusted_response_source(value: object) -> object:
-    """Admit inert response containers before NumPy can invoke protocols."""
+    """Admit inert, bounded response containers before NumPy invokes protocols."""
     if type(value) is np.ndarray:
+        if int(value.size) > _MAX_RSM_RESPONSE_CELLS:
+            raise ValueError(_RSM_RESOURCE_ERROR)
         return value
     if type(value) is not list and type(value) is not tuple:
         raise ValueError("responses must be a real numeric array")
 
+    logical_cells = 0
     for row in value:
         row_type = type(row)
         if row_type is np.ndarray:
+            logical_cells += int(row.size)
+            if logical_cells > _MAX_RSM_RESPONSE_CELLS:
+                raise ValueError(_RSM_RESOURCE_ERROR)
             continue
         if row_type is list or row_type is tuple:
+            logical_cells += len(row)
+            if logical_cells > _MAX_RSM_RESPONSE_CELLS:
+                raise ValueError(_RSM_RESOURCE_ERROR)
             if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
                 raise ValueError("responses must be a real numeric array")
             continue
@@ -123,11 +136,14 @@ def _trusted_response_source(value: object) -> object:
         # diagnostic, while refusing caller-defined scalar/container subclasses.
         if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
             raise ValueError("responses must be a real numeric array")
+        logical_cells += 1
+        if logical_cells > _MAX_RSM_RESPONSE_CELLS:
+            raise ValueError(_RSM_RESOURCE_ERROR)
     return value
 
 
 def _real_numeric_response_matrix(value: object) -> np.ndarray:
-    """Admit real numeric response storage before ``float64`` marshalling."""
+    """Admit bounded real numeric response storage before ``float64`` marshalling."""
     source = _trusted_response_source(value)
     array = np.asarray(source)
     if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
