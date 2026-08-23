@@ -74,6 +74,13 @@ def _trusted_response_array(responses: object) -> np.ndarray:
     if type(responses) is not list and type(responses) is not tuple:
         raise ValueError(error)
 
+    # A valid non-empty 2-D built-in response matrix with N scalar cells visits
+    # at most N row nodes + N scalar nodes.  This preserves every valid matrix
+    # inside the native 200M-cell envelope while bounding malformed empty or
+    # over-nested container fan-out before NumPy materialization.
+    structural_budget = 2 * _MAX_RESPONSE_CELLS
+    structural_nodes = 0
+
     # Each frame is [object, next_child_index, entered, logical_cell_count].
     # Memoized container counts preserve shared acyclic subtrees while charging
     # every logical occurrence against the same Rust-side persons×items ceiling.
@@ -131,6 +138,12 @@ def _trusted_response_array(responses: object) -> np.ndarray:
         child_index = int(frame[1])
         if child_index < len(item):
             frame[1] = child_index + 1
+            structural_nodes += 1
+            if structural_nodes > structural_budget:
+                raise ValueError(
+                    "responses exceeded structural traversal budget of "
+                    f"{structural_budget:,} nodes"
+                )
             frames.append([item[child_index], 0, False, 0])
             continue
 
