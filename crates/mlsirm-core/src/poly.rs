@@ -17,6 +17,7 @@
 
 pub(crate) const POLY_MAX_CAT: usize = 64;
 pub(crate) const POLY_MAX_ITER: usize = 100_000;
+pub(crate) const POLY_MAX_PREDICTION_CELLS: usize = 20_000_000;
 
 fn validate_observed_categories(
     y: &[usize],
@@ -218,7 +219,6 @@ pub fn polytomous_predictions(
     if n_items == 0 || n_cat < 2 {
         return Err("n_items must be positive and n_cat must be at least 2".into());
     }
-    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     let cells = crate::checked_mul_usize(
         theta.len(),
         n_items,
@@ -229,6 +229,12 @@ pub fn polytomous_predictions(
         n_cat,
         "prediction cells * n_cat exceeds the probability buffer size",
     )?;
+    if probability_cells > POLY_MAX_PREDICTION_CELLS {
+        return Err(format!(
+            "polytomous prediction grid of {probability_cells} cells exceeds the 20,000,000 prediction-cell limit"
+        ));
+    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     let mut probabilities = Vec::with_capacity(probability_cells);
     let mut expected = Vec::with_capacity(cells);
     let scores: Vec<f64> = (0..n_cat).map(|category| category as f64).collect();
