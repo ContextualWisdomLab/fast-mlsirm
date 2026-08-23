@@ -70,6 +70,15 @@ def _response_array(value: object) -> np.ndarray:
             raise ValueError(resource_error)
         response_array = value
     elif value_type is list or value_type is tuple:
+        # A valid non-empty 3-D built-in tree with N scalar cells visits at most
+        # N person nodes + N item nodes + N scalar nodes.  Bounding traversal at
+        # three times the logical-cell ceiling therefore preserves every valid
+        # rectangular input admitted by the public 20M-cell contract while
+        # preventing malformed empty-container fan-out from consuming
+        # unbounded Python work before NumPy materialization.
+        structural_budget = 3 * _MAX_FACETS_RESPONSE_CELLS
+        structural_nodes = 0
+
         # Indexed frames keep temporary traversal state proportional to nesting
         # depth instead of sibling width. The public evidence contract is at
         # most three-dimensional, so this state remains bounded independently
@@ -90,6 +99,13 @@ def _response_array(value: object) -> np.ndarray:
                 continue
 
             frame[1] = child_index + 1
+            structural_nodes += 1
+            if structural_nodes > structural_budget:
+                raise ValueError(
+                    "responses exceeded structural traversal budget of "
+                    f"{structural_budget:,} nodes"
+                )
+
             child = current[child_index]
             child_type = type(child)
             next_depth = depth + 1
