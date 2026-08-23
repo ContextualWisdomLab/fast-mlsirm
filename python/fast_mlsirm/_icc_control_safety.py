@@ -33,6 +33,7 @@ _NUMPY_REAL_SCALAR_TYPES = (
     np.float64,
     np.longdouble,
 )
+_PRIMARY_HARDENED_ATTR = "__fast_mlsirm_reliability_evidence_hardened__"
 
 
 def _choice(value: Any, name: str, allowed: tuple[str, ...]) -> str:
@@ -200,25 +201,44 @@ def _real_numeric_array(
         raise ValueError(f"{name} must be real numeric evidence") from exc
 
 
+def _primary_original(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Recover the original callable from one package-owned hardened wrapper."""
+    if getattr(function, _PRIMARY_HARDENED_ATTR, False):
+        return function.__wrapped__
+    if getattr(function, "__fast_mlsirm_icc_control_hardened__", False):
+        return function.__wrapped__
+    return function
+
+
 def install(reliability_module: ModuleType) -> None:
     """Install callback-free control and evidence validation adapters once."""
     current_icc: Callable[..., Any] = reliability_module.icc
-    if getattr(current_icc, "__fast_mlsirm_icc_control_hardened__", False):
-        # A prior install can have completed the ICC rebinding but failed before
-        # the sibling rater adapter ran. Re-enter that idempotent child installer
-        # so a later install repairs the partially hardened public surface.
+    current_primary = (
+        current_icc,
+        reliability_module.guttman_lambdas,
+        reliability_module.tenberge_mu,
+        reliability_module.cronbach_alpha,
+        reliability_module.separation_reliability,
+        reliability_module.mean_pairwise_cor,
+        reliability_module.mean_pairwise_rho,
+    )
+    primary_complete = all(
+        getattr(function, _PRIMARY_HARDENED_ATTR, False)
+        for function in current_primary
+    )
+    if primary_complete:
         from ._rater_evidence_safety import install as _install_rater_evidence_safety
 
         _install_rater_evidence_safety(reliability_module)
         return
 
-    original_icc: Callable[..., Any] = current_icc
-    original_guttman: Callable[..., Any] = reliability_module.guttman_lambdas
-    original_tenberge: Callable[..., Any] = reliability_module.tenberge_mu
-    original_alpha: Callable[..., Any] = reliability_module.cronbach_alpha
-    original_separation: Callable[..., Any] = reliability_module.separation_reliability
-    original_mean_cor: Callable[..., Any] = reliability_module.mean_pairwise_cor
-    original_mean_rho: Callable[..., Any] = reliability_module.mean_pairwise_rho
+    original_icc = _primary_original(current_icc)
+    original_guttman = _primary_original(reliability_module.guttman_lambdas)
+    original_tenberge = _primary_original(reliability_module.tenberge_mu)
+    original_alpha = _primary_original(reliability_module.cronbach_alpha)
+    original_separation = _primary_original(reliability_module.separation_reliability)
+    original_mean_cor = _primary_original(reliability_module.mean_pairwise_cor)
+    original_mean_rho = _primary_original(reliability_module.mean_pairwise_rho)
     ratings_dimension_error = "ratings must be a 2-D subjects x raters array"
     data_dimension_error = "data must be a 2-D persons x items array"
 
@@ -357,7 +377,19 @@ def install(reliability_module: ModuleType) -> None:
         )
         return original_mean_rho(ratings_value, fisher=fisher_value)
 
+    primary_wrappers = (
+        safe_icc,
+        safe_guttman_lambdas,
+        safe_tenberge_mu,
+        safe_cronbach_alpha,
+        safe_separation_reliability,
+        safe_mean_pairwise_cor,
+        safe_mean_pairwise_rho,
+    )
+    for function in primary_wrappers:
+        setattr(function, _PRIMARY_HARDENED_ATTR, True)
     safe_icc.__fast_mlsirm_icc_control_hardened__ = True
+
     reliability_module.icc = safe_icc
     reliability_module.guttman_lambdas = safe_guttman_lambdas
     reliability_module.tenberge_mu = safe_tenberge_mu
