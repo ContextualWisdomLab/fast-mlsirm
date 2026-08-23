@@ -29,6 +29,8 @@ def test_icc_installer_repairs_missing_rater_adapters_after_partial_install():
     module = ModuleType("fast_mlsirm_test_reliability")
     module.__package__ = "fast_mlsirm_test"
     module.icc = reliability.icc
+    for name in _PRIMARY_APIS:
+        setattr(module, name, getattr(reliability, name))
 
     assert getattr(module.icc, "__fast_mlsirm_icc_control_hardened__", False)
 
