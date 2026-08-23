@@ -208,8 +208,10 @@ def fit_crm(
     n_persons, n_items = y.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
+    if np.any(np.isinf(y)):
+        raise ValueError("responses may only use NaN for missing values")
 
-    observed = np.isfinite(y)
+    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.5).reshape(-1)
 
     core = _core_module()
