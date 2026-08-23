@@ -31,6 +31,8 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = frozenset(
         np.uint16,
         np.uint32,
         np.uint64,
+        np.longlong,
+        np.ulonglong,
         np.float16,
         np.float32,
         np.float64,
