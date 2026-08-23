@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from . import _icc_control_safety
 from ._icc_control_safety import (
     _choice,
     _integer,
@@ -23,6 +24,71 @@ from ._icc_control_safety import (
 )
 
 _RATER_HARDENED_ATTR = "__fast_mlsirm_rater_evidence_hardened__"
+_RESOURCE_BOUNDED_ATTR = "__fast_mlsirm_reliability_resource_bounded__"
+_MAX_RELIABILITY_EVIDENCE_CELLS = 20_000_000
+_RESOURCE_ERROR = "reliability evidence exceeds 20000000 cells"
+
+
+def _enforce_reliability_evidence_cell_bound(value: Any, *, max_depth: int) -> None:
+    """Reject oversized inert evidence before NumPy materialization or allocation."""
+    total_cells = 0
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        current_type = builtins.type(current)
+        if current_type is list or current_type is tuple:
+            next_depth = depth + 1
+            if next_depth > max_depth:
+                return
+            stack.extend((child, next_depth) for child in current)
+            continue
+        if current_type is np.ndarray:
+            if depth + current.ndim > max_depth:
+                return
+            total_cells += int(current.size)
+        else:
+            total_cells += 1
+        if total_cells > _MAX_RELIABILITY_EVIDENCE_CELLS:
+            raise ValueError(_RESOURCE_ERROR)
+
+
+def _base_real_numeric_array() -> Callable[..., np.ndarray]:
+    """Return the unwrapped package-owned primary evidence marshaller."""
+    current = _icc_control_safety._real_numeric_array
+    if getattr(current, _RESOURCE_BOUNDED_ATTR, False):
+        return current.__wrapped__
+    return current
+
+
+def _install_primary_resource_bound() -> None:
+    """Add the shared evidence ceiling to primary reliability marshalling once."""
+    current = _icc_control_safety._real_numeric_array
+    if getattr(current, _RESOURCE_BOUNDED_ATTR, False):
+        return
+    original = _base_real_numeric_array()
+
+    @wraps(original)
+    def bounded_real_numeric_array(
+        value: Any,
+        name: str,
+        ndim: int,
+        *,
+        allow_bool: bool = True,
+        dimension_error: str | None = None,
+        preserve_ratings_diagnostics: bool = False,
+    ) -> np.ndarray:
+        _enforce_reliability_evidence_cell_bound(value, max_depth=ndim)
+        return original(
+            value,
+            name,
+            ndim,
+            allow_bool=allow_bool,
+            dimension_error=dimension_error,
+            preserve_ratings_diagnostics=preserve_ratings_diagnostics,
+        )
+
+    setattr(bounded_real_numeric_array, _RESOURCE_BOUNDED_ATTR, True)
+    _icc_control_safety._real_numeric_array = bounded_real_numeric_array
 
 
 def _real_numeric_source_array(
@@ -32,6 +98,7 @@ def _real_numeric_source_array(
     dimension_error: str,
 ) -> np.ndarray:
     """Return inert 2-D real-numeric source evidence without narrowing it."""
+    _enforce_reliability_evidence_cell_bound(value, max_depth=2)
     value_type = builtins.type(value)
     if value_type is np.ndarray:
         arr = value
@@ -77,6 +144,7 @@ def _rater_original(function: Callable[..., Any]) -> Callable[..., Any]:
 
 def install(reliability_module: ModuleType) -> None:
     """Install callback-free adapters for the complete rater surface idempotently."""
+    _install_primary_resource_bound()
     current_rater: tuple[Callable[..., Any], ...] = (
         reliability_module.kripp_alpha,
         reliability_module.finn_coefficient,
