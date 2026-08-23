@@ -100,6 +100,51 @@ def test_public_polytomous_predictions_reject_array_providers_before_callbacks(
         polytomous_category_probabilities(fit, theta)
 
 
+@pytest.mark.parametrize(
+    ("field", "over_rank", "expected_rank"),
+    [
+        ("theta", [[0.0]], 1),
+        ("slope", [[1.0]], 1),
+        ("cat_params", [[[0.0]]], 2),
+    ],
+)
+def test_public_polytomous_predictions_reject_over_rank_before_numpy_materialization(
+    monkeypatch, field, over_rank, expected_rank
+):
+    """Known over-rank evidence must fail before NumPy can materialize it."""
+
+    theta = np.array([0.0])
+    slope = np.array([1.0])
+    cat_params = np.array([[0.0]])
+    if field == "theta":
+        theta = over_rank
+    elif field == "slope":
+        slope = over_rank
+    else:
+        cat_params = over_rank
+    fit = PolytomousFit("grm", slope, cat_params, 0.0, 0)
+
+    def unexpected_numpy_materialization(*args, **kwargs):
+        raise AssertionError("over-rank evidence reached NumPy materialization")
+
+    def unexpected_core_discovery():
+        raise AssertionError("over-rank evidence reached compiled-core discovery")
+
+    monkeypatch.setattr(prediction_admission.np, "asarray", unexpected_numpy_materialization)
+    monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
+    with pytest.raises(ValueError, match=rf"{field} must be at most {expected_rank}-D"):
+        polytomous_category_probabilities(fit, theta)
+
+
+def test_public_polytomous_predictions_preserve_exact_numpy_row_sequences():
+    """A trusted NumPy row nested in the 2-D category matrix remains compatible."""
+
+    fit = PolytomousFit("gpcm", [1.0], [np.array([0.0])], 0.0, 0)
+    probabilities = polytomous_category_probabilities(fit, [0.0])
+    assert probabilities.shape == (1, 1, 2)
+    assert np.allclose(probabilities.sum(axis=2), 1.0)
+
+
 def test_public_polytomous_predictions_reject_complex_before_native_dispatch(monkeypatch):
     """Do not silently project complex theta evidence onto the real line."""
 
