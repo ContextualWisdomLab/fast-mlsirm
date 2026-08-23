@@ -27,6 +27,13 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.ulonglong,
 )
 _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
+)
 _ALLOWED_Q_THETA = frozenset({7, 11, 15, 21, 31, 41})
 
 
@@ -97,9 +104,32 @@ def _trusted_positive_tolerance(value: float) -> float:
     return normalized
 
 
+def _trusted_response_source(value: object) -> object:
+    """Admit inert response containers before NumPy can invoke protocols."""
+    if type(value) is np.ndarray:
+        return value
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError("responses must be a real numeric array")
+
+    for row in value:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            continue
+        if row_type is list or row_type is tuple:
+            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
+                raise ValueError("responses must be a real numeric array")
+            continue
+        # Preserve historical flat built-in sequences until the existing 2-D
+        # diagnostic, while refusing caller-defined scalar/container subclasses.
+        if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            raise ValueError("responses must be a real numeric array")
+    return value
+
+
 def _real_numeric_response_matrix(value: object) -> np.ndarray:
     """Admit real numeric response storage before ``float64`` marshalling."""
-    array = np.asarray(value)
+    source = _trusted_response_source(value)
+    array = np.asarray(source)
     if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
         raise ValueError("responses must be a real numeric array")
     return np.ascontiguousarray(array, dtype=np.float64)
