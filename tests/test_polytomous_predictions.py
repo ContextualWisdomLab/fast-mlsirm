@@ -43,6 +43,25 @@ def test_public_polytomous_predictions_reject_invalid_grm_thresholds():
         polytomous_category_probabilities(fit, np.array([0.0]))
 
 
+def test_public_polytomous_predictions_reject_category_count_above_fitter_ceiling_before_numpy(
+    monkeypatch,
+):
+    """A manually constructed fit cannot exceed the fitter's 64-category domain."""
+
+    fit = PolytomousFit("gpcm", np.array([1.0]), np.zeros((1, 64)), 0.0, 0)
+
+    def unexpected_numpy_materialization(*args, **kwargs):
+        raise AssertionError("out-of-domain category count reached NumPy materialization")
+
+    def unexpected_core_discovery():
+        raise AssertionError("out-of-domain category count reached compiled-core discovery")
+
+    monkeypatch.setattr(prediction_admission.np, "asarray", unexpected_numpy_materialization)
+    monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
+    with pytest.raises(ValueError, match=r"n_cat must be in 2\.\.=64"):
+        polytomous_category_probabilities(fit, np.array([0.0]))
+
+
 def test_public_polytomous_predictions_bound_output_before_native_dispatch(monkeypatch):
     """Reject oversized logical prediction grids before Rust/output allocation."""
 
