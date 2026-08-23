@@ -11,6 +11,7 @@ from .config import MAX_MAX_ITER
 
 
 _SUPPORTED_Q_THETA = (7, 11, 15, 21, 31, 41)
+_MAX_CRM_RESPONSE_CELLS = 20_000_000
 _NUMPY_INTEGER_TYPES = tuple(
     np.dtype(name).type
     for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
@@ -73,55 +74,81 @@ def _positive_real(value: object, name: str) -> float:
 
 
 def _trusted_response_array(responses: object) -> np.ndarray:
-    """Materialize CRM evidence only after a callback-free container preflight."""
+    """Materialize CRM evidence only after callback-free trust/resource preflight."""
 
+    resource_error = (
+        f"responses must contain at most {_MAX_CRM_RESPONSE_CELLS:,} logical cells"
+    )
     if type(responses) is np.ndarray:
+        if responses.size > _MAX_CRM_RESPONSE_CELLS:
+            raise ValueError(resource_error)
         return responses
 
     error = "responses must be a trusted NumPy array or built-in response matrix"
     if type(responses) is not list and type(responses) is not tuple:
         raise ValueError(error)
 
-    frames: list[list[object]] = [[responses, 0, False]]
-    active_container_ids: set[int] = set()
-    validated_container_ids: set[int] = set()
+    # Each frame is [exact built-in container, next child index, logical-cell subtotal].
+    # Memoized subtotals let repeated/shared acyclic subtrees count by logical
+    # occurrence without re-traversing their descendants exponentially.
+    frames: list[list[object]] = [[responses, 0, 0]]
+    active_container_ids: set[int] = {id(responses)}
+    subtree_cells: dict[int, int] = {}
 
     while frames:
         frame = frames[-1]
         item = frame[0]
-        item_type = type(item)
+        child_index = int(frame[1])
 
-        if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+        if child_index >= len(item):
+            subtotal = int(frame[2])
+            item_id = id(item)
+            active_container_ids.remove(item_id)
+            subtree_cells[item_id] = subtotal
             frames.pop()
+            if frames:
+                parent_total = int(frames[-1][2]) + subtotal
+                if parent_total > _MAX_CRM_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][2] = parent_total
             continue
-        if item_type is np.ndarray:
-            if item.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
+
+        frame[1] = child_index + 1
+        child = item[child_index]
+        child_type = type(child)
+
+        if _is_exact_type(child_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            subtotal = int(frame[2]) + 1
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type is np.ndarray:
+            if child.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
                 raise ValueError(error)
-            frames.pop()
+            subtotal = int(frame[2]) + int(child.size)
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
             continue
 
-        if item_type is not list and item_type is not tuple:
+        if child_type is not list and child_type is not tuple:
             raise ValueError(error)
 
-        item_id = id(item)
-        if not bool(frame[2]):
-            if item_id in validated_container_ids:
-                frames.pop()
-                continue
-            if item_id in active_container_ids:
-                raise ValueError(error)
-            active_container_ids.add(item_id)
-            frame[2] = True
-
-        child_index = int(frame[1])
-        if child_index < len(item):
-            frame[1] = child_index + 1
-            frames.append([item[child_index], 0, False])
+        child_id = id(child)
+        if child_id in active_container_ids:
+            raise ValueError(error)
+        cached_cells = subtree_cells.get(child_id)
+        if cached_cells is not None:
+            subtotal = int(frame[2]) + cached_cells
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
             continue
 
-        active_container_ids.remove(item_id)
-        validated_container_ids.add(item_id)
-        frames.pop()
+        active_container_ids.add(child_id)
+        frames.append([child, 0, 0])
 
     return np.asarray(responses)
 
