@@ -103,3 +103,31 @@ def test_gtheory_pi_rejects_oversized_exact_row_before_numpy_materialization(
         match=rf"data exceeds the {gtheory.MAX_GTHEORY_SCORE_CELLS}-cell G-theory limit",
     ):
         gtheory.gtheory_pi([oversized_row], n_i_prime=[2])
+
+
+def test_gtheory_sequence_cell_bound_preempts_eager_sibling_scheduling(
+    monkeypatch,
+) -> None:
+    """Flat score rows hit the cell ceiling before every sibling is scheduled."""
+    original_reversed = reversed
+    yielded_children = 0
+
+    def bounded_reversed(value):
+        nonlocal yielded_children
+        for child in original_reversed(value):
+            yielded_children += 1
+            if yielded_children > 4:
+                raise AssertionError(
+                    "G-theory preflight scheduled siblings past the cell ceiling"
+                )
+            yield child
+
+    monkeypatch.setattr(gtheory, "MAX_GTHEORY_SCORE_CELLS", 1)
+    monkeypatch.setattr(gtheory, "reversed", bounded_reversed, raising=False)
+    monkeypatch.setattr(gtheory, "_core_or_raise", _unexpected_core_discovery)
+
+    with pytest.raises(
+        ValueError,
+        match=r"data exceeds the 1-cell G-theory limit",
+    ):
+        gtheory.gtheory_pi([[0.0, 1.0, 2.0, 3.0]], n_i_prime=[2])
