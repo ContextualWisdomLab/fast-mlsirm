@@ -156,3 +156,47 @@ def test_public_polytomous_predictions_reject_complex_before_native_dispatch(mon
     monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
     with pytest.raises(ValueError, match="real-valued"):
         polytomous_expected_response(fit, np.array([0.0 + 1.0j]))
+
+
+def test_public_polytomous_predictions_reject_mixed_integer_precision_loss_before_numpy(
+    monkeypatch,
+):
+    """Mixed sequence promotion must not erase integer identity before validation."""
+
+    fit = PolytomousFit("gpcm", [1.0], [[0.0]], 0.0, 0)
+    theta = [9_007_199_254_740_993, 0.0]
+
+    def unexpected_numpy_materialization(*args, **kwargs):
+        raise AssertionError("lossy mixed evidence reached NumPy materialization")
+
+    def unexpected_core_discovery():
+        raise AssertionError("lossy mixed evidence reached compiled-core discovery")
+
+    monkeypatch.setattr(prediction_admission.np, "asarray", unexpected_numpy_materialization)
+    monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
+    with pytest.raises(ValueError, match="exactly representable as float64"):
+        polytomous_expected_response(fit, theta)
+
+
+def test_public_polytomous_predictions_bound_joint_grid_before_float64_conversion(
+    monkeypatch,
+):
+    """Joint output budget must be decided from shapes before float64 conversion."""
+
+    theta = np.broadcast_to(np.array([0.0], dtype=np.float32), (2,))
+    slope = np.broadcast_to(np.array([1.0], dtype=np.float32), (10_000_001,))
+    cat_params = np.broadcast_to(
+        np.array([[0.0]], dtype=np.float32), (10_000_001, 1)
+    )
+    fit = PolytomousFit("gpcm", slope, cat_params, 0.0, 0)
+
+    def unexpected_numpy_materialization(*args, **kwargs):
+        raise AssertionError("oversized joint grid reached NumPy materialization")
+
+    def unexpected_core_discovery():
+        raise AssertionError("oversized joint grid reached compiled-core discovery")
+
+    monkeypatch.setattr(prediction_admission.np, "asarray", unexpected_numpy_materialization)
+    monkeypatch.setattr(polytomous_module, "_core_module", unexpected_core_discovery)
+    with pytest.raises(ValueError, match="20,000,000.*prediction"):
+        polytomous_category_probabilities(fit, theta)
