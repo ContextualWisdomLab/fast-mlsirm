@@ -156,7 +156,10 @@ def _finite_integer_control(value: object, name: str) -> int:
     if _is_exact_type(value_type, _NUMPY_FLOAT_TYPES) or value_type is float:
         if not bool(np.isfinite(value)) or value != np.floor(value):
             raise ValueError(f"{name} must be a finite integer")
-    return int(value)
+    normalized = int(value)
+    if normalized >= 2**64:
+        raise ValueError(f"{name} must be in [0, 2**64)")
+    return normalized
 
 
 def _finite_real_control(value: object, name: str) -> float:
