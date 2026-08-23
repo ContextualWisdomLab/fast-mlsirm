@@ -1,5 +1,7 @@
 """Public Rust-owned GRM/GPCM prediction contract."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -35,6 +37,52 @@ def test_public_polytomous_predictions_are_normalized_and_consistent(model, cat_
     assert np.all(np.isfinite(probabilities))
     assert np.allclose(probabilities.sum(axis=2), 1.0)
     assert np.allclose(expected, probabilities @ np.arange(3, dtype=np.float64))
+
+
+def test_prediction_admission_preserves_fit_metadata_when_normalizing_evidence():
+    """Admission must not erase package-owned fit metadata while normalizing arrays."""
+
+    captured = {}
+
+    def original(fit, theta):
+        captured["fit"] = fit
+        captured["theta"] = theta
+        return np.empty((0,), dtype=np.float64), np.empty((0,), dtype=np.float64)
+
+    module = SimpleNamespace(
+        PolytomousFit=PolytomousFit,
+        _polytomous_predictions=original,
+    )
+    prediction_admission.install(module)
+
+    loglik_trace = np.array([-10.0, -8.5, -8.0], dtype=np.float64)
+    thresholds = np.array([[0.25]], dtype=np.float64)
+    fit = PolytomousFit(
+        "gpcm",
+        [np.float32(1.0)],
+        [[np.float32(0.0)]],
+        -8.0,
+        7,
+        converged=True,
+        termination_reason="tolerance",
+        loglik_trace=loglik_trace,
+        final_delta=1e-7,
+        stopping_tolerance=1e-6,
+        thresholds=thresholds,
+    )
+
+    module._polytomous_predictions(fit, [np.float32(0.0)])
+    trusted = captured["fit"]
+
+    assert trusted.converged is True
+    assert trusted.termination_reason == "tolerance"
+    assert trusted.loglik_trace is loglik_trace
+    assert trusted.final_delta == pytest.approx(1e-7)
+    assert trusted.stopping_tolerance == pytest.approx(1e-6)
+    assert trusted.thresholds is thresholds
+    assert trusted.slope.dtype == np.float64
+    assert trusted.cat_params.dtype == np.float64
+    assert captured["theta"].dtype == np.float64
 
 
 def test_public_polytomous_predictions_reject_invalid_grm_thresholds():
