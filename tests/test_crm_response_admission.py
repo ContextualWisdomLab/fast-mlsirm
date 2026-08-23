@@ -120,6 +120,30 @@ def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monk
     assert fitted.n_parameters == 3
 
 
+def test_builtin_matrix_preserves_exact_numpy_row_compatibility(monkeypatch):
+    """Exact numeric ndarray rows remain valid inside an inert built-in matrix."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_crm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    responses = [
+        np.array([0.25], dtype=np.float32),
+        np.array([0.75], dtype=np.float64),
+    ]
+    fitted = crm.fit_crm(responses, max_iter=1)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.25, 0.75], dtype=np.float64))
+    np.testing.assert_array_equal(args[1], np.array([True, True], dtype=bool))
+    assert args[2:4] == (2, 1)
+    assert fitted.n_parameters == 3
+
+
 def test_text_response_storage_rejected_before_native_discovery(monkeypatch):
     """Textual numerics are evidence strings, not continuous response values."""
 
