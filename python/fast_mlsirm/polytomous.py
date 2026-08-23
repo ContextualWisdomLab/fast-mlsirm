@@ -110,6 +110,12 @@ def _polytomous_predictions(
     model = fit.model.lower() if type(fit.model) is str else ""
     if model not in VALID_POLY_MODELS:
         raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
+    prediction_cells = int(th.size) * int(slope.size) * int(cat_params.shape[1] + 1)
+    if prediction_cells > 20_000_000:
+        raise ValueError(
+            f"prediction grid of {prediction_cells:,} cells exceeds the "
+            "20,000,000 prediction-cell limit"
+        )
     core = _core_module()
     if core is None or not hasattr(core, "polytomous_predictions"):
         raise RuntimeError("polytomous predictions require the compiled Rust core")
