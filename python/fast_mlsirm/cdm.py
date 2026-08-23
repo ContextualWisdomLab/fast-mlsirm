@@ -12,6 +12,8 @@ from .config import MAX_MAX_ITER
 
 
 _MAX_ATTRIBUTES = 15
+# Keep the Python trust boundary aligned with the Rust sequential-CDM resource cap.
+_SEQ_MAX_CAT = 50
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -117,6 +119,8 @@ def _validate_q_matrix_input(
     if q.ndim != 2:
         raise ValueError(f"{name} must be a 2-D items x attributes array")
     if q.shape[0] != n_items:
+        if name == "step_q":
+            raise ValueError("step_q must have sum(n_steps) rows")
         raise ValueError(f"{name} must have one row per item")
     n_attributes = q.shape[1]
     if not 1 <= n_attributes <= _MAX_ATTRIBUTES:
@@ -128,6 +132,55 @@ def _validate_q_matrix_input(
     if not np.all(np.isfinite(q)) or not np.all((q == 0) | (q == 1)):
         raise ValueError(f"{name} entries must be finite and exactly 0 or 1")
     return q.astype(np.int64, copy=False), n_attributes
+
+
+def _validate_seq_n_steps(value: object, n_items: int) -> tuple[np.ndarray, int]:
+    """Admit sequential step counts without executing caller conversion protocols."""
+
+    value_type = type(value)
+    if value_type is np.ndarray:
+        raw_steps = value
+        if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
+            raise ValueError("n_steps must be a 1-D array of length n_items")
+        if raw_steps.dtype.kind not in ("i", "u"):
+            raise ValueError("n_steps entries must be positive integers")
+        if np.any(raw_steps < 1):
+            raise ValueError("n_steps entries must be positive integers")
+        if np.any(raw_steps > _SEQ_MAX_CAT):
+            raise ValueError(f"n_steps entries must be <= {_SEQ_MAX_CAT}")
+        steps = raw_steps.astype(np.int64, copy=False)
+        return steps, sum(int(step) for step in steps)
+
+    if value_type is not list and value_type is not tuple:
+        raise ValueError(
+            "n_steps must be a trusted 1-D integer NumPy array or built-in sequence"
+        )
+    if len(value) != n_items:
+        raise ValueError("n_steps must be a 1-D array of length n_items")
+
+    normalized: list[int] = []
+    for step in value:
+        step_type = type(step)
+        if step_type is int or any(
+            step_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+        ):
+            step_value = int(step)
+        elif step_type in (bool, float, str, bytes, np.bool_) or any(
+            step_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
+        ):
+            raise ValueError("n_steps entries must be positive integers")
+        else:
+            raise ValueError(
+                "n_steps must be a trusted 1-D integer NumPy array or built-in sequence"
+            )
+        if step_value < 1:
+            raise ValueError("n_steps entries must be positive integers")
+        if step_value > _SEQ_MAX_CAT:
+            raise ValueError(f"n_steps entries must be <= {_SEQ_MAX_CAT}")
+        normalized.append(step_value)
+
+    steps = np.asarray(normalized, dtype=np.int64)
+    return steps, sum(normalized)
 
 
 @dataclass
@@ -1010,22 +1063,7 @@ def fit_seq_gdina_qr(
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
-    raw_steps = np.asarray(n_steps)
-    if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
-        raise ValueError("n_steps must be a 1-D array of length n_items")
-    if not np.issubdtype(raw_steps.dtype, np.integer) or np.issubdtype(
-        raw_steps.dtype, np.bool_
-    ):
-        raise ValueError("n_steps entries must be positive integers")
-    if np.any(raw_steps < 1):
-        raise ValueError("n_steps entries must be positive integers")
-    steps = raw_steps.astype(np.int64, copy=False)
-    n_step_rows = sum(int(m) for m in steps)
-    sq = np.asarray(step_q)
-    if sq.ndim != 2:
-        raise ValueError("step_q must be a 2-D (sum_i n_steps[i]) x n_attributes array")
-    if sq.shape[0] != n_step_rows:
-        raise ValueError("step_q must have sum(n_steps) rows")
+    steps, n_step_rows = _validate_seq_n_steps(n_steps, n_items)
     sq, n_attributes = _validate_q_matrix_input(step_q, "step_q", n_step_rows)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
