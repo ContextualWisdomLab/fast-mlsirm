@@ -220,3 +220,38 @@ def test_real_responses_preserve_existing_native_marshalling(monkeypatch):
     assert args[3:6] == (2, 2, 1)
     assert fitted.loading.shape == (2, 1)
     assert fitted.theta.shape == (2, 1)
+
+
+def test_oversized_exact_response_view_fails_before_model_or_native_work(monkeypatch):
+    """The Rust 200M-cell response ceiling is replayed before downstream dense work."""
+
+    responses = np.broadcast_to(
+        np.array([[0.0]], dtype=np.float64),
+        (2, 100_000_001),
+    )
+
+    def unexpected_model(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("model resolution reached before MH-RM response resource admission")
+
+    monkeypatch.setattr(mhrm, "_resolve_model", unexpected_model)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="200,000,000"):
+        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1)
+
+
+def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeypatch):
+    """A huge exact ndarray row is bounded before a trusted built-in matrix is stacked."""
+
+    row = np.broadcast_to(np.array([0.0], dtype=np.float64), (200_000_001,))
+
+    def unexpected_asarray(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("NumPy materialization reached before MH-RM response resource admission")
+
+    monkeypatch.setattr(mhrm.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="200,000,000"):
+        mhrm.fit_mhrm([row], 1, max_cycles=2, burn_in=1, mh_steps=1)
