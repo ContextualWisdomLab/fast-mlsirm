@@ -24,15 +24,10 @@ from typing import Any, Callable, Final, Sequence
 
 try:
     from scripts._bounded_json import parse_json_bounded
-except ModuleNotFoundError:
-    try:
-        from _bounded_json import parse_json_bounded
-    except ModuleNotFoundError:
-        def parse_json_bounded(content: str, **_: Any) -> Any:
-            """Parse JSON when the repository helper is unavailable in isolation."""
-            if len(content) > 32 * 1024 * 1024:
-                raise ValueError('JSON input exceeds maximum allowed size')
-            return json.loads(content)
+except ModuleNotFoundError as exc:
+    if exc.name != "scripts":
+        raise
+    from _bounded_json import parse_json_bounded
 
 
 OPEN_PR_DETAIL_FIELDS: Final = (
