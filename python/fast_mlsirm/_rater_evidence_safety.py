@@ -22,6 +22,8 @@ from ._icc_control_safety import (
     _trusted_sequence_tree,
 )
 
+_RATER_HARDENED_ATTR = "__fast_mlsirm_rater_evidence_hardened__"
+
 
 def _real_numeric_source_array(
     value: Any,
@@ -66,16 +68,28 @@ def _real_numeric_source_array(
     return arr
 
 
+def _rater_original(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Recover one original callable from a package-owned rater wrapper."""
+    if getattr(function, _RATER_HARDENED_ATTR, False):
+        return function.__wrapped__
+    return function
+
+
 def install(reliability_module: ModuleType) -> None:
-    """Install callback-free adapters for remaining rater reliability APIs."""
-    current_kripp: Callable[..., Any] = reliability_module.kripp_alpha
-    if getattr(current_kripp, "__fast_mlsirm_rater_evidence_hardened__", False):
+    """Install callback-free adapters for the complete rater surface idempotently."""
+    current_rater: tuple[Callable[..., Any], ...] = (
+        reliability_module.kripp_alpha,
+        reliability_module.finn_coefficient,
+        reliability_module.maxwell_re,
+        reliability_module.robinson_a,
+    )
+    if all(getattr(function, _RATER_HARDENED_ATTR, False) for function in current_rater):
         return
 
-    original_kripp: Callable[..., Any] = current_kripp
-    original_finn: Callable[..., Any] = reliability_module.finn_coefficient
-    original_maxwell: Callable[..., Any] = reliability_module.maxwell_re
-    original_robinson: Callable[..., Any] = reliability_module.robinson_a
+    original_kripp = _rater_original(reliability_module.kripp_alpha)
+    original_finn = _rater_original(reliability_module.finn_coefficient)
+    original_maxwell = _rater_original(reliability_module.maxwell_re)
+    original_robinson = _rater_original(reliability_module.robinson_a)
 
     @wraps(original_kripp)
     def safe_kripp_alpha(ratings: Any, method: str = "nominal") -> Any:
@@ -138,7 +152,15 @@ def install(reliability_module: ModuleType) -> None:
         )
         return original_robinson(ratings_value)
 
-    safe_kripp_alpha.__fast_mlsirm_rater_evidence_hardened__ = True
+    rater_wrappers = (
+        safe_kripp_alpha,
+        safe_finn_coefficient,
+        safe_maxwell_re,
+        safe_robinson_a,
+    )
+    for function in rater_wrappers:
+        setattr(function, _RATER_HARDENED_ATTR, True)
+
     reliability_module.kripp_alpha = safe_kripp_alpha
     reliability_module.finn_coefficient = safe_finn_coefficient
     reliability_module.maxwell_re = safe_maxwell_re
