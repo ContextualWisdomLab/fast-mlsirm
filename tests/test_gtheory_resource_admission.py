@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import tracemalloc
+
 import numpy as np
 import pytest
 
@@ -108,26 +110,23 @@ def test_gtheory_pi_rejects_oversized_exact_row_before_numpy_materialization(
 def test_gtheory_sequence_cell_bound_preempts_eager_sibling_scheduling(
     monkeypatch,
 ) -> None:
-    """Flat score rows hit the cell ceiling before every sibling is scheduled."""
-    original_reversed = reversed
-    yielded_children = 0
-
-    def bounded_reversed(value):
-        nonlocal yielded_children
-        for child in original_reversed(value):
-            yielded_children += 1
-            if yielded_children > 4:
-                raise AssertionError(
-                    "G-theory preflight scheduled siblings past the cell ceiling"
-                )
-            yield child
-
+    """Flat score rows fail without allocating traversal state per sibling."""
+    data = [[0.0] * 100_000]
     monkeypatch.setattr(gtheory, "MAX_GTHEORY_SCORE_CELLS", 1)
-    monkeypatch.setattr(gtheory, "reversed", bounded_reversed, raising=False)
     monkeypatch.setattr(gtheory, "_core_or_raise", _unexpected_core_discovery)
 
-    with pytest.raises(
-        ValueError,
-        match=r"data exceeds the 1-cell G-theory limit",
-    ):
-        gtheory.gtheory_pi([[0.0, 1.0, 2.0, 3.0]], n_i_prime=[2])
+    tracemalloc.start()
+    try:
+        with pytest.raises(
+            ValueError,
+            match=r"data exceeds the 1-cell G-theory limit",
+        ):
+            gtheory.gtheory_pi(data, n_i_prime=[2])
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    # The wide input exists before tracing. Indexed traversal needs only a
+    # depth-sized stack; eagerly scheduling 100k sibling frames requires many
+    # megabytes before the second-cell resource failure can fire.
+    assert peak_bytes < 2_000_000
