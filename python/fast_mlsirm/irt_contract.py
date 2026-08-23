@@ -88,15 +88,21 @@ def _validate_item_contract(
 
 
 def _preflight_numeric_tree(value: object, *, error: str) -> None:
-    """Validate built-in numeric trees without caller callbacks or cycle loops."""
+    """Validate and bound built-in numeric trees without caller callbacks."""
     stack: list[tuple[bool, object]] = [(True, value)]
     active_containers: set[int] = set()
+    logical_cells = 0
+    visited_nodes = 0
+    structural_limit = 2 * MAX_IRT_RESPONSE_CELLS + 1
     while stack:
         entering, current = stack.pop()
         current_type = type(current)
         if current_type in (list, tuple):
             identity = id(current)
             if entering:
+                visited_nodes += 1
+                if visited_nodes > structural_limit:
+                    raise ValueError(f"{error}; evidence exceeds the structural-work limit")
                 if identity in active_containers:
                     raise ValueError(f"{error}; cyclic list/tuple containers are not supported")
                 active_containers.add(identity)
@@ -105,12 +111,21 @@ def _preflight_numeric_tree(value: object, *, error: str) -> None:
             else:
                 active_containers.remove(identity)
             continue
+        visited_nodes += 1
+        if visited_nodes > structural_limit:
+            raise ValueError(f"{error}; evidence exceeds the structural-work limit")
         if current_type is np.ndarray:
             if current.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError(error)
-            continue
-        if current_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            logical_cells += int(current.size)
+        elif current_type in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            logical_cells += 1
+        else:
             raise ValueError(error)
+        if logical_cells > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"{error}; evidence must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
 
 
 def _validate_response_shape(source: np.ndarray) -> None:
