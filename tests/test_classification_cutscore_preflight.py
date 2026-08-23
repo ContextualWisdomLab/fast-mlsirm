@@ -107,7 +107,11 @@ def test_numpy_cut_conversion_overflow_is_stable_value_error(monkeypatch) -> Non
             raise OverflowError("platform conversion overflow")
         return original_float(value)
 
-    monkeypatch.setattr(classification, "float", overflow_numpy_float, raising=False)
+    monkeypatch.setitem(
+        classification._normalize_cutscores.__globals__,
+        "float",
+        overflow_numpy_float,
+    )
 
     with pytest.raises(ValueError, match=r"cutscores entries must be finite real scalars"):
         classification._normalize_cutscores([np.float64(1.5)])
