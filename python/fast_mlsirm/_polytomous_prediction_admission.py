@@ -37,18 +37,20 @@ _MAX_PREDICTION_CELLS = 20_000_000
 _MARKER = "__fast_mlsirm_polytomous_prediction_admission__"
 
 
-def _preflight(value: object, name: str) -> None:
-    """Reject callback-bearing and over-budget evidence before NumPy conversion."""
+def _preflight(value: object, name: str, max_ndim: int) -> None:
+    """Reject callback-bearing, over-rank, and over-budget evidence before NumPy."""
 
     error = f"{name} must be a trusted NumPy array or built-in sequence"
+    rank_error = f"{name} must be at most {max_ndim}-D"
     resource_error = (
         f"{name} exceeds the {_MAX_PREDICTION_CELLS:,}-cell prediction evidence budget"
     )
-    frames: list[list[object]] = [[value, 0, 0, False]]
+    # frame = [item, next_child_index, logical_cells, subtree_rank, entered]
+    frames: list[list[object]] = [[value, 0, 0, 1, False]]
     active_container_ids: set[int] = set()
-    subtree_cells: dict[int, int] = {}
+    subtree_metrics: dict[int, tuple[int, int]] = {}
 
-    def add_to_parent(count: int) -> None:
+    def add_to_parent(count: int, subtree_rank: int) -> None:
         if count > _MAX_PREDICTION_CELLS:
             raise ValueError(resource_error)
         if not frames:
@@ -58,53 +60,66 @@ def _preflight(value: object, name: str) -> None:
         if count > _MAX_PREDICTION_CELLS - subtotal:
             raise ValueError(resource_error)
         parent[2] = subtotal + count
+        parent[3] = max(int(parent[3]), 1 + subtree_rank)
 
     while frames:
         frame = frames[-1]
         item = frame[0]
         item_type = type(item)
+        depth = len(frames) - 1
 
         if item_type is np.ndarray:
+            if depth + int(item.ndim) > max_ndim:
+                raise ValueError(rank_error)
             frames.pop()
-            add_to_parent(int(item.size))
+            add_to_parent(int(item.size), int(item.ndim))
             continue
 
         if any(item_type is scalar_type for scalar_type in _TRUSTED_SCALAR_TYPES):
+            if depth > max_ndim:
+                raise ValueError(rank_error)
             frames.pop()
-            add_to_parent(1)
+            add_to_parent(1, 0)
             continue
 
         if item_type is not list and item_type is not tuple:
             raise ValueError(error)
+        if depth + 1 > max_ndim:
+            raise ValueError(rank_error)
 
         item_id = id(item)
-        if not bool(frame[3]):
-            if item_id in subtree_cells:
+        if not bool(frame[4]):
+            cached = subtree_metrics.get(item_id)
+            if cached is not None:
+                count, subtree_rank = cached
+                if depth + subtree_rank > max_ndim:
+                    raise ValueError(rank_error)
                 frames.pop()
-                add_to_parent(subtree_cells[item_id])
+                add_to_parent(count, subtree_rank)
                 continue
             if item_id in active_container_ids:
                 raise ValueError(error)
             active_container_ids.add(item_id)
-            frame[3] = True
+            frame[4] = True
 
         child_index = int(frame[1])
         if child_index < len(item):
             frame[1] = child_index + 1
-            frames.append([item[child_index], 0, 0, False])
+            frames.append([item[child_index], 0, 0, 1, False])
             continue
 
         count = int(frame[2])
+        subtree_rank = int(frame[3])
         active_container_ids.remove(item_id)
-        subtree_cells[item_id] = count
+        subtree_metrics[item_id] = (count, subtree_rank)
         frames.pop()
-        add_to_parent(count)
+        add_to_parent(count, subtree_rank)
 
 
-def _real_numeric_array(value: object, name: str) -> np.ndarray:
+def _real_numeric_array(value: object, name: str, max_ndim: int) -> np.ndarray:
     """Admit trusted evidence and verify lossless float64 representation."""
 
-    _preflight(value, name)
+    _preflight(value, name, max_ndim)
     raw = np.asarray(value)
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
@@ -133,9 +148,9 @@ def install(module: ModuleType) -> None:
         if type(fit) is not module.PolytomousFit:
             raise TypeError("fit must be a PolytomousFit")
 
-        trusted_theta = _real_numeric_array(theta, "theta")
-        trusted_slope = _real_numeric_array(fit.slope, "fit.slope")
-        trusted_cat_params = _real_numeric_array(fit.cat_params, "fit.cat_params")
+        trusted_theta = _real_numeric_array(theta, "theta", 1)
+        trusted_slope = _real_numeric_array(fit.slope, "fit.slope", 1)
+        trusted_cat_params = _real_numeric_array(fit.cat_params, "fit.cat_params", 2)
 
         if (
             trusted_theta.ndim == 1
