@@ -112,3 +112,27 @@ def test_icc_installer_repairs_partially_hardened_rater_surface():
 
     assert module.finn_coefficient is not originals["finn_coefficient"]
     assert module.finn_coefficient.__wrapped__ is originals["finn_coefficient"]
+
+
+def test_icc_installer_keeps_complete_rater_surface_idempotent():
+    """A complete hardened rater surface must not gain another wrapper layer."""
+    module = ModuleType("fast_mlsirm_test_complete_rater_reliability")
+    module.__package__ = "fast_mlsirm_test"
+    module.icc = reliability.icc
+    for name in _PRIMARY_APIS:
+        setattr(module, name, getattr(reliability, name))
+    for name in _RATER_APIS:
+        setattr(module, name, getattr(reliability, name))
+
+    before = tuple(getattr(module, name) for name in _RATER_APIS)
+    icc_control_safety.install(module)
+    after_first = tuple(getattr(module, name) for name in _RATER_APIS)
+    icc_control_safety.install(module)
+    after_second = tuple(getattr(module, name) for name in _RATER_APIS)
+
+    assert after_first == before
+    assert after_second == before
+    assert all(
+        getattr(function, "__fast_mlsirm_rater_evidence_hardened__", False)
+        for function in after_second
+    )
