@@ -40,6 +40,24 @@ class _HostileFloat:
         raise AssertionError("caller numeric conversion executed")
 
 
+class _HostileInt(int):
+    """Integer subclass that must not cross the package trust boundary."""
+
+    calls = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.calls = 0
+
+    def __int__(self) -> int:
+        type(self).calls += 1
+        raise AssertionError("caller integer conversion executed")
+
+    def __float__(self) -> float:
+        type(self).calls += 1
+        raise AssertionError("caller float conversion executed")
+
+
 def _unexpected_core_discovery():
     """Fail if invalid public evidence reaches compiled-core discovery."""
 
@@ -93,6 +111,46 @@ def test_cdm_fits_reject_callback_bearing_response_providers(monkeypatch, fit):
         with pytest.raises(ValueError, match="trusted NumPy array or built-in sequence"):
             fit(responses, _q_matrix())
         assert _ArraySentinel.calls == 0
+
+
+@pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
+def test_cdm_fits_reject_numeric_subclasses_without_callbacks(monkeypatch, fit):
+    """Caller-defined numeric identities are not trusted as inert response cells."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    _HostileInt.reset()
+    responses = [[_HostileInt(0), 1], [1, 0]]
+
+    with pytest.raises(ValueError, match="trusted NumPy array or built-in sequence"):
+        fit(responses, _q_matrix())
+
+    assert _HostileInt.calls == 0
+
+
+@pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
+def test_cdm_fits_preserve_trusted_sequence_compatibility(monkeypatch, fit):
+    """Inert ndarray rows, shared rows, and NumPy booleans remain supported."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+    shared_row = [0, 1]
+    cases = (
+        [np.array([0, 1], dtype=np.int8), np.array([1, 0], dtype=np.uint8)],
+        [shared_row, shared_row],
+        [[np.bool_(False), np.int8(1)], [np.uint8(1), np.bool_(False)]],
+    )
+
+    for responses in cases:
+        with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
+            fit(responses, _q_matrix())
+
+    assert calls == len(cases)
 
 
 @pytest.mark.parametrize("fit", [fit_cdm, fit_gdina])
