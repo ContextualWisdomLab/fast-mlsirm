@@ -225,6 +225,12 @@ def install(module: ModuleType) -> None:
         trusted_theta = _real_numeric_array(theta, "theta")
         trusted_slope = _real_numeric_array(fit.slope, "fit.slope")
         trusted_cat_params = _real_numeric_array(fit.cat_params, "fit.cat_params")
+        if not np.all(np.isfinite(trusted_theta)):
+            raise ValueError("theta must be a non-empty finite 1-D array")
+        if not np.all(np.isfinite(trusted_slope)) or not np.all(
+            np.isfinite(trusted_cat_params)
+        ):
+            raise ValueError("fit item parameters must be finite")
 
         if (
             trusted_theta.ndim == 1
