@@ -39,6 +39,25 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = frozenset(
 )
 
 
+def _validate_item_contract(
+    item_type: object,
+    n_categories: object,
+) -> None:
+    """Validate IRT family/category semantics before caller-owned data work."""
+    if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
+        raise ValueError("item_type must be 'dichotomous' or 'polytomous'")
+    if item_type == "dichotomous" and n_categories is not None:
+        raise ValueError("n_categories is only valid for polytomous responses")
+    if item_type == "polytomous" and (
+        type(n_categories) is not int
+        or not 2 <= n_categories <= MAX_POLYTOMOUS_CATEGORIES
+    ):
+        raise ValueError(
+            "polytomous responses require n_categories in "
+            f"2..{MAX_POLYTOMOUS_CATEGORIES}"
+        )
+
+
 def _real_numeric_response_matrix(
     responses: Iterable[Iterable[float]] | np.ndarray,
 ) -> np.ndarray:
@@ -73,6 +92,40 @@ def _real_numeric_response_matrix(
         raise ValueError("responses must be a real numeric matrix") from exc
 
 
+def _trusted_mask_matrix(mask: object, shape: tuple[int, ...]) -> np.ndarray:
+    """Marshal trusted mask evidence without caller array/truth callbacks."""
+    if type(mask) is np.ndarray:
+        source = mask
+    elif type(mask) in (list, tuple):
+        stack = list(mask)
+        while stack:
+            current = stack.pop()
+            if type(current) in (list, tuple):
+                stack.extend(current)
+                continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in {"b", "i", "u", "f"}:
+                    raise ValueError("mask must be Boolean or numeric evidence")
+                continue
+            if type(current) not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+                raise ValueError("mask must be Boolean or numeric evidence")
+        try:
+            source = np.asarray(mask)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("mask must be Boolean or numeric evidence") from exc
+    else:
+        raise ValueError("mask must be Boolean or numeric evidence")
+
+    if source.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError("mask must be Boolean or numeric evidence")
+    if source.shape != shape:
+        raise ValueError("mask shape must match responses")
+    try:
+        return np.ascontiguousarray(source, dtype=bool)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("mask must be Boolean or numeric evidence") from exc
+
+
 def validate_irt_response_matrix(
     responses: Iterable[Iterable[float]] | np.ndarray,
     item_type: IRTItemType,
@@ -91,18 +144,7 @@ def validate_irt_response_matrix(
     polytomous observations are integer category indices in
     0..n_categories-1.
     """
-    if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
-        raise ValueError("item_type must be 'dichotomous' or 'polytomous'")
-    if item_type == "dichotomous" and n_categories is not None:
-        raise ValueError("n_categories is only valid for polytomous responses")
-    if item_type == "polytomous" and (
-        type(n_categories) is not int
-        or not 2 <= n_categories <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(
-            "polytomous responses require n_categories in "
-            f"2..{MAX_POLYTOMOUS_CATEGORIES}"
-        )
+    _validate_item_contract(item_type, n_categories)
 
     matrix = _real_numeric_response_matrix(responses)
     if matrix.ndim != 2:
@@ -299,6 +341,7 @@ def fit_irt_experiment(  # noqa: UP047  # PEP 695 syntax would break Python 3.10
     evidence. The callable receives the validated persons-by-items matrix as
     its first positional argument.
     """
+    _validate_item_contract(item_type, n_categories)
     mask = fit_kwargs.get("mask")
     normalized = _normalize_experiment_responses(responses, item_type, mask)
     matrix = validate_irt_experiment_readiness(
@@ -320,9 +363,7 @@ def _normalize_experiment_responses(
     if mask is None:
         active = np.ones(matrix.shape, dtype=bool)
     else:
-        active = np.asarray(mask, dtype=bool)
-        if active.shape != matrix.shape:
-            raise ValueError("mask shape must match responses")
+        active = _trusted_mask_matrix(mask, matrix.shape)
     if item_type == "dichotomous":
         observed = active & np.isfinite(matrix) & (matrix != -1)
     else:
