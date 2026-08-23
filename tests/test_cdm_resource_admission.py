@@ -78,3 +78,34 @@ def test_cdm_resource_preflight_preserves_small_shared_sequence_dag():
 
     shared_row = [0, 1]
     _reject_untrusted_response_container([shared_row, shared_row])
+
+
+def test_shared_nested_dag_hits_logical_budget_without_exponential_retraversal():
+    """Shared nested containers are accounted by multiplicity without rewalking them."""
+
+    evidence: object = [0]
+    for _ in range(25):
+        evidence = [evidence, evidence]
+
+    with pytest.raises(
+        ValueError,
+        match=r"responses exceed the 20000000-cell CDM evidence budget",
+    ):
+        _reject_untrusted_response_container(evidence)
+
+
+def test_boolean_round_trip_does_not_require_equal_nan(monkeypatch):
+    """Boolean response admission remains compatible with the declared NumPy floor."""
+
+    original_array_equal = np.array_equal
+
+    def guarded_array_equal(left, right, *, equal_nan=False):
+        if equal_nan and np.asarray(left).dtype.kind == "b":
+            raise AssertionError("equal_nan must not be used for boolean arrays")
+        return original_array_equal(left, right, equal_nan=equal_nan)
+
+    monkeypatch.setattr(cdm.np, "array_equal", guarded_array_equal)
+    observed = cdm._response_array(np.array([[True, False]], dtype=np.bool_))
+
+    assert observed.dtype == np.float64
+    assert observed.tolist() == [[1.0, 0.0]]
