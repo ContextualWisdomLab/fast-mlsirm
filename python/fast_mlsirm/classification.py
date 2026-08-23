@@ -486,7 +486,8 @@ def subkoviak_agreement(
     read source, whose Eq. 4 OCR prints ``>``). ``alpha=None`` derives
     KR-21 with the population variance, clamped to [0, 1]; the compound
     binomial refinement (Eqs. 12-14) is not implemented because it defers
-    to Lord & Novick (1968), which was not read. In LLM-as-a-Judge quality management this estimates how consistently a judge's cut score would
+    to Lord & Novick (1968), which was not read. In LLM-as-a-Judge quality
+    management this estimates how consistently a judge's cut score would
     reclassify the same outputs on a hypothetical retest, from one
     administration only.
 
