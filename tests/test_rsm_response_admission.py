@@ -20,6 +20,16 @@ class _FloatTrap:
         raise AssertionError("caller element conversion executed")
 
 
+class _ArrayTrap:
+    """Fail if package admission invokes a caller-owned array protocol."""
+
+    callbacks = 0
+
+    def __array__(self, *args: object, **kwargs: object) -> np.ndarray:
+        type(self).callbacks += 1
+        raise AssertionError("caller array protocol executed")
+
+
 class _FakeCore:
     """Minimal Rust-boundary recorder for valid response compatibility."""
 
@@ -53,6 +63,14 @@ class _FakeCore:
 
 def _native_must_not_run():
     raise AssertionError("compiled-core discovery must not run for rejected evidence")
+
+
+def test_array_provider_fails_without_protocol_or_native_discovery() -> None:
+    _ArrayTrap.callbacks = 0
+    with patch("fast_mlsirm.fitstats._core_module", side_effect=_native_must_not_run):
+        with pytest.raises(ValueError, match="responses must be a real numeric array"):
+            fit_rsm(_ArrayTrap(), n_cat=3)
+    assert _ArrayTrap.callbacks == 0
 
 
 def test_complex_responses_fail_before_lossy_cast_or_native_discovery() -> None:
