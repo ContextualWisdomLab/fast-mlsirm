@@ -551,8 +551,10 @@ pub fn fit_poly_unidim(
                 let mut cum = 0.0_f64;
                 for k in (1..n_cat).rev() {
                     cum += freq[k];
-                    let c = cum.clamp(1e-4, 1.0 - 1e-4);
-                    params[i][k] = (c / (1.0 - c)).ln();
+                    if !(0.0 < cum && cum < 1.0) {
+                        return Err("smoothed GRM cumulative probability must be in (0, 1)".into());
+                    }
+                    params[i][k] = (cum / (1.0 - cum)).ln();
                 }
             }
         }
@@ -1426,8 +1428,10 @@ pub fn fit_poly_multigroup(
                 let mut cum = 0.0_f64;
                 for k in (1..n_cat).rev() {
                     cum += freq[k];
-                    let c = cum.clamp(1e-4, 1.0 - 1e-4);
-                    params[i][k] = (c / (1.0 - c)).ln();
+                    if !(0.0 < cum && cum < 1.0) {
+                        return Err("smoothed GRM cumulative probability must be in (0, 1)".into());
+                    }
+                    params[i][k] = (cum / (1.0 - cum)).ln();
                 }
             }
         }
@@ -2362,9 +2366,9 @@ pub fn poly_s_x2(
             let lp = match model {
                 PolyModel::Gpcm => {
                     let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
-                    let mut intercepts = vec![0.0_f64; n_cat];
-                    intercepts[1..].copy_from_slice(cp);
-                    gpcm_logprobs(base, &scores, &intercepts)
+                    let mut ic = vec![0.0_f64; n_cat];
+                    ic[1..].copy_from_slice(cp);
+                    gpcm_logprobs(base, &scores, &ic)
                 }
                 PolyModel::Grm => grm_logprobs(base, cp),
             };
