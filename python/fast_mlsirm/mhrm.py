@@ -40,6 +40,16 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = (
     *_NUMPY_COMPLEX_TYPES,
 )
 _TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
+_TRUSTED_INTEGRAL_CONTROL_TYPES = (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES)
+_TRUSTED_SEED_TYPES = (int, *_NUMPY_INTEGER_TYPES)
+_TRUSTED_REAL_CONTROL_TYPES = (
+    bool,
+    int,
+    float,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+)
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -100,6 +110,61 @@ def _trusted_response_array(responses: object) -> np.ndarray:
         frames.pop()
 
     return np.asarray(responses)
+
+
+def _finite_integer_control(value: object, name: str) -> int:
+    """Normalize one finite integral control without invoking caller conversion protocols."""
+
+    value_type = type(value)
+    if not _is_exact_type(value_type, _TRUSTED_INTEGRAL_CONTROL_TYPES):
+        raise ValueError(f"{name} must be a finite integer")
+    if _is_exact_type(value_type, _NUMPY_FLOAT_TYPES) or value_type is float:
+        if not bool(np.isfinite(value)) or value != np.floor(value):
+            raise ValueError(f"{name} must be a finite integer")
+    return int(value)
+
+
+def _finite_real_control(value: object, name: str) -> float:
+    """Normalize one finite real control without invoking caller conversion protocols."""
+
+    if not _is_exact_type(type(value), _TRUSTED_REAL_CONTROL_TYPES):
+        raise ValueError(f"{name} must be a finite real scalar")
+    numeric = float(value)
+    if not np.isfinite(numeric):
+        raise ValueError(f"{name} must be finite")
+    return numeric
+
+
+def _seed_control(value: object) -> int:
+    """Normalize the public unsigned-64 seed without caller integer dispatch."""
+
+    if not _is_exact_type(type(value), _TRUSTED_SEED_TYPES):
+        raise TypeError("seed must be a non-negative integer")
+    seed = int(value)
+    if not 0 <= seed < 2**64:
+        raise ValueError("seed must be in [0, 2**64)")
+    return seed
+
+
+def _boolean_control(value: object, name: str) -> bool:
+    """Normalize one Boolean flag without invoking arbitrary truth protocols."""
+
+    if type(value) is bool:
+        return value
+    if type(value) is np.bool_:
+        return bool(value)
+    raise TypeError(f"{name} must be a boolean")
+
+
+def _family_control(value: object) -> str:
+    """Normalize the response-family selector without invoking caller text conversion."""
+
+    if type(value) is not str:
+        raise ValueError("family must be '2pl' or 'gpcm'")
+    family = value.lower()
+    if family not in ("2pl", "gpcm"):
+        raise ValueError("family must be '2pl' or 'gpcm'")
+    return family
 
 
 @dataclass
@@ -219,6 +284,36 @@ def fit_mhrm(
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
             Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
+    max_cycles_int = _finite_integer_control(max_cycles, "max_cycles")
+    burn_in_int = _finite_integer_control(burn_in, "burn_in")
+    mh_steps_int = _finite_integer_control(mh_steps, "mh_steps")
+    proposal_sd_float = _finite_real_control(proposal_sd, "proposal_sd")
+    target_accept_float = _finite_real_control(target_accept, "target_accept")
+    tol_float = _finite_real_control(tol, "tol")
+    seed_int = _seed_control(seed)
+    estimate_se_bool = _boolean_control(estimate_se, "estimate_se")
+    estimate_corr_bool = _boolean_control(estimate_corr, "estimate_corr")
+    fam = _family_control(family)
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
+
+    if max_cycles_int == 0 or burn_in_int >= max_cycles_int:
+        raise ValueError("require 0 < burn_in < max_cycles")
+    if mh_steps_int == 0:
+        raise ValueError("mh_steps must be positive")
+    if proposal_sd_float <= 0.0:
+        raise ValueError("proposal_sd must be finite and positive")
+    if not 0.0 <= target_accept_float <= 1.0:
+        raise ValueError("target_accept must be in [0, 1]")
+    if tol_float <= 0.0:
+        raise ValueError("tol must be finite and positive")
+    if fam == "2pl":
+        n_cat_int = 2
+    elif not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(
+            "n_cat must be between 2 and "
+            f"{MAX_POLYTOMOUS_CATEGORIES} for family='gpcm'"
+        )
+
     response_input = _trusted_response_array(responses)
     if np.iscomplexobj(response_input) or response_input.dtype == object:
         raise ValueError("responses must be real-valued")
@@ -232,44 +327,6 @@ def fit_mhrm(
     n_dims = pat.shape[1]
     if not 1 <= n_dims <= _MAX_DIMS:
         raise ValueError(f"loading_pattern dimensions must be between 1 and {_MAX_DIMS}")
-
-    def _finite_int(value, name: str) -> int:
-        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
-        scalar = np.asarray(value)
-        if (
-            scalar.ndim != 0
-            or not np.issubdtype(scalar.dtype, np.number)
-            or np.iscomplexobj(scalar)
-        ):
-            raise ValueError(f"{name} must be a finite integer")
-        numeric = float(scalar)
-        if not np.isfinite(numeric) or numeric != np.floor(numeric):
-            raise ValueError(f"{name} must be a finite integer")
-        return int(numeric)
-
-    max_cycles_int = _finite_int(max_cycles, "max_cycles")
-    burn_in_int = _finite_int(burn_in, "burn_in")
-    mh_steps_int = _finite_int(mh_steps, "mh_steps")
-    if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
-        raise TypeError("seed must be a non-negative integer")
-    seed_int = int(seed)
-    if not 0 <= seed_int < 2**64:
-        raise ValueError("seed must be in [0, 2**64)")
-    for name, val in (("proposal_sd", proposal_sd), ("target_accept", target_accept), ("tol", tol)):
-        if not np.isfinite(float(val)):
-            raise ValueError(f"{name} must be finite")
-
-    fam = str(family).lower()
-    if fam not in ("2pl", "gpcm"):
-        raise ValueError("family must be '2pl' or 'gpcm'")
-    n_cat_int = _finite_int(n_cat, "n_cat")
-    if fam == "2pl":
-        n_cat_int = 2
-    elif not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
-        raise ValueError(
-            "n_cat must be between 2 and "
-            f"{MAX_POLYTOMOUS_CATEGORIES} for family='gpcm'"
-        )
 
     observed = ~np.isnan(y)
     if np.any(observed):
@@ -307,14 +364,14 @@ def fit_mhrm(
         max_cycles_int,
         burn_in_int,
         mh_steps_int,
-        float(proposal_sd),
-        float(target_accept),
-        float(tol),
+        proposal_sd_float,
+        target_accept_float,
+        tol_float,
         seed_int,
-        bool(estimate_se),
-        bool(estimate_corr),
+        estimate_se_bool,
+        estimate_corr_bool,
         fam,
-        int(n_cat_int),
+        n_cat_int,
     )
     se_loading = np.asarray(res["se_loading"], dtype=np.float64)
     se_intercept = np.asarray(res["se_intercept"], dtype=np.float64)
