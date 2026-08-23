@@ -83,3 +83,32 @@ def test_icc_installer_repairs_missing_primary_adapter_after_partial_install():
 
     assert module.guttman_lambdas is not originals["guttman_lambdas"]
     assert module.guttman_lambdas.__wrapped__ is originals["guttman_lambdas"]
+
+
+def test_icc_installer_repairs_partially_hardened_rater_surface():
+    """A hardened Krippendorff wrapper must not strand an unwrapped rater sibling."""
+    module = ModuleType("fast_mlsirm_test_partial_rater_reliability")
+    module.__package__ = "fast_mlsirm_test"
+    module.icc = reliability.icc
+    for name in _PRIMARY_APIS:
+        setattr(module, name, getattr(reliability, name))
+
+    originals = {}
+    for name in _RATER_APIS:
+        wrapped = getattr(reliability, name)
+        originals[name] = wrapped.__wrapped__
+        setattr(module, name, wrapped)
+
+    # Model interruption after kripp_alpha was rebound but before finn_coefficient.
+    module.finn_coefficient = originals["finn_coefficient"]
+    assert getattr(
+        module.kripp_alpha,
+        "__fast_mlsirm_rater_evidence_hardened__",
+        False,
+    )
+    assert module.finn_coefficient is originals["finn_coefficient"]
+
+    icc_control_safety.install(module)
+
+    assert module.finn_coefficient is not originals["finn_coefficient"]
+    assert module.finn_coefficient.__wrapped__ is originals["finn_coefficient"]
