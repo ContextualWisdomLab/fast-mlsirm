@@ -9,8 +9,8 @@ import fast_mlsirm.gtheory as gtheory
 
 
 def _unexpected_core_discovery(name: str) -> object:
-    """Fail if an invalid semantic control reaches native capability discovery."""
-    raise AssertionError(f"invalid G-theory control reached Rust discovery: {name}")
+    """Fail if invalid G-theory input reaches native capability discovery."""
+    raise AssertionError(f"invalid G-theory input reached Rust discovery: {name}")
 
 
 class _UnexpectedArrayMaterialization:
@@ -21,6 +21,16 @@ class _UnexpectedArrayMaterialization:
     def __array__(self, *args, **kwargs):
         type(self).calls += 1
         raise AssertionError("invalid G-theory control reached data materialization")
+
+
+class _HostileArrayProvider:
+    """Fail if scientific evidence admission executes caller array callbacks."""
+
+    calls = 0
+
+    def __array__(self, *args, **kwargs):
+        type(self).calls += 1
+        raise AssertionError("G-theory evidence admission executed caller __array__")
 
 
 def _pi_data() -> np.ndarray:
@@ -105,3 +115,59 @@ def test_phi_lambda_rejects_invalid_cut_before_data_materialization() -> None:
         gtheory.phi_lambda(_UnexpectedArrayMaterialization(), np.inf, n_i_prime=[2])
 
     assert _UnexpectedArrayMaterialization.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "kwargs"),
+    [
+        (gtheory.gtheory_pi, {"n_i_prime": [2]}),
+        (gtheory.gtheory_pio, {"n_prime": [(2, 2)]}),
+    ],
+)
+def test_gtheory_rejects_arbitrary_array_provider_before_callbacks_and_core(
+    monkeypatch,
+    entrypoint,
+    kwargs,
+) -> None:
+    """G-study evidence must be inert before NumPy or Rust receives it."""
+    _HostileArrayProvider.calls = 0
+    monkeypatch.setattr(gtheory, "_core_or_raise", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match=r"data must be a real numeric array"):
+        entrypoint(_HostileArrayProvider(), **kwargs)
+
+    assert _HostileArrayProvider.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "data", "kwargs"),
+    [
+        (
+            gtheory.gtheory_pi,
+            np.array([[0.0 + 1.0j, 1.0], [1.0, 0.0]], dtype=np.complex128),
+            {"n_i_prime": [2]},
+        ),
+        (
+            gtheory.gtheory_pio,
+            np.array(
+                [
+                    [[0.0 + 1.0j, 1.0], [1.0, 0.0]],
+                    [[1.0, 0.0], [0.0, 1.0]],
+                ],
+                dtype=np.complex128,
+            ),
+            {"n_prime": [(2, 2)]},
+        ),
+    ],
+)
+def test_gtheory_rejects_complex_evidence_before_lossy_narrowing_and_core(
+    monkeypatch,
+    entrypoint,
+    data,
+    kwargs,
+) -> None:
+    """Imaginary score evidence must not be projected onto a real G-study."""
+    monkeypatch.setattr(gtheory, "_core_or_raise", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match=r"data must be real-valued"):
+        entrypoint(data, **kwargs)
