@@ -189,3 +189,18 @@ def test_gtheory_real_data_preserves_builtin_sequence_numpy_scalars(data) -> Non
     assert result.dtype == np.float64
     assert result.flags.c_contiguous
     np.testing.assert_array_equal(result, np.array([[0.0, 1.0], [1.0, 0.0]]))
+
+
+def test_gtheory_real_data_preserves_builtin_sequence_of_exact_ndarrays() -> None:
+    """Historical built-in containers of exact inert NumPy rows remain supported."""
+    rows = [
+        np.array([0, 1], dtype=np.int16),
+        np.array([1.0, 0.0], dtype=np.float32),
+    ]
+
+    result = gtheory._validated_real_data(rows)
+
+    assert type(result) is np.ndarray
+    assert result.dtype == np.float64
+    assert result.flags.c_contiguous
+    np.testing.assert_array_equal(result, np.array([[0.0, 1.0], [1.0, 0.0]]))
