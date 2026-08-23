@@ -255,3 +255,20 @@ def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeyp
 
     with pytest.raises(ValueError, match="200,000,000"):
         mhrm.fit_mhrm([row], 1, max_cycles=2, burn_in=1, mh_steps=1)
+
+
+def test_empty_container_fanout_fails_before_sequence_materialization(monkeypatch):
+    """Malformed empty-container fan-out cannot bypass bounded MH-RM preflight work."""
+
+    monkeypatch.setattr(mhrm, "_MAX_RESPONSE_CELLS", 2, raising=False)
+
+    def unexpected_asarray(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("NumPy materialization ran after unbounded MH-RM traversal")
+
+    monkeypatch.setattr(mhrm.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    responses = [[[]] for _ in range(7)]
+
+    with pytest.raises(ValueError, match="structural traversal budget"):
+        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1)
