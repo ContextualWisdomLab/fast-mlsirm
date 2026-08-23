@@ -118,6 +118,23 @@ def test_native_unsigned_control_domains_fail_before_response_admission(monkeypa
         mhrm.fit_mhrm(_ResponseShouldNotBeTouched(), **controls)
 
 
+@pytest.mark.parametrize(
+    "controls",
+    [
+        {"max_cycles": 2**64},
+        {"max_cycles": 2, "burn_in": 2**64},
+        {"max_cycles": 2, "burn_in": 1, "mh_steps": 2**64},
+    ],
+)
+def test_native_usize_upper_bound_fails_before_response_admission(monkeypatch, controls):
+    """Controls outside the supported 64-bit usize boundary fail before caller response work."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match=r"must be in \[0, 2\*\*64\)"):
+        mhrm.fit_mhrm(_ResponseShouldNotBeTouched(), **controls)
+
+
 def test_callback_bearing_numeric_and_text_controls_fail_without_callbacks(monkeypatch):
     """Caller conversion protocols cannot define MH-RM estimator controls."""
 
@@ -207,3 +224,29 @@ def test_trusted_numpy_controls_are_normalized_to_builtin_primitives(monkeypatch
     assert type(args[13]) is bool
     assert type(args[14]) is bool
     assert type(args[15]) is str
+
+
+def test_full_uint64_iteration_control_domain_remains_compatible(monkeypatch):
+    """The 64-bit usize boundary remains unsigned rather than being narrowed to signed 63 bits."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_mhrm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    responses = np.array([[0, 1], [1, 0]], dtype=np.int8)
+    maximum = np.uint64(2**64 - 1)
+
+    mhrm.fit_mhrm(
+        responses,
+        max_cycles=2,
+        burn_in=1,
+        mh_steps=maximum,
+        estimate_se=False,
+    )
+
+    assert type(captured["args"][8]) is int
+    assert captured["args"][8] == 2**64 - 1
