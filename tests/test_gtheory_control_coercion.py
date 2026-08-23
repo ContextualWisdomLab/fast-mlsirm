@@ -40,6 +40,31 @@ class _HostileFloat:
         raise RuntimeError("GTHEORY_FLOAT_REPR_SENTINEL")
 
 
+class _HostileControlList(list):
+    """List subclass whose iterator must never run during control admission."""
+
+    def __init__(self, values) -> None:
+        super().__init__(values)
+        self.iter_calls = 0
+
+    def __iter__(self):
+        self.iter_calls += 1
+        raise RuntimeError("GTHEORY_CONTROL_ITER_SENTINEL")
+
+
+class _HostileControlPair(tuple):
+    """Pair subclass whose iterator must never run during D-study admission."""
+
+    def __new__(cls, values):
+        obj = super().__new__(cls, values)
+        obj.iter_calls = 0
+        return obj
+
+    def __iter__(self):
+        self.iter_calls += 1
+        raise RuntimeError("GTHEORY_PAIR_ITER_SENTINEL")
+
+
 class _NoNumericCore:
     """Core stub proving invalid controls fail before Rust numerical work."""
 
@@ -58,6 +83,7 @@ class _RecordingCore:
 
     def __init__(self) -> None:
         self.primes: list[int] | None = None
+        self.pairs: list[tuple[int, int]] | None = None
         self.cut: float | None = None
 
     def gtheory_pi(self, data, n_p, n_i, primes):
@@ -68,6 +94,17 @@ class _RecordingCore:
             "ms": [1.0, 1.0, 1.0],
             "var_raw": [1.0, 1.0, 1.0],
             "var": [1.0, 1.0, 1.0],
+            "d_study": [],
+        }
+
+    def gtheory_pio(self, data, n_p, n_i, n_o, pairs):
+        self.pairs = pairs
+        return {
+            "df": [1.0] * 7,
+            "ss": [1.0] * 7,
+            "ms": [1.0] * 7,
+            "var_raw": [1.0] * 7,
+            "var": [1.0] * 7,
             "d_study": [],
         }
 
@@ -126,6 +163,53 @@ def test_pio_rejects_hostile_dstudy_size_before_integer_coercion(monkeypatch) ->
     assert hostile.repr_calls == 0
 
 
+def test_pi_rejects_hostile_dstudy_container_before_iteration(monkeypatch) -> None:
+    """One-facet D-study containers must be inert before iteration."""
+    hostile = _HostileControlList([2, 3])
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"n_i_prime must be a list or tuple"):
+        gtheory.gtheory_pi(_pi_data(), n_i_prime=hostile)
+
+    assert hostile.iter_calls == 0
+
+
+def test_phi_lambda_rejects_hostile_dstudy_container_before_iteration(monkeypatch) -> None:
+    """Phi(lambda) D-study containers must be inert before iteration."""
+    hostile = _HostileControlList([2, 3])
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"n_i_prime must be a list or tuple"):
+        gtheory.phi_lambda(_pi_data(), 0.5, n_i_prime=hostile)
+
+    assert hostile.iter_calls == 0
+
+
+def test_pio_rejects_hostile_outer_dstudy_container_before_iteration(monkeypatch) -> None:
+    """Two-facet outer D-study containers must not execute caller iteration."""
+    hostile = _HostileControlList([(2, 3)])
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(ValueError, match=r"n_prime must be a list or tuple of pairs"):
+        gtheory.gtheory_pio(_pio_data(), n_prime=hostile)
+
+    assert hostile.iter_calls == 0
+
+
+def test_pio_rejects_hostile_dstudy_pair_before_iteration(monkeypatch) -> None:
+    """Two-facet D-study pairs must not execute caller iteration."""
+    hostile = _HostileControlPair((2, 3))
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: _NoNumericCore())
+
+    with pytest.raises(
+        ValueError,
+        match=r"n_prime entries must be pairs of positive integers",
+    ):
+        gtheory.gtheory_pio(_pio_data(), n_prime=[hostile])
+
+    assert hostile.iter_calls == 0
+
+
 def test_phi_lambda_rejects_hostile_cut_before_float_coercion(monkeypatch) -> None:
     """Mastery cut validation must not execute caller-defined ``__float__``."""
     hostile = _HostileFloat()
@@ -164,8 +248,13 @@ def test_dstudy_controls_preserve_builtin_and_numpy_scalar_types(monkeypatch) ->
     monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: core)
 
     gtheory.gtheory_pi(_pi_data(), n_i_prime=[2, np.int64(3)])
+    gtheory.gtheory_pio(
+        _pio_data(),
+        n_prime=((np.int32(2), 2), [3, np.uint8(2)]),
+    )
 
     assert core.primes == [2, 3]
+    assert core.pairs == [(2, 2), (3, 2)]
 
 
 def test_phi_lambda_preserves_numpy_real_and_integer_controls(monkeypatch) -> None:
