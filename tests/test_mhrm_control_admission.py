@@ -104,8 +104,8 @@ def test_invalid_control_precedes_response_admission(monkeypatch):
 @pytest.mark.parametrize(
     ("controls", "message"),
     [
-        ({"max_cycles": -1}, "require 0 < burn_in < max_cycles"),
-        ({"max_cycles": 2, "burn_in": -1}, "require 0 < burn_in < max_cycles"),
+        ({"max_cycles": -1}, "require 0 <= burn_in < max_cycles"),
+        ({"max_cycles": 2, "burn_in": -1}, "require 0 <= burn_in < max_cycles"),
         ({"max_cycles": 2, "burn_in": 1, "mh_steps": -1}, "mh_steps must be positive"),
     ],
 )
