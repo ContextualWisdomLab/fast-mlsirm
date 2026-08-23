@@ -101,6 +101,19 @@ def test_exact_numpy_integer_dstudy_controls_remain_supported(monkeypatch) -> No
     assert core.primes == [4, 5]
 
 
+def test_exact_range_one_facet_dstudy_controls_remain_supported(monkeypatch) -> None:
+    """The documented Sequence[int] surface retains inert built-in ranges."""
+    core = _RecordingCore()
+    monkeypatch.setattr(gtheory, "_core_or_raise", lambda name: core)
+
+    gtheory.gtheory_pi(_pi_data(), n_i_prime=range(2, 5))
+    assert core.primes == [2, 3, 4]
+    assert all(type(value) is int for value in core.primes)
+
+    gtheory.phi_lambda(_pi_data(), 0.5, n_i_prime=range(5, 7))
+    assert core.primes == [5, 6]
+
+
 def test_numpy_dstudy_control_subclasses_fail_before_iteration(monkeypatch) -> None:
     hostile_vector = _HostileIntegerArray([2, 3])
     hostile_pairs = _HostileIntegerArray([[2, 2], [3, 4]])
