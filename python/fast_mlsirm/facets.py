@@ -12,6 +12,7 @@ import numpy as np
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 
 
+_MAX_FACETS_RESPONSE_CELLS = 20_000_000
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -58,36 +59,75 @@ def _real_control(value: object, name: str) -> float:
 
 
 def _response_array(value: object) -> np.ndarray:
-    """Materialize inert real-numeric response evidence without array callbacks."""
+    """Materialize inert real-numeric response evidence after bounded preflight."""
+
+    resource_error = (
+        f"responses must contain at most {_MAX_FACETS_RESPONSE_CELLS:,} logical cells"
+    )
     value_type = type(value)
     if value_type is np.ndarray:
+        if value.size > _MAX_FACETS_RESPONSE_CELLS:
+            raise ValueError(resource_error)
         response_array = value
     elif value_type is list or value_type is tuple:
-        stack: list[tuple[object, int]] = [(value, 0)]
-        while stack:
-            current, depth = stack.pop()
-            current_type = type(current)
-            if current_type is list or current_type is tuple:
-                next_depth = depth + 1
-                if next_depth > 3:
+        # Indexed frames keep temporary traversal state proportional to nesting
+        # depth instead of sibling width. The public evidence contract is at
+        # most three-dimensional, so this state remains bounded independently
+        # of the number of ratings in any one dimension.
+        frames: list[list[object]] = [[value, 0, 0]]
+        active_container_ids: set[int] = {id(value)}
+        logical_cells = 0
+
+        while frames:
+            frame = frames[-1]
+            current = frame[0]
+            child_index = int(frame[1])
+            depth = int(frame[2])
+
+            if child_index >= len(current):
+                active_container_ids.remove(id(current))
+                frames.pop()
+                continue
+
+            frame[1] = child_index + 1
+            child = current[child_index]
+            child_type = type(child)
+            next_depth = depth + 1
+
+            if child_type is list or child_type is tuple:
+                if next_depth >= 3:
                     raise ValueError(
                         "responses must be a 3-D persons x items x raters array"
                     )
-                stack.extend((child, next_depth) for child in current)
+                child_id = id(child)
+                if child_id in active_container_ids:
+                    raise ValueError(
+                        "responses must be a 3-D persons x items x raters array"
+                    )
+                active_container_ids.add(child_id)
+                frames.append([child, 0, next_depth])
                 continue
-            if current_type is bool or current_type is np.bool_:
-                continue
-            if current_type is int or current_type is float:
-                continue
-            if any(
-                current_type is trusted_type
-                for trusted_type in (
-                    *_NUMPY_INTEGER_SCALAR_TYPES,
-                    *_NUMPY_FLOAT_SCALAR_TYPES,
+
+            trusted_scalar = (
+                child_type is bool
+                or child_type is np.bool_
+                or child_type is int
+                or child_type is float
+                or any(
+                    child_type is trusted_type
+                    for trusted_type in (
+                        *_NUMPY_INTEGER_SCALAR_TYPES,
+                        *_NUMPY_FLOAT_SCALAR_TYPES,
+                    )
                 )
-            ):
-                continue
-            raise ValueError("responses must be a numeric array")
+            )
+            if not trusted_scalar:
+                raise ValueError("responses must be a numeric array")
+
+            logical_cells += 1
+            if logical_cells > _MAX_FACETS_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+
         try:
             response_array = np.asarray(value)
         except (TypeError, ValueError, OverflowError) as exc:
