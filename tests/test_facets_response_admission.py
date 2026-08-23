@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import fitstats
+import fast_mlsirm.facets as facets_module
 from fast_mlsirm.facets import fit_facets
 
 
@@ -95,6 +96,42 @@ def test_fit_facets_rejects_array_provider_before_numpy_callback(monkeypatch):
         )
 
     assert counter.calls == 0
+
+
+def test_fit_facets_rejects_oversized_exact_array_before_value_work(monkeypatch):
+    """Logical size is bounded before value-wise NumPy work on broadcast ratings."""
+
+    responses = np.broadcast_to(
+        np.array([[[0.0]]], dtype=np.float64),
+        (20_000_001, 1, 1),
+    )
+
+    def unexpected_value_work(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("value-wise NumPy work ran before facets resource admission")
+
+    monkeypatch.setattr(facets_module.np, "iscomplexobj", unexpected_value_work)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="20,000,000"):
+        fit_facets(responses, n_cat=2, q_theta=41, max_iter=10, tol=1e-6)
+
+
+def test_fit_facets_bounds_builtin_tree_before_numpy_materialization(monkeypatch):
+    """Built-in rating leaves are counted before sequence materialization."""
+
+    monkeypatch.setattr(facets_module, "_MAX_FACETS_RESPONSE_CELLS", 3, raising=False)
+
+    def unexpected_asarray(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("NumPy sequence materialization ran before facets resource admission")
+
+    monkeypatch.setattr(facets_module.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = [[[0, 1]], [[1, 0]]]
+
+    with pytest.raises(ValueError, match="3"):
+        fit_facets(responses, n_cat=2, q_theta=41, max_iter=10, tol=1e-6)
 
 
 def test_fit_facets_valid_real_evidence_reaches_dispatch_boundary(monkeypatch):
