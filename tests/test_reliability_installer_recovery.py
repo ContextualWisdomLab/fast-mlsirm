@@ -7,6 +7,15 @@ from types import ModuleType
 from fast_mlsirm import _icc_control_safety as icc_control_safety
 from fast_mlsirm import reliability
 
+_PRIMARY_APIS = (
+    "guttman_lambdas",
+    "tenberge_mu",
+    "cronbach_alpha",
+    "separation_reliability",
+    "mean_pairwise_cor",
+    "mean_pairwise_rho",
+)
+
 _RATER_APIS = (
     "kripp_alpha",
     "finn_coefficient",
@@ -45,3 +54,30 @@ def test_icc_installer_repairs_missing_rater_adapters_after_partial_install():
     )
     for name, original in originals.items():
         assert getattr(module, name) is not original
+
+
+def test_icc_installer_repairs_missing_primary_adapter_after_partial_install():
+    """A hardened ICC flag must not strand a missing primary reliability wrapper."""
+    module = ModuleType("fast_mlsirm_test_primary_reliability")
+    module.__package__ = "fast_mlsirm_test"
+
+    module.icc = reliability.icc
+    originals = {}
+    for name in _PRIMARY_APIS:
+        wrapped = getattr(reliability, name)
+        original = wrapped.__wrapped__
+        originals[name] = original
+        setattr(module, name, wrapped)
+    for name in _RATER_APIS:
+        setattr(module, name, getattr(reliability, name))
+
+    # Model an interrupted install after ICC was hardened but before one sibling
+    # binding became durable. A retry must repair the whole primary surface.
+    module.guttman_lambdas = originals["guttman_lambdas"]
+    assert getattr(module.icc, "__fast_mlsirm_icc_control_hardened__", False)
+    assert module.guttman_lambdas is originals["guttman_lambdas"]
+
+    icc_control_safety.install(module)
+
+    assert module.guttman_lambdas is not originals["guttman_lambdas"]
+    assert module.guttman_lambdas.__wrapped__ is originals["guttman_lambdas"]
