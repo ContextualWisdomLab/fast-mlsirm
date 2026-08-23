@@ -134,6 +134,23 @@ def test_fit_facets_bounds_builtin_tree_before_numpy_materialization(monkeypatch
         fit_facets(responses, n_cat=2, q_theta=41, max_iter=10, tol=1e-6)
 
 
+def test_fit_facets_bounds_empty_container_fanout_before_numpy_materialization(monkeypatch):
+    """Malformed empty-container fan-out cannot bypass bounded traversal work."""
+
+    monkeypatch.setattr(facets_module, "_MAX_FACETS_RESPONSE_CELLS", 2, raising=False)
+
+    def unexpected_asarray(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("NumPy materialization ran after unbounded container fan-out")
+
+    monkeypatch.setattr(facets_module.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    responses = [[[]] for _ in range(7)]
+
+    with pytest.raises(ValueError, match="structural traversal budget"):
+        fit_facets(responses, n_cat=2, q_theta=41, max_iter=10, tol=1e-6)
+
+
 def test_fit_facets_valid_real_evidence_reaches_dispatch_boundary(monkeypatch):
     """Ordinary real ratings retain their historical native-dispatch contract."""
 
