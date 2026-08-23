@@ -100,6 +100,45 @@ def test_numeric_subclass_rejected_without_conversion_or_native_execution(monkey
     assert callbacks == 0
 
 
+def test_oversized_exact_response_array_fails_before_value_scan_or_native_discovery(monkeypatch):
+    """Logical size is bounded before value-wise NumPy work on broadcast evidence."""
+
+    responses = np.broadcast_to(np.array([[0.5]], dtype=np.float64), (20_000_001, 1))
+
+    def unexpected_value_scan(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("value-wise NumPy work ran before CRM resource admission")
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered before CRM resource admission")
+
+    monkeypatch.setattr(crm.np, "iscomplexobj", unexpected_value_scan)
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+
+    with pytest.raises(ValueError, match="20,000,000"):
+        crm.fit_crm(responses)
+
+
+def test_oversized_nested_numpy_rows_fail_before_sequence_materialization(monkeypatch):
+    """Exact NumPy leaves are charged by logical occurrence before stacking."""
+
+    row = np.broadcast_to(np.array([0.5], dtype=np.float64), (10_000_001,))
+    responses = [row, row]
+
+    def unexpected_asarray(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("NumPy sequence materialization ran before CRM resource admission")
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered before CRM resource admission")
+
+    monkeypatch.setattr(crm.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+
+    with pytest.raises(ValueError, match="20,000,000"):
+        crm.fit_crm(responses)
+
+
 def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monkeypatch):
     """Ordinary built-in rows with concrete NumPy reals remain compatible."""
 
