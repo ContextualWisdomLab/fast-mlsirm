@@ -111,3 +111,54 @@ def test_rasch_cml_preserves_trusted_builtin_and_numpy_scalar_evidence(
     assert rasch_cml.andersen_lr_test(responses, group)["converged"] is True
     assert captured["fit"].tolist() == [0, 1, 1, 0, 0, 1, 1, 0]
     assert captured["group"].tolist() == [0, 0, 1, 1]
+
+
+def _assert_andersen_dense_groups(
+    monkeypatch: pytest.MonkeyPatch,
+    group: object,
+    expected: list[int],
+) -> None:
+    """Require external group identities to survive until deterministic densification."""
+    responses = np.array([[0, 1], [1, 0], [0, 1], [1, 0]], dtype=np.int8)
+
+    class _Core:
+        def andersen_lr_test(
+            self,
+            responses: np.ndarray,
+            dense_group: np.ndarray,
+            n_groups: int,
+            n_persons: int,
+            n_items: int,
+            max_iter: int,
+            tol: float,
+        ) -> dict[str, object]:
+            assert type(dense_group) is np.ndarray
+            assert dense_group.dtype == np.int64
+            assert dense_group.tolist() == expected
+            assert n_groups == len(set(expected))
+            return {
+                "lr": 0.0,
+                "df": max(1, (n_groups - 1) * (n_items - 1)),
+                "p_value": 1.0,
+                "n_used": [1] * n_groups,
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+    assert rasch_cml.andersen_lr_test(responses, group)["converged"] is True
+
+
+def test_andersen_preserves_integer_identity_beyond_float64_exact_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Distinct exact integer labels must not collapse through float64."""
+    group = np.array([0, 2**53, 2**53 + 1, 0], dtype=np.uint64)
+    _assert_andersen_dense_groups(monkeypatch, group, [0, 1, 2, 0])
+
+
+def test_andersen_preserves_uint64_identity_without_signed_wrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unsigned external labels stay ordered by exact value before dense mapping."""
+    group = np.array([0, np.iinfo(np.uint64).max, 1, 0], dtype=np.uint64)
+    _assert_andersen_dense_groups(monkeypatch, group, [0, 2, 1, 0])
