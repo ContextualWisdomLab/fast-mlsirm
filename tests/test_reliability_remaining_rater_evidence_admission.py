@@ -184,6 +184,70 @@ def test_remaining_rater_apis_preserve_trusted_sequence_compatibility(monkeypatc
         assert flat.dtype == np.float64
 
 
+@pytest.mark.parametrize(
+    "invoke",
+    [
+        lambda value: reliability.kripp_alpha(value),
+        lambda value: reliability.finn_coefficient(value, 5),
+        lambda value: reliability.maxwell_re(value),
+        lambda value: reliability.robinson_a(value),
+    ],
+)
+def test_remaining_rater_apis_preserve_boolean_sequence_diagnostic(
+    monkeypatch, invoke
+):
+    """Pure Boolean sequences retain the historical Boolean-specific rejection."""
+    monkeypatch.setattr(fitstats, "_core_module", _native_discovery_must_not_run)
+
+    with pytest.raises(ValueError, match="ratings must be numeric, not boolean"):
+        invoke([[True, False], [False, True]])
+
+
+def test_remaining_rater_apis_preserve_mixed_boolean_numeric_sequence_compatibility(
+    monkeypatch,
+):
+    """Exact inert Boolean leaves retain historical NumPy numeric promotion."""
+    seen: dict[str, np.ndarray] = {}
+
+    def _kripp(flat, nr, ns, method):
+        seen["kripp"] = flat
+        return {"value": 0.5, "subjects": ns, "raters": nr, "levels": 2, "nmatchval": 6.0}
+
+    def _finn(flat, ns, nr, s_levels, model):
+        seen["finn"] = flat
+        return {"value": 0.4, "statistic": 1.5, "df2": 4.0, "p_value": 0.2, "subjects": ns, "raters": nr}
+
+    def _maxwell(flat, ns, nr):
+        seen["maxwell"] = flat
+        return {"value": 0.25, "subjects": ns, "raters": nr}
+
+    def _robinson(flat, ns, nr):
+        seen["robinson"] = flat
+        return {"value": 0.75, "subjects": ns, "raters": nr}
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: SimpleNamespace(
+            kripp_alpha=_kripp,
+            finn_coefficient=_finn,
+            maxwell_re=_maxwell,
+            robinson_a=_robinson,
+        ),
+    )
+
+    mixed = [[True, 2], [1, False]]
+    assert reliability.kripp_alpha(mixed).value == pytest.approx(0.5)
+    assert reliability.finn_coefficient(mixed, 5).value == pytest.approx(0.4)
+    assert reliability.maxwell_re(mixed).value == pytest.approx(0.25)
+    assert reliability.robinson_a(mixed).value == pytest.approx(0.75)
+
+    for flat in seen.values():
+        assert isinstance(flat, np.ndarray)
+        assert flat.dtype == np.float64
+        assert flat.tolist() == [1.0, 2.0, 1.0, 0.0]
+
+
 def test_kripp_alpha_rejects_oversized_view_before_native_discovery(monkeypatch):
     """Rater evidence shares the reliability logical-cell resource ceiling."""
     oversized = np.broadcast_to(
