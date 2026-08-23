@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import builtins
+
 import numpy as np
 import pytest
 
@@ -94,6 +96,21 @@ def test_extended_precision_cut_outside_float_range_is_stable_value_error() -> N
 
     with pytest.raises(ValueError, match=r"cutscores entries must be finite real scalars"):
         classification._normalize_cutscores([np.longdouble(np.finfo(np.longdouble).max)])
+
+
+def test_numpy_cut_conversion_overflow_is_stable_value_error(monkeypatch) -> None:
+    """A platform conversion overflow is normalized at the package boundary."""
+    original_float = builtins.float
+
+    def overflow_numpy_float(value: object) -> float:
+        if type(value) is np.float64:
+            raise OverflowError("platform conversion overflow")
+        return original_float(value)
+
+    monkeypatch.setattr(classification, "float", overflow_numpy_float, raising=False)
+
+    with pytest.raises(ValueError, match=r"cutscores entries must be finite real scalars"):
+        classification._normalize_cutscores([np.float64(1.5)])
 
 
 def test_trusted_builtin_and_numpy_cut_scores_normalize_to_builtin_floats() -> None:
