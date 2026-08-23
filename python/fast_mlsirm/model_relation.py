@@ -9,7 +9,7 @@ indistinguishable relations fail closed rather than forcing a winner.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 
@@ -143,6 +143,7 @@ def classify_model_relation(evidence: ModelRelationEvidence) -> ModelRelationRes
     """
     if type(evidence) is not ModelRelationEvidence:
         raise TypeError("evidence must be ModelRelationEvidence")
+    evidence = replace(evidence)
 
     if evidence.parameter_embedding is None:
         return ModelRelationResult(
