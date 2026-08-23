@@ -141,7 +141,7 @@ def classify_model_relation(evidence: ModelRelationEvidence) -> ModelRelationRes
     an A/B preference remains prohibited until a formal Vuong distinguishability
     test succeeds.
     """
-    if not isinstance(evidence, ModelRelationEvidence):
+    if type(evidence) is not ModelRelationEvidence:
         raise TypeError("evidence must be ModelRelationEvidence")
 
     if evidence.parameter_embedding is None:
