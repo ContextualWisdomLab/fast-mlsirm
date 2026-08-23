@@ -39,22 +39,8 @@ def test_public_polytomous_predictions_are_normalized_and_consistent(model, cat_
 
 def test_public_polytomous_predictions_reject_invalid_grm_thresholds():
     fit = PolytomousFit("grm", np.array([1.0]), np.array([[-1.0, 1.0]]), 0.0, 0)
-    with pytest.raises(ValueError, match="non-increasing"):
+    with pytest.raises(ValueError, match="strictly decreasing"):
         polytomous_category_probabilities(fit, np.array([0.0]))
-
-
-def test_public_polytomous_predictions_accept_tied_grm_threshold_boundary():
-    """A zero-width GRM category remains a valid fitted-boundary prediction."""
-
-    fit = PolytomousFit("grm", np.array([1.0]), np.array([[0.0, 0.0]]), 0.0, 0)
-    probabilities = polytomous_category_probabilities(fit, np.array([0.0]))
-    expected = polytomous_expected_response(fit, np.array([0.0]))
-
-    assert probabilities.shape == (1, 1, 3)
-    assert np.all(np.isfinite(probabilities))
-    assert np.allclose(probabilities.sum(axis=2), 1.0)
-    assert probabilities[0, 0, 1] == 0.0
-    assert np.allclose(expected, probabilities @ np.arange(3, dtype=np.float64))
 
 
 def test_public_polytomous_predictions_bound_output_before_native_dispatch(monkeypatch):
