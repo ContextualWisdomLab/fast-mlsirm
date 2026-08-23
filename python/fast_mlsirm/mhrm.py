@@ -19,6 +19,7 @@ from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _MAX_DIMS = 64
+_MAX_RESPONSE_CELLS = 200_000_000
 _NUMPY_INTEGER_TYPES = tuple(
     np.dtype(name).type
     for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
@@ -59,18 +60,26 @@ def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
 
 
 def _trusted_response_array(responses: object) -> np.ndarray:
-    """Materialize MH-RM responses only after callback-free identity preflight."""
+    """Materialize MH-RM responses only after callback-free identity/resource preflight."""
 
+    resource_error = (
+        f"responses exceed the {_MAX_RESPONSE_CELLS:,}-cell MH-RM resource limit"
+    )
     if type(responses) is np.ndarray:
+        if int(responses.size) > _MAX_RESPONSE_CELLS:
+            raise ValueError(resource_error)
         return responses
 
     error = "responses must be a trusted NumPy array or built-in response matrix"
     if type(responses) is not list and type(responses) is not tuple:
         raise ValueError(error)
 
-    frames: list[list[object]] = [[responses, 0, False]]
+    # Each frame is [object, next_child_index, entered, logical_cell_count].
+    # Memoized container counts preserve shared acyclic subtrees while charging
+    # every logical occurrence against the same Rust-side persons×items ceiling.
+    frames: list[list[object]] = [[responses, 0, False, 0]]
     active_container_ids: set[int] = set()
-    validated_container_ids: set[int] = set()
+    validated_container_cells: dict[int, int] = {}
 
     while frames:
         frame = frames[-1]
@@ -79,11 +88,25 @@ def _trusted_response_array(responses: object) -> np.ndarray:
 
         if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
             frames.pop()
+            cells = 1
+            if frames:
+                parent_cells = int(frames[-1][3]) + cells
+                if parent_cells > _MAX_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][3] = parent_cells
             continue
         if item_type is np.ndarray:
             if item.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
                 raise ValueError(error)
+            cells = int(item.size)
+            if cells > _MAX_RESPONSE_CELLS:
+                raise ValueError(resource_error)
             frames.pop()
+            if frames:
+                parent_cells = int(frames[-1][3]) + cells
+                if parent_cells > _MAX_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][3] = parent_cells
             continue
 
         if item_type is not list and item_type is not tuple:
@@ -91,8 +114,14 @@ def _trusted_response_array(responses: object) -> np.ndarray:
 
         item_id = id(item)
         if not bool(frame[2]):
-            if item_id in validated_container_ids:
+            if item_id in validated_container_cells:
+                cells = validated_container_cells[item_id]
                 frames.pop()
+                if frames:
+                    parent_cells = int(frames[-1][3]) + cells
+                    if parent_cells > _MAX_RESPONSE_CELLS:
+                        raise ValueError(resource_error)
+                    frames[-1][3] = parent_cells
                 continue
             if item_id in active_container_ids:
                 raise ValueError(error)
@@ -102,12 +131,18 @@ def _trusted_response_array(responses: object) -> np.ndarray:
         child_index = int(frame[1])
         if child_index < len(item):
             frame[1] = child_index + 1
-            frames.append([item[child_index], 0, False])
+            frames.append([item[child_index], 0, False, 0])
             continue
 
+        cells = int(frame[3])
         active_container_ids.remove(item_id)
-        validated_container_ids.add(item_id)
+        validated_container_cells[item_id] = cells
         frames.pop()
+        if frames:
+            parent_cells = int(frames[-1][3]) + cells
+            if parent_cells > _MAX_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frames[-1][3] = parent_cells
 
     return np.asarray(responses)
 
