@@ -108,3 +108,29 @@ def test_real_numeric_and_nan_responses_keep_existing_rust_payload_semantics() -
         core.observed,
         np.array([True, True, True, True, True, False]),
     )
+
+
+def test_builtin_and_exact_numpy_rows_preserve_response_compatibility() -> None:
+    inputs = [
+        [[np.int8(0), np.uint8(1)], (np.float32(2.0), 0), [1, np.nan]],
+        [
+            np.array([0, 1], dtype=np.int16),
+            np.array([2, 0], dtype=np.uint8),
+            np.array([1.0, np.nan], dtype=np.float32),
+        ],
+    ]
+
+    for responses in inputs:
+        core = _FakeCore()
+        with patch("fast_mlsirm.fitstats._core_module", return_value=core):
+            fit_rsm(responses, n_cat=3)
+        assert core.yy is not None
+        assert core.observed is not None
+        np.testing.assert_array_equal(
+            core.yy,
+            np.array([0, 1, 2, 0, 1, 0], dtype=np.int64),
+        )
+        np.testing.assert_array_equal(
+            core.observed,
+            np.array([True, True, True, True, True, False]),
+        )
