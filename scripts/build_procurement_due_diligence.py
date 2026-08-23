@@ -20,19 +20,7 @@ GIT_METADATA_TIMEOUT_SECONDS = 5
 try:
     from scripts._bounded_json import parse_json_bounded, read_json_object
 except ModuleNotFoundError:
-    try:
-        from _bounded_json import parse_json_bounded, read_json_object
-    except ModuleNotFoundError:
-        def parse_json_bounded(content: str, **_: Any) -> Any:
-            if len(content) > 32 * 1024 * 1024:
-                raise ValueError('JSON input exceeds maximum allowed size')
-            return json.loads(content)
-        def read_json_object(path: Path) -> dict[str, Any]:
-            with path.open("r", encoding="utf-8") as fh:
-                content = fh.read(32 * 1024 * 1024 + 1)
-            if len(content) > 32 * 1024 * 1024:
-                raise ValueError('JSON input exceeds maximum allowed size')
-            return json.loads(content)
+    from _bounded_json import parse_json_bounded, read_json_object
 
 
 POLICY_FILES = [
