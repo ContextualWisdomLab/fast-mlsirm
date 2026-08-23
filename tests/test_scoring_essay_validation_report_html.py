@@ -51,6 +51,7 @@ def test_report_renders_deterministic_accessible_exact_evidence(tmp_path: Path) 
     assert '<main id="main-content" tabindex="-1">' in first
     assert 'tabindex="0" role="region"' in first
     assert "default-src &#x27;none&#x27;" in first
+    assert "style-src &#x27;sha256-" in first
     assert "script-src" not in first
     assert '<section class="review-required"' in first
     assert "Human interpretation required" in first

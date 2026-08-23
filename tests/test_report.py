@@ -43,6 +43,7 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     assert "<table>" in html
     assert 'http-equiv="Content-Security-Policy"' in html
     assert "default-src &#x27;none&#x27;" in html
+    assert "style-src &#x27;sha256-" in html
     assert 'role="region" aria-label="Item Fit diagnostics table" tabindex="0"' in html
     assert "<caption>Item Fit diagnostics table</caption>" in html
 
