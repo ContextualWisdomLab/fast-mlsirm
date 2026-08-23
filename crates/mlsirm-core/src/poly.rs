@@ -219,6 +219,9 @@ pub fn polytomous_predictions(
     if n_items == 0 || n_cat < 2 {
         return Err("n_items must be positive and n_cat must be at least 2".into());
     }
+    if n_cat > POLY_MAX_CAT {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
+    }
     let cells = crate::checked_mul_usize(
         theta.len(),
         n_items,
