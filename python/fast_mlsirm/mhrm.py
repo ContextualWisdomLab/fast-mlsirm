@@ -44,10 +44,8 @@ _TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
 _TRUSTED_INTEGRAL_CONTROL_TYPES = (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES)
 _TRUSTED_SEED_TYPES = (int, *_NUMPY_INTEGER_TYPES)
 _TRUSTED_REAL_CONTROL_TYPES = (
-    bool,
     int,
     float,
-    np.bool_,
     *_NUMPY_INTEGER_TYPES,
     *_NUMPY_FLOAT_TYPES,
 )
