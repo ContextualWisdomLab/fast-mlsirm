@@ -44,4 +44,9 @@ def _normalize(module: ModuleType, cutscores: Sequence[float]) -> list[float]:
 def install(module: ModuleType) -> None:
     """Install overflow-stable cut-score admission on the classification module."""
 
-    module._normalize_cutscores = lambda cutscores: _normalize(module, cutscores)
+    def normalize(cutscores: Sequence[float]) -> list[float]:
+        """Normalize cut scores using the current classification trust helpers."""
+
+        return _normalize(module, cutscores)
+
+    module._normalize_cutscores = normalize
