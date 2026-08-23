@@ -172,3 +172,20 @@ def test_gtheory_rejects_complex_evidence_before_lossy_narrowing_and_core(
 
     with pytest.raises(ValueError, match=r"data must be real-valued"):
         entrypoint(data, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [[np.int8(0), np.float32(1.0)], [np.uint8(1), np.float64(0.0)]],
+        ((np.bool_(False), np.int16(1)), (np.float32(1.0), np.uint16(0))),
+    ],
+)
+def test_gtheory_real_data_preserves_builtin_sequence_numpy_scalars(data) -> None:
+    """Trusted built-in score trees keep their concrete NumPy scalar compatibility."""
+    result = gtheory._validated_real_data(data)
+
+    assert type(result) is np.ndarray
+    assert result.dtype == np.float64
+    assert result.flags.c_contiguous
+    np.testing.assert_array_equal(result, np.array([[0.0, 1.0], [1.0, 0.0]]))
