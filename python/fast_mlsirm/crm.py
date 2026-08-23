@@ -18,6 +18,19 @@ _NUMPY_INTEGER_TYPES = tuple(
 _NUMPY_FLOAT_TYPES = tuple(
     np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
 )
+_NUMPY_COMPLEX_TYPES = tuple(
+    np.dtype(name).type for name in ("complex64", "complex128", "clongdouble")
+)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+    *_NUMPY_COMPLEX_TYPES,
+)
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -56,6 +69,55 @@ def _positive_real(value: object, name: str) -> float:
     if not np.isfinite(result) or result <= 0.0:
         raise ValueError(f"{name} must be finite and positive")
     return result
+
+
+def _trusted_response_array(responses: object) -> np.ndarray:
+    """Materialize CRM evidence only after a callback-free container preflight."""
+
+    if type(responses) is np.ndarray:
+        return responses
+
+    error = "responses must be a trusted NumPy array or built-in response matrix"
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(error)
+
+    frames: list[list[object]] = [[responses, 0, False]]
+    active_container_ids: set[int] = set()
+    validated_container_ids: set[int] = set()
+
+    while frames:
+        frame = frames[-1]
+        item = frame[0]
+        item_type = type(item)
+
+        if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            frames.pop()
+            continue
+
+        if item_type is not list and item_type is not tuple:
+            raise ValueError(error)
+
+        item_id = id(item)
+        if not bool(frame[2]):
+            if item_id in validated_container_ids:
+                frames.pop()
+                continue
+            if item_id in active_container_ids:
+                raise ValueError(error)
+            active_container_ids.add(item_id)
+            frame[2] = True
+
+        child_index = int(frame[1])
+        if child_index < len(item):
+            frame[1] = child_index + 1
+            frames.append([item[child_index], 0, False])
+            continue
+
+        active_container_ids.remove(item_id)
+        validated_container_ids.add(item_id)
+        frames.pop()
+
+    return np.asarray(responses)
 
 
 @dataclass
@@ -135,10 +197,12 @@ def fit_crm(
         raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
     tol_value = _positive_real(tol, "tol")
 
-    raw = np.asarray(responses)
+    raw = _trusted_response_array(responses)
     if np.iscomplexobj(raw) or raw.dtype == object:
         raise ValueError("responses must be real-valued")
-    y = np.asarray(raw, dtype=np.float64)
+    if raw.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a real numeric array")
+    y = raw.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
