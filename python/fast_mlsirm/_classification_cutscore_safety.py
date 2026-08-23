@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from types import ModuleType
 from typing import Sequence
 
 import numpy as np
@@ -66,9 +65,3 @@ def normalize_cutscores(cutscores: Sequence[float]) -> list[float]:
             raise ValueError(_ERROR)
         normalized.append(parsed)
     return normalized
-
-
-def install(module: ModuleType) -> None:
-    """Bind the canonical cut-score normalizer on the classification module."""
-
-    module._normalize_cutscores = normalize_cutscores
