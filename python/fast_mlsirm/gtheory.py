@@ -54,6 +54,7 @@ _NUMPY_COMPLEX_SCALAR_TYPES = (
     np.clongdouble,
 )
 _REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
+_INTEGER_DTYPE_KINDS = frozenset({"i", "u"})
 
 # Keep each public D-study size below the rubric pilot handoff ceiling.
 MAX_GTHEORY_PRIME_SIZE = 1_000_000
@@ -246,22 +247,49 @@ def _finite_real_control(value: object, message: str) -> float:
 def _positive_integer_vector(value: object) -> list[int]:
     """Normalize inert one-facet D-study size containers without callbacks."""
 
-    if type(value) is not list and type(value) is not tuple:
+    message = "n_i_prime entries must be positive integers"
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if value.ndim != 1 or value.dtype.kind not in _INTEGER_DTYPE_KINDS:
+            raise ValueError("n_i_prime must be a list or tuple")
+        if value.shape[0] > MAX_GTHEORY_D_STUDY_ROWS:
+            _raise_dstudy_row_resource_limit()
+        return [
+            _positive_integer_control(value[index], message)
+            for index in range(value.shape[0])
+        ]
+    if value_type is not list and value_type is not tuple:
         raise ValueError("n_i_prime must be a list or tuple")
     if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
         _raise_dstudy_row_resource_limit()
-    message = "n_i_prime entries must be positive integers"
     return [_positive_integer_control(entry, message) for entry in value]
 
 
 def _positive_integer_pairs(value: object) -> list[tuple[int, int]]:
     """Normalize inert two-facet D-study size pairs without caller iteration."""
 
-    if type(value) is not list and type(value) is not tuple:
+    message = "n_prime entries must be pairs of positive integers"
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if (
+            value.ndim != 2
+            or value.shape[1] != 2
+            or value.dtype.kind not in _INTEGER_DTYPE_KINDS
+        ):
+            raise ValueError("n_prime must be a list or tuple of pairs")
+        if value.shape[0] > MAX_GTHEORY_D_STUDY_ROWS:
+            _raise_dstudy_row_resource_limit()
+        return [
+            (
+                _positive_integer_control(value[index, 0], message),
+                _positive_integer_control(value[index, 1], message),
+            )
+            for index in range(value.shape[0])
+        ]
+    if value_type is not list and value_type is not tuple:
         raise ValueError("n_prime must be a list or tuple of pairs")
     if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
         _raise_dstudy_row_resource_limit()
-    message = "n_prime entries must be pairs of positive integers"
     pairs: list[tuple[int, int]] = []
     for pair in value:
         if (type(pair) is not list and type(pair) is not tuple) or len(pair) != 2:
