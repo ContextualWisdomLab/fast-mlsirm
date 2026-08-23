@@ -134,3 +134,20 @@ def test_builtin_and_exact_numpy_rows_preserve_response_compatibility() -> None:
             core.observed,
             np.array([True, True, True, True, True, False]),
         )
+
+
+def test_builtin_rows_preserve_exact_numpy_boolean_cell_compatibility() -> None:
+    core = _FakeCore()
+    responses = [
+        [np.bool_(False), np.bool_(True)],
+        [np.bool_(True), np.bool_(False)],
+        [np.bool_(False), np.bool_(True)],
+    ]
+
+    with patch("fast_mlsirm.fitstats._core_module", return_value=core):
+        fit_rsm(responses, n_cat=2)
+
+    assert core.yy is not None
+    assert core.observed is not None
+    np.testing.assert_array_equal(core.yy, np.array([0, 1, 1, 0, 0, 1], dtype=np.int64))
+    np.testing.assert_array_equal(core.observed, np.ones(6, dtype=bool))
