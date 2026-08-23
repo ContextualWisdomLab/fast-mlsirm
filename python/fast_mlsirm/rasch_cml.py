@@ -27,6 +27,55 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.ulonglong,
 )
 _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_TRUSTED_EVIDENCE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
+)
+_RESPONSE_ERROR = "responses must be complete 0/1 (Rasch CML has no missing-data path)"
+_GROUP_ERROR = "group labels must be finite non-negative integers"
+
+
+def _trusted_response_source(responses: object) -> object:
+    """Admit inert response evidence before NumPy can invoke caller protocols."""
+    if type(responses) is np.ndarray:
+        if responses.dtype.kind not in ("b", "i", "u", "f", "c"):
+            raise ValueError(_RESPONSE_ERROR)
+        return responses
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(_RESPONSE_ERROR)
+
+    for row in responses:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            if row.dtype.kind not in ("b", "i", "u", "f", "c"):
+                raise ValueError(_RESPONSE_ERROR)
+            continue
+        if row_type is list or row_type is tuple:
+            if any(type(cell) not in _TRUSTED_EVIDENCE_SCALAR_TYPES for cell in row):
+                raise ValueError(_RESPONSE_ERROR)
+            continue
+        # Preserve the historical flat built-in-sequence path long enough for
+        # the established 2-D dimensionality diagnostic.
+        if row_type not in _TRUSTED_EVIDENCE_SCALAR_TYPES:
+            raise ValueError(_RESPONSE_ERROR)
+    return responses
+
+
+def _trusted_group_source(group: object) -> object:
+    """Admit inert Andersen split labels before NumPy conversion."""
+    if type(group) is np.ndarray:
+        if group.dtype.kind not in ("b", "i", "u", "f", "c"):
+            raise ValueError(_GROUP_ERROR)
+        return group
+    if type(group) is not list and type(group) is not tuple:
+        raise ValueError(_GROUP_ERROR)
+    if any(type(label) not in _TRUSTED_EVIDENCE_SCALAR_TYPES for label in group):
+        raise ValueError(_GROUP_ERROR)
+    return group
 
 
 def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
@@ -34,17 +83,17 @@ def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
 
     Rasch CML has no missing-data path, so any non-0/1 entry is rejected.
     """
-    y = np.asarray(responses)
+    y = np.asarray(_trusted_response_source(responses))
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     if n_items < 2:
         raise ValueError("need at least 2 items")
     if np.iscomplexobj(y):
-        raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
+        raise ValueError(_RESPONSE_ERROR)
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
-        raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
+        raise ValueError(_RESPONSE_ERROR)
     return yf.astype(np.int64).reshape(-1), n_persons, n_items
 
 
@@ -144,14 +193,14 @@ def andersen_lr_test(
     max_iter = _trusted_iteration_cap(max_iter)
     tol = _trusted_positive_tolerance(tol)
     yy, n_persons, n_items = _binary_matrix(responses)
-    g = np.asarray(group)
+    g = np.asarray(_trusted_group_source(group))
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
     if np.iscomplexobj(g):
-        raise ValueError("group labels must be finite non-negative integers")
+        raise ValueError(_GROUP_ERROR)
     gf = np.asarray(g, dtype=np.float64)
     if not np.all(np.isfinite(gf)) or np.any(gf != np.floor(gf)) or np.any(gf < 0):
-        raise ValueError("group labels must be finite non-negative integers")
+        raise ValueError(_GROUP_ERROR)
     # densify labels so n_groups counts only populated groups
     _, gid = np.unique(gf.astype(np.int64), return_inverse=True)
     n_groups = int(gid.max()) + 1
