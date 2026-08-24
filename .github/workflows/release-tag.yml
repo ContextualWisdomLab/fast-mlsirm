@@ -54,7 +54,6 @@ jobs:
           ref: ${{ inputs.release_commit }}
       - name: Verify the release source is on the current default-branch lineage
         env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           DISPATCH_SHA: ${{ github.sha }}
           RELEASE_COMMIT: ${{ inputs.release_commit }}
         run: |
@@ -117,6 +116,52 @@ jobs:
               raise SystemExit(
                   f"expected exactly one CHANGELOG section for {release_version}; "
                   f"found {len(matches)}"
+              )
+          PY
+      - name: Verify the release source is the version-cut transition
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          if ! parent_commit="$(git rev-parse "$RELEASE_COMMIT^" 2>/dev/null)"; then
+            echo "release commit must have a verifiable first parent" >&2
+            exit 1
+          fi
+          python3 - "$parent_commit" <<'PY'
+          import os
+          import subprocess
+          import sys
+          import tomllib
+
+          parent_commit = sys.argv[1]
+          release_version = os.environ["RELEASE_VERSION"]
+
+          def parent_text(path: str) -> str:
+              result = subprocess.run(
+                  ["git", "show", f"{parent_commit}:{path}"],
+                  check=False,
+                  capture_output=True,
+                  text=True,
+              )
+              if result.returncode != 0:
+                  raise SystemExit(
+                      f"release parent is missing required source file {path}"
+                  )
+              return result.stdout
+
+          parent_project = tomllib.loads(parent_text("pyproject.toml"))
+          parent_version = parent_project["project"]["version"]
+          if parent_version == release_version:
+              raise SystemExit(
+                  "parent project version already equals requested release version"
+              )
+
+          header = f"## [{release_version}] - "
+          parent_changelog = parent_text("CHANGELOG.md").splitlines()
+          if any(line.startswith(header) for line in parent_changelog):
+              raise SystemExit(
+                  "parent CHANGELOG already contains requested release section"
               )
           PY
       - name: Fail closed on fragment to CHANGELOG aggregate drift
