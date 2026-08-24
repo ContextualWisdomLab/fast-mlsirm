@@ -36,6 +36,10 @@ class _CoreCapture:
         self.kwargs = kwargs
         return [0.0], [1.0], [True]
 
+    def cat_ability_standard_error(self, **kwargs: object) -> list[float]:
+        self.kwargs = kwargs
+        return [0.5]
+
 
 def _bank() -> MLSIRMParams:
     return MLSIRMParams(
@@ -177,23 +181,30 @@ def test_cat_rejects_overrank_administration_before_dense_conversion_or_core(
     [cat_module.ability_standard_error, fast_mlsirm.ability_standard_error],
     ids=["module", "package"],
 )
-def test_standard_error_rejects_impossible_administration_length_before_value_scan(
+@pytest.mark.parametrize(
+    "administered",
+    [
+        np.array([0, 0, 1], dtype=np.int64),
+        np.array([[0, 1], [1, 0]], dtype=np.int64),
+    ],
+    ids=["duplicates-over-bank-length", "multidimensional-dedup"],
+)
+def test_standard_error_preserves_historical_deduplication_semantics(
     monkeypatch: pytest.MonkeyPatch,
     standard_error: Callable[..., np.ndarray],
+    administered: np.ndarray,
 ) -> None:
-    """Every public SE surface must apply the same over-bank preflight."""
-    administered = np.broadcast_to(np.array([0], dtype=np.int64), (3,))
+    """SE accepts duplicate/over-rank evidence because its mask is set-valued."""
+    core = _CoreCapture()
+    monkeypatch.setattr(fast_mlsirm, "_core", core, raising=False)
 
-    def unexpected_value_scan(_values: object) -> np.ndarray:
-        raise AssertionError("impossible CAT administration reached value-wise validation")
+    result = standard_error(
+        _bank(),
+        np.zeros(2, dtype=np.int64),
+        np.zeros(1, dtype=np.float64),
+        administered=administered,
+    )
 
-    monkeypatch.setattr(cat_module, "_lossless_signed_int64_indices", unexpected_value_scan)
-    monkeypatch.setattr(fast_mlsirm, "_core", _CoreSentinel(), raising=False)
-
-    with pytest.raises(ValueError, match="administration length cannot exceed item bank size"):
-        standard_error(
-            _bank(),
-            np.zeros(2, dtype=np.int64),
-            np.zeros(1, dtype=np.float64),
-            administered=administered,
-        )
+    assert core.kwargs is not None
+    np.testing.assert_array_equal(core.kwargs["administered"], np.array([0, 1], dtype=np.int64))
+    np.testing.assert_array_equal(result, np.array([0.5], dtype=np.float64))
