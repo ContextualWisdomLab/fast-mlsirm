@@ -6,10 +6,12 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
+from . import cat as _cat
 from . import exposure as _exposure
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import validation as _validation
+from ._cat_administration_resource_safety import install as _install_cat_administration_resource_safety
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
@@ -20,6 +22,7 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls only; result arithmetic
 # remains in the existing Rust-backed implementations.
+_install_cat_administration_resource_safety(_cat)
 _install_exposure_array_safety(_exposure)
 _install_exposure_flexilevel_safety(_exposure)
 _install_icc_control_safety(_reliability)
@@ -34,7 +37,9 @@ _legacy_init.bratt_mm = _scaling.bratt_mm
 _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
+    _cat,
     _exposure,
+    _install_cat_administration_resource_safety,
     _install_exposure_array_safety,
     _install_exposure_flexilevel_safety,
     _install_fleiss_control_safety,
