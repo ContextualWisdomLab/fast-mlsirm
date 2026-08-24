@@ -64,12 +64,16 @@ def install(cat_module: ModuleType) -> None:
             administered: object,
             responses: object,
         ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-            # Preserve the existing callback/type-error contract for unsupported
-            # top-level providers by delegating unchanged unless both carriers expose
-            # inert exact-container metadata.
+            # Unsupported administered providers retain the original callback/type
+            # rejection contract.  Once administered exposes inert exact-container
+            # metadata, reject structurally impossible unique administrations before
+            # inspecting the response carrier so an invalid/unsupported response
+            # cannot force an oversized administered vector through dense validation.
             administered_length = _vector_length(administered)
             if administered_length is None:
                 return original_validate(bank, factor_id, administered, responses)
+
+            _reject_over_bank_administration(bank, administered)
 
             responses_length = _vector_length(responses)
             if responses_length is None:
@@ -78,9 +82,6 @@ def install(cat_module: ModuleType) -> None:
             if administered_length != responses_length:
                 raise ValueError(_SHAPE_ERROR)
 
-            # A validated EAP/MLE administration requires unique item identities, so
-            # more observations than bank items is structurally impossible there.
-            _reject_over_bank_administration(bank, administered)
             return original_validate(bank, factor_id, administered, responses)
 
         setattr(safe_validate_administration, _VALIDATE_MARKER, True)
