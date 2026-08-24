@@ -33,22 +33,30 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     arr = _np.asarray(raw)
     if arr.ndim != 1 or arr.shape[0] != n_persons:
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
-    fl = arr.astype(_np.float64)
-    if not _np.all(_np.isfinite(fl)):
+    validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
+    if not _np.all(_np.isfinite(validated)):
         raise ValueError(f"{name} must be finite")
-    if _np.any(fl < 0) or _np.any(fl != _np.floor(fl)):
+    if _np.any(validated < 0) or _np.any(validated != _np.floor(validated)):
         raise ValueError(f"{name} must be non-negative integers")
     int64_max = _np.iinfo(_np.int64).max
     if arr.dtype.kind == "u" and _np.any(arr > _np.uint64(int64_max)):
         raise ValueError(f"{name} must fit in signed 64-bit integers")
-    if arr.dtype.kind == "f" and _np.any(fl >= _np.float64(2**63)):
-        raise ValueError(f"{name} must fit in signed 64-bit integers")
+    if arr.dtype.kind == "f":
+        signed_boundary = _np.array(2**63, dtype=arr.dtype)
+        if _np.any(arr >= signed_boundary):
+            raise ValueError(f"{name} must fit in signed 64-bit integers")
     try:
         with _np.errstate(invalid="ignore", over="ignore"):
             int_labels = arr.astype(_np.int64)
     except (OverflowError, TypeError, ValueError) as exc:
         raise ValueError(f"{name} must fit in signed 64-bit integers") from exc
-    if not _np.array_equal(int_labels.astype(_np.float64), fl):
+    if arr.dtype.kind == "f":
+        roundtrip = int_labels.astype(arr.dtype)
+        expected = arr
+    else:
+        roundtrip = int_labels.astype(_np.float64)
+        expected = validated
+    if not _np.array_equal(roundtrip, expected):
         raise ValueError(f"{name} must fit in signed 64-bit integers")
     uniq, remapped = _np.unique(int_labels, return_inverse=True)
     return remapped.astype(_np.int64), int(uniq.size)
