@@ -288,14 +288,16 @@ def _trusted_real_array(value: object, name: str) -> np.ndarray:
     exact NumPy real-numeric arrays are admitted. Logical cells, nesting depth,
     and malformed structural traversal are bounded before NumPy conversion.
     Every admitted scalar must preserve its value when normalized to binary64.
+    Already-normalized exact float64 arrays need no Python-level scalar replay.
     Arbitrary array providers, ndarray/container/numeric subclasses,
     object/text/complex storage, and cyclic built-in trees fail before NumPy
     conversion.
     """
     _preflight_real_evidence(value, name)
     if type(value) is np.ndarray:
-        for scalar in value.flat:
-            _require_lossless_float64_scalar(scalar, name)
+        if value.dtype != np.dtype(np.float64):
+            for scalar in value.flat:
+                _require_lossless_float64_scalar(scalar, name)
     elif _is_exact_public_real_scalar(value):
         _require_lossless_float64_scalar(value, name)
     else:
@@ -400,21 +402,6 @@ def _target_info_vector(target_info: object, n_points: int) -> np.ndarray:
     return target
 
 
-def _item_information_matrix_from_validated_thetas(
-    bank: MLSIRMParams,
-    factor_id: np.ndarray,
-    thetas: np.ndarray,
-    *,
-    model: str,
-) -> np.ndarray:
-    """Return item information for an already package-validated theta grid."""
-    n_items = int(np.asarray(bank.b).shape[0])
-    matrix = np.empty((thetas.shape[0], n_items), dtype=np.float64)
-    for k in range(thetas.shape[0]):
-        matrix[k] = item_information(bank, factor_id, theta=thetas[k], model=model)
-    return matrix
-
-
 def item_information_matrix(
     bank: MLSIRMParams,
     factor_id: np.ndarray,
@@ -432,12 +419,10 @@ def item_information_matrix(
     n_dims = int(np.asarray(bank.theta).shape[1])
     n_items = int(np.asarray(bank.b).shape[0])
     thetas = _target_theta_rows(target_thetas, n_dims, n_items=n_items)
-    return _item_information_matrix_from_validated_thetas(
-        bank,
-        factor_id,
-        thetas,
-        model=model,
-    )
+    matrix = np.empty((thetas.shape[0], n_items), dtype=np.float64)
+    for k in range(thetas.shape[0]):
+        matrix[k] = item_information(bank, factor_id, theta=thetas[k], model=model)
+    return matrix
 
 
 def _content_feasible(
@@ -670,12 +655,7 @@ def assemble_to_target(
     thetas = _target_theta_rows(target_thetas, n_dims, n_items=n_items)
     target = _target_info_vector(target_info, thetas.shape[0])
 
-    matrix = _item_information_matrix_from_validated_thetas(
-        bank,
-        factor_id,
-        thetas,
-        model=model,
-    )
+    matrix = item_information_matrix(bank, factor_id, thetas, model=model)
     n_points, matrix_n_items = matrix.shape
     if matrix_n_items != n_items:
         raise ValueError("item-information matrix must match the number of items")
