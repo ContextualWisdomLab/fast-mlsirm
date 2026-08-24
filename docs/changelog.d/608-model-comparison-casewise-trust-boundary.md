@@ -1,5 +1,0 @@
-# Harden model-comparison casewise numeric trust boundary
-
-## Fixed
-
-- Harden public non-nested model-comparison casewise value admission so arbitrary float-protocol objects and caller-defined numeric subclasses fail closed without executing conversion callbacks, while preserving exact Python and supported NumPy real scalars; Vuong statistics remain Rust-owned.
