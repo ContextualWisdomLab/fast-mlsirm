@@ -21,10 +21,11 @@ from .contracts import (
     build_longitudinal_state_spec,
     build_temporal_occasion,
 )
-from .estimation import CrossedPersonEffectResult, weighted_contextual_effect
+from .estimation import CrossedPersonEffectResult
 
 _install_crossed_estimation_safety(_estimation)
 estimate_crossed_person_effects = _estimation.estimate_crossed_person_effects
+weighted_contextual_effect = _estimation.weighted_contextual_effect
 
 del _install_crossed_estimation_safety, _estimation
 
