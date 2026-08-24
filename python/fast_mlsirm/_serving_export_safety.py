@@ -129,6 +129,29 @@ def _quadrature_integer(value: Any, *, label: str) -> int:
     raise ValueError(f"{label} must be an integer")
 
 
+def _eps_distance(value: Any, *, maximum: float) -> float:
+    """Normalize one trusted distance control to a JSON-safe finite float."""
+    value_type = builtins.type(value)
+    if value_type is bool or value_type is np.bool_:
+        raise ValueError(
+            f"eps_distance must be in the safe numeric range (0, {maximum}]"
+        )
+    if value_type is int or value_type is float:
+        normalized = float(value)
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_TYPES):
+        normalized = float(value)
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_TYPES):
+        normalized = float(value)
+    else:
+        raise ValueError("eps_distance must be a real numeric scalar")
+
+    if not math.isfinite(normalized) or not 0 < normalized <= maximum:
+        raise ValueError(
+            f"eps_distance must be in the safe numeric range (0, {maximum}]"
+        )
+    return normalized
+
+
 def _exact_string_keys(mapping: dict[Any, Any]) -> bool:
     """Return whether an exact built-in mapping contains only inert text keys."""
     return all(builtins.type(key) is str for key in mapping)
@@ -205,6 +228,9 @@ def install(serving_module: Any) -> None:
         dim_names_value = _dimension_name_list(dim_names, n_dims)
         q_theta_value = _quadrature_integer(q_theta, label="q_theta")
         q_xi_value = _quadrature_integer(q_xi, label="q_xi")
+        eps_distance_value = _eps_distance(
+            eps_distance, maximum=serving_module.MAX_ABS_ITEM_PARAMETER
+        )
         return original_export(
             result,
             item_codes_value,
@@ -212,7 +238,7 @@ def install(serving_module: Any) -> None:
             path,
             q_theta_value,
             q_xi_value,
-            eps_distance,
+            eps_distance_value,
             screening_audit,
             dim_names_value,
         )
