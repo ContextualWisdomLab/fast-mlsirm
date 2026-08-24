@@ -36,12 +36,13 @@ PERIOD_2_TRUE_MEAN_SHIFT = 0.3
 # RMSE ~0.33 and correlation ~0.94, with the FIPC-estimated period-2 mean
 # landing at ~0.37 against a true realized mean of ~0.43 (the shift is
 # substantially recovered, not perfectly -- sampling noise on 250 people).
-# Bias/MAE and posterior-interval coverage are required independently of
-# correlation so fixed-bank recovery cannot pass on rank ordering alone.
+# Bias/MAE and normal-approximation coverage based on the Rust-returned
+# posterior SD are required independently of correlation so fixed-bank
+# recovery cannot pass on rank ordering alone.
 MAX_THETA_RMSE = 0.6
 MAX_THETA_MAE = 0.5
 MAX_ABS_THETA_BIAS = 0.20
-MIN_THETA_INTERVAL_COVERAGE = 0.80
+MIN_THETA_NORMAL_APPROX_COVERAGE = 0.80
 MIN_THETA_CORRELATION = 0.75
 MIN_FIPC_MEAN_SHIFT_DETECTED = PERIOD_2_TRUE_MEAN_SHIFT * 0.5
 MAX_INDEPENDENT_REFIT_MEAN_SHIFT_DETECTED = PERIOD_2_TRUE_MEAN_SHIFT * 0.35
@@ -115,7 +116,9 @@ def test_fipc_recovers_period_two_mean_shift_that_an_independent_refit_would_hid
     bias = float(np.mean(error))
     mae = float(np.mean(np.abs(error)))
     rmse = float(np.sqrt(np.mean(error**2)))
-    coverage = float(np.mean(np.abs(error) <= 1.96 * fipc_theta_sd))
+    normal_approx_coverage = float(
+        np.mean(np.abs(error) <= 1.96 * fipc_theta_sd)
+    )
     correlation = float(np.corrcoef(fipc_theta_eap, theta_period_2)[0, 1])
     fipc_detected_shift = float(fipc_theta_eap.mean())
 
@@ -131,9 +134,9 @@ def test_fipc_recovers_period_two_mean_shift_that_an_independent_refit_would_hid
     assert rmse < MAX_THETA_RMSE, (
         f"FIPC period-2 theta RMSE {rmse:.3f} exceeded {MAX_THETA_RMSE}"
     )
-    assert coverage >= MIN_THETA_INTERVAL_COVERAGE, (
-        f"FIPC period-2 theta 95% posterior-interval coverage {coverage:.3f} below "
-        f"{MIN_THETA_INTERVAL_COVERAGE}"
+    assert normal_approx_coverage >= MIN_THETA_NORMAL_APPROX_COVERAGE, (
+        f"FIPC period-2 theta mean±1.96 posterior-SD coverage "
+        f"{normal_approx_coverage:.3f} below {MIN_THETA_NORMAL_APPROX_COVERAGE}"
     )
     assert correlation > MIN_THETA_CORRELATION, (
         f"FIPC period-2 theta correlation {correlation:.3f} "
