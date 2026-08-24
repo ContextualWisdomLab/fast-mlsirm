@@ -67,6 +67,14 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uintp,
     np.ulonglong,
 )
+_NUMPY_REAL_SCALAR_TYPES = (
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
 
 
 @dataclass
@@ -96,9 +104,59 @@ class AssembledForm:
     content_counts: dict[str, int]
 
 
-def _target_theta_rows(target_thetas: np.ndarray, n_dims: int) -> np.ndarray:
-    """Coerce target trait points to a ``(n_points, n_dims)`` array."""
-    thetas = np.asarray(target_thetas, dtype=np.float64)
+def _is_exact_public_real_scalar(value: object) -> bool:
+    """Return whether ``value`` is one package-trusted real scalar identity."""
+    value_type = type(value)
+    return value_type in {bool, int, float} or any(
+        value_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES
+    )
+
+
+def _trusted_real_array(value: object, name: str) -> np.ndarray:
+    """Materialize inert real evidence without caller array/numeric callbacks.
+
+    Exact NumPy real-numeric arrays and exact built-in list/tuple trees whose
+    leaves have package-trusted real scalar identities are admitted. Arbitrary
+    array providers, ndarray/container/numeric subclasses, object/text/complex
+    storage, and cyclic built-in trees fail before NumPy conversion.
+    """
+    if type(value) is np.ndarray:
+        if value.dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError(f"{name} must be real numeric evidence")
+    elif type(value) in {list, tuple}:
+        active: set[int] = set()
+        stack: list[tuple[object, bool]] = [(value, False)]
+        while stack:
+            current, leaving = stack.pop()
+            if type(current) in {list, tuple}:
+                current_id = id(current)
+                if leaving:
+                    active.remove(current_id)
+                    continue
+                if current_id in active:
+                    raise ValueError(f"{name} must be real numeric evidence")
+                active.add(current_id)
+                stack.append((current, True))
+                for index in range(len(current) - 1, -1, -1):
+                    child = current[index]
+                    if type(child) in {list, tuple} or _is_exact_public_real_scalar(child):
+                        stack.append((child, False))
+                    else:
+                        raise ValueError(f"{name} must be real numeric evidence")
+            elif not _is_exact_public_real_scalar(current):
+                raise ValueError(f"{name} must be real numeric evidence")
+    else:
+        raise ValueError(f"{name} must be real numeric evidence")
+
+    try:
+        return np.asarray(value, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must be real numeric evidence") from None
+
+
+def _target_theta_rows(target_thetas: object, n_dims: int) -> np.ndarray:
+    """Return a trusted target-trait matrix with shape ``(n_points, n_dims)``."""
+    thetas = _trusted_real_array(target_thetas, "target_thetas")
     if thetas.ndim == 1:
         if n_dims == 1:
             thetas = thetas[:, None]
@@ -113,6 +171,16 @@ def _target_theta_rows(target_thetas: np.ndarray, n_dims: int) -> np.ndarray:
     if not np.all(np.isfinite(thetas)):
         raise ValueError("target_thetas must be finite")
     return thetas
+
+
+def _target_info_vector(target_info: object, n_points: int) -> np.ndarray:
+    """Return one trusted finite non-negative target-information vector."""
+    target = _trusted_real_array(target_info, "target_info").ravel()
+    if target.shape != (n_points,):
+        raise ValueError("target_info must have one entry per target theta point")
+    if np.any(target < 0) or not np.all(np.isfinite(target)):
+        raise ValueError("target_info must be finite and non-negative")
+    return target
 
 
 def item_information_matrix(
@@ -336,9 +404,10 @@ def assemble_to_target(
     Content labels and constraint-map keys/counts must already be the admitted
     types (strings / exact integers); arbitrary objects and conversion hooks are
     rejected before psychometric scoring rather than coerced through caller
-    callbacks. Semantic count/range constraints and exclusion indices are also
-    validated before item-information evaluation. Deterministic given ``seed``.
-    Raises ``ValueError`` if no form satisfying the constraints can be assembled.
+    callbacks. Semantic count/range constraints, target-curve evidence, and
+    exclusion indices are validated before item-information evaluation.
+    Deterministic given ``seed``. Raises ``ValueError`` if no form satisfying the
+    constraints can be assembled.
     """
     n_items = int(np.asarray(bank.b).shape[0])
     labels = _validated_content_labels(content, n_items)
@@ -363,15 +432,16 @@ def assemble_to_target(
     if seed < 0:
         raise ValueError("seed must be non-negative")
 
-    matrix = item_information_matrix(bank, factor_id, target_thetas, model=model)
+    n_dims = int(np.asarray(bank.theta).shape[1])
+    thetas = _target_theta_rows(target_thetas, n_dims)
+    target = _target_info_vector(target_info, thetas.shape[0])
+
+    matrix = item_information_matrix(bank, factor_id, thetas, model=model)
     n_points, matrix_n_items = matrix.shape
     if matrix_n_items != n_items:
         raise ValueError("item-information matrix must match the number of items")
-    target = np.asarray(target_info, dtype=np.float64).ravel()
     if target.shape != (n_points,):
         raise ValueError("target_info must have one entry per target theta point")
-    if np.any(target < 0) or not np.all(np.isfinite(target)):
-        raise ValueError("target_info must be finite and non-negative")
 
     raw_info = matrix.sum(axis=0)
     rng = np.random.default_rng(seed)
