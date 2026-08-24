@@ -38,6 +38,19 @@ def test_release_dispatch_must_target_the_repository_default_branch():
     assert text.index(guard) < text.index(checkout)
 
 
+def test_release_dispatch_requires_an_explicit_source_commit():
+    """A release is bound to its reviewed cut even if default-branch HEAD moves."""
+    text = _workflow_text()
+    assert "release_commit:" in text
+    assert "Release source commit" in text
+    assert "required: true" in text
+    assert "RELEASE_COMMIT: ${{ inputs.release_commit }}" in text
+    assert "release_commit must be a canonical" in text
+    assert "merge-base --is-ancestor" in text
+    assert "release commit must be an ancestor of the default branch" in text
+    assert "ref: ${{ inputs.release_commit }}" in text
+
+
 def test_release_version_and_changelog_section_fail_closed():
     """The requested canonical version matches exactly one nonempty release section."""
     text = _workflow_text()
@@ -61,12 +74,14 @@ def test_existing_release_and_api_uncertainty_block_publication():
     assert "refusing to overwrite or reuse it" in text
 
 
-def test_tag_without_release_resumes_instead_of_retagging():
-    """A prior interrupted run resumes on its immutable tag, never a new one."""
+def test_tag_without_release_resumes_only_at_the_requested_source_commit():
+    """An interrupted run resumes only when the immutable tag targets the source."""
     text = _workflow_text()
     assert "resume_existing_tag=true" in text
     assert "resume_existing_tag=false" in text
     assert "resuming publication for the existing immutable tag" in text
+    assert "existing tag does not target the requested release commit" in text
+    assert 'actual_tag_sha != os.environ["RELEASE_COMMIT"]' in text
     guard = "if: steps.release_tag_state.outputs.resume_existing_tag != 'true'"
     create_step = "Atomically create the immutable release tag"
     assert guard in text
@@ -85,19 +100,20 @@ def test_oversized_release_notes_are_capped_with_authoritative_pointer():
     assert "(contents list truncated)" in text
 
 
-def test_release_tag_is_created_atomically_at_the_dispatch_sha():
-    """The tag creation API is the race-safe authority for the immutable ref."""
+def test_release_tag_is_created_atomically_at_the_explicit_source_commit():
+    """The tag creation API binds the immutable ref to the reviewed release cut."""
     text = _workflow_text()
     create_step = "Atomically create the immutable release tag"
     post_ref = '"$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/refs"'
     assert create_step in text
     assert '"ref": f"refs/tags/v{os.environ[\'RELEASE_VERSION\']}"' in text
-    assert '"sha": os.environ["GITHUB_SHA"]' in text
+    assert '"sha": os.environ["RELEASE_COMMIT"]' in text
+    assert '"sha": os.environ["GITHUB_SHA"]' not in text
     assert "--request POST" in text
     assert '--data-binary "@$request_file"' in text
     assert post_ref in text
     assert 'if [ "$status" != "201" ]' in text
-    assert 'actual_sha != os.environ["GITHUB_SHA"]' in text
+    assert 'actual_sha != os.environ["RELEASE_COMMIT"]' in text
 
 
 def test_release_creation_requires_the_verified_existing_tag():
