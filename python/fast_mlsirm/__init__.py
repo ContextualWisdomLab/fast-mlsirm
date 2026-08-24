@@ -29,6 +29,7 @@ _legacy_init.flexilevel_administer = _exposure.flexilevel_administer
 _legacy_init.flexilevel_score_distribution = _exposure.flexilevel_score_distribution
 _legacy_init.icc = _reliability.icc
 _legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
+_legacy_init.bratt_mm = _scaling.bratt_mm
 _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
