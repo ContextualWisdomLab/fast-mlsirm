@@ -67,13 +67,16 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uintp,
     np.ulonglong,
 )
-_NUMPY_REAL_SCALAR_TYPES = (
-    np.bool_,
-    *_NUMPY_INTEGER_SCALAR_TYPES,
+_NUMPY_FLOAT_SCALAR_TYPES = (
     np.float16,
     np.float32,
     np.float64,
     np.longdouble,
+)
+_NUMPY_REAL_SCALAR_TYPES = (
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
 )
 
 
@@ -112,20 +115,51 @@ def _is_exact_public_real_scalar(value: object) -> bool:
     )
 
 
+def _require_lossless_float64_scalar(value: object, name: str) -> None:
+    """Require one already-trusted scalar to preserve identity in binary64."""
+    value_type = type(value)
+    if value_type is bool or value_type is np.bool_ or value_type is float:
+        return
+    try:
+        converted = float(value)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must be real numeric evidence") from None
+
+    if value_type is int or any(
+        value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        if not np.isfinite(converted):
+            raise ValueError(f"{name} must be real numeric evidence")
+        if int(converted) != int(value):
+            raise ValueError(f"{name} could not be converted losslessly to float64")
+        return
+
+    # The only remaining admitted identities are concrete NumPy real scalars.
+    if not np.isfinite(converted):
+        if np.isfinite(value):
+            raise ValueError(f"{name} could not be converted losslessly to float64")
+        return
+    if value_type(converted) != value:
+        raise ValueError(f"{name} could not be converted losslessly to float64")
+
+
 def _trusted_real_array(value: object, name: str) -> np.ndarray:
     """Materialize inert real evidence without caller array/numeric callbacks.
 
     Exact NumPy real-numeric arrays, exact trusted real scalars, and exact
     built-in list/tuple trees whose leaves have package-trusted real scalar
-    identities are admitted. Arbitrary array providers, ndarray/container/
+    identities are admitted. Every admitted scalar must preserve its value when
+    normalized to binary64. Arbitrary array providers, ndarray/container/
     numeric subclasses, object/text/complex storage, and cyclic built-in trees
     fail before NumPy conversion.
     """
     if type(value) is np.ndarray:
         if value.dtype.kind not in {"b", "i", "u", "f"}:
             raise ValueError(f"{name} must be real numeric evidence")
+        for scalar in value.flat:
+            _require_lossless_float64_scalar(scalar, name)
     elif _is_exact_public_real_scalar(value):
-        pass
+        _require_lossless_float64_scalar(value, name)
     elif type(value) in {list, tuple}:
         active: set[int] = set()
         stack: list[tuple[object, bool]] = [(value, False)]
@@ -146,7 +180,9 @@ def _trusted_real_array(value: object, name: str) -> np.ndarray:
                         stack.append((child, False))
                     else:
                         raise ValueError(f"{name} must be real numeric evidence")
-            elif not _is_exact_public_real_scalar(current):
+            elif _is_exact_public_real_scalar(current):
+                _require_lossless_float64_scalar(current, name)
+            else:
                 raise ValueError(f"{name} must be real numeric evidence")
     else:
         raise ValueError(f"{name} must be real numeric evidence")
