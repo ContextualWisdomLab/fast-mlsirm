@@ -9,6 +9,8 @@ Date: 2026-08-09
 
 Without an explicit boundary, the library can accidentally absorb participant/session state, identity, hosted persistence, UI and deployment logic. That would make the numerical core harder to install independently, create circular repository dependencies, and duplicate ownership already assigned to other CWL services.
 
+The reusable core's scientific identity remains the simple-structure MLSIRM/MLS2PLM family and adjacent measurement contracts. Jeon, Jin, Schweinberger, and Baugh (2021) define the latent-space item-response interaction map; Kang and Jeon (2025) give the multidimensional extension and the relativity of conditional dependence; Molenaar and Jeon (2026) give the regularized joint-maximum-likelihood estimation strategy used by the point-estimate path. Score interpretation, fairness, and intended use remain governed by AERA, APA, and NCME (2014). ISO/IEC/IEEE 42010:2022 governs how this boundary is recorded as an architecture decision, not the psychometric likelihood.
+
 ## Decision
 
 `fast-mlsirm` owns reusable domain-neutral measurement contracts and scientific/numerical capabilities:
@@ -67,6 +69,16 @@ Costs:
 
 Supersede this ADR only if the organization intentionally redefines repository bounded contexts and provides a migration plan preserving independent scientific/numerical reuse.
 
-## References
+## Research and standards basis
+
+The architecture-description concern (stakeholders, viewpoints, correspondence, and decision records) follows ISO/IEC/IEEE 42010:2022. The measurement methods this boundary exists to keep independently reusable are the simple-structure MLSIRM/MLS2PLM specialization documented in `docs/papers/mls2plm-canonical-equations.md`, not a silent claim of the full discrimination-vector MLS2PLM model.
+
+Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika, 86*(2), 378–403. https://doi.org/10.1007/s11336-021-09762-5
+
+Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826. https://doi.org/10.1017/psy.2025.5
+
+Molenaar, D., & Jeon, M. (2026). Regularized joint maximum likelihood estimation of latent space item response models. *Psychometrika, 91*, 335–359. https://doi.org/10.1017/psy.2025.10068
+
+American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 
 International Organization for Standardization, International Electrotechnical Commission, & Institute of Electrical and Electronics Engineers. (2022). *ISO/IEC/IEEE 42010:2022 Software, systems and enterprise—Architecture description*.
