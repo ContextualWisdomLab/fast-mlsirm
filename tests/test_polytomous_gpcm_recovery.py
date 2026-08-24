@@ -27,12 +27,13 @@ N_CAT = 4
 SEED = 20260101
 
 # A real run with these exact parameters/seed measures RMSE ~0.30 and
-# correlation ~0.95. Bias/MAE and interval coverage are asserted separately so
-# correlation remains supplementary rather than standing in for calibration.
+# correlation ~0.95. Bias/MAE and normal-approximation coverage based on the
+# Rust-returned posterior SD are asserted separately so correlation remains
+# supplementary rather than standing in for calibration.
 MAX_THETA_RMSE = 0.55
 MAX_THETA_MAE = 0.45
 MAX_ABS_THETA_BIAS = 0.15
-MIN_THETA_INTERVAL_COVERAGE = 0.80
+MIN_THETA_NORMAL_APPROX_COVERAGE = 0.80
 MIN_THETA_CORRELATION = 0.8
 
 
@@ -72,7 +73,7 @@ def test_gpcm_recovers_true_theta_within_expected_rmse() -> None:
     bias = float(np.mean(error))
     mae = float(np.mean(np.abs(error)))
     rmse = float(np.sqrt(np.mean(error**2)))
-    coverage = float(np.mean(np.abs(error) <= 1.96 * theta_sd))
+    normal_approx_coverage = float(np.mean(np.abs(error) <= 1.96 * theta_sd))
     correlation = float(np.corrcoef(theta_eap, true_theta)[0, 1])
 
     assert np.all(np.isfinite(theta_sd))
@@ -86,9 +87,9 @@ def test_gpcm_recovers_true_theta_within_expected_rmse() -> None:
     assert rmse < MAX_THETA_RMSE, (
         f"theta recovery RMSE {rmse:.3f} exceeded {MAX_THETA_RMSE}"
     )
-    assert coverage >= MIN_THETA_INTERVAL_COVERAGE, (
-        f"theta 95% posterior-interval coverage {coverage:.3f} below "
-        f"{MIN_THETA_INTERVAL_COVERAGE}"
+    assert normal_approx_coverage >= MIN_THETA_NORMAL_APPROX_COVERAGE, (
+        f"theta mean±1.96 posterior-SD coverage {normal_approx_coverage:.3f} below "
+        f"{MIN_THETA_NORMAL_APPROX_COVERAGE}"
     )
     assert correlation > MIN_THETA_CORRELATION, (
         f"theta recovery correlation {correlation:.3f} below {MIN_THETA_CORRELATION}"
