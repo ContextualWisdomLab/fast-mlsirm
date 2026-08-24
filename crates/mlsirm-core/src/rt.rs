@@ -32,6 +32,33 @@
 
 /// Package-wide ceiling for RT EM iterations (matches Python `MAX_MAX_ITER`).
 const RT_MAX_ITER: usize = 100_000;
+/// Maximum length of either RT evidence axis, mirrored by Python `rt.py`.
+pub(crate) const RT_MAX_AXIS_LENGTH: usize = 100_000;
+/// Maximum persons × items RT evidence cells, mirrored by Python `rt.py`.
+pub(crate) const RT_MAX_CELLS: usize = 20_000_000;
+
+/// Validate RT dimensions before any result/workspace allocation.
+pub(crate) fn validate_rt_shape(n_persons: usize, n_items: usize) -> Result<usize, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be positive".into());
+    }
+    if n_persons > RT_MAX_AXIS_LENGTH || n_items > RT_MAX_AXIS_LENGTH {
+        return Err(format!(
+            "response-time axes must be <= {RT_MAX_AXIS_LENGTH}"
+        ));
+    }
+    let n_cells = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items overflows usize",
+    )?;
+    if n_cells > RT_MAX_CELLS {
+        return Err(format!(
+            "response-time evidence exceeds the {RT_MAX_CELLS}-cell budget"
+        ));
+    }
+    Ok(n_cells)
+}
 
 /// Estimation controls for [`fit_rt_lognormal`].
 #[derive(Clone, Copy, Debug)]
@@ -84,7 +111,7 @@ pub struct RtFit {
     pub final_loglik_change: f64,
 }
 
-/// Fit the lognormal RT measurement model by marginal-ML EM (van der Linden,
+/// Fit the lognormal response-time measurement model by marginal-ML EM (van der Linden,
 /// 2007). `times` is `n_persons * n_items` row-major raw response times (`> 0`
 /// where observed); `observed` is an optional missingness mask of the same length
 /// (`None` = fully observed). Returns item `alpha`/`beta`, the estimated
@@ -96,14 +123,12 @@ pub fn fit_rt_lognormal(
     n_items: usize,
     config: RtConfig,
 ) -> Result<RtFit, String> {
-    if n_persons == 0 || n_items == 0 {
-        return Err("n_persons and n_items must be positive".into());
-    }
-    if times.len() != n_persons * n_items {
+    let n_cells = validate_rt_shape(n_persons, n_items)?;
+    if times.len() != n_cells {
         return Err("times must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -127,7 +152,7 @@ pub fn fit_rt_lognormal(
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
 
     // log-times where observed
-    let mut y = vec![0.0_f64; n_persons * n_items];
+    let mut y = vec![0.0_f64; n_cells];
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) {
@@ -366,12 +391,7 @@ pub fn rt_person_fit(
     alpha_level: f64,
     z_fast: f64,
 ) -> Result<RtPersonFit, String> {
-    if n_persons == 0 || n_items == 0 {
-        return Err("n_persons and n_items must be positive".into());
-    }
-    let n_cells = n_persons
-        .checked_mul(n_items)
-        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    let n_cells = validate_rt_shape(n_persons, n_items)?;
     if times.len() != n_cells {
         return Err("times must have length n_persons * n_items".into());
     }
@@ -406,8 +426,8 @@ pub fn rt_person_fit(
     let mut p_value = vec![f64::NAN; n_persons];
     let mut flagged = vec![false; n_persons];
     let mut tau_ml = vec![f64::NAN; n_persons];
-    let mut z_resid = vec![f64::NAN; n_persons * n_items];
-    let mut item_flag = vec![false; n_persons * n_items];
+    let mut z_resid = vec![f64::NAN; n_cells];
+    let mut item_flag = vec![false; n_cells];
 
     for p in 0..n_persons {
         // pass 1: profiled speed tau_hat = sum a_i(beta_i - y_i) / sum a_i
@@ -483,6 +503,50 @@ pub fn rt_person_fit(
         z_resid,
         item_flag,
     })
+}
+
+#[cfg(test)]
+mod resource_limit_tests {
+    use super::*;
+
+    #[test]
+    fn rt_shape_limits_fail_before_data_or_output_allocation() {
+        assert_eq!(validate_rt_shape(RT_MAX_AXIS_LENGTH, 200).unwrap(), RT_MAX_CELLS);
+        assert_eq!(
+            validate_rt_shape(RT_MAX_AXIS_LENGTH + 1, 1).unwrap_err(),
+            "response-time axes must be <= 100000"
+        );
+        assert_eq!(
+            validate_rt_shape(RT_MAX_AXIS_LENGTH, 201).unwrap_err(),
+            "response-time evidence exceeds the 20000000-cell budget"
+        );
+        assert_eq!(
+            fit_rt_lognormal(
+                &[],
+                None,
+                RT_MAX_AXIS_LENGTH + 1,
+                1,
+                RtConfig::default(),
+            )
+            .unwrap_err(),
+            "response-time axes must be <= 100000"
+        );
+        assert_eq!(
+            rt_person_fit(
+                &[],
+                None,
+                RT_MAX_AXIS_LENGTH,
+                201,
+                &[],
+                &[],
+                0.05,
+                1.645,
+            )
+            .err()
+            .expect("oversized response-time person-fit shape must fail"),
+            "response-time evidence exceeds the 20000000-cell budget"
+        );
+    }
 }
 
 #[cfg(test)]

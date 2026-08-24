@@ -205,6 +205,20 @@ def _require_optional_score_ceiling(value, name: str) -> int | None:
     return _require_positive_integer_control(value, name)
 
 
+def _require_real_numeric_vector(value: object, name: str) -> np.ndarray:
+    """Admit inert real numeric evidence before any lossy float64 conversion.
+
+    ``np.asarray(..., dtype=float64)`` silently projects complex evidence onto the
+    real line and asks object/text cells for executable conversion protocols.  The
+    observed-score surfaces instead establish the source storage domain first and
+    only then marshal trusted numeric storage into the contiguous Rust payload.
+    """
+    array = np.asarray(value)
+    if np.iscomplexobj(array) or array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError(f"{name} must contain real numeric evidence")
+    return np.ascontiguousarray(array, dtype=np.float64).ravel()
+
+
 @dataclass
 class EquateResult:
     """Observed-score equating result: the conversion table
@@ -298,13 +312,13 @@ def equate_observed_scores(
     method = _require_equating_method(method)
     k_x = _require_optional_score_ceiling(k_x, "k_x")
     k_y = _require_optional_score_ceiling(k_y, "k_y")
+    xs = _require_real_numeric_vector(x_scores, "x_scores")
+    ys = _require_real_numeric_vector(y_scores, "y_scores")
+    kx = _infer_k(xs, k_x, "k_x")
+    ky = _infer_k(ys, k_y, "k_y")
     core = _core_module()
     if core is None or not hasattr(core, "equate_observed_scores"):
         raise RuntimeError("equate_observed_scores requires the compiled Rust core")
-    xs = np.asarray(x_scores, dtype=np.float64).ravel()
-    ys = np.asarray(y_scores, dtype=np.float64).ravel()
-    kx = _infer_k(xs, k_x, "k_x")
-    ky = _infer_k(ys, k_y, "k_y")
     res = core.equate_observed_scores(xs, ys, int(kx), int(ky), method=method)
     return _build(res, method, "EG")
 
@@ -353,16 +367,16 @@ def equate_neat(
     k_y = _require_optional_score_ceiling(k_y, "k_y")
     k_v = _require_optional_score_ceiling(k_v, "k_v")
     w1 = _require_weight(w1)
-    core = _core_module()
-    if core is None or not hasattr(core, "equate_neat"):
-        raise RuntimeError("equate_neat requires the compiled Rust core")
-    xt = np.asarray(x_total, dtype=np.float64).ravel()
-    xa = np.asarray(x_anchor, dtype=np.float64).ravel()
-    yt = np.asarray(y_total, dtype=np.float64).ravel()
-    ya = np.asarray(y_anchor, dtype=np.float64).ravel()
+    xt = _require_real_numeric_vector(x_total, "x_total")
+    xa = _require_real_numeric_vector(x_anchor, "x_anchor")
+    yt = _require_real_numeric_vector(y_total, "y_total")
+    ya = _require_real_numeric_vector(y_anchor, "y_anchor")
     kx = _infer_k(xt, k_x, "k_x")
     ky = _infer_k(yt, k_y, "k_y")
     kv = _infer_k(np.concatenate([xa, ya]), k_v, "k_v")
+    core = _core_module()
+    if core is None or not hasattr(core, "equate_neat"):
+        raise RuntimeError("equate_neat requires the compiled Rust core")
     res = core.equate_neat(
         xt, xa, yt, ya, int(kx), int(ky), int(kv), method=method, w1=w1
     )
@@ -417,15 +431,15 @@ def equate_neat_linear(
     k_x = _require_optional_score_ceiling(k_x, "k_x")
     k_y = _require_optional_score_ceiling(k_y, "k_y")
     w1 = _require_weight(w1)
+    xt = _require_real_numeric_vector(x_total, "x_total")
+    xa = _require_real_numeric_vector(x_anchor, "x_anchor")
+    yt = _require_real_numeric_vector(y_total, "y_total")
+    ya = _require_real_numeric_vector(y_anchor, "y_anchor")
+    kx = _infer_k(xt, k_x, "k_x")
+    ky = _infer_k(yt, k_y, "k_y")
     core = _core_module()
     if core is None or not hasattr(core, "equate_neat_linear"):
         raise RuntimeError("equate_neat_linear requires the compiled Rust core")
-    xt = np.asarray(x_total, dtype=np.float64).ravel()
-    xa = np.asarray(x_anchor, dtype=np.float64).ravel()
-    yt = np.asarray(y_total, dtype=np.float64).ravel()
-    ya = np.asarray(y_anchor, dtype=np.float64).ravel()
-    kx = _infer_k(xt, k_x, "k_x")
-    ky = _infer_k(yt, k_y, "k_y")
     res = core.equate_neat_linear(
         xt, xa, yt, ya, int(kx), int(ky),
         method=method, anchor_kind=anchor_kind, w1=w1,
@@ -454,13 +468,13 @@ def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
     from .fitstats import _core_module
 
     degree = _require_positive_integer_control(degree, "degree")
-    core = _core_module()
-    if core is None or not hasattr(core, "loglinear_smooth"):
-        raise RuntimeError("loglinear_smooth requires the compiled Rust core")
-    c = np.asarray(counts, dtype=np.float64).ravel()
+    c = _require_real_numeric_vector(counts, "counts")
     # the model preserves at most k = len(counts)-1 moments; clamp so the default
     # degree works on short forms (k < 6) instead of erroring
     deg = max(1, min(degree, c.size - 1))
+    core = _core_module()
+    if core is None or not hasattr(core, "loglinear_smooth"):
+        raise RuntimeError("loglinear_smooth requires the compiled Rust core")
     res = core.loglinear_smooth(c, deg)
     return {
         "probs": np.asarray(res["probs"], dtype=np.float64),
@@ -523,13 +537,13 @@ def equate_observed_scores_kernel(
         smooth_y = _require_positive_integer_control(smooth_y, "smooth_y")
     bandwidth_x = _require_optional_bandwidth(bandwidth_x, "bandwidth_x")
     bandwidth_y = _require_optional_bandwidth(bandwidth_y, "bandwidth_y")
+    xs = _require_real_numeric_vector(x_scores, "x_scores")
+    ys = _require_real_numeric_vector(y_scores, "y_scores")
+    kx = _infer_k(xs, k_x, "k_x")
+    ky = _infer_k(ys, k_y, "k_y")
     core = _core_module()
     if core is None or not hasattr(core, "equate_observed_scores_ext"):
         raise RuntimeError("equate_observed_scores_kernel requires the compiled Rust core")
-    xs = np.asarray(x_scores, dtype=np.float64).ravel()
-    ys = np.asarray(y_scores, dtype=np.float64).ravel()
-    kx = _infer_k(xs, k_x, "k_x")
-    ky = _infer_k(ys, k_y, "k_y")
     res = core.equate_observed_scores_ext(
         xs, ys, int(kx), int(ky),
         continuization=continuization,
@@ -579,13 +593,13 @@ def equating_standard_errors(
     n_boot = _require_positive_integer_control(n_boot, "n_boot")
     ci_level = _require_ci_level(ci_level)
     seed = _require_seed(seed)
+    xs = _require_real_numeric_vector(x_scores, "x_scores")
+    ys = _require_real_numeric_vector(y_scores, "y_scores")
+    kx = _infer_k(xs, k_x, "k_x")
+    ky = _infer_k(ys, k_y, "k_y")
     core = _core_module()
     if core is None:
         raise RuntimeError("equating_standard_errors requires the compiled Rust core")
-    xs = np.asarray(x_scores, dtype=np.float64).ravel()
-    ys = np.asarray(y_scores, dtype=np.float64).ravel()
-    kx = _infer_k(xs, k_x, "k_x")
-    ky = _infer_k(ys, k_y, "k_y")
     if route == "bootstrap":
         if not hasattr(core, "bootstrap_see"):
             raise RuntimeError("bootstrap SEE requires the compiled Rust core")

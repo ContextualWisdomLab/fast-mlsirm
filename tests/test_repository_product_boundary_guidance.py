@@ -1,6 +1,7 @@
 """Regression contracts for the fast-mlsirm / Psychometrics Commons boundary."""
 
 from pathlib import Path
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,12 @@ def _guidance(name: str) -> str:
 def _normalized_guidance(name: str) -> str:
     """Return guidance with insignificant Markdown wrapping collapsed."""
     return " ".join(_guidance(name).split())
+
+
+def _project_python_requirement() -> str:
+    """Return the package's authoritative Python compatibility requirement."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(pyproject["project"]["requires-python"])
 
 
 def test_agents_declares_psychometrics_commons_as_downstream_product() -> None:
@@ -51,3 +58,12 @@ def test_guidance_forbids_recreating_hosted_runtime_in_fast_mlsirm() -> None:
     assert "must not be recreated" in agents
     assert runtime_path in claude
     assert "must not be recreated" in claude
+
+
+def test_agent_guidance_matches_packaging_python_floor() -> None:
+    """Agent guidance must not advertise a Python floor below package metadata."""
+    requirement = _project_python_requirement()
+    expected = f'`requires-python = "{requirement}"`'
+
+    assert expected in _normalized_guidance("AGENTS.md")
+    assert expected in _normalized_guidance("CLAUDE.md")

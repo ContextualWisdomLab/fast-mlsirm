@@ -7,7 +7,7 @@ Date: 2026-08-09
 
 Psychometric and AI-evaluation observations commonly sit inside schools, teams, organizations, prompts, testlets, documents, clients, time periods or other overlapping contexts. Repeated observations also evolve over time. Flattening those structures into independent rows can produce atomistic fallacy, understate uncertainty, confound stable traits with context effects and drift, and misinterpret temporal dependence.
 
-A current open PR contains reusable contract work for nested, cross-classified, multiple-membership and longitudinal designs, but it is not yet protected-integrated. Numerical estimators for the full structures are not accepted production behavior. Therefore this ADR remains Proposed.
+Reusable nested, cross-classified, multiple-membership, and longitudinal *contracts* are on protected main. A Rust MAP estimator now recovers crossed / weighted multiple-membership person effects `u_h` with RMSE evidence. OLS/AR longitudinal state estimation and MCMC variance-component engines remain separate slices, so this ADR stays Proposed until those numerical release-rule items are also evidenced.
 
 ## Decision
 
