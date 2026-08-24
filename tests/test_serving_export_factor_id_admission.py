@@ -1,4 +1,4 @@
-"""Serving-export regressions for factor-to-dimension and item identity admission."""
+"""Serving-export regressions for factor, item, and dimension identity admission."""
 
 from __future__ import annotations
 
@@ -60,6 +60,49 @@ class _HostileItemCode(str):
     def _trip(self) -> NoReturn:
         self.calls += 1
         raise AssertionError("caller-controlled item-code scalar callback executed")
+
+    def __str__(self) -> str:
+        return self._trip()
+
+    def __hash__(self) -> int:
+        return self._trip()
+
+    def __eq__(self, other):
+        return self._trip()
+
+
+class _HostileDimNames(list[str]):
+    """List subclass whose callbacks must not run during dimension-name admission."""
+
+    def __init__(self, values: list[str]) -> None:
+        super().__init__(values)
+        self.calls = 0
+
+    def _trip(self) -> NoReturn:
+        self.calls += 1
+        raise AssertionError("caller-controlled dimension-name container callback executed")
+
+    def __len__(self) -> int:
+        return self._trip()
+
+    def __iter__(self):
+        return self._trip()
+
+    def __getitem__(self, index):
+        return self._trip()
+
+
+class _HostileDimName(str):
+    """String subclass that must not enter the frozen dimension-name artifact."""
+
+    def __new__(cls, value: str):
+        instance = super().__new__(cls, value)
+        instance.calls = 0
+        return instance
+
+    def _trip(self) -> NoReturn:
+        self.calls += 1
+        raise AssertionError("caller-controlled dimension-name scalar callback executed")
 
     def __str__(self) -> str:
         return self._trip()
@@ -193,6 +236,46 @@ def test_export_preserves_trusted_item_code_tuple(monkeypatch):
     bundle = serving.export_serving_bundle(_result(), ("q0", "q1"), (0, 1))
 
     assert [item["code"] for item in bundle["items"]] == ["q0", "q1"]
+
+
+def test_export_rejects_callback_bearing_dimension_name_container_before_native(
+    monkeypatch,
+):
+    """Dimension-name container protocols must not run before compiled-core work."""
+    dim_names = _HostileDimNames(["primary", "secondary"])
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match="dim_names"):
+        serving.export_serving_bundle(
+            _result(), ["q0", "q1"], (0, 1), dim_names=dim_names
+        )
+
+    assert dim_names.calls == 0
+
+
+def test_export_rejects_callback_bearing_dimension_name_scalar_before_native(
+    monkeypatch,
+):
+    """Caller-defined dimension strings must not enter the frozen serving bundle."""
+    dim_name = _HostileDimName("secondary")
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match="dim_names"):
+        serving.export_serving_bundle(
+            _result(), ["q0", "q1"], (0, 1), dim_names=["primary", dim_name]
+        )
+
+    assert dim_name.calls == 0
+
+
+def test_export_rejects_wrong_dimension_name_count_before_native(monkeypatch):
+    """Dimension-label cardinality is validated before Rust EAPsum generation."""
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match="dim_names length"):
+        serving.export_serving_bundle(
+            _result(), ["q0", "q1"], (0, 1), dim_names=["primary"]
+        )
 
 
 @pytest.mark.parametrize("control_name", ["q_theta", "q_xi"])
