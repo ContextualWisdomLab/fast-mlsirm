@@ -244,3 +244,77 @@ def test_cyclic_builtin_target_tree_fails_before_information(monkeypatch) -> Non
         )
 
     assert information_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("target_thetas", [2**53 + 1]),
+        ("target_info", 2**53 + 1),
+        ("target_info", np.uint64(2**53 + 1)),
+    ],
+)
+def test_lossy_integer_target_evidence_fails_before_information(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    """Exact integer target evidence cannot silently change in binary64."""
+    bank, factor_id = _bank()
+    information_calls = 0
+
+    def unexpected_information(*_args: object, **_kwargs: object) -> np.ndarray:
+        nonlocal information_calls
+        information_calls += 1
+        raise AssertionError("lossy target evidence must fail before scoring")
+
+    monkeypatch.setattr(ata, "item_information_matrix", unexpected_information)
+    target_thetas: object = np.array([0.0], dtype=np.float64)
+    target_info: object = np.array([1.0], dtype=np.float64)
+    if field == "target_thetas":
+        target_thetas = value
+    else:
+        target_info = value
+
+    with pytest.raises(ValueError, match=rf"{field} could not be converted losslessly"):
+        ata.assemble_to_target(
+            bank,
+            factor_id,
+            target_thetas,
+            target_info,
+            length=2,
+            model="MIRT",
+        )
+
+    assert information_calls == 0
+
+
+def test_wider_real_target_info_must_not_round_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Higher-precision target evidence must retain identity or fail pre-scoring."""
+    wide = np.longdouble(1.0) + np.finfo(np.longdouble).eps
+    if np.longdouble(np.float64(wide)) == wide:
+        pytest.skip("np.longdouble has no precision beyond float64 on this platform")
+
+    bank, factor_id = _bank()
+    information_calls = 0
+
+    def unexpected_information(*_args: object, **_kwargs: object) -> np.ndarray:
+        nonlocal information_calls
+        information_calls += 1
+        raise AssertionError("rounded target evidence must fail before scoring")
+
+    monkeypatch.setattr(ata, "item_information_matrix", unexpected_information)
+
+    with pytest.raises(ValueError, match="target_info could not be converted losslessly"):
+        ata.assemble_to_target(
+            bank,
+            factor_id,
+            np.array([0.0], dtype=np.float64),
+            wide,
+            length=2,
+            model="MIRT",
+        )
+
+    assert information_calls == 0
