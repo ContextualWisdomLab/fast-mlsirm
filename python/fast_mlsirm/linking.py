@@ -92,14 +92,17 @@ def _require_irt_link_quadrature_size(value, *, name: str = "q_theta") -> int:
 def _is_trusted_linking_real_scalar(value) -> bool:
     """Return whether ``value`` has a package-trusted inert real scalar identity."""
     value_type = type(value)
-    return any(value_type is scalar_type for scalar_type in _TRUSTED_LINKING_REAL_SCALAR_TYPES)
+    return any(
+        value_type is scalar_type for scalar_type in _TRUSTED_LINKING_REAL_SCALAR_TYPES
+    )
 
 
 def _is_trusted_linking_complex_scalar(value) -> bool:
     """Return whether ``value`` has a package-trusted inert complex scalar identity."""
     value_type = type(value)
     return any(
-        value_type is scalar_type for scalar_type in _TRUSTED_LINKING_COMPLEX_SCALAR_TYPES
+        value_type is scalar_type
+        for scalar_type in _TRUSTED_LINKING_COMPLEX_SCALAR_TYPES
     )
 
 
@@ -129,7 +132,10 @@ def _real_numeric_array(value, *, name: str) -> np.ndarray:
                     raise ValueError(f"{name} must be a numeric array")
                 active_container_ids.add(current_id)
                 stack.append((current, True))
-                stack.extend((current[index], False) for index in range(len(current) - 1, -1, -1))
+                stack.extend(
+                    (current[index], False)
+                    for index in range(len(current) - 1, -1, -1)
+                )
                 continue
             if current_type is np.ndarray:
                 if current.dtype.kind == "c":
@@ -173,12 +179,14 @@ def link_fixed_item_parameters(
     source_theta = _real_numeric_array(source.theta, name="source.theta")
     source_alpha = _real_numeric_array(source.alpha, name="source.alpha")
     source_b = _real_numeric_array(source.b, name="source.b")
+    target_theta = _real_numeric_array(target.theta, name="target.theta")
     target_alpha = _real_numeric_array(target.alpha, name="target.alpha")
     target_b = _real_numeric_array(target.b, name="target.b")
     for arr, nm in (
         (source_theta, "source.theta"),
         (source_alpha, "source.alpha"),
         (source_b, "source.b"),
+        (target_theta, "target.theta"),
         (target_alpha, "target.alpha"),
         (target_b, "target.b"),
     ):
@@ -187,12 +195,7 @@ def link_fixed_item_parameters(
 
     if source_alpha.shape != target_alpha.shape or source_b.shape != target_b.shape:
         raise ValueError("source and target item parameters must have matching shapes")
-    if source_theta.ndim != 2 or target.theta.ndim != 2:
-        raise ValueError("source and target theta must be 2-D (items x dimensions)")
-    target_theta = _real_numeric_array(target.theta, name="target.theta")
-    if not np.all(np.isfinite(target_theta)):
-        raise ValueError("target.theta must be finite")
-    if target_theta.ndim != 2:
+    if source_theta.ndim != 2 or target_theta.ndim != 2:
         raise ValueError("source and target theta must be 2-D (items x dimensions)")
     if source_theta.shape[1] != target_theta.shape[1]:
         raise ValueError("source and target theta must have the same dimensionality")
