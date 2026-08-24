@@ -155,6 +155,33 @@ def test_nested_numeric_provider_fails_before_conversion_or_native_discovery(
     assert core_discoveries == 0
 
 
+def test_invalid_controls_fail_before_hostile_evidence_is_inspected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The safety adapter must preserve semantic-control-before-data ordering."""
+    _HostileArrayProvider.callback_count = 0
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not be discovered for invalid controls")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="max_iter"):
+        estimation.estimate_crossed_person_effects(
+            _HostileArrayProvider(),
+            _design(),
+            item_intercepts=[0.0],
+            max_iter=0,
+            device="cpu",
+        )
+
+    assert _HostileArrayProvider.callback_count == 0
+    assert core_discoveries == 0
+
+
 def test_builtin_and_numpy_scalar_evidence_remains_supported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
