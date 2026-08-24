@@ -9,6 +9,60 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+)
+_NUMPY_FLOAT_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+
+
+def _boolean(value: object, name: str) -> bool:
+    """Normalize one trusted Boolean control without caller truth-value callbacks."""
+
+    value_type = type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean")
+
+
+def _positive_integer(value: object, name: str) -> int:
+    """Normalize one trusted positive integer without caller conversion protocols."""
+
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif value_type in _NUMPY_INTEGER_TYPES:
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be a positive integer")
+    if normalized <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return normalized
+
+
+def _nonnegative_finite_real(value: object, name: str) -> float:
+    """Normalize one trusted finite non-negative real without caller coercion hooks."""
+
+    value_type = type(value)
+    if value_type not in (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES):
+        raise ValueError(f"{name} must be finite and non-negative")
+    try:
+        normalized = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and non-negative") from exc
+    if not np.isfinite(normalized) or normalized < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative")
+    return normalized
+
+
 @dataclass
 class LltmFit:
     """Fitted LLTM (Fischer, 1973).
@@ -78,22 +132,35 @@ def fit_lltm(
             443–459.
             https://doi.org/10.1007/BF02293801
     """
+    normalized_fit_intercept = _boolean(fit_intercept, "fit_intercept")
+    normalized_compute_lr = _boolean(compute_lr, "compute_lr")
+    normalized_max_iter = _positive_integer(max_iter, "max_iter")
+    normalized_tol = _nonnegative_finite_real(tol, "tol")
+
+    y_input = np.asarray(responses)
+    if np.iscomplexobj(y_input):
+        raise ValueError("responses must be real-valued")
+    y = np.asarray(y_input, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+
+    q_input = np.asarray(q_design)
+    if np.iscomplexobj(q_input):
+        raise ValueError("q_design must be real-valued")
+    q = np.asarray(q_input, dtype=np.float64)
+    if q.ndim != 2:
+        raise ValueError("q_design must be a 2-D items x basic-operations array")
+
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("q_design must have one row per item")
+    n_basic = q.shape[1]
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_lltm"):
         raise RuntimeError("fit_lltm requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_design, dtype=np.float64)
-    if q.ndim != 2:
-        raise ValueError("q_design must be a 2-D items x basic-operations array")
-    n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_design must have one row per item")
-    n_basic = q.shape[1]
 
     observed = np.isfinite(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
@@ -104,10 +171,10 @@ def fit_lltm(
         int(n_persons),
         int(n_items),
         int(n_basic),
-        bool(fit_intercept),
-        bool(compute_lr),
-        int(max_iter),
-        float(tol),
+        normalized_fit_intercept,
+        normalized_compute_lr,
+        normalized_max_iter,
+        normalized_tol,
     )
     return LltmFit(
         eta=np.asarray(res["eta"], dtype=np.float64),

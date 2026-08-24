@@ -191,3 +191,13 @@ def test_classifier_rejects_unowned_transport_objects() -> None:
 
     with pytest.raises(TypeError, match="ModelRelationEvidence"):
         classify(object())  # type: ignore[arg-type]
+
+
+def test_classifier_revalidates_post_construction_evidence() -> None:
+    """Forged frozen fields must not bypass exact relation-fact validation."""
+    _, _, Evidence, classify = _surface()
+    evidence = Evidence(parameter_embedding=True)
+    object.__setattr__(evidence, "parameter_embedding", "regular")
+
+    with pytest.raises(TypeError, match="parameter_embedding"):
+        classify(evidence)

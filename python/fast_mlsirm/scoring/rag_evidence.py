@@ -84,15 +84,40 @@ class RAGEvidenceRegimeLimitations(CanonicalContract):
 
     @property
     def limitations_fingerprint(self) -> str:
-        """Return SHA-256 over the exact interpretation-limit contract."""
-        return artifact_digest(self)
+        """Return SHA-256 over the replay-validated interpretation-limit contract."""
+        replayed = _replay_limitations(self)
+        return artifact_digest(replayed)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return canonical limitation content plus its deterministic digest."""
+        """Return replay-validated limitation content and deterministic digest."""
+        replayed = _replay_limitations(self)
         return {
-            **self._content_dict(),
-            "limitations_fingerprint": self.limitations_fingerprint,
+            **RAGEvidenceRegimeLimitations._content_dict(replayed),
+            "limitations_fingerprint": artifact_digest(replayed),
         }
+
+
+def _replay_limitations(
+    value: RAGEvidenceRegimeLimitations,
+) -> RAGEvidenceRegimeLimitations:
+    """Re-establish exact factory-derived state before manifest projection."""
+    if (
+        type(value) is not RAGEvidenceRegimeLimitations
+        or type(value.regime) is not RAGEvidenceRegime
+        or type(value.limitation_codes) is not tuple
+        or any(type(code) is not str for code in value.limitation_codes)
+        or value.limitation_codes != _REGIME_LIMITATIONS[value.regime]
+    ):
+        raise assessment_error(
+            "invalid_rag_evidence_limitations",
+            "$",
+            "RAG evidence limitations must retain factory-derived state",
+        )
+    return RAGEvidenceRegimeLimitations(
+        regime=value.regime,
+        limitation_codes=_REGIME_LIMITATIONS[value.regime],
+        _limitations_token=_RAG_EVIDENCE_LIMITATIONS_TOKEN,
+    )
 
 
 def rag_evidence_regime_limitations(
