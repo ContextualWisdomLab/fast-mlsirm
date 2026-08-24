@@ -108,7 +108,7 @@ def install(dif_module: ModuleType) -> None:
     ) -> Any:
         """Validate logistic DIF controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
-        iterations = _usize(max_iter, "max_iter", minimum=0)
+        iterations = _usize(max_iter, "max_iter", minimum=1)
         return original_logistic(
             responses,
             group,
@@ -151,7 +151,7 @@ def install(dif_module: ModuleType) -> None:
     ) -> Any:
         """Validate purified logistic controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
-        iterations = _usize(max_iter, "max_iter", minimum=0)
+        iterations = _usize(max_iter, "max_iter", minimum=1)
         rounds = _usize(max_rounds, "max_rounds", minimum=1)
         anchors = _usize(min_anchor_items, "min_anchor_items", minimum=0)
         return original_logistic_purified(

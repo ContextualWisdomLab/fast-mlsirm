@@ -5,11 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import pytest
 
 import fast_mlsirm as fast_mlsirm
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import dif as dif_module
 from fast_mlsirm.dif import logistic_dif, logistic_dif_purified
+
+
+def _unexpected_core_discovery():
+    """Fail if a rejected ``max_iter`` control reaches native-core discovery."""
+    raise AssertionError("compiled core must not be discovered for invalid controls")
 
 
 class _CaptureCore:
@@ -68,7 +74,7 @@ class _CaptureCore:
         }
 
 
-def test_logistic_dif_preserves_numpy_boolean_and_zero_iteration_native_domain(monkeypatch):
+def test_logistic_dif_preserves_numpy_boolean_and_minimum_iteration_native_domain(monkeypatch):
     core = _CaptureCore()
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
     responses = np.array([[0], [1]], dtype=np.int8)
@@ -79,17 +85,17 @@ def test_logistic_dif_preserves_numpy_boolean_and_zero_iteration_native_domain(m
         group,
         exclude_studied_item=np.bool_(True),
         fdr_q=np.float32(0.05),
-        max_iter=np.int16(0),
+        max_iter=np.int16(1),
     )
 
     assert core.logistic_controls is not None
     exclude, fdr_q, max_iter = core.logistic_controls
     assert type(exclude) is bool and exclude is True
     assert type(fdr_q) is float
-    assert type(max_iter) is int and max_iter == 0
+    assert type(max_iter) is int and max_iter == 1
 
 
-def test_purified_logistic_preserves_zero_iteration_native_domain(monkeypatch):
+def test_purified_logistic_preserves_minimum_iteration_native_domain(monkeypatch):
     core = _CaptureCore()
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
     responses = np.array([[0], [1]], dtype=np.int8)
@@ -98,7 +104,7 @@ def test_purified_logistic_preserves_zero_iteration_native_domain(monkeypatch):
     logistic_dif_purified(
         responses,
         group,
-        max_iter=np.uint8(0),
+        max_iter=np.uint8(1),
         max_rounds=np.uint8(1),
         min_anchor_items=np.uint8(0),
     )
@@ -107,9 +113,33 @@ def test_purified_logistic_preserves_zero_iteration_native_domain(monkeypatch):
     exclude, fdr_q, max_iter, max_rounds, min_anchor_items = core.purified_controls
     assert type(exclude) is bool
     assert type(fdr_q) is float
-    assert type(max_iter) is int and max_iter == 0
+    assert type(max_iter) is int and max_iter == 1
     assert type(max_rounds) is int and max_rounds == 1
     assert type(min_anchor_items) is int and min_anchor_items == 0
+
+
+def test_logistic_dif_rejects_zero_max_iter_before_native_discovery(monkeypatch):
+    """Zero iterations fail at the Python boundary, matching the Rust ``logistic_sweep`` domain."""
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="max_iter must be >= 1"):
+        logistic_dif(
+            np.array([[0], [1]], dtype=np.int8),
+            np.array([0, 1], dtype=np.int8),
+            max_iter=0,
+        )
+
+
+def test_purified_logistic_dif_rejects_zero_max_iter_before_native_discovery(monkeypatch):
+    """Zero iterations fail at the Python boundary, matching the Rust ``logistic_sweep`` domain."""
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="max_iter must be >= 1"):
+        logistic_dif_purified(
+            np.array([[0], [1]], dtype=np.int8),
+            np.array([0, 1], dtype=np.int8),
+            max_iter=0,
+        )
 
 
 def test_package_aliases_share_hardened_dif_functions():
