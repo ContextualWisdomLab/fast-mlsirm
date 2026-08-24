@@ -21,6 +21,22 @@ _FIXTURES = runpy.run_path(
 assessment = _FIXTURES["assessment"]
 
 
+class _HostileMetadataText(str):
+    """Valid-looking metadata text that records caller callback execution."""
+
+    callback_count = 0
+
+    def strip(self, chars: str | None = None) -> str:
+        """Fail if metadata validation calls caller-defined text methods."""
+        type(self).callback_count += 1
+        raise AssertionError("hostile metadata text must not be inspected")
+
+    def encode(self, *args: object, **kwargs: object) -> bytes:
+        """Fail if metadata validation encodes caller-defined text."""
+        type(self).callback_count += 1
+        raise AssertionError("hostile metadata text must not be encoded")
+
+
 def test_metadata_is_copied_and_preserves_no_mutable_aliases():
     """Caller mutations after construction cannot change nested assessment content."""
     source = {
@@ -77,6 +93,16 @@ def test_metadata_scalar_values_are_json_safe_and_resource_bounded():
     assert spec.metadata["minimum_integer"] == -(1 << 63)
     assert spec.metadata["maximum_integer"] == (1 << 63) - 1
     assert spec.metadata["text_value"] == ""
+
+
+def test_metadata_rejects_string_subclasses_before_callbacks():
+    """Metadata text admission rejects caller-defined strings before inspection."""
+    _HostileMetadataText.callback_count = 0
+
+    with pytest.raises(ValueError):
+        assessment(metadata={"text_value": _HostileMetadataText("safe-looking")})
+
+    assert _HostileMetadataText.callback_count == 0
 
 
 def test_metadata_collections_depth_and_node_counts_are_bounded():
