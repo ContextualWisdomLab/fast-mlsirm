@@ -115,14 +115,17 @@ def _is_exact_public_real_scalar(value: object) -> bool:
 def _trusted_real_array(value: object, name: str) -> np.ndarray:
     """Materialize inert real evidence without caller array/numeric callbacks.
 
-    Exact NumPy real-numeric arrays and exact built-in list/tuple trees whose
-    leaves have package-trusted real scalar identities are admitted. Arbitrary
-    array providers, ndarray/container/numeric subclasses, object/text/complex
-    storage, and cyclic built-in trees fail before NumPy conversion.
+    Exact NumPy real-numeric arrays, exact trusted real scalars, and exact
+    built-in list/tuple trees whose leaves have package-trusted real scalar
+    identities are admitted. Arbitrary array providers, ndarray/container/
+    numeric subclasses, object/text/complex storage, and cyclic built-in trees
+    fail before NumPy conversion.
     """
     if type(value) is np.ndarray:
         if value.dtype.kind not in {"b", "i", "u", "f"}:
             raise ValueError(f"{name} must be real numeric evidence")
+    elif _is_exact_public_real_scalar(value):
+        pass
     elif type(value) in {list, tuple}:
         active: set[int] = set()
         stack: list[tuple[object, bool]] = [(value, False)]
