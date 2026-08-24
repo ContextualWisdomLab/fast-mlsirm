@@ -137,3 +137,62 @@ def test_excessive_builtin_nesting_fails_before_numpy_materialization(
         ata._trusted_real_array(target, "target_thetas")
 
     assert numpy_calls == 0
+
+
+def test_assembly_scans_target_theta_evidence_only_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assembly must reuse its validated theta grid instead of scanning it twice."""
+    bank, factor_id = _bank()
+    original_target_theta_rows = ata._target_theta_rows
+    target_validation_calls = 0
+
+    def counted_target_theta_rows(
+        target_thetas: object,
+        n_dims: int,
+        *,
+        n_items: int | None = None,
+    ) -> np.ndarray:
+        nonlocal target_validation_calls
+        target_validation_calls += 1
+        if target_validation_calls > 1:
+            raise AssertionError("validated target theta evidence was scanned twice")
+        return original_target_theta_rows(target_thetas, n_dims, n_items=n_items)
+
+    def fixed_item_information(
+        _bank: MLSIRMParams,
+        _factor_id: np.ndarray,
+        *,
+        theta: np.ndarray,
+        model: str,
+    ) -> np.ndarray:
+        del _bank, _factor_id, theta
+        assert model == "MIRT"
+        return np.ones(4, dtype=np.float64)
+
+    class _Core:
+        @staticmethod
+        def target_information_gains(
+            matrix: np.ndarray,
+            candidates: np.ndarray,
+            target_info: np.ndarray,
+            accumulated: np.ndarray,
+        ) -> np.ndarray:
+            del matrix, target_info, accumulated
+            return np.arange(candidates.size, 0, -1, dtype=np.float64)
+
+    monkeypatch.setattr(ata, "_target_theta_rows", counted_target_theta_rows)
+    monkeypatch.setattr(ata, "item_information", fixed_item_information)
+    monkeypatch.setattr(ata, "ata_core", lambda: _Core())
+
+    form = ata.assemble_to_target(
+        bank,
+        factor_id,
+        np.array([0.0], dtype=np.float64),
+        np.array([1.0], dtype=np.float64),
+        length=1,
+        model="MIRT",
+    )
+
+    assert form.items.size == 1
+    assert target_validation_calls == 1
