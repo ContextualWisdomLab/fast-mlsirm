@@ -87,6 +87,7 @@ def _trusted_numeric_storage(
     name: str,
     *,
     max_cells: int | None = None,
+    allow_bool: bool = True,
 ) -> np.ndarray:
     """Materialize exact numeric evidence after callback-free resource preflight."""
     resource_error = (
@@ -136,6 +137,8 @@ def _trusted_numeric_storage(
 
             child_type = type(child)
             if child_type in _TRUSTED_NUMERIC_SCALAR_TYPES:
+                if not allow_bool and child_type in (bool, np.bool_):
+                    raise ValueError(f"{name} must be real-valued numeric evidence")
                 _validate_integer_scalar_float64_lossless(child, name)
                 subtotal = int(frame[2]) + 1
                 if max_cells is not None and subtotal > max_cells:
@@ -146,6 +149,8 @@ def _trusted_numeric_storage(
             if child_type is np.ndarray:
                 if child.dtype.kind not in ("b", "i", "u", "f", "c"):
                     raise ValueError(f"{name} must be a numeric array")
+                if not allow_bool and child.dtype.kind == "b":
+                    raise ValueError(f"{name} must be real-valued numeric evidence")
                 subtotal = int(frame[2]) + int(child.size)
                 if max_cells is not None and subtotal > max_cells:
                     raise ValueError(resource_error)
@@ -183,6 +188,8 @@ def _trusted_numeric_storage(
 
     if raw.dtype.kind not in ("b", "i", "u", "f", "c"):
         raise ValueError(f"{name} must be a numeric array")
+    if not allow_bool and raw.dtype.kind == "b":
+        raise ValueError(f"{name} must be real-valued numeric evidence")
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
     return _float64_array_lossless(raw, name)
@@ -265,6 +272,7 @@ def install(module: ModuleType) -> None:
             item_intercepts,
             "item_intercepts",
             max_cells=_MAX_CROSSED_RESPONSE_CELLS,
+            allow_bool=False,
         )
         trusted_slopes = (
             None
@@ -273,6 +281,7 @@ def install(module: ModuleType) -> None:
                 item_slopes,
                 "item_slopes",
                 max_cells=_MAX_CROSSED_RESPONSE_CELLS,
+                allow_bool=False,
             )
         )
         trusted_offsets = (
@@ -282,6 +291,7 @@ def install(module: ModuleType) -> None:
                 person_offsets,
                 "person_offsets",
                 max_cells=_MAX_CROSSED_RESPONSE_CELLS,
+                allow_bool=False,
             )
         )
         return current(
