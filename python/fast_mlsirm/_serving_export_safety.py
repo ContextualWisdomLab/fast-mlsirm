@@ -88,6 +88,49 @@ def _factor_id_vector(value: Any, n_items: int) -> np.ndarray:
     return np.ascontiguousarray(value, dtype=np.int64)
 
 
+def _trusted_real_scalar(value: Any) -> bool:
+    """Return whether one scalar has package-trusted real numeric identity."""
+    value_type = builtins.type(value)
+    return (
+        value_type is bool
+        or value_type is int
+        or value_type is float
+        or value_type is np.bool_
+        or any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_TYPES)
+        or any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_TYPES)
+    )
+
+
+def _latent_dimension(value: Any, n_items: int) -> int:
+    """Return trusted zeta width without arbitrary array/container callbacks."""
+    value_type = builtins.type(value)
+    if value_type is np.ndarray:
+        if value.ndim != 2 or value.shape[0] != n_items:
+            raise ValueError("zeta must be a 2-D item-by-latent-position matrix")
+        if value.dtype.kind not in "biuf":
+            raise ValueError("zeta must contain trusted real numeric values")
+        return int(value.shape[1])
+
+    if value_type is not list and value_type is not tuple:
+        raise ValueError("zeta must be a 2-D real numeric array or sequence")
+    if len(value) != n_items:
+        raise ValueError("zeta item count must match the fitted item count")
+
+    latent_dim: int | None = None
+    for row in value:
+        if builtins.type(row) is not list and builtins.type(row) is not tuple:
+            raise ValueError("zeta must be a rectangular 2-D real numeric matrix")
+        row_width = len(row)
+        if latent_dim is None:
+            latent_dim = row_width
+        elif row_width != latent_dim:
+            raise ValueError("zeta must be a rectangular 2-D real numeric matrix")
+        if not all(_trusted_real_scalar(cell) for cell in row):
+            raise ValueError("zeta must contain trusted real numeric values")
+
+    return 0 if latent_dim is None else latent_dim
+
+
 def _item_code_list(value: Any, n_items: int) -> list[str]:
     """Return inert built-in item identities without caller container callbacks."""
     value_type = builtins.type(value)
@@ -278,7 +321,7 @@ def install(serving_module: Any) -> None:
         dim_names_value = _dimension_name_list(dim_names, n_dims)
         q_theta_value = _quadrature_integer(q_theta, label="q_theta")
         q_xi_value = _quadrature_integer(q_xi, label="q_xi")
-        latent_dim = int(params.zeta.shape[1])
+        latent_dim = _latent_dimension(params.zeta, n_items)
         _validate_quadrature_resources(
             model=result.model,
             n_items=n_items,
