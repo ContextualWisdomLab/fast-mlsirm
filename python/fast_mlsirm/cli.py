@@ -241,7 +241,7 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
-    fit_cmd.add_argument("--backend", choices=["rust", "auto"], default="auto", help="Rust numerical owner to use (default: auto; fails closed otherwise; pass numpy only for the explicit reference/parity path).")
+    fit_cmd.add_argument("--backend", choices=["rust", "auto"], default="auto", help="Rust numerical owner to use (default: auto; fails closed otherwise; use --reference for the explicit NumPy parity path).")
     fit_cmd.add_argument("--reference", action="store_true", help="Use the explicit non-production NumPy parity reference.")
     fit_cmd.add_argument("--rust-device", choices=["auto", "cpu", "gpu"], default="auto", help="Execution device for the Rust backend (default: auto). Ignored by --reference.")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
