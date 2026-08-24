@@ -57,14 +57,6 @@ class _MemoryIterable:
         raise MemoryError("iteration allocation exhausted")
 
 
-class _MemoryFloat:
-    """Raise resource exhaustion during caller-controlled numeric coercion."""
-
-    def __float__(self) -> float:
-        """Preserve process-level resource exhaustion from float conversion."""
-        raise MemoryError("float allocation exhausted")
-
-
 class _MemoryIndex:
     """Probe an untrusted integer protocol that must never be dispatched."""
 
@@ -116,7 +108,7 @@ def test_casewise_iteration_failure_after_valid_prefix_is_redacted() -> None:
 
 
 def test_casewise_numeric_conversion_failure_is_redacted() -> None:
-    """Numeric conversion callbacks must fail through a package-owned boundary."""
+    """Untrusted numeric protocols must fail through a package-owned boundary."""
     _assert_redacted_value_error(
         lambda: compare_nonnested_models(
             (_ExplodingFloat(), 0.2),
@@ -148,11 +140,10 @@ def test_parameter_count_conversion_failure_is_redacted() -> None:
     [
         lambda: compare_nonnested_models(_MemoryIteratorFactory(), (0.1, 0.2), 2, 2),
         lambda: compare_nonnested_models(_MemoryIterable(), (0.1, 0.2), 2, 2),
-        lambda: compare_nonnested_models((_MemoryFloat(), 0.2), (0.1, 0.2), 2, 2),
     ],
 )
 def test_memory_error_remains_explicit_resource_exhaustion(callable_) -> None:
-    """Resource exhaustion from accepted casewise callbacks remains explicit."""
+    """Resource exhaustion from accepted iteration callbacks remains explicit."""
     with pytest.raises(MemoryError):
         callable_()
 

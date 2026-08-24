@@ -102,6 +102,23 @@ _OBLIQUE_ONLY: Final[frozenset[str]] = frozenset(
     {"oblimin", "quartimin", "biquartimin", "covarimin", "simplimax", "oblimax"}
 )
 _TARGET_METHODS: Final[frozenset[str]] = frozenset({"target", "pst", "partial_target"})
+_NUMPY_INTEGER_TYPES: Final[tuple[type, ...]] = tuple(
+    np.dtype(name).type
+    for name in (
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    )
+)
+_NUMPY_FLOAT_TYPES: Final[tuple[type, ...]] = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+_NUMPY_BOOL_TYPE: Final[type] = np.dtype("bool").type
 
 
 def available_rotation_criteria() -> tuple[RotationCriterionInfo, ...]:
@@ -110,10 +127,71 @@ def available_rotation_criteria() -> tuple[RotationCriterionInfo, ...]:
     return _CATALOGUE
 
 
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether a scalar type is package-trusted without subclass hooks."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _trusted_boolean(value: object, name: str) -> bool:
+    """Normalize an exact Python or NumPy boolean without caller callbacks."""
+
+    value_type = type(value)
+    if value_type is bool:
+        return value
+    if value_type is _NUMPY_BOOL_TYPE:
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean")
+
+
+def _trusted_integer(value: object, name: str) -> int:
+    """Normalize an exact Python or NumPy integer without caller callbacks."""
+
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if _is_exact_type(value_type, _NUMPY_INTEGER_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def _trusted_real(value: object, name: str) -> float:
+    """Normalize an exact finite Python or NumPy real without subclass hooks."""
+
+    value_type = type(value)
+    trusted = (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_TYPES)
+    )
+    if not trusted:
+        raise ValueError(f"{name} must be a finite real number")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite real number") from exc
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be a finite real number")
+    return result
+
+
+def _optional_trusted_real(value: object | None, name: str) -> float | None:
+    """Normalize an optional exact finite real scalar."""
+
+    return None if value is None else _trusted_real(value, name)
+
+
+def _optional_trusted_integer(value: object | None, name: str) -> int | None:
+    """Normalize an optional exact integer scalar."""
+
+    return None if value is None else _trusted_integer(value, name)
+
+
 def _method_name(value: str) -> str:
     """Normalize a public criterion identifier without silently guessing."""
 
-    if not isinstance(value, str) or not value.strip():
+    if type(value) is not str or not value.strip():
         raise ValueError("criterion must be a non-empty string")
     return value.strip().lower().replace("-", "_")
 
@@ -243,9 +321,25 @@ def rotate_factor_loadings(
     separately named ``lp_wls`` criterion for continuous non-negative weights.
     """
 
-    matrix = _matrix(loadings, "loadings")
     method = _method_name(criterion)
     resolved_mode = _mode_name(method, mode)
+    marshaled_normalize = _trusted_boolean(normalize, "normalize")
+    marshaled_n_starts = _trusted_integer(n_starts, "n_starts")
+    marshaled_seed = _trusted_integer(seed, "seed")
+    marshaled_max_iter = _trusted_integer(max_iter, "max_iter")
+    marshaled_tolerance = _trusted_real(tolerance, "tolerance")
+    marshaled_function_window = _trusted_integer(function_window, "function_window")
+    marshaled_max_line_search = _trusted_integer(max_line_search, "max_line_search")
+    marshaled_basin_tolerance = _trusted_real(basin_tolerance, "basin_tolerance")
+    marshaled_max_threads = _trusted_integer(max_threads, "max_threads")
+    marshaled_kappa = _optional_trusted_real(kappa, "kappa")
+    marshaled_gamma = _optional_trusted_real(gamma, "gamma")
+    marshaled_delta = _optional_trusted_real(delta, "delta")
+    marshaled_simplimax_zeros = _optional_trusted_integer(
+        simplimax_zeros, "simplimax_zeros"
+    )
+
+    matrix = _matrix(loadings, "loadings")
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
     _validate_weights(method, weight_matrix)
@@ -253,19 +347,19 @@ def rotate_factor_loadings(
         matrix,
         method,
         resolved_mode,
-        bool(normalize),
-        int(n_starts),
-        int(seed),
-        int(max_iter),
-        float(tolerance),
-        int(function_window),
-        int(max_line_search),
-        float(basin_tolerance),
-        int(max_threads),
-        kappa,
-        gamma,
-        delta,
-        simplimax_zeros,
+        marshaled_normalize,
+        marshaled_n_starts,
+        marshaled_seed,
+        marshaled_max_iter,
+        marshaled_tolerance,
+        marshaled_function_window,
+        marshaled_max_line_search,
+        marshaled_basin_tolerance,
+        marshaled_max_threads,
+        marshaled_kappa,
+        marshaled_gamma,
+        marshaled_delta,
+        marshaled_simplimax_zeros,
         target_matrix,
         weight_matrix,
     )
@@ -285,18 +379,25 @@ def rotation_criterion_value_gradient(
 ) -> tuple[float, np.ndarray]:
     """Return a built-in criterion value and analytic loading-space gradient."""
 
-    matrix = _matrix(loadings, "loadings")
     method = _method_name(criterion)
+    marshaled_kappa = _optional_trusted_real(kappa, "kappa")
+    marshaled_gamma = _optional_trusted_real(gamma, "gamma")
+    marshaled_delta = _optional_trusted_real(delta, "delta")
+    marshaled_simplimax_zeros = _optional_trusted_integer(
+        simplimax_zeros, "simplimax_zeros"
+    )
+
+    matrix = _matrix(loadings, "loadings")
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
     _validate_weights(method, weight_matrix)
     value, gradient = rotation_core().rotation_criterion_value_gradient(
         matrix,
         method,
-        kappa,
-        gamma,
-        delta,
-        simplimax_zeros,
+        marshaled_kappa,
+        marshaled_gamma,
+        marshaled_delta,
+        marshaled_simplimax_zeros,
         target_matrix,
         weight_matrix,
     )
