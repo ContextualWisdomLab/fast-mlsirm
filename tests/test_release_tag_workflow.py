@@ -41,6 +41,8 @@ def test_release_dispatch_must_target_the_repository_default_branch():
 def test_release_dispatch_requires_an_explicit_source_commit():
     """A release is bound to its reviewed cut even if default-branch HEAD moves."""
     text = _workflow_text()
+    validation = "Validate release source identity"
+    checkout = "actions/checkout@"
     assert "release_commit:" in text
     assert "Release source commit" in text
     assert "required: true" in text
@@ -49,6 +51,7 @@ def test_release_dispatch_requires_an_explicit_source_commit():
     assert "merge-base --is-ancestor" in text
     assert "release commit must be an ancestor of the default branch" in text
     assert "ref: ${{ inputs.release_commit }}" in text
+    assert text.index(validation) < text.index(checkout)
 
 
 def test_release_version_and_changelog_section_fail_closed():
@@ -61,6 +64,19 @@ def test_release_version_and_changelog_section_fail_closed():
     assert "expected exactly one CHANGELOG section" in text
     assert "if len(matches) != 1:" in text
     assert "grep -q '[^[:space:]]' release_notes.md" in text
+
+
+def test_release_source_is_the_version_cut_transition_not_a_later_descendant():
+    """A same-version post-cut descendant cannot be selected as the release source."""
+    text = _workflow_text()
+    version_step = "Verify the requested version is the released source version"
+    transition_step = "Verify the release source is the version-cut transition"
+    tag_state_step = "Verify the release is absent and classify the tag state"
+    assert transition_step in text
+    assert 'parent_commit="$(git rev-parse "$RELEASE_COMMIT^")"' in text
+    assert "parent project version already equals requested release version" in text
+    assert "parent CHANGELOG already contains requested release section" in text
+    assert text.index(version_step) < text.index(transition_step) < text.index(tag_state_step)
 
 
 def test_existing_release_and_api_uncertainty_block_publication():
