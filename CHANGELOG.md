@@ -148,6 +148,11 @@
 
 - Replace production judge and calibration invariants that relied on removable `assert` statements with explicit package-owned `ValueError` or `RuntimeError` failures, and verify that invalid response-schema admission remains fail-closed under `python -O`.
 
+#### Harden S-X² scalar control admission
+
+- Reject caller-defined integer and floating subclasses at the public S-X² control boundary before numeric conversion or compiled-core dispatch, while preserving exact built-in and concrete NumPy scalar compatibility and leaving all S-X²/G², quadrature, and BH/FDR arithmetic Rust-owned.
+- Reject built-in or concrete NumPy integer-valued real controls when float64 normalization would change the integer identity, so `min_expected`, `fdr_q`, and `min_effect` cannot be silently rounded before domain validation.
+
 #### Item-bank transition replay callback safety
 
 - Lifecycle transition replay now validates the exact creation-time record and evidence-reference instance state before invoking canonical serialization or fingerprint verification.
