@@ -3,6 +3,37 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.9.0
+
+- Project version is bumped to 0.9.0 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.9.0] - 2026-08-24` release section: new governed contracts (cross-engine
+  conformance inventory/provenance/manifest-replay evidence, an external
+  validation and transportability profile, a governed structural-model
+  pair-decision gate, buyer-facing item-bank lifecycle reports), a new
+  Rust-owned crossed/weighted multiple-membership person-effects estimator
+  (Fox & Glas, 2001; Browne, Goldstein, & Rasbash, 2001) with CPU-threaded and
+  optional GPU kernels, reproducible release-tag-bound PyPI sdist/wheel
+  publishing, restriction of production backend selection to Rust-owned
+  paths (NumPy parity moved behind an explicit `fit_reference` API), a Rust
+  1.97.1 toolchain pin across verification, and a broad continuation of the
+  hostile-callback/conversion-protocol hardening sweep across dozens of public
+  entry points (CAT, ATA, DIF, equating, scaling, reliability, multilevel,
+  response-time, fit-statistics, inference, linking, LLM-judge orchestration,
+  parallel-analysis, and rotation/loader concurrency, among others).
+- This cut also removes the stale, never-rendered `release-0.8.0-cut.md`
+  fragment left over from the abandoned 0.8.0 release attempt (that version
+  was never actually tagged or published); its already-recorded
+  `[0.8.0] - 2026-08-17` section in `CHANGELOG.md` is left untouched as
+  history, and this release supersedes it directly.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.9.0] - 2026-08-24
+
+
 ### Added
 
 #### Cross-engine conformance inventory contract
@@ -109,28 +140,6 @@
   correlation lines as a 90-day Actions artifact.
 - Withheld checkout credentials from every Statistical Studies job so
   repository-controlled `cargo test` cannot reuse the Actions token.
-
-#### Release cut 0.8.0
-
-- Project version is bumped to 0.8.0 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.8.0] - 2026-08-17` release section: governed contract additions
-  (multilevel/multiple-membership/longitudinal design, structural
-  model-relation and leakage-safe model-validation units, post-pilot
-  item-bank lifecycle, RAG scoring/perturbation-anchor/facets-calibration
-  adapters, enterprise issue-intelligence observation/calibration/reporting
-  contracts, essay facets/score/validation HTML reports, paired rating-range
-  and essay-facets synthetic recovery evidence), a broad Rust-ownership
-  hardening sweep across dozens of public entry points (CAT, ATA, DIF,
-  equating, scaling, reliability, multilevel, response-time, fit-statistics,
-  inference, linking, LLM-judge orchestration, parallel-analysis, plausible
-  values, Rasch-CML, model-comparison, and rotation/loader concurrency) that
-  reject hostile Python callback/conversion-protocol inputs before native
-  dispatch, and accessibility/documentation polish (exact-value tooltips,
-  tabular numerals, print styles, row headers, architecture baseline,
-  Python 3.14 CI).
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
 
 #### Pin Rust 1.97.1 across verification
 
@@ -718,7 +727,7 @@
 - Reject caller-defined string and numeric subclasses at `ValidationPolicy` construction before `strip`, numeric conversion, or comparison callbacks can execute.
 - Normalize only exact built-in and package-trusted NumPy real scalar identities for scoring-policy thresholds while preserving the existing closed `0..1` domains and Rust-owned pass/fail arithmetic.
 - Require an exact built-in integer for `min_subgroup_n` before range comparison and preserve the existing `rust_kwargs()` payload contract.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## [0.8.0] - 2026-08-17
 
 
