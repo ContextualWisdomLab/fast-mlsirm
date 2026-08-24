@@ -160,6 +160,76 @@ def test_public_predictor_rejects_hostile_effect_coercion_before_callback(
     assert _SECRET not in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    ("effect", "expected"),
+    [
+        (1, 1.0),
+        (1.25, 1.25),
+        (np.int16(2), 2.0),
+        (np.float32(2.5), float(np.float32(2.5))),
+    ],
+)
+def test_public_predictor_normalizes_trusted_effect_scalars_before_rust(
+    monkeypatch: pytest.MonkeyPatch,
+    effect: object,
+    expected: float,
+) -> None:
+    """Supported contextual-effect scalars reach Rust as inert float64 evidence."""
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def weighted_contextual_effect(
+            self,
+            row_offsets,
+            context_indices,
+            weights,
+            effects,
+            worker_count,
+        ):
+            del row_offsets, context_indices, weights
+            captured["effects"] = effects
+            captured["worker_count"] = worker_count
+            return np.array([effects[0]], dtype=np.float64)
+
+    monkeypatch.setattr(estimation, "multilevel_core", lambda: _Core())
+
+    result = weighted_contextual_effect(
+        _single_context_design(),
+        {_CONTEXT_KEY: effect},  # type: ignore[dict-item]
+        worker_count=np.int16(2),
+    )
+
+    effects = captured["effects"]
+    assert type(effects) is np.ndarray
+    assert effects.dtype == np.float64
+    assert effects.tolist() == [expected]
+    assert type(captured["worker_count"]) is int
+    assert captured["worker_count"] == 2
+    assert result.tolist() == [expected]
+
+
+def test_public_predictor_rejects_lossy_integer_effect_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Integer effects must preserve exact identity when normalized to binary64."""
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not see lossy contextual effects")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="could not be converted losslessly"):
+        weighted_contextual_effect(
+            _single_context_design(),
+            {_CONTEXT_KEY: 2**53 + 1},
+        )
+
+    assert core_discoveries == 0
+
+
 def test_public_predictor_rejects_finite_inputs_that_overflow_weighted_sum() -> None:
     design = build_context_membership_design(
         [
