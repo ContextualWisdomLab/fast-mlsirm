@@ -13,6 +13,7 @@ from . import validation as _validation
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
+from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._scaling_control_safety import install as _install_scaling_control_safety
 
@@ -49,6 +50,12 @@ del (
 for _public_name in _legacy_init.__all__:
     if hasattr(_legacy_init, _public_name):
         globals()[_public_name] = getattr(_legacy_init, _public_name)
+
+# The legacy compatibility module imports the implementation-level ``fit``
+# callable, which carries private reference-backend authority for
+# ``fit_reference``. Rebind the package export after the legacy copy so callers
+# can never acquire that authority from the public ``fast_mlsirm.fit`` API.
+fit = _public_fit
 
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
@@ -145,4 +152,4 @@ __all__ = list(_legacy_init.__all__) + [
     "paired_rating_range_evidence",
 ]
 
-del _PackageNotFoundError, _distribution_version, _public_name
+del _PackageNotFoundError, _distribution_version, _public_fit, _public_name
