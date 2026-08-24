@@ -177,7 +177,8 @@ def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[
 
     while stack:
         current = stack[-1][0]
-        assert type(current) is list or type(current) is tuple
+        if type(current) is not list and type(current) is not tuple:
+            raise ValueError(f"{name} must be real numeric evidence")
         child_index = int(stack[-1][1])
         if child_index == 0:
             current_id = id(current)
@@ -189,7 +190,13 @@ def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[
             active.remove(id(current))
             first_child_shape = stack[-1][2]
             logical_cells = int(stack[-1][3])
-            shape = (len(current),) + (() if first_child_shape is None else first_child_shape)
+            if first_child_shape is None:
+                child_shape: tuple[int, ...] = ()
+            elif type(first_child_shape) is tuple:
+                child_shape = first_child_shape
+            else:
+                raise ValueError(f"{name} must be real numeric evidence")
+            shape = (len(current),) + child_shape
             stack.pop()
             if not stack:
                 return shape, logical_cells
@@ -226,7 +233,7 @@ def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[
         if int(stack[-1][3]) > MAX_ATA_TARGET_CELLS:
             _raise_target_resource_limit(name)
 
-    raise AssertionError("unreachable ATA target preflight state")
+    raise RuntimeError("ATA target preflight terminated without a result")
 
 
 def _preflight_real_evidence(value: object, name: str) -> tuple[tuple[int, ...], int]:
@@ -264,7 +271,8 @@ def _trusted_real_array(value: object, name: str) -> np.ndarray:
     elif _is_exact_public_real_scalar(value):
         _require_lossless_float64_scalar(value, name)
     else:
-        assert type(value) is list or type(value) is tuple
+        if type(value) is not list and type(value) is not tuple:
+            raise ValueError(f"{name} must be real numeric evidence")
         active: set[int] = set()
         stack: list[tuple[list | tuple, int]] = [(value, 0)]
         logical_cells = 0
