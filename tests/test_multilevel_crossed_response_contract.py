@@ -41,6 +41,16 @@ def _design():
     )
 
 
+class _HostileArrayProvider:
+    """Array provider that must never run during package evidence admission."""
+
+    callback_count = 0
+
+    def __array__(self, *args: object, **kwargs: object) -> np.ndarray:
+        type(self).callback_count += 1
+        raise AssertionError("caller __array__ must not execute")
+
+
 @pytest.mark.parametrize("invalid_response", [0.5, 1.5, 2.0])
 def test_nonbinary_observed_response_fails_before_native_discovery(
     monkeypatch: pytest.MonkeyPatch,
@@ -66,3 +76,83 @@ def test_nonbinary_observed_response_fails_before_native_discovery(
         )
 
     assert core_discoveries == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_error"),
+    [
+        ("responses", "responses must be a numeric array"),
+        ("item_intercepts", "item_intercepts must be a numeric array"),
+        ("item_slopes", "item_slopes must be a numeric array"),
+        ("person_offsets", "person_offsets must be a numeric array"),
+    ],
+)
+def test_array_providers_fail_before_callbacks_or_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    expected_error: str,
+) -> None:
+    """Scientific evidence providers must be rejected before NumPy protocols run."""
+    _HostileArrayProvider.callback_count = 0
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not be discovered for hostile evidence")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+    kwargs: dict[str, object] = {
+        "responses": np.array([[1.0], [0.0]], dtype=np.float64),
+        "design": _design(),
+        "item_intercepts": np.array([0.0], dtype=np.float64),
+        "item_slopes": np.array([1.0], dtype=np.float64),
+        "person_offsets": np.array([0.0, 0.0], dtype=np.float64),
+        "device": "cpu",
+    }
+    kwargs[field] = _HostileArrayProvider()
+
+    with pytest.raises(ValueError, match=expected_error):
+        estimation.estimate_crossed_person_effects(**kwargs)
+
+    assert _HostileArrayProvider.callback_count == 0
+    assert core_discoveries == 0
+
+
+def test_builtin_and_numpy_scalar_evidence_remains_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Plain containers with concrete NumPy scalars normalize to Rust payloads."""
+    captured: dict[str, object] = {}
+
+    class _Core:
+        @staticmethod
+        def estimate_crossed_person_effects(*args: object, **kwargs: object):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return (
+                np.zeros(2, dtype=np.float64),
+                0.0,
+                1,
+                True,
+                False,
+            )
+
+    monkeypatch.setattr(estimation, "multilevel_core", lambda: _Core())
+
+    result = estimation.estimate_crossed_person_effects(
+        [[np.int8(1)], [np.float32(0.0)]],
+        _design(),
+        item_intercepts=[np.float32(0.25)],
+        item_slopes=(np.uint8(1),),
+        person_offsets=[np.float64(0.0), np.int16(0)],
+        device="cpu",
+    )
+
+    args = captured["args"]
+    assert isinstance(args, tuple)
+    assert args[4].dtype == np.float64
+    assert args[5].dtype == np.float64
+    assert args[6].dtype == np.float64
+    assert args[7].dtype == np.float64
+    assert result.converged is True
