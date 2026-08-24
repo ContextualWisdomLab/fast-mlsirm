@@ -8,6 +8,7 @@ omega hierarchical, and construct replicability ``H`` are computed in
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,50 @@ from ._bifactor_core_loader import bifactor_core
 MAX_BIFACTOR_ITEMS = 1_000_000
 MAX_BIFACTOR_FACTORS = 64
 MAX_BIFACTOR_WORK_UNITS = 50_000_000
+
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_REAL_SCALAR_TYPES = _NUMPY_INTEGER_SCALAR_TYPES + (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+
+
+def _general_factor_control(value: object) -> int:
+    """Normalize one trusted general-factor index without caller callbacks."""
+    value_type = type(value)
+    if value_type is not int and not any(
+        value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        raise ValueError("general_factor must be an integer")
+    return int(value)
+
+
+def _zero_tolerance_control(value: object) -> float:
+    """Normalize one trusted structural-zero tolerance without caller callbacks."""
+    value_type = type(value)
+    if value_type is not int and value_type is not float and not any(
+        value_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES
+    ):
+        raise ValueError("zero_tolerance must be a real number")
+    try:
+        return float(value)
+    except OverflowError as exc:
+        raise ValueError("zero_tolerance must be a real number") from exc
 
 
 @dataclass(frozen=True)
@@ -115,13 +160,48 @@ def _validated_matrix_shape(shape: Any, name: str) -> tuple[int, int]:
     return n_items, n_factors
 
 
+def _bounded_sequence_shape(value: Any, name: str) -> tuple[int, ...] | None:
+    """Infer a shallow built-in sequence shape before NumPy materialization.
+
+    Plain nested lists are common array-like inputs, but converting an
+    oversized list with ``np.asarray`` would allocate it before the public
+    work budget can reject it. Inspecting the first nested row is enough to
+    reject the advertised item/factor caps and obvious three-dimensional
+    inputs without invoking NumPy conversion.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return None
+    try:
+        n_items = len(value)
+        if n_items == 0:
+            return (0,)
+        first_row = value[0]
+        if isinstance(first_row, np.ndarray):
+            row_dimensions = _bounded_shape_dimensions(
+                first_row.shape,
+                expected_dimensions=1,
+                error_message=f"{name} must be a 2-D item-by-factor matrix",
+            )
+            return (n_items, row_dimensions[0])
+        if not isinstance(first_row, Sequence) or isinstance(
+            first_row, (str, bytes, bytearray)
+        ):
+            return (n_items,)
+        n_factors = len(first_row)
+        if n_factors and isinstance(first_row[0], Sequence):
+            return (n_items, n_factors, len(first_row[0]))
+        return (n_items, n_factors)
+    except Exception as exc:
+        raise ValueError(f"{name} must be a 2-D item-by-factor matrix") from exc
+
+
 def _matrix(value: Any, name: str) -> np.ndarray:
     """Return a bounded contiguous float64 matrix after pre-allocation checks.
 
-    Existing NumPy arrays and array-likes that expose ``shape`` are bounded
-    before any dtype-converting copy. Generic Python containers necessarily
-    cross NumPy's materialization boundary before their inferred shape can be
-    checked, after which the same public limits are enforced.
+    Existing NumPy arrays, array-likes that expose ``shape``, and plain nested
+    Python sequences are bounded before any dtype-converting copy. Other
+    generic array-likes cross NumPy's materialization boundary before their
+    inferred shape can be checked, after which the same public limits apply.
     """
     if isinstance(value, np.ndarray):
         _validated_matrix_shape(value.shape, name)
@@ -130,6 +210,10 @@ def _matrix(value: Any, name: str) -> np.ndarray:
     advertised_shape = getattr(value, "shape", None)
     if advertised_shape is not None:
         _validated_matrix_shape(advertised_shape, name)
+    else:
+        inferred_shape = _bounded_sequence_shape(value, name)
+        if inferred_shape is not None:
+            _validated_matrix_shape(inferred_shape, name)
 
     matrix = np.asarray(value, dtype=np.float64)
     _validated_matrix_shape(matrix.shape, name)
@@ -239,6 +323,8 @@ def bifactor_scoreability(
     predictive validation, recovery, invariance, and substantive validity
     remain separate evidence requirements.
     """
+    general_factor = _general_factor_control(general_factor)
+    zero_tolerance = _zero_tolerance_control(zero_tolerance)
     loading_matrix = _matrix(loadings, "loadings")
     uniqueness_vector = _uniqueness_vector(
         uniquenesses,
@@ -276,6 +362,8 @@ def bifactor_scoreability_from_logit_slopes(
     The same bounded CPU work and advertised-shape inspection contract as
     :func:`bifactor_scoreability` applies.
     """
+    general_factor = _general_factor_control(general_factor)
+    zero_tolerance = _zero_tolerance_control(zero_tolerance)
     slope_matrix = _matrix(logit_slopes, "logit_slopes")
     raw = bifactor_core().bifactor_indices_from_logit_slopes(
         slope_matrix,

@@ -1,0 +1,209 @@
+name: Publish Package
+
+# Builds hash-pinnable sdist + wheel artifacts for a verified immutable release
+# tag and publishes them to PyPI. The canonical release-tag workflow dispatches
+# this workflow explicitly because events created with GITHUB_TOKEN do not
+# recursively start ordinary event-triggered workflows.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Immutable release tag to build and publish (for example v0.9.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-pypi-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release:
+    name: verify release provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Require release tag to match project version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+
+          with open("pyproject.toml", "rb") as stream:
+              project = tomllib.load(stream)["project"]
+
+          expected = f"v{project['version']}"
+          actual = os.environ["RELEASE_TAG"]
+          if actual != expected:
+              raise SystemExit(
+                  f"release tag does not match project version: expected {expected!r}, got {actual!r}"
+              )
+          PY
+
+  sdist:
+    name: sdist
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Build sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          command: sdist
+          maturin-version: v1.14.1
+          args: --out dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dist-sdist
+          path: dist
+
+  wheels:
+    name: wheels (${{ matrix.target }}, py${{ matrix.python-version }})
+    needs: verify-release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2014"
+            python-version: "3.12"
+            interpreter: python3.12
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2014"
+            python-version: "3.13"
+            interpreter: python3.13
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2014"
+            python-version: "3.14"
+            interpreter: python3.14
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2014"
+            python-version: "3.12"
+            interpreter: python3.12
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2014"
+            python-version: "3.13"
+            interpreter: python3.13
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2014"
+            python-version: "3.14"
+            interpreter: python3.14
+          - runner: macos-latest
+            target: universal2-apple-darwin
+            manylinux: ""
+            python-version: "3.12"
+            interpreter: python
+          - runner: macos-latest
+            target: universal2-apple-darwin
+            manylinux: ""
+            python-version: "3.13"
+            interpreter: python
+          - runner: macos-latest
+            target: universal2-apple-darwin
+            manylinux: ""
+            python-version: "3.14"
+            interpreter: python
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: ""
+            python-version: "3.12"
+            interpreter: python
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: ""
+            python-version: "3.13"
+            interpreter: python
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: ""
+            python-version: "3.14"
+            interpreter: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          maturin-version: v1.14.1
+          args: --release --out dist -i ${{ matrix.interpreter }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
+          path: dist
+
+  release-assets:
+    name: attach release assets
+    needs: [sdist, wheels]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: List built artifacts
+        run: ls -la dist
+      - name: Attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" dist/* --repo "${{ github.repository }}"
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: [sdist, wheels]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: List built artifacts
+        run: ls -la dist
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          password: ${{ secrets.PIPY_TOKEN }}
+          attestations: false
