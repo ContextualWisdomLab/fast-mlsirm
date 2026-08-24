@@ -27,11 +27,12 @@ N_CAT = 4
 SEED = 20260101
 
 # A real run with these exact parameters/seed measures RMSE ~0.30 and
-# correlation ~0.95 -- stronger recovery than the GRM test's ~0.38/~0.92
-# at the same sample size. The margins below stay loose enough to tolerate
-# a minor fast-mlsirm version bump while still catching a real recovery
-# regression.
+# correlation ~0.95. Bias/MAE and interval coverage are asserted separately so
+# correlation remains supplementary rather than standing in for calibration.
 MAX_THETA_RMSE = 0.55
+MAX_THETA_MAE = 0.45
+MAX_ABS_THETA_BIAS = 0.15
+MIN_THETA_INTERVAL_COVERAGE = 0.80
 MIN_THETA_CORRELATION = 0.8
 
 
@@ -65,12 +66,29 @@ def test_gpcm_recovers_true_theta_within_expected_rmse() -> None:
 
     scored = score_polytomous(responses, fit)
     theta_eap = scored["theta_eap"]
+    theta_sd = scored["theta_sd"]
 
-    rmse = float(np.sqrt(np.mean((theta_eap - true_theta) ** 2)))
+    error = theta_eap - true_theta
+    bias = float(np.mean(error))
+    mae = float(np.mean(np.abs(error)))
+    rmse = float(np.sqrt(np.mean(error**2)))
+    coverage = float(np.mean(np.abs(error) <= 1.96 * theta_sd))
     correlation = float(np.corrcoef(theta_eap, true_theta)[0, 1])
 
+    assert np.all(np.isfinite(theta_sd))
+    assert np.all(theta_sd > 0.0)
+    assert abs(bias) < MAX_ABS_THETA_BIAS, (
+        f"theta recovery absolute bias {abs(bias):.3f} exceeded {MAX_ABS_THETA_BIAS}"
+    )
+    assert mae < MAX_THETA_MAE, (
+        f"theta recovery MAE {mae:.3f} exceeded {MAX_THETA_MAE}"
+    )
     assert rmse < MAX_THETA_RMSE, (
         f"theta recovery RMSE {rmse:.3f} exceeded {MAX_THETA_RMSE}"
+    )
+    assert coverage >= MIN_THETA_INTERVAL_COVERAGE, (
+        f"theta 95% posterior-interval coverage {coverage:.3f} below "
+        f"{MIN_THETA_INTERVAL_COVERAGE}"
     )
     assert correlation > MIN_THETA_CORRELATION, (
         f"theta recovery correlation {correlation:.3f} below {MIN_THETA_CORRELATION}"
