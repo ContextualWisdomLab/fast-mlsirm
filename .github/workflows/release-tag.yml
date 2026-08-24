@@ -370,13 +370,16 @@ jobs:
             --verify-tag \
             --title "v$RELEASE_VERSION" \
             --notes-file release_notes.md
-      - name: Dispatch package publication from the immutable release tag
+      - name: Dispatch package publication from the verified release source
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
           gh workflow run publish-pypi.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref "v$RELEASE_VERSION" \
-            -f release_tag="v$RELEASE_VERSION"
+            --ref "$DEFAULT_BRANCH" \
+            -f release_tag="v$RELEASE_VERSION" \
+            -f release_commit="$RELEASE_COMMIT"
