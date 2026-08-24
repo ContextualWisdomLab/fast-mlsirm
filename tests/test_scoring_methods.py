@@ -9,6 +9,7 @@ import fast_mlsirm.serving as serving
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.estimators.marginal import fit_marginal_numpy
 from fast_mlsirm.fit import fit
+from fast_mlsirm.reference import fit_reference
 from fast_mlsirm.serving import export_serving_bundle, score_respondents, serving_prior
 
 
@@ -131,7 +132,11 @@ def test_qmc_mc_rules_parity_between_backends(rule):
             xi_points=32,
             xi_seed=9,
         )
-        results[backend] = fit(y, fid, cfg)
+        results[backend] = (
+            fit(y, fid, cfg)
+            if backend == "rust"
+            else fit_reference(y, fid, cfg)
+        )
         trace = np.asarray(results[backend].loglik_trace)
         final_change = float(trace[-1] - trace[-2])
         assert results[backend].convergence_status == "converged"
@@ -206,14 +211,15 @@ def test_fipc_rejects_unidentified_and_nonfinite_anchor_contracts(backend):
         rust_device="cpu",
         max_iter=3,
     )
+    fit_call = fit if backend == "rust" else fit_reference
     with pytest.raises(ValueError, match="at least two fixed anchor items"):
-        fit(y, fid, cfg, anchors=base)
+        fit_call(y, fid, cfg, anchors=base)
 
     finite = dict(base)
     finite["fixed"] = np.ones(6, dtype=bool)
     finite["tau"] = np.nan
     with pytest.raises(ValueError, match="anchor tau must be finite"):
-        fit(y, fid, cfg, anchors=finite)
+        fit_call(y, fid, cfg, anchors=finite)
 
 
 @pytest.mark.parametrize("backend", ["rust", "numpy"])
@@ -240,8 +246,9 @@ def test_fipc_rejects_nonboolean_anchor_masks(backend, fixed):
         rust_device="cpu",
         max_iter=1,
     )
+    fit_call = fit if backend == "rust" else fit_reference
     with pytest.raises(ValueError, match="anchor fixed must contain only boolean"):
-        fit(y, fid, cfg, anchors=anchors)
+        fit_call(y, fid, cfg, anchors=anchors)
 
 
 def test_numpy_marginal_rejects_nonboolean_anchor_mask_directly():
