@@ -3,6 +3,80 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Cross-engine conformance inventory contract
+
+- Add a provider-neutral, source-free `ConformanceInventory` contract for independent numerical conformance coverage. The first slice records public estimands, parameterization and identification scope, isolated engine/version/license identity, versioned parameter-mapping and fixture/environment fingerprints, and explicit passed/failed/indeterminate/not-executed states without adding external engines as runtime, build, package, or release dependencies. This is Python validation/provenance schema work only; production psychometric and statistical arithmetic remains Rust-owned.
+- Accept both full Git SHA-1 and SHA-256 commit identities so protected-main and harness provenance remains valid across repository hash-format migrations.
+- Require at least one executed evidence row before a capability can claim
+  `covered` or `partially_covered` status.
+- Revalidate exact package-owned engine, evidence, capability, and inventory records before manifest or fingerprint replay so post-construction field rebinding cannot bypass semantic-control, fingerprint, or collection admission; hostile enum controls and container subclasses fail closed before their callbacks execute.
+
+#### Cross-engine conformance provenance
+
+- Add optional run-level conformance provenance for the isolated harness
+  commit, environment, RNG seeds, parameter-mapping schema, tolerance
+  rationale, output fingerprints, and license classification without storing
+  raw responses or adding an external-engine dependency.
+- Revalidate exact run-provenance state before direct manifest replay so
+  post-construction container rebinding fails closed before caller callbacks.
+
+#### External validation profile contract
+
+- Add a provider-neutral, source-free `ExternalValidationProfile` contract for preregistered external-validity and transportability evidence. The first slice keeps technical, construct, transportability, fairness, and decision-utility evidence distinct; preserves explicit failed/indeterminate/not-executed states; fingerprints normalized manifests; accepts provider-neutral dataset/site identities; and rejects evidence unavailable at the declared analysis cutoff. This is validation/provenance schema work only and does not move psychometric or statistical production arithmetic out of Rust.
+- Reject caller-defined profile and evidence-record subclasses before reading their fields, keeping the immutable manifest boundary free of executable attribute callbacks.
+- Reject overlapping development, internal-validation, and external-validation dataset identities so a transport claim cannot silently reuse a declared development cohort.
+- Revalidate exact profile and evidence state before manifest or fingerprint replay so post-construction field rebinding cannot introduce hostile enum or container callbacks or make a manifest fingerprint disagree with its emitted payload.
+
+#### Cross-engine runtime and redistribution provenance
+
+- Bind cross-engine conformance runs to an explicit container-image or environment-lock identity, operating system, architecture, model-configuration digest, convergence-controls digest, and redistribution status.
+- Include the new source-free runtime identities in deterministic manifests and inventory fingerprints while preserving exact-record replay validation against post-construction mutation.
+- Keep external-engine evidence isolated from production numerical ownership; no psychometric or statistical arithmetic moves out of Rust.
+
+#### Strict conformance manifest replay
+
+- Added `ConformanceInventory.from_manifest()` and `from_json()` to rehydrate persisted cross-engine conformance evidence through exact package-owned validation.
+- Persisted manifests now fail closed on unknown or missing nested keys, caller-defined mapping/list/text subtypes, duplicate JSON object keys, non-finite JSON constants, oversized JSON payloads, fingerprint tampering, and non-canonical normalized content.
+- Replay remains provenance and serialization only; production psychometric and statistical arithmetic remains Rust-first.
+
+#### Accessible cross-engine conformance evidence
+
+- Add a deterministic standalone HTML and canonical JSON renderer for strict `ConformanceInventory` manifests, exposing capability coverage, capability × engine execution evidence, immutable inventory/run provenance, limitations, and explicit no-evidence states with exact values in text.
+- Add a deterministic provenance-bound long-form JSON table so buyers can download one flat row per capability × engine evidence record without spreadsheet formula execution risk; capabilities with no independent engine remain explicit `not_executed` rows instead of disappearing or turning green.
+- Escape manifest text, emit semantic table captions/headers and a restrictive no-script CSP, and state explicitly that numerical conformance is not construct validity, fairness, or high-stakes approval.
+- Delegate all ingestion to strict manifest replay and keep the renderer reporting-only; no likelihood, discrepancy, RMSE/MAE, uncertainty, alignment, scoring, or other production psychometric/statistical arithmetic moves out of Rust.
+
+#### Bind Figma buyer evidence to an authoritative ADR
+
+- Record the buyer-review Figma File ID, packet-validation boundary, and
+  downstream Code Connect ownership in ADR-0016 and the governance index.
+
+#### Reproducible PyPI release publishing
+
+- Added release-tag-bound sdist and wheel publication with a project-version provenance check, pinned Maturin and PyPA publisher revisions, and persisted checkout credentials disabled.
+- The canonical release-tag workflow now explicitly dispatches package publication from the immutable tag, avoiding reliance on release events created with `GITHUB_TOKEN`, which do not recursively start ordinary event-triggered workflows.
+- Isolated GitHub release-asset mutation from PyPI credentials, removed the unpinned runtime Twine installation path, and kept duplicate GitHub release assets and PyPI filenames fail-closed rather than silently replacing an immutable release artifact.
+- PyPI publication now depends directly on the verified build artifacts rather than successful GitHub asset attachment, so a failed PyPI publication can be retried even when immutable release assets already exist and correctly reject replacement.
+
+#### Crossed multiple-membership person effects
+
+- Added a Rust-owned MAP estimator of crossed / weighted multiple-membership person effects `u_h` (Fox & Glas, 2001; Browne, Goldstein, & Rasbash, 2001). Persons may belong to several groups at once; one-hot nesting remains the singleton special case of the same sparse design.
+- Added a CPU-multithreaded Bernoulli score/information reduction and an optional wgpu GPU kernel for that hot loop, with f64 CPU fallback when no adapter is present. Sparse Newton accumulation stays on CPU. This slice does not estimate OLS or AR longitudinal states.
+- Added `fast_mlsirm.multilevel.estimate_crossed_person_effects` and `CrossedPersonEffectResult` as marshal-only Python access, plus a true-parameter RMSE recovery test against simulated crossed membership weights.
+- Enforced the binary-response contract before native discovery and again inside the Rust estimator: finite non-negative observed cells must be exactly `0` or `1`; negative and non-finite cells retain the established missing-data semantics.
+
+#### Govern structural-model pair decisions
+
+- Add a governed structural-model selection gate that keeps factor retention separate from structure choice, requires explicit parameter-space relation evidence, refuses pairwise selection before the relation-appropriate LR/bootstrap/Vuong procedure, and gates any winner on recovery and intended-score interpretation evidence. The new Python surface performs validation and policy orchestration only; numerical comparison and psychometric arithmetic remain Rust-owned.
+
+#### Add buyer-facing item-bank lifecycle reports
+
+- Added deterministic JSON and standalone accessible HTML reporting for complete governed item-bank lifecycle lineages, including current state, rubric/blueprint provenance, approved-use scope, evidence-class inventory, transition timeline, and explicit missing-evidence limitations.
+- Cross-version comparability is reported only as supported when governed linking evidence is present; the report never infers comparability from a nominal score range or active lifecycle state.
+- Reporting remains provenance-only: calibration, fit, DIF, information, linking, exposure, drift, and uncertainty arithmetic are referenced by exact evidence identity and are not recomputed in Python.
+
 ### Changed
 
 #### Govern non-psychometric item-bank suspension concerns
@@ -11,11 +85,30 @@
 - Suspended records bind the exact newly asserted concern classes into their content-addressed identity, and reactivation requires fresh evidence for those same classes so unrelated evidence cannot clear a quarantine.
 - Reactivation rejects a historical approval or concern fingerprint even when it is presented under a replacement evidence identifier; every required reactivation artifact must bind new evidence content.
 
+#### Production backend boundary
+
+- Restrict production `FitConfig` and CLI backend selection to Rust (`rust` or
+  fail-closed `auto`). Move the NumPy parity fit behind the explicit
+  `fast_mlsirm.fit_reference` API and `fit --reference` mode, preserving
+  testable parity without allowing an implicit production owner switch.
+- Record the resolved Rust backend for the plain unidimensional MMLE fast path
+  so CLI JSON and saved fit summaries report the execution owner rather than
+  the unresolved `auto` selector.
+
 #### Harden remaining equating controls before native discovery
 
 - Validate circle-arc method/point/scalar controls, nominal-weights score ceilings and synthetic-population weight, and the composite-linking exponent before compiled-core discovery.
 - Reject caller-defined scalar/container subclasses and arbitrary conversion providers without executing their conversion, comparison, representation, hashing, or iteration callbacks.
 - Preserve exact built-in and genuine NumPy scalar compatibility while keeping circle-arc geometry, nominal-weights moments, composite-linking weight arithmetic, and all result-affecting equating mathematics in Rust.
+
+#### Dedicated GRM recovery evidence retention
+
+- Kept the 500-replication multidimensional Graded Response Model recovery
+  study out of pull-request CI and out of the generic 1,800-second ignored-shard
+  budget, then published its printed bias, RMSE, convergence, and theta
+  correlation lines as a 90-day Actions artifact.
+- Withheld checkout credentials from every Statistical Studies job so
+  repository-controlled `cargo test` cannot reuse the Actions token.
 
 #### Release cut 0.8.0
 
@@ -39,12 +132,488 @@
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
 
+#### Pin Rust 1.97.1 across verification
+
+- Pin local Rust builds, Python/Rust package verification, ordinary Rust tests, GPU smoke, packaging, and scheduled statistical studies to exact Rust 1.97.1 instead of a floating stable channel.
+- Track the root `rust-toolchain.toml` through Dependabot so future stable compiler updates arrive as reviewable pull requests with exact-head scientific, package, GPU, security, and recovery evidence.
+- Preserve the existing public crate compatibility boundary by not adding or raising `package.rust-version`; this is a repository build-baseline change, not a new downstream MSRV claim.
+
 ### Fixed
+
+#### Harden bounded subprocess cleanup
+
+- Keep governance and procurement subprocess capture bounded across stdout, stderr, execution time, decoding, and JSON parsing. POSIX cleanup now avoids re-signalling an already reaped process group, successful capture closes parent-side pipe descriptors deterministically, and timeout/overflow paths retain fail-closed evidence without weakening repository gates.
+
+#### Keep judge runtime validation active under Python optimization
+
+- Replace production judge and calibration invariants that relied on removable `assert` statements with explicit package-owned `ValueError` or `RuntimeError` failures, and verify that invalid response-schema admission remains fail-closed under `python -O`.
+
+#### Item-bank transition replay callback safety
+
+- Lifecycle transition replay now validates the exact creation-time record and evidence-reference instance state before invoking canonical serialization or fingerprint verification.
+- Frozen lifecycle records mutated through Python object internals cannot shadow `_content_dict()` or evidence `to_dict()` callbacks to execute caller code while acquiring transition authority.
+- This changes provenance/integrity validation only; calibration, fit, DIF, item-information, linking, exposure, drift, uncertainty, and other production psychometric arithmetic remain Rust-owned and unchanged.
+
+#### Harden Rudner/Lee cut-score control admission
+
+- Validate and materialize Rudner and Lee cut-score scalars before compiled Rust capability discovery, rejecting booleans, caller-defined scalar subclasses, protocol coercion providers, malformed containers, non-finite values, and conversion overflow without invoking caller conversion hooks while preserving exact built-in and concrete NumPy real scalar compatibility. Both public paths now use one canonical package-owned normalizer; cut ordering/domain checks and all classification arithmetic remain Rust-owned.
+
+#### Seal enterprise request record admission
+
+- Enterprise issue scoring-request provenance now rejects caller-defined issue, stakeholder-perspective, and candidate-intervention record subclasses before reading their fingerprints or fields, preventing caller callbacks from executing during canonical record admission while preserving exact package record behavior.
+
+#### Seal enterprise observation admission
+
+- Enterprise issue observation admission now rejects caller-defined scoring-request, evidence-reference, and status-string subclasses before reading provenance or performing enum lookup, preventing caller callbacks during semantic validation while preserving exact package records and serialized status strings.
+
+#### Seal enterprise explicit-value integer admission
+
+- Reject caller-defined integer subclasses for enterprise explicit-value source offsets and deterministic parser record limits before comparison or coercion callbacks can execute, while preserving exact built-in integer domains and stable validation errors.
+
+#### Seal scoring engine-authorization record admission
+
+- Reject caller-defined assessment, scoring-request, and engine-descriptor subclasses before authorization policy or provenance fields are read, preserving exact package records, stable validation errors, and existing engine-policy semantics.
+
+#### Seal assessment aggregate record admission
+
+- Assessment assembly now rejects `ConstructSpec`, `RubricSpecification`, and scoring-policy subclasses before reading package-owned provenance or construct-scope fields, preventing caller-defined attribute/fingerprint callbacks from executing during aggregate contract admission while preserving exact package records and existing cross-reference semantics.
+
+#### Bifactor scoreability control trust boundary
+
+- Hardened both public bifactor scoreability entry points so `general_factor` and `zero_tolerance` are validated and normalized before loading, uniqueness, or logit-slope materialization and before compiled-core discovery.
+- Reject booleans, caller-defined numeric subclasses, and arbitrary conversion-protocol objects without executing their callbacks, while preserving concrete Python/NumPy scalar compatibility and Rust ownership of index/domain validation and all scoreability arithmetic.
+
+#### Scoring shared enum callback safety
+
+- Shared scoring enum admission now preserves exact enum members and accepts only exact built-in strings for serialized enum values before invoking Enum lookup.
+- Caller-defined string subclasses and arbitrary non-text objects fail closed with the existing package-owned assessment error before hostile hash or equality callbacks can run.
+- Added public EngineDescriptor regressions proving callback-free rejection while preserving built-in string and exact enum-member compatibility; no scoring, calibration, likelihood, estimator, ranking, utility, or psychometric arithmetic changed.
+
+#### Model-spec record admission
+
+- Model resolution now admits only exact package-owned exploratory and confirmatory model records before reading their fields, so caller-defined model-spec subclasses cannot execute attribute callbacks during validation. Exact built-in/concrete NumPy factor counts and exact package model records retain their existing behavior; multidimensional exploratory estimation remains separately governed by #633.
+
+#### Correct skewed-population Mokken study contract
+
+- Keep the normal-trait Monte Carlo condition as the calibrated H/recovery
+  contract.
+- Standardize the positive-skew half-normal latent condition to the same
+  location and scale as the normal condition before applying the shared 1.5
+  theta scale, so the study changes distribution shape without confounding
+  skewness with the previous approximately 28% narrower latent spread.
+- Require both moment-matched latent conditions to retain the calibrated
+  Loevinger H band, while keeping AISP full-recovery acceptance calibrated on
+  the normal condition rather than treating the user-selected `c = 0.3`
+  cutoff as distribution-invariant.
+- Preserve the exact ignored-study execution and report failures normally.
+- Declare that the workflow consumes no secrets and require reviewed
+  `${{ secrets.NAME }}` environment injection for any future credentialed
+  study.
+
+#### Seal bounded JSON semantic-input callback boundaries
+
+- Reject caller-defined byte/depth limit integers before comparison and caller-defined JSON text subclasses before encoding, while preserving exact built-in controls, bounded parsing semantics, and the existing descriptor/path/size/depth defenses used by repository release and governance automation.
+
+#### Factor-retention callback safety
+
+- Hardened governed factor-retention evidence admission so caller-defined integer and evidence-record subclasses are rejected before comparison or record-field callbacks can execute, while preserving built-in candidate counts and existing conservative retention semantics.
+
+#### Harden multilevel text callback safety
+
+- Require exact built-in strings for contextual schema versions, descriptive identifiers, and provenance fingerprints before comparison, normalization, regex, or encoding work, preventing caller-defined `str` subclasses from executing callbacks during multilevel and temporal contract admission.
+
+#### Make repository test imports deterministic
+
+- Pytest now exposes both the repository root and the Python source tree from
+  committed configuration, so tests that materialize repository automation
+  scripts do not require an operator-specific `PYTHONPATH=.` workaround.
+- Agent guidance now derives its advertised Python support floor from the same
+  `pyproject.toml` requirement guarded by repository tests, preventing stale
+  lower-version setup instructions from diverging from package metadata.
+
+#### Executed conformance provenance integrity
+
+- Fail closed when a cross-engine conformance inventory contains executed `passed`, `failed`, or `indeterminate` evidence without exact run provenance.
+- Require both raw-output and normalized-output SHA-256 identities for executed conformance runs while preserving optional output hashes for genuinely nonexecuted plans.
+- Revalidate nested run provenance before applying the execution consistency gate so post-construction mutation cannot bypass package-owned admission.
+
+#### Fail closed on missing release source identity
+
+- The buyer-facing release evidence index now rejects timed-out, failed, unavailable, empty, malformed, or non-canonical Git `HEAD` identity instead of allowing an otherwise complete packet to report `status: "ok"` with unreconstructable source provenance.
+- Valid repositories continue to record the exact full lowercase hexadecimal source commit without changing psychometric/statistical numerical ownership.
+
+#### Require reconstructable buyer-packet source identity
+
+- Buyer evidence packet generation now fails closed when Git source discovery times out, fails, is unavailable, or returns an abbreviated/malformed identity instead of recording `unknown` provenance.
+- Canonical full lowercase SHA-1 and SHA-256 Git object identities remain accepted, preserving interoperability without changing psychometric/statistical numerical ownership.
+
+#### Require reconstructable benchmark source identity
+
+- Benchmark evidence generation now fails closed when Git source discovery times out, fails, is unavailable, or returns an abbreviated/malformed identity instead of recording `unknown` provenance.
+- Canonical full lowercase SHA-1 and SHA-256 Git object identities remain accepted, preserving repository interoperability without changing psychometric/statistical numerical ownership.
+
+#### Figma evidence source provenance
+
+- Figma design-evidence manifests now fail closed when the repository source commit cannot be resolved to a canonical full lowercase SHA-1 or SHA-256 object identity, instead of emitting buyer-facing evidence with `source_commit: "unknown"` or an abbreviated/malformed revision.
+
+#### Workflow registry transport failures
+
+- The read-only workflow-registry audit now converts missing or inaccessible local GitHub CLI execution into a stable fail-closed `GitHubApiError`, so automation can emit bounded failure evidence instead of crashing with raw operating-system details.
+
+#### Commercial release source identity
+
+- Fail commercial release evidence generation closed when the source Git revision is unavailable or malformed, and require a canonical lowercase full SHA-1 or SHA-256 identity before provenance can be emitted.
+
+#### Enterprise gate source-provenance hardening
+
+- Require enterprise due-diligence manifests to bind `source_commit` to a canonical lowercase full SHA-1 or SHA-256 Git object identity instead of accepting abbreviated or arbitrary printable identifiers.
+- Reject caller-defined string subclasses before text callbacks can execute at the source-provenance admission boundary, so a successful gate remains reconstructable from exact source identity.
+- Restrict manifest output to a relative path inside the invocation directory and reject symlinked or tree-escaping destinations before writing.
+- Write through a validated descriptor tree into a same-directory temporary file and atomically rename it into place on supported POSIX systems, so a failed write cannot truncate the previously accepted manifest.
+- Preserve an existing manifest's access permissions across atomic replacement and use ordinary process file-creation permissions for a new manifest instead of forcing buyer-facing evidence to owner-only mode.
+
+#### Enterprise gate semantic-control callback safety
+
+- Reject caller-defined string subclasses for enterprise gate names and currency codes before normalization can invoke caller text callbacks.
+- Reject caller-defined integer subclasses for procurement scenario amounts before comparison while preserving the positive-integer validation contract for exact built-in values.
+
+#### Changelog fragment marker integrity
+
+- Reject authoritative changelog fragments containing reserved managed-block marker literals before rendering or update, preventing nested markers from producing a changelog that fails its own next integrity check.
+
+#### Scoring fingerprint text admission
+
+- Require caller-supplied SHA-256 scoring provenance to be an exact built-in string before validation or retention, preventing valid-looking string subclasses from crossing the package trust boundary as canonical fingerprints.
+- Apply the same exact built-in text boundary to structured scoring error code, path, and message fields.
+- Reject caller-defined scalar subclasses in bounded scoring metadata before canonicalization or digesting.
+
+#### Reject ambiguous duplicate JSON artifact members
+
+- The shared bounded artifact JSON loader now rejects duplicate object member
+  names at every nesting level instead of accepting last-value-wins semantics,
+  while preserving its existing stable-file, UTF-8, byte, nesting, and parser
+  controls.
+
+#### Strict artifact JSON constants
+
+- Reject `NaN`, `Infinity`, and `-Infinity` by default in the shared bounded artifact JSON loader so persisted package artifacts use interoperable JSON semantics; explicit caller `parse_constant` policies remain supported.
+
+#### Require interoperable bounded JSON artifacts
+
+- Reject duplicate object member names and non-standard non-finite numeric constants in the shared repository-automation bounded JSON reader, so file-backed and direct parsing use the same unambiguous RFC-compatible semantics while preserving existing size, depth, UTF-8, path-identity, and callback-safety controls.
+
+#### Seal bounded subprocess command admission
+
+- Reject caller-defined command-container and text-token subclasses before repository automation materializes or checks command arguments, preventing validation-time callback execution while preserving exact built-in list and tuple vectors.
+
+#### Population-label narrowing safety
+
+- Reject multigroup and multilevel population labels that cannot round-trip through signed 64-bit integer representation before compaction, preventing narrowing overflow from silently reordering the identified reference population while preserving valid sparse labels and the signed `int64` boundary.
+
+#### BRATT control admission
+
+- Validate and normalize Bradley-Terry-with-ties reference, iteration, and tolerance controls before comparison-data materialization or compiled-core discovery, rejecting callback-bearing scalar subclasses and protocol providers while preserving trusted built-in and NumPy scalar inputs.
+- Keep BRATT probability, MM-update, reference-rescaling, convergence, and log-likelihood arithmetic unchanged in the Rust core.
+
+#### RAG evidence limitation replay integrity
+
+- Replay factory-derived RAG evidence limitation records before manifest or fingerprint projection so post-construction mutation fails closed before caller callbacks can execute.
+
+#### Response-time calibration semantic control safety
+
+- Reject caller-defined numeric and truth-value protocols before response-time calibration controls are normalized or dispatched to the Rust core.
+- Require the joint speed-accuracy Gauss-Hermite node count to be an exact supported integer instead of silently narrowing floating-point values.
+- Keep required positive-finite runtime validation active under optimized Python execution instead of relying on `assert` guards that disappear with `-O`.
+- Preserve positive-finite stopping, variance-floor, and fixed-speed-scale contracts while keeping all response-time likelihood and estimation arithmetic Rust-owned.
+
+#### Polytomous fit semantic control safety
+
+- Reject caller-defined text, integer, real, and hashing protocols before GRM/GPCM calibration controls are normalized, response data are materialized, or the Rust core is discovered.
+- Require calibration quadrature to use an exact supported integer node count rather than callback-capable membership or lossy coercion.
+- Normalize both `NaN` and `-1` as missing polytomous responses before category validation, and report malformed response conversion through a stable package-owned numeric-input error.
+- Preserve the category, iteration, and positive-finite stopping contracts while keeping the Bock-Aitkin EM/Newton estimator and all result-affecting psychometric arithmetic Rust-owned.
+
+#### Keep essay-report pointer focus modality-safe
+
+- Suppress pointer-acquired outlines on focusable essay-report table regions and canonical JSON blocks only when `:focus-visible` is false. Keyboard navigation retains the explicit high-contrast focus indicator, and regressions reject blanket `:focus { outline: none; }` suppression.
+
+#### Reject overflowing polytomous DIF labels
+
+- Polytomous DIF group and studied-item label/index vectors now verify signed-64-bit narrowing before compaction or Rust dispatch, preventing unsigned boundary values from wrapping negative and changing group/reference identity.
+- Valid non-negative signed-64-bit and sparse/non-contiguous labels remain supported; GRM/GPCM DIF likelihood and statistical arithmetic remain Rust-owned and unchanged.
+
+#### CAT administration data integrity
+
+- Reject administered item indices that cannot be represented losslessly as signed 64-bit identities before range/mask handling, and reject complex-valued binary responses before any real-valued coercion can discard their imaginary component. Ordinary signed indices and real 0/1 responses retain the existing Rust-owned CAT likelihood, ability-estimation, and information paths.
+
+#### Complex-valued polytomous response admission
+
+- Reject complex-valued polytomous response matrices before any `float64` narrowing can discard imaginary components and turn a different observed category into a valid-looking real category.
+- Preserve real integer categories plus `NaN` and `-1` missingness semantics across calibration, scoring, DIF, item/person fit, and other callers of the shared response-admission boundary without changing Rust-owned psychometric arithmetic.
+
+#### CRM response data integrity
+
+- Reject complex-valued continuous-response-model observations before NumPy can narrow them to `float64` and discard an imaginary component, and reject object-dtype response storage before caller-defined numeric conversion can run.
+- Establish a callback-free response-evidence boundary before NumPy materialization: exact NumPy arrays and ordinary built-in list/tuple trees with package-trusted concrete Python/NumPy numeric scalars remain supported, while arbitrary array providers and caller-defined container/numeric subclasses fail closed before their protocols can execute. Exact numeric NumPy arrays nested as inert rows inside built-in containers remain compatible without admitting ndarray subclasses or object/text leaves.
+- Preserve `NaN` as the CRM missing-cell marker while rejecting `+Infinity` and `-Infinity` before native discovery instead of silently reclassifying those invalid observed values as missing. Ordinary finite real-valued evidence retains the existing Rust-owned CRM fitting path.
+- Bound CRM response evidence to 20,000,000 logical cells before sequence materialization or dense real-valued work. Exact broadcast arrays and exact NumPy row leaves nested in trusted built-in matrices are rejected from shape/size metadata before allocation; shared acyclic built-in subtrees retain logical-occurrence accounting without exponential re-traversal.
+
+#### IRTree scientific-evidence admission
+
+- Reject complex-valued IRTree response matrices, tree mappings, and node-dimension vectors before any `float64` narrowing can discard imaginary components and change observed categories, mapping branches, or factor assignments.
+- Reject arbitrary NumPy array providers, callback-bearing container/scalar subclasses, and object/text storage before package-triggered `__array__` or numeric-conversion callbacks can synthesize or replace IRTree evidence.
+- Preserve exact NumPy real-numeric arrays plus exact built-in list/tuple evidence containing package-trusted Python/NumPy real scalars, including ordinary `NaN` missingness, without changing IRTree mapping semantics or psychometric estimator arithmetic.
+
+#### Complex-valued curvature admission
+
+- Reject complex-valued Hessian and covariance matrices before any `float64` narrowing can discard imaginary components and alter second-order, covariance, or standard-error evidence.
+- Keep eigendecomposition, inversion/pseudoinversion, and standard-error arithmetic in the Rust core while preserving existing real square-matrix contracts.
+
+#### Oakes uncertainty input admission
+
+- Reject complex-valued response matrices and factor assignments before any real/integer narrowing can discard imaginary components in the public Oakes standard-error wrapper.
+- Preserve existing binary-response missingness and integer factor semantics while keeping Oakes information, finite-difference, inversion, and standard-error arithmetic in the Rust core.
+
+#### Oakes factor-id signed-64 admission
+
+- Reject Oakes `factor_id` values that cannot round-trip through signed 64-bit integer marshalling before dimension derivation or Rust uncertainty arithmetic, preventing unsigned overflow from silently changing item-to-dimension assignments.
+
+#### WLE complex-evidence admission
+
+- Reject complex-valued dichotomous and polytomous WLE responses and item parameters before real-valued marshalling or Rust scoring dispatch, preventing imaginary components from being silently discarded.
+
+#### Seal LLTM data and control admission
+
+- Reject complex-valued LLTM response matrices and explanatory-design weights before real-valued narrowing can discard their imaginary components.
+- Validate Boolean, iteration, and tolerance controls before caller-owned data materialization or compiled-Rust capability discovery, while preserving trusted built-in and concrete NumPy scalar inputs and the Rust-owned LLTM estimator.
+
+#### Nominal-response admission hardening
+
+- Validate nominal category, quadrature, iteration, tolerance, Monte Carlo point, and RNG-seed controls before caller response materialization, accepting only package-trusted built-in or concrete NumPy scalar identities and passing normalized primitives to Rust.
+- Reject complex response evidence before real-valued narrowing and reject infinite response values instead of silently reclassifying them as missing, while preserving ordinary real/integer categories plus documented NaN/negative missingness.
+- Keep nominal probabilities, marginal likelihood, estimation, integration, convergence, identification, and EAP arithmetic unchanged in the Rust numerical core.
+
+#### GPCM admission hardening
+
+- Validate GPCM category, quadrature, iteration, tolerance, integration-point, and RNG-seed controls before caller response materialization, admitting only package-trusted built-in or concrete NumPy scalar identities and passing normalized primitives to Rust.
+- Reject complex response evidence before real-valued narrowing and reject infinite response values instead of silently reclassifying them as missing, while preserving ordinary categories plus documented NaN/negative missingness.
+- Keep GPCM probabilities, marginal likelihood, estimation, integration, reflection/identification, convergence, and EAP arithmetic unchanged in the Rust numerical core.
+
+#### Mixture-response admission hardening
+
+- Reject complex mixture-IRT response evidence before real-valued narrowing so caller data cannot silently project onto a different observed 0/1 pattern before Rust validation.
+- Reject object-dtype response storage before per-element numeric coercion, including Python complex objects and caller-defined conversion callbacks, with the package-owned real-valued input error.
+- Reject positive and negative infinity instead of treating them as undocumented missing responses, while preserving `NaN` as the documented MAR missingness representation.
+- Keep mixture likelihood, posterior, EM updates, restart selection, canonical class ordering, convergence, and EAP arithmetic unchanged in the Rust numerical core.
+
+#### KSIRT input admission
+
+- Validate and normalize KSIRT kernel/grid controls before caller array materialization or compiled-core discovery, reject complex response or bandwidth evidence before real-valued `float64` marshalling, reject object/string-like storage before per-element numeric conversion can execute caller callbacks, and reject arbitrary array-protocol providers before NumPy materialization while preserving exact NumPy arrays and plain built-in numeric sequences. The Nadaraya-Watson/OCC estimator and all production psychometric/statistical arithmetic remain Rust-owned.
+
+#### Mixed-format response admission
+
+- Reject complex-valued mixed-format response evidence before real-valued marshalling so imaginary components cannot be silently discarded before categorical validation and Rust-owned calibration.
+
+#### Subscore complex-evidence admission
+
+- Reject complex-valued response and subscale-assignment evidence before real-valued marshalling so imaginary components cannot be silently discarded before Rust-owned Haberman subscore analysis.
+
+#### DETECT evidence admission hardening
+
+- Reject complex or non-real-numeric DETECT response storage before real-valued marshalling so observed binary evidence cannot be silently projected onto different data.
+- Reject complex or non-real-numeric DETECT cluster storage before partition normalization so item-to-dimension labels cannot be silently projected onto a different real partition.
+- Reject arbitrary response/cluster array-protocol providers before NumPy materialization, while preserving exact NumPy arrays and plain built-in sequences of trusted real scalar values.
+- Reject a self-referential or otherwise cyclic list/tuple response or cluster (for example `a = []; a.append(a)`) before flattening instead of looping until the process is killed; cycle detection tracks only the active ancestor path, so legitimate repeated/shared acyclic rows remain accepted.
+- Bound compressed shared-DAG list/tuple expansion and exact NumPy-array evidence before further package materialization, preventing hidden expansion or arrays above 20,000,000 logical cells while retaining ordinary shared-row compatibility.
+- Preserve Rust ownership of conditional-covariance and DETECT index arithmetic; the Python change is limited to validation and marshalling.
+
+#### Graded-response evidence admission hardening
+
+- Normalize GRM integration, iteration, category, seed, and tolerance controls before caller response materialization, without invoking arbitrary scalar coercion callbacks.
+- Reject complex, non-real-numeric, and infinite response storage before real-valued marshalling so observed graded-category evidence cannot be silently projected or reclassified as missing.
+- Preserve the documented `NaN`/negative missingness convention, confirmatory loading validation, and Rust ownership of GRM likelihood, integration, parameter estimation, EAP, identification, and convergence arithmetic.
+
+#### Linking evidence admission
+
+- Reject complex-valued or non-real-numeric fixed-item and common-item linking evidence before lossy real marshalling, caller element conversion, or compiled Rust-core discovery; reject non-finite source-theta evidence before fixed-item Rust dispatch while preserving Rust-owned linking arithmetic.
+
+#### Factor input admission hardening
+
+- Reject complex and non-real-numeric factor-analysis, reliability, and Velicer MAP evidence before real-valued marshalling can alter caller data or execute object-element conversion.
+- Normalize trusted `n_factors` and `max_m` integer controls before caller array materialization and Rust-core discovery while preserving concrete NumPy integer compatibility.
+
+#### Parallel-analysis data admission
+
+- Reject complex and non-real-numeric caller matrices before Horn/Glorfeld parallel-analysis input is narrowed to `float64`, preventing imaginary evidence from being silently discarded or object-element numeric callbacks from running during package-owned admission.
+- Preserve existing real numeric input compatibility, integer-control validation, bounded random-eigenvalue workspace policy, and Rust ownership of eigenvalue, random-benchmark, centile, and retention arithmetic.
+
+#### Validate Hofstee controls before score materialization
+
+- Validate and order the four Hofstee percentage controls before caller-owned score arrays are materialized, so rejected semantic controls cannot trigger score-side array protocols before the package emits its stable validation error.
+- Preserve the existing Rust-owned Hofstee ogive, intersection, fallback, and cut-score arithmetic.
+
+#### CAT exposure item-evidence admission
+
+- Reject complex-valued and non-real-numeric Sympson-Hetter and a-stratified item-parameter storage before lossy `float64` marshalling or compiled-core discovery, while preserving ordinary real item banks and Rust-owned CAT exposure algorithms.
+
+#### Seal Chang-Ying KL evidence admission
+
+- Reject complex or non-real-numeric KL item-parameter storage before any lossy `float64` narrowing or Rust-core discovery.
+- Require `kl_select()` administration masks to use Boolean storage rather than truth-value coercion.
+- Normalize `theta0`, `delta`, and `r` only from package-trusted built-in or concrete NumPy real scalar identities before caller array work.
+- Preserve contiguous `float64`/Boolean native marshalling after admission while leaving Chang-Ying KL integration and selection arithmetic Rust-owned.
+
+#### Delta-plot group evidence admission
+
+- Reject non-real-numeric Delta-plot group storage before real-valued coercion, preventing textual reference/focal labels from being silently reinterpreted and object-dtype cells from executing caller numeric callbacks during Python-to-Rust admission.
+- Preserve ordinary numeric and Boolean 0/1 group arrays while keeping Angoff Delta-plot psychometric arithmetic unchanged in the Rust core.
+
+#### Owen CAT evidence admission
+
+- Establish Owen posterior/CAT scalar, Boolean, item-array, and binary-response trust boundaries before compiled-core discovery or caller-controlled coercion. Caller-defined scalar/truth callbacks, complex/text/object item or response storage, and arbitrary array providers now fail closed while supported NumPy scalar/array evidence is normalized to inert built-in/contiguous representations. Owen posterior moments, b-matching, variance stopping, and all result-affecting psychometric arithmetic remain Rust-owned.
+
+#### Seal EPV trust-boundary admission
+
+- Reject caller-defined posterior scalar callbacks, lossy or non-numeric EPV item evidence, and non-Boolean administered masks before native dispatch while preserving ordinary NumPy inputs and Rust-owned predictive/variance/selection arithmetic.
+
+#### Seal Sympson-Hetter scalar control admission
+
+- Validate package-trusted `r_max` and `tol` scalar identity and semantic domains before caller item arrays or native discovery, preserving Rust-owned Sympson-Hetter calibration, simulation, update, and stopping arithmetic.
+- Preserve the Rust finite `tol >= 0` contract directly in the canonical `exposure.sympson_hetter` boundary and remove the duplicate zero-tolerance marshalling/dispatch shim.
+
+#### Seal SPRT evidence and control admission
+
+- Validate package-trusted Wald SPRT scalar controls and reject coercive, textual, object, or complex item/response evidence before native dispatch, preserving Rust-owned boundaries, likelihood-ratio accumulation, first-crossing decisions, and trace arithmetic.
+
+#### Seal CI-classification evidence and control admission
+
+- Validate package-trusted confidence-interval classification controls and reject coercive, textual, object, or complex item/response evidence before native dispatch, preserving Rust-owned EAP, posterior-SE, interval, and strict first-crossing arithmetic.
+
+#### Flexilevel evidence admission
+
+- Validate Lord flexilevel item-count and platform-size controls before caller response materialization, and reject complex, textual, object-backed, lossy, or domain-invalid response/probability evidence before native-core discovery while preserving supported binary NumPy arrays, plain callback-safe 1-D/2-D list/tuple response array-likes, and finite odd-length probability vectors. Routing, red/blue self-scoring, forward recursion, score-lattice probabilities, mean, and variance remain Rust-owned.
+- Preserve callback-safe list/tuple probability compatibility for package-trusted concrete NumPy real scalars as well as built-in real scalars.
+
+#### Observed-score equating evidence admission
+
+- Reject complex, object-backed, and textual score/frequency evidence before lossy `float64` marshalling or compiled-Rust discovery across equivalent-groups, NEAT, kernel, presmoothing, and SEE entry points.
+- Preserve real Boolean/integer/unsigned/float evidence while keeping equating, smoothing, uncertainty, and population-linking arithmetic Rust-owned.
+
+#### Fixed-form test assembly admission safety
+
+- Harden fixed-form assembly so form length and content-constraint controls are normalized before caller item evidence, complex/object information cannot be projected through `float64`, content labels are admitted as text without caller stringification, and exclusion indices must fit signed 64-bit item identity without narrowing overflow before the Rust-owned greedy assembly runs.
+
+#### Harden constrained-CAT evidence admission
+
+- Validate CCAT ability, item, content-group, target, and administered-mask evidence before native dispatch; reject callback-bearing or lossy storage, require lossless non-negative integral `uintp` group marshalling, and leave constrained-CAT selection arithmetic Rust-owned.
+
+#### Bound the judge's weighted-score boundary
+
+- `ContextualOrchestratorJudge.judge()`'s plain scoring path (no `category_count`, the simplest public interface) trusted the model's own self-reported top-level `score` for the accept/reject decision instead of deriving it from `criterion_scores` and each `JudgeCriterion.weight`, unlike the three `category_count`-based paths, which already discard the self-reported score in favor of a mechanically recomputed weight-aware average. A model could report a high aggregate score while giving a low score on a heavily-weighted criterion and still be accepted. Made the plain path derive `score` the same way as the other three (issue #1238).
+- Rejected a non-finite aggregate criterion weight before any contextual-orchestrator transport call. `JudgeCriterion` validates each weight as finite and positive, but two individually valid weights (for example `1e308` each) could still overflow their sum to infinity; a weighted score could then silently collapse to an incorrect finite value (for example `0.0`) instead of failing closed. All three weighted-score paths now share one bounded, finite denominator (issue #1235).
+
+#### Response-time evidence admission
+
+- Reject complex, object/text, callback-bearing, and arbitrary array-provider response-time evidence before real-valued marshalling or Rust-core discovery across standalone RT calibration, joint speed-accuracy calibration, and RT person-fit diagnostics, while preserving ordinary built-in real-numeric sequence and NumPy-array inputs.
+- Replaced the recursive built-in-sequence walk with an explicit stack so a deeply nested response-time list/tuple (past Python's recursion limit) or a self-referential one (`a = []; a.append(a)`) rejects with a validation error instead of crashing the process with an uncaught `RecursionError` or looping forever.
+
+#### Response-time person-fit control safety
+
+- Validate `alpha_level` and `z_fast` with callback-free concrete real-scalar admission and the Rust-owned `(0, 1)` / finite non-negative domains before native-core discovery in response-time person-fit diagnostics.
+
+#### Empirical Bayes DIF evidence admission
+
+- Reject arbitrary array-protocol providers and callback-bearing sequence elements before Empirical Bayes Mantel-Haenszel DIF evidence is narrowed or dispatched, while preserving exact NumPy real-numeric arrays and ordinary built-in real-numeric list/tuple vectors.
+
+#### Nonparametric person-fit response admission
+
+- Reject arbitrary array-protocol providers and callback-bearing response cells before complete dichotomous person-fit evidence is materialized or dispatched, while preserving exact NumPy real-numeric arrays and ordinary built-in real-numeric list/tuple matrices.
+
+#### DIMTEST evidence admission hardening
+
+- Reject arbitrary response and AT1/AT2 array-protocol providers before NumPy materialization so caller callbacks cannot synthesize scientific evidence or subtest membership.
+- Preserve exact NumPy real-numeric arrays and plain built-in sequences of trusted real scalars, plus existing complete dichotomous response and integer index semantics.
+- Preserve Rust ownership of Stout DIMTEST conditional-variance, bias-correction, p-value, and retained-group arithmetic.
+
+#### Seal paired rating-range evidence admission
+
+- Reject callback-bearing or subclassed caller rating containers before NumPy conversion or Rust-core discovery, while preserving exact NumPy numeric arrays and the existing ordinal category/domain checks. Paired rating-range descriptive arithmetic remains Rust-owned.
+
+#### Reliability evidence admission
+
+- Reject callback-bearing, complex, or non-real-numeric caller evidence before Rust discovery in Guttman lambda, ten Berge mu, Cronbach alpha, and person-separation reliability entry points, while preserving ordinary NumPy arrays and trusted built-in sequence inputs.
+- Reject over-nested or cyclic built-in sequence evidence at the public API's known 1-D/2-D rank boundary before NumPy materialization or native discovery, while preserving shared acyclic rows and trusted real-scalar sequence compatibility.
+- Use one callback-free masked-array diagnostic across ICC, Guttman lambda, ten Berge mu, Cronbach alpha, person separation, and pairwise-rater reliability so masked evidence consistently tells callers to encode missingness with NaN before any native dispatch.
+- Preserve historical built-in sequence compatibility when rows are exact real-numeric NumPy arrays, while retaining callback-free rejection of ndarray subclasses and non-real row storage before materialization.
+- Preserve historical rater-sequence Boolean semantics without reopening caller protocols: pure Boolean built-in sequences keep the Boolean-specific diagnostic, while mixed Boolean+numeric built-in sequences retain NumPy's numeric promotion.
+- Make reliability-adapter installation recover every primary sibling after an interrupted partial bind instead of treating a hardened ICC wrapper alone as proof that the whole public reliability surface was installed.
+- Bound primary and rater reliability evidence to 20,000,000 logical cells before NumPy materialization or contiguous `float64` allocation, including exact broadcast views and exact NumPy leaves nested inside trusted built-in sequences.
+
+#### Pairwise reliability evidence admission
+
+- Validate the Pearson/Spearman pairwise-rater Fisher control and caller-owned ratings evidence before native discovery, rejecting callback-bearing or non-real evidence without changing Rust-owned correlation, ranking, Fisher-transform, or inference arithmetic.
+
+#### ICC ratings evidence admission
+
+- Preserve callback-free ICC semantic controls while also rejecting callback-bearing, complex, Boolean, or non-real ratings before native discovery; trusted numeric arrays and built-in numeric sequences still marshal to the unchanged Rust ICC implementation.
+- Preserve the established Boolean-rating diagnostic for trusted built-in/NumPy-Boolean sequences, including mixed Boolean-plus-numeric sequences whose Boolean identity NumPy would otherwise erase by numeric promotion, and preserve actionable `NaN` missingness guidance for NumPy `MaskedArray` subclasses without reopening caller-defined array or scalar callbacks.
+
+#### Remaining reliability rater-evidence admission
+
+- Validate Krippendorff alpha, Finn reliability, Maxwell RE, and Robinson A semantic controls and rater evidence through callback-free package admission before Rust discovery, while preserving trusted numeric sequence compatibility and the existing Rust-owned agreement/reliability arithmetic.
+
+#### Answer-copying evidence admission
+
+- Reject callback-bearing NumPy array providers, ndarray/container subclasses, and caller-defined numeric subclasses before answer-copying evidence is materialized for Wollack omega, K-index/K1/K2/S1/S2, or GBT.
+- Preserve exact NumPy numeric arrays and exact built-in list/tuple evidence containing package-trusted Python/NumPy real scalars, while keeping existing complex, dimensional, finite, index, binary, probability, and relation validation contracts.
+- Keep all result-affecting answer-copying statistics and tail/regression arithmetic in the Rust numerical core; this change only hardens Python validation and marshalling.
+
+#### Rater reliability installer recovery
+
+- Recover interrupted Krippendorff/Finn/Maxwell/Robinson reliability-adapter installation by requiring the complete package-owned rater wrapper set before idempotent short-circuiting, while preserving callback-free evidence admission and Rust-owned reliability arithmetic.
+
+#### Close CI contract drift on the toolchain pin and metadata scalar admission
+
+- Pin the `grm-recovery` scheduled statistical-study job's `dtolnay/rust-toolchain` step to exact Rust `1.97.1`, closing a gap where it silently floated to the default stable channel while every sibling verification lane stayed pinned.
+- Align `test_metadata_normalizes_string_subclasses_without_callbacks` (formerly `test_metadata_rejects_string_subclasses_before_callbacks`) with the metadata scalar admission boundary's actual, intentional behavior: caller-defined `str` subclasses are safely normalized through the inert `str.__str__` descriptor (matching the established `int`/`float` subclass handling in the same function) without invoking any subclass-defined method, rather than being rejected outright.
 
 #### Fail closed on unsafe multilevel contextual effects
 
 - Multilevel contextual-effect evaluation now fails closed when any referenced context random-effect value is NaN or infinite and when finite inputs overflow the weighted sum, preventing non-finite predictor results from escaping the Rust boundary while leaving unreferenced table capacity outside sparse validation work.
 - Python context-effect marshalling snapshots each required mapping value once without caller-defined membership probes and normalizes hostile lookup callbacks to non-reflective package errors before native dispatch.
+
+#### Seal governed RAG request replay
+
+- Reject caller-defined `ScoringRequest` subclasses at governed RAG perturbation and facets-calibration replay boundaries before any request field can execute caller code. Exact factory-sealed requests retain the existing provenance validation, while invalid subclasses now fail through stable non-reflective package errors.
+
+#### Harden model-comparison casewise numeric trust boundary
+
+- Harden public non-nested model-comparison casewise value admission so arbitrary float-protocol objects and caller-defined numeric subclasses fail closed without executing conversion callbacks, while preserving exact Python and supported NumPy real scalars; Vuong statistics remain Rust-owned.
+
+#### Multilevel M2 moment and covariance ownership
+
+- Move multigroup and multilevel M2 population-moment integration into the
+  Rust/PyO3 numerical boundary, including the shared cluster-intercept
+  reduction.
+- Move the finite-cluster moment-covariance construction into Rust while
+  preserving compact-label validation, finite-cluster correction, and the
+  existing M2/RMSEA2 estimand.
+- Keep the NumPy implementations available only as explicit parity references;
+  public M2 paths fail closed when the required native entry point is absent.
+
+#### Multilevel M2 Rust projection
+
+- Multilevel M2 now routes both fitted-model and cluster-robust independence projections through the compiled Rust core, failing closed when that projection entrypoint is unavailable.
+
+#### Structured M2 Rust ownership
+
+- Route public single-population `m2()` calls that include estimated population
+  moments, anchored items, or a fixed spatial coefficient through the Rust/PyO3
+  M2 kernel. Missing structured native capability now fails closed instead of
+  entering the NumPy reference implementation.
+- Preserve the existing M2 estimand and degrees-of-freedom contract while
+  moving finite-difference calibration and population nuisance columns into
+  the Rust numerical owner.
 
 #### Workflow-registry audit transport retry hardening
 
@@ -74,13 +643,76 @@
 - Hardened the public Fleiss/Conger kappa control boundary so explicit category counts and exact-mode selection are validated without executing caller-defined integer, index, or truthiness callbacks before ratings materialization or compiled-core discovery.
 - Preserved genuine Python/NumPy scalar compatibility, capped explicit and inferred category counts at the Rust contract maximum of 10,000, and kept all agreement arithmetic Rust-owned.
 
+#### Selection utility numeric trust boundary
+
+- Hardened classical selection-utility and Taylor-Russell scalar controls so booleans, non-real objects, and non-finite values fail with package-owned validation before compiled Rust discovery.
+- Prevented arbitrary caller-defined `__float__` callbacks from executing during public control marshalling while preserving genuine Python/NumPy real scalar compatibility and keeping all BCG, Naylor-Shine, and Taylor-Russell arithmetic Rust-owned.
+- Normalized exact built-in integers outside the representable float range to the same package-owned validation error instead of leaking `OverflowError`.
+
+#### Essay report title trust boundary
+
+- Hardened score, validation-evidence, and facets-calibration essay HTML renderers so caller-supplied titles admit only exact built-in strings, rejecting caller-controlled `str` subclasses before overridden text callbacks such as `strip()` or HTML-escaping operations can execute.
+- Added hostile-string-subclass regressions that prove all three public renderers reject before callback execution or artifact creation; scoring, calibration estimation, and psychometric arithmetic remain unchanged.
+
+#### Factor-rotation semantic control trust boundary
+
+- Reject caller-defined criterion/policy strings and boolean, integer, or real conversion protocols before factor-rotation Rust-core discovery across direct rotation, criterion-gradient, and empirical criterion-selection APIs.
+- Preserve exact built-in and supported concrete NumPy scalar controls while keeping rotation objectives, gradients, multi-start optimization, convergence, bootstrap diagnostics, policy scoring, and criterion selection arithmetic Rust-owned.
+
+#### Harden rubric text schema callback safety
+
+- Harden rubric, item-blueprint, and shared scoring text/identifier schema admission so caller-defined `str` subclasses fail closed before any overridable text callback executes, while preserving normalization for exact built-in strings.
+- Apply the same exact-built-in-string admission to item-bank evidence enums so lifecycle evidence cannot dispatch caller-defined equality or hash callbacks during enum lookup.
+
+#### Restore semantic essay table row headers
+
+- Mark the identity axis of governed essay facets-calibration and validation-evidence tables with explicit `<th scope="row">` semantics. Task, rater, respondent, category/iteration, and validation-metric identities now remain programmatically associated with their row while numerical scoring and calibration arithmetic remain unchanged.
+- Preserve complete table and canonical-JSON evidence when standalone reports are printed or exported to PDF by removing screen-only scroll clipping and the JSON height cap in print media.
+
+#### Harden generic diagnostics report title callback boundary
+
+- Reject caller-defined `str` subclasses at the public generic diagnostics-report title boundary before truth-value or HTML-escaping callbacks can run, while preserving `None` and an empty exact built-in string as requests for the report-type default title.
+
+#### Bound GPU smoke package provisioning
+
+- Bound Vulkan package index and installation network/lock waits with explicit APT request, retry, lock, and whole-command deadlines so a hosted-runner mirror stall fails with actionable provisioning evidence instead of consuming the full GPU job timeout.
+- Route the GPU smoke job through an isolated deb822 source list backed by the canonical Ubuntu archive and security endpoints, preventing the hosted runner's `mirror+file` registry from repeatedly selecting a black-holed Azure mirror for package payloads after metadata fallback.
+- Preserve the existing llvmpipe Vulkan adapter proof and explicit CPU/GPU parity test; this changes CI provisioning reliability only, not production numerical behavior.
+
 ### Security
+
+#### Seal ATA content-string callback admission
+
+- Reject caller-defined string subclasses at Automated Test Assembly content-label and content-constraint-key validation boundaries before package-triggered text conversion callbacks or psychometric scoring can run, while preserving exact built-in and NumPy string scalar support.
+
+#### Rubric generation text callback safety
+
+- Reject caller-defined `str` subclasses at source-content, generation-contract JSON, candidate-parser JSON, static-fixture response, and live provider-output admission boundaries before caller-overridable text operations can execute.
+- Preserve built-in string behavior, exact source whitespace and digests, redacted provider failures, deterministic generation provenance, and the existing Rust-owned psychometric/statistical computation boundary.
+
+#### Compensatory 2PL control trust hardening
+
+- Validate and normalize `q`, `estimate_corr`, `max_iter`, `tol`, `xi_points`, and `xi_seed` before response-array materialization or native-core discovery, rejecting caller-defined scalar subclasses and arbitrary conversion/truth-value providers without executing their callbacks.
+- Preserve documented built-in and concrete NumPy scalar compatibility, Gauss-Hermite node choices, positive finite tolerance, iteration and QMC/MC point limits, and the full unsigned-64 integration-seed domain while passing only normalized built-in primitives to Rust.
+- Keep compensatory 2PL likelihood, integration, ECM correlation estimation, convergence, and EAP arithmetic unchanged in the Rust core.
+
+#### Testlet input trust hardening
+
+- Validate testlet estimator semantic controls before materializing caller-owned response or testlet arrays, so invalid controls fail without executing array protocols or reaching native-core discovery.
+- Reject complex and object/string-like response storage before real-valued narrowing, preventing imaginary response evidence from being discarded and preventing caller-controlled per-element numeric conversion during admission.
+- Preserve the existing 0/1/NaN response contract, testlet identifiers, resource bounds, and Rust-owned marginal-ML EM, quadrature, convergence, and local-dependence arithmetic.
 
 #### Parallel-analysis control trust hardening
 
 - Validate `n_iterations`, `centile`, and `seed` before native-core discovery, accepting only exact built-in integers and supported concrete NumPy integer scalars while rejecting booleans, `np.bool_`, caller-defined subclasses, and conversion providers without executing their callbacks. Workspace and `u64` seed limits fail at the same pre-discovery boundary.
 - Normalize nonnumeric `data` conversion failures to a package-owned `ValueError` before native-core discovery while preserving dimensionality and workspace validation for successfully converted arrays.
 - Preserve the existing positive-iteration, centile `0..99`, Rust `u64` seed, and 128 MiB random-benchmark workspace limits without changing Rust-owned Horn/Glorfeld factor-retention arithmetic.
+
+#### Harden validation-policy scalar trust boundaries
+
+- Reject caller-defined string and numeric subclasses at `ValidationPolicy` construction before `strip`, numeric conversion, or comparison callbacks can execute.
+- Normalize only exact built-in and package-trusted NumPy real scalar identities for scoring-policy thresholds while preserving the existing closed `0..1` domains and Rust-owned pass/fail arithmetic.
+- Require an exact built-in integer for `min_subgroup_n` before range comparison and preserve the existing `rust_kwargs()` payload contract.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.8.0] - 2026-08-17
 
