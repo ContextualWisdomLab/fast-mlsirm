@@ -7,6 +7,7 @@ from .backend import (
     normalize_backend,
     normalize_device,
     resolve_backend,
+    resolve_reference_backend,
 )
 from .config import VALID_MODELS, FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
@@ -145,8 +146,8 @@ def neg_loglik_and_grad(
     requested_backend = normalize_backend(backend)
     normalized_backend = (
         resolve_backend(requested_backend)
-        if requested_backend == "auto"
-        else requested_backend
+        if requested_backend in {"auto", "rust"}
+        else resolve_reference_backend(requested_backend)
     )
     if normalized_backend == "rust":
         resolved_device = normalize_device(
