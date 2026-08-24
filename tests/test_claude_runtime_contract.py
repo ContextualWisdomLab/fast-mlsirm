@@ -142,9 +142,11 @@ def test_architecture_summaries_do_not_call_auto_a_transparent_fallback() -> Non
     assert "transparent reference/fallback paths" not in trd
     assert "governed reference/parity paths" in trd
     assert "transparent governed reference/fallback paths" not in summary
-    assert "fails closed otherwise; it never silently selects NumPy" in adr
+    assert "public production backend architecture exposes only `auto` and `rust`" in adr
+    assert "`fit_reference` API" in adr
+    assert "`fit --reference` CLI mode" in adr
+    assert "not a `FitConfig` production choice" in adr
     assert "controlled fallback" not in adr
-    assert "reference/fallback calculations" not in adr
 
 
 def test_buyer_facing_surfaces_do_not_advertise_auto_numpy_fallback() -> None:
@@ -188,7 +190,7 @@ def test_fit_cli_help_names_fail_closed_auto_backend(capsys) -> None:
     help_text = " ".join(capsys.readouterr().out.split())
     assert _STALE_CLI_HELP_FALLBACK not in help_text
     assert "fails closed otherwise" in help_text
-    assert "pass numpy only for the explicit reference/parity path" in help_text
+    assert "use --reference for the explicit NumPy parity path" in help_text
 
 
 def test_buyer_demo_storyboard_names_fail_closed_rust_owner() -> None:
