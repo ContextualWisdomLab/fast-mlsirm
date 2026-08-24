@@ -218,3 +218,23 @@ def test_python_rejects_oversized_work_before_loading_the_rust_module(monkeypatc
 def test_loader_caches_the_secondary_extension_module():
     """Repeated calls reuse one initialized `_bifactor_core` module."""
     assert bifactor_core() is bifactor_core()
+
+
+def test_plain_nested_sequences_keep_the_public_array_like_contract():
+    """Ordinary nested Python lists remain accepted after bounded preflight."""
+    result = bifactor_scoreability(_loadings().tolist(), _uniquenesses().tolist())
+    assert result.factor_item_counts == (4, 2, 2)
+
+
+def test_numpy_row_sequences_keep_the_public_array_like_contract():
+    """Lists of one-dimensional NumPy rows remain valid two-dimensional inputs."""
+    loadings = [row.copy() for row in _loadings()]
+    result = bifactor_scoreability(loadings, _uniquenesses())
+    assert result.factor_item_counts == (4, 2, 2)
+
+
+@pytest.mark.parametrize("loadings", [[], [0.7, 0.4], [[[0.7, 0.4]]]])
+def test_plain_sequences_reject_non_matrix_shapes_before_core(loadings):
+    """Empty, one-dimensional, and three-dimensional lists fail closed."""
+    with pytest.raises(ValueError, match="2-D item-by-factor matrix"):
+        bifactor_scoreability(loadings, _uniquenesses())

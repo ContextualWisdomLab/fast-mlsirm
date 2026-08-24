@@ -166,7 +166,7 @@ def _currency_codes(values: Iterable[str]) -> tuple[str, ...]:
 
 def _offset(value: Any, name: str) -> int:
     """Return one real nonnegative integer offset."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    if type(value) is not int or value < 0:
         raise assessment_error(
             f"invalid_{name}",
             f"$.{name}",
@@ -416,9 +416,7 @@ class DeterministicExplicitValueParser:
     def __post_init__(self) -> None:
         """Normalize immutable parser configuration and record bounds."""
         object.__setattr__(self, "currency_codes", _currency_codes(self.currency_codes))
-        if isinstance(self.maximum_records, bool) or not isinstance(
-            self.maximum_records, int
-        ):
+        if type(self.maximum_records) is not int:
             raise assessment_error(
                 "invalid_maximum_records",
                 "$.maximum_records",

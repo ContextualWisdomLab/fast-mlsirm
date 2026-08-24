@@ -60,7 +60,11 @@ def test_run_gh_json_recovers_from_each_approved_transient_status(
             ),
         ]
     )
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(responses))
+    monkeypatch.setattr(
+        module,
+        "run_bounded_capture",
+        lambda *args, **kwargs: next(responses),
+    )
     monkeypatch.setattr(module.time, "sleep", lambda seconds: sleeps.append(seconds))
 
     payload, error = module._run_gh_json(
@@ -94,7 +98,7 @@ def test_run_gh_json_exhausts_exact_retry_budget_for_transient_failures(
             f"HTTP {status}: transient gateway failure",
         )
 
-    monkeypatch.setattr(module.subprocess, "run", fail_transiently)
+    monkeypatch.setattr(module, "run_bounded_capture", fail_transiently)
     monkeypatch.setattr(module.time, "sleep", lambda seconds: sleeps.append(seconds))
 
     payload, error = module._run_gh_json(

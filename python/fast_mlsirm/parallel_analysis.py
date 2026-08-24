@@ -91,6 +91,24 @@ def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
         )
 
 
+def _real_numeric_matrix(data: object) -> np.ndarray:
+    """Materialize real numeric evidence before narrowing it to ``float64``."""
+    try:
+        raw = np.asarray(data)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("data must be numeric and convertible to float64") from None
+    if raw.ndim != 2:
+        raise ValueError("data must be a 2-D persons x items array")
+    if np.iscomplexobj(raw):
+        raise ValueError("data must be real-valued")
+    if raw.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("data must be numeric and convertible to float64")
+    try:
+        return np.ascontiguousarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("data must be numeric and convertible to float64") from None
+
+
 def parallel_analysis(
     data: np.ndarray,
     n_iterations: int | None = None,
@@ -116,8 +134,11 @@ def parallel_analysis(
     paran-inspired but not bit-identical to any R run. Integer controls
     accept exact built-in and supported concrete NumPy integer scalars while
     rejecting booleans, subclasses, and implicit conversion providers before
-    compiled-core discovery. The random-eigenvalue benchmark workspace is
-    bounded to 128 MiB before compiled dispatch.
+    compiled-core discovery. Caller data is first materialized in its source
+    dtype; complex and non-real-numeric storage is rejected before the
+    accepted matrix is marshalled to contiguous ``float64``. The random-
+    eigenvalue benchmark workspace is bounded to 128 MiB before compiled
+    dispatch.
 
     """
     explicit_iterations = (
@@ -128,12 +149,7 @@ def parallel_analysis(
     centile_value = _integer_control("centile", centile, minimum=0, maximum=99)
     seed_value = _integer_control("seed", seed, minimum=0, maximum=_U64_MAX)
 
-    try:
-        x = np.ascontiguousarray(data, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("data must be numeric and convertible to float64") from None
-    if x.ndim != 2:
-        raise ValueError("data must be a 2-D persons x items array")
+    x = _real_numeric_matrix(data)
     n_persons, n_items = x.shape
     iters = 30 * n_items if explicit_iterations is None else explicit_iterations
     _validate_random_workspace(iters, n_items)
