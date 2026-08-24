@@ -105,12 +105,15 @@ def _polytomous_predictions(
         or cat_params.shape[1] < 1
     ):
         raise ValueError("fit.cat_params must be n_items x (n_cat - 1)")
+    n_cat = int(cat_params.shape[1]) + 1
+    if n_cat > MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(f"n_cat must be in 2..={MAX_POLYTOMOUS_CATEGORIES}")
     if not np.all(np.isfinite(slope)) or not np.all(np.isfinite(cat_params)):
         raise ValueError("fit item parameters must be finite")
     model = fit.model.lower() if type(fit.model) is str else ""
     if model not in VALID_POLY_MODELS:
         raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
-    prediction_cells = int(th.size) * int(slope.size) * int(cat_params.shape[1] + 1)
+    prediction_cells = int(th.size) * int(slope.size) * n_cat
     if prediction_cells > 20_000_000:
         raise ValueError(
             f"prediction grid of {prediction_cells:,} cells exceeds the "
@@ -124,11 +127,11 @@ def _polytomous_predictions(
         slope,
         cat_params.reshape(-1),
         int(slope.size),
-        int(cat_params.shape[1] + 1),
+        n_cat,
         model,
     )
     probabilities = np.asarray(result["probabilities"], dtype=np.float64).reshape(
-        th.size, slope.size, cat_params.shape[1] + 1
+        th.size, slope.size, n_cat
     )
     expected = np.asarray(result["expected"], dtype=np.float64).reshape(
         th.size, slope.size
