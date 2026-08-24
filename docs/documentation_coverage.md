@@ -81,11 +81,11 @@ The table below records product truth, not documentation-file presence. “Imple
 | Governed post-pilot item-bank lifecycle | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | immutable post-pilot lifecycle/evidence gates are integrated; linking/exposure/drift/assembly/release integration continues incrementally |
 | Bifactor / higher-order / testlet / two-tier / many-facet relation governance | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | relation-safe policy is established; family-specific estimator/validation evidence varies |
 | Latent-space residual interaction | IMPLEMENTED_ON_PROTECTED_MAIN | interpretation remains gated on substantive dimension/testlet/facet diagnosis |
-| Angoff delta-plot observed-score DIF | IMPLEMENTED_ON_PROTECTED_MAIN | `fast_mlsirm.delta_plot`; method page and ADR-0016; flags are screens, not fairness determinations |
+| Angoff delta-plot observed-score DIF | IMPLEMENTED_ON_PROTECTED_MAIN | `fast_mlsirm.delta_plot`; method page and ADR-0018; flags are screens, not fairness determinations |
 | Bradley–Terry MM pairwise ranking | IMPLEMENTED_ON_PROTECTED_MAIN | `bradley_terry_mm` and additive-ties `bratt_mm`; ADR-0017; Rao–Kupper/Davidson remain unimplemented |
 | Formal non-nested distinguishability/model comparison | PARTIAL | fail-closed relation-aware comparison exists; additional family-specific evidence and metadata remain incremental |
 | Adaptive rotation criterion selection | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust-backed criterion registry/multi-start selector/report surfaces are integrated; additional criteria/GPU/recovery remain incremental |
-| Multilevel / cross-classified / multiple-membership contracts | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | contextual and longitudinal contracts are integrated; estimator identification/recovery remains separate work |
+| Multilevel / cross-classified / multiple-membership contracts | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | contextual and longitudinal contracts are integrated; crossed / multiple-membership `u_h` MAP estimation with RMSE recovery is this kernel; OLS/AR and richer variance-component claims remain separate |
 | Temporal/longitudinal/drift estimators | PARTIAL | governed contracts/design primitives exist; continuous-time or richer estimator claims require separate recovery evidence |
 | Automated essay scoring calibration/validation | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | governed essay contracts/validation/reporting exist; generalized rater discrimination/range/drift remains incremental |
 | Paired automated-vs-reference rating-range evidence | IMPLEMENTED_ON_PROTECTED_MAIN | Rust-owned paired range/compression diagnostic is integrated |

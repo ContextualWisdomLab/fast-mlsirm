@@ -1,4 +1,4 @@
-# ADR-0016: Adopt Angoff delta-plot as the small-sample observed-score DIF screen
+# ADR-0018: Adopt Angoff delta-plot as the small-sample observed-score DIF screen
 
 Status: **Accepted**
 Date: 2026-08-16

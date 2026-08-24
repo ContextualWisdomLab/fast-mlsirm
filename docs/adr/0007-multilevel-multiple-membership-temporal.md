@@ -7,9 +7,13 @@ Date: 2026-08-09
 
 Psychometric and AI-evaluation observations commonly sit inside schools, teams, organizations, prompts, testlets, documents, clients, time periods or other overlapping contexts. Repeated observations also evolve over time. Flattening those structures into independent rows can produce atomistic fallacy, understate uncertainty, confound stable traits with context effects and drift, and misinterpret temporal dependence.
 
-Reusable contract work for nested, cross-classified, multiple-membership and longitudinal designs may exist on open branches, but unmerged PRs are not accepted production behavior. Numerical estimators for the full structures are not accepted production behavior. Therefore this ADR remains Proposed.
+Reusable nested, cross-classified, multiple-membership, and longitudinal *contracts* are on protected main. A Rust MAP estimator now recovers crossed / weighted multiple-membership person effects `u_h` with RMSE evidence. OLS/AR longitudinal state estimation and MCMC variance-component engines remain separate slices, so this ADR stays Proposed until those numerical release-rule items are also evidenced.
 
-This decision is about explicit context and time in the measurement design. It is not a claim that latent-space MLSIRM/MLS2PLM interaction (Jeon, Jin, Schweinberger, & Baugh, 2021; Kang & Jeon, 2025) absorbs hierarchy or drift. Residual latent-space interaction remains a later layer after known multilevel/temporal structure, consistent with ADR-0001 and ADR-0006.
+This decision is about explicit context and time in the measurement design. It
+is not a claim that latent-space MLSIRM/MLS2PLM interaction (Jeon, Jin,
+Schweinberger, & Baugh, 2021; Kang & Jeon, 2025) absorbs hierarchy or drift.
+Residual latent-space interaction remains a later layer after known
+multilevel/temporal structure, consistent with ADR-0001 and ADR-0006.
 
 ## Decision
 

@@ -130,7 +130,8 @@ Architecture effect:
 - prevent atomistic flattening;
 - explicit context dimensions and weighted memberships;
 - separate repeated occasion ordering from continuous-time dynamics;
-- require Rust estimator identification/recovery before production claims.
+- recover crossed / multiple-membership `u_h` with Rust MAP + RMSE evidence;
+- keep OLS/AR and continuous-time claims on separate estimator slices.
 
 Primary basis:
 
@@ -138,6 +139,7 @@ Primary basis:
 - Uto, M. (2022). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928. https://doi.org/10.3758/s13428-022-01997-z
 - Jeon et al. (2021) and Kang and Jeon (2025) for residual latent-space interaction after explicit hierarchy/time, not as a substitute for those structures.
 - American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+- Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership multiple classification (MMMC) models. *Statistical Modelling, 1*(2), 103–124.
 
 ## 9. Adaptive factor rotation — Proposed
 
@@ -210,7 +212,7 @@ Primary basis:
 - Magis, D., & Facon, B. (2014). deltaPlotR: An R package for differential item functioning analysis with Angoff's Delta Plot. *Journal of Statistical Software, 59*(1), 1–19. https://doi.org/10.18637/jss.v059.c01
 - American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 
-Decision record: ADR-0016. Method page: `docs/delta_plot_dif.md`. Adjacent MH/logistic/SIBTEST sources remain in `docs/rubric_dif_pilot_handoff.md`.
+Decision record: ADR-0018. Method page: `docs/delta_plot_dif.md`. Adjacent MH/logistic/SIBTEST sources remain in `docs/rubric_dif_pilot_handoff.md`.
 
 ## 14. Bradley–Terry MM pairwise ranking — Accepted estimators
 
