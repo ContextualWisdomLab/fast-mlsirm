@@ -400,6 +400,21 @@ def _target_info_vector(target_info: object, n_points: int) -> np.ndarray:
     return target
 
 
+def _item_information_matrix_from_validated_thetas(
+    bank: MLSIRMParams,
+    factor_id: np.ndarray,
+    thetas: np.ndarray,
+    *,
+    model: str,
+) -> np.ndarray:
+    """Return item information for an already package-validated theta grid."""
+    n_items = int(np.asarray(bank.b).shape[0])
+    matrix = np.empty((thetas.shape[0], n_items), dtype=np.float64)
+    for k in range(thetas.shape[0]):
+        matrix[k] = item_information(bank, factor_id, theta=thetas[k], model=model)
+    return matrix
+
+
 def item_information_matrix(
     bank: MLSIRMParams,
     factor_id: np.ndarray,
@@ -417,10 +432,12 @@ def item_information_matrix(
     n_dims = int(np.asarray(bank.theta).shape[1])
     n_items = int(np.asarray(bank.b).shape[0])
     thetas = _target_theta_rows(target_thetas, n_dims, n_items=n_items)
-    matrix = np.empty((thetas.shape[0], n_items), dtype=np.float64)
-    for k in range(thetas.shape[0]):
-        matrix[k] = item_information(bank, factor_id, theta=thetas[k], model=model)
-    return matrix
+    return _item_information_matrix_from_validated_thetas(
+        bank,
+        factor_id,
+        thetas,
+        model=model,
+    )
 
 
 def _content_feasible(
@@ -653,7 +670,12 @@ def assemble_to_target(
     thetas = _target_theta_rows(target_thetas, n_dims, n_items=n_items)
     target = _target_info_vector(target_info, thetas.shape[0])
 
-    matrix = item_information_matrix(bank, factor_id, thetas, model=model)
+    matrix = _item_information_matrix_from_validated_thetas(
+        bank,
+        factor_id,
+        thetas,
+        model=model,
+    )
     n_points, matrix_n_items = matrix.shape
     if matrix_n_items != n_items:
         raise ValueError("item-information matrix must match the number of items")
