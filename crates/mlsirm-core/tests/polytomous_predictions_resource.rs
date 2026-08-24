@@ -93,3 +93,53 @@ fn fitted_grm_with_empty_middle_category_stays_inside_prediction_domain() {
         assert!((probabilities.iter().sum::<f64>() - 1.0).abs() < 1e-12);
     }
 }
+
+#[test]
+fn fitted_grm_with_multiple_empty_middle_categories_remains_prediction_valid_after_em() {
+    // Stress more than one unobserved interior category and require the fitted
+    // parameters returned after at least one EM M-step to remain in the same
+    // strict threshold domain enforced by the public/native prediction path.
+    let responses: Vec<usize> = (0..64)
+        .map(|person| if person < 32 { 0 } else { 3 })
+        .collect();
+    let fit = fit_poly_unidim(
+        &responses,
+        None,
+        responses.len(),
+        1,
+        4,
+        PolyModel::Grm,
+        7,
+        2,
+        1e-8,
+    )
+    .expect("sparse four-category GRM evidence must retain a prediction-valid fit");
+
+    assert!(
+        fit.n_iter >= 1 && fit.loglik_trace.len() >= 2,
+        "regression must exercise at least one EM M-step: n_iter={}, trace_len={}",
+        fit.n_iter,
+        fit.loglik_trace.len()
+    );
+    let thresholds = &fit.cat_params[0];
+    assert_eq!(thresholds.len(), 3);
+    assert!(
+        thresholds.windows(2).all(|pair| pair[0] > pair[1]),
+        "post-M-step GRM thresholds must stay strictly decreasing: {thresholds:?}"
+    );
+
+    let prediction = polytomous_predictions(
+        &[-4.0, 0.0, 4.0],
+        &fit.slope,
+        thresholds,
+        1,
+        4,
+        PolyModel::Grm,
+    )
+    .expect("a post-M-step GRM fit must be directly accepted by prediction");
+
+    for probabilities in prediction.probabilities.chunks_exact(4) {
+        assert!(probabilities.iter().all(|value| value.is_finite() && *value >= 0.0));
+        assert!((probabilities.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+    }
+}
