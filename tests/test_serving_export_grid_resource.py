@@ -9,7 +9,19 @@ from fast_mlsirm import serving
 from fast_mlsirm.types import FitResult, MLSIRMParams
 
 
-def _result(*, n_items: int, latent_dim: int, list_backed_zeta: bool = False) -> FitResult:
+class _HostileZeta:
+    """Array provider that records any forbidden NumPy callback dispatch."""
+
+    calls = 0
+
+    def __array__(self, dtype=None, copy=None) -> np.ndarray:
+        type(self).calls += 1
+        raise AssertionError("caller zeta array callback executed")
+
+
+def _result(
+    *, n_items: int, latent_dim: int, list_backed_zeta: bool = False
+) -> FitResult:
     """Return a converged result with the requested serving-grid dimensions."""
     zeta: object = np.zeros((n_items, latent_dim), dtype=np.float64)
     if list_backed_zeta:
@@ -68,6 +80,20 @@ def test_export_preserves_list_backed_zeta_resource_admission(monkeypatch) -> No
             q_theta=21,
             q_xi=41,
         )
+
+
+def test_export_rejects_hostile_zeta_provider_before_callback(monkeypatch) -> None:
+    """Resource preflight must not execute caller-controlled zeta protocols."""
+    result = _result(n_items=2, latent_dim=2)
+    hostile = _HostileZeta()
+    type(hostile).calls = 0
+    result.params.zeta = hostile  # type: ignore[assignment]
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match="zeta must be a 2-D real numeric"):
+        serving.export_serving_bundle(result, ["q0", "q1"], (0, 0))
+
+    assert type(hostile).calls == 0
 
 
 def test_export_rejects_oversized_scoring_table_before_native(monkeypatch) -> None:
