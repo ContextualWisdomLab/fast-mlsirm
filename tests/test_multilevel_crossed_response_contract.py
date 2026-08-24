@@ -51,6 +51,16 @@ class _HostileArrayProvider:
         raise AssertionError("caller __array__ must not execute")
 
 
+class _HostileNumericProvider:
+    """Numeric provider that must never run during nested evidence admission."""
+
+    callback_count = 0
+
+    def __float__(self) -> float:
+        type(self).callback_count += 1
+        raise AssertionError("caller __float__ must not execute")
+
+
 @pytest.mark.parametrize("invalid_response", [0.5, 1.5, 2.0])
 def test_nonbinary_observed_response_fails_before_native_discovery(
     monkeypatch: pytest.MonkeyPatch,
@@ -119,6 +129,32 @@ def test_array_providers_fail_before_callbacks_or_native_discovery(
     assert core_discoveries == 0
 
 
+def test_nested_numeric_provider_fails_before_conversion_or_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nested vector cells cannot run numeric conversion during admission."""
+    _HostileNumericProvider.callback_count = 0
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not be discovered for hostile evidence")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="item_intercepts must be a numeric array"):
+        estimation.estimate_crossed_person_effects(
+            [[1.0], [0.0]],
+            _design(),
+            item_intercepts=[_HostileNumericProvider()],
+            device="cpu",
+        )
+
+    assert _HostileNumericProvider.callback_count == 0
+    assert core_discoveries == 0
+
+
 def test_builtin_and_numpy_scalar_evidence_remains_supported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -130,13 +166,14 @@ def test_builtin_and_numpy_scalar_evidence_remains_supported(
         def estimate_crossed_person_effects(*args: object, **kwargs: object):
             captured["args"] = args
             captured["kwargs"] = kwargs
-            return (
-                np.zeros(2, dtype=np.float64),
-                0.0,
-                1,
-                True,
-                False,
-            )
+            return {
+                "effects": np.zeros(2, dtype=np.float64),
+                "loglik": 0.0,
+                "n_iter": 1,
+                "converged": True,
+                "used_gpu": False,
+                "termination_reason": "converged",
+            }
 
     monkeypatch.setattr(estimation, "multilevel_core", lambda: _Core())
 
@@ -151,8 +188,8 @@ def test_builtin_and_numpy_scalar_evidence_remains_supported(
 
     args = captured["args"]
     assert isinstance(args, tuple)
+    assert args[0].dtype == np.float64
     assert args[4].dtype == np.float64
     assert args[5].dtype == np.float64
     assert args[6].dtype == np.float64
-    assert args[7].dtype == np.float64
     assert result.converged is True
