@@ -36,10 +36,13 @@ PERIOD_2_TRUE_MEAN_SHIFT = 0.3
 # RMSE ~0.33 and correlation ~0.94, with the FIPC-estimated period-2 mean
 # landing at ~0.37 against a true realized mean of ~0.43 (the shift is
 # substantially recovered, not perfectly -- sampling noise on 250 people).
-# An independent free refit of the same period-2 data, by contrast,
-# re-centers to an estimated mean of ~0.01 -- essentially erasing the
-# shift, exactly the failure mode fixed-bank scoring is intended to expose.
+# Bias/MAE and normal-approximation coverage based on the Rust-returned
+# posterior SD are required independently of correlation so fixed-bank
+# recovery cannot pass on rank ordering alone.
 MAX_THETA_RMSE = 0.6
+MAX_THETA_MAE = 0.5
+MAX_ABS_THETA_BIAS = 0.20
+MIN_THETA_NORMAL_APPROX_COVERAGE = 0.80
 MIN_THETA_CORRELATION = 0.75
 MIN_FIPC_MEAN_SHIFT_DETECTED = PERIOD_2_TRUE_MEAN_SHIFT * 0.5
 MAX_INDEPENDENT_REFIT_MEAN_SHIFT_DETECTED = PERIOD_2_TRUE_MEAN_SHIFT * 0.35
@@ -107,13 +110,33 @@ def test_fipc_recovers_period_two_mean_shift_that_an_independent_refit_would_hid
     # Fixed-bank scoring: period 2 uses period 1's item parameters unchanged.
     fipc_scored = score_polytomous(responses_period_2, period_1_fit)
     fipc_theta_eap = fipc_scored["theta_eap"]
+    fipc_theta_sd = fipc_scored["theta_sd"]
 
-    rmse = float(np.sqrt(np.mean((fipc_theta_eap - theta_period_2) ** 2)))
+    error = fipc_theta_eap - theta_period_2
+    bias = float(np.mean(error))
+    mae = float(np.mean(np.abs(error)))
+    rmse = float(np.sqrt(np.mean(error**2)))
+    normal_approx_coverage = float(
+        np.mean(np.abs(error) <= 1.96 * fipc_theta_sd)
+    )
     correlation = float(np.corrcoef(fipc_theta_eap, theta_period_2)[0, 1])
     fipc_detected_shift = float(fipc_theta_eap.mean())
 
+    assert np.all(np.isfinite(fipc_theta_sd))
+    assert np.all(fipc_theta_sd > 0.0)
+    assert abs(bias) < MAX_ABS_THETA_BIAS, (
+        f"FIPC period-2 theta absolute bias {abs(bias):.3f} exceeded "
+        f"{MAX_ABS_THETA_BIAS}"
+    )
+    assert mae < MAX_THETA_MAE, (
+        f"FIPC period-2 theta MAE {mae:.3f} exceeded {MAX_THETA_MAE}"
+    )
     assert rmse < MAX_THETA_RMSE, (
         f"FIPC period-2 theta RMSE {rmse:.3f} exceeded {MAX_THETA_RMSE}"
+    )
+    assert normal_approx_coverage >= MIN_THETA_NORMAL_APPROX_COVERAGE, (
+        f"FIPC period-2 theta mean±1.96 posterior-SD coverage "
+        f"{normal_approx_coverage:.3f} below {MIN_THETA_NORMAL_APPROX_COVERAGE}"
     )
     assert correlation > MIN_THETA_CORRELATION, (
         f"FIPC period-2 theta correlation {correlation:.3f} "
