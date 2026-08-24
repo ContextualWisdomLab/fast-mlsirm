@@ -95,14 +95,15 @@ def test_metadata_scalar_values_are_json_safe_and_resource_bounded():
     assert spec.metadata["text_value"] == ""
 
 
-def test_metadata_rejects_string_subclasses_before_callbacks():
-    """Metadata text admission rejects caller-defined strings before inspection."""
+def test_metadata_normalizes_string_subclasses_without_callbacks():
+    """Metadata text admission safely normalizes caller-defined strings without inspecting them."""
     _HostileMetadataText.callback_count = 0
 
-    with pytest.raises(ValueError):
-        assessment(metadata={"text_value": _HostileMetadataText("safe-looking")})
+    spec = assessment(metadata={"text_value": _HostileMetadataText("safe-looking")})
 
     assert _HostileMetadataText.callback_count == 0
+    assert spec.metadata["text_value"] == "safe-looking"
+    assert type(spec.metadata["text_value"]) is str
 
 
 def test_metadata_collections_depth_and_node_counts_are_bounded():
