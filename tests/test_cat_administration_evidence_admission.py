@@ -25,6 +25,15 @@ class _CoreSentinel:
         raise AssertionError(f"compiled CAT core must not be reached for invalid evidence: {name}")
 
 
+class _CoreCapture:
+    def __init__(self) -> None:
+        self.kwargs: dict[str, object] | None = None
+
+    def cat_ability_eap(self, **kwargs: object) -> tuple[list[float], list[float], list[bool]]:
+        self.kwargs = kwargs
+        return [0.0], [1.0], [True]
+
+
 def _bank() -> MLSIRMParams:
     return MLSIRMParams(
         theta=np.zeros((1, 1), dtype=np.float64),
@@ -68,3 +77,26 @@ def test_cat_rejects_response_array_provider_before_callback_or_core(
         )
 
     assert provider.calls == 0
+
+
+def test_cat_preserves_trusted_numpy_scalar_sequence_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = _CoreCapture()
+    monkeypatch.setattr(fast_mlsirm, "_core", core, raising=False)
+
+    result = estimate_ability_eap(
+        _bank(),
+        np.zeros(2, dtype=np.int64),
+        [np.int16(0), np.float32(1.0)],
+        (np.bool_(True), np.uint8(0)),
+    )
+
+    assert result.method == "eap"
+    assert core.kwargs is not None
+    administered = core.kwargs["administered"]
+    responses = core.kwargs["responses"]
+    assert type(administered) is np.ndarray
+    assert type(responses) is np.ndarray
+    np.testing.assert_array_equal(administered, np.array([0, 1], dtype=np.int64))
+    np.testing.assert_array_equal(responses, np.array([1.0, 0.0], dtype=np.float64))
