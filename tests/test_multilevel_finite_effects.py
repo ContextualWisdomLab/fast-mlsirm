@@ -58,9 +58,13 @@ class _LookupTrap(Mapping[tuple[str, str], float]):
 
 
 class _FloatTrap:
-    """Raise caller-controlled text from numeric coercion."""
+    """Raise caller-controlled text from numeric coercion and count callbacks."""
+
+    def __init__(self) -> None:
+        self.callback_count = 0
 
     def __float__(self) -> float:
+        self.callback_count += 1
         raise RuntimeError(_SECRET)
 
 
@@ -128,17 +132,31 @@ def test_public_predictor_normalizes_hostile_effect_lookup_failures() -> None:
     assert _SECRET not in str(caught.value)
 
 
-def test_public_predictor_normalizes_hostile_effect_coercion_failures() -> None:
-    """Numeric-conversion callbacks must not reflect caller exception text."""
+def test_public_predictor_rejects_hostile_effect_coercion_before_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Continuous effect admission must not execute caller numeric protocols."""
+    effect = _FloatTrap()
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not see callback-bearing effects")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+
     with pytest.raises(
         ValueError,
-        match="context_effects values could not be converted safely",
+        match="context_effects values must be real-valued numeric evidence",
     ) as caught:
         weighted_contextual_effect(
             _single_context_design(),
-            {_CONTEXT_KEY: _FloatTrap()},  # type: ignore[dict-item]
+            {_CONTEXT_KEY: effect},  # type: ignore[dict-item]
         )
 
+    assert effect.callback_count == 0
+    assert core_discoveries == 0
     assert _SECRET not in str(caught.value)
 
 
