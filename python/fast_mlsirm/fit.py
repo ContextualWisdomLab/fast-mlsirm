@@ -41,7 +41,7 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     int64_max = _np.iinfo(_np.int64).max
     if arr.dtype.kind == "u" and _np.any(arr > _np.uint64(int64_max)):
         raise ValueError(f"{name} must fit in signed 64-bit integers")
-    if arr.dtype.kind == "f":
+    if arr.dtype.kind == "f" and _np.finfo(arr.dtype).maxexp > 63:
         signed_boundary = _np.array(2**63, dtype=arr.dtype)
         if _np.any(arr >= signed_boundary):
             raise ValueError(f"{name} must fit in signed 64-bit integers")
