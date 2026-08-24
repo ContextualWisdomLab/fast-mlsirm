@@ -6,8 +6,10 @@ from collections.abc import Iterator, Mapping
 import math
 import sys
 
+import numpy as np
 import pytest
 
+import fast_mlsirm.multilevel.estimation as estimation
 from fast_mlsirm.multilevel import (
     build_context_membership,
     build_context_membership_design,
@@ -82,6 +84,33 @@ def test_public_predictor_rejects_non_finite_context_effects(effect: float) -> N
             design,
             {_CONTEXT_KEY: effect},
         )
+
+
+@pytest.mark.parametrize("effect", [True, False, np.bool_(True), np.bool_(False)])
+def test_public_predictor_rejects_boolean_context_effects_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    effect: object,
+) -> None:
+    """Continuous contextual effects must not reinterpret Boolean identity as 0/1."""
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not see Boolean contextual effects")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+
+    with pytest.raises(
+        ValueError,
+        match="context_effects values must be real-valued numeric evidence",
+    ):
+        weighted_contextual_effect(
+            _single_context_design(),
+            {_CONTEXT_KEY: effect},  # type: ignore[dict-item]
+        )
+
+    assert core_discoveries == 0
 
 
 def test_public_predictor_does_not_invoke_alien_membership_callbacks() -> None:
