@@ -164,6 +164,16 @@ def _real_numeric_array(value, *, name: str) -> np.ndarray:
         raise ValueError(f"{name} must be a numeric array") from exc
 
 
+def _real_numeric_scalar(value, *, name: str) -> float:
+    """Normalize an inert real scalar without invoking caller conversion hooks."""
+    if _is_trusted_linking_complex_scalar(value) or not _is_trusted_linking_real_scalar(value):
+        raise ValueError(f"{name} must be a real number")
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a real number") from exc
+
+
 def link_fixed_item_parameters(
     source: MLSIRMParams,
     target: MLSIRMParams,
@@ -233,6 +243,13 @@ def link_fixed_item_parameters(
     if np.any(factors >= n_dims):
         raise ValueError("factor_id values must be in 0..n_dims-1")
 
+    # These fields are not transformed by linking, but they are part of the
+    # returned MLSIRMParams record. Admit them before Rust so reconstructing the
+    # linked result never invokes caller-controlled source.copy()/NumPy hooks.
+    source_xi = _real_numeric_array(source.xi, name="source.xi")
+    source_zeta = _real_numeric_array(source.zeta, name="source.zeta")
+    source_tau = _real_numeric_scalar(source.tau, name="source.tau")
+
     # Affine coefficients and transformed parameters are Rust-owned.
     from . import _core as core
 
@@ -245,10 +262,14 @@ def link_fixed_item_parameters(
         np.ascontiguousarray(anchors, dtype=np.int64),
         np.ascontiguousarray(factors, dtype=np.int64),
     )
-    linked = source.copy()
-    linked.theta = np.asarray(res["theta"], dtype=np.float64)
-    linked.alpha = np.asarray(res["alpha"], dtype=np.float64)
-    linked.b = np.asarray(res["b"], dtype=np.float64)
+    linked = MLSIRMParams(
+        theta=np.asarray(res["theta"], dtype=np.float64),
+        alpha=np.asarray(res["alpha"], dtype=np.float64),
+        b=np.asarray(res["b"], dtype=np.float64),
+        xi=np.array(source_xi, copy=True),
+        zeta=np.array(source_zeta, copy=True),
+        tau=source_tau,
+    )
     scale = np.asarray(res["scale"], dtype=np.float64)
     shift = np.asarray(res["shift"], dtype=np.float64)
     return linked, {"scale": scale, "shift": shift, "anchor_items": anchors.copy()}
