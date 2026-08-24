@@ -45,16 +45,29 @@ def _trusted_integer(value: Any, name: str) -> int:
     raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
 
 
+def _trusted_integer_real(value: Any, name: str) -> float:
+    """Return an integer-valued real only when float64 preserves it exactly."""
+    integer = int(value)
+    try:
+        converted = float(integer)
+    except OverflowError as error:
+        raise ValueError(f"{name} must be a finite number") from error
+    if not np.isfinite(converted):
+        raise ValueError(f"{name} must be a finite number")
+    if int(converted) != integer:
+        raise ValueError(f"{name} must be exactly representable as float64")
+    return converted
+
+
 def _trusted_real(value: Any, name: str) -> float:
     """Return one exact trusted real scalar without caller conversion hooks."""
     value_type = type(value)
-    if value_type is int or value_type is float:
-        try:
-            return float(value)
-        except OverflowError as error:
-            raise ValueError(f"{name} must be a finite number") from error
+    if value_type is int:
+        return _trusted_integer_real(value, name)
+    if value_type is float:
+        return value
     if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        return float(value)
+        return _trusted_integer_real(value, name)
     if any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
         return float(value)
     raise ValueError(f"{name} must be a finite number")
