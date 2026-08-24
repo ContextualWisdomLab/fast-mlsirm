@@ -9,14 +9,17 @@ from fast_mlsirm import serving
 from fast_mlsirm.types import FitResult, MLSIRMParams
 
 
-def _result(*, n_items: int, latent_dim: int) -> FitResult:
+def _result(*, n_items: int, latent_dim: int, list_backed_zeta: bool = False) -> FitResult:
     """Return a converged result with the requested serving-grid dimensions."""
+    zeta: object = np.zeros((n_items, latent_dim), dtype=np.float64)
+    if list_backed_zeta:
+        zeta = [[0.0 for _ in range(latent_dim)] for _ in range(n_items)]
     params = MLSIRMParams(
         theta=np.zeros((1, 1), dtype=np.float64),
         alpha=np.zeros(n_items, dtype=np.float64),
         b=np.zeros(n_items, dtype=np.float64),
         xi=np.zeros((1, latent_dim), dtype=np.float64),
-        zeta=np.zeros((n_items, latent_dim), dtype=np.float64),
+        zeta=zeta,  # type: ignore[arg-type]
         tau=0.0,
     )
     return FitResult(
@@ -40,6 +43,21 @@ def _core_must_not_be_discovered() -> None:
 def test_export_rejects_oversized_latent_grid_before_native(monkeypatch) -> None:
     """The bundle's q_xi**latent_dim ceiling must apply during export too."""
     result = _result(n_items=2, latent_dim=8)
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match=r"q_xi \*\* latent_dim"):
+        serving.export_serving_bundle(
+            result,
+            ["q0", "q1"],
+            (0, 0),
+            q_theta=21,
+            q_xi=41,
+        )
+
+
+def test_export_preserves_list_backed_zeta_resource_admission(monkeypatch) -> None:
+    """Trusted list-backed zeta must reach the same resource ceiling as ndarray zeta."""
+    result = _result(n_items=2, latent_dim=8, list_backed_zeta=True)
     monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
 
     with pytest.raises(ValueError, match=r"q_xi \*\* latent_dim"):
