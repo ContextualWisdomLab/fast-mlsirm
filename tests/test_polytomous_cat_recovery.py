@@ -1,16 +1,21 @@
-"""Accuracy-and-efficiency recovery study for public polytomous CAT.
+"""Accuracy, uncertainty-calibration, and efficiency recovery for polytomous CAT.
 
 A GRM bank is calibrated from synthetic responses and then passed to
 ``cat_simulate_polytomous`` for examinees with known true abilities. The test
-requires both acceptable theta recovery and materially fewer administered
-items than the full bank, so a silent fallback to non-adaptive item order can
-fail even when correlation remains acceptable.
+requires bounded bias/MAE/RMSE, calibrated Rust-returned posterior uncertainty,
+and materially fewer administered items than the full bank. Correlation remains
+supplementary: a highly correlated CAT can still be biased or understate score
+uncertainty, while a silent fallback to non-adaptive item order can still meet
+score-recovery bounds.
 
 Dodd, De Ayala, and Koch (1995) evaluate computerized adaptive testing with
 polytomous IRT items and motivate measuring adaptive efficiency together with
 score quality. This regression uses the package's Rust-owned item-information,
-selection, scoring, and stopping path; the Python formula below only generates
-synthetic GRM responses.
+selection, scoring, posterior-SD, and stopping path; Python only generates the
+synthetic GRM responses and summarizes recovery against known simulation truth.
+The interval ``theta_eap ± 1.96 * theta_sd`` is an explicit normal approximation
+based on the returned posterior mean and posterior SD, not a claim of an exact
+posterior credible interval.
 
 Reference
 ---------
@@ -37,8 +42,9 @@ CAT_SE_THRESHOLD = 0.4
 # correlation ~0.91 using a mean of ~8.7 of 40 items -- comparable accuracy
 # to the full-bank GRM recovery test (~0.38/~0.92) at roughly a fifth of
 # the items. Margins are loose enough to tolerate a minor fast-mlsirm
-# version bump while still catching a real regression in either accuracy
-# or the adaptive-selection efficiency CAT exists to provide.
+# version bump while still catching a real regression in recovery,
+# uncertainty calibration, or the adaptive-selection efficiency CAT exists
+# to provide.
 #
 # MAX_MEAN_ITEMS_USED is deliberately close to the measured ~8.7 (not a
 # loose N_ITEMS * 0.5): the same fixture/seed with adaptive=False (random
@@ -46,6 +52,9 @@ CAT_SE_THRESHOLD = 0.4
 # correlation bounds -- so a bound of 12 is what actually catches a silent
 # fallback to non-adaptive selection.
 MAX_THETA_RMSE = 0.65
+MAX_THETA_MAE = 0.52
+MAX_ABS_THETA_BIAS = 0.20
+MIN_NORMAL_APPROX_COVERAGE = 0.80
 MIN_THETA_CORRELATION = 0.7
 MAX_MEAN_ITEMS_USED = 12
 
@@ -95,14 +104,34 @@ def test_cat_recovers_theta_using_substantially_fewer_items_than_the_full_bank()
         seed=SEED,
     )
     theta_eap = cat_result["theta_eap"]
+    theta_sd = cat_result["theta_sd"]
     n_used = cat_result["n_used"]
 
-    rmse = float(np.sqrt(np.mean((theta_eap - true_theta) ** 2)))
+    assert np.all(np.isfinite(theta_sd))
+    assert np.all(theta_sd > 0.0)
+
+    error = theta_eap - true_theta
+    bias = float(np.mean(error))
+    mae = float(np.mean(np.abs(error)))
+    rmse = float(np.sqrt(np.mean(error**2)))
+    normal_approx_coverage = float(
+        np.mean(np.abs(error) <= 1.96 * theta_sd)
+    )
     correlation = float(np.corrcoef(theta_eap, true_theta)[0, 1])
     mean_items_used = float(n_used.mean())
 
+    assert abs(bias) < MAX_ABS_THETA_BIAS, (
+        f"CAT theta bias {bias:.3f} exceeded ±{MAX_ABS_THETA_BIAS}"
+    )
+    assert mae < MAX_THETA_MAE, (
+        f"CAT theta MAE {mae:.3f} exceeded {MAX_THETA_MAE}"
+    )
     assert rmse < MAX_THETA_RMSE, (
         f"CAT theta RMSE {rmse:.3f} exceeded {MAX_THETA_RMSE}"
+    )
+    assert normal_approx_coverage >= MIN_NORMAL_APPROX_COVERAGE, (
+        "CAT theta normal-approximation coverage "
+        f"{normal_approx_coverage:.3f} below {MIN_NORMAL_APPROX_COVERAGE}"
     )
     assert correlation > MIN_THETA_CORRELATION, (
         f"CAT theta correlation {correlation:.3f} below {MIN_THETA_CORRELATION}"
