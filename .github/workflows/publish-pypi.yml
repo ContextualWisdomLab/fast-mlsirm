@@ -1,15 +1,20 @@
 name: Publish Package
 
-# Builds hash-pinnable sdist + wheel artifacts for a verified immutable release
-# tag and publishes them to PyPI. The canonical release-tag workflow dispatches
-# this workflow explicitly because events created with GITHUB_TOKEN do not
-# recursively start ordinary event-triggered workflows.
+# Builds hash-pinnable sdist + wheel artifacts from an explicitly verified
+# release commit and publishes them under the corresponding immutable release
+# tag. The canonical release-tag workflow dispatches this workflow explicitly
+# because events created with GITHUB_TOKEN do not recursively start ordinary
+# event-triggered workflows.
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Immutable release tag to build and publish (for example v0.9.0)"
+        description: "Immutable release tag to publish (for example v0.9.0)"
+        required: true
+        type: string
+      release_commit:
+        description: "Reviewed release source commit (full lowercase SHA-1)"
         required: true
         type: string
 
@@ -26,17 +31,43 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Validate release source identity
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ inputs.release_commit }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
-      - name: Require release tag to match project version
+      - name: Require release tag and source commit to match project version
         env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
+          set -euo pipefail
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [ "$checked_out_commit" != "$RELEASE_COMMIT" ]; then
+            echo "checked-out release source does not match release_commit" >&2
+            exit 1
+          fi
+          if ! tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}" 2>/dev/null)"; then
+            echo "release tag is unavailable for provenance verification" >&2
+            exit 1
+          fi
+          if [ "$tag_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release tag does not target release_commit" >&2
+            exit 1
+          fi
           python - <<'PY'
           import os
           import tomllib
@@ -60,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ inputs.release_commit }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -148,7 +179,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ inputs.release_commit }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
