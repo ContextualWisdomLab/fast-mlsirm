@@ -61,6 +61,21 @@ def _core_must_not_be_discovered() -> None:
     raise AssertionError("invalid eps_distance reached compiled-core discovery")
 
 
+def _valid_eapsum_tables(*args, **kwargs):
+    """Return structurally valid one-item tables for both fitted dimensions."""
+    del args, kwargs
+    return [
+        {
+            "dim": dim,
+            "n_items_dim": 1,
+            "score_prob": [0.5, 0.5],
+            "eap": [-0.5, 0.5],
+            "sd": [1.0, 1.0],
+        }
+        for dim in range(2)
+    ]
+
+
 def test_export_rejects_callback_bearing_eps_distance_before_native(monkeypatch):
     """Caller numeric protocols must not run while eps-distance is admitted."""
     hostile = _HostileFloat(1e-8)
@@ -90,7 +105,7 @@ def test_export_normalizes_numpy_eps_distance_for_bundle_and_json(monkeypatch, t
     monkeypatch.setattr(
         serving,
         "_core_module",
-        lambda: SimpleNamespace(eapsum_tables=lambda *args, **kwargs: []),
+        lambda: SimpleNamespace(eapsum_tables=_valid_eapsum_tables),
     )
     path = tmp_path / "bundle.json"
 
