@@ -154,12 +154,14 @@ def _fingerprint(value: Any, name: str) -> str:
 
 def _enum_value(value: Any, enum_type: type[Enum], name: str) -> Enum:
     """Normalize an exact enum member or its serialized value."""
-    if isinstance(value, enum_type):
+    choices = [member.value for member in enum_type]
+    if type(value) is enum_type:
         return value
+    if type(value) is not str:
+        raise ValueError(f"{name} must be one of {choices}")
     try:
         return enum_type(value)
     except (TypeError, ValueError) as exc:
-        choices = [member.value for member in enum_type]
         raise ValueError(f"{name} must be one of {choices}") from exc
 
 
