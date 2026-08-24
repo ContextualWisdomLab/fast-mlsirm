@@ -172,3 +172,75 @@ def test_single_point_scalar_target_info_remains_supported(monkeypatch) -> None:
     )
 
     np.testing.assert_allclose(form.target_info, np.array([2.0]))
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("target_thetas", np.array([0.0 + 1.0j]), "target_thetas must be real numeric evidence"),
+        ("target_info", np.array([1.0 + 1.0j]), "target_info must be real numeric evidence"),
+        ("target_info", [object()], "target_info must be real numeric evidence"),
+        ("target_info", 10**400, "target_info must be real numeric evidence"),
+    ],
+)
+def test_nonreal_or_unrepresentable_target_evidence_fails_before_information(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    """Malformed target evidence must fail before item-information evaluation."""
+    bank, factor_id = _bank()
+    information_calls = 0
+
+    def unexpected_information(*_args: object, **_kwargs: object) -> np.ndarray:
+        nonlocal information_calls
+        information_calls += 1
+        return np.ones((1, 4), dtype=np.float64)
+
+    monkeypatch.setattr(ata, "item_information_matrix", unexpected_information)
+    target_thetas: object = np.array([0.0], dtype=np.float64)
+    target_info: object = np.array([1.0], dtype=np.float64)
+    if field == "target_thetas":
+        target_thetas = value
+    else:
+        target_info = value
+
+    with pytest.raises(ValueError, match=message):
+        ata.assemble_to_target(
+            bank,
+            factor_id,
+            target_thetas,
+            target_info,
+            length=2,
+            model="MIRT",
+        )
+
+    assert information_calls == 0
+
+
+def test_cyclic_builtin_target_tree_fails_before_information(monkeypatch) -> None:
+    """Cyclic trusted-container syntax must fail without NumPy or scoring work."""
+    bank, factor_id = _bank()
+    cyclic: list[object] = []
+    cyclic.append(cyclic)
+    information_calls = 0
+
+    def unexpected_information(*_args: object, **_kwargs: object) -> np.ndarray:
+        nonlocal information_calls
+        information_calls += 1
+        return np.ones((1, 4), dtype=np.float64)
+
+    monkeypatch.setattr(ata, "item_information_matrix", unexpected_information)
+
+    with pytest.raises(ValueError, match="target_info must be real numeric evidence"):
+        ata.assemble_to_target(
+            bank,
+            factor_id,
+            np.array([0.0], dtype=np.float64),
+            cyclic,
+            length=2,
+            model="MIRT",
+        )
+
+    assert information_calls == 0
