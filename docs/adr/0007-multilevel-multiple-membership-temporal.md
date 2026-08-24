@@ -9,6 +9,12 @@ Psychometric and AI-evaluation observations commonly sit inside schools, teams, 
 
 Reusable nested, cross-classified, multiple-membership, and longitudinal *contracts* are on protected main. A Rust MAP estimator now recovers crossed / weighted multiple-membership person effects `u_h` with RMSE evidence. OLS/AR longitudinal state estimation and MCMC variance-component engines remain separate slices, so this ADR stays Proposed until those numerical release-rule items are also evidenced.
 
+This decision is about explicit context and time in the measurement design. It
+is not a claim that latent-space MLSIRM/MLS2PLM interaction (Jeon, Jin,
+Schweinberger, & Baugh, 2021; Kang & Jeon, 2025) absorbs hierarchy or drift.
+Residual latent-space interaction remains a later layer after known
+multilevel/temporal structure, consistent with ADR-0001 and ADR-0006.
+
 ## Decision
 
 The architecture treats the following as distinct, explicit structures:
@@ -63,8 +69,16 @@ This architecture avoids forcing product-specific tenant/org structures into the
 - at least one Rust estimator or clear handoff contract exists for a supported multilevel/temporal inference use case;
 - recovery evidence meets the numerical release rule.
 
-## References
+## Research and standards basis
 
-Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT model. *Psychometrika, 66*, 271–288.
+Score interpretation that depends on context, occasion, or drift remains governed by AERA, APA, and NCME (2014). Full multilevel/temporal estimators stay Proposed until the numerical release rule above is met. NIST, OWASP, and CWE catalogs are not the methodological basis.
 
-Uto, M. (2022). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928.
+American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+
+Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT model. *Psychometrika, 66*, 271–288. https://doi.org/10.1007/BF02294839
+
+Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika, 86*(2), 378–403. https://doi.org/10.1007/s11336-021-09762-5
+
+Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826. https://doi.org/10.1017/psy.2025.5
+
+Uto, M. (2023). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928. https://doi.org/10.3758/s13428-022-01997-z
