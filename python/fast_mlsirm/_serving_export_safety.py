@@ -135,6 +135,27 @@ def _quadrature_integer(value: Any, *, label: str) -> int:
     return normalized
 
 
+def _validate_quadrature_resources(
+    *,
+    model: Any,
+    n_items: int,
+    n_dims: int,
+    latent_dim: int,
+    q_theta: int,
+    q_xi: int,
+) -> None:
+    """Replay serving-grid allocation ceilings before compiled-core discovery."""
+    if builtins.type(model) is not str:
+        raise ValueError("result.model must be a built-in string")
+    n_xi = 1 if model == "MIRT" else q_xi**latent_dim
+    if model != "MIRT" and n_xi > 1_000_000:
+        raise ValueError("bundle q_xi ** latent_dim exceeds the serving grid limit")
+    if max(n_items, n_dims) * q_theta * n_xi > 50_000_000:
+        raise ValueError(
+            "bundle scoring-table size (items x q_theta x n_xi) exceeds the serving limit"
+        )
+
+
 def _eps_distance(value: Any, *, maximum: float) -> float:
     """Normalize one trusted distance control to a JSON-safe finite float."""
     value_type = builtins.type(value)
@@ -257,6 +278,15 @@ def install(serving_module: Any) -> None:
         dim_names_value = _dimension_name_list(dim_names, n_dims)
         q_theta_value = _quadrature_integer(q_theta, label="q_theta")
         q_xi_value = _quadrature_integer(q_xi, label="q_xi")
+        latent_dim = int(params.zeta.shape[1])
+        _validate_quadrature_resources(
+            model=result.model,
+            n_items=n_items,
+            n_dims=n_dims,
+            latent_dim=latent_dim,
+            q_theta=q_theta_value,
+            q_xi=q_xi_value,
+        )
         eps_distance_value = _eps_distance(
             eps_distance, maximum=serving_module.MAX_ABS_ITEM_PARAMETER
         )
