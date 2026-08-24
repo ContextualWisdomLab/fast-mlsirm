@@ -1,7 +1,7 @@
 # Architecture documentation completeness and maintenance matrix
 
 Status: **Authoritative maintenance audit**  
-Last reviewed: 2026-08-12
+Last reviewed: 2026-08-16
 
 This matrix answers whether GitHub can reconstruct the current `fast-mlsirm` product, technical, scientific, security, operability, and release intent without relying on chat history or stale pull-request prose. File existence is not sufficient: document availability and product-capability maturity are evaluated separately against protected-main code, tests, workflows, accepted decisions, and live work.
 
@@ -81,10 +81,12 @@ The table below records product truth, not documentation-file presence. “Imple
 | Governed post-pilot item-bank lifecycle | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | immutable post-pilot lifecycle/evidence gates are integrated; linking/exposure/drift/assembly/release integration continues incrementally |
 | Bifactor / higher-order / testlet / two-tier / many-facet relation governance | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | relation-safe policy is established; family-specific estimator/validation evidence varies |
 | Latent-space residual interaction | IMPLEMENTED_ON_PROTECTED_MAIN | interpretation remains gated on substantive dimension/testlet/facet diagnosis |
+| Angoff delta-plot observed-score DIF | IMPLEMENTED_ON_PROTECTED_MAIN | `fast_mlsirm.delta_plot`; method page and ADR-0018; flags are screens, not fairness determinations |
+| Bradley–Terry MM pairwise ranking | IMPLEMENTED_ON_PROTECTED_MAIN | `bradley_terry_mm` and additive-ties `bratt_mm`; ADR-0017; Rao–Kupper/Davidson remain unimplemented |
 | Formal non-nested distinguishability/model comparison | PARTIAL | fail-closed relation-aware comparison exists; additional family-specific evidence and metadata remain incremental |
 | Adaptive rotation criterion selection | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust-backed criterion registry/multi-start selector/report surfaces are integrated; additional criteria/GPU/recovery remain incremental |
 | Multilevel / cross-classified / multiple-membership contracts | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | contextual and longitudinal contracts are integrated; estimator identification/recovery remains separate work |
-| Temporal/longitudinal/drift estimators | IMPLEMENTED_ON_ACTIVE_PR / PARTIAL | independent OLS/AR (ADR-0018) and joint MAP hierarchical CT-AR Rasch (ADR-0019) exist on stacked longitudinal PRs; estimated MMMC `u_h` and GPU parity remain excluded |
+| Temporal/longitudinal/drift estimators | IMPLEMENTED_ON_ACTIVE_PR / PARTIAL | independent OLS/AR (ADR-0019) and joint MAP hierarchical CT-AR Rasch (ADR-0020) exist on stacked longitudinal PRs; estimated MMMC `u_h` and GPU parity remain excluded |
 | Crossed / multiple-membership person-effect estimator | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust MAP recovery with RMSE evidence is integrated; richer variance-component claims remain separate |
 | Automated essay scoring calibration/validation | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | governed essay contracts/validation/reporting exist; generalized rater discrimination/range/drift remains incremental |
 | Paired automated-vs-reference rating-range evidence | IMPLEMENTED_ON_PROTECTED_MAIN | Rust-owned paired range/compression diagnostic is integrated |

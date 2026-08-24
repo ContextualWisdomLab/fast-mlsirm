@@ -206,8 +206,8 @@ hierarchical, multiply affiliated, or longitudinal:
   temporal validity rules.
 
 The `fast_mlsirm.multilevel` contracts are content-addressed and fail closed.
-ADR-0018 proposes a state layer for independent OLS trends and caller-supplied
-discrete AR predictions. ADR-0019 proposes a separate joint MAP hierarchical
+ADR-0019 proposes a state layer for independent OLS trends and caller-supplied
+discrete AR predictions. ADR-0020 proposes a separate joint MAP hierarchical
 continuous-time AR(1) Rasch slice with estimated `(mu, tau, lambda)`, elapsed-day
 transitions, and Wald observed-information intervals. That slice excludes
 estimated multiple-membership `u_h` and does not claim GPU parity. Remaining

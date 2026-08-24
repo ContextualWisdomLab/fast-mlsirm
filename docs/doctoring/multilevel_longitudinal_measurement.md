@@ -95,12 +95,12 @@ The implementation:
 
 ## Temporal interpretation boundary
 
-The ADR-0018 `autoregressive_coefficient` is a discrete occasion-step
+The ADR-0019 `autoregressive_coefficient` is a discrete occasion-step
 stationary AR(1) coefficient with \(-1<\phi<1\). Irregular millisecond
 offsets are retained as exact ordering and audit provenance. They do **not**
 imply that one \(\phi\) is automatically adjusted for elapsed time.
 
-A separate joint MAP slice (ADR-0019) parameterizes elapsed time through
+A separate joint MAP slice (ADR-0020) parameterizes elapsed time through
 \(\phi_{pt}=\exp(-\lambda\Delta_{pt})\) with \(\Delta_{pt}\) in days. That
 slice may be described as continuous-time AR(1) / Ornstein–Uhlenbeck. The
 discrete AR path must not be described as continuous-time or interval-adjusted;
