@@ -372,6 +372,7 @@ jobs:
             --notes-file release_notes.md
       - name: Dispatch package publication from the verified release source
         env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ inputs.release_commit }}
@@ -382,4 +383,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --ref "$DEFAULT_BRANCH" \
             -f release_tag="v$RELEASE_VERSION" \
-            -f release_commit="$RELEASE_COMMIT"
+            -f release_commit="$RELEASE_COMMIT" \
+            -f control_plane_commit="$CONTROL_PLANE_COMMIT"
