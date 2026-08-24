@@ -85,6 +85,7 @@ The table below records product truth, not documentation-file presence. “Imple
 | Adaptive rotation criterion selection | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust-backed criterion registry/multi-start selector/report surfaces are integrated; additional criteria/GPU/recovery remain incremental |
 | Multilevel / cross-classified / multiple-membership contracts | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | contextual and longitudinal contracts are integrated; estimator identification/recovery remains separate work |
 | Temporal/longitudinal/drift estimators | IMPLEMENTED_ON_ACTIVE_PR / PARTIAL | independent OLS/AR (ADR-0018) and joint MAP hierarchical CT-AR Rasch (ADR-0019) exist on stacked longitudinal PRs; estimated MMMC `u_h` and GPU parity remain excluded |
+| Crossed / multiple-membership person-effect estimator | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust MAP recovery with RMSE evidence is integrated; richer variance-component claims remain separate |
 | Automated essay scoring calibration/validation | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | governed essay contracts/validation/reporting exist; generalized rater discrimination/range/drift remains incremental |
 | Paired automated-vs-reference rating-range evidence | IMPLEMENTED_ON_PROTECTED_MAIN | Rust-owned paired range/compression diagnostic is integrated |
 | Enterprise issue measurement | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | reusable evidence/calibration adapters exist; causal intervention utility remains downstream/policy-bound |

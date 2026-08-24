@@ -23,6 +23,10 @@ Ornstein–Uhlenbeck transitions and packed L-BFGS. GPU batching for this
 Rasch objective is not implemented: the existing wgpu path owns MLSIRM
 distance/likelihood kernels, a different estimand.
 
+Crossed / multiple-membership `u_h` MAP estimation remains separately
+documented in `docs/doctoring/multilevel_crossed_person_effects.md`; it is not
+silently treated as the longitudinal estimand.
+
 ## Scientific rationale
 
 A respondent-level model can commit an atomistic fallacy when cluster, team,

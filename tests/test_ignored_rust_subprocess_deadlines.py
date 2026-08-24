@@ -8,8 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 _SCRIPT = Path(__file__).parents[1] / "scripts" / "run_ignored_rust_shard.py"
 _SPEC = importlib.util.spec_from_file_location("ignored_rust_deadlines", _SCRIPT)

@@ -15,6 +15,7 @@ the Rust core.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -619,8 +620,196 @@ def simulate_hierarchical_longitudinal_irt(
     }
 
 
+@dataclass(frozen=True)
+class CrossedPersonEffectResult:
+    """Immutable MAP estimate of crossed or multiple-membership effects.
+
+    The result keeps the dimension-qualified context keys beside the effect
+    vector so callers cannot accidentally join effects from two classifications
+    that happen to use the same local identifier.
+    """
+
+    context_effects: dict[ContextKey, float]
+    effect_vector: np.ndarray
+    context_keys: tuple[ContextKey, ...]
+    loglik: float
+    n_iter: int
+    converged: bool
+    used_gpu: bool
+    termination_reason: str
+
+
+def _crossed_csr_from_design(
+    design: ContextMembershipDesign,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, tuple[ContextKey, ...]]:
+    """Marshal one sealed membership design into native CSR arrays."""
+    context_keys = design.context_keys
+    key_index = {key: index for index, key in enumerate(context_keys)}
+    by_observation: dict[str, list] = {
+        observation_id: [] for observation_id in design.observation_ids
+    }
+    for edge in design.memberships:
+        by_observation[edge.observation_id].append(edge)
+
+    row_offsets: list[int] = [0]
+    context_indices: list[int] = []
+    weights: list[float] = []
+    for observation_id in design.observation_ids:
+        for edge in by_observation[observation_id]:
+            context_indices.append(
+                key_index[(edge.context_dimension_id, edge.context_id)]
+            )
+            weights.append(edge.membership_weight)
+        row_offsets.append(len(context_indices))
+
+    classification_offsets = [0]
+    for dimension_id in design.context_dimension_ids:
+        classification_offsets.append(
+            classification_offsets[-1]
+            + sum(key[0] == dimension_id for key in context_keys)
+        )
+    return (
+        np.asarray(row_offsets, dtype=np.uint64),
+        np.asarray(context_indices, dtype=np.uint64),
+        np.asarray(weights, dtype=np.float64),
+        np.asarray(classification_offsets, dtype=np.uint64),
+        context_keys,
+    )
+
+
+def _crossed_finite_vector(values: object, name: str, length: int) -> np.ndarray:
+    """Return one finite contiguous vector for the native estimator."""
+    try:
+        array = np.asarray(values, dtype=np.float64)
+    except Exception:
+        raise ValueError(f"{name} could not be converted safely") from None
+    if array.ndim != 1 or array.shape[0] != length:
+        raise ValueError(f"{name} must be a length-{length} vector")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must be finite")
+    return np.ascontiguousarray(array, dtype=np.float64)
+
+
+def _crossed_response_vector(
+    values: object,
+    n_persons: int,
+    n_items: int,
+) -> np.ndarray:
+    """Flatten a binary response matrix while preserving missing cells."""
+    try:
+        array = np.asarray(values, dtype=np.float64)
+    except Exception:
+        raise ValueError("responses could not be converted safely") from None
+    if array.ndim != 2 or array.shape != (n_persons, n_items):
+        raise ValueError("responses must have shape (n_observations, n_items)")
+    observed = np.isfinite(array) & (array >= 0.0)
+    if np.any(observed & (array != 0.0) & (array != 1.0)):
+        raise ValueError("binary responses must contain only 0 or 1 for observed cells")
+    return np.ascontiguousarray(array.reshape(-1), dtype=np.float64)
+
+
+def estimate_crossed_person_effects(
+    responses: object,
+    design: ContextMembershipDesign,
+    *,
+    item_intercepts: object,
+    item_slopes: object | None = None,
+    person_offsets: object | None = None,
+    prior_scale: object = 1.0,
+    max_iter: object = 50,
+    tol: object = 1e-8,
+    worker_count: object = 1,
+    device: object = "auto",
+) -> CrossedPersonEffectResult:
+    """Estimate dimension-qualified crossed person effects with Rust MAP.
+
+    Known item parameters are held fixed. The optional person offsets are
+    already-estimated longitudinal locations; this function does not silently
+    reinterpret them as a second temporal estimator. The Rust core owns the
+    weighted likelihood, Gaussian prior, centering, and CPU/GPU reduction.
+    """
+    if type(design) is not ContextMembershipDesign:
+        raise ValueError("design must be an exact ContextMembershipDesign")
+    _ = design.design_fingerprint
+    n_persons = len(design.observation_ids)
+    n_effects = len(design.context_keys)
+    trusted_max_iter = _trusted_positive_integer(max_iter, "max_iter")
+    trusted_workers = _trusted_positive_integer(worker_count, "worker_count")
+    if trusted_max_iter > 10_000:
+        raise ValueError("max_iter exceeds maximum supported value of 10000")
+    if trusted_workers > 10_000:
+        raise ValueError("worker_count exceeds maximum supported value of 10000")
+    trusted_tol = _trusted_positive_real(tol, "tol")
+    trusted_scale = _trusted_positive_real(prior_scale, "prior_scale")
+    if type(device) is not str or device.strip().casefold() not in {"cpu", "gpu", "auto"}:
+        raise ValueError("device must be one of 'cpu', 'gpu', or 'auto'")
+    trusted_device = device.strip().casefold()
+
+    try:
+        intercept_array = np.asarray(item_intercepts, dtype=np.float64)
+        intercept_count = intercept_array.shape[0]
+    except Exception:
+        raise ValueError("item_intercepts could not be converted safely") from None
+    intercepts = _crossed_finite_vector(item_intercepts, "item_intercepts", intercept_count)
+    n_items = int(intercepts.shape[0])
+    slopes = (
+        np.ones(n_items, dtype=np.float64)
+        if item_slopes is None
+        else _crossed_finite_vector(item_slopes, "item_slopes", n_items)
+    )
+    if np.any(slopes <= 0.0):
+        raise ValueError("item_slopes must be strictly positive")
+    y = _crossed_response_vector(responses, n_persons, n_items)
+    offsets = (
+        np.zeros(0, dtype=np.float64)
+        if person_offsets is None
+        else _crossed_finite_vector(person_offsets, "person_offsets", n_persons)
+    )
+    (
+        row_offsets,
+        context_indices,
+        weights,
+        classification_offsets,
+        context_keys,
+    ) = _crossed_csr_from_design(design)
+    payload = multilevel_core().estimate_crossed_person_effects(
+        y,
+        row_offsets,
+        context_indices,
+        weights,
+        slopes,
+        intercepts,
+        offsets,
+        classification_offsets,
+        n_persons,
+        n_items,
+        n_effects,
+        1.0 / (trusted_scale * trusted_scale),
+        trusted_max_iter,
+        trusted_tol,
+        trusted_workers,
+        trusted_device,
+    )
+    effect_vector = np.ascontiguousarray(payload["effects"], dtype=np.float64)
+    context_effects = {
+        key: float(value) for key, value in zip(context_keys, effect_vector, strict=True)
+    }
+    return CrossedPersonEffectResult(
+        context_effects=context_effects,
+        effect_vector=effect_vector,
+        context_keys=context_keys,
+        loglik=float(payload["loglik"]),
+        n_iter=int(payload["n_iter"]),
+        converged=bool(payload["converged"]),
+        used_gpu=bool(payload["used_gpu"]),
+        termination_reason=str(payload["termination_reason"]),
+    )
+
+
 __all__ = [
     "ContextKey",
+    "CrossedPersonEffectResult",
+    "estimate_crossed_person_effects",
     "fit_hierarchical_longitudinal_irt",
     "fit_longitudinal_state",
     "simulate_hierarchical_longitudinal_irt",

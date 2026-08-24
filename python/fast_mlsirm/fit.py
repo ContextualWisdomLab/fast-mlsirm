@@ -4,7 +4,12 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import normalize_device, resolve_backend
+from .backend import (
+    _REFERENCE_BACKEND_ACTIVE,
+    _resolve_scoped_reference_backend,
+    normalize_device,
+    resolve_backend,
+)
 from .config import FitConfig, PenaltyConfig
 from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
@@ -33,7 +38,14 @@ def _compact_population_labels(raw, n_persons: int, name: str):
         raise ValueError(f"{name} must be finite")
     if _np.any(fl < 0) or _np.any(fl != _np.floor(fl)):
         raise ValueError(f"{name} must be non-negative integers")
-    uniq, remapped = _np.unique(arr.astype(_np.int64), return_inverse=True)
+    try:
+        with _np.errstate(invalid="ignore", over="ignore"):
+            int_labels = arr.astype(_np.int64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must fit in signed 64-bit integers") from exc
+    if not _np.array_equal(int_labels.astype(_np.float64), fl):
+        raise ValueError(f"{name} must fit in signed 64-bit integers")
+    uniq, remapped = _np.unique(int_labels, return_inverse=True)
     return remapped.astype(_np.int64), int(uniq.size)
 
 
@@ -103,8 +115,12 @@ def fit(
     """
     config = config or FitConfig()
     config.validate()
-    backend = resolve_backend(config.backend)
-    # The device is a sub-option of the rust backend; the numpy path ignores it.
+    backend = (
+        _resolve_scoped_reference_backend(config.backend)
+        if _REFERENCE_BACKEND_ACTIVE.get()
+        else resolve_backend(config.backend)
+    )
+    # The device is a sub-option of the Rust backend; the reference path ignores it.
     device = normalize_device(config.rust_device) if backend == "rust" else "cpu"
     model = config.normalized_model()
 
@@ -157,7 +173,12 @@ def fit(
             # space is not estimated — unchanged public behavior). Use the
             # spatial models or a population structure for the full marginal
             # latent-space fit.
-            return _fit_mmle(y, observed, model, config)
+            if backend == "numpy":
+                raise RuntimeError(
+                    "NumPy reference is unavailable for plain unidimensional MMLE; "
+                    "use the production Rust fit"
+                )
+            return _fit_mmle(y, observed, model, config, backend)
         return _fit_mmle_marginal(
             y, observed, factors, n_dims, model, config, backend, device,
             group_id=group_id, cluster_id=cluster_id, anchors=anchors,
@@ -176,7 +197,6 @@ def fit(
         )
         if best is None or candidate.objective < best.objective:
             best = candidate
-
     if best is None:
         raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
@@ -187,6 +207,7 @@ def _fit_mmle(
     observed: np.ndarray,
     model: str,
     config: FitConfig,
+    backend: str,
 ) -> FitResult:
     """Marginal MLE (EM) — robust to missing data. Unidimensional 2PL measurement.
 
@@ -233,7 +254,7 @@ def _fit_mmle(
         params=params,
         model=model,
         optimizer="mmle_em/rust",
-        backend=config.backend,
+        backend=backend,
         rust_device=config.rust_device,
         objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
         loglik_trace=[float(v) for v in loglik_trace],
@@ -267,7 +288,8 @@ def _fit_mmle_marginal(
     compiled ``fit_marginal`` whose ``MARGINAL_CAPABILITY_VERSION`` matches
     this package. Missing, stale, or keyword-incompatible native entrypoints
     raise ``RuntimeError`` and never fall back to NumPy production arithmetic.
-    Use ``backend="numpy"`` only for explicit reference or parity runs.
+    Use :func:`fast_mlsirm.fit_reference` for explicit reference or parity runs;
+    ordinary production fitting never selects the NumPy owner.
 
     References (APA 7th ed.):
         Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping

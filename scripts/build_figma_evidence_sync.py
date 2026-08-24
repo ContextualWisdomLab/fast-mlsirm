@@ -46,6 +46,7 @@ REQUIRED_TOKENS = [
 
 
 def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest of one Figma evidence file."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -59,6 +60,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
+    """Resolve a packet or output path relative to the repository root."""
     path = Path(value)
     if path.is_absolute():
         return path
@@ -66,7 +68,7 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return HEAD SHA, failing closed when Git metadata lookup times out."""
+    """Return the canonical full Git object identity for HEAD or fail closed."""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -78,14 +80,20 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except Exception:
-        return "unknown"
-    return completed.stdout.strip() or "unknown"
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise RuntimeError("source commit lookup failed") from exc
+    source_commit = completed.stdout.strip()
+    if len(source_commit) not in {40, 64} or any(
+        character not in "0123456789abcdef" for character in source_commit
+    ):
+        raise RuntimeError("source commit lookup returned invalid object id")
+    return source_commit
 
 
 def _check(
     name: str, category: str, ok: bool, detail: str, **metadata: Any
 ) -> dict[str, Any]:
+    """Build one named Figma evidence check with optional diagnostic metadata."""
     payload: dict[str, Any] = {
         "name": name,
         "category": category,
@@ -97,16 +105,19 @@ def _check(
 
 
 def _normalize(value: str) -> str:
+    """Normalize human-readable evidence text for token matching."""
     return " ".join(value.lower().replace("-", " ").replace("_", " ").split())
 
 
 def _coverage(text: str, tokens: list[str]) -> dict[str, Any]:
+    """Return required evidence tokens missing from normalized packet text."""
     normalized = _normalize(text)
     missing = [token for token in tokens if _normalize(token) not in normalized]
     return {"required": tokens, "missing": missing}
 
 
 def _frame_coverage(packet: dict[str, Any]) -> dict[str, Any]:
+    """Return present and missing buyer-review frame identifiers."""
     frames = packet.get("frames", [])
     ids = {
         frame.get("id")
@@ -121,9 +132,11 @@ def _frame_coverage(packet: dict[str, Any]) -> dict[str, Any]:
 
 
 def _snapshot_text(snapshot: dict[str, Any]) -> str:
+    """Flatten meaningful text fields from an exported Figma metadata snapshot."""
     parts: list[str] = []
 
     def walk(value: Any) -> None:
+        """Visit nested snapshot values and collect meaningful text fields."""
         if isinstance(value, dict):
             for key, child in value.items():
                 if key in {"characters", "name", "text"} and isinstance(child, str):
@@ -139,10 +152,12 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
 
 
 def _content_security_policy() -> str:
+    """Return the restrictive policy used by the self-contained HTML report."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _report_css() -> str:
+    """Return the small inline stylesheet used by the Figma evidence report."""
     return """
 :root { color: #172026; background: #f5f7f8; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 * { box-sizing: border-box; }
@@ -197,6 +212,7 @@ code { overflow-wrap: anywhere; }
 
 
 def _render_report(manifest: dict[str, Any]) -> str:
+    """Render Figma evidence checks as a portable accessible HTML report."""
     checks = manifest.get("checks", [])
     rows = []
     for check in checks:
@@ -267,6 +283,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
 
 
 def build_figma_evidence_sync(args: argparse.Namespace) -> dict[str, Any]:
+    """Validate the Figma packet and write its manifest and HTML report."""
     repo_root = Path(args.repo_root).resolve()
     packet_path = _resolve_path(args.packet, base=repo_root).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
@@ -371,6 +388,7 @@ def build_figma_evidence_sync(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Create the command-line parser for Figma evidence synchronization."""
     parser = argparse.ArgumentParser(
         description="Build Figma evidence sync checks for fast-mlsirm."
     )
@@ -402,6 +420,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run Figma evidence synchronization and print a machine-readable summary."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

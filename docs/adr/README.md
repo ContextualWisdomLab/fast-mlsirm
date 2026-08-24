@@ -34,6 +34,8 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0015](0015-multi-item-irt-fit-boundary.md) | Proposed | Enforce the multi-item dichotomous/polytomous contract at public IRT fitters and require explicit readiness evidence before interpreting estimates. |
 | [0018](0018-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
 | [0019](0019-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
+| [0016](0016-figma-buyer-evidence-design-boundary.md) | Accepted | Bind the buyer-review Figma file ID to repository-local packet validation while keeping Code Connect and hosted UI ownership downstream. |
+| [0016](0016-figma-buyer-evidence-design-boundary.md) | Accepted | Bind the buyer-review Figma file ID to repository-local packet validation while keeping Code Connect and hosted UI ownership downstream. |
 
 ## ADR completeness rule
 

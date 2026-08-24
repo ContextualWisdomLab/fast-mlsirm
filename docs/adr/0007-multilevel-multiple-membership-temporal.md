@@ -14,6 +14,12 @@ until those boundaries are protected-integrated. Fox and Glas Gibbs sampling,
 Jeon and Rabe-Hesketh adaptive-quadrature ML, estimated multiple-membership
 `u_h`, and GPU recurrent-state parity are not accepted production behavior.
 
+Protected main already contains the reusable nested, cross-classified, and
+multiple-membership contracts plus crossed `u_h` MAP recovery evidence. The
+longitudinal state and joint CT-AR slices remain separate estimands; Fox and
+Glas Gibbs sampling, Jeon and Rabe-Hesketh adaptive-quadrature ML, and GPU
+recurrent-state parity are not accepted production behavior.
+
 ## Decision
 
 The architecture treats the following as distinct, explicit structures:

@@ -98,6 +98,12 @@ def _run_gh_api(
             if retry_sleep_seconds > 0:
                 time.sleep(retry_sleep_seconds)
             continue
+        except OSError as exc:
+            raise GitHubApiError(
+                endpoint=endpoint,
+                returncode=127,
+                stderr="GitHub CLI transport unavailable",
+            ) from exc
         if completed.returncode == 0:
             try:
                 return parse_json_bounded(completed.stdout)
@@ -432,6 +438,7 @@ def audit_workflow_registry(
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse the required repository slug and evidence output path."""
     parser = argparse.ArgumentParser(
         description="Audit GitHub Actions registry drift against protected default branch."
     )

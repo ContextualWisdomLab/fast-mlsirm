@@ -15,9 +15,13 @@ runner therefore uses three named deadline classes:
 These values are repository operating policy, not universal performance claims.
 The statistical-study deadline is deliberately much longer than the metadata and
 inventory deadlines because true-parameter recovery and other ignored scientific
-studies are expected to perform substantially more computation. The existing
-GitHub Actions job timeout remains a separate outer ceiling; the ignored Rust
-shard job currently has a 90-minute job timeout.
+studies are expected to perform substantially more computation. The scheduled
+ignored-Rust workflow opts into the full 7,200-second statistical bound and has a
+separate 180-minute GitHub Actions shard ceiling; those controls are independent.
+
+The workflow-level override is intentionally limited to the exhaustive study
+job. Interactive and other automation callers continue to use the resolver's
+documented 1,800-second default unless they supply their own bounded override.
 
 ## Operator configuration
 
@@ -84,6 +88,17 @@ particular, it does not turn a timed-out study into evidence of convergence,
 parameter recovery, CPU/GPU parity, model fit, reliability, or scientific
 validity.
 
+The Mokken recovery study keeps the normal-trait condition as the calibrated
+recovery contract. Its skew-trait condition is a distribution-sensitivity
+control: it requires finite positive ``H`` below the normal-trait value for the
+same item pool, but it does not require AISP's conventional ``c = 0.3`` cutoff
+to recover every item. Loevinger's ``H`` is a scalability coefficient rather
+than a probability, and AISP selection depends on the observed response
+distribution; treating that cutoff as distribution-invariant made the hosted
+shard fail on a scientifically valid skewed population. This test boundary
+follows the Mokken model and item-selection literature rather than masking the
+failed study or weakening the Rust implementation.
+
 This slice deliberately migrates only `scripts/run_ignored_rust_shard.py`.
 Issue #555 remains open for separate, reviewable deadline policies for GitHub CLI,
 packaging, release-evidence, ordinary-test, and other repository subprocess call
@@ -126,3 +141,14 @@ https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-synt
 
 Python Software Foundation. (2026). *subprocess — Subprocess management*. Python
 3.14 documentation. https://docs.python.org/3/library/subprocess.html
+
+Mokken, R. J. (1971). *A theory and procedure of scale analysis: With
+applications in political research*. De Gruyter Mouton.
+https://doi.org/10.1515/9783110813203
+
+van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of Statistical
+Software, 20*(11), 1–19. https://doi.org/10.18637/jss.v020.i11
+
+Straat, J. H., van der Ark, L. A., & Sijtsma, K. (2013). Comparing optimization
+algorithms for item selection in Mokken scale analysis. *Journal of
+Classification, 30*(1), 75–99. https://doi.org/10.1007/s00357-013-9122-y
