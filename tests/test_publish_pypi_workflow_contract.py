@@ -79,8 +79,10 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
 
     # GITHUB_TOKEN-created release events do not recursively start ordinary
     # event-triggered workflows. Package publication therefore uses the one
-    # supported recursive trigger: workflow_dispatch, bound to both immutable
-    # release identities rather than re-resolving the tag independently.
+    # supported recursive trigger. The control-plane workflow comes from the
+    # protected default branch while artifact source identity is an immutable
+    # explicit commit, so an older release tag cannot select an outdated
+    # publication workflow definition.
     assert "  workflow_dispatch:\n" in publish_text
     assert "      release_tag:\n" in publish_text
     assert "      release_commit:\n" in publish_text
@@ -89,7 +91,9 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
 
     assert "permissions:\n      contents: write\n      actions: write" in release_job
     assert "gh workflow run publish-pypi.yml" in release_job
-    assert '--ref "v$RELEASE_VERSION"' in release_job
+    assert 'DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}' in release_job
+    assert '--ref "$DEFAULT_BRANCH"' in release_job
+    assert '--ref "v$RELEASE_VERSION"' not in release_job
     assert '-f release_tag="v$RELEASE_VERSION"' in release_job
     assert '-f release_commit="$RELEASE_COMMIT"' in release_job
     assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in release_job
