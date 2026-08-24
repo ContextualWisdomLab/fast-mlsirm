@@ -77,3 +77,30 @@ def test_malformed_builtin_fanout_has_bounded_traversal_before_numpy(
         ata._trusted_real_array([[], [], []], "target_info")
 
     assert numpy_calls == 0
+
+
+def test_excessive_builtin_nesting_fails_before_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deep one-cell trees must not consume an unbounded active traversal path."""
+    monkeypatch.setattr(ata, "MAX_ATA_TARGET_NESTING", 4, raising=False)
+    numpy_calls = 0
+    original_asarray = ata.np.asarray
+
+    def unexpected_asarray(*args: object, **kwargs: object) -> np.ndarray:
+        nonlocal numpy_calls
+        numpy_calls += 1
+        return original_asarray(*args, **kwargs)
+
+    monkeypatch.setattr(ata.np, "asarray", unexpected_asarray)
+    target: object = 0.0
+    for _ in range(5):
+        target = [target]
+
+    with pytest.raises(
+        ValueError,
+        match=r"target_thetas exceeds the 4-level ATA nesting limit",
+    ):
+        ata._trusted_real_array(target, "target_thetas")
+
+    assert numpy_calls == 0
