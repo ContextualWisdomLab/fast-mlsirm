@@ -177,3 +177,49 @@ def test_mokken_preserves_concrete_numpy_scalar_controls(
     assert type(captured["lower_bound"]) is float
     assert type(captured["alpha"]) is float
     assert result.scale.tolist() == [1, 1]
+
+
+def test_mokken_materializes_non_contiguous_scores_for_rust(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A strided response view is copied before the Rust slice boundary."""
+    captured: list[np.ndarray] = []
+
+    class _Core:
+        def mokken_coef_h(
+            self,
+            responses: np.ndarray,
+            n_persons: int,
+            n_items: int,
+        ) -> dict[str, object]:
+            assert (n_persons, n_items) == (3, 2)
+            captured.append(responses)
+            return {
+                "hij": [float("nan"), 0.4, 0.4, float("nan")],
+                "hi": [0.4, 0.4],
+                "h": 0.4,
+                "zij": [float("nan"), 1.0, 1.0, float("nan")],
+                "zi": [1.0, 1.0],
+                "z": 1.0,
+            }
+
+        def mokken_aisp(
+            self,
+            responses: np.ndarray,
+            n_persons: int,
+            n_items: int,
+            lower_bound: float,
+            alpha: float,
+        ) -> list[int]:
+            captured.append(responses)
+            return [1, 1]
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+    responses = np.arange(12, dtype=np.int64).reshape(3, 4)[:, ::2]
+    assert not responses.flags.c_contiguous
+
+    mokken.mokken_analysis(responses)
+
+    assert len(captured) == 2
+    assert all(response.flags.c_contiguous for response in captured)
+    assert all(response.tolist() == [0, 2, 4, 6, 8, 10] for response in captured)

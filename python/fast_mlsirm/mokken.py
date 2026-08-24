@@ -162,7 +162,7 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
         raise ValueError(
             f"responses imply more than {MAX_POLYTOMOUS_CATEGORIES} categories"
         )
-    return scores.reshape(-1), int(n_persons), int(n_items)
+    return np.ascontiguousarray(scores.reshape(-1)), int(n_persons), int(n_items)
 
 
 def mokken_analysis(
