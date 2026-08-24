@@ -1,9 +1,10 @@
-"""Serving-export regressions for factor-to-dimension identity admission."""
+"""Serving-export regressions for factor-to-dimension and item identity admission."""
 
 from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from typing import NoReturn
 
 import numpy as np
 import pytest
@@ -25,6 +26,49 @@ class _HostileInteger:
     def __index__(self) -> int:
         self.calls += 1
         raise AssertionError("caller-controlled index conversion executed")
+
+
+class _HostileItemCodes(list[str]):
+    """List subclass whose container callbacks must never run during export."""
+
+    def __init__(self, values: list[str]) -> None:
+        super().__init__(values)
+        self.calls = 0
+
+    def _trip(self) -> NoReturn:
+        self.calls += 1
+        raise AssertionError("caller-controlled item-code container callback executed")
+
+    def __len__(self) -> int:
+        return self._trip()
+
+    def __iter__(self):
+        return self._trip()
+
+    def __getitem__(self, index):
+        return self._trip()
+
+
+class _HostileItemCode(str):
+    """String subclass that must not survive serving-artifact admission."""
+
+    def __new__(cls, value: str):
+        instance = super().__new__(cls, value)
+        instance.calls = 0
+        return instance
+
+    def _trip(self) -> NoReturn:
+        self.calls += 1
+        raise AssertionError("caller-controlled item-code scalar callback executed")
+
+    def __str__(self) -> str:
+        return self._trip()
+
+    def __hash__(self) -> int:
+        return self._trip()
+
+    def __eq__(self, other):
+        return self._trip()
 
 
 def _result() -> FitResult:
@@ -112,6 +156,43 @@ def test_export_preserves_trusted_integer_valued_factor_sequence(monkeypatch):
     assert factor_id.tolist() == [0, 1]
     assert bundle["n_dims"] == 2
     assert [item["factor_id"] for item in bundle["items"]] == [0, 1]
+
+
+def test_export_rejects_callback_bearing_item_code_container_before_native(
+    monkeypatch,
+):
+    """Item-code container protocols must not run while artifact identity is admitted."""
+    item_codes = _HostileItemCodes(["q0", "q1"])
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match="item_codes"):
+        serving.export_serving_bundle(_result(), item_codes, (0, 1))
+
+    assert item_codes.calls == 0
+
+
+def test_export_rejects_callback_bearing_item_code_scalar_before_native(monkeypatch):
+    """Caller-defined string identities must not enter the frozen serving bundle."""
+    item_code = _HostileItemCode("q1")
+    monkeypatch.setattr(serving, "_core_module", _core_must_not_be_discovered)
+
+    with pytest.raises(ValueError, match="item_codes"):
+        serving.export_serving_bundle(_result(), ["q0", item_code], (0, 1))
+
+    assert item_code.calls == 0
+
+
+def test_export_preserves_trusted_item_code_tuple(monkeypatch):
+    """Ordinary built-in tuple item identities retain historical export compatibility."""
+    monkeypatch.setattr(
+        serving,
+        "_core_module",
+        lambda: SimpleNamespace(eapsum_tables=lambda *args, **kwargs: []),
+    )
+
+    bundle = serving.export_serving_bundle(_result(), ("q0", "q1"), (0, 1))
+
+    assert [item["code"] for item in bundle["items"]] == ["q0", "q1"]
 
 
 @pytest.mark.parametrize("control_name", ["q_theta", "q_xi"])
