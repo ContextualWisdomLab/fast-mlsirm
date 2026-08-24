@@ -60,3 +60,15 @@ def test_population_labels_preserve_extended_precision_int64_upper_boundary() ->
 
     assert n_populations == 2
     assert ids.tolist() == [0, 1]
+
+
+def test_population_labels_preserve_float16_without_boundary_warning() -> None:
+    """Small floating dtypes must not overflow merely constructing the int64 bound."""
+    labels = np.array([0.0, 1.0], dtype=np.float16)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ids, n_populations = _compact_population_labels(labels, 2, "group_id")
+
+    assert n_populations == 2
+    assert ids.tolist() == [0, 1]
