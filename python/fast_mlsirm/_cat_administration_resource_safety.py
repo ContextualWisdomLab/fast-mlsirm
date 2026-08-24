@@ -39,71 +39,39 @@ def _reject_over_bank_administration(bank: Any, administered: object) -> None:
 
 
 def install(cat_module: ModuleType) -> None:
-    """Install fail-fast administration resource preflights idempotently."""
+    """Install fail-fast administration resource preflight idempotently."""
     original_validate = cat_module._validate_administration
-    original_standard_error = cat_module.ability_standard_error
-    validate_installed = bool(getattr(original_validate, _MARKER, False))
-    standard_error_installed = bool(getattr(original_standard_error, _MARKER, False))
-    if validate_installed and standard_error_installed:
+    if bool(getattr(original_validate, _MARKER, False)):
         return
 
-    if not validate_installed:
-
-        def safe_validate_administration(
-            bank: Any,
-            factor_id: np.ndarray,
-            administered: object,
-            responses: object,
-        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-            # Preserve the existing callback/type-error contract for unsupported
-            # top-level providers by delegating unchanged unless both carriers expose
-            # inert exact-container metadata.
-            administered_length = _vector_length(administered)
-            if administered_length is None:
-                return original_validate(bank, factor_id, administered, responses)
-
-            responses_length = _vector_length(responses)
-            if responses_length is None:
-                return original_validate(bank, factor_id, administered, responses)
-
-            if administered_length != responses_length:
-                raise ValueError(_SHAPE_ERROR)
-
-            # A valid partial administration cannot contain more observations than
-            # the bank has items because administered identities must be unique.
-            # Reject that impossible shape before value-wise range/uniqueness scans
-            # or dense int64/float64 conversion of the caller evidence.
-            _reject_over_bank_administration(bank, administered)
+    def safe_validate_administration(
+        bank: Any,
+        factor_id: np.ndarray,
+        administered: object,
+        responses: object,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        # Preserve the existing callback/type-error contract for unsupported
+        # top-level providers by delegating unchanged unless both carriers expose
+        # inert exact-container metadata.
+        administered_length = _vector_length(administered)
+        if administered_length is None:
             return original_validate(bank, factor_id, administered, responses)
 
-        setattr(safe_validate_administration, _MARKER, True)
-        cat_module._validate_administration = safe_validate_administration
+        responses_length = _vector_length(responses)
+        if responses_length is None:
+            return original_validate(bank, factor_id, administered, responses)
 
-    if not standard_error_installed:
+        if administered_length != responses_length:
+            raise ValueError(_SHAPE_ERROR)
 
-        def safe_ability_standard_error(
-            bank: Any,
-            factor_id: np.ndarray,
-            theta: np.ndarray,
-            *,
-            administered: object | None = None,
-            model: str = "MLS2PLM",
-        ) -> np.ndarray:
-            # Standard-error evaluation shares the same uniqueness constraint as
-            # CAT administration.  Reject an exact-carrier vector that is already
-            # longer than the bank before signed-int64 normalization, np.unique,
-            # theta work, or compiled-core discovery. Unsupported carriers still
-            # delegate unchanged so the established callback/type diagnostics are
-            # owned by the existing CAT evidence validator.
-            if administered is not None:
-                _reject_over_bank_administration(bank, administered)
-            return original_standard_error(
-                bank,
-                factor_id,
-                theta,
-                administered=administered,
-                model=model,
-            )
+        # A validated CAT administration requires unique item identities, so more
+        # observations than bank items is structurally impossible on this surface.
+        # `ability_standard_error` is intentionally not wrapped here: its historical
+        # contract treats `administered` as a set-valued mask and applies np.unique,
+        # so duplicate-laden or multidimensional evidence can legitimately have a
+        # raw logical size above the bank item count before deduplication.
+        _reject_over_bank_administration(bank, administered)
+        return original_validate(bank, factor_id, administered, responses)
 
-        setattr(safe_ability_standard_error, _MARKER, True)
-        cat_module.ability_standard_error = safe_ability_standard_error
+    setattr(safe_validate_administration, _MARKER, True)
+    cat_module._validate_administration = safe_validate_administration
