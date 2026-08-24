@@ -1070,7 +1070,7 @@ def test_fit_rejects_fractional_factor_id_before_integer_cast(factor_id):
         fit_model(
             np.array([[0.0], [1.0]]),
             factor_id,
-            FitConfig(model="MIRT", estimator="mmle", backend="numpy", max_iter=1),
+            FitConfig(model="MIRT", estimator="mmle", max_iter=1),
         )
 
 

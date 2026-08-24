@@ -26,7 +26,6 @@ deterministic reproducibility of the reported loading magnitudes.
 import numpy as np
 
 from fast_mlsirm import FitConfig, PenaltyConfig
-from fast_mlsirm.fit import fit
 
 
 def _heywood_prone_responses() -> tuple[np.ndarray, np.ndarray]:
@@ -63,7 +62,9 @@ def _fit_max_loading(lambda_alpha: float) -> tuple[float, bool]:
     difficulties, abilities, objective) is finite.
     """
     responses, factors = _heywood_prone_responses()
-    result = fit(
+    from fast_mlsirm.reference import fit_reference
+
+    result = fit_reference(
         responses,
         factors,
         config=FitConfig(

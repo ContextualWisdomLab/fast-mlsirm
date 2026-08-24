@@ -381,7 +381,7 @@ def test_run_gh_snapshot_records_base_sha_history_and_errors(monkeypatch):
             subprocess.CompletedProcess([], 0, json.dumps({"sha": "c" * 40}), ""),
         ]
     )
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(responses))
+    monkeypatch.setattr(module, "run_bounded_capture", lambda *args, **kwargs: next(responses))
 
     snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
 
@@ -401,7 +401,7 @@ def test_run_gh_snapshot_fails_closed_on_command_errors(monkeypatch):
             subprocess.CompletedProcess([], 1, "", "history failed"),
         ]
     )
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(responses))
+    monkeypatch.setattr(module, "run_bounded_capture", lambda *args, **kwargs: next(responses))
 
     snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
 
@@ -462,8 +462,8 @@ def test_run_gh_json_retries_only_transient_gateway_statuses(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        module.subprocess,
-        "run",
+        module,
+        "run_bounded_capture",
         lambda *args, **kwargs: next(transient),
     )
     payload, error = module._run_gh_json(
@@ -482,8 +482,8 @@ def test_run_gh_json_retries_only_transient_gateway_statuses(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        module.subprocess,
-        "run",
+        module,
+        "run_bounded_capture",
         lambda *args, **kwargs: next(permanent),
     )
     payload, error = module._run_gh_json(
@@ -506,7 +506,7 @@ def test_run_gh_snapshot_uses_light_history_fields_and_recovers_from_502(
     recorded: list[list[str]] = []
     history_attempts = {"n": 0}
 
-    def fake_run(command, capture_output=True, text=True):
+    def fake_run(command, **kwargs):
         recorded.append(list(command))
         if command[1:3] == ["repo", "view"]:
             return subprocess.CompletedProcess(
@@ -557,7 +557,7 @@ def test_run_gh_snapshot_uses_light_history_fields_and_recovers_from_502(
             )
         raise AssertionError(f"unexpected command: {command}")
 
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module, "run_bounded_capture", fake_run)
     monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
 
     snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
@@ -583,7 +583,7 @@ def test_run_gh_snapshot_records_exhausted_history_502_without_dropping_open_prs
     """When history stays 502 after retries, open PRs remain and the error is kept."""
     module = _load_governance()
 
-    def fake_run(command, capture_output=True, text=True):
+    def fake_run(command, **kwargs):
         if command[1:3] == ["repo", "view"]:
             return subprocess.CompletedProcess(
                 command,
@@ -615,7 +615,7 @@ def test_run_gh_snapshot_records_exhausted_history_502_without_dropping_open_prs
             )
         raise AssertionError(command)
 
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module, "run_bounded_capture", fake_run)
     monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
 
     snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
@@ -763,8 +763,8 @@ def test_run_gh_snapshot_handles_missing_branch_and_nonobject_base(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        module.subprocess,
-        "run",
+        module,
+        "run_bounded_capture",
         lambda *args, **kwargs: next(no_branch_responses),
     )
     snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
@@ -785,8 +785,8 @@ def test_run_gh_snapshot_handles_missing_branch_and_nonobject_base(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        module.subprocess,
-        "run",
+        module,
+        "run_bounded_capture",
         lambda *args, **kwargs: next(base_responses),
     )
     snapshot = module._run_gh_snapshot("ContextualWisdomLab/fast-mlsirm")
