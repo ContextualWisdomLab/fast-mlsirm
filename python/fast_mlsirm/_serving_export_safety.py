@@ -17,6 +17,7 @@ from typing import Any, Callable
 import numpy as np
 
 _MAX_SERVING_DIMS = 64
+_HARDENED_ATTR = "__fast_mlsirm_serving_export_safety_hardened__"
 _NUMPY_INTEGER_TYPES = (
     np.int8,
     np.int16,
@@ -157,10 +158,29 @@ def _exact_string_keys(mapping: dict[Any, Any]) -> bool:
     return all(builtins.type(key) is str for key in mapping)
 
 
+def _is_hardened(callback: Callable[..., Any]) -> bool:
+    """Return whether ``callback`` is one of this module's installed wrappers."""
+    return getattr(callback, _HARDENED_ATTR, False) is True
+
+
+def _unwrap_hardened(callback: Callable[..., Any]) -> Callable[..., Any]:
+    """Return the package delegate captured by one installed wrapper."""
+    if _is_hardened(callback):
+        return callback.__wrapped__
+    return callback
+
+
 def install(serving_module: Any) -> None:
-    """Install callback-free serving validation and export identity boundaries."""
-    original_validate: Callable[..., Any] = serving_module._validate_bundle
-    original_export: Callable[..., Any] = serving_module.export_serving_bundle
+    """Install callback-free serving validation and export identity boundaries once."""
+    current_validate: Callable[..., Any] = serving_module._validate_bundle
+    current_export: Callable[..., Any] = serving_module.export_serving_bundle
+    if _is_hardened(current_validate) and _is_hardened(current_export):
+        return
+
+    # Recover deterministically from a partially installed pair without stacking
+    # another copy of a package-owned wrapper around the already-hardened sibling.
+    original_validate = _unwrap_hardened(current_validate)
+    original_export = _unwrap_hardened(current_export)
 
     @wraps(original_validate)
     def safe_validate_bundle(bundle: Any) -> Any:
@@ -243,5 +263,7 @@ def install(serving_module: Any) -> None:
             dim_names_value,
         )
 
+    setattr(safe_validate_bundle, _HARDENED_ATTR, True)
+    setattr(safe_export_serving_bundle, _HARDENED_ATTR, True)
     serving_module._validate_bundle = safe_validate_bundle
     serving_module.export_serving_bundle = safe_export_serving_bundle
