@@ -1,9 +1,10 @@
 """Callback-free serving trust-boundary admission.
 
-Serving artifacts are scientific deployment records: their structural controls
-and item-to-dimension identities must be established before caller callbacks,
-NumPy integer narrowing, or Rust-owned scoring can observe them. Numerical
-scoring arithmetic remains in the existing Rust-backed serving implementation.
+Serving artifacts are scientific deployment records: their structural controls,
+item identities, and item-to-dimension identities must be established before
+caller callbacks, NumPy integer narrowing, or Rust-owned scoring can observe
+them. Numerical scoring arithmetic remains in the existing Rust-backed serving
+implementation.
 """
 
 from __future__ import annotations
@@ -85,6 +86,22 @@ def _factor_id_vector(value: Any, n_items: int) -> np.ndarray:
     return np.ascontiguousarray(value, dtype=np.int64)
 
 
+def _item_code_list(value: Any, n_items: int) -> list[str]:
+    """Return inert built-in item identities without caller container callbacks."""
+    value_type = builtins.type(value)
+    if value_type is not list and value_type is not tuple:
+        raise ValueError("item_codes must be a list or tuple of built-in strings")
+    if len(value) != n_items:
+        raise ValueError("item_codes length must match the fitted item count")
+
+    normalized: list[str] = []
+    for code in value:
+        if builtins.type(code) is not str:
+            raise ValueError("item_codes must contain built-in strings")
+        normalized.append(code)
+    return normalized
+
+
 def _quadrature_integer(value: Any, *, label: str) -> int:
     """Normalize one trusted integer quadrature control to a JSON-safe int."""
     value_type = builtins.type(value)
@@ -139,9 +156,9 @@ def install(serving_module: Any) -> None:
         screening_audit: Any = None,
         dim_names: Any = None,
     ) -> Any:
-        # Preserve the legacy error ordering for unfinished calibrations and
-        # item-code length mismatches. Only a result that has already crossed
-        # those two original preconditions reaches the new trust boundaries.
+        # Preserve the legacy convergence-error ordering. Only a result that
+        # already crossed that original precondition reaches the artifact
+        # identity and numerical-control trust boundaries below.
         status = getattr(result, "convergence_status", None)
         if builtins.type(status) is not str or status.strip().lower() != "converged":
             return original_export(
@@ -158,25 +175,13 @@ def install(serving_module: Any) -> None:
 
         params = result.params
         n_items = len(params.b)
-        if len(item_codes) != n_items:
-            return original_export(
-                result,
-                item_codes,
-                factor_id,
-                path,
-                q_theta,
-                q_xi,
-                eps_distance,
-                screening_audit,
-                dim_names,
-            )
-
+        item_codes_value = _item_code_list(item_codes, n_items)
         factor_value = _factor_id_vector(factor_id, n_items)
         q_theta_value = _quadrature_integer(q_theta, label="q_theta")
         q_xi_value = _quadrature_integer(q_xi, label="q_xi")
         return original_export(
             result,
-            item_codes,
+            item_codes_value,
             factor_value,
             path,
             q_theta_value,
