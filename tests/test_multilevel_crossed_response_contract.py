@@ -292,7 +292,7 @@ def test_exact_integer_float64_boundary_remains_supported(
 
     args = captured["args"]
     assert isinstance(args, tuple)
-    assert args[4][0] == float(2**53)
+    assert args[5][0] == float(2**53)
     assert args[6][0] == float(2**53)
 
 
