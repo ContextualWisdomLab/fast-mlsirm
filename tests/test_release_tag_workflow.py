@@ -73,7 +73,8 @@ def test_release_source_is_the_version_cut_transition_not_a_later_descendant():
     transition_step = "Verify the release source is the version-cut transition"
     tag_state_step = "Verify the release is absent and classify the tag state"
     assert transition_step in text
-    assert 'parent_commit="$(git rev-parse "$RELEASE_COMMIT^")"' in text
+    assert 'git rev-parse "$RELEASE_COMMIT^"' in text
+    assert "release commit must have a verifiable first parent" in text
     assert "parent project version already equals requested release version" in text
     assert "parent CHANGELOG already contains requested release section" in text
     assert text.index(version_step) < text.index(transition_step) < text.index(tag_state_step)
