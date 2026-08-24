@@ -11,6 +11,7 @@ from .config import MAX_MAX_ITER
 
 
 _SUPPORTED_Q_THETA = (7, 11, 15, 21, 31, 41)
+_MAX_CRM_RESPONSE_CELLS = 20_000_000
 _NUMPY_INTEGER_TYPES = tuple(
     np.dtype(name).type
     for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
@@ -18,6 +19,20 @@ _NUMPY_INTEGER_TYPES = tuple(
 _NUMPY_FLOAT_TYPES = tuple(
     np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
 )
+_NUMPY_COMPLEX_TYPES = tuple(
+    np.dtype(name).type for name in ("complex64", "complex128", "clongdouble")
+)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+    *_NUMPY_COMPLEX_TYPES,
+)
+_TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
 
 
 def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
@@ -56,6 +71,86 @@ def _positive_real(value: object, name: str) -> float:
     if not np.isfinite(result) or result <= 0.0:
         raise ValueError(f"{name} must be finite and positive")
     return result
+
+
+def _trusted_response_array(responses: object) -> np.ndarray:
+    """Materialize CRM evidence only after callback-free trust/resource preflight."""
+
+    resource_error = (
+        f"responses must contain at most {_MAX_CRM_RESPONSE_CELLS:,} logical cells"
+    )
+    if type(responses) is np.ndarray:
+        if responses.size > _MAX_CRM_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        return responses
+
+    error = "responses must be a trusted NumPy array or built-in response matrix"
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(error)
+
+    # Each frame is [exact built-in container, next child index, logical-cell subtotal].
+    # Memoized subtotals let repeated/shared acyclic subtrees count by logical
+    # occurrence without re-traversing their descendants exponentially.
+    frames: list[list[object]] = [[responses, 0, 0]]
+    active_container_ids: set[int] = {id(responses)}
+    subtree_cells: dict[int, int] = {}
+
+    while frames:
+        frame = frames[-1]
+        item = frame[0]
+        child_index = int(frame[1])
+
+        if child_index >= len(item):
+            subtotal = int(frame[2])
+            item_id = id(item)
+            active_container_ids.remove(item_id)
+            subtree_cells[item_id] = subtotal
+            frames.pop()
+            if frames:
+                parent_total = int(frames[-1][2]) + subtotal
+                if parent_total > _MAX_CRM_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][2] = parent_total
+            continue
+
+        frame[1] = child_index + 1
+        child = item[child_index]
+        child_type = type(child)
+
+        if _is_exact_type(child_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            subtotal = int(frame[2]) + 1
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type is np.ndarray:
+            if child.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
+                raise ValueError(error)
+            subtotal = int(frame[2]) + int(child.size)
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type is not list and child_type is not tuple:
+            raise ValueError(error)
+
+        child_id = id(child)
+        if child_id in active_container_ids:
+            raise ValueError(error)
+        cached_cells = subtree_cells.get(child_id)
+        if cached_cells is not None:
+            subtotal = int(frame[2]) + cached_cells
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        active_container_ids.add(child_id)
+        frames.append([child, 0, 0])
+
+    return np.asarray(responses)
 
 
 @dataclass
@@ -135,14 +230,21 @@ def fit_crm(
         raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
     tol_value = _positive_real(tol, "tol")
 
-    y = np.asarray(responses, dtype=np.float64)
+    raw = _trusted_response_array(responses)
+    if np.iscomplexobj(raw) or raw.dtype == object:
+        raise ValueError("responses must be real-valued")
+    if raw.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a real numeric array")
+    y = raw.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
+    if np.any(np.isinf(y)):
+        raise ValueError("responses may only use NaN for missing values")
 
-    observed = np.isfinite(y)
+    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.5).reshape(-1)
 
     core = _core_module()

@@ -1,6 +1,7 @@
 import argparse
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -78,7 +79,38 @@ def _write_snapshot(path: Path, *, include_queue: bool = True) -> Path:
     return path
 
 
+def _initialize_git_repo(repo_root: Path) -> None:
+    """Create a minimal committed repository for source-provenance fixtures."""
+    subprocess.run(
+        ["git", "init", "--quiet", str(repo_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "-c",
+            "user.name=fast-mlsirm-test",
+            "-c",
+            "user.email=fast-mlsirm-test@example.invalid",
+            "commit",
+            "--allow-empty",
+            "--quiet",
+            "-m",
+            "source provenance fixture",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _args(root: Path, packet: Path, out: Path, snapshot: Path | None = None) -> argparse.Namespace:
+    """Return sync arguments backed by a committed source fixture."""
+    _initialize_git_repo(root)
     return argparse.Namespace(
         repo_root=str(root),
         packet=str(packet),
@@ -139,6 +171,7 @@ def test_main_reports_repo_root_relative_output(tmp_path, monkeypatch, capsys):
     """Report a relative output path from the repository root, not the process CWD."""
     module = _load_sync()
     repo_root = tmp_path / "repo"
+    _initialize_git_repo(repo_root)
     _write_packet(repo_root / "packet.json")
     working_directory = tmp_path / "working-directory"
     working_directory.mkdir()
