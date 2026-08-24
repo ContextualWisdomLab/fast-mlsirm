@@ -176,7 +176,8 @@ def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[
     The explicit stack holds one frame per active nesting level. Logical scalar
     cells, nesting depth, and structural nodes are independently bounded so
     malformed trees made mostly of empty containers cannot consume unbounded
-    Python traversal work.
+    Python traversal work. Exact NumPy real-numeric array leaves retain their
+    inert shape while their logical cells are charged before materialization.
     """
     # frame: [container, next child index, first child shape, logical cells]
     stack: list[list[object]] = [[value, 0, None, 0]]
@@ -233,6 +234,21 @@ def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[
                 _raise_target_nesting_limit(name)
             stack.append([child, 0, None, 0])
             continue
+        if child_type is np.ndarray:
+            if child.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError(f"{name} must be real numeric evidence")
+            child_cells = int(child.size)
+            next_cells = int(stack[-1][3]) + child_cells
+            if next_cells > MAX_ATA_TARGET_CELLS:
+                _raise_target_resource_limit(name)
+            child_shape = child.shape
+            first_child_shape = stack[-1][2]
+            if first_child_shape is None:
+                stack[-1][2] = child_shape
+            elif first_child_shape != child_shape:
+                raise ValueError(f"{name} must be real numeric evidence")
+            stack[-1][3] = next_cells
+            continue
         if not _is_exact_public_real_scalar(child):
             raise ValueError(f"{name} must be real numeric evidence")
         first_child_shape = stack[-1][2]
@@ -268,12 +284,13 @@ def _trusted_real_array(value: object, name: str) -> np.ndarray:
     """Materialize bounded inert real evidence without caller callbacks.
 
     Exact NumPy real-numeric arrays, exact trusted real scalars, and exact
-    built-in list/tuple trees whose leaves have package-trusted real scalar
-    identities are admitted. Logical cells, nesting depth, and malformed
-    structural traversal are bounded before NumPy conversion. Every admitted
-    scalar must preserve its value when normalized to binary64. Arbitrary array
-    providers, ndarray/container/numeric subclasses, object/text/complex
-    storage, and cyclic built-in trees fail before NumPy conversion.
+    built-in list/tuple trees whose leaves are package-trusted real scalars or
+    exact NumPy real-numeric arrays are admitted. Logical cells, nesting depth,
+    and malformed structural traversal are bounded before NumPy conversion.
+    Every admitted scalar must preserve its value when normalized to binary64.
+    Arbitrary array providers, ndarray/container/numeric subclasses,
+    object/text/complex storage, and cyclic built-in trees fail before NumPy
+    conversion.
     """
     _preflight_real_evidence(value, name)
     if type(value) is np.ndarray:
@@ -309,6 +326,16 @@ def _trusted_real_array(value: object, name: str) -> np.ndarray:
                 if id(child) in active:
                     raise ValueError(f"{name} must be real numeric evidence")
                 stack.append((child, 0))
+                continue
+            if type(child) is np.ndarray:
+                if child.dtype.kind not in {"b", "i", "u", "f"}:
+                    raise ValueError(f"{name} must be real numeric evidence")
+                child_cells = int(child.size)
+                logical_cells += child_cells
+                if logical_cells > MAX_ATA_TARGET_CELLS:
+                    _raise_target_resource_limit(name)
+                for scalar in child.flat:
+                    _require_lossless_float64_scalar(scalar, name)
                 continue
             if not _is_exact_public_real_scalar(child):
                 raise ValueError(f"{name} must be real numeric evidence")
