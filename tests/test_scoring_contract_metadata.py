@@ -36,6 +36,11 @@ class _HostileMetadataText(str):
         type(self).callback_count += 1
         raise AssertionError("hostile metadata text must not be encoded")
 
+    def __str__(self) -> str:
+        """Fail if metadata validation converts via the overridable ``str()`` path."""
+        type(self).callback_count += 1
+        raise AssertionError("hostile metadata text must not be str()-converted")
+
 
 def test_metadata_is_copied_and_preserves_no_mutable_aliases():
     """Caller mutations after construction cannot change nested assessment content."""
