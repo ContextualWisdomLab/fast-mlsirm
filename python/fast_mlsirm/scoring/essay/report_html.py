@@ -361,36 +361,10 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
     )
 
 
-def _bounded_output_path(
-    output_path: str | Path,
-    output_root: str | Path | None,
-) -> tuple[Path, Path]:
-    root = Path.cwd() if output_root is None else Path(output_root)
-    if root.exists() and not root.is_dir():
-        raise ValueError("output root must be a directory")
-    resolved_root = root.resolve(strict=False)
-    candidate = Path(output_path)
-    if not candidate.is_absolute():
-        candidate = resolved_root / candidate
-    resolved_output = candidate.resolve(strict=False)
-    try:
-        resolved_output.relative_to(resolved_root)
-    except ValueError:
-        raise ValueError("output path must remain within the approved directory") from None
-    return resolved_output, resolved_root
-
-def _verify_output_parent(output: Path, output_root: Path) -> None:
-    resolved_parent = output.parent.resolve(strict=True)
-    try:
-        resolved_parent.relative_to(output_root)
-    except ValueError:
-        raise ValueError("output path must remain within the approved directory") from None
-
 def render_essay_score_report_html(
     report: EssayScoreReport,
     output_path: str | Path,
     *,
-    output_root: str | Path | None = None,
     title: str | None = None,
 ) -> Path:
     """Write one replay-verified, accessible standalone HTML audit report.
@@ -400,15 +374,13 @@ def render_essay_score_report_html(
     Its review state is not a validity or deployment decision.
     """
     validated = _validated_report(report)
-    requested_output = Path(output_path)
-    if requested_output.suffix.lower() != ".html":
+    output = Path(output_path)
+    if output.suffix.lower() != ".html":
         raise ValueError("essay score report output path must end with .html")
     if title is not None and (type(title) is not str or not title.strip()):
         raise ValueError("essay score report title must be a non-empty string")
-    output, approved_root = _bounded_output_path(requested_output, output_root)
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)
-    _verify_output_parent(output, approved_root)
     output.write_text(_render_html(validated, resolved_title), encoding="utf-8")
     return output
 
