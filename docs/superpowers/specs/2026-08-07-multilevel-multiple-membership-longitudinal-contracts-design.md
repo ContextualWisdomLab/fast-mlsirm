@@ -154,4 +154,4 @@ Jeon, M., & Rabe-Hesketh, S. (2025). An autoregressive growth model for longitud
 
 Tranmer, M., Steel, D., & Browne, W. J. (2014). Multiple-membership multiple-classification models for social network and group dependencies. *Journal of the Royal Statistical Society: Series A (Statistics in Society), 177*(2), 439–455. https://doi.org/10.1111/rssa.12021
 
-Uto, M. (2023). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928. https://doi.org/10.3758/s13428-022-02032-1
+Uto, M. (2023). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928. https://doi.org/10.3758/s13428-022-01997-z
