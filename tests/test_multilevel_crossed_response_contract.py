@@ -294,3 +294,31 @@ def test_exact_integer_float64_boundary_remains_supported(
     assert isinstance(args, tuple)
     assert args[4][0] == float(2**53)
     assert args[6][0] == float(2**53)
+
+
+def test_extended_precision_real_evidence_must_not_round_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wider NumPy real values must retain identity or fail before Rust."""
+    wide = np.longdouble(1.0) + np.finfo(np.longdouble).eps
+    if np.longdouble(np.float64(wide)) == wide:
+        pytest.skip("np.longdouble has no precision beyond float64 on this platform")
+
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not see rounded longdouble evidence")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+
+    with pytest.raises(ValueError, match="item_intercepts could not be converted losslessly"):
+        estimation.estimate_crossed_person_effects(
+            [[1.0], [0.0]],
+            _design(),
+            item_intercepts=[wide],
+            device="cpu",
+        )
+
+    assert core_discoveries == 0
