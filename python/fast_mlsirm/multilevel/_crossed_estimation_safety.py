@@ -1,7 +1,7 @@
-"""Callback-free evidence admission for crossed person-effect estimation.
+"""Callback-free evidence admission for crossed multilevel operations.
 
 The production estimator and all result-affecting arithmetic remain Rust-owned.
-This adapter only establishes inert numeric evidence before NumPy marshalling.
+This adapter only establishes inert controls/evidence before Rust marshalling.
 """
 
 from __future__ import annotations
@@ -188,8 +188,40 @@ def _trusted_numeric_storage(
     return _float64_array_lossless(raw, name)
 
 
+def _trusted_worker_count(module: ModuleType, value: object) -> int:
+    """Normalize a worker count without invoking caller conversion/comparison hooks."""
+    value_type = type(value)
+    if value_type is int:
+        integer = value
+    elif value_type in _TRUSTED_NUMPY_INTEGER_TYPES:
+        integer = int(value)
+    else:
+        raise ValueError("worker_count must be an integer in the supported range")
+    return module.exact_integer(integer, "worker_count", minimum=1)
+
+
 def install(module: ModuleType) -> None:
-    """Install one idempotent scientific-evidence guard on the estimator."""
+    """Install idempotent trust-boundary guards on crossed multilevel operations."""
+    current_weighted = module.weighted_contextual_effect
+    if not getattr(current_weighted, _INSTALL_MARKER, False):
+
+        @wraps(current_weighted)
+        def guarded_weighted_contextual_effect(
+            design: object,
+            context_effects: object,
+            *,
+            worker_count: object = 1,
+        ):
+            trusted_workers = _trusted_worker_count(module, worker_count)
+            return current_weighted(
+                design,
+                context_effects,
+                worker_count=trusted_workers,
+            )
+
+        setattr(guarded_weighted_contextual_effect, _INSTALL_MARKER, True)
+        module.weighted_contextual_effect = guarded_weighted_contextual_effect
+
     current = module.estimate_crossed_person_effects
     if getattr(current, _INSTALL_MARKER, False):
         return
