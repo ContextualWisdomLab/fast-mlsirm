@@ -29,11 +29,12 @@ SEED = 20260101
 
 # Reasonable bounds for a 12-item, 4-category GRM test at this sample size:
 # a real run with these exact parameters/seed measures RMSE ~0.38 and
-# correlation ~0.92, comfortably inside literature-typical recovery for a
-# test this length. The margins below are loose enough to tolerate a minor
-# fast-mlsirm version bump while still catching an actual estimation
-# regression (e.g. RMSE blowing up past ~1 std or correlation collapsing).
+# correlation ~0.92. Bias/MAE and interval coverage are asserted separately so
+# correlation remains supplementary rather than standing in for calibration.
 MAX_THETA_RMSE = 0.6
+MAX_THETA_MAE = 0.5
+MAX_ABS_THETA_BIAS = 0.15
+MIN_THETA_INTERVAL_COVERAGE = 0.80
 MIN_THETA_CORRELATION = 0.75
 
 
@@ -85,12 +86,29 @@ def test_grm_recovers_true_theta_within_expected_rmse() -> None:
 
     scored = score_polytomous(responses, fit)
     theta_eap = scored["theta_eap"]
+    theta_sd = scored["theta_sd"]
 
-    rmse = float(np.sqrt(np.mean((theta_eap - true_theta) ** 2)))
+    error = theta_eap - true_theta
+    bias = float(np.mean(error))
+    mae = float(np.mean(np.abs(error)))
+    rmse = float(np.sqrt(np.mean(error**2)))
+    coverage = float(np.mean(np.abs(error) <= 1.96 * theta_sd))
     correlation = float(np.corrcoef(theta_eap, true_theta)[0, 1])
 
+    assert np.all(np.isfinite(theta_sd))
+    assert np.all(theta_sd > 0.0)
+    assert abs(bias) < MAX_ABS_THETA_BIAS, (
+        f"theta recovery absolute bias {abs(bias):.3f} exceeded {MAX_ABS_THETA_BIAS}"
+    )
+    assert mae < MAX_THETA_MAE, (
+        f"theta recovery MAE {mae:.3f} exceeded {MAX_THETA_MAE}"
+    )
     assert rmse < MAX_THETA_RMSE, (
         f"theta recovery RMSE {rmse:.3f} exceeded {MAX_THETA_RMSE}"
+    )
+    assert coverage >= MIN_THETA_INTERVAL_COVERAGE, (
+        f"theta 95% posterior-interval coverage {coverage:.3f} below "
+        f"{MIN_THETA_INTERVAL_COVERAGE}"
     )
     assert correlation > MIN_THETA_CORRELATION, (
         f"theta recovery correlation {correlation:.3f} below {MIN_THETA_CORRELATION}"
