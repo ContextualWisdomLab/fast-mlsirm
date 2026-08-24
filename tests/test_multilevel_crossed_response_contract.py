@@ -220,3 +220,77 @@ def test_builtin_and_numpy_scalar_evidence_remains_supported(
     assert args[5].dtype == np.float64
     assert args[6].dtype == np.float64
     assert result.converged is True
+
+
+@pytest.mark.parametrize(
+    ("field", "lossy_value"),
+    [
+        ("item_intercepts", 2**53 + 1),
+        ("item_slopes", np.uint64(2**53 + 1)),
+        ("person_offsets", np.int64(2**53 + 1)),
+    ],
+)
+def test_lossy_integer_vector_evidence_fails_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    lossy_value: object,
+) -> None:
+    """Exact integers must not change identity during float64 marshalling."""
+    core_discoveries = 0
+
+    def _unexpected_core_discovery():
+        nonlocal core_discoveries
+        core_discoveries += 1
+        raise AssertionError("native core must not see lossy vector evidence")
+
+    monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
+    kwargs: dict[str, object] = {
+        "responses": [[1.0], [0.0]],
+        "design": _design(),
+        "item_intercepts": [0.0],
+        "item_slopes": [1.0],
+        "person_offsets": [0.0, 0.0],
+        "device": "cpu",
+    }
+    kwargs[field] = [lossy_value] if field != "person_offsets" else [lossy_value, 0]
+
+    with pytest.raises(ValueError, match=rf"{field} could not be converted losslessly"):
+        estimation.estimate_crossed_person_effects(**kwargs)
+
+    assert core_discoveries == 0
+
+
+def test_exact_integer_float64_boundary_remains_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The largest consecutive binary64 integer remains valid evidence."""
+    captured: dict[str, object] = {}
+
+    class _Core:
+        @staticmethod
+        def estimate_crossed_person_effects(*args: object, **kwargs: object):
+            captured["args"] = args
+            return {
+                "effects": np.zeros(2, dtype=np.float64),
+                "loglik": 0.0,
+                "n_iter": 1,
+                "converged": True,
+                "used_gpu": False,
+                "termination_reason": "converged",
+            }
+
+    monkeypatch.setattr(estimation, "multilevel_core", lambda: _Core())
+
+    estimation.estimate_crossed_person_effects(
+        [[1.0], [0.0]],
+        _design(),
+        item_intercepts=[2**53],
+        item_slopes=[1],
+        person_offsets=[np.uint64(2**53), 0],
+        device="cpu",
+    )
+
+    args = captured["args"]
+    assert isinstance(args, tuple)
+    assert args[4][0] == float(2**53)
+    assert args[6][0] == float(2**53)
