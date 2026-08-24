@@ -131,3 +131,44 @@ def test_trusted_numpy_and_builtin_target_evidence_remains_supported(monkeypatch
     assert form.items.size == 2
     np.testing.assert_allclose(captured[0][0], np.array([[-0.5], [0.0], [0.5]]))
     np.testing.assert_allclose(form.target_info, np.array([2.0, 2.0, 2.0]))
+
+
+def test_single_point_scalar_target_info_remains_supported(monkeypatch) -> None:
+    """A trusted scalar target keeps the historical one-point ravel behavior."""
+    bank, factor_id = _bank()
+
+    def fixed_information(
+        _bank: MLSIRMParams,
+        _factor_id: np.ndarray,
+        target_thetas: np.ndarray,
+        *,
+        model: str,
+    ) -> np.ndarray:
+        del _bank, _factor_id, model
+        assert np.asarray(target_thetas).shape == (1, 1)
+        return np.ones((1, 4), dtype=np.float64)
+
+    class _Core:
+        @staticmethod
+        def target_information_gains(
+            matrix: np.ndarray,
+            candidates: np.ndarray,
+            target_info: np.ndarray,
+            accumulated: np.ndarray,
+        ) -> np.ndarray:
+            del matrix, target_info, accumulated
+            return np.arange(candidates.size, 0, -1, dtype=np.float64)
+
+    monkeypatch.setattr(ata, "item_information_matrix", fixed_information)
+    monkeypatch.setattr(ata, "ata_core", lambda: _Core())
+
+    form = ata.assemble_to_target(
+        bank,
+        factor_id,
+        np.array([0.0], dtype=np.float64),
+        np.float32(2.0),
+        length=2,
+        model="MIRT",
+    )
+
+    np.testing.assert_allclose(form.target_info, np.array([2.0]))
