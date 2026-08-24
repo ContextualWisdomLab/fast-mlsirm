@@ -17,6 +17,10 @@ on:
         description: "Reviewed release source commit (full lowercase SHA-1)"
         required: true
         type: string
+      control_plane_commit:
+        description: "Protected default-branch commit that selected this publication workflow"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -31,6 +35,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Verify publication control-plane identity
+        env:
+          CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}
+          CONTROL_PLANE_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUBLISH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$CONTROL_PLANE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "control_plane_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          expected_ref="refs/heads/$DEFAULT_BRANCH"
+          if [ "$PUBLISH_REF" != "$expected_ref" ]; then
+            echo "package publication must run from $expected_ref, not $PUBLISH_REF" >&2
+            exit 1
+          fi
+          if [ "$CONTROL_PLANE_SHA" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "publication control plane moved after release verification" >&2
+            exit 1
+          fi
       - name: Validate release source identity
         env:
           RELEASE_COMMIT: ${{ inputs.release_commit }}
