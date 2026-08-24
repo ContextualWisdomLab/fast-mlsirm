@@ -28,6 +28,14 @@ def test_population_labels_reject_float_int64_narrowing_overflow_without_warning
             _compact_population_labels(labels, 2, "group_id")
 
 
+def test_population_labels_reject_integer_sequence_promoted_to_float64() -> None:
+    """A Python sequence containing 2**63 must not be silently saturated."""
+    labels = [0, 2**63]
+
+    with pytest.raises(ValueError, match="signed 64-bit"):
+        _compact_population_labels(labels, 2, "group_id")
+
+
 def test_population_labels_preserve_signed_int64_upper_boundary() -> None:
     """The largest valid signed label remains admissible and order preserving."""
     labels = np.array([0, np.iinfo(np.int64).max], dtype=np.int64)

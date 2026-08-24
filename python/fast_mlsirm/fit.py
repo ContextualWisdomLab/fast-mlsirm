@@ -38,6 +38,11 @@ def _compact_population_labels(raw, n_persons: int, name: str):
         raise ValueError(f"{name} must be finite")
     if _np.any(fl < 0) or _np.any(fl != _np.floor(fl)):
         raise ValueError(f"{name} must be non-negative integers")
+    int64_max = _np.iinfo(_np.int64).max
+    if arr.dtype.kind == "u" and _np.any(arr > _np.uint64(int64_max)):
+        raise ValueError(f"{name} must fit in signed 64-bit integers")
+    if arr.dtype.kind == "f" and _np.any(fl >= _np.float64(2**63)):
+        raise ValueError(f"{name} must fit in signed 64-bit integers")
     try:
         with _np.errstate(invalid="ignore", over="ignore"):
             int_labels = arr.astype(_np.int64)
