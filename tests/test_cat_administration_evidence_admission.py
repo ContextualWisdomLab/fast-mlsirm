@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 
@@ -167,4 +169,31 @@ def test_cat_rejects_overrank_administration_before_dense_conversion_or_core(
             np.zeros(2, dtype=np.int64),
             administered,
             responses,
+        )
+
+
+@pytest.mark.parametrize(
+    "standard_error",
+    [cat_module.ability_standard_error, fast_mlsirm.ability_standard_error],
+    ids=["module", "package"],
+)
+def test_standard_error_rejects_impossible_administration_length_before_value_scan(
+    monkeypatch: pytest.MonkeyPatch,
+    standard_error: Callable[..., np.ndarray],
+) -> None:
+    """Every public SE surface must apply the same over-bank preflight."""
+    administered = np.broadcast_to(np.array([0], dtype=np.int64), (3,))
+
+    def unexpected_value_scan(_values: object) -> np.ndarray:
+        raise AssertionError("impossible CAT administration reached value-wise validation")
+
+    monkeypatch.setattr(cat_module, "_lossless_signed_int64_indices", unexpected_value_scan)
+    monkeypatch.setattr(fast_mlsirm, "_core", _CoreSentinel(), raising=False)
+
+    with pytest.raises(ValueError, match="administration length cannot exceed item bank size"):
+        standard_error(
+            _bank(),
+            np.zeros(2, dtype=np.int64),
+            np.zeros(1, dtype=np.float64),
+            administered=administered,
         )
