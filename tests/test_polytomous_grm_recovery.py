@@ -57,8 +57,10 @@ def test_grm_recovers_true_theta_within_expected_rmse() -> None:
     rng = np.random.default_rng(SEED)
     true_theta = rng.normal(0.0, 1.0, N_PERSONS)
     true_discrimination = rng.uniform(0.8, 2.0, N_ITEMS)
-    # Preserve the original deterministic DGP while making the library-native
-    # boundary-intercept identity explicit: beta = -b, hence decreasing beta.
+    # Preserve the predecessor test's deterministic DGP while making the
+    # library-native additive boundary intercept explicit. These beta values
+    # are the negatives of that test's additive threshold terms; they are not
+    # classical threshold locations b, for which beta = -a * b.
     true_boundary_intercepts = -np.sort(
         rng.normal(0.0, 1.0, (N_ITEMS, N_CAT - 1)), axis=1
     )
