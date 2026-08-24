@@ -207,18 +207,41 @@ def _trusted_worker_count(module: ModuleType, value: object) -> int:
     return module.exact_integer(integer, "worker_count", minimum=1)
 
 
+def _trusted_context_effect_scalar(value: object) -> float:
+    """Normalize one continuous contextual effect without caller conversions."""
+    value_type = type(value)
+    if value_type is int or value_type in _TRUSTED_NUMPY_INTEGER_TYPES:
+        _validate_integer_scalar_float64_lossless(value, "context_effects values")
+        number = float(int(value))
+    elif value_type is float:
+        number = value
+    elif value_type in (np.float16, np.float32, np.float64, np.longdouble):
+        normalized = _float64_array_lossless(
+            np.asarray(value),
+            "context_effects values",
+        )
+        number = float(normalized.item())
+    else:
+        raise ValueError(
+            "context_effects values must be real-valued numeric evidence"
+        )
+    if not np.isfinite(number):
+        raise ValueError("effects must be finite")
+    return number
+
+
 def _trusted_context_effect_mapping(
     module: ModuleType,
     design: object,
     context_effects: object,
-) -> dict[object, object]:
-    """Snapshot required continuous effects once and reject Boolean identity."""
+) -> dict[object, float]:
+    """Snapshot and normalize each required continuous effect exactly once."""
     if type(design) is not module.ContextMembershipDesign:
         raise ValueError("design must be an exact ContextMembershipDesign")
     _ = design.design_fingerprint
 
     missing: list[object] = []
-    snapshot: dict[object, object] = {}
+    snapshot: dict[object, float] = {}
     for key in design.context_keys:
         try:
             value = context_effects[key]
@@ -227,11 +250,7 @@ def _trusted_context_effect_mapping(
             continue
         except Exception:
             raise ValueError("context_effects could not be read safely") from None
-        if type(value) in (bool, np.bool_):
-            raise ValueError(
-                "context_effects values must be real-valued numeric evidence"
-            )
-        snapshot[key] = value
+        snapshot[key] = _trusted_context_effect_scalar(value)
 
     if missing:
         raise KeyError(f"context_effects is missing keys: {missing!r}")
