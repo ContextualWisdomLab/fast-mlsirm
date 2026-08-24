@@ -226,6 +226,39 @@ def test_population_kind_string_subclass_is_rejected_without_callbacks(monkeypat
     assert _HostileText.calls == 0
 
 
+def test_dim_names_list_subclass_is_rejected_without_callbacks(monkeypatch):
+    _HostileList.calls = 0
+    _fail_if_core_discovered(monkeypatch)
+    bundle = _bundle()
+    bundle["dim_names"] = _HostileList(["ability"])
+
+    with pytest.raises(ValueError, match="dim_names"):
+        serving.score_respondents(bundle, np.array([[1.0]]))
+
+    assert _HostileList.calls == 0
+
+
+def test_dim_name_string_subclass_is_rejected_without_callbacks(monkeypatch):
+    _HostileText.calls = 0
+    _fail_if_core_discovered(monkeypatch)
+    bundle = _bundle()
+    bundle["dim_names"] = [_HostileText("ability")]
+
+    with pytest.raises(ValueError, match="dim_names"):
+        serving.score_respondents(bundle, np.array([[1.0]]))
+
+    assert _HostileText.calls == 0
+
+
+def test_dim_name_count_must_match_n_dims_before_native(monkeypatch):
+    _fail_if_core_discovered(monkeypatch)
+    bundle = _bundle()
+    bundle["dim_names"] = ["ability", "extra"]
+
+    with pytest.raises(ValueError, match="dim_names"):
+        serving.score_respondents(bundle, np.array([[1.0]]))
+
+
 def test_items_list_subclass_is_rejected_without_callbacks(monkeypatch):
     _HostileList.calls = 0
     _fail_if_core_discovered(monkeypatch)
