@@ -186,7 +186,6 @@ def link_fixed_item_parameters(
         (source_theta, "source.theta"),
         (source_alpha, "source.alpha"),
         (source_b, "source.b"),
-        (target_theta, "target.theta"),
         (target_alpha, "target.alpha"),
         (target_b, "target.b"),
     ):
