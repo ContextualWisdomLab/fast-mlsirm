@@ -54,6 +54,7 @@ def test_public_mmle_fails_closed_when_compiled_core_is_unavailable(
             observed,
             "ULS2PLM",
             FitConfig(estimator="mmle", max_iter=1, n_restarts=1),
+            "rust",
         )
 
     assert fallback_calls == []
