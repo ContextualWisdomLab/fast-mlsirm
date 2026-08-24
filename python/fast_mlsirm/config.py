@@ -5,7 +5,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .backend import normalize_backend, normalize_device
+from .backend import (
+    normalize_backend,
+    normalize_device,
+)
 
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"}
@@ -316,6 +319,11 @@ class FitConfig:
             raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
         if not (0 <= xi_seed <= (1 << 64) - 1):
             raise ValueError("xi_seed must fit an unsigned 64-bit integer")
+        # A config may be materialized before the explicit reference API enters
+        # its authority scope.  The production facade performs the stricter
+        # ``{auto, rust}`` admission before backend discovery; retaining the
+        # kernel allowlist here lets ``fit_reference`` replace the backend
+        # without making ordinary config construction depend on call order.
         normalize_backend(self.backend)
         normalize_device(self.rust_device)
         _store_trusted_integer(self, "latent_dim", latent_dim)

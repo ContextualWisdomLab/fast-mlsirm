@@ -22,7 +22,8 @@ Python may:
 
 Python shall not become an independently evolving second production formula.
 
-The public backend architecture may expose `auto`, `rust` and governed `numpy` reference/parity choices for APIs that currently support them. `auto` resolves to Rust when the compiled core is available and fails closed otherwise; it never silently selects NumPy. GPU is a Rust device path, not a third psychometric formula implementation.
+The public backend architecture may expose `auto`, `rust` and governed `numpy`
+reference/parity choices for APIs that currently support them. `auto` resolves to Rust when the compiled core is available and fails closed otherwise; it never silently selects NumPy. GPU is a Rust device path, not a third psychometric formula implementation.
 
 The canonical PyO3 layer must support feature growth without independent PRs overwriting initialization/export structure. Secondary module symbols, if retained, must be registered through one auditable binding architecture.
 

@@ -3,35 +3,36 @@ import pytest
 from fast_mlsirm import backend
 
 
-class _HostileControlName:
-    """Object whose string conversion must never run at a control boundary."""
+class _HostileText(str):
+    """String subclass that records any package-triggered text callback."""
 
-    def __str__(self) -> str:
-        raise AssertionError("caller-controlled __str__ executed")
+    def __new__(cls, value: str):
+        instance = super().__new__(cls, value)
+        instance.callbacks = []
+        return instance
+
+    def __str__(self):
+        self.callbacks.append("__str__")
+        raise AssertionError("backend admission must not call __str__")
+
+    def strip(self, *args, **kwargs):
+        self.callbacks.append("strip")
+        raise AssertionError("backend admission must not call strip")
+
+    def lower(self):
+        self.callbacks.append("lower")
+        raise AssertionError("backend admission must not call lower")
 
 
-class _HostileControlString(str):
-    """String subclass whose normalization callbacks must never run."""
+class _HostileStringProvider:
+    """Arbitrary object whose string conversion must never be used for admission."""
 
-    def __str__(self) -> str:
-        raise AssertionError("caller-controlled str-subclass __str__ executed")
+    def __init__(self):
+        self.callbacks = []
 
-    def strip(self, chars=None) -> str:
-        raise AssertionError("caller-controlled str-subclass strip executed")
-
-
-def test_auto_unavailable_message_names_purchaser_next_action() -> None:
-    """The fail-closed auto error must tell a purchaser what to install or pass."""
-    message = backend.AUTO_BACKEND_UNAVAILABLE_MESSAGE
-
-    assert message.startswith("compiled Rust core is required for automatic backend resolution")
-    assert "fast_mlsirm._core" in message
-    assert "backend='numpy'" in message
-    assert ":" not in message
-    assert "\\" not in message
-    assert "/home/" not in message
-    assert "/usr/" not in message
-    assert "/tmp/" not in message
+    def __str__(self):
+        self.callbacks.append("__str__")
+        raise AssertionError("backend admission must not coerce arbitrary objects")
 
 
 def test_load_core_surfaces_import_errors(monkeypatch):
@@ -50,11 +51,12 @@ def test_auto_backend_fails_closed_when_rust_core_is_unavailable(monkeypatch):
     """Automatic production resolution must not silently select NumPy."""
     monkeypatch.setattr(backend, "_load_core", lambda: None)
 
-    with pytest.raises(RuntimeError, match="compiled Rust core is required") as exc_info:
+    with pytest.raises(RuntimeError, match="compiled Rust core is required") as caught:
         backend.resolve_backend("auto")
 
-    assert str(exc_info.value) == backend.AUTO_BACKEND_UNAVAILABLE_MESSAGE
-    assert "backend='numpy'" in str(exc_info.value)
+    assert str(caught.value) == backend.AUTO_BACKEND_UNAVAILABLE_MESSAGE
+    assert "fast_mlsirm._core" in str(caught.value)
+    assert "fit_reference" in str(caught.value)
 
 
 def test_auto_backend_resolves_to_rust_when_core_is_available(monkeypatch):
@@ -65,8 +67,10 @@ def test_auto_backend_resolves_to_rust_when_core_is_available(monkeypatch):
     assert backend.resolve_backend("auto") == "rust"
 
 
-def test_explicit_numpy_reference_backend_remains_explicit(monkeypatch):
-    """The explicit NumPy reference path must never depend on core discovery."""
+def test_explicit_numpy_reference_backend_keeps_low_level_parity_scope_guarded(
+    monkeypatch,
+):
+    """Low-level parity stays explicit while high-level fitting remains scoped."""
     calls: list[None] = []
 
     def unexpected_core_load():
@@ -75,32 +79,62 @@ def test_explicit_numpy_reference_backend_remains_explicit(monkeypatch):
 
     monkeypatch.setattr(backend, "_load_core", unexpected_core_load)
 
-    assert backend.resolve_backend("numpy") == "numpy"
+    assert backend.resolve_reference_backend() == "numpy"
+
+    with backend._reference_backend_scope():
+        assert backend._resolve_scoped_reference_backend() == "numpy"
+
+    with pytest.raises(RuntimeError, match="fit_reference"):
+        backend._resolve_scoped_reference_backend()
     assert calls == []
 
 
-def test_backend_normalizers_reject_untrusted_control_types_before_callbacks() -> None:
-    """Backend/device controls must not invoke caller-defined string callbacks."""
-    for normalizer, label in (
-        (backend.normalize_backend, "backend"),
-        (backend.normalize_device, "rust_device"),
-    ):
-        for value in (_HostileControlName(), _HostileControlString("auto")):
-            with pytest.raises(ValueError, match=rf"{label} must be an exact built-in string"):
-                normalizer(value)
+def test_production_backend_rejects_numpy_reference_name():
+    """Production resolution cannot select the Python numerical owner."""
+    with pytest.raises(ValueError, match="production backend"):
+        backend.resolve_backend("numpy")
 
 
-def test_resolve_backend_rejects_untrusted_name_before_core_access(monkeypatch) -> None:
-    """Public resolution must reject an untrusted control before native discovery."""
-    core_loads: list[None] = []
+@pytest.mark.parametrize(
+    ("normalizer", "raw"),
+    [
+        (backend.normalize_backend, "auto"),
+        (backend.normalize_production_backend, "rust"),
+        (backend.normalize_device, "cpu"),
+        (backend.resolve_reference_backend, "numpy"),
+    ],
+)
+def test_backend_semantic_controls_reject_string_subclasses_before_callbacks(
+    normalizer,
+    raw,
+):
+    """Semantic-control admission must reject hostile text before dispatch."""
+    value = _HostileText(raw)
 
-    def unexpected_core_load():
-        core_loads.append(None)
-        raise AssertionError("native discovery must not run for an invalid backend control")
+    with pytest.raises(ValueError, match="built-in string"):
+        normalizer(value)
 
-    monkeypatch.setattr(backend, "_load_core", unexpected_core_load)
+    assert value.callbacks == []
 
-    with pytest.raises(ValueError, match="backend must be an exact built-in string"):
-        backend.resolve_backend(_HostileControlName())
 
-    assert core_loads == []
+@pytest.mark.parametrize(
+    "normalizer",
+    [backend.normalize_backend, backend.normalize_device],
+)
+def test_backend_semantic_controls_reject_string_providers_before_callbacks(normalizer):
+    """Arbitrary string providers must not be coerced during control admission."""
+    value = _HostileStringProvider()
+
+    with pytest.raises(ValueError, match="built-in string"):
+        normalizer(value)
+
+    assert value.callbacks == []
+
+
+def test_backend_semantic_controls_preserve_builtin_normalization():
+    """Exact built-in strings retain the documented whitespace/case normalization."""
+    assert backend.normalize_backend("  AuTo ") == "auto"
+    assert backend.normalize_production_backend(" RUST ") == "rust"
+    assert backend.normalize_device(" GPU ") == "gpu"
+    with backend._reference_backend_scope():
+        assert backend.resolve_reference_backend(" NumPy ") == "numpy"

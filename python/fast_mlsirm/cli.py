@@ -17,6 +17,7 @@ from .diagnostics import (
     response_process_fit_diagnostics,
 )
 from .fit import fit
+from .reference import fit_reference
 from .irt_contract import fit_irt_experiment
 from .io import (
     _atomic_write_text,
@@ -240,8 +241,9 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
-    fit_cmd.add_argument("--backend", choices=["numpy", "rust", "auto"], default="auto", help="Objective backend to use (default: auto = Rust core when available, fails closed otherwise; pass numpy only for the explicit reference/parity path).")
-    fit_cmd.add_argument("--rust-device", choices=["auto", "cpu", "gpu"], default="auto", help="Execution device for the rust backend: wgpu GPGPU when available, else CPU fallback (default: auto). Ignored for the numpy backend.")
+    fit_cmd.add_argument("--backend", choices=["rust", "auto"], default="auto", help="Rust numerical owner to use (default: auto; fails closed otherwise; pass numpy only for the explicit reference/parity path).")
+    fit_cmd.add_argument("--reference", action="store_true", help="Use the explicit non-production NumPy parity reference.")
+    fit_cmd.add_argument("--rust-device", choices=["auto", "cpu", "gpu"], default="auto", help="Execution device for the Rust backend (default: auto). Ignored by --reference.")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
     _add_json_flag(fit_cmd)
 
@@ -374,6 +376,9 @@ def _main(argv: list[str] | None = None) -> int:
             raise
         print(f"❌ Error: Invalid path - {str(e)}", file=sys.stderr)
         return 1
+    if args.command == "fit" and args.reference and args.backend != "auto":
+        print("❌ Error: --reference cannot be combined with --backend rust", file=sys.stderr)
+        return 2
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
         try:
@@ -750,7 +755,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     try:
         result = fit_irt_experiment(
-            fit,
+            fit_reference if args.reference else fit,
             responses,
             "dichotomous",
             factor_ids=factors,
