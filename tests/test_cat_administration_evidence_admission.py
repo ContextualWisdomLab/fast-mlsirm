@@ -142,6 +142,26 @@ def test_cat_rejects_impossible_administration_length_before_dense_conversion_or
         )
 
 
+def test_cat_rejects_impossible_administration_before_unsupported_response_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Over-bank administration must fail before response protocols or dense scans."""
+    administered = np.broadcast_to(np.array([0], dtype=np.int64), (3,))
+    responses = _ArrayProvider(np.array([1.0], dtype=np.float64))
+    _forbid_dense_conversion(monkeypatch, administered)
+    monkeypatch.setattr(fast_mlsirm, "_core", _CoreSentinel(), raising=False)
+
+    with pytest.raises(ValueError, match="administration length cannot exceed item bank size"):
+        estimate_ability_eap(
+            _bank(),
+            np.zeros(2, dtype=np.int64),
+            administered,
+            responses,  # type: ignore[arg-type]
+        )
+
+    assert responses.calls == 0
+
+
 def test_cat_rejects_length_mismatch_before_dense_conversion_or_core(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
