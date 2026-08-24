@@ -110,6 +110,22 @@ def install(module: ModuleType) -> None:
         worker_count: object = 1,
         device: object = "auto",
     ):
+        # Preserve the estimator's existing trust-boundary ordering: sealed
+        # design and semantic controls are rejected before caller evidence is
+        # inspected or any NumPy array protocol can run.
+        if type(design) is not module.ContextMembershipDesign:
+            raise ValueError("design must be an exact ContextMembershipDesign")
+        _ = design.design_fingerprint
+        trusted_max_iter = module.exact_integer(
+            max_iter, "max_iter", minimum=1, maximum=10_000
+        )
+        trusted_workers = module.exact_integer(
+            worker_count, "worker_count", minimum=1, maximum=10_000
+        )
+        trusted_tol = module._exact_positive_real(tol, "tol")
+        trusted_scale = module._exact_positive_real(prior_scale, "prior_scale")
+        trusted_device = module._exact_device(device)
+
         trusted_responses = _trusted_numeric_storage(responses, "responses")
         trusted_intercepts = _trusted_numeric_storage(
             item_intercepts, "item_intercepts"
@@ -130,11 +146,11 @@ def install(module: ModuleType) -> None:
             item_intercepts=trusted_intercepts,
             item_slopes=trusted_slopes,
             person_offsets=trusted_offsets,
-            prior_scale=prior_scale,
-            max_iter=max_iter,
-            tol=tol,
-            worker_count=worker_count,
-            device=device,
+            prior_scale=trusted_scale,
+            max_iter=trusted_max_iter,
+            tol=trusted_tol,
+            worker_count=trusted_workers,
+            device=trusted_device,
         )
 
     setattr(guarded_estimate_crossed_person_effects, _INSTALL_MARKER, True)
