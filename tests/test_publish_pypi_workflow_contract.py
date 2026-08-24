@@ -34,8 +34,10 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     wheels = _job_block(text, "wheels")
 
     assert "      release_commit:\n" in text
-    release_commit_input = text.split("      release_commit:\n", 1)[1].split("\n      ", 1)[0]
-    assert "required: true" in release_commit_input
+    assert re.search(
+        r"(?m)^      release_commit:\n(?:        .*\n)*?        required: true$",
+        text,
+    )
 
     for job in (verify, sdist, wheels):
         assert "ref: ${{ inputs.release_commit }}" in job
