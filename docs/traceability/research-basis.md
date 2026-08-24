@@ -1,7 +1,7 @@
 # Research-to-architecture basis
 
 Status: **Authoritative research traceability baseline**  
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-16
 
 This document records why major scientific/product directions exist. It does not promote every research idea to accepted functionality. `Accepted`, `Proposed`, and `Open` below match the ADR status/implementation evidence.
 
@@ -15,9 +15,12 @@ Architecture effect:
 
 Primary basis:
 
-- Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika, 86*(2), 378–403.
-- Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826.
-- Molenaar, D., & Jeon, M. (2026). Regularized joint maximum likelihood estimation of latent space item response models. *Psychometrika, 91*, 335–359.
+- Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika, 86*(2), 378–403. https://doi.org/10.1007/s11336-021-09762-5
+- Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826. https://doi.org/10.1017/psy.2025.5
+- Molenaar, D., & Jeon, M. (2026). Regularized joint maximum likelihood estimation of latent space item response models. *Psychometrika, 91*, 335–359. https://doi.org/10.1017/psy.2025.10068
+- American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+
+Decision record: ADR-0001. Equation contract: `docs/papers/mls2plm-canonical-equations.md`.
 
 ## 2. Reference-free RAG as measurement — Proposed
 
@@ -105,7 +108,7 @@ Primary basis:
 
 - Williamson, D. M., Xi, X., & Breyer, F. J. (2012). A framework for evaluation and use of automated scoring. *Educational Measurement: Issues and Practice, 31*(1), 2–13.
 - Uto, M., & Ueno, M. (2020). A generalized many-facet Rasch model and its Bayesian estimation using Hamiltonian Monte Carlo. *Behaviormetrika, 47*, 469–496.
-- AERA, APA, & NCME (2014), *Standards for Educational and Psychological Testing*.
+- American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 
 ## 7. Parameter recovery over correlation — Accepted
 
@@ -127,12 +130,16 @@ Architecture effect:
 - prevent atomistic flattening;
 - explicit context dimensions and weighted memberships;
 - separate repeated occasion ordering from continuous-time dynamics;
-- require Rust estimator identification/recovery before production claims.
+- recover crossed / multiple-membership `u_h` with Rust MAP + RMSE evidence;
+- keep OLS/AR and continuous-time claims on separate estimator slices.
 
 Primary basis:
 
-- Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT model. *Psychometrika, 66*, 271–288.
-- Uto, M. (2022). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928.
+- Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT model. *Psychometrika, 66*, 271–288. https://doi.org/10.1007/BF02294839
+- Uto, M. (2023). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928. https://doi.org/10.3758/s13428-022-01997-z
+- Jeon et al. (2021) and Kang and Jeon (2025) for residual latent-space interaction after explicit hierarchy/time, not as a substitute for those structures.
+- American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+- Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership multiple classification (MMMC) models. *Statistical Modelling, 1*(2), 103–124.
 
 ## 9. Adaptive factor rotation — Proposed
 
@@ -187,6 +194,42 @@ Architecture/product documentation also uses:
   Governance scope: Govern, Map, Measure and Manage are used as a risk-management input; this citation is not a certification or conformity claim.
 - National Institute of Standards and Technology. (2024). *Artificial intelligence risk management framework: Generative artificial intelligence profile* (NIST AI 600-1). https://doi.org/10.6028/NIST.AI.600-1
   Governance scope: provider/model risk, provenance, evaluation, human oversight and incident considerations; this citation is not a certification or conformity claim.
+
+## 13. Angoff delta-plot observed-score DIF — Accepted screen
+
+Architecture effect:
+
+- keep Angoff's transformed-item-difficulty / delta-plot as a named small-sample observed-score DIF screen;
+- keep Mantel–Haenszel, logistic DIF, and SIBTEST as distinct matching-score / standardization screens;
+- treat a flag as a review candidate, not a fairness determination;
+- do not cite CWE, OWASP, or NIST as the method basis.
+
+Primary basis:
+
+- Angoff, W. H. (1972, September). *A technique for the investigation of cultural differences* [Paper presentation]. Annual meeting of the American Psychological Association, Honolulu, HI, United States.
+- Angoff, W. H., & Ford, S. F. (1973). Item-race interaction on a test of scholastic aptitude. *Journal of Educational Measurement, 10*(2), 95–105. https://doi.org/10.1111/j.1745-3984.1973.tb00787.x
+- Magis, D., & Facon, B. (2012). Angoff's Delta method revisited: Improving DIF detection under small samples. *British Journal of Mathematical and Statistical Psychology, 65*(2), 302–321. https://doi.org/10.1111/j.2044-8317.2011.02025.x
+- Magis, D., & Facon, B. (2014). deltaPlotR: An R package for differential item functioning analysis with Angoff's Delta Plot. *Journal of Statistical Software, 59*(1), 1–19. https://doi.org/10.18637/jss.v059.c01
+- American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+
+Decision record: ADR-0018. Method page: `docs/delta_plot_dif.md`. Adjacent MH/logistic/SIBTEST sources remain in `docs/rubric_dif_pilot_handoff.md`.
+
+## 14. Bradley–Terry MM pairwise ranking — Accepted estimators
+
+Architecture effect:
+
+- fit tie-free paired comparisons with Bradley–Terry worths by Hunter MM;
+- fit observed ties with the implemented additive-`alpha0` BRATT variant only;
+- do not claim Rao–Kupper or Davidson unless a later complete model path implements them;
+- keep LSR / I-LSR / Plackett–Luce as separate ranking estimators.
+
+Primary basis:
+
+- Bradley, R. A., & Terry, M. E. (1952). Rank analysis of incomplete block designs: I. The method of paired comparisons. *Biometrika, 39*(3/4), 324–345. https://doi.org/10.2307/2334029
+- Hunter, D. R. (2004). MM algorithms for generalized Bradley–Terry models. *The Annals of Statistics, 32*(1), 384–406. https://doi.org/10.1214/aos/1079120141
+- American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
+
+Decision record: ADR-0017. Method page: `docs/bradley_terry_mm.md`. Changelog notes that Bradley and Terry (1952) or Hunter (2004) were unread at port time are historical source-governance comments, not a reason to omit these citations.
 
 ## Maintenance rule
 
