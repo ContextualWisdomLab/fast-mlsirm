@@ -108,3 +108,10 @@ def test_sx2_rejects_unrepresentable_builtin_integer_as_value_error() -> None:
     """An exact but non-float-representable integer fails with the stable contract."""
     with pytest.raises(ValueError, match="min_expected must be a finite number"):
         fitstats_module._validate_sx2_controls(7, 7, 10**400, 0.05, 0.1)
+
+
+@pytest.mark.parametrize("value", [2**53 + 1, np.uint64(2**53 + 1)])
+def test_sx2_rejects_lossy_integer_real_controls(value: object) -> None:
+    """Integer-valued real controls must not change identity during float64 normalization."""
+    with pytest.raises(ValueError, match="min_expected must be exactly representable as float64"):
+        fitstats_module._validate_sx2_controls(7, 7, value, 0.05, 0.1)
