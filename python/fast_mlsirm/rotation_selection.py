@@ -91,10 +91,10 @@ def _policy_name(value: str) -> str:
 
 
 def _candidate_names(values: Sequence[str]) -> tuple[str, ...]:
-    """Return at least two distinct, normalized candidate names."""
+    """Return at least two distinct names from an inert candidate container."""
 
-    if isinstance(values, (str, bytes)):
-        raise ValueError("candidates must be a sequence of criterion names")
+    if type(values) not in (list, tuple):
+        raise ValueError("candidates must be an exact list or tuple of criterion names")
     normalized = tuple(_method_name(value) for value in values)
     if len(normalized) < 2:
         raise ValueError("criterion selection requires at least two candidates")
