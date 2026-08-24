@@ -227,7 +227,6 @@ def test_public_mmle_fails_closed_without_allocating_fallback_grid(
             observed,
             model="ULS2PLM",
             config=FitConfig(estimator="mmle", model="ULS2PLM", max_iter=1),
-            backend="rust",
         )
 
 

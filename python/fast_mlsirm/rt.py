@@ -26,213 +26,6 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uintp,
     np.ulonglong,
 )
-_NUMPY_FLOAT_SCALAR_TYPES = tuple(
-    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
-)
-_SUPPORTED_RT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
-_REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
-# RT calibration/person-fit materialize several dense arrays at once. Keep the
-# same 100k-axis / 20M-cell envelope used by the package's dense simulation
-# safety contract, and mirror these values at the Rust boundary.
-_RT_MAX_ARRAY_RANK = 2
-_RT_MAX_AXIS_LENGTH = 100_000
-_RT_MAX_ELEMENTS = 20_000_000
-
-
-def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
-    """Return whether ``value_type`` is one trusted type without callbacks."""
-    return any(value_type is trusted_type for trusted_type in trusted_types)
-
-
-def _is_trusted_real_type(value_type: type) -> bool:
-    """Return whether a scalar type is package-trusted real numeric storage."""
-    return (
-        value_type is int
-        or value_type is float
-        or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
-        or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
-    )
-
-
-def _validated_positive_real(value: object, name: str, *, allow_none: bool = False) -> float | None:
-    """Normalize one positive finite control after exact scalar admission."""
-    if allow_none and value is None:
-        return None
-    if not _is_trusted_real_type(type(value)):
-        raise ValueError(f"{name} must be positive and finite")
-    try:
-        validated = float(value)
-    except OverflowError as exc:
-        raise ValueError(f"{name} must be positive and finite") from exc
-    if not np.isfinite(validated) or validated <= 0.0:
-        raise ValueError(f"{name} must be positive and finite")
-    return validated
-
-
-def _required_positive_real(value: object, name: str) -> float:
-    """Return a required positive real without optimization-sensitive guards."""
-    validated = _validated_positive_real(value, name)
-    if validated is None:
-        raise ValueError(f"{name} must be positive and finite")
-    return validated
-
-
-def _validated_open_unit_real(value: object, name: str) -> float:
-    """Normalize one trusted finite real strictly inside the unit interval."""
-    if not _is_trusted_real_type(type(value)):
-        raise ValueError(f"{name} must be in (0, 1)")
-    try:
-        validated = float(value)
-    except OverflowError as exc:
-        raise ValueError(f"{name} must be in (0, 1)") from exc
-    if not np.isfinite(validated) or not 0.0 < validated < 1.0:
-        raise ValueError(f"{name} must be in (0, 1)")
-    return validated
-
-
-def _validated_nonnegative_real(value: object, name: str) -> float:
-    """Normalize one trusted finite non-negative real control."""
-    if not _is_trusted_real_type(type(value)):
-        raise ValueError(f"{name} must be finite and non-negative")
-    try:
-        validated = float(value)
-    except OverflowError as exc:
-        raise ValueError(f"{name} must be finite and non-negative") from exc
-    if not np.isfinite(validated) or validated < 0.0:
-        raise ValueError(f"{name} must be finite and non-negative")
-    return validated
-
-
-def _validated_boolean(value: object, name: str) -> bool:
-    """Normalize one exact Python/NumPy Boolean without truth-value dispatch."""
-    value_type = type(value)
-    if value_type is bool:
-        return value
-    if value_type is np.bool_:
-        return bool(value)
-    raise ValueError(f"{name} must be a Boolean")
-
-
-def _validated_quadrature(value: object) -> int:
-    """Return one supported exact Gauss-Hermite node count without narrowing."""
-    value_type = type(value)
-    if value_type is int:
-        validated = value
-    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
-        validated = int(value)
-    else:
-        raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
-    if validated not in _SUPPORTED_RT_QUADRATURE_POINTS:
-        raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
-    return validated
-
-
-def _is_trusted_real_scalar(value: object) -> bool:
-    """Return whether one scalar can be marshalled without caller callbacks."""
-    value_type = type(value)
-    return value_type is bool or value_type is np.bool_ or _is_trusted_real_type(value_type)
-
-
-def _validate_array_resource_bounds(source: np.ndarray, name: str, *, nesting_depth: int = 0) -> int:
-    """Validate RT rank/axis/element metadata before any dense conversion."""
-    if nesting_depth + source.ndim > _RT_MAX_ARRAY_RANK:
-        raise ValueError(f"{name} exceeds response-time maximum rank {_RT_MAX_ARRAY_RANK}")
-    if any(axis > _RT_MAX_AXIS_LENGTH for axis in source.shape):
-        raise ValueError(
-            f"{name} exceeds response-time maximum axis length {_RT_MAX_AXIS_LENGTH}"
-        )
-    if source.size > _RT_MAX_ELEMENTS:
-        raise ValueError(
-            f"{name} exceeds response-time maximum element count {_RT_MAX_ELEMENTS}"
-        )
-    return int(source.size)
-
-
-def _validate_real_sequence(value: object, name: str) -> None:
-    """Validate a bounded built-in nested real-numeric sequence without coercion."""
-    # Iterator frames keep traversal memory O(rank) instead of pushing every
-    # element of a caller-owned container onto the explicit stack at once.
-    stack: list[tuple[str, object, int]] = [("visit", value, 0)]
-    active_container_ids: set[int] = set()
-    total_elements = 0
-    while stack:
-        action, current, depth = stack.pop()
-        if action == "leave":
-            active_container_ids.remove(id(current))
-            continue
-        if action == "iterate":
-            iterator = current
-            try:
-                element = next(iterator)  # type: ignore[arg-type]
-            except StopIteration:
-                continue
-            stack.append(("iterate", iterator, depth))
-            stack.append(("visit", element, depth))
-            continue
-
-        current_type = type(current)
-        if current_type is list or current_type is tuple:
-            rank = depth + 1
-            if rank > _RT_MAX_ARRAY_RANK:
-                raise ValueError(
-                    f"{name} exceeds response-time maximum rank {_RT_MAX_ARRAY_RANK}"
-                )
-            if len(current) > _RT_MAX_AXIS_LENGTH:
-                raise ValueError(
-                    f"{name} exceeds response-time maximum axis length {_RT_MAX_AXIS_LENGTH}"
-                )
-            current_id = id(current)
-            if current_id in active_container_ids:
-                raise ValueError(f"{name} must be a real numeric array")
-            active_container_ids.add(current_id)
-            stack.append(("leave", current, depth))
-            stack.append(("iterate", iter(current), rank))
-            continue
-        if current_type is np.ndarray:
-            total_elements += _validate_array_resource_bounds(
-                current,
-                name,
-                nesting_depth=depth,
-            )
-            if total_elements > _RT_MAX_ELEMENTS:
-                raise ValueError(
-                    f"{name} exceeds response-time maximum element count {_RT_MAX_ELEMENTS}"
-                )
-            if current.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
-                raise ValueError(f"{name} must be a real numeric array")
-            continue
-        if not _is_trusted_real_scalar(current):
-            raise ValueError(f"{name} must be a real numeric array")
-        total_elements += 1
-        if total_elements > _RT_MAX_ELEMENTS:
-            raise ValueError(
-                f"{name} exceeds response-time maximum element count {_RT_MAX_ELEMENTS}"
-            )
-
-
-def _validated_real_array(value: object, name: str) -> np.ndarray:
-    """Materialize bounded trusted real evidence without lossy/callback coercion."""
-    value_type = type(value)
-    if value_type is np.ndarray:
-        source = value
-        _validate_array_resource_bounds(source, name)
-        if source.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
-            raise ValueError(f"{name} must be a real numeric array")
-    elif value_type is list or value_type is tuple:
-        _validate_real_sequence(value, name)
-        try:
-            source = np.asarray(value)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(f"{name} must be a real numeric array") from exc
-        _validate_array_resource_bounds(source, name)
-        if source.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
-            raise ValueError(f"{name} must be a real numeric array")
-    else:
-        raise ValueError(f"{name} must be a real numeric array")
-    try:
-        return np.ascontiguousarray(source, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be a real numeric array") from exc
 
 
 @dataclass
@@ -267,7 +60,7 @@ def _validated_max_iter(value: int) -> int:
     value_type = type(value)
     if value_type is int:
         validated = value
-    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+    elif any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
         raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
@@ -308,39 +101,20 @@ def fit_response_times(
     from .fitstats import _core_module
 
     validated_max_iter = _validated_max_iter(max_iter)
-    validated_tol = _required_positive_real(tol, "tol")
-    validated_var_floor = _required_positive_real(var_floor, "var_floor")
-    validated_sigma_floor = _required_positive_real(sigma_floor, "sigma_floor")
-    validated_fix_sigma_tau = _validated_positive_real(
-        fix_sigma_tau,
-        "fix_sigma_tau",
-        allow_none=True,
-    )
-    validated_require_convergence = _validated_boolean(
-        require_convergence,
-        "require_convergence",
-    )
-    t = _validated_real_array(times, "times")
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rt_lognormal"):
+        raise RuntimeError("fit_response_times requires the compiled Rust core")
+    t = np.asarray(times, dtype=np.float64)
     if t.ndim != 2:
         raise ValueError("times must be a 2-D persons x items array")
     n_persons, n_items = t.shape
     observed = np.isfinite(t) & (t > 0)
     obs_arg = None if observed.all() else observed.reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)  # masked entries get a valid placeholder
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_rt_lognormal"):
-        raise RuntimeError("fit_response_times requires the compiled Rust core")
     res = core.fit_rt_lognormal(
-        tt,
-        obs_arg,
-        int(n_persons),
-        int(n_items),
-        validated_max_iter,
-        validated_tol,
-        validated_var_floor,
-        validated_sigma_floor,
-        validated_fix_sigma_tau,
+        tt, obs_arg, int(n_persons), int(n_items),
+        validated_max_iter, float(tol), float(var_floor), float(sigma_floor),
+        None if fix_sigma_tau is None else float(fix_sigma_tau),
     )
     fit = RtFit(
         alpha=np.asarray(res["alpha"], dtype=np.float64),
@@ -360,10 +134,9 @@ def fit_response_times(
         message = (
             "response-time calibration did not converge: "
             f"reason={fit.termination_reason}, iterations={fit.n_iter}/{validated_max_iter}, "
-            f"final_loglik_change={fit.final_loglik_change:.12g}, "
-            f"tolerance={validated_tol:.12g}"
+            f"final_loglik_change={fit.final_loglik_change:.12g}, tolerance={tol:.12g}"
         )
-        if validated_require_convergence:
+        if require_convergence:
             raise RuntimeError(message)
         warnings.warn(message, RuntimeWarning, stacklevel=2)
     return fit
@@ -394,7 +167,6 @@ def fit_speed_accuracy(
     ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
     :func:`fit_response_times`). At least one paired observation and one observed
     item with non-zero accuracy discrimination are required to identify ``rho``.
-    ``q`` must be an exact Python/NumPy integer in ``{7, 11, 15, 21, 31, 41}``, and
     ``max_iter`` obeys the same exact integer ``1..MAX_MAX_ITER`` resource bound as
     standalone RT calibration. Returns a dict with ``rho``, ``sigma_tau``,
     ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,
@@ -412,24 +184,12 @@ def fit_speed_accuracy(
     """
     from .fitstats import _core_module
 
-    validated_q = _validated_quadrature(q)
     validated_max_iter = _validated_max_iter(max_iter)
-    validated_tol = _required_positive_real(tol, "tol")
-    validated_fix_sigma_tau = _validated_positive_real(
-        fix_sigma_tau,
-        "fix_sigma_tau",
-        allow_none=True,
-    )
-    validated_require_convergence = _validated_boolean(
-        require_convergence,
-        "require_convergence",
-    )
-    u = _validated_real_array(responses, "responses")
-    t = _validated_real_array(times, "times")
-    a_arr = _validated_real_array(a, "a")
-    b_arr = _validated_real_array(b, "b")
-    alpha_arr = _validated_real_array(alpha, "alpha")
-    beta_arr = _validated_real_array(beta, "beta")
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
+        raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
+    u = np.asarray(responses, dtype=np.float64)
+    t = np.asarray(times, dtype=np.float64)
     if u.ndim != 2 or t.shape != u.shape:
         raise ValueError("responses and times must be matching 2-D persons x items arrays")
     n_persons, n_items = u.shape
@@ -437,24 +197,13 @@ def fit_speed_accuracy(
     obs_arg = None if observed.all() else observed.reshape(-1)
     uu = np.where(observed, u, 0.0).reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
-        raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
     res = core.fit_speed_accuracy_covariance(
-        uu,
-        tt,
-        obs_arg,
-        a_arr,
-        b_arr,
-        alpha_arr,
-        beta_arr,
-        int(n_persons),
-        int(n_items),
-        validated_q,
-        validated_max_iter,
-        validated_tol,
-        validated_fix_sigma_tau,
+        uu, tt, obs_arg,
+        np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64),
+        np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
+        int(n_persons), int(n_items),
+        int(q), validated_max_iter, float(tol),
+        None if fix_sigma_tau is None else float(fix_sigma_tau),
     )
     fit = {
         "rho": float(res["rho"]),
@@ -473,10 +222,9 @@ def fit_speed_accuracy(
         message = (
             "joint speed-accuracy calibration did not converge: "
             f"reason={fit['termination_reason']}, iterations={fit['n_iter']}/{validated_max_iter}, "
-            f"final_loglik_change={fit['final_loglik_change']:.12g}, "
-            f"tolerance={validated_tol:.12g}"
+            f"final_loglik_change={fit['final_loglik_change']:.12g}, tolerance={tol:.12g}"
         )
-        if validated_require_convergence:
+        if require_convergence:
             raise RuntimeError(message)
         warnings.warn(message, RuntimeWarning, stacklevel=2)
     return fit
@@ -520,30 +268,20 @@ def rt_person_fit(
     """
     from .fitstats import _core_module
 
-    validated_alpha_level = _validated_open_unit_real(alpha_level, "alpha_level")
-    validated_z_fast = _validated_nonnegative_real(z_fast, "z_fast")
-    t = _validated_real_array(times, "times")
-    alpha_arr = _validated_real_array(alpha, "alpha")
-    beta_arr = _validated_real_array(beta, "beta")
+    core = _core_module()
+    if core is None or not hasattr(core, "rt_person_fit"):
+        raise RuntimeError("rt_person_fit requires the compiled Rust core")
+    t = np.asarray(times, dtype=np.float64)
     if t.ndim != 2:
         raise ValueError("times must be a 2-D persons x items array")
     n_persons, n_items = t.shape
     observed = np.isfinite(t) & (t > 0)
     obs_arg = None if observed.all() else observed.reshape(-1)
     tt = np.where(observed, t, 1.0).reshape(-1)
-
-    core = _core_module()
-    if core is None or not hasattr(core, "rt_person_fit"):
-        raise RuntimeError("rt_person_fit requires the compiled Rust core")
     res = core.rt_person_fit(
-        tt,
-        obs_arg,
-        int(n_persons),
-        int(n_items),
-        alpha_arr,
-        beta_arr,
-        validated_alpha_level,
-        validated_z_fast,
+        tt, obs_arg, int(n_persons), int(n_items),
+        np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
+        float(alpha_level), float(z_fast),
     )
     return {
         "w": np.asarray(res["w"], dtype=np.float64),

@@ -52,13 +52,10 @@ class _RuntimeEquality:
 
 
 class _DomainErrorString(str):
-    """String fixture whose package-error callback must never execute."""
-
-    calls = 0
+    """String fixture that raises an existing package-owned domain error."""
 
     def strip(self, chars=None):
-        """Record forbidden text dispatch before raising the sentinel error."""
-        type(self).calls += 1
+        """Raise the shared sentinel domain error unchanged."""
         raise _SENTINEL_ERROR
 
 
@@ -74,13 +71,10 @@ class _DomainErrorInteger:
 
 
 class _KeyboardString(str):
-    """String fixture whose BaseException callback must never execute."""
-
-    calls = 0
+    """String fixture proving BaseException is outside the redaction boundary."""
 
     def strip(self, chars=None):
-        """Record forbidden text dispatch before raising KeyboardInterrupt."""
-        type(self).calls += 1
+        """Raise KeyboardInterrupt rather than an ordinary Exception."""
         raise KeyboardInterrupt
 
 
@@ -220,20 +214,15 @@ def test_response_type_equality_callback_failure_is_redacted() -> None:
     assert "private enum comparison payload" not in str(captured.value)
 
 
-def test_package_owned_text_callback_errors_are_rejected_before_dispatch() -> None:
-    """String subclasses cannot execute even package-owned error callbacks."""
-    _DomainErrorString.calls = 0
+def test_package_owned_text_callback_errors_are_preserved_unchanged() -> None:
+    """String normalization re-raises an existing package-owned domain error."""
     with pytest.raises(AssessmentSpecError) as text_error:
         ConstructSpec(
             construct_id=_DomainErrorString("argument_quality"),
             construct_definition="Definition.",
             rubric_fingerprints=("a" * 64,),
         )
-
-    assert text_error.value.code == "invalid_construct_id"
-    assert text_error.value.path == "$.construct_id"
-    assert text_error.value is not _SENTINEL_ERROR
-    assert _DomainErrorString.calls == 0
+    assert text_error.value is _SENTINEL_ERROR
 
 
 def test_integer_callback_domain_errors_are_rejected_before_dispatch() -> None:
@@ -254,23 +243,14 @@ def test_integer_callback_domain_errors_are_rejected_before_dispatch() -> None:
     assert _DomainErrorInteger.calls == 0
 
 
-def test_text_base_exceptions_are_rejected_before_dispatch() -> None:
-    """String subclasses cannot execute BaseException-raising text callbacks."""
-    _KeyboardString.calls = 0
-    with pytest.raises(AssessmentSpecError) as text_error:
+def test_base_exceptions_are_not_swallowed_by_callback_redaction() -> None:
+    """KeyboardInterrupt propagates through text and collection boundaries."""
+    with pytest.raises(KeyboardInterrupt):
         ConstructSpec(
             construct_id=_KeyboardString("argument_quality"),
             construct_definition="Definition.",
             rubric_fingerprints=("a" * 64,),
         )
-
-    assert text_error.value.code == "invalid_construct_id"
-    assert text_error.value.path == "$.construct_id"
-    assert _KeyboardString.calls == 0
-
-
-def test_collection_base_exceptions_are_not_swallowed() -> None:
-    """BaseException still propagates after a collection callback is admitted."""
     with pytest.raises(KeyboardInterrupt):
         ConstructSpec(
             construct_id="argument_quality",

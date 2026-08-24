@@ -1,7 +1,7 @@
 """Trusted scalar boundary for paired-comparison scaling controls.
 
 This module validates and normalizes caller-owned semantic controls before the
-historical :mod:`fast_mlsirm.scaling` wrappers materialize data or discover
+historical :mod:`fast_mlsirm.scaling` wrapper materializes data or discovers
 the compiled core. Bradley-Terry estimation and every result-affecting
 calculation remain owned by the Rust implementation.
 """
@@ -79,87 +79,29 @@ def _normalized_controls(alpha: object, max_iter: object, tol: object) -> tuple[
     return normalized_alpha, normalized_max_iter, normalized_tol
 
 
-def _normalized_bratt_controls(
-    ref_index: object,
-    ref_value: object,
-    max_iter: object,
-    tol: object,
-) -> tuple[int, float, int, float]:
-    """Normalize BRATT controls before comparison data or native discovery."""
-    normalized_ref_index = _exact_integer(ref_index, "ref_index")
-    normalized_ref_value = _exact_real(ref_value, "ref_value")
-    normalized_max_iter = _exact_integer(max_iter, "max_iter")
-    normalized_tol = _exact_real(tol, "tol")
-
-    if normalized_ref_index < 0:
-        raise ValueError("ref_index must be nonnegative")
-    if not math.isfinite(normalized_ref_value) or normalized_ref_value <= 0.0:
-        raise ValueError("ref_value must be finite and positive")
-    if not 1 <= normalized_max_iter <= MAX_MAX_ITER:
-        raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
-    if not math.isfinite(normalized_tol) or normalized_tol <= 0.0:
-        raise ValueError("tol must be finite and positive")
-    return (
-        normalized_ref_index,
-        normalized_ref_value,
-        normalized_max_iter,
-        normalized_tol,
-    )
-
-
 def install(scaling_module: ModuleType) -> None:
-    """Install paired-comparison control wrappers once on ``scaling_module``."""
-    bradley_original: Callable[..., Any] = scaling_module.bradley_terry_mm
-    if not getattr(bradley_original, "__fast_mlsirm_control_hardened__", False):
+    """Install the Bradley-Terry control wrapper exactly once on ``scaling_module``."""
+    original: Callable[..., Any] = scaling_module.bradley_terry_mm
+    if getattr(original, "__fast_mlsirm_control_hardened__", False):
+        return
 
-        @wraps(bradley_original)
-        def hardened_bradley_terry_mm(
-            wins: object,
-            alpha: object = 0.0,
-            max_iter: object = 10_000,
-            tol: object = 1e-8,
-        ) -> Any:
-            """Validate trusted controls, then delegate unchanged arithmetic to Rust."""
-            normalized_alpha, normalized_max_iter, normalized_tol = _normalized_controls(
-                alpha, max_iter, tol
-            )
-            return bradley_original(
-                wins,
-                alpha=normalized_alpha,
-                max_iter=normalized_max_iter,
-                tol=normalized_tol,
-            )
+    @wraps(original)
+    def hardened_bradley_terry_mm(
+        wins: object,
+        alpha: object = 0.0,
+        max_iter: object = 10_000,
+        tol: object = 1e-8,
+    ) -> Any:
+        """Validate trusted controls, then delegate unchanged arithmetic to Rust."""
+        normalized_alpha, normalized_max_iter, normalized_tol = _normalized_controls(
+            alpha, max_iter, tol
+        )
+        return original(
+            wins,
+            alpha=normalized_alpha,
+            max_iter=normalized_max_iter,
+            tol=normalized_tol,
+        )
 
-        hardened_bradley_terry_mm.__fast_mlsirm_control_hardened__ = True
-        scaling_module.bradley_terry_mm = hardened_bradley_terry_mm
-
-    bratt_original: Callable[..., Any] = scaling_module.bratt_mm
-    if not getattr(bratt_original, "__fast_mlsirm_control_hardened__", False):
-
-        @wraps(bratt_original)
-        def hardened_bratt_mm(
-            wins: object,
-            ties: object,
-            ref_index: object = 0,
-            ref_value: object = 1.0,
-            max_iter: object = 10_000,
-            tol: object = 1e-10,
-        ) -> Any:
-            """Validate BRATT controls, then delegate unchanged arithmetic to Rust."""
-            (
-                normalized_ref_index,
-                normalized_ref_value,
-                normalized_max_iter,
-                normalized_tol,
-            ) = _normalized_bratt_controls(ref_index, ref_value, max_iter, tol)
-            return bratt_original(
-                wins,
-                ties,
-                ref_index=normalized_ref_index,
-                ref_value=normalized_ref_value,
-                max_iter=normalized_max_iter,
-                tol=normalized_tol,
-            )
-
-        hardened_bratt_mm.__fast_mlsirm_control_hardened__ = True
-        scaling_module.bratt_mm = hardened_bratt_mm
+    hardened_bradley_terry_mm.__fast_mlsirm_control_hardened__ = True
+    scaling_module.bradley_terry_mm = hardened_bradley_terry_mm

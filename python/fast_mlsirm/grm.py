@@ -21,94 +21,6 @@ _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS_GH = 3
 _MAX_DIMS_QMC = 6
 _MAX_NODES = 200_000
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
-
-
-def _finite_integer_control(value: object, name: str) -> int:
-    """Normalize a trusted finite integer-valued scalar without caller callbacks."""
-
-    value_type = type(value)
-    if value_type is int or value_type is float:
-        scalar = value
-    elif any(
-        value_type is scalar_type
-        for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
-    ):
-        scalar = value
-    else:
-        raise ValueError(f"{name} must be a finite integer")
-    try:
-        numeric = float(scalar)
-    except OverflowError:
-        raise ValueError(f"{name} must be a finite integer") from None
-    if not np.isfinite(numeric) or numeric != np.floor(numeric):
-        raise ValueError(f"{name} must be a finite integer")
-    return int(numeric)
-
-
-def _positive_real_control(value: object, name: str) -> float:
-    """Normalize a trusted finite positive real scalar without caller callbacks."""
-
-    value_type = type(value)
-    if not (
-        value_type is int
-        or value_type is float
-        or any(
-            value_type is scalar_type
-            for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
-        )
-    ):
-        raise ValueError(f"{name} must be a real number")
-    try:
-        numeric = float(value)
-    except OverflowError:
-        raise ValueError(f"{name} must be finite and > 0") from None
-    if not np.isfinite(numeric) or numeric <= 0:
-        raise ValueError(f"{name} must be finite and > 0")
-    return numeric
-
-
-def _u64_seed(value: object) -> int:
-    """Normalize the deterministic integration seed without subclass callbacks."""
-
-    value_type = type(value)
-    if value_type is int:
-        seed = value
-    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        seed = int(value)
-    else:
-        raise ValueError("xi_seed must be a non-negative integer")
-    if not 0 <= seed < 2**64:
-        raise ValueError("xi_seed must be in [0, 2**64)")
-    return seed
-
-
-def _response_array(value: np.ndarray) -> np.ndarray:
-    """Materialize real numeric response storage before floating-point marshalling."""
-
-    response_array = np.asarray(value)
-    if np.iscomplexobj(response_array):
-        raise ValueError("responses must be real-valued")
-    if response_array.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError("responses must be a numeric array")
-    y = response_array.astype(np.float64, copy=False)
-    if np.isinf(y).any():
-        raise ValueError("responses must not contain infinity")
-    return y
 
 
 @dataclass
@@ -194,35 +106,53 @@ def fit_grm(
         Reckase, M. D. (2009). *Multidimensional item response theory*. Springer.
             https://doi.org/10.1007/978-0-387-89976-3
     """
-    # Fail closed on semantic controls before caller response materialization.
+    # Fail closed on hostile node_rule before any core import or coercion.
     node_rule = normalize_node_rule(node_rule)
-    _gh = node_rule == "gh"
-    n_cat_int = _finite_integer_control(n_cat, "n_cat")
-    if not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
-        raise ValueError(f"n_cat must be between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    q_int = _finite_integer_control(q, "q")
-    if _gh and q_int not in _SUPPORTED_Q:
-        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
-    max_iter_int = _finite_integer_control(max_iter, "max_iter")
-    if not 1 <= max_iter_int <= MAX_MAX_ITER:
-        raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
-    xi_points_int = _finite_integer_control(xi_points, "xi_points")
-    if not 1 <= xi_points_int <= _MAX_NODES:
-        raise ValueError(f"xi_points must be between 1 and {_MAX_NODES}")
-    xi_seed_int = _u64_seed(xi_seed)
-    tol_float = _positive_real_control(tol, "tol")
 
-    y = _response_array(responses)
+    y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     resolved_model, pat = _resolve_model(model, n_items)
     n_dims = pat.shape[1]
+    _gh = node_rule == "gh"
     _max_dims = _MAX_DIMS_GH if _gh else _MAX_DIMS_QMC
     if not 1 <= n_dims <= _max_dims:
         raise ValueError(
             f"loading_pattern dimensions must be between 1 and {_max_dims} (node_rule={node_rule!r})"
         )
+
+    def _finite_int(value, name: str) -> int:
+        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
+        scalar = np.asarray(value)
+        if (
+            scalar.ndim != 0
+            or not np.issubdtype(scalar.dtype, np.number)
+            or np.iscomplexobj(scalar)
+        ):
+            raise ValueError(f"{name} must be a finite integer")
+        numeric = float(scalar)
+        if not np.isfinite(numeric) or numeric != np.floor(numeric):
+            raise ValueError(f"{name} must be a finite integer")
+        return int(numeric)
+
+    n_cat_int = _finite_int(n_cat, "n_cat")
+    if not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(f"n_cat must be between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
+    q_int = _finite_int(q, "q")
+    if _gh and q_int not in _SUPPORTED_Q:
+        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
+    max_iter_int = _finite_int(max_iter, "max_iter")
+    xi_points_int = _finite_int(xi_points, "xi_points")
+    if not 1 <= max_iter_int <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
+    if not 1 <= xi_points_int <= _MAX_NODES:
+        raise ValueError(f"xi_points must be between 1 and {_MAX_NODES}")
+    if isinstance(xi_seed, bool) or not isinstance(xi_seed, (int, np.integer)):
+        raise ValueError("xi_seed must be a non-negative integer")
+    xi_seed_int = int(xi_seed)
+    if not 0 <= xi_seed_int < 2**64:
+        raise ValueError("xi_seed must be in [0, 2**64)")
 
     observed = np.isfinite(y) & (y >= 0)
     if np.any(observed):
@@ -255,7 +185,7 @@ def fit_grm(
         n_cat_int,
         q_int,
         max_iter_int,
-        tol_float,
+        float(tol),
         node_rule,
         xi_points_int,
         xi_seed_int,

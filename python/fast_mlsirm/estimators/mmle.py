@@ -55,7 +55,7 @@ def _estimate_mmle_workspace_bytes(
     n_items: int,
     n_nodes: int,
 ) -> int:
-    """Conservatively estimate owned NumPy reference workspace in bytes.
+    """Conservatively estimate owned NumPy fallback workspace in bytes.
 
     The estimate covers response-sized conversion and masking arrays,
     person-by-node posterior arrays, item-by-node Newton arrays, and small
@@ -92,7 +92,7 @@ def _validate_mmle_workspace(
     )
     if estimated_bytes > MAX_MMLE_FALLBACK_WORKSPACE_BYTES:
         raise ValueError(
-            "NumPy MMLE reference workspace estimate "
+            "NumPy MMLE fallback workspace estimate "
             f"{estimated_bytes} bytes exceeds the "
             f"{MAX_MMLE_FALLBACK_WORKSPACE_BYTES}-byte safe limit; "
             "use the Rust backend or reduce the response matrix or quadrature nodes"

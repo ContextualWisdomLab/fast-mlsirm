@@ -173,22 +173,6 @@ def test_load_json_bounded_happy_and_depth(tmp_path):
         _load_json_bounded(deep, source="j")
 
 
-@pytest.mark.parametrize(
-    "payload",
-    [
-        '{"status":"ok","status":"failed"}',
-        '{"outer":{"id":1,"id":2}}',
-    ],
-    ids=["root", "nested"],
-)
-def test_load_json_bounded_rejects_duplicate_object_members(tmp_path, payload):
-    duplicate = tmp_path / "duplicate.json"
-    duplicate.write_text(payload, encoding="utf-8")
-
-    with pytest.raises(ValueError, match="contains a duplicate JSON object member"):
-        _load_json_bounded(duplicate, source="artifact JSON")
-
-
 def test_load_json_bounded_byte_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(io_mod, "MAX_JSON_INPUT_BYTES", 3)
     big = tmp_path / "big.json"

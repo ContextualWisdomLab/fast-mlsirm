@@ -53,5 +53,5 @@ def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
 
     assert "permissions:\n  contents: read\n" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
-    assert "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
-    assert "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
+    assert "github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3" in workflow
+    assert "github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3" in workflow

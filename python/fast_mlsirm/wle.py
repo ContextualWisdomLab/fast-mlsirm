@@ -9,14 +9,6 @@ from __future__ import annotations
 import numpy as np
 
 
-def _real_float64_array(value: np.ndarray, name: str) -> np.ndarray:
-    """Reject complex caller evidence before real-valued numeric marshalling."""
-    raw = np.asarray(value)
-    if np.iscomplexobj(raw):
-        raise ValueError(f"{name} must be real-valued")
-    return np.asarray(raw, dtype=np.float64)
-
-
 def score_wle(
     a: np.ndarray,
     b: np.ndarray,
@@ -59,19 +51,19 @@ def score_wle(
     if core is None or not hasattr(core, "score_wle"):
         raise RuntimeError("score_wle requires the compiled Rust core")
 
-    a = _real_float64_array(a, "a").reshape(-1)
-    b = _real_float64_array(b, "b").reshape(-1)
+    a = np.asarray(a, dtype=np.float64).reshape(-1)
+    b = np.asarray(b, dtype=np.float64).reshape(-1)
     n_items = a.shape[0]
     if n_items == 0:
         raise ValueError("need at least one item")
     if b.shape[0] != n_items:
         raise ValueError("a and b must have the same length")
-    c = np.zeros(n_items) if c is None else _real_float64_array(c, "c").reshape(-1)
-    d = np.ones(n_items) if d is None else _real_float64_array(d, "d").reshape(-1)
+    c = np.zeros(n_items) if c is None else np.asarray(c, dtype=np.float64).reshape(-1)
+    d = np.ones(n_items) if d is None else np.asarray(d, dtype=np.float64).reshape(-1)
     if c.shape[0] != n_items or d.shape[0] != n_items:
         raise ValueError("c and d must have the same length as a")
 
-    y = _real_float64_array(responses, "responses")
+    y = np.asarray(responses, dtype=np.float64)
     if y.ndim == 1:
         y = y.reshape(1, -1)
     if y.ndim != 2 or y.shape[1] != n_items:
@@ -170,14 +162,14 @@ def score_wle_poly(
     n_cat = int(n_cat)
     if n_cat < 2:
         raise ValueError("n_cat must be >= 2")
-    slope = _real_float64_array(slope, "slope").reshape(-1)
+    slope = np.asarray(slope, dtype=np.float64).reshape(-1)
     n_items = slope.shape[0]
     if n_items == 0:
         raise ValueError("need at least one item")
-    cat = _real_float64_array(cat_params, "cat_params")
+    cat = np.asarray(cat_params, dtype=np.float64)
     if cat.shape != (n_items, n_cat - 1):
         raise ValueError("cat_params must be (n_items, n_cat - 1)")
-    y = _real_float64_array(responses, "responses")
+    y = np.asarray(responses, dtype=np.float64)
     if y.ndim == 1:
         y = y.reshape(1, -1)
     if y.ndim != 2 or y.shape[1] != n_items:

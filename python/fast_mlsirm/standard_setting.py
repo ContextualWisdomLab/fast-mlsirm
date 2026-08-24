@@ -108,15 +108,6 @@ def hofstee(
     ``fn_plot_hofstee()``. https://github.com/GergoIO/psychometricsGP
     (READ: ``R/fn_plot_hofstee.R``; ported implementation.)
     """
-    min_cut = _percentage_control(min_cut, "min_cut")
-    max_cut = _percentage_control(max_cut, "max_cut")
-    min_fail = _percentage_control(min_fail, "min_fail")
-    max_fail = _percentage_control(max_fail, "max_fail")
-    if min_cut > max_cut:
-        raise ValueError("min_cut must not exceed max_cut")
-    if min_fail > max_fail:
-        raise ValueError("min_fail must not exceed max_fail")
-
     s = np.asarray(scores)
     if s.ndim != 1:
         raise ValueError("scores must be a 1-D vector")
@@ -127,6 +118,14 @@ def hofstee(
     if s.dtype.kind not in ("i", "u", "f"):
         raise ValueError("scores must be an integer or float array")
     sf = np.ascontiguousarray(s, dtype=np.float64)
+    min_cut = _percentage_control(min_cut, "min_cut")
+    max_cut = _percentage_control(max_cut, "max_cut")
+    min_fail = _percentage_control(min_fail, "min_fail")
+    max_fail = _percentage_control(max_fail, "max_fail")
+    if min_cut > max_cut:
+        raise ValueError("min_cut must not exceed max_cut")
+    if min_fail > max_fail:
+        raise ValueError("min_fail must not exceed max_fail")
 
     from .fitstats import _core_module
 

@@ -4,20 +4,7 @@
 
 `backend="auto"` is a convenience selector for the production Rust/PyO3 numerical implementation. It is not permission to switch to an independent NumPy implementation when the compiled extension is unavailable. A missing compiled core therefore fails closed before psychometric numerical work begins.
 
-The production `FitConfig` and CLI backend vocabularies are `{auto, rust}`.
-NumPy is retained only behind the explicitly named `fit_reference` API and
-`fit --reference` mode for parity and research inspection. It is never selected
-implicitly by automatic production resolution. Rust device selection remains a
-different axis: a Rust GPU request may fall back to the parity-verified Rust
-CPU implementation because the numerical owner and formula contract remain
-Rust-owned.
-
-The public `fit` signature has no reference-enabling keyword, and
-`FitConfig.validate()` has no public NumPy opt-in flag. The named reference API
-enters a scoped authority context and calls the same fit implementation with
-an explicit NumPy configuration. Low-level objective calls may still request
-`backend="numpy"` explicitly for Rust/NumPy parity; that kernel-level escape
-does not make NumPy a production fit backend.
+The explicit `backend="numpy"` surface is retained in this bounded migration as a reference/parity choice. It is never selected implicitly by automatic production resolution. Rust device selection remains a different axis: a Rust GPU request may fall back to the parity-verified Rust CPU implementation because the numerical owner and formula contract remain Rust-owned.
 
 ## Failure boundary
 
@@ -27,13 +14,7 @@ The package exposes a stable, non-reflective error for an unavailable automatic 
 
 ## Falsification and acceptance
 
-This decision is falsified if any ordinary `FitConfig` or `backend="auto"` call
-can select NumPy because the Rust extension is missing or incompatible.
-Acceptance requires tests proving that automatic resolution selects Rust when
-available, fails closed when absent, production configuration rejects the
-NumPy name, and `fit_reference` is the only public fitting escape hatch.
-Installed-wheel/package evidence must continue to prove the Rust extension is
-present in supported production artifacts.
+This decision is falsified if any ordinary `backend="auto"` call can select NumPy because the Rust extension is missing or incompatible. Acceptance requires tests proving that automatic resolution selects Rust when available, fails closed when absent, and explicit NumPy resolution remains an explicit caller decision. Installed-wheel/package evidence must continue to prove the Rust extension is present in supported production artifacts.
 
 ## References
 

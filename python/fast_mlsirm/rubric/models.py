@@ -64,7 +64,7 @@ class EvidenceMode(str, Enum):
 
 def _text(value: Any, name: str, *, maximum: int = MAX_TEXT_LENGTH) -> str:
     """Normalize bounded non-empty text or raise a field-specific error."""
-    if type(value) is not str:
+    if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
     normalized = value.strip()
     if not normalized:
@@ -152,15 +152,13 @@ def _identifier_tuple(
 
 
 def _enum_value(value: Any, enum_type: type[EnumValue], name: str) -> EnumValue:
-    """Normalize an enum instance or its exact built-in string value."""
+    """Normalize an enum instance or its exact string value."""
     if isinstance(value, enum_type):
         return value
-    choices = [member.value for member in enum_type]
-    if type(value) is not str:
-        raise ValueError(f"{name} must be one of {choices}")
     try:
         return enum_type(value)
     except (TypeError, ValueError) as exc:
+        choices = [member.value for member in enum_type]
         raise ValueError(f"{name} must be one of {choices}") from exc
 
 

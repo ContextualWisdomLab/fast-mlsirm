@@ -22,17 +22,6 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uintp,
     np.ulonglong,
 )
-_NUMPY_REAL_SCALAR_TYPES = _NUMPY_INTEGER_SCALAR_TYPES + (
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
-_NUMPY_COMPLEX_SCALAR_TYPES = (
-    np.complex64,
-    np.complex128,
-    np.clongdouble,
-)
 
 
 def _exact_integer_control(value: object, error_message: str) -> int:
@@ -43,63 +32,6 @@ def _exact_integer_control(value: object, error_message: str) -> int:
     if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return int(value)
     raise ValueError(error_message)
-
-
-def _trusted_numeric_evidence(
-    value: object,
-    *,
-    type_error: str,
-    complex_error: str,
-    allow_bool: bool = False,
-) -> np.ndarray:
-    """Materialize numeric evidence only after callback-free identity admission."""
-    value_type = type(value)
-    if value_type is np.ndarray:
-        array = value
-    elif value_type is list or value_type is tuple:
-        stack: list[tuple[object, bool]] = [(value, False)]
-        active_containers: set[int] = set()
-        while stack:
-            current, leaving = stack.pop()
-            current_type = type(current)
-            if current_type is list or current_type is tuple:
-                current_id = id(current)
-                if leaving:
-                    active_containers.remove(current_id)
-                    continue
-                if current_id in active_containers:
-                    raise ValueError(type_error)
-                active_containers.add(current_id)
-                stack.append((current, True))
-                stack.extend((child, False) for child in reversed(current))
-                continue
-            if current_type is complex or any(
-                current_type is trusted_type
-                for trusted_type in _NUMPY_COMPLEX_SCALAR_TYPES
-            ):
-                raise ValueError(complex_error)
-            if current_type is bool or current_type is np.bool_:
-                if allow_bool:
-                    continue
-                raise ValueError(type_error)
-            if current_type is int or current_type is float or any(
-                current_type is trusted_type for trusted_type in _NUMPY_REAL_SCALAR_TYPES
-            ):
-                continue
-            raise ValueError(type_error)
-        try:
-            array = np.asarray(value)
-        except (TypeError, ValueError):
-            raise ValueError(type_error) from None
-    else:
-        raise ValueError(type_error)
-
-    if np.iscomplexobj(array):
-        raise ValueError(complex_error)
-    allowed_kinds = ("b", "i", "u", "f") if allow_bool else ("i", "u", "f")
-    if array.dtype.kind not in allowed_kinds:
-        raise ValueError(type_error)
-    return array
 
 
 @dataclass
@@ -119,15 +51,15 @@ class WollackOmegaResult:
 
 def _index_vector(arr: np.ndarray, name: str, n_options: int) -> np.ndarray:
     """Validate and coerce a 1-D option-index vector into ``0..n_options-1``."""
-    a = _trusted_numeric_evidence(
-        arr,
-        type_error=f"{name} must be an integer or float index array",
-        complex_error=f"{name} must be real-valued",
-    )
+    a = np.asarray(arr)
     if a.ndim != 1:
         raise ValueError(f"{name} must be one-dimensional")
     if a.size == 0:
         raise ValueError(f"{name} must be non-empty")
+    if np.iscomplexobj(a):
+        raise ValueError(f"{name} must be real-valued")
+    if a.dtype.kind not in ("i", "u", "f"):
+        raise ValueError(f"{name} must be an integer or float index array")
     af = a.astype(np.float64)
     if not np.all(np.isfinite(af)):
         raise ValueError(f"{name} must be finite")
@@ -191,12 +123,11 @@ def wollack_omega(
     if c.size != s.size:
         raise ValueError("copier and source must have the same length")
 
-    p = _trusted_numeric_evidence(
-        probs,
-        type_error="probs must be numeric",
-        complex_error="probs must be real-valued",
-        allow_bool=True,
-    )
+    p = np.asarray(probs)
+    if np.iscomplexobj(p):
+        raise ValueError("probs must be real-valued")
+    if p.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("probs must be numeric")
     if p.ndim == 2:
         if p.shape != (c.size, n_options):
             raise ValueError(
@@ -301,15 +232,15 @@ def k_index(
     if source < 0:
         raise ValueError("source must be nonnegative")
 
-    x = _trusted_numeric_evidence(
-        responses,
-        type_error="responses must be an integer or float array",
-        complex_error="responses must be real-valued",
-    )
+    x = np.asarray(responses)
     if x.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items matrix")
     if x.shape[0] < 2 or x.shape[1] < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
+    if np.iscomplexobj(x):
+        raise ValueError("responses must be real-valued")
+    if x.dtype.kind not in ("i", "u", "f"):
+        raise ValueError("responses must be an integer or float array")
     xf = np.ascontiguousarray(x, dtype=np.float64)
     if not np.all((xf == 0.0) | (xf == 1.0)):
         raise ValueError("responses entries must be exactly 0 or 1 (no missing)")
@@ -384,21 +315,17 @@ def gbt(matches, match_probs):
     Zopluoglu, C. (2018). *CopyDetect* (R package). (READ:
     ``R/similarity1.r`` internal ``GBT()``; corroboration.)
     """
-    m = _trusted_numeric_evidence(
-        matches,
-        type_error="matches must be an integer or float array",
-        complex_error="matches must be real-valued",
-    )
-    p = _trusted_numeric_evidence(
-        match_probs,
-        type_error="match_probs must be an integer or float array",
-        complex_error="match_probs must be real-valued",
-    )
+    m = np.asarray(matches)
+    p = np.asarray(match_probs)
     for name, a in (("matches", m), ("match_probs", p)):
         if a.ndim != 1:
             raise ValueError(f"{name} must be a 1-D vector")
         if a.shape[0] < 1:
             raise ValueError(f"{name} must be non-empty")
+        if np.iscomplexobj(a):
+            raise ValueError(f"{name} must be real-valued")
+        if a.dtype.kind not in ("i", "u", "f"):
+            raise ValueError(f"{name} must be an integer or float array")
     if m.shape[0] != p.shape[0]:
         raise ValueError("matches and match_probs must have equal length")
     mf = np.ascontiguousarray(m, dtype=np.float64)
@@ -508,15 +435,15 @@ def k_variants(
     if source < 0:
         raise ValueError("source must be nonnegative")
 
-    x = _trusted_numeric_evidence(
-        responses,
-        type_error="responses must be an integer or float array",
-        complex_error="responses must be real-valued",
-    )
+    x = np.asarray(responses)
     if x.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items matrix")
     if x.shape[0] < 2 or x.shape[1] < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
+    if np.iscomplexobj(x):
+        raise ValueError("responses must be real-valued")
+    if x.dtype.kind not in ("i", "u", "f"):
+        raise ValueError("responses must be an integer or float array")
     xf = np.ascontiguousarray(x, dtype=np.float64)
     if not np.all((xf == 0.0) | (xf == 1.0)):
         raise ValueError("responses entries must be exactly 0 or 1 (no missing)")

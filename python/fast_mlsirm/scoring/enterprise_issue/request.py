@@ -18,6 +18,7 @@ from ..assessment import AssessmentSpec
 from ..authorization import build_scoring_request
 from ..execution import EvidenceReference, ObservationGranularity, ScoringRequest
 from .contracts import (
+    MAX_ENTERPRISE_ISSUE_EVIDENCE,
     MAX_ENTERPRISE_STAKEHOLDERS,
     AtomicIssueRecord,
     CandidateIntervention,
@@ -52,7 +53,7 @@ def _typed_content_values(
     """Return bounded unique records in deterministic fingerprint order."""
     raw = bounded_values(values, name, minimum=0, maximum=maximum)
     for index, value in enumerate(raw):
-        if type(value) is not expected_type:
+        if not isinstance(value, expected_type):
             raise assessment_error(
                 f"invalid_{name}",
                 f"$.{name}[{index}]",
@@ -124,7 +125,7 @@ def _intervention_values(
 
 def _validated_issue(issue: AtomicIssueRecord) -> AtomicIssueRecord:
     """Return one accepted atomic issue or fail before attribute access."""
-    if type(issue) is not AtomicIssueRecord:
+    if not isinstance(issue, AtomicIssueRecord):
         raise assessment_error(
             "invalid_atomic_issue",
             "$.issue",

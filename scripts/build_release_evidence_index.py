@@ -40,7 +40,6 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _sha256(path: Path) -> str:
-    """Return the SHA-256 digest of one release evidence file."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -49,7 +48,7 @@ def _sha256(path: Path) -> str:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return the exact HEAD SHA, failing closed when Git provenance is unavailable."""
+    """Return HEAD SHA, failing closed when Git metadata lookup times out."""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -61,19 +60,12 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError("source commit lookup failed") from exc
-
-    source_commit = completed.stdout.strip()
-    if len(source_commit) not in {40, 64} or any(
-        character not in "0123456789abcdef" for character in source_commit
-    ):
-        raise RuntimeError("source commit lookup returned invalid identity")
-    return source_commit
+    except Exception:
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
 
 
 def _project_version(repo_root: Path) -> str:
-    """Read the package version from the repository's ``pyproject.toml``."""
     pyproject = repo_root / "pyproject.toml"
     try:
         import tomllib
@@ -85,7 +77,6 @@ def _project_version(repo_root: Path) -> str:
 
 
 def _parse_project_version(pyproject_text: str) -> str:
-    """Extract a project version without requiring the TOML parser."""
     in_project = False
     for raw_line in pyproject_text.splitlines():
         line = raw_line.strip()
@@ -102,7 +93,6 @@ def _parse_project_version(pyproject_text: str) -> str:
 
 
 def _resolve_artifact_path(value: Any, *, base: Path) -> Path | None:
-    """Resolve a manifest artifact path relative to its manifest directory."""
     if not isinstance(value, str) or not value:
         return None
     path = Path(value)
@@ -112,7 +102,6 @@ def _resolve_artifact_path(value: Any, *, base: Path) -> Path | None:
 
 
 def _file_entry(role: str, path: Path) -> dict[str, Any]:
-    """Describe one release artifact with size and content digest."""
     return {
         "role": role,
         "path": str(path),
@@ -123,7 +112,6 @@ def _file_entry(role: str, path: Path) -> dict[str, Any]:
 
 
 def _dist_entries(dist_dir: Path) -> list[dict[str, Any]]:
-    """Collect wheel and source-distribution files from a distribution folder."""
     entries: list[dict[str, Any]] = []
     for path in sorted(dist_dir.glob("*.whl")):
         entry = _file_entry("wheel", path)
@@ -137,12 +125,10 @@ def _dist_entries(dist_dir: Path) -> list[dict[str, Any]]:
 
 
 def _content_security_policy() -> str:
-    """Return the restrictive policy used by the self-contained HTML index."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _format_value(value: Any) -> str:
-    """Format a status value for a human-readable evidence table."""
     if isinstance(value, bool):
         return "go" if value else "missing"
     if value is None:
@@ -153,7 +139,6 @@ def _format_value(value: Any) -> str:
 def _render_rows(
     rows: list[dict[str, Any]], columns: list[tuple[str, str]]
 ) -> list[str]:
-    """Render evidence records as escaped accessible HTML table rows."""
     rendered = []
     for row in rows:
         cells = []
@@ -168,7 +153,6 @@ def _render_rows(
 
 
 def _render_report_html(index: dict[str, Any]) -> str:
-    """Render the release evidence index as portable self-contained HTML."""
     coverage_rows = []
     coverage = index.get("coverage", {})
     if isinstance(coverage, dict):
@@ -292,7 +276,6 @@ def _render_report_html(index: dict[str, Any]) -> str:
 
 
 def _report_css() -> str:
-    """Return the small inline stylesheet used by the evidence index."""
     return """
 :root {
   color: #172026;
@@ -443,7 +426,6 @@ tbody tr:last-child td {
 
 
 def build_index(args: argparse.Namespace) -> dict[str, Any]:
-    """Build, validate, and return the release evidence index."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -630,7 +612,6 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Create the command-line parser for release evidence index generation."""
     parser = argparse.ArgumentParser(
         description="Build a release evidence index for fast-mlsirm."
     )
@@ -675,7 +656,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run release evidence indexing and print a machine-readable summary."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

@@ -2,7 +2,7 @@
 
 ## Decision
 
-The explicit NumPy MMLE reference path computes Euclidean item-to-node distances
+The NumPy MMLE reference/fallback path computes Euclidean item-to-node distances
 from coordinate differences before squaring:
 
 \[
@@ -37,7 +37,7 @@ high-offset regression now protects the direct Euclidean semantics for both
 `n_left < n_right` and `n_left > n_right`. This is a numerical-stability fix,
 not a change to the statistical model.
 
-This change applies only to the explicit NumPy reference estimator.
+This change applies only to the existing NumPy reference/fallback estimator.
 Rust remains the production psychometric arithmetic boundary.
 
 ## Resource contract

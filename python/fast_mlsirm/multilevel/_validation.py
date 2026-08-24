@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import hashlib
 import json
 import math
@@ -33,8 +34,8 @@ def contract_error(code: str, path: str, message: str) -> MultilevelContractErro
 
 
 def schema_version(value: Any) -> str:
-    """Require the exact built-in current contextual-contract schema version."""
-    if type(value) is not str or value != MULTILEVEL_SCHEMA_VERSION:
+    """Require the current contextual-contract schema version."""
+    if value != MULTILEVEL_SCHEMA_VERSION:
         raise contract_error(
             "invalid_schema_version",
             "$.schema_version",
@@ -44,10 +45,10 @@ def schema_version(value: Any) -> str:
 
 
 def descriptive_identifier(value: Any, name: str, path: str | None = None) -> str:
-    """Return one exact built-in bounded lower-snake identifier."""
+    """Return one bounded two-or-more-token lower-snake identifier."""
     resolved_path = path or f"$.{name}"
     if (
-        type(value) is not str
+        not isinstance(value, str)
         or not value
         or value != value.strip()
         or len(value) > MAX_IDENTIFIER_LENGTH
@@ -70,9 +71,9 @@ def descriptive_identifier(value: Any, name: str, path: str | None = None) -> st
 
 
 def fingerprint(value: Any, name: str, path: str | None = None) -> str:
-    """Return one exact built-in complete lowercase SHA-256 fingerprint."""
+    """Return one complete lowercase SHA-256 fingerprint."""
     resolved_path = path or f"$.{name}"
-    if type(value) is not str or _FINGERPRINT_PATTERN.fullmatch(value) is None:
+    if not isinstance(value, str) or _FINGERPRINT_PATTERN.fullmatch(value) is None:
         raise contract_error(
             f"invalid_{name}",
             resolved_path,

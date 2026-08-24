@@ -317,14 +317,14 @@ def test_mlsirm_readiness_uses_missing_mask_before_fit() -> None:
             "dichotomous",
             factor_ids=(0, 0),
             factor_id=np.array([0, 0], dtype=np.int64),
-            config=FitConfig(max_iter=1),
+            config=FitConfig(backend="numpy", max_iter=1),
         )
 
 
 @pytest.mark.parametrize(
     "fit_call",
     [
-        lambda y: fit_binary(y, np.array([0]), FitConfig(max_iter=1)),
+        lambda y: fit_binary(y, np.array([0]), FitConfig(backend="numpy", max_iter=1)),
         lambda y: fit_2pl(y, q=7, max_iter=1),
         lambda y: fit_grm(y, n_cat=2, q=7, max_iter=1),
         lambda y: fit_polytomous(y, n_cat=2, q_theta=7, max_iter=1),

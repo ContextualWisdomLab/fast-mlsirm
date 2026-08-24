@@ -10,9 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import secrets
-import stat
 import sys
 import warnings
 from pathlib import Path
@@ -31,40 +28,17 @@ LEGACY_GATE_ALIASES = frozenset(
         "require_20b_product",
     }
 )
-_GIT_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
-def _safe_output_path(output_path: Path) -> Path:
-    """Resolve one output path below the current directory without symlinks."""
+def _contains_control_character(value: str) -> bool:
+    """Return whether *value* contains an ASCII control character."""
 
-    root = Path.cwd().resolve()
-    candidate = Path(output_path)
-    if candidate.is_absolute():
-        raise ValueError("output path must be relative to the current working directory")
-    if ".." in candidate.parts:
-        raise ValueError("output path must remain within the current working directory")
-
-    probe = root
-    for part in candidate.parts:
-        probe /= part
-        if probe.is_symlink():
-            raise ValueError("output path must not contain symbolic links")
-
-    resolved = (root / candidate).resolve()
-    try:
-        resolved.relative_to(root)
-    except ValueError:
-        raise ValueError("output path must remain within the current working directory") from None
-    if resolved.exists() and not resolved.is_file():
-        raise ValueError("output path must name a regular file")
-    return resolved
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
 def normalize_gate_name(value: str) -> str:
     """Return the canonical gate name and warn for a supported legacy alias."""
 
-    if type(value) is not str:
-        raise ValueError("gate_name must be an exact built-in string")
     normalized = value.strip().lower().replace("-", "_")
     if normalized == CANONICAL_GATE_NAME:
         return CANONICAL_GATE_NAME
@@ -84,8 +58,6 @@ def normalize_gate_name(value: str) -> str:
 def validate_currency_code(value: str) -> str:
     """Validate and normalize an ISO-4217-style three-letter currency code."""
 
-    if type(value) is not str:
-        raise ValueError("currency_code must be an exact built-in string")
     normalized = value.strip().upper()
     if len(normalized) != 3 or not normalized.isascii() or not normalized.isalpha():
         raise ValueError("currency_code must be exactly three ASCII letters")
@@ -93,23 +65,24 @@ def validate_currency_code(value: str) -> str:
 
 
 def validate_scenario_amount(value: int) -> int:
-    """Validate a positive procurement scenario amount without accepting subclasses."""
+    """Validate a positive procurement scenario amount without accepting booleans."""
 
-    if type(value) is not int or value <= 0:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError("scenario_amount must be a positive integer")
     return value
 
 
 def validate_source_commit(value: str) -> str:
-    """Validate a callback-free canonical full Git object identity."""
+    """Validate a bounded, printable source-commit identifier."""
 
-    if (
-        type(value) is not str
-        or len(value) not in (40, 64)
-        or any(character not in _GIT_HEX_DIGITS for character in value)
-    ):
-        raise ValueError("source_commit must be a canonical lowercase full Git object identity")
-    return value
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("source_commit must not be empty")
+    if len(normalized) > 128:
+        raise ValueError("source_commit must not exceed 128 characters")
+    if _contains_control_character(normalized):
+        raise ValueError("source_commit must not contain control characters")
+    return normalized
 
 
 def build_gate_manifest(
@@ -145,181 +118,14 @@ def build_gate_manifest(
     }
 
 
-def _portable_existing_mode(validated_path: Path) -> int | None:
-    """Return an existing regular target's permissions for atomic replacement."""
-    try:
-        target_stat = validated_path.lstat()
-    except FileNotFoundError:
-        return None
-    if not stat.S_ISREG(target_stat.st_mode):
-        raise ValueError("output path must name a regular file")
-    return stat.S_IMODE(target_stat.st_mode)
-
-
-def _write_manifest_descriptor(
-    output_path: Path,
-    content: str,
-    validated_path: Path,
-) -> None:
-    """Write content with descriptor safety or an atomic portable fallback."""
-    if (
-        os.name != "posix"
-        or os.open not in os.supports_dir_fd
-        or os.mkdir not in os.supports_dir_fd
-        or os.rename not in os.supports_dir_fd
-        or os.unlink not in os.supports_dir_fd
-        or os.stat not in os.supports_dir_fd
-        or not hasattr(os, "fchmod")
-        or not hasattr(os, "O_DIRECTORY")
-        or not hasattr(os, "O_NOFOLLOW")
-    ):
-        validated_path.parent.mkdir(parents=True, exist_ok=True)
-        existing_mode = _portable_existing_mode(validated_path)
-        temporary_path: Path | None = None
-        temporary_fd: int | None = None
-        temporary_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        try:
-            for _ in range(128):
-                candidate = validated_path.parent / (
-                    f".{validated_path.name}.{secrets.token_hex(16)}.tmp"
-                )
-                try:
-                    temporary_fd = os.open(candidate, temporary_flags, 0o666)
-                except FileExistsError:
-                    continue
-                temporary_path = candidate
-                break
-            else:
-                raise ValueError("manifest output could not be written")
-
-            assert temporary_fd is not None
-            try:
-                stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
-            except BaseException:
-                os.close(temporary_fd)
-                temporary_fd = None
-                raise
-            temporary_fd = None
-            with stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-
-            assert temporary_path is not None
-            if existing_mode is not None:
-                os.chmod(temporary_path, existing_mode)
-            os.replace(temporary_path, validated_path)
-            temporary_path = None
-        finally:
-            if temporary_fd is not None:
-                try:
-                    os.close(temporary_fd)
-                except OSError:
-                    pass
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
-        return
-
-    components = output_path.parts
-    if not components:
-        raise ValueError("output path must name a regular file")
-    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    directory_fd = os.open(".", directory_flags)
-    try:
-        for component in components[:-1]:
-            try:
-                os.mkdir(component, 0o755, dir_fd=directory_fd)
-            except FileExistsError:
-                pass
-            next_directory_fd = os.open(component, directory_flags, dir_fd=directory_fd)
-            os.close(directory_fd)
-            directory_fd = next_directory_fd
-
-        try:
-            target_stat = os.stat(
-                components[-1],
-                dir_fd=directory_fd,
-                follow_symlinks=False,
-            )
-        except FileNotFoundError:
-            existing_mode = None
-        else:
-            if not stat.S_ISREG(target_stat.st_mode):
-                raise ValueError("output path must name a regular file")
-            existing_mode = stat.S_IMODE(target_stat.st_mode)
-
-        temporary_name: str | None = None
-        temporary_fd: int | None = None
-        temporary_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
-        try:
-            for _ in range(128):
-                candidate = f".{components[-1]}.{secrets.token_hex(16)}.tmp"
-                try:
-                    temporary_fd = os.open(
-                        candidate,
-                        temporary_flags,
-                        0o666,
-                        dir_fd=directory_fd,
-                    )
-                except FileExistsError:
-                    continue
-                temporary_name = candidate
-                break
-            else:
-                raise ValueError("manifest output could not be written")
-
-            assert temporary_fd is not None
-            if existing_mode is not None:
-                os.fchmod(temporary_fd, existing_mode)
-            try:
-                stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
-            except BaseException:
-                os.close(temporary_fd)
-                temporary_fd = None
-                raise
-            temporary_fd = None
-            with stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-
-            assert temporary_name is not None
-            os.rename(
-                temporary_name,
-                components[-1],
-                src_dir_fd=directory_fd,
-                dst_dir_fd=directory_fd,
-            )
-            temporary_name = None
-        finally:
-            if temporary_fd is not None:
-                try:
-                    os.close(temporary_fd)
-                except OSError:
-                    pass
-            if temporary_name is not None:
-                try:
-                    os.unlink(temporary_name, dir_fd=directory_fd)
-                except FileNotFoundError:
-                    pass
-    finally:
-        try:
-            os.close(directory_fd)
-        except OSError:
-            pass
-
-
 def write_gate_manifest(manifest: dict[str, Any], output_path: Path) -> None:
-    """Write deterministic UTF-8 JSON through a validated relative path."""
+    """Write a gate manifest as deterministic UTF-8 JSON."""
 
-    validated_path = _safe_output_path(output_path)
-    content = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-    try:
-        _write_manifest_descriptor(Path(output_path), content, validated_path)
-    except ValueError:
-        raise
-    except (NotImplementedError, OSError):
-        raise ValueError("manifest output could not be written") from None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -347,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--source-commit",
         required=True,
-        help="Canonical lowercase full SHA-1 or SHA-256 Git object identity.",
+        help="Commit or immutable source identifier represented by the evidence.",
     )
     parser.add_argument(
         "--out",

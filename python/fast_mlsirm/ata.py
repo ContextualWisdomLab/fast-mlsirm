@@ -163,37 +163,21 @@ def _content_feasible(
     return True
 
 
-def _is_exact_public_string(value: object) -> bool:
-    """Return whether ``value`` has one package-trusted string scalar identity."""
-    value_type = type(value)
-    return value_type is str or value_type is np.str_
-
-
-def _exact_public_string(value: object, error_message: str) -> str:
-    """Return an inert string while rejecting caller-defined string subclasses."""
-    if not _is_exact_public_string(value):
-        raise ValueError(error_message)
-    return value if type(value) is str else str(value)
-
-
 def _validated_content_labels(content: np.ndarray | None, n_items: int) -> np.ndarray | None:
-    """Return bounded exact string labels without arbitrary object coercion.
+    """Return bounded string labels without invoking arbitrary object coercion.
 
-    Caller-controlled objects and string subclasses are rejected by exact type
-    before NumPy is allowed to stringify them. This keeps ``__str__`` and
-    ``__repr__`` callbacks outside the ATA trust boundary and lets invalid labels
-    fail before item-information work.
+    Caller-controlled object labels are rejected by type before NumPy is allowed
+    to stringify them. This keeps ``__str__``/``__repr__`` callbacks outside the
+    ATA trust boundary and lets invalid labels fail before item-information work.
     """
     if content is None:
         return None
     labels = np.asarray(content, dtype=object)
     if labels.shape != (n_items,):
         raise ValueError("content length must match the number of items")
-    normalized = [
-        _exact_public_string(label, "content labels must be strings")
-        for label in labels.flat
-    ]
-    return np.asarray(normalized, dtype=str).reshape(labels.shape)
+    if any(not isinstance(label, (str, np.str_)) for label in labels.flat):
+        raise ValueError("content labels must be strings")
+    return labels.astype(str)
 
 
 def _is_exact_public_integer(value: object) -> bool:
@@ -224,23 +208,20 @@ def _validated_content_constraints(
     """Validate content constraint maps and finite-domain count semantics."""
 
     def _one(raw: dict[str, int] | None) -> dict[str, int]:
-        """Normalize one optional content-count map without coercion callbacks."""
         if raw is None:
             return {}
         if not isinstance(raw, dict):
             raise ValueError("content constraints must be mappings")
         out: dict[str, int] = {}
         for key, count in raw.items():
-            trusted_key = _exact_public_string(
-                key,
-                "content constraint keys must be strings",
-            )
+            if not isinstance(key, (str, np.str_)):
+                raise ValueError("content constraint keys must be strings")
             if not _is_exact_public_integer(count):
                 raise ValueError("content constraint counts must be integers")
             value = count if type(count) is int else int(count)
             if value < 0:
                 raise ValueError("content constraint counts must be non-negative")
-            out[trusted_key] = value
+            out[str(key)] = value
         return out
 
     minimums = _one(min_per_content)

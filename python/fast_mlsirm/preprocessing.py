@@ -17,103 +17,6 @@ from __future__ import annotations
 
 import numpy as np
 
-_REAL_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
-_COMPLEX_SCALAR_TYPES = frozenset({complex, np.complex64, np.complex128, np.clongdouble})
-_TRUSTED_REAL_SCALAR_TYPES = frozenset(
-    {
-        bool,
-        int,
-        float,
-        np.bool_,
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-        np.int_,
-        np.uint,
-        np.intp,
-        np.uintp,
-        np.longlong,
-        np.ulonglong,
-        np.float16,
-        np.float32,
-        np.float64,
-        np.longdouble,
-    }
-)
-
-
-def _preflight_real_sequence(
-    value: list[object] | tuple[object, ...],
-    *,
-    max_rank: int,
-    shape_error: str,
-    complex_error: str,
-    storage_error: str,
-) -> None:
-    """Reject callback-bearing nested evidence before NumPy materialization."""
-
-    stack: list[tuple[object, int, bool]] = [(value, 0, False)]
-    active_container_ids: set[int] = set()
-    while stack:
-        current, depth, leaving = stack.pop()
-        if leaving:
-            active_container_ids.remove(id(current))
-            continue
-        current_type = type(current)
-        if current_type is list or current_type is tuple:
-            if depth >= max_rank:
-                raise ValueError(shape_error)
-            identity = id(current)
-            if identity in active_container_ids:
-                raise ValueError(storage_error)
-            active_container_ids.add(identity)
-            stack.append((current, depth, True))
-            stack.extend((child, depth + 1, False) for child in current)
-            continue
-        if current_type in _COMPLEX_SCALAR_TYPES:
-            raise ValueError(complex_error)
-        if current_type not in _TRUSTED_REAL_SCALAR_TYPES:
-            raise ValueError(storage_error)
-
-
-def _trusted_real_array(
-    value: object,
-    *,
-    max_rank: int,
-    shape_error: str,
-    complex_error: str,
-    storage_error: str,
-) -> np.ndarray:
-    """Materialize only inert real numeric arrays/sequences as ``float64``."""
-
-    value_type = type(value)
-    if value_type is np.ndarray:
-        raw = value
-    elif value_type is list or value_type is tuple:
-        _preflight_real_sequence(
-            value,
-            max_rank=max_rank,
-            shape_error=shape_error,
-            complex_error=complex_error,
-            storage_error=storage_error,
-        )
-        raw = np.asarray(value)
-    else:
-        raise ValueError(storage_error)
-    if np.iscomplexobj(raw):
-        raise ValueError(complex_error)
-    if raw.dtype.kind not in _REAL_DTYPE_KINDS:
-        raise ValueError(storage_error)
-    try:
-        return np.asarray(raw, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(storage_error) from exc
-
 
 def irtree_expand(
     responses: np.ndarray,
@@ -131,13 +34,7 @@ def irtree_expand(
     node ``n`` of every item loads on dimension ``node_dims[n]`` (default:
     dimension ``n``, one trait per tree node, the canonical IRTree structure).
     """
-    y = _trusted_real_array(
-        responses,
-        max_rank=2,
-        shape_error="responses must be a persons x items matrix",
-        complex_error="responses must be real-valued",
-        storage_error="responses must contain real numeric categories or NaN",
-    )
+    y = np.asarray(responses, dtype=float)
     if y.ndim != 2:
         raise ValueError("responses must be a persons x items matrix")
     n_persons, n_items = y.shape
@@ -146,13 +43,7 @@ def irtree_expand(
     if np.any(np.isinf(y)):
         raise ValueError("responses must contain integer categories or NaN")
 
-    t = _trusted_real_array(
-        mapping,
-        max_rank=2,
-        shape_error="mapping must be nodes x categories",
-        complex_error="mapping must be real-valued",
-        storage_error="mapping must contain real numeric tree entries",
-    )
+    t = np.asarray(mapping, dtype=float)
     if t.ndim != 2:
         raise ValueError("mapping must be nodes x categories")
     n_nodes, n_cats = t.shape
@@ -195,16 +86,13 @@ def irtree_expand(
         expanded[:, n * n_items : (n + 1) * n_items] = node_vals
     if node_dims is None:
         node_dims = np.arange(n_nodes)
-    node_dims_arr = _trusted_real_array(
-        node_dims,
-        max_rank=1,
-        shape_error="node_dims must have one entry per tree node",
-        complex_error="node_dims must be real-valued integer indices",
-        storage_error="node_dims must be finite non-negative integers",
-    )
+    node_dims_arr = np.asarray(node_dims)
     if node_dims_arr.shape != (n_nodes,):
         raise ValueError("node_dims must have one entry per tree node")
-    nd = node_dims_arr
+    try:
+        nd = node_dims_arr.astype(np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("node_dims must be finite non-negative integers") from exc
     if (
         not np.all(np.isfinite(nd))
         or np.any(nd < 0)

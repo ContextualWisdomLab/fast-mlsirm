@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This record governs the NumPy **reference** implementation of the unidimensional 2PL MMLE EAP projection in `python/fast_mlsirm/estimators/mmle.py`. Production psychometric arithmetic remains Rust-first; this Python path exists for explicit `fit_reference` compatibility and parity validation. Rust unavailability never authorizes an implicit production fallback. This change does not move likelihood, optimization, scoring, or calibration ownership from Rust into Python.
+This record governs the NumPy **reference/fallback** implementation of the unidimensional 2PL MMLE EAP projection in `python/fast_mlsirm/estimators/mmle.py`. Production psychometric arithmetic remains Rust-first; this Python path exists for compatibility, reference validation, and environments where the Rust backend is unavailable. This change does not move likelihood, optimization, scoring, or calibration ownership from Rust into Python.
 
 ## Behavioral invariant
 

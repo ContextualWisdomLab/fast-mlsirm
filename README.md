@@ -165,8 +165,8 @@ print(fixed_item_calibration.best)
   diligence, and PR queue governance evidence while Code Connect stays disabled.
 - CLI commands for simulation and fitting.
 - Rust-backed fitting objective (neg-loglik, gradients, and distance kernels)
-  via PyO3/maturin as the production numeric path, with an explicitly named
-  NumPy reference API retained only for parity testing and research inspection.
+  via PyO3/maturin as the primary numeric path, with a numerically-identical
+  NumPy reference backend kept for parity testing and fallback.
 
 ## Install
 
@@ -176,12 +176,12 @@ For local development:
 python -m pip install -e .
 ```
 
-The default runtime backend is `"auto"`, which requires the compiled Rust core
-(`fast_mlsirm._core`) and fails closed when the extension is unavailable. Source
+The default runtime backend is `"auto"`, which uses the compiled Rust core
+(`fast_mlsirm._core`) as the primary numeric path and transparently falls back
+to the NumPy reference implementation when the extension is unavailable. Source
 and editable installs use maturin to build the extension, so they require a
-working Rust toolchain; installed wheels ship the compiled core. Use the
-explicit `fast_mlsirm.fit_reference` API or `fit --reference` only for
-non-production NumPy parity work.
+working Rust toolchain; installed wheels ship the compiled core. Pass
+`backend="numpy"` to force the pure-Python reference (used for parity testing).
 The core Rust workspace can be tested with:
 
 ```bash
@@ -417,12 +417,12 @@ kaefa-style item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
 mask or item-index vector; when omitted, all items are treated as the fixed
 calibration set.
 
-`fit --reference` uses the explicitly non-production Python reference objective.
-`fit --backend rust` requires the installed `fast_mlsirm._core` extension and
-fails clearly if it is unavailable. `fit --backend auto` resolves to Rust and
-also fails closed when the extension is unavailable.
+`fit --backend numpy` uses the Python reference objective. `fit --backend rust`
+requires the installed `fast_mlsirm._core` extension and fails clearly if it is
+unavailable. `fit --backend auto` uses the Rust objective when available and
+falls back to NumPy otherwise.
 
-The production backend axis is `{rust, auto}`. GPU acceleration is a *device*
+The backend axis stays `{numpy, rust, auto}`. GPU acceleration is a *device*
 sub-option of the Rust backend rather than a separate backend, selected with
 `fit --backend rust --rust-device {auto,cpu,gpu}` (or `FitConfig(backend="rust",
 rust_device=...)`). The Rust core carries a [wgpu](https://github.com/gfx-rs/wgpu)
@@ -451,9 +451,9 @@ repeated blank-looking report sections or placeholder-only columns.
 ## Repository Layout
 
 ```text
-python/fast_mlsirm/       Python public API, orchestration, and reference API
+python/fast_mlsirm/       Python public API and reference backend
 crates/mlsirm-core/       Rust likelihood and gradient core
-crates/fast-mlsirm-py/    PyO3 binding for the Rust production backend
+crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
 examples/enterprise_demo/ Synthetic procurement evidence manifests

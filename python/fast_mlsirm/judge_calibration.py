@@ -534,8 +534,7 @@ class JudgeCalibrationReport:
             scores: list[float] = []
             gold_scored = [outcome for outcome in outcomes if outcome.gold_exact is not None]
             for outcome in passed:
-                if outcome.result is None:
-                    raise RuntimeError("Passed outcome is missing a valid result")
+                assert outcome.result is not None
                 scores.append(outcome.result.score)
                 categories = outcome.result.criterion_categories or {}
                 for criterion_id in self.criterion_ids:
@@ -583,8 +582,7 @@ class JudgeCalibrationReport:
                     "control_status": control.status,
                 }
                 if baseline.status == control.status == "passed":
-                    if baseline.result is None or control.result is None:
-                        raise RuntimeError("Passed baseline or control is missing a valid result")
+                    assert baseline.result is not None and control.result is not None
                     effect.update(
                         {
                             "baseline_score": baseline.result.score,

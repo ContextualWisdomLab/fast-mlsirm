@@ -142,20 +142,6 @@ def _has_exact_type(value: Any, trusted_types: tuple[type, ...]) -> bool:
     return any(value_type is trusted_type for trusted_type in trusted_types)
 
 
-def _normalize_metadata_scalar(value: Any) -> tuple[bool, Any]:
-    """Normalize JSON scalar subclasses through inert base-type descriptors."""
-    value_type = type(value)
-    if value is None or value_type in (bool, int, float, str):
-        return True, value
-    if isinstance(value, str):
-        return True, str.__str__(value)
-    if isinstance(value, int) and not isinstance(value, bool):
-        return True, int.__int__(value)
-    if isinstance(value, float):
-        return True, float.__float__(value)
-    return False, value
-
-
 def bounded_positive_integer(
     value: Any,
     name: str,
@@ -329,10 +315,6 @@ def _preflight_metadata(
             f"metadata exceeds the maximum node count of {base.MAX_METADATA_NODES}",
         )
 
-    is_scalar, normalized_scalar = _normalize_metadata_scalar(value)
-    if is_scalar:
-        return normalized_scalar
-
     if isinstance(value, Mapping):
         marker = id(value)
         if marker in active:
@@ -372,10 +354,7 @@ def _preflight_metadata(
                             "metadata mapping entries must contain one key and value",
                         ) from None
                     key_path = f"{path}.keys[{index}]"
-                    key_is_scalar, key_input = _normalize_metadata_scalar(raw_key)
-                    if not key_is_scalar or type(key_input) is not str:
-                        key_input = raw_key
-                    key = base._metadata_key(key_input, key_path)
+                    key = base._metadata_key(raw_key, key_path)
                     if key.casefold() in _SENSITIVE_METADATA_FIELDS:
                         raise base.assessment_error(
                             "sensitive_metadata_field",

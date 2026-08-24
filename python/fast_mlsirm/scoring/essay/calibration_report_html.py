@@ -373,35 +373,30 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
         headers=("Task ID", "Task family", "Revision fingerprint", "Estimate"),
         rows=_task_rows(report),
         empty_message="No task estimates are available.",
-        row_header_column=0,
     )
     raters = _table(
         caption="Criterion-specific rater severity estimates",
         headers=("Engine ID", "Engine family", "Engine fingerprint", "Estimate"),
         rows=_rater_rows(report),
         empty_message="No rater estimates are available.",
-        row_header_column=0,
     )
     respondents = _table(
         caption="Criterion-specific respondent estimates",
         headers=("Respondent ID", "Estimate"),
         rows=_respondent_rows(report),
         empty_message="No respondent estimates are available.",
-        row_header_column=0,
     )
     thresholds = _table(
         caption="Ordered-category threshold estimates",
         headers=("Lower category", "Upper category", "Estimate"),
         rows=_threshold_rows(report),
         empty_message="No threshold estimates are available.",
-        row_header_column=0,
     )
     trace = _table(
         caption="Estimator log-likelihood trace",
         headers=("Iteration", "Log likelihood"),
         rows=_trace_rows(report),
         empty_message="No likelihood trace is available.",
-        row_header_column=0,
     )
     triggers = _identifier_list(
         report.review_trigger_ids,
@@ -537,7 +532,7 @@ def render_essay_facets_calibration_report_html(
     requested_output = Path(output_path)
     if requested_output.suffix.lower() != ".html":
         raise ValueError("essay facets calibration output path must end with .html")
-    if title is not None and (type(title) is not str or not title.strip()):
+    if title is not None and (not isinstance(title, str) or not title.strip()):
         raise ValueError("essay facets calibration title must be a non-empty string")
     output, approved_root = _bounded_output_path(requested_output, output_root)
     resolved_title = _DEFAULT_TITLE if title is None else title

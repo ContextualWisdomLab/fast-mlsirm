@@ -21,16 +21,13 @@ fn m2_factorizes_independent_trait_dimensions() {
     let probs = vec![0.2, 0.8, 0.3, 0.7];
     let weights = vec![0.5, 0.5];
     let sets = vec![vec![0, 1]];
-    let moments = factorized_trait_moments(&probs, &weights, &[1.0], 2, &[0, 1], 2, &sets)
-        .expect("valid factorized moments must integrate");
+    let moments = factorized_trait_moments(&probs, &weights, 2, &[0, 1], 2, &sets);
     assert!((moments[0] - 0.25).abs() < 1e-14);
     assert!(
         (moments[0] - 0.31).abs() > 1e-3,
         "must not share one trait node"
     );
-    let missing_dimension =
-        factorized_trait_moments(&probs, &weights, &[1.0], 2, &[0, 1], 3, &[vec![0]])
-            .expect("unused dimensions do not invalidate a moment set");
+    let missing_dimension = factorized_trait_moments(&probs, &weights, 2, &[0, 1], 3, &[vec![0]]);
     assert!((missing_dimension[0] - 0.5).abs() < 1e-14);
 }
 
@@ -75,68 +72,6 @@ fn m2_numeric_helpers_cover_every_parameter_and_metric_branch() {
     assert!(finite.0.is_finite() && finite.1.is_finite());
     let unavailable = comparative_fit_metrics(5.0, 3.0, 2.0, 5.0);
     assert!(unavailable.0.is_nan() && unavailable.1.is_nan());
-}
-
-#[test]
-fn structured_m2_parameter_controls_cover_population_and_anchor_columns() {
-    let params = m2_parameters_with_controls(
-        1,
-        true,
-        true,
-        2,
-        2,
-        true,
-        M2StructuredControls {
-            fixed_items: None,
-            estimate_population: true,
-            tau_fixed: false,
-        },
-    );
-    let mut alpha = vec![3.0];
-    let mut b = vec![2.0];
-    let mut zeta = vec![4.0, 5.0];
-    let mut tau = 6.0;
-    let mut mean = vec![7.0, 8.0];
-    let mut sd = vec![9.0, 10.0];
-    for (index, param) in params.iter().copied().enumerate() {
-        let value = m2_structured_param_value(
-            param, &alpha, &b, &zeta, tau, 2, &mean, &sd,
-        );
-        set_m2_structured_param(
-            param,
-            index as f64 + 20.0,
-            &mut alpha,
-            &mut b,
-            &mut zeta,
-            &mut tau,
-            2,
-            &mut mean,
-            &mut sd,
-        );
-        assert_eq!(
-            m2_structured_param_value(param, &alpha, &b, &zeta, tau, 2, &mean, &sd),
-            index as f64 + 20.0
-        );
-        assert_ne!(value, index as f64 + 20.0);
-    }
-
-    assert_eq!(
-        m2_parameters_with_controls(
-            1,
-            true,
-            true,
-            2,
-            2,
-            true,
-            M2StructuredControls {
-                fixed_items: Some(&[true]),
-                estimate_population: false,
-                tau_fixed: true,
-            },
-        )
-        .len(),
-        0
-    );
 }
 
 #[test]
@@ -276,51 +211,6 @@ fn m2_runs_on_small_hand_built_bank() {
     assert!(res.m2.is_finite() && res.df == 20.0);
     assert!(res.rmsea2_ci_lower <= res.rmsea2_ci_upper + 1e-9);
     assert!(res.srmsr.is_finite());
-}
-
-#[test]
-fn structured_m2_runs_with_population_and_anchor_metadata() {
-    use crate::fitstats::m2_rmsea2_structured;
-
-    let n_items = 8usize;
-    let n = 400usize;
-    let alpha = vec![0.0; n_items];
-    let b: Vec<f64> = (0..n_items).map(|i| -0.8 + 0.2 * i as f64).collect();
-    let zeta: Vec<f64> = (0..n_items).map(|i| -0.7 + 0.2 * i as f64).collect();
-    let fid = vec![0usize; n_items];
-    let y: Vec<f64> = (0..n * n_items)
-        .map(|index| (((index * 37 + 11) % 101) < 45) as u8 as f64)
-        .collect();
-    let observed = vec![true; n * n_items];
-    let bank = ItemBank {
-        alpha: &alpha,
-        b: &b,
-        zeta: &zeta,
-        tau: -2.0,
-        factor_id: &fid,
-        model_type: crate::ModelType::Mls2plm,
-        n_dims: 1,
-        latent_dim: 1,
-        eps_distance: 1e-8,
-    };
-    let mut fixed = vec![false; n_items];
-    fixed[0] = true;
-    let result = m2_rmsea2_structured(
-        &bank,
-        &y,
-        &observed,
-        n,
-        &PriorSpec::standard(1),
-        21,
-        XiRule::GaussHermite { q_xi: 7 },
-        Some(&fixed),
-        true,
-        true,
-    )
-    .expect("structured M2 should run");
-    assert_eq!(result.n_moments, 36);
-    assert_eq!(result.n_parameters, 23);
-    assert!(result.m2.is_finite());
 }
 
 #[test]

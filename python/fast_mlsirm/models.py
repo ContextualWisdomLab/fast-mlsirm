@@ -148,14 +148,14 @@ def _resolve_model(
         raise TypeError("model must be a factor count or an IRT model specification")
     if type(model) is int or _is_exact_numpy_integer_scalar(model):
         model = ExploratoryModel(model)
-    if type(model) is ExploratoryModel:
+    if isinstance(model, ExploratoryModel):
         if model.dimensions != 1:
             raise NotImplementedError(
                 "multidimensional exploratory loading estimation is not implemented; "
                 "use models.confirmatory(...) for an identified loading structure"
             )
         return model, np.ones((n_items, 1), dtype=np.int64)
-    if type(model) is ConfirmatoryModel:
+    if isinstance(model, ConfirmatoryModel):
         if model.loading_pattern.shape[0] != n_items:
             raise ValueError(
                 "confirmatory model must have one loading-pattern row per item"

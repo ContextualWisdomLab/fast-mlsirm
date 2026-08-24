@@ -204,7 +204,7 @@ def _materialize_constructs(values: Iterable[Any]) -> tuple[ConstructSpec, ...]:
         maximum=MAX_ASSESSMENT_CONSTRUCTS,
     )
     for index, construct in enumerate(raw):
-        if type(construct) is not ConstructSpec:
+        if not isinstance(construct, ConstructSpec):
             raise assessment_error(
                 "invalid_construct",
                 f"$.constructs[{index}]",
@@ -233,7 +233,7 @@ def _materialize_rubrics(
     )
     keyed: list[tuple[str, RubricSpecification]] = []
     for index, rubric in enumerate(raw):
-        if type(rubric) is not RubricSpecification:
+        if not isinstance(rubric, RubricSpecification):
             raise assessment_error(
                 "invalid_rubric",
                 f"$.rubrics[{index}]",
@@ -269,7 +269,7 @@ def _validate_policy_types(
         ("reporting_policy", reporting_policy, ReportingPolicy),
     )
     for name, value, expected_type in expected:
-        if type(value) is not expected_type:
+        if not isinstance(value, expected_type):
             raise assessment_error(
                 f"invalid_{name}",
                 f"$.{name}",

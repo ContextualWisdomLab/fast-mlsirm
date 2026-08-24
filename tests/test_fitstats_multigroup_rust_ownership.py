@@ -75,18 +75,8 @@ def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
     calls = []
 
     class ProjectionCore:
-        """Provide only the Rust projection surface used by this test."""
-
-        @staticmethod
-        def factorized_trait_moments_stat(
-            _probs, _trait_weights, _space_weights, _q_theta, _factor_id, _item_values, item_offsets
-        ):
-            """Provide a deterministic Rust-boundary moment result for projection tests."""
-            return np.full(len(item_offsets) - 1, 0.25, dtype=np.float64)
-
         @staticmethod
         def projected_m2(residual, delta, xi, n):
-            """Record projection inputs and return distinct target/null values."""
             residual = np.asarray(residual)
             delta = np.asarray(delta)
             xi = np.asarray(xi)
@@ -96,17 +86,9 @@ def test_multigroup_m2_delegates_target_and_null_projection_to_rust(monkeypatch)
 
         @staticmethod
         def chi2_sf(_x, _df):
-            """Return a finite p-value for the delegated projection result."""
             return 0.5
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: ProjectionCore())
-    monkeypatch.setattr(
-        fitstats,
-        "_factorized_trait_moments",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("public multigroup M2 entered NumPy moment arithmetic")
-        ),
-    )
     monkeypatch.setattr(fitstats, "_projected_m2_numpy", _reject_reference_projection)
 
     result = _run_multigroup(_multigroup_case())

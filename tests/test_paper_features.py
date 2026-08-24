@@ -59,7 +59,6 @@ def test_zero_inflation_via_public_api():
 
 def test_zero_inflation_multilevel_final_scores_use_mixture_posteriors():
     from fast_mlsirm.estimators import marginal as marginal_ref
-    from fast_mlsirm.reference import fit_reference
 
     rng = np.random.default_rng(20260722)
     n_clusters, persons_per_cluster, n_items = 4, 8, 6
@@ -84,7 +83,7 @@ def test_zero_inflation_multilevel_final_scores_use_mixture_posteriors():
         tolerance=3e-2,
         zero_inflation=True,
     )
-    result = fit_reference(y, factor_id, config, cluster_id=cluster_id)
+    result = fit(y, factor_id, config, cluster_id=cluster_id)
     assert result.convergence_status == "converged"
     assert result.n_iter < config.max_iter
     assert abs(result.loglik_trace[-1] - result.loglik_trace[-2]) < config.tolerance
@@ -502,8 +501,6 @@ def test_vuong_rejects_lossy_parameter_controls(k_a, k_b, bic_correction, match)
 
 
 def test_bifactor_parity_and_recovery():
-    from fast_mlsirm.reference import fit_reference
-
     rng = np.random.default_rng(21)
     P, I, D = 500, 10, 2
     fid = np.array([i % D for i in range(I)])
@@ -528,7 +525,7 @@ def test_bifactor_parity_and_recovery():
             q_xi=15,
             tolerance=tolerance,
         )
-        results[backend] = (fit_reference if backend == "numpy" else fit)(y, fid, cfg)
+        results[backend] = fit(y, fid, cfg)
     r, n = results["rust"], results["numpy"]
     for result in results.values():
         trace = np.asarray(result.loglik_trace)
@@ -551,8 +548,6 @@ def test_bifactor_parity_and_recovery():
 
 
 def test_bifactor_covariate_parity_uses_inner_product_predictor():
-    from fast_mlsirm.reference import fit_reference
-
     rng = np.random.default_rng(22)
     P, I, D = 400, 8, 2
     fid = np.arange(I) % D
@@ -588,7 +583,7 @@ def test_bifactor_covariate_parity_uses_inner_product_predictor():
             q_theta=7,
             q_xi=7,
         )
-        results[backend] = (fit_reference if backend == "numpy" else fit)(
+        results[backend] = fit(
             y,
             fid,
             cfg,
@@ -6680,7 +6675,7 @@ class TestSprtClassify:
     def test_rejects_bad_responses(self):
         from fast_mlsirm import sprt_classify
 
-        with pytest.raises(ValueError, match="0 or 1"):
+        with pytest.raises(ValueError, match="0 and 1"):
             sprt_classify(
                 np.array([1.0, 1.0]),
                 np.zeros(2),
@@ -6688,7 +6683,7 @@ class TestSprtClassify:
                 theta_cut=0.0,
                 delta=0.5,
             )
-        with pytest.raises(ValueError, match="0 or 1"):
+        with pytest.raises(ValueError, match="0 and 1"):
             sprt_classify(
                 np.array([1.0, 1.0]),
                 np.zeros(2),
@@ -6700,7 +6695,7 @@ class TestSprtClassify:
     def test_rejects_complex_input(self):
         from fast_mlsirm import sprt_classify
 
-        with pytest.raises(ValueError, match="real numeric array"):
+        with pytest.raises(ValueError, match="real-valued"):
             sprt_classify(
                 np.array([1.0 + 1j, 1.0]),
                 np.zeros(2),
@@ -6790,7 +6785,7 @@ class TestCiClassify:
     def test_rejects_bad_responses(self):
         from fast_mlsirm import ci_classify
 
-        with pytest.raises(ValueError, match="0 or 1"):
+        with pytest.raises(ValueError, match="0 and 1"):
             ci_classify(
                 np.array([1.0, 1.0]),
                 np.zeros(2),
@@ -6798,7 +6793,7 @@ class TestCiClassify:
                 theta_cut=0.0,
                 z_crit=1.96,
             )
-        with pytest.raises(ValueError, match="0 or 1"):
+        with pytest.raises(ValueError, match="0 and 1"):
             ci_classify(
                 np.array([1.0, 1.0]),
                 np.zeros(2),
@@ -6810,7 +6805,7 @@ class TestCiClassify:
     def test_rejects_complex_input(self):
         from fast_mlsirm import ci_classify
 
-        with pytest.raises(ValueError, match="real numeric array"):
+        with pytest.raises(ValueError, match="real-valued"):
             ci_classify(
                 np.array([1.0 + 1j, 1.0]),
                 np.zeros(2),

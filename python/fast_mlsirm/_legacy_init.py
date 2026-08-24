@@ -4,7 +4,6 @@ from importlib.metadata import version as _distribution_version
 from .config import FitConfig as FitConfig, MLS2PLMConfig as MLS2PLMConfig, PenaltyConfig as PenaltyConfig
 from .diagnostics import align_latent_space as align_latent_space, dimensionality_diagnostics as dimensionality_diagnostics, fit_diagnostics as fit_diagnostics, fixed_item_calibration_diagnostics as fixed_item_calibration_diagnostics, predict_proba as predict_proba, recovery_report as recovery_report, response_process_dimensionality_diagnostics as response_process_dimensionality_diagnostics, response_process_fit_diagnostics as response_process_fit_diagnostics
 from .fit import fit as fit
-from .reference import fit_reference as fit_reference
 from .model_comparison import (
     ComparisonStatus as ComparisonStatus,
     ModelComparisonResult as ModelComparisonResult,
@@ -513,7 +512,6 @@ __all__ = [  # noqa: RUF022
     "TestletFit",
     "export_serving_bundle",
     "fit",
-    "fit_reference",
     "fit_polytomous",
     "score_polytomous",
     "information_polytomous",

@@ -149,24 +149,15 @@ def observed_information(
     return np.asarray(flat, dtype=np.float64).reshape(n, n)
 
 
-def _real_square_matrix(value: np.ndarray, name: str) -> np.ndarray:
-    """Validate a real square matrix before lossless float64 marshalling."""
-    raw = np.asarray(value)
-    if np.iscomplexobj(raw):
-        raise ValueError(f"{name} must be real-valued")
-    matrix = np.ascontiguousarray(np.asarray(raw, dtype=np.float64))
-    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-        raise ValueError(f"{name} must be a square matrix")
-    return matrix
-
-
 def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float | bool | np.ndarray]:
     """Check whether the Hessian/information matrix is positive definite.
 
     Eigenvalue diagnostics are owned by the compiled Rust core
     (``second_order_test``); Python validates shape and marshals the matrix.
     """
-    matrix = _real_square_matrix(hessian, "hessian")
+    matrix = np.ascontiguousarray(np.asarray(hessian, dtype=np.float64))
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("hessian must be a square matrix")
     from . import _core as core
 
     result = core.second_order_test(matrix, float(tol))
@@ -187,7 +178,9 @@ def vcov_from_hessian(hessian: np.ndarray, rcond: float = 1e-10) -> np.ndarray:
     """
     from . import _core  # type: ignore
 
-    matrix = _real_square_matrix(hessian, "hessian")
+    matrix = np.ascontiguousarray(np.asarray(hessian, dtype=np.float64))
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("hessian must be a square matrix")
     n = int(matrix.shape[0])
     flat = _core.vcov_from_hessian(matrix, float(rcond))
     vcov = np.asarray(flat, dtype=np.float64).reshape(n, n)
@@ -203,7 +196,9 @@ def standard_errors_from_vcov(vcov: np.ndarray) -> np.ndarray:
     """
     from . import _core  # type: ignore
 
-    matrix = _real_square_matrix(vcov, "vcov")
+    matrix = np.ascontiguousarray(np.asarray(vcov, dtype=np.float64))
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("vcov must be a square matrix")
     return np.asarray(
         _core.standard_errors_from_vcov(matrix),
         dtype=np.float64,
@@ -254,26 +249,15 @@ def oakes_standard_errors(
     from .objective import prepare_response
 
     config = config or FitConfig(model=result.model, estimator="mmle")
-    raw_responses = np.asarray(responses)
-    if np.iscomplexobj(raw_responses):
-        raise ValueError("responses must be real-valued")
-    y, observed = prepare_response(raw_responses, mask)
+    y, observed = prepare_response(np.asarray(responses, dtype=float), mask)
     n_persons, n_items = y.shape
     raw_factors = np.asarray(factor_id)
     if raw_factors.ndim != 1 or raw_factors.shape != (n_items,):
         raise ValueError("factor_id must be a 1-D array with one entry per item")
-    if np.iscomplexobj(raw_factors):
-        raise ValueError("factor_id must be real-valued integers")
     ff = raw_factors.astype(np.float64)
     if not np.all(np.isfinite(ff)) or np.any(ff < 0) or np.any(ff != np.floor(ff)):
         raise ValueError("factor_id must be finite non-negative integers")
-    try:
-        with np.errstate(invalid="ignore", over="ignore"):
-            factors = raw_factors.astype(np.int64)
-    except (OverflowError, TypeError, ValueError) as exc:
-        raise ValueError("factor_id must fit signed 64-bit integers") from exc
-    if not np.array_equal(factors.astype(np.float64), ff):
-        raise ValueError("factor_id must fit signed 64-bit integers")
+    factors = raw_factors.astype(np.int64)
     n_dims = int(factors.max()) + 1 if factors.size else 0
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")

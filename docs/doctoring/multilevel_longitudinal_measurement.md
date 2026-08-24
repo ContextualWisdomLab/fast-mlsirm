@@ -11,8 +11,7 @@ This first slice performs no statistical estimation. Python owns validation,
 content identity, bounded collection handling, replay protection, sparse design
 marshalling, and serialization only. Likelihood, integration, gradients,
 optimization, uncertainty, CPU multithreading, and any justified GPU batching
-remain in Rust. Crossed / multiple-membership `u_h` MAP estimation is documented
-separately in `docs/doctoring/multilevel_crossed_person_effects.md`.
+remain in Rust.
 
 ## Scientific rationale
 

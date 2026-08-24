@@ -1,4 +1,4 @@
-"""Callback-safe preflight for governed RAG request metadata and replay."""
+"""Callback-safe preflight for governed RAG request metadata."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from ._validation import (
 )
 
 _ORIGINAL_RAG_METADATA = _base._rag_metadata
-_ORIGINAL_CANONICAL_RAG_REQUEST = _base._canonical_rag_request
 
 
 def _caller_metadata(value: Any) -> Any:
@@ -121,21 +120,9 @@ def _rag_metadata(
     )
 
 
-def _canonical_rag_request(value: Any, name: str) -> _base.ScoringRequest:
-    """Admit only an exact factory-sealed request before replaying its fields."""
-    if type(value) is not _base.ScoringRequest:
-        raise assessment_error(
-            f"invalid_{name}",
-            f"$.{name}",
-            f"{name} must be a ScoringRequest",
-        )
-    return _ORIGINAL_CANONICAL_RAG_REQUEST(value, name)
-
-
 def install(module: Any) -> None:
-    """Install callback-safe metadata and request-replay boundaries."""
+    """Install the callback-safe metadata builder on the loaded RAG module."""
     module._rag_metadata = _rag_metadata
-    module._canonical_rag_request = _canonical_rag_request
 
 
 __all__: list[str] = []

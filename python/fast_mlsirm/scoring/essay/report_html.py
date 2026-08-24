@@ -220,7 +220,6 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .details-grid dt { font-weight: 700; }
 .details-grid dd { margin: 0; overflow-wrap: anywhere; }
 .table-scroll { overflow-x: auto; }
-.table-scroll:focus:not(:focus-visible), pre:focus:not(:focus-visible) { outline: none; }
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
@@ -250,8 +249,6 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
   body { background: white; color: black; }
   .skip-link { display: none !important; }
   section, .table-scroll { break-inside: avoid; }
-  .table-scroll, pre { overflow: visible; }
-  pre { max-height: none; }
 }
 """.strip()
 
@@ -377,7 +374,7 @@ def render_essay_score_report_html(
     output = Path(output_path)
     if output.suffix.lower() != ".html":
         raise ValueError("essay score report output path must end with .html")
-    if title is not None and (type(title) is not str or not title.strip()):
+    if title is not None and (not isinstance(title, str) or not title.strip()):
         raise ValueError("essay score report title must be a non-empty string")
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)

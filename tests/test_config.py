@@ -96,11 +96,6 @@ def test_fitconfig_invalid_backend():
         FitConfig(backend="cuda").validate()
 
 
-def test_fitconfig_rejects_numpy_reference_backend():
-    with pytest.raises(ValueError, match="production backend"):
-        FitConfig(backend="numpy").validate()
-
-
 @pytest.mark.parametrize("name", ["xi_points", "xi_seed"])
 @pytest.mark.parametrize("value", [True, 8.75, "9"])
 def test_fitconfig_rejects_noninteger_xi_controls(name, value):

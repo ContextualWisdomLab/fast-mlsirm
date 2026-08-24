@@ -21,12 +21,6 @@ _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = tuple(
     np.dtype(code).type
     for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
 )
-_TRUSTED_NUMPY_FLOAT_SCALAR_TYPES = (
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-)
 
 
 def _is_exact_numpy_integer_scalar_type(value_type: type) -> bool:
@@ -37,25 +31,6 @@ def _is_exact_numpy_integer_scalar_type(value_type: type) -> bool:
     NumPy scalar subclass that overrides metaclass ``__hash__`` or ``__eq__``.
     """
     return any(value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES)
-
-
-def _trusted_policy_real(value: object, name: str) -> float:
-    """Normalize one trusted policy threshold without caller callback dispatch."""
-    value_type = type(value)
-    if not (
-        value_type is int
-        or value_type is float
-        or _is_exact_numpy_integer_scalar_type(value_type)
-        or any(value_type is scalar_type for scalar_type in _TRUSTED_NUMPY_FLOAT_SCALAR_TYPES)
-    ):
-        raise ValueError(f"{name} must be a real number in 0..1")
-    try:
-        normalized = float(value)
-    except (OverflowError, ValueError) as exc:
-        raise ValueError(f"{name} must be a real number in 0..1") from exc
-    if not (0.0 <= normalized <= 1.0):
-        raise ValueError(f"{name} must be in 0..1")
-    return normalized
 
 
 def _trusted_judge_category_count(value: object) -> int:
@@ -130,9 +105,9 @@ class ValidationPolicy:
 
     def __post_init__(self) -> None:
         """Reject empty identities and thresholds outside closed unit intervals."""
-        if type(self.policy_id) is not str or not self.policy_id.strip():
+        if not isinstance(self.policy_id, str) or not self.policy_id.strip():
             raise ValueError("policy_id must be a non-empty string")
-        if type(self.policy_version) is not str or not self.policy_version.strip():
+        if not isinstance(self.policy_version, str) or not self.policy_version.strip():
             raise ValueError("policy_version must be a non-empty string")
         for name in (
             "qwk_min",
@@ -141,9 +116,15 @@ class ValidationPolicy:
             "overall_smd_max",
             "subgroup_smd_max",
         ):
-            object.__setattr__(self, name, _trusted_policy_real(getattr(self, name), name))
+            value = getattr(self, name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError(f"{name} must be a real number in 0..1")
+            f = float(value)
+            if not (0.0 <= f <= 1.0):
+                raise ValueError(f"{name} must be in 0..1")
+            object.__setattr__(self, name, f)
         n = self.min_subgroup_n
-        if type(n) is not int or n < 2:
+        if not isinstance(n, int) or isinstance(n, bool) or n < 2:
             raise ValueError("min_subgroup_n must be an integer >= 2")
 
     def rust_kwargs(self) -> dict[str, Any]:

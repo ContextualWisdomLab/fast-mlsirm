@@ -17,41 +17,9 @@ def _load_builder():
     return module
 
 
-def _initialize_git_repo(repo_root: Path) -> None:
-    """Create a minimal committed repository for source-provenance fixtures."""
-    subprocess.run(
-        ["git", "init", "--quiet", str(repo_root)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo_root),
-            "-c",
-            "user.name=fast-mlsirm-test",
-            "-c",
-            "user.email=fast-mlsirm-test@example.invalid",
-            "commit",
-            "--allow-empty",
-            "--quiet",
-            "-m",
-            "source provenance fixture",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
 def _args(tmp_path: Path, *, skip_build: bool = True) -> argparse.Namespace:
-    """Return builder arguments backed by a committed source fixture."""
-    repo_root = tmp_path / "repo"
-    _initialize_git_repo(repo_root)
     return argparse.Namespace(
-        repo_root=str(repo_root),
+        repo_root=str(tmp_path / "repo"),
         out=str(tmp_path / "commercial-release"),
         dist=str(tmp_path / "dist"),
         python="python",

@@ -243,9 +243,6 @@ def test_rust_and_numpy_agree_on_masked_inputs():
     n_obj, n_grad, n_ll = neg_loglik_and_grad(y_nan, factors, params, config, mask=mask, backend="numpy")
     r_obj, r_grad, r_ll = neg_loglik_and_grad(y_nan, factors, params, config, mask=mask, backend="rust")
 
-    # Rust and NumPy reduce the same masked cells in different orders. Keep
-    # the absolute tolerance tight while allowing the small platform-dependent
-    # rounding term at this objective scale.
-    np.testing.assert_allclose(r_obj, n_obj, rtol=1e-7, atol=1e-6)
-    np.testing.assert_allclose(r_ll, n_ll, rtol=1e-7, atol=1e-6)
+    assert abs(r_obj - n_obj) < 1e-6
+    assert abs(r_ll - n_ll) < 1e-6
     assert _max_grad_diff(r_grad, n_grad) < 1e-6

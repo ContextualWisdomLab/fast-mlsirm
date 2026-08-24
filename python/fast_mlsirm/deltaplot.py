@@ -270,11 +270,7 @@ def delta_plot(
         raise ValueError("group must be 1-D with one entry per person")
     if np.iscomplexobj(ga):
         raise ValueError("group must be real-valued")
-    if ga.dtype.kind == "b":
-        ga = ga.astype(np.float64)
-    if ga.dtype.kind not in ("i", "u", "f"):
-        raise ValueError("group must be a numeric array")
-    gf = np.ascontiguousarray(ga, dtype=np.float64)
+    gf = np.asarray(ga, dtype=np.float64)
     if not np.all((gf == 0.0) | (gf == 1.0)):
         raise ValueError("group entries must be 0 (reference) or 1 (focal)")
     gu = np.ascontiguousarray(gf, dtype=np.uint8)

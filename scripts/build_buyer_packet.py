@@ -47,7 +47,6 @@ PRODUCT_MANIFESTS = [
 
 
 def _sha256(path: Path) -> str:
-    """Return the SHA-256 digest of one evidence file."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -61,7 +60,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return the exact HEAD SHA, failing closed when Git provenance is unavailable."""
+    """Return HEAD SHA, failing closed when Git metadata lookup times out."""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -73,15 +72,9 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError("source commit lookup failed") from exc
-
-    source_commit = completed.stdout.strip()
-    if len(source_commit) not in {40, 64} or any(
-        character not in "0123456789abcdef" for character in source_commit
-    ):
-        raise RuntimeError("source commit lookup returned invalid identity")
-    return source_commit
+    except Exception:
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
 
 
 def _add_file(
@@ -91,7 +84,6 @@ def _add_file(
     *,
     required: bool = True,
 ) -> None:
-    """Register an existing source file under its buyer-packet archive path."""
     if not source_path.exists() or not source_path.is_file():
         if required:
             raise RuntimeError(f"required evidence file is missing: {source_path}")
@@ -100,7 +92,6 @@ def _add_file(
 
 
 def _acceptance_artifact_files(acceptance: dict[str, Any]) -> list[Path]:
-    """Extract file paths declared by acceptance workflow steps."""
     artifacts: list[Path] = []
     for step in acceptance.get("steps", []):
         if not isinstance(step, dict):
@@ -120,7 +111,6 @@ def _collect_files(
     benchmark_report_path: Path | None = None,
     release_evidence_index_path: Path | None = None,
 ) -> dict[str, Path]:
-    """Collect required and optional procurement evidence for the packet."""
     acceptance = _read_json(acceptance_path)
     files: dict[str, Path] = {}
     _add_file(files, "acceptance/acceptance_summary.json", acceptance_path)
@@ -182,7 +172,6 @@ def _collect_files(
 
 
 def _coverage(files: dict[str, Path]) -> dict[str, bool]:
-    """Report which required and optional evidence categories are present."""
     return {
         "acceptance_summary": "acceptance/acceptance_summary.json" in files,
         "sales_readiness_manifest": "sales/sales_readiness_manifest.json" in files,
@@ -208,12 +197,10 @@ def _coverage(files: dict[str, Path]) -> dict[str, bool]:
 
 
 def _content_security_policy() -> str:
-    """Return the restrictive policy used by the self-contained HTML report."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _format_value(value: Any) -> str:
-    """Format a coverage value for a human-readable report cell."""
     if isinstance(value, bool):
         return "go" if value else "missing"
     if value is None:
@@ -222,7 +209,6 @@ def _format_value(value: Any) -> str:
 
 
 def _render_report_html(manifest: dict[str, Any]) -> str:
-    """Render the buyer evidence manifest as a portable accessible HTML report."""
     coverage = manifest.get("coverage", {})
     coverage_rows = []
     if isinstance(coverage, dict):
@@ -340,7 +326,6 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
 
 
 def _report_css() -> str:
-    """Return the small inline stylesheet used by the buyer evidence report."""
     return """
 :root {
   color: #172026;
@@ -494,7 +479,6 @@ code {
 
 
 def build_packet(args: argparse.Namespace) -> dict[str, Any]:
-    """Build, validate, and return a signed-by-digest buyer evidence packet."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -582,7 +566,6 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Create the command-line parser for buyer evidence packet generation."""
     parser = argparse.ArgumentParser(
         description="Build a portable fast-mlsirm buyer evidence packet."
     )
@@ -625,7 +608,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run packet generation and print a machine-readable result summary."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

@@ -35,8 +35,6 @@ jobs:
       # numeric core (fast_mlsirm._core) during the editable install; the
       # Rust<->NumPy parity gate then exercises the Rust path.
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.97.1
       - run: python -m pip install --require-hashes -r requirements/ci.txt
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - name: Verify Rust core is the resolved default backend
@@ -63,8 +61,6 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.97.1
       # Ordinary Rust tests include the deterministic equation and bounded
       # recovery-contract sentinels. Exhaustive ignored studies run in the
       # scheduled Statistical Studies workflow rather than on every PR.
@@ -85,45 +81,10 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.97.1
       - name: Install software Vulkan adapter
         run: |
-          # The hosted runner's mirror+file registry can keep selecting a
-          # black-holed Azure mirror even after apt falls back for InRelease.
-          # Use a job-local source file pinned to canonical Ubuntu archives so
-          # package payloads do not re-enter that broken mirror selection path.
-          . /etc/os-release
-          test -n "${VERSION_CODENAME:-}"
-          cat > /tmp/fast-mlsirm-ubuntu.sources <<EOF
-          Types: deb
-          URIs: https://archive.ubuntu.com/ubuntu
-          Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-backports
-          Components: main restricted universe multiverse
-          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-
-          Types: deb
-          URIs: https://security.ubuntu.com/ubuntu
-          Suites: ${VERSION_CODENAME}-security
-          Components: main restricted universe multiverse
-          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-          EOF
-          timeout 120s sudo apt-get \
-            -o Dir::Etc::sourcelist=/tmp/fast-mlsirm-ubuntu.sources \
-            -o Dir::Etc::sourceparts=- \
-            -o Acquire::Retries=2 \
-            -o Acquire::http::Timeout=10 \
-            -o Acquire::https::Timeout=10 \
-            -o DPkg::Lock::Timeout=30 \
-            update
-          timeout 180s sudo apt-get \
-            -o Dir::Etc::sourcelist=/tmp/fast-mlsirm-ubuntu.sources \
-            -o Dir::Etc::sourceparts=- \
-            -o Acquire::Retries=2 \
-            -o Acquire::http::Timeout=10 \
-            -o Acquire::https::Timeout=10 \
-            -o DPkg::Lock::Timeout=30 \
-            install --yes mesa-vulkan-drivers vulkan-tools
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           LVP_ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*.json' -print -quit)"
@@ -169,7 +130,7 @@ jobs:
       # --require-hashes for editable/local installs, so the fuzz extras
       # (atheris plus test-only hypothesis) are resolved from the pinned pip
       # above rather than a hash-locked requirements file.
-      - run: python -m pip install -e '.[fuzz]'
+      - run: python -m pip install -e .[fuzz]
       - name: Fuzz load_factor_csv (CSV parser)
         run: |
           python fuzz/atheris/fuzz_load_factor_csv.py \
@@ -191,8 +152,6 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.97.1
       - run: python -m pip install --require-hashes -r requirements/package.txt
       - run: python -m build --no-isolation
       - run: python -m pip install --no-index --no-deps --force-reinstall dist/*.whl

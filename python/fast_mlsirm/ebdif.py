@@ -7,27 +7,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-_TRUSTED_EBDIF_SCALAR_TYPES = frozenset(
-    {
-        bool,
-        int,
-        float,
-        np.bool_,
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-        np.float16,
-        np.float32,
-        np.float64,
-        np.longdouble,
-    }
-)
-
 
 @dataclass
 class EbDifResult:
@@ -52,19 +31,8 @@ class EbDifResult:
 
 
 def _validated_1d(x, name: str) -> np.ndarray:
-    """Validate trusted real 1-D evidence without caller conversion hooks."""
-    if type(x) is np.ndarray:
-        xa = x
-    elif type(x) in (list, tuple):
-        if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in x):
-            raise ValueError(f"{name} must be a numeric array")
-        try:
-            xa = np.asarray(x)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(f"{name} must be a numeric array") from exc
-    else:
-        raise ValueError(f"{name} must be a numeric 1-D array")
-
+    """Validate ``x`` is a real 1-D array and return it (raises otherwise)."""
+    xa = np.asarray(x)
     if xa.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
     if np.iscomplexobj(xa):
@@ -73,10 +41,7 @@ def _validated_1d(x, name: str) -> np.ndarray:
         xa = xa.astype(np.float64)
     if xa.dtype.kind not in ("i", "u", "f"):
         raise ValueError(f"{name} must be a numeric array")
-    try:
-        return np.ascontiguousarray(xa, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be a numeric array") from exc
+    return np.ascontiguousarray(xa, dtype=np.float64)
 
 
 def eb_mh_dif(mh, se) -> EbDifResult:

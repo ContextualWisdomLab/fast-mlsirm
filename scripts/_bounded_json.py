@@ -19,13 +19,11 @@ MAX_JSON_DEPTH: Final = 128
 _READ_CHUNK_BYTES: Final = 64 * 1024
 _SAFE_OPEN_ERROR = "JSON input could not be opened as a stable regular file"
 _UNSTABLE_PATH_ERROR = "JSON input path changed during the bounded read"
-_DUPLICATE_MEMBER_ERROR = "JSON input contains a duplicate JSON object member"
-_NONFINITE_NUMBER_ERROR = "JSON input contains a non-finite JSON numeric value"
 
 
 def _positive_limit(value: object, field_name: str) -> int:
-    """Return ``value`` as a positive exact built-in integer."""
-    if type(value) is not int or value <= 0:
+    """Return ``value`` as a positive, non-Boolean integer."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{field_name} must be a positive integer")
     return value
 
@@ -117,30 +115,6 @@ def _validate_json_depth(content: bytes, *, max_depth: int) -> None:
             depth -= 1
 
 
-def _reject_nonfinite_constant(_: str) -> None:
-    """Reject Python's non-standard JSON numeric constants without reflection."""
-    raise ValueError(_NONFINITE_NUMBER_ERROR)
-
-
-def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    """Build one JSON object while rejecting repeated member names."""
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(_DUPLICATE_MEMBER_ERROR)
-        result[key] = value
-    return result
-
-
-def _loads_interoperable_json(content: str) -> Any:
-    """Decode one JSON value using unambiguous RFC-compatible semantics."""
-    return json.loads(
-        content,
-        object_pairs_hook=_reject_duplicate_members,
-        parse_constant=_reject_nonfinite_constant,
-    )
-
-
 def read_json_object(
     path: Path,
     *,
@@ -173,7 +147,7 @@ def read_json_object(
     except UnicodeDecodeError:
         raise ValueError("JSON input is not valid UTF-8") from None
     try:
-        payload = _loads_interoperable_json(text)
+        payload = json.loads(text)
     except json.JSONDecodeError:
         raise ValueError("JSON input is not valid JSON") from None
     except RecursionError as exc:
@@ -192,19 +166,15 @@ def parse_json_bounded(
     """Parse a stable, bounded UTF-8 JSON string.
 
     Args:
-        content: Exact built-in string containing the JSON.
+        content: The string containing the JSON.
         max_bytes: Inclusive maximum number of bytes accepted.
         max_depth: Inclusive maximum object/array nesting depth.
 
     Raises:
-        TypeError: If ``content`` is not an exact built-in string.
-        ValueError: If limits are invalid or exceeded, JSON syntax is invalid,
-            or decoder recursion fails.
+        ValueError: If limits are exceeded, or decoder recursion fails.
     """
     byte_limit = _positive_limit(max_bytes, "max_bytes")
     depth_limit = _positive_limit(max_depth, "max_depth")
-    if type(content) is not str:
-        raise TypeError("content must be str")
 
     encoded = content.encode("utf-8")
     if len(encoded) > byte_limit:
@@ -213,7 +183,7 @@ def parse_json_bounded(
     _validate_json_depth(encoded, max_depth=depth_limit)
 
     try:
-        return _loads_interoperable_json(content)
+        return json.loads(content)
     except json.JSONDecodeError:
         raise ValueError("JSON input is not valid JSON") from None
     except RecursionError as exc:

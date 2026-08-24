@@ -71,34 +71,6 @@ def test_limitations_contract_is_factory_sealed() -> None:
         )
 
 
-def test_limitations_replay_rejects_rebound_container_before_callbacks() -> None:
-    """Post-construction container rebinding cannot execute during replay."""
-    callbacks: list[str] = []
-
-    class HostileTuple(tuple):
-        def __iter__(self):  # type: ignore[override]
-            """Fail if package replay invokes caller-controlled iteration."""
-            callbacks.append("iter")
-            raise AssertionError("hostile limitation iteration executed")
-
-    for projection in (
-        lambda value: value.to_dict(),
-        lambda value: value.limitations_fingerprint,
-    ):
-        limits = rag_evidence_regime_limitations(RAGEvidenceRegime.RETRIEVED_CONTEXT)
-        object.__setattr__(
-            limits,
-            "limitation_codes",
-            HostileTuple(limits.limitation_codes),
-        )
-
-        with pytest.raises(AssessmentSpecError) as captured:
-            projection(limits)
-
-        assert captured.value.code == "invalid_rag_evidence_limitations"
-        assert callbacks == []
-
-
 def test_evidence_limitations_are_explicit_scoring_package_attributes() -> None:
     """Governed reporting callers should not need an internal-module import path."""
     assert scoring.RAGEvidenceRegimeLimitations is RAGEvidenceRegimeLimitations

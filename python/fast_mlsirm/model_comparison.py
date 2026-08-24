@@ -192,7 +192,7 @@ def _omega_tolerance(value: Any) -> float:
 
 
 def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
-    """Materialize trusted finite casewise values without conversion callbacks."""
+    """Materialize and normalize a bounded iterable of finite numeric values."""
     iterable_message = f"{name} must be an iterable of numeric casewise values"
     if isinstance(value, (str, bytes)):
         raise ValueError(iterable_message)
@@ -218,13 +218,16 @@ def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
             raise ValueError(
                 f"{name} must contain at most {MAX_CASEWISE_VALUES} casewise values"
             )
-        message = f"{name}[{index}] must be a finite number"
+        if _is_boolean_like(item):
+            raise ValueError(f"{name}[{index}] must be a finite number")
         try:
-            numeric = _trusted_real_scalar(item, message)
-        except ValueError:
-            raise ValueError(message) from None
+            numeric = float(item)
+        except MemoryError:
+            raise
+        except Exception:
+            raise ValueError(f"{name}[{index}] must be a finite number") from None
         if not math.isfinite(numeric):
-            raise ValueError(message)
+            raise ValueError(f"{name}[{index}] must be a finite number")
         materialized.append(numeric)
         index += 1
     return tuple(materialized)

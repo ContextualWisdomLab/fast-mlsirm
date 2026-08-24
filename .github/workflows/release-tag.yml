@@ -21,7 +21,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-      actions: write
     steps:
       - name: Verify dispatch targets the default branch
         env:
@@ -35,8 +34,6 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
       - name: Verify the requested version is the released source version
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
@@ -271,13 +268,3 @@ jobs:
             --verify-tag \
             --title "v$RELEASE_VERSION" \
             --notes-file release_notes.md
-      - name: Dispatch package publication from the immutable release tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
-        run: |
-          set -euo pipefail
-          gh workflow run publish-pypi.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "v$RELEASE_VERSION" \
-            -f release_tag="v$RELEASE_VERSION"

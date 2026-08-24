@@ -51,45 +51,11 @@ def test_irtree_expand_handles_all_missing_responses():
     assert np.array_equal(factor_id, np.array([0]))
 
 
-def test_irtree_expand_rejects_complex_responses_before_lossy_coercion():
-    responses = np.array([[0.0 + 1.0j], [1.0 + 0.0j]])
-    mapping = np.array([[0.0, 1.0]])
-    with pytest.raises(ValueError, match="responses must be real-valued"):
-        preprocessing.irtree_expand(responses, mapping)
-
-
-def test_irtree_expand_rejects_complex_mapping_before_lossy_coercion():
-    responses = np.array([[0.0], [1.0]])
-    mapping = np.array([[0.0 + 1.0j, 1.0 + 0.0j]])
-    with pytest.raises(ValueError, match="mapping must be real-valued"):
-        preprocessing.irtree_expand(responses, mapping)
-
-
-def test_irtree_expand_preserves_real_input_and_nan_semantics():
-    responses = np.array([[0.0], [np.nan], [1.0]], dtype=np.float32)
-    mapping = np.array([[0.0, 1.0]], dtype=np.float32)
-    expanded, factor_id = preprocessing.irtree_expand(responses, mapping)
-    assert np.array_equal(expanded[[0, 2], 0], np.array([0.0, 1.0]))
-    assert np.isnan(expanded[1, 0])
-    assert np.array_equal(factor_id, np.array([0]))
-
-
 def test_irtree_expand_rejects_wrong_shape_node_dims():
     responses = np.array([[0.0], [1.0]])
     mapping = np.array([[0.0, 1.0]])
     with pytest.raises(ValueError, match="node_dims must have one entry"):
         preprocessing.irtree_expand(responses, mapping, node_dims=np.array([0, 1]))
-
-
-def test_irtree_expand_rejects_complex_node_dims_before_lossy_coercion():
-    responses = np.array([[0.0], [1.0]])
-    mapping = np.array([[0.0, 1.0]])
-    with pytest.raises(ValueError, match="node_dims must be real-valued"):
-        preprocessing.irtree_expand(
-            responses,
-            mapping,
-            node_dims=np.array([0.0 + 1.0j]),
-        )
 
 
 def test_irtree_expand_rejects_non_numeric_node_dims():

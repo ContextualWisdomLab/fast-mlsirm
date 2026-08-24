@@ -80,9 +80,7 @@ def _rating_array(
     expected_length: int | None = None,
 ) -> np.ndarray:
     """Validate one paired rating vector without performing scoring arithmetic."""
-    if type(values) is not np.ndarray:
-        raise ValueError(f"{name} must be a NumPy array")
-    arr = values
+    arr = np.asarray(values)
     if arr.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
     if arr.size > MAX_OBSERVATIONS:

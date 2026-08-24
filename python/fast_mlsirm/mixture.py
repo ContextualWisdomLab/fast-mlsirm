@@ -145,14 +145,9 @@ def fit_mixture(
     tol_value = _finite_nonnegative_real(tol, "tol")
     seed_int = _bounded_integer(seed, "seed", 0, _MAX_U64)
 
-    raw_y = np.asarray(responses)
-    if np.iscomplexobj(raw_y) or raw_y.dtype.kind not in {"b", "i", "u", "f"}:
-        raise ValueError("responses must be real-valued")
-    y = np.asarray(raw_y, dtype=np.float64)
+    y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    if np.isinf(y).any():
-        raise ValueError("responses must be finite where not missing")
     n_persons, n_items = y.shape
 
     aggregate_iterations = n_classes_int * n_starts_int * max_iter_int
@@ -170,7 +165,7 @@ def fit_mixture(
                 f"{label} buffer ({cells} cells) exceeds the "
                 f"{MAX_MIXTURE_BUFFER_CELLS}-cell mixture limit"
             )
-    observed = ~np.isnan(y)
+    observed = np.isfinite(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
 
     core = _core_module()

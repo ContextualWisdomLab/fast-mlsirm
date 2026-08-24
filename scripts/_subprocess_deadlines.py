@@ -12,7 +12,7 @@ import os
 import signal
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -20,8 +20,6 @@ PROCESS_GROUP_GRACE_SECONDS = 5.0
 # Bound every post-timeout communicate/reap so a stuck child cannot hang the
 # parent after SIGTERM/SIGKILL (fail-closed evidence still returns promptly).
 PROCESS_REAP_TIMEOUT_SECONDS = 5.0
-
-_Command = list[str] | tuple[str, ...]
 
 
 class SubprocessOperation(str, Enum):
@@ -116,15 +114,18 @@ def resolve_timeout_seconds(
     return float(seconds)
 
 
-def _validate_command(command: _Command) -> list[str]:
+def _validate_command(command: Sequence[str]) -> list[str]:
     """Return a plain argument vector after rejecting malformed command fields."""
-    if type(command) not in {list, tuple} or not command:
+    if isinstance(command, (str, bytes)) or not command:
         raise ValueError("command must be a non-empty sequence of strings")
-    if not all(type(part) is str and part for part in command):
+    materialized = list(command)
+    if not materialized or not all(
+        isinstance(part, str) and part for part in materialized
+    ):
         raise ValueError(
             "command must be a non-empty sequence of non-empty strings"
         )
-    return list(command)
+    return materialized
 
 
 def _posix_process_group_exists(process_group_id: int) -> bool:
@@ -202,7 +203,7 @@ def _terminate_after_timeout(process: subprocess.Popen) -> None:
 
 
 def run_bounded(
-    command: _Command,
+    command: Sequence[str],
     *,
     operation: SubprocessOperation,
     check: bool = False,

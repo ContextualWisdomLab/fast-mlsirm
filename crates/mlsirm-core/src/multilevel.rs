@@ -9,30 +9,14 @@
 //! design. Equal-key ordering therefore cannot affect a public result and finite
 //! input overflow cannot silently become an infinite contextual contribution.
 //!
-//! [`estimate_crossed_person_effects`] is the MAP estimator of the same `u_h`
-//! vector for crossed and weighted multiple-membership designs (Fox & Glas,
-//! 2001; Browne, Goldstein, & Rasbash, 2001). It does not rewrite the
-//! longitudinal OLS / AR utilities reserved for a separate slice.
-//!
 //! Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership
 //! multiple classification (MMMC) models. *Statistical Modelling, 1*(2),
 //! 103-124. <https://doi.org/10.1177/1471082X0100100202>
-//!
-//! Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel
-//! IRT model. *Psychometrika, 66*, 271-288.
-//! <https://doi.org/10.1007/BF02294839>
 
 use std::collections::HashSet;
 
-#[path = "multilevel_estimator.rs"]
-mod estimator;
 #[path = "multilevel_kernel.rs"]
 mod kernel;
-
-pub use estimator::{
-    estimate_crossed_person_effects, CrossedPersonEffectConfig, CrossedPersonEffectEstimate,
-    MAX_CROSSED_EFFECTS, MAX_CROSSED_ITER,
-};
 
 fn validate_unique_context_indices_per_row(
     row_offsets: &[usize],

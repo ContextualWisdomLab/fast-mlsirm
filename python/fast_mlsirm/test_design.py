@@ -5,128 +5,6 @@ import numpy as np
 from .types import MLSIRMParams
 
 
-_NUMPY_INTEGER_SCALAR_TYPES = (
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.intp,
-    np.longlong,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.uintp,
-    np.ulonglong,
-)
-
-
-def _trusted_positive_length(value: object) -> int:
-    """Normalize a package-trusted positive form length without caller callbacks."""
-    value_type = type(value)
-    if value_type is int:
-        length = value
-    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        length = int(value)
-    else:
-        raise ValueError("length must be an integer between 1 and the number of items")
-    if length < 1:
-        raise ValueError("length must be an integer between 1 and the number of items")
-    return length
-
-
-def _real_information_vector(value: object) -> np.ndarray:
-    """Admit real numeric item information before ``float64`` marshalling."""
-    array = np.asarray(value)
-    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
-        raise ValueError("information must be a real numeric array")
-    if array.ndim != 1:
-        raise ValueError("information must be a 1D array")
-    return np.ascontiguousarray(array, dtype=np.float64)
-
-
-def _constraint_counts(value: object, *, name: str) -> dict[str, int]:
-    """Admit an exact string-to-nonnegative-int constraint mapping."""
-    if value is None:
-        return {}
-    if type(value) is not dict:
-        raise ValueError(f"{name} must be a dictionary")
-    normalized: dict[str, int] = {}
-    for key, count in value.items():
-        if type(key) is not str:
-            raise ValueError("content constraints must use string keys")
-        if type(count) is not int or count < 0:
-            raise ValueError("content constraint counts must be non-negative integers")
-        normalized[key] = count
-    return normalized
-
-
-def _content_labels(value: object, *, expected_shape: tuple[int, ...]) -> list[str]:
-    """Admit text labels without allowing NumPy to stringify mixed sequences."""
-    if type(value) is list or type(value) is tuple:
-        raw_labels = list(value)
-        if (len(raw_labels),) != expected_shape:
-            raise ValueError("content length must match information")
-        labels: list[str] = []
-        for label in raw_labels:
-            if type(label) is str:
-                labels.append(label)
-            elif type(label) is np.str_:
-                labels.append(str(label))
-            else:
-                raise ValueError("content must contain string labels")
-        return labels
-    if isinstance(value, (list, tuple)):
-        raise ValueError("content must contain string labels")
-
-    array = np.asarray(value)
-    if array.shape != expected_shape:
-        raise ValueError("content length must match information")
-    if array.dtype.kind == "U":
-        return list(array.tolist())
-    if array.dtype.kind == "O":
-        raw_labels = array.tolist()
-        if not isinstance(raw_labels, list):
-            raise ValueError("content must contain string labels")
-        labels = []
-        for label in raw_labels:
-            if type(label) is str:
-                labels.append(label)
-            elif type(label) is np.str_:
-                labels.append(str(label))
-            else:
-                raise ValueError("content must contain string labels")
-        return labels
-    raise ValueError("content must contain string labels")
-
-
-def _exclude_indices(value: object, *, n_items: int) -> list[int]:
-    """Admit non-negative item indices losslessly through signed ``int64``."""
-    array = np.asarray(value)
-    if array.ndim != 1 or np.iscomplexobj(array) or array.dtype.kind not in {"i", "u", "f"}:
-        raise ValueError("exclude must contain valid item indices")
-    if array.dtype.kind == "f":
-        if (
-            np.any(~np.isfinite(array))
-            or np.any(array != np.floor(array))
-            or np.any(array < 0)
-            or np.any(array >= float(2**63))
-        ):
-            raise ValueError("exclude must contain valid item indices")
-    elif array.dtype.kind == "u":
-        # Compare like-for-like unsigned values so the signed-64 boundary does
-        # not depend on NumPy's version-specific mixed signed/unsigned promotion.
-        unsigned = array.astype(np.uint64, copy=False)
-        if np.any(unsigned > np.uint64(np.iinfo(np.int64).max)):
-            raise ValueError("exclude must contain valid item indices")
-    elif np.any(array < 0):
-        raise ValueError("exclude must contain valid item indices")
-    indices = np.ascontiguousarray(array, dtype=np.int64)
-    if indices.size and np.any(indices >= n_items):
-        raise ValueError("exclude must contain valid item indices")
-    return [int(index) for index in indices.tolist()]
-
-
 def item_information(
     params: MLSIRMParams,
     factor_id: np.ndarray,
@@ -233,30 +111,30 @@ def assemble_test_form(
     compiled Rust core (``assemble_test_form_greedy``); Python validates public
     shapes and marshals constraint maps without mutating caller arrays.
     """
-    length = _trusted_positive_length(length)
-    min_counts = _constraint_counts(min_per_content, name="min_per_content")
-    max_counts = _constraint_counts(max_per_content, name="max_per_content")
+    scores = np.asarray(information, dtype=np.float64)
+    if scores.ndim != 1:
+        raise ValueError("information must be a 1D array")
+    if length < 1 or length > scores.size:
+        raise ValueError("length must be between 1 and the number of items")
 
-    scores = _real_information_vector(information)
-    if length > scores.size:
-        raise ValueError("length must be an integer between 1 and the number of items")
-
-    labels: list[str] | None = None
-    if content is not None:
-        labels = _content_labels(content, expected_shape=scores.shape)
+    min_counts = {str(k): int(v) for k, v in (min_per_content or {}).items()}
+    max_counts = {str(k): int(v) for k, v in (max_per_content or {}).items()}
+    labels = None if content is None else np.asarray(content).astype(str)
     if (min_counts or max_counts) and labels is None:
         raise ValueError("content labels are required for content constraints")
+    if labels is not None and labels.shape != scores.shape:
+        raise ValueError("content length must match information")
 
     exclude_list: list[int] = []
     if exclude is not None:
-        exclude_list = _exclude_indices(exclude, n_items=int(scores.size))
+        exclude_list = [int(i) for i in np.asarray(exclude, dtype=np.int64).tolist()]
 
     from . import _core as core
 
     selected = core.assemble_test_form_greedy(
-        scores,
-        length,
-        labels,
+        np.ascontiguousarray(scores, dtype=np.float64),
+        int(length),
+        None if labels is None else [str(x) for x in labels.tolist()],
         min_counts,
         max_counts,
         exclude_list,

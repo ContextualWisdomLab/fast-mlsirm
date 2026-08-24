@@ -12,7 +12,6 @@ import pytest
 
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit
-from fast_mlsirm.reference import fit_reference
 
 pytestmark = pytest.mark.skipif(
     pytest.importorskip("fast_mlsirm._core", reason="compiled core required") is None,
@@ -47,11 +46,7 @@ def _both(y, fid, model, n_dims, **kwargs):
             q_xi=7,
             q_u=11,
         )
-        results[backend] = (
-            fit(y, fid, cfg, **kwargs)
-            if backend == "rust"
-            else fit_reference(y, fid, cfg, **kwargs)
-        )
+        results[backend] = fit(y, fid, cfg, **kwargs)
     return results["rust"], results["numpy"]
 
 

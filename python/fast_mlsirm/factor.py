@@ -31,38 +31,6 @@ _REFERENCES = """References (APA 7th ed.):
             Erlbaum. (As cited in Revelle, 2025; not read.)
     """
 
-_NUMPY_INTEGER_TYPES = frozenset(
-    {
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-    }
-)
-
-
-def _integer_control(value: object, name: str) -> int:
-    """Return a callback-free built-in integer for a semantic control."""
-    if type(value) is int:
-        return value
-    if type(value) in _NUMPY_INTEGER_TYPES:
-        return int(value)
-    raise TypeError(f"{name} must be an integer")
-
-
-def _real_numeric_array(value: object, name: str) -> np.ndarray:
-    """Materialize trusted real numeric storage before float64 marshalling."""
-    array = np.asarray(value)
-    if np.iscomplexobj(array):
-        raise ValueError(f"{name} must be real-valued")
-    if array.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError(f"{name} must be a numeric array")
-    return np.ascontiguousarray(array, dtype=np.float64)
-
 
 @dataclass
 class MinresFaResult:
@@ -110,16 +78,14 @@ def minres_fa(corr: np.ndarray, n_factors: int) -> MinresFaResult:
     (psych fa.R transcription; Revelle, 2025).
 
     """
-    nf = _integer_control(n_factors, "n_factors")
-    r = _real_numeric_array(corr, "corr")
+    from . import _core
+
+    r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
     if r.ndim != 2 or r.shape[0] != r.shape[1]:
         raise ValueError("corr must be a square (p, p) matrix")
     p = int(r.shape[0])
-
-    from . import _core
-
-    out = _core.minres_fa(r.reshape(-1), p, nf)
-    return _fa_from_dict(out, p, nf)
+    out = _core.minres_fa(r.reshape(-1), p, int(n_factors))
+    return _fa_from_dict(out, p, int(n_factors))
 
 
 minres_fa.__doc__ += _REFERENCES
@@ -130,16 +96,14 @@ def minres_fa_from_data(data: np.ndarray, n_factors: int) -> MinresFaResult:
     correlations computed in the Rust core).
 
     """
-    nf = _integer_control(n_factors, "n_factors")
-    x = _real_numeric_array(data, "data")
+    from . import _core
+
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D (n, p) matrix")
     n, p = map(int, x.shape)
-
-    from . import _core
-
-    out = _core.minres_fa_from_data(x.reshape(-1), n, p, nf)
-    return _fa_from_dict(out, p, nf)
+    out = _core.minres_fa_from_data(x.reshape(-1), n, p, int(n_factors))
+    return _fa_from_dict(out, p, int(n_factors))
 
 
 minres_fa_from_data.__doc__ += _REFERENCES
@@ -151,13 +115,12 @@ def omega_total_1f(corr: np.ndarray) -> OmegaResult:
     Revelle, 2025 — formula hand-derived, see Rust module docs).
 
     """
-    r = _real_numeric_array(corr, "corr")
+    from . import _core
+
+    r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
     if r.ndim != 2 or r.shape[0] != r.shape[1]:
         raise ValueError("corr must be a square (p, p) matrix")
     p = int(r.shape[0])
-
-    from . import _core
-
     out = _core.omega_total_1f(r.reshape(-1), p)
     return OmegaResult(
         omega_total=float(out["omega_total"]), fa=_fa_from_dict(out["fa"], p, 1)
@@ -171,13 +134,12 @@ def omega_total_1f_from_data(data: np.ndarray) -> OmegaResult:
     """:func:`omega_total_1f` from a complete ``(n, p)`` data matrix.
 
     """
-    x = _real_numeric_array(data, "data")
+    from . import _core
+
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D (n, p) matrix")
     n, p = map(int, x.shape)
-
-    from . import _core
-
     out = _core.omega_total_1f_from_data(x.reshape(-1), n, p)
     return OmegaResult(
         omega_total=float(out["omega_total"]), fa=_fa_from_dict(out["fa"], p, 1)
@@ -220,12 +182,11 @@ def glb_fa(corr: np.ndarray) -> GlbFaResult:
     for the scope reduction (not the algebraic glb).
 
     """
-    r = _real_numeric_array(corr, "corr")
-    if r.ndim != 2 or r.shape[0] != r.shape[1]:
-        raise ValueError("corr must be a square (p, p) matrix")
-
     from . import _core
 
+    r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
+    if r.ndim != 2 or r.shape[0] != r.shape[1]:
+        raise ValueError("corr must be a square (p, p) matrix")
     return _glbfa_from_dict(_core.glb_fa(r.reshape(-1), int(r.shape[0])))
 
 
@@ -236,13 +197,12 @@ def glb_fa_from_data(data: np.ndarray) -> GlbFaResult:
     """:func:`glb_fa` from a complete ``(n, p)`` data matrix.
 
     """
-    x = _real_numeric_array(data, "data")
+    from . import _core
+
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D (n, p) matrix")
     n, p = map(int, x.shape)
-
-    from . import _core
-
     return _glbfa_from_dict(_core.glb_fa_from_data(x.reshape(-1), n, p))
 
 
@@ -313,15 +273,13 @@ def velicer_map(corr: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
     ``max_m`` defaults to ``p - 1`` (the canonical upper bound).
 
     """
-    explicit_m = None if max_m is None else _integer_control(max_m, "max_m")
-    r = _real_numeric_array(corr, "corr")
+    from . import _core
+
+    r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
     if r.ndim != 2 or r.shape[0] != r.shape[1]:
         raise ValueError("corr must be a square (p, p) matrix")
     p = int(r.shape[0])
-    m = p - 1 if explicit_m is None else explicit_m
-
-    from . import _core
-
+    m = p - 1 if max_m is None else int(max_m)
     return _map_from_dict(_core.velicer_map(r.reshape(-1), p, m))
 
 
@@ -332,15 +290,13 @@ def velicer_map_from_data(data: np.ndarray, max_m: int | None = None) -> Velicer
     """:func:`velicer_map` from a complete ``(n, p)`` data matrix.
 
     """
-    explicit_m = None if max_m is None else _integer_control(max_m, "max_m")
-    x = _real_numeric_array(data, "data")
+    from . import _core
+
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
         raise ValueError("data must be a 2-D (n, p) matrix")
     n, p = map(int, x.shape)
-    m = p - 1 if explicit_m is None else explicit_m
-
-    from . import _core
-
+    m = p - 1 if max_m is None else int(max_m)
     return _map_from_dict(_core.velicer_map_from_data(x.reshape(-1), n, p, m))
 
 

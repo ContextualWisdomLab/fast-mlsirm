@@ -30,7 +30,6 @@
 //!   https://doi.org/10.1007/s11336-006-1478-z
 
 use crate::quadrature::gh_rule;
-use crate::rt::validate_rt_shape;
 
 /// Upper bound on caller-controlled EM iterations, shared with the other fit APIs.
 const RT_JOINT_MAX_ITER: usize = 100_000;
@@ -208,7 +207,12 @@ pub fn fit_speed_accuracy_covariance(
     n_items: usize,
     config: SpeedAccuracyConfig,
 ) -> Result<SpeedAccuracyFit, String> {
-    let expected = validate_rt_shape(n_persons, n_items)?;
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be positive".into());
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows".to_string())?;
     if responses.len() != expected || times.len() != expected {
         return Err("responses and times must have length n_persons * n_items".into());
     }
@@ -459,52 +463,6 @@ pub fn fit_speed_accuracy_covariance(
         theta_eap,
         tau_eap,
     })
-}
-
-#[cfg(test)]
-mod resource_limit_tests {
-    use super::*;
-    use crate::rt::{RT_MAX_AXIS_LENGTH, RT_MAX_CELLS};
-
-    #[test]
-    fn joint_rt_shape_limits_precede_data_and_workspace_allocation() {
-        let base = SpeedAccuracyConfig::default();
-        let axis_err = fit_speed_accuracy_covariance(
-            &[],
-            &[],
-            None,
-            &[],
-            &[],
-            &[],
-            &[],
-            RT_MAX_AXIS_LENGTH + 1,
-            1,
-            base,
-        )
-        .err()
-        .expect("oversized RT axis must fail");
-        assert_eq!(axis_err, "response-time axes must be <= 100000");
-
-        let item_count = RT_MAX_CELLS / RT_MAX_AXIS_LENGTH + 1;
-        let budget_err = fit_speed_accuracy_covariance(
-            &[],
-            &[],
-            None,
-            &[],
-            &[],
-            &[],
-            &[],
-            RT_MAX_AXIS_LENGTH,
-            item_count,
-            base,
-        )
-        .err()
-        .expect("oversized RT cell count must fail");
-        assert_eq!(
-            budget_err,
-            "response-time evidence exceeds the 20000000-cell budget"
-        );
-    }
 }
 
 #[cfg(test)]

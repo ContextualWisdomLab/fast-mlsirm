@@ -86,7 +86,8 @@ def test_cli_fit_json_output(tmp_path, capsys):
         "MLS2PLM",
         "--max-iter",
         "1",
-        "--reference",
+        "--backend",
+        "numpy",
         "--out",
         str(fit_dir),
         "--json",
@@ -107,7 +108,6 @@ def test_cli_fit_json_output(tmp_path, capsys):
 
 
 def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
-    pytest.importorskip("fast_mlsirm._core")
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
@@ -136,9 +136,9 @@ def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
         assert main() == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["backend"] == "rust"
+    assert payload["backend"] in {"numpy", "rust"}
     summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
-    assert summary["backend"] == "rust"
+    assert summary["backend"] == payload["backend"]
 
 def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     pytest.importorskip("fast_mlsirm._core")
@@ -178,36 +178,6 @@ def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     assert payload["rust_device"] == "gpu"
     summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
     assert summary["rust_device"] == "gpu"
-
-
-def test_cli_rejects_reference_with_explicit_rust_backend(tmp_path, capsys):
-    args = [
-        "fit",
-        "--responses",
-        str(tmp_path / "responses.npy"),
-        "--factors",
-        str(tmp_path / "factors.csv"),
-        "--reference",
-        "--backend",
-        "rust",
-        "--out",
-        str(tmp_path / "fit_out"),
-    ]
-    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
-        assert main() == 2
-    assert "cannot be combined" in capsys.readouterr().err
-
-
-def test_cli_rejects_numpy_as_a_production_backend(capsys):
-    with patch.object(
-        sys,
-        "argv",
-        ["fast-mlsirm", "fit", "--backend", "numpy"],
-    ):
-        with pytest.raises(SystemExit) as failure:
-            main()
-    assert failure.value.code == 2
-    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_cli_score_json_payload_reports_scores(capsys):

@@ -61,16 +61,6 @@ def _require_irt_link_quadrature_size(value, *, name: str = "q_theta") -> int:
     raise ValueError(f"{name} must be an integer quadrature size")
 
 
-def _real_numeric_array(value, *, name: str) -> np.ndarray:
-    """Marshal trusted real numeric storage without lossy complex/object casts."""
-    raw = np.asarray(value)
-    if np.iscomplexobj(raw):
-        raise ValueError(f"{name} must be real-valued")
-    if raw.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError(f"{name} must be a numeric array")
-    return np.ascontiguousarray(raw, dtype=np.float64)
-
-
 def link_fixed_item_parameters(
     source: MLSIRMParams,
     target: MLSIRMParams,
@@ -86,7 +76,7 @@ def link_fixed_item_parameters(
     anchors_raw = np.asarray(anchor_items)
     if anchors_raw.ndim != 1 or anchors_raw.size == 0:
         raise ValueError("anchor_items must be a non-empty 1D array")
-    a_fl = _real_numeric_array(anchors_raw, name="anchor_items")
+    a_fl = anchors_raw.astype(np.float64)
     if not np.all(np.isfinite(a_fl)) or np.any(a_fl < 0) or np.any(a_fl != np.floor(a_fl)):
         raise ValueError("anchor_items must be finite non-negative integers")
     # Range-check on the float BEFORE narrowing: uint64 max casts to -1 and
@@ -102,20 +92,13 @@ def link_fixed_item_parameters(
         raise ValueError("source and target theta must be 2-D (items x dimensions)")
     if source.theta.shape[1] != target.theta.shape[1]:
         raise ValueError("source and target theta must have the same dimensionality")
-
-    source_theta = _real_numeric_array(source.theta, name="source.theta")
-    source_alpha = _real_numeric_array(source.alpha, name="source.alpha")
-    source_b = _real_numeric_array(source.b, name="source.b")
-    target_alpha = _real_numeric_array(target.alpha, name="target.alpha")
-    target_b = _real_numeric_array(target.b, name="target.b")
     for arr, nm in (
-        (source_theta, "source.theta"),
-        (source_alpha, "source.alpha"),
-        (source_b, "source.b"),
-        (target_alpha, "target.alpha"),
-        (target_b, "target.b"),
+        (source.alpha, "source.alpha"),
+        (source.b, "source.b"),
+        (target.alpha, "target.alpha"),
+        (target.b, "target.b"),
     ):
-        if not np.all(np.isfinite(arr)):
+        if not np.all(np.isfinite(np.asarray(arr, dtype=float))):
             raise ValueError(f"{nm} must be finite")
 
     n_items = source.alpha.size
@@ -124,7 +107,7 @@ def link_fixed_item_parameters(
         factors = np.zeros(n_items, dtype=np.int64)
     else:
         f_raw = np.asarray(factor_id)
-        f_fl = _real_numeric_array(f_raw, name="factor_id")
+        f_fl = f_raw.astype(np.float64)
         if (
             f_raw.ndim != 1
             or not np.all(np.isfinite(f_fl))
@@ -143,11 +126,11 @@ def link_fixed_item_parameters(
     from . import _core as core
 
     res = core.link_fixed_item_parameters(
-        source_theta,
-        source_alpha,
-        source_b,
-        target_alpha,
-        target_b,
+        np.ascontiguousarray(source.theta, dtype=np.float64),
+        np.ascontiguousarray(source.alpha, dtype=np.float64),
+        np.ascontiguousarray(source.b, dtype=np.float64),
+        np.ascontiguousarray(target.alpha, dtype=np.float64),
+        np.ascontiguousarray(target.b, dtype=np.float64),
         np.ascontiguousarray(anchors, dtype=np.int64),
         np.ascontiguousarray(factors, dtype=np.int64),
     )
@@ -225,24 +208,23 @@ def irt_link(
     method = _require_irt_link_method(method)
     q_theta = _require_irt_link_quadrature_size(q_theta)
 
-    ao = _real_numeric_array(a_old, name="a_old")
-    bo = _real_numeric_array(b_old, name="b_old")
-    an = _real_numeric_array(a_new, name="a_new")
-    bn = _real_numeric_array(b_new, name="b_new")
-    for _arr, _nm in ((ao, "a_old"), (bo, "b_old"), (an, "a_new"), (bn, "b_new")):
-        if _arr.ndim != 1 or not np.all(np.isfinite(_arr)):
-            raise ValueError(f"{_nm} must be a 1-D array of finite numbers")
-    if ao.shape != bo.shape or an.shape != bn.shape or ao.shape != an.shape:
-        raise ValueError("slope/intercept arrays must have matching lengths")
-    if np.any(ao <= 0) or np.any(an <= 0):
-        raise ValueError("slopes (a_old/a_new) must be positive")
-
-    from .estimators.marginal import _gh
     from .fitstats import _core_module
+    from .estimators.marginal import _gh
 
     core = _core_module()
     if core is None:  # pragma: no cover
         raise RuntimeError("irt_link requires the compiled Rust core")
+    ao = np.asarray(a_old, dtype=np.float64)
+    bo = np.asarray(b_old, dtype=np.float64)
+    an = np.asarray(a_new, dtype=np.float64)
+    bn = np.asarray(b_new, dtype=np.float64)
+    for _arr, _nm in ((ao, 'a_old'), (bo, 'b_old'), (an, 'a_new'), (bn, 'b_new')):
+        if _arr.ndim != 1 or not np.all(np.isfinite(_arr)):
+            raise ValueError(f'{_nm} must be a 1-D array of finite numbers')
+    if ao.shape != bo.shape or an.shape != bn.shape or ao.shape != an.shape:
+        raise ValueError('slope/intercept arrays must have matching lengths')
+    if np.any(ao <= 0) or np.any(an <= 0):
+        raise ValueError('slopes (a_old/a_new) must be positive')
     nodes, weights = _gh(q_theta)
     res = core.irt_link(
         ao,

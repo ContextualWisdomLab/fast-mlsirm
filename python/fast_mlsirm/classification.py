@@ -9,8 +9,6 @@ from typing import Sequence
 
 import numpy as np
 
-from ._classification_cutscore_safety import normalize_cutscores as _normalize_cutscores
-
 
 @dataclass
 class ClassificationResult:
@@ -177,7 +175,6 @@ def rudner_classification(
     fail given the calibration's standard errors.
 
     """
-    cuts = _normalize_cutscores(cutscores)
     core = _core_or_raise("rudner_classification")
     t = np.ascontiguousarray(np.asarray(theta, dtype=np.float64).reshape(-1))
     s = np.ascontiguousarray(np.asarray(sem, dtype=np.float64).reshape(-1))
@@ -188,6 +185,7 @@ def rudner_classification(
             np.asarray(weights, dtype=np.float64).reshape(-1)
         )
     )
+    cuts = [float(c) for c in cutscores]
     res = core.rudner_classification(t, s, w, cuts)
     return _to_result(res, len(cuts), t.shape[0])
 
@@ -214,7 +212,6 @@ def lee_classification(
     documented in the Rust core). ``weights`` defaults to uniform.
 
     """
-    cuts = _normalize_cutscores(cutscores)
     core = _core_or_raise("lee_classification")
     p = np.ascontiguousarray(np.asarray(probs, dtype=np.float64))
     if p.ndim != 2:
@@ -227,6 +224,7 @@ def lee_classification(
             np.asarray(weights, dtype=np.float64).reshape(-1)
         )
     )
+    cuts = [float(c) for c in cutscores]
     res = core.lee_classification(
         p.reshape(-1), int(n_points), int(n_items), w, cuts
     )

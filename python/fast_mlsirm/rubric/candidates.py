@@ -934,7 +934,7 @@ def parse_generated_item_candidate(
     """Parse untrusted provider JSON into one strict source-grounded candidate."""
     if not isinstance(request, GenerationRequest):
         raise TypeError("request must be a GenerationRequest")
-    if type(raw_json) is not str:
+    if not isinstance(raw_json, str):
         raise TypeError("raw_json must be a string")
     if len(raw_json) > MAX_RAW_RESPONSE_CHARACTERS:
         raise _error(

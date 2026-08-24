@@ -87,10 +87,7 @@ def subscore_analysis(
             H. Wainer (Eds.), *Test scoring* (pp. 343-387). Lawrence
             Erlbaum. (as cited in Sinharay, 2010)
     """
-    y_raw = np.asarray(responses)
-    if np.iscomplexobj(y_raw):
-        raise ValueError("responses must be real-valued")
-    y = np.asarray(y_raw, dtype=np.float64)
+    y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -105,10 +102,8 @@ def subscore_analysis(
     g = np.asarray(groups).reshape(-1)
     if g.shape[0] != n_items:
         raise ValueError("groups must assign one subscale index per item")
-    if np.iscomplexobj(g):
-        raise ValueError("groups must be real-valued")
     if not np.issubdtype(g.dtype, np.integer):
-        gf = np.asarray(g, dtype=np.float64).reshape(-1)
+        gf = np.asarray(groups, dtype=np.float64).reshape(-1)
         if not np.all(np.isfinite(gf)) or np.any(gf != np.round(gf)):
             raise ValueError("groups must be integer subscale indices")
         g = gf.astype(np.int64)

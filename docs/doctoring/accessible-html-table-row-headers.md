@@ -12,13 +12,6 @@ table does not declare a row-header column: its first value is repeated
 criterion provenance inside a many-row evidence relation rather than a unique
 row identity.
 
-The governed essay facets-calibration renderer likewise supplies
-`row_header_column=0` for task, rater, respondent, ordered-threshold, and
-likelihood-trace tables because those first-column values identify the row's
-semantic axis. The validation-evidence renderer supplies it for the metric
-identity column. This is an explicit domain decision at each call site rather
-than a blanket first-column transform.
-
 Every non-empty row must have exactly the same width as the declared header
 axis. Invalid, Boolean, negative, or out-of-range row-header indices fail before
 HTML is emitted. This prevents a malformed row from silently shifting a
@@ -29,7 +22,7 @@ HTML is emitted. This prevents a malformed row from silently shifting a
 The renderer emits:
 
 - `<th scope="col">` for every declared column header;
-- `<th scope="row">` only for an explicitly identified row-identity field;
+- `<th scope="row">` only for the explicitly identified criterion field;
 - `<td>` for all other body values;
 - a semantic `<caption>` for each table;
 - a keyboard-focusable overflow region around each table; and
@@ -42,35 +35,20 @@ header semantics where a cell is not actually a header is itself a structural
 failure. Therefore row-header markup is a domain decision, not a blanket first-
 column transform.
 
-## Print and export contract
-
-Screen rendering keeps wide tables and canonical JSON keyboard-accessible in
-scroll containers. Static media cannot provide that scrolling interaction. The
-CSS Overflow Module Level 3 therefore advises authors to adjust print layout so
-relevant overflow is simultaneously visible. The shared report stylesheet uses
-`@media print` to preserve that distinction: table wrappers and canonical JSON
-switch to `overflow: visible`, and the screen-only `32rem` JSON height cap is
-removed. Screen overflow behavior remains unchanged.
-
-This matters to the commercial audit surface because the canonical JSON is the
-exact-value alternative for reconstruction. Printing or exporting a report to
-PDF must not silently replace a complete on-screen audit payload with a clipped
-subset.
-
 ## Verification
 
-Focused tests exercise complete rendered artifacts and verify that:
+Focused tests parse a complete rendered report with Python's standard-library
+`HTMLParser` and verify that:
 
-1. score-report criterion outcomes start with `<th scope="row">` while evidence-reference cells remain data cells;
-2. facets-calibration task, rater, respondent, category/iteration identity axes emit `<th scope="row">`;
-3. validation-evidence metric identities emit `<th scope="row">`;
-4. canonical JSON in the same artifacts continues to reconstruct the exact governed reports;
-5. invalid row-header indices and header/row width drift fail closed; and
-6. print media removes scroll clipping and the canonical-JSON height cap while retaining screen overflow behavior.
+1. every criterion outcome starts with `<th scope="row">`;
+2. the remaining criterion cells are `<td>`;
+3. every evidence-reference body cell remains `<td>`;
+4. the canonical JSON in the same artifact reconstructs the exact report; and
+5. invalid row-header indices and header/row width drift fail closed.
 
-The tests operate on final standalone artifacts rather than asserting only a
+The tests operate on the final standalone artifact rather than asserting only a
 helper substring, so they cover the production composition path and the exact
-row-identity distinctions.
+criterion/evidence distinction.
 
 ## Interpretation boundary
 
@@ -84,9 +62,6 @@ separate evidence.
 
 World Wide Web Consortium. (2023). *Web Content Accessibility Guidelines
 (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
-
-World Wide Web Consortium. (2025, October 7). *CSS Overflow Module Level 3*
-(Working Draft). https://www.w3.org/TR/css-overflow-3/
 
 World Wide Web Consortium, Web Accessibility Initiative. (2019, July 27).
 *Tables with two headers*. https://www.w3.org/WAI/tutorials/tables/two-headers/

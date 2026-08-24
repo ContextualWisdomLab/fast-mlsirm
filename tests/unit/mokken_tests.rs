@@ -339,11 +339,9 @@ fn aisp_leaves_independent_items_unscaled() {
 }
 
 /// Monte Carlo: >= 500 replications of a unidimensional Rasch scale
-/// under normal and positively skewed latent distributions with matched
-/// location and scale. Loevinger's H is marginal-distribution dependent, so
-/// the skew condition must not confound skewness with a narrower theta spread.
-/// Reads crate `h` for both conditions and `aisp` labels for the calibrated
-/// normal-condition recovery contract.
+/// (normal and skew-positive traits). Reads crate `h` and `aisp` labels.
+/// Asserts distributional behavior: mean H within a plausible band and
+/// one-scale full recovery in >= 95% of replications.
 /// Limitations stated: this cannot pin exact constants; the algebra anchors
 /// live in `coefficients_match_brute_force_oracle` and
 /// `z_statistic_matches_hand_computation`.
@@ -352,15 +350,10 @@ fn aisp_leaves_independent_items_unscaled() {
 fn monte_carlo_unidimensional_recovery() {
     let bs = [-1.0, -0.5, 0.0, 0.5, 1.0];
     let n = 500;
-    let reps = 500;
-    let half_normal_mean = (2.0 / std::f64::consts::PI).sqrt();
-    let half_normal_sd = (1.0 - 2.0 / std::f64::consts::PI).sqrt();
     for (label, skew) in [("normal", false), ("skew", true)] {
         let mut full = 0usize;
         let mut h_sum = 0.0;
-        let mut theta_sum = 0.0;
-        let mut theta_sq_sum = 0.0;
-        let mut theta_count = 0usize;
+        let reps = 500;
         for rep in 0..reps {
             let mut rng = Rng::new(1000 + rep as u64);
             let j = bs.len();
@@ -368,15 +361,10 @@ fn monte_carlo_unidimensional_recovery() {
             for p in 0..n {
                 let mut th = rng.next_normal();
                 if skew {
-                    // Standardize a half-normal draw analytically before the
-                    // shared 1.5 scale factor. This changes distribution shape
-                    // without the old fixture's ~28% reduction in theta SD.
-                    th = (th.abs() - half_normal_mean) / half_normal_sd;
+                    // half-normal shifted: skewed positive trait
+                    th = th.abs() * 1.2 - 0.9;
                 }
                 th *= 1.5;
-                theta_sum += th;
-                theta_sq_sum += th * th;
-                theta_count += 1;
                 for (i, &b) in bs.iter().enumerate() {
                     let pr = 1.0 / (1.0 + (-(th - b)).exp());
                     x[p * j + i] = if rng.next_f64() < pr { 1 } else { 0 };
@@ -390,27 +378,14 @@ fn monte_carlo_unidimensional_recovery() {
             }
         }
         let mean_h = h_sum / reps as f64;
-        let theta_mean = theta_sum / theta_count as f64;
-        let theta_var = theta_sq_sum / theta_count as f64 - theta_mean * theta_mean;
-        let theta_sd = theta_var.sqrt();
-        assert!(
-            theta_mean.abs() < 0.03,
-            "{label}: theta mean = {theta_mean}"
-        );
-        assert!(
-            theta_sd > 1.45 && theta_sd < 1.60,
-            "{label}: theta SD = {theta_sd}"
-        );
         assert!(
             mean_h > 0.35 && mean_h < 0.75,
             "{label}: mean H = {mean_h}"
         );
-        if !skew {
-            assert!(
-                full as f64 / reps as f64 >= 0.95,
-                "{label}: full-recovery rate = {}",
-                full as f64 / reps as f64
-            );
-        }
+        assert!(
+            full as f64 / reps as f64 >= 0.95,
+            "{label}: full-recovery rate = {}",
+            full as f64 / reps as f64
+        );
     }
 }

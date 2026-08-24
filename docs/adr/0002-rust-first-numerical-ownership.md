@@ -5,7 +5,7 @@ Date: 2026-08-09
 
 ## Context
 
-The repository exposes Python APIs while supporting computationally intensive psychometric estimation, diagnostics, calibration and simulation. Maintaining independent Python and Rust production formulas creates drift risk, doubles verification burden and makes CPU/GPU ownership ambiguous. At the same time, transparent NumPy paths are valuable for parity and research inspection when reached through an explicit reference API.
+The repository exposes Python APIs while supporting computationally intensive psychometric estimation, diagnostics, calibration and simulation. Maintaining independent Python and Rust production formulas creates drift risk, doubles verification burden and makes CPU/GPU ownership ambiguous. At the same time, transparent NumPy paths are valuable for parity, research inspection and controlled fallback.
 
 ## Decision
 
@@ -22,11 +22,7 @@ Python may:
 
 Python shall not become an independently evolving second production formula.
 
-The public production backend architecture exposes only `auto` and `rust`.
-NumPy parity is available through the explicitly named `fit_reference` API and
-`fit --reference` CLI mode; it is not a `FitConfig` production choice and is
-never selected by automatic resolution. GPU is a Rust device path, not a third
-psychometric formula implementation.
+The public backend architecture may expose `auto`, `rust` and governed `numpy` reference/fallback choices for APIs that currently support them. Rust is the preferred resolved production backend when the extension is available. GPU is a Rust device path, not a third psychometric formula implementation.
 
 The canonical PyO3 layer must support feature growth without independent PRs overwriting initialization/export structure. Secondary module symbols, if retained, must be registered through one auditable binding architecture.
 

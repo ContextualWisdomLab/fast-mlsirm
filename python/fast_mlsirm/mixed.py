@@ -262,10 +262,7 @@ def fit_mixed_items(
     39–55. https://doi.org/10.1111/j.2044-8317.1990.tb00925.x
 
     """
-    y_raw = np.asarray(responses)
-    if np.iscomplexobj(y_raw):
-        raise ValueError("responses must be real-valued")
-    y_float = np.asarray(y_raw, dtype=np.float64)
+    y_float = np.asarray(responses, dtype=np.float64)
     if y_float.ndim != 2:
         raise ValueError("responses must be a persons-by-items matrix")
     n_persons, n_items = y_float.shape
