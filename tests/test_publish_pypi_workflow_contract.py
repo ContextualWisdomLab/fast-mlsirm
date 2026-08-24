@@ -27,17 +27,29 @@ def _job_block(text: str, name: str) -> str:
     return match.group(0)
 
 
-def test_release_builds_are_bound_to_the_published_version() -> None:
+def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     text = _workflow_text()
     verify = _job_block(text, "verify-release")
     sdist = _job_block(text, "sdist")
     wheels = _job_block(text, "wheels")
 
-    for job in (verify, sdist, wheels):
-        assert "ref: ${{ inputs.release_tag }}" in job
-        assert "persist-credentials: false" in job
+    assert "      release_commit:\n" in text
+    release_commit_input = text.split("      release_commit:\n", 1)[1].split("\n      ", 1)[0]
+    assert "required: true" in release_commit_input
 
+    for job in (verify, sdist, wheels):
+        assert "ref: ${{ inputs.release_commit }}" in job
+        assert "persist-credentials: false" in job
+        assert "ref: ${{ inputs.release_tag }}" not in job
+
+    assert "fetch-depth: 0" in verify
     assert 'RELEASE_TAG: ${{ inputs.release_tag }}' in verify
+    assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in verify
+    assert "release_commit must be a canonical 40-character lowercase SHA-1" in verify
+    assert 'git rev-parse HEAD' in verify
+    assert 'git rev-parse "$RELEASE_TAG^{commit}"' in verify
+    assert "checked-out release source does not match release_commit" in verify
+    assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
     assert text.count("maturin-version: v1.14.1") == 2
@@ -67,16 +79,20 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
 
     # GITHUB_TOKEN-created release events do not recursively start ordinary
     # event-triggered workflows. Package publication therefore uses the one
-    # supported recursive trigger: workflow_dispatch, bound to the immutable tag.
+    # supported recursive trigger: workflow_dispatch, bound to both immutable
+    # release identities rather than re-resolving the tag independently.
     assert "  workflow_dispatch:\n" in publish_text
     assert "      release_tag:\n" in publish_text
-    assert "        required: true\n" in publish_text
+    assert "      release_commit:\n" in publish_text
+    assert publish_text.count("        required: true\n") >= 2
     assert "types: [published]" not in publish_text
 
     assert "permissions:\n      contents: write\n      actions: write" in release_job
     assert "gh workflow run publish-pypi.yml" in release_job
     assert '--ref "v$RELEASE_VERSION"' in release_job
     assert '-f release_tag="v$RELEASE_VERSION"' in release_job
+    assert '-f release_commit="$RELEASE_COMMIT"' in release_job
+    assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in release_job
     assert release_job.index('gh release create "v$RELEASE_VERSION"') < release_job.index(
         "gh workflow run publish-pypi.yml"
     )
