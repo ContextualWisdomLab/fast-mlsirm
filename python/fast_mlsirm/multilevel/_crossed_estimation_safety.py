@@ -62,7 +62,7 @@ def _validate_integer_scalar_float64_lossless(value: object, name: str) -> None:
 
 
 def _float64_array_lossless(raw: np.ndarray, name: str) -> np.ndarray:
-    """Normalize trusted storage to binary64 without changing exact integers."""
+    """Normalize trusted storage to binary64 without changing admitted values."""
     try:
         converted = np.asarray(raw, dtype=np.float64)
     except (TypeError, ValueError, OverflowError):
@@ -71,6 +71,12 @@ def _float64_array_lossless(raw: np.ndarray, name: str) -> np.ndarray:
         with np.errstate(invalid="ignore", over="ignore"):
             roundtrip = converted.astype(raw.dtype)
         if not np.array_equal(roundtrip, raw):
+            raise ValueError(f"{name} could not be converted losslessly")
+    elif raw.dtype.kind == "f" and raw.dtype.itemsize > np.dtype(np.float64).itemsize:
+        roundtrip = converted.astype(raw.dtype)
+        same = roundtrip == raw
+        nan_same = np.isnan(roundtrip) & np.isnan(raw)
+        if not np.all(same | nan_same):
             raise ValueError(f"{name} could not be converted losslessly")
     return converted
 
