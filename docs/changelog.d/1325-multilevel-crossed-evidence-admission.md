@@ -3,5 +3,5 @@
 ## Fixed
 
 - Sealed the public crossed/multiple-membership person-effect estimator's response, fixed-item, slope, and person-offset evidence before NumPy array protocols can run. Exact NumPy numeric arrays and ordinary built-in list/tuple evidence containing package-trusted Python/NumPy numeric scalars remain supported, while arbitrary array providers, callback-bearing nested values, complex storage, and non-numeric storage fail closed before native-core discovery.
-- Require exact integer item-intercept, slope, and person-offset evidence to survive binary64 normalization losslessly; values such as `2**53 + 1` now fail closed instead of silently rounding before Rust dispatch, while the exact `2**53` boundary remains supported.
+- Require exact integer and wider-than-binary64 real evidence to survive float64 normalization losslessly; values such as `2**53 + 1` and higher-precision `np.longdouble` values now fail closed instead of silently rounding before Rust dispatch, while exactly representable values remain supported.
 - Normalized admitted evidence to package-owned float64 arrays before delegating to the existing Rust-owned Fox–Glas/Browne MMMC MAP/Newton estimator; likelihood, updates, centering, GPU/CPU reductions, convergence, and recovery arithmetic are unchanged.
