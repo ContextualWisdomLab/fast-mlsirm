@@ -262,17 +262,27 @@ def install(module: ModuleType) -> None:
             max_cells=_MAX_CROSSED_RESPONSE_CELLS,
         )
         trusted_intercepts = _trusted_numeric_storage(
-            item_intercepts, "item_intercepts"
+            item_intercepts,
+            "item_intercepts",
+            max_cells=_MAX_CROSSED_RESPONSE_CELLS,
         )
         trusted_slopes = (
             None
             if item_slopes is None
-            else _trusted_numeric_storage(item_slopes, "item_slopes")
+            else _trusted_numeric_storage(
+                item_slopes,
+                "item_slopes",
+                max_cells=_MAX_CROSSED_RESPONSE_CELLS,
+            )
         )
         trusted_offsets = (
             None
             if person_offsets is None
-            else _trusted_numeric_storage(person_offsets, "person_offsets")
+            else _trusted_numeric_storage(
+                person_offsets,
+                "person_offsets",
+                max_cells=_MAX_CROSSED_RESPONSE_CELLS,
+            )
         )
         return current(
             trusted_responses,
