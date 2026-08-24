@@ -223,11 +223,15 @@ def install(serving_module: Any) -> None:
         screening_audit: Any = None,
         dim_names: Any = None,
     ) -> Any:
-        # Preserve the legacy convergence-error ordering. Only a result that
-        # already crossed that original precondition reaches the artifact
-        # identity and numerical-control trust boundaries below.
+        # Establish the convergence-status scalar before delegating to the
+        # historical exporter: its ``str(...)`` conversion would otherwise run
+        # caller-defined string-subclass callbacks on a public FitResult.
         status = getattr(result, "convergence_status", None)
-        if builtins.type(status) is not str or status.strip().lower() != "converged":
+        if builtins.type(status) is not str:
+            raise RuntimeError(
+                "export_serving_bundle requires convergence_status to be a built-in string"
+            )
+        if status.strip().lower() != "converged":
             return original_export(
                 result,
                 item_codes,
