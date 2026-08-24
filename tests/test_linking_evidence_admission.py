@@ -92,6 +92,18 @@ def test_fixed_link_rejects_array_provider_parameter_without_callbacks():
     assert _ArrayProviderBomb.calls == 0
 
 
+def test_fixed_link_rejects_array_provider_target_theta_without_callbacks():
+    source = _params(seed=14)
+    target = _params(seed=15)
+    target.theta = _ArrayProviderBomb()
+    _ArrayProviderBomb.calls = 0
+
+    with pytest.raises(ValueError, match="target.theta must be a numeric array"):
+        link_fixed_item_parameters(source, target, np.array([0, 1, 2]))
+
+    assert _ArrayProviderBomb.calls == 0
+
+
 def test_fixed_link_rejects_complex_factor_identity_before_rust(monkeypatch):
     source = _params(n_dims=1, seed=3)
     target = _params(n_dims=1, seed=4)
@@ -169,6 +181,45 @@ def test_irt_link_rejects_array_provider_before_native_discovery(monkeypatch):
         )
 
     assert _ArrayProviderBomb.calls == 0
+
+
+def test_irt_link_preserves_trusted_builtin_sequences_and_numpy_scalars(monkeypatch):
+    import fast_mlsirm.fitstats as fitstats
+
+    captured: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+
+    class Core:
+        def irt_link(self, ao, bo, an, bn, *_args, method):
+            assert method == "mean_mean"
+            captured.append((ao, bo, an, bn))
+            return {
+                "slope": 1.0,
+                "intercept": 0.0,
+                "criterion": 0.0,
+                "n_iter": 0,
+                "converged": True,
+                "termination_reason": "closed_form",
+                "max_iter": 0,
+                "final_objective_span": 0.0,
+                "objective_tolerance": 0.0,
+                "final_parameter_span": 0.0,
+                "parameter_tolerance": 0.0,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
+
+    result = irt_link(
+        [np.float32(1.0), np.int16(1), 0.9],
+        (np.float32(-1.0), 0, np.int8(1)),
+        [np.float64(1.1), np.uint8(1), 0.8],
+        (np.float32(-0.8), np.int16(0), 0.9),
+        method="mean_mean",
+        q_theta=7,
+    )
+
+    assert result.slope == 1.0
+    assert len(captured) == 1
+    assert all(array.dtype == np.float64 for array in captured[0])
 
 
 def test_irt_link_rejects_object_storage_without_numeric_callbacks(monkeypatch):
