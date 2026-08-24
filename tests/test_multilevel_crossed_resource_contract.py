@@ -16,10 +16,12 @@ from fast_mlsirm.multilevel import (
 
 
 def _revision(tag: str) -> str:
+    """Return one deterministic fixture fingerprint."""
     return hashlib.sha256(tag.encode("utf-8")).hexdigest()
 
 
 def _design():
+    """Build the smallest identified crossed-estimator design fixture."""
     return build_context_membership_design(
         [
             build_context_membership(
@@ -44,6 +46,7 @@ def _assert_oversized_response_fails_before_materialization(
     monkeypatch: pytest.MonkeyPatch,
     responses: object,
 ) -> None:
+    """Assert a tiny test ceiling is enforced before conversion or Rust."""
     monkeypatch.setattr(safety, "_MAX_CROSSED_RESPONSE_CELLS", 2)
     conversions = 0
     core_discoveries = 0
