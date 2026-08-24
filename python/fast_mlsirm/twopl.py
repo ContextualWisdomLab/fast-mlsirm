@@ -21,6 +21,77 @@ from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_mode
 
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS = 3
+_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+)
+_NUMPY_FLOAT_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+
+
+def _finite_integer(value: object, name: str) -> int:
+    """Normalize one trusted integral scalar without invoking caller protocols."""
+
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if value_type in _NUMPY_INTEGER_TYPES:
+        return int(value)
+    if value_type is float:
+        numeric = value
+    elif value_type in _NUMPY_FLOAT_TYPES:
+        numeric = float(value)
+    else:
+        raise ValueError(f"{name} must be a finite integer")
+    if not np.isfinite(numeric) or numeric != np.floor(numeric):
+        raise ValueError(f"{name} must be a finite integer")
+    return int(numeric)
+
+
+def _positive_finite_real(value: object, name: str) -> float:
+    """Normalize one trusted positive finite real without caller coercion hooks."""
+
+    value_type = type(value)
+    if value_type not in (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES):
+        raise ValueError(f"{name} must be finite and > 0")
+    try:
+        numeric = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and > 0") from exc
+    if not np.isfinite(numeric) or numeric <= 0.0:
+        raise ValueError(f"{name} must be finite and > 0")
+    return numeric
+
+
+def _boolean(value: object, name: str) -> bool:
+    """Normalize one trusted Boolean scalar without truth-value callbacks."""
+
+    value_type = type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean")
+
+
+def _u64_seed(value: object) -> int:
+    """Normalize the integration seed without lossy float conversion."""
+
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif value_type in _NUMPY_INTEGER_TYPES:
+        normalized = int(value)
+    else:
+        raise ValueError("xi_seed must be a non-negative integer")
+    if not 0 <= normalized < 2**64:
+        raise ValueError("xi_seed must be in [0, 2**64)")
+    return normalized
 
 
 @dataclass
@@ -122,8 +193,21 @@ def fit_2pl(
             Carlo EM. *Computational Statistics & Data Analysis, 48*(4), 685-701.
             https://doi.org/10.1016/j.csda.2004.03.019
     """
-    # Fail closed on hostile node_rule before any core import or coercion.
+    # Fail closed on hostile integration controls before caller data or core work.
     node_rule = normalize_node_rule(node_rule)
+    gh_rule = node_rule == "gh"
+    q_int = _finite_integer(q, "q")
+    if gh_rule and q_int not in _SUPPORTED_Q:
+        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
+    estimate_corr_bool = _boolean(estimate_corr, "estimate_corr")
+    max_iter_int = _finite_integer(max_iter, "max_iter")
+    if not (1 <= max_iter_int <= MAX_MAX_ITER):
+        raise ValueError(f"max_iter must be in 1..{MAX_MAX_ITER}")
+    tol_float = _positive_finite_real(tol, "tol")
+    xi_points_int = _finite_integer(xi_points, "xi_points")
+    if not gh_rule and not (1 <= xi_points_int <= MAX_XI_POINTS):
+        raise ValueError(f"xi_points must be in 1..{MAX_XI_POINTS}")
+    xi_seed_int = _u64_seed(xi_seed)
 
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
@@ -133,49 +217,14 @@ def fit_2pl(
     n_dims = pat.shape[1]
     # The Gauss-Hermite product grid caps D <= _MAX_DIMS; the QMC/MC rules reach D <= 6 (the Halton
     # prime axes). The core does the authoritative rule-dependent check; this mirrors it up front.
-    _gh = node_rule == "gh"
-    _max_dims = _MAX_DIMS if _gh else 6
-    if not 1 <= n_dims <= _max_dims:
+    max_dims = _MAX_DIMS if gh_rule else 6
+    if not 1 <= n_dims <= max_dims:
         raise ValueError(
-            f"loading_pattern dimensions must be between 1 and {_max_dims} "
+            f"loading_pattern dimensions must be between 1 and {max_dims} "
             f"(node_rule={node_rule!r})"
         )
     if np.isinf(y).any():
         raise ValueError("responses must be 0, 1, or NaN (missing)")
-
-    def _finite_integer(value: int, name: str) -> int:
-        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
-        scalar = np.asarray(value)
-        if (
-            scalar.ndim != 0
-            or not np.issubdtype(scalar.dtype, np.number)
-            or np.iscomplexobj(scalar)
-        ):
-            raise ValueError(f"{name} must be a finite integer")
-        numeric = float(scalar)
-        if not np.isfinite(numeric) or numeric != np.floor(numeric):
-            raise ValueError(f"{name} must be a finite integer")
-        return int(numeric)
-
-    q_int = _finite_integer(q, "q")
-    max_iter_int = _finite_integer(max_iter, "max_iter")
-    # q is used only by the Gauss-Hermite rule; the QMC/MC rules ignore it (matching the core).
-    if _gh and q_int not in _SUPPORTED_Q:
-        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
-    xi_points_int = _finite_integer(xi_points, "xi_points")
-    if not (1 <= max_iter_int <= MAX_MAX_ITER):
-        raise ValueError(f"max_iter must be in 1..{MAX_MAX_ITER}")
-    if not _gh and not (1 <= xi_points_int <= MAX_XI_POINTS):
-        raise ValueError(f"xi_points must be in 1..{MAX_XI_POINTS}")
-    # xi_seed is a full-range u64 (default 0x9E37_79B9_7F4A_7C15): validate it as an EXACT integer
-    # WITHOUT a float64 round-trip. _finite_integer casts through float(), which silently rounds any
-    # value >= 2^53 (the default drifts, breaking Rust<->Python parity) and overflows u64 near the
-    # top of the range (raising OverflowError in the PyO3 conversion).
-    if isinstance(xi_seed, bool) or not isinstance(xi_seed, (int, np.integer)):
-        raise ValueError("xi_seed must be a non-negative integer")
-    xi_seed_int = int(xi_seed)
-    if not 0 <= xi_seed_int < 2**64:
-        raise ValueError("xi_seed must be in [0, 2**64)")
 
     observed = ~np.isnan(y)
     validation_y = np.where(observed, y, np.nan)
@@ -195,9 +244,9 @@ def fit_2pl(
         int(n_items),
         int(n_dims),
         q_int,
-        bool(estimate_corr),
+        estimate_corr_bool,
         max_iter_int,
-        float(tol),
+        tol_float,
         node_rule,
         xi_points_int,
         xi_seed_int,

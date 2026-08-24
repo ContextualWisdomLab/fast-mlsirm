@@ -1,6 +1,7 @@
 import argparse
 import importlib.util
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -32,6 +33,36 @@ def _write_repo_evidence(root: Path, module) -> None:
                 "checks": [{"id": "buyer_evidence_packet", "status": "go"}],
             }
         _write(root / relative, json.dumps(payload))
+    _initialize_git_repo(root)
+
+
+def _initialize_git_repo(repo_root: Path) -> None:
+    """Create a minimal committed repository for source-provenance fixtures."""
+    subprocess.run(
+        ["git", "init", "--quiet", str(repo_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "-c",
+            "user.name=fast-mlsirm-test",
+            "-c",
+            "user.email=fast-mlsirm-test@example.invalid",
+            "commit",
+            "--allow-empty",
+            "--quiet",
+            "-m",
+            "source provenance fixture",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _write_acceptance(tmp_path: Path) -> Path:

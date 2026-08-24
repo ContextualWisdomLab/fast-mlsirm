@@ -63,3 +63,15 @@ fn projected_m2_rejects_nonfinite_sample_size_before_arithmetic() {
         "non-finite n must fail before numerical execution"
     );
 }
+
+#[test]
+fn projected_m2_rejects_nonpositive_sample_size_before_arithmetic() {
+    for sample_size in [0.0, -1.0] {
+        let result = projected_m2(&[0.25], &[1.0], vec![1.0], 1, 1, sample_size);
+
+        assert!(
+            matches!(result, Err(message) if message.contains("n must be positive")),
+            "sample size {sample_size} must fail closed"
+        );
+    }
+}
