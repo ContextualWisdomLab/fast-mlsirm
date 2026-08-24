@@ -1,10 +1,10 @@
 """Callback-free serving trust-boundary admission.
 
 Serving artifacts are scientific deployment records: their structural controls,
-item identities, and item-to-dimension identities must be established before
-caller callbacks, NumPy integer narrowing, or Rust-owned scoring can observe
-them. Numerical scoring arithmetic remains in the existing Rust-backed serving
-implementation.
+item identities, dimension identities, and item-to-dimension identities must be
+established before caller callbacks, NumPy integer narrowing, or Rust-owned
+scoring can observe them. Numerical scoring arithmetic remains in the existing
+Rust-backed serving implementation.
 """
 
 from __future__ import annotations
@@ -102,6 +102,23 @@ def _item_code_list(value: Any, n_items: int) -> list[str]:
     return normalized
 
 
+def _dimension_name_list(value: Any, n_dims: int) -> list[str] | None:
+    """Return inert built-in dimension labels without caller callbacks."""
+    if value is None:
+        return None
+    if builtins.type(value) is not list:
+        raise ValueError("dim_names must be null or a list of built-in strings")
+    if len(value) != n_dims:
+        raise ValueError("dim_names length must match the fitted dimension count")
+
+    normalized: list[str] = []
+    for name in value:
+        if builtins.type(name) is not str:
+            raise ValueError("dim_names must contain built-in strings")
+        normalized.append(name)
+    return normalized
+
+
 def _quadrature_integer(value: Any, *, label: str) -> int:
     """Normalize one trusted integer quadrature control to a JSON-safe int."""
     value_type = builtins.type(value)
@@ -142,7 +159,14 @@ def install(serving_module: Any) -> None:
                     kind = population.get("kind")
                     if kind is not None and builtins.type(kind) is not str:
                         raise ValueError("bundle population kind must be a string")
-        return original_validate(bundle)
+
+        # Preserve every existing package-owned validation/error precedence.
+        # `dim_names` is not consumed by the historical validator, so replay its
+        # identity contract only after the rest of the bundle has been proven
+        # valid and before any public scorer can discover the compiled core.
+        result = original_validate(bundle)
+        _dimension_name_list(bundle.get("dim_names"), bundle["n_dims"])
+        return result
 
     @wraps(original_export)
     def safe_export_serving_bundle(
@@ -177,6 +201,8 @@ def install(serving_module: Any) -> None:
         n_items = len(params.b)
         item_codes_value = _item_code_list(item_codes, n_items)
         factor_value = _factor_id_vector(factor_id, n_items)
+        n_dims = int(factor_value.max()) + 1
+        dim_names_value = _dimension_name_list(dim_names, n_dims)
         q_theta_value = _quadrature_integer(q_theta, label="q_theta")
         q_xi_value = _quadrature_integer(q_xi, label="q_xi")
         return original_export(
@@ -188,7 +214,7 @@ def install(serving_module: Any) -> None:
             q_xi_value,
             eps_distance,
             screening_audit,
-            dim_names,
+            dim_names_value,
         )
 
     serving_module._validate_bundle = safe_validate_bundle
