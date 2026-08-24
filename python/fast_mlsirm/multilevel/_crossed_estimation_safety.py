@@ -207,6 +207,37 @@ def _trusted_worker_count(module: ModuleType, value: object) -> int:
     return module.exact_integer(integer, "worker_count", minimum=1)
 
 
+def _trusted_context_effect_mapping(
+    module: ModuleType,
+    design: object,
+    context_effects: object,
+) -> dict[object, object]:
+    """Snapshot required continuous effects once and reject Boolean identity."""
+    if type(design) is not module.ContextMembershipDesign:
+        raise ValueError("design must be an exact ContextMembershipDesign")
+    _ = design.design_fingerprint
+
+    missing: list[object] = []
+    snapshot: dict[object, object] = {}
+    for key in design.context_keys:
+        try:
+            value = context_effects[key]
+        except KeyError:
+            missing.append(key)
+            continue
+        except Exception:
+            raise ValueError("context_effects could not be read safely") from None
+        if type(value) in (bool, np.bool_):
+            raise ValueError(
+                "context_effects values must be real-valued numeric evidence"
+            )
+        snapshot[key] = value
+
+    if missing:
+        raise KeyError(f"context_effects is missing keys: {missing!r}")
+    return snapshot
+
+
 def install(module: ModuleType) -> None:
     """Install idempotent trust-boundary guards on crossed multilevel operations."""
     current_weighted = module.weighted_contextual_effect
@@ -220,9 +251,14 @@ def install(module: ModuleType) -> None:
             worker_count: object = 1,
         ):
             trusted_workers = _trusted_worker_count(module, worker_count)
-            return current_weighted(
+            trusted_effects = _trusted_context_effect_mapping(
+                module,
                 design,
                 context_effects,
+            )
+            return current_weighted(
+                design,
+                trusted_effects,
                 worker_count=trusted_workers,
             )
 
