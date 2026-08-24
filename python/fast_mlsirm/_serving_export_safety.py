@@ -18,6 +18,7 @@ import numpy as np
 
 _MAX_SERVING_DIMS = 64
 _HARDENED_ATTR = "__fast_mlsirm_serving_export_safety_hardened__"
+_QUADRATURE_ORDERS = frozenset((7, 11, 15, 21, 31, 41))
 _NUMPY_INTEGER_TYPES = (
     np.int8,
     np.int16,
@@ -121,13 +122,17 @@ def _dimension_name_list(value: Any, n_dims: int) -> list[str] | None:
 
 
 def _quadrature_integer(value: Any, *, label: str) -> int:
-    """Normalize one trusted integer quadrature control to a JSON-safe int."""
+    """Normalize one trusted supported quadrature order to a JSON-safe int."""
     value_type = builtins.type(value)
     if value_type is int:
-        return value
-    if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_TYPES):
-        return int(value)
-    raise ValueError(f"{label} must be an integer")
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{label} must be an integer")
+    if normalized not in _QUADRATURE_ORDERS:
+        raise ValueError(f"{label} must be one of 7,11,15,21,31,41")
+    return normalized
 
 
 def _eps_distance(value: Any, *, maximum: float) -> float:
