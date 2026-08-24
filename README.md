@@ -7,6 +7,17 @@
 Latent Space Item Response Models, focused on MLS2PLM simulation, regularized
 point estimation, and true-parameter recovery checks.
 
+The implemented simple-structure MLSIRM/MLS2PLM path follows Jeon, Jin,
+Schweinberger, and Baugh (2021), Kang and Jeon (2025), and Molenaar and Jeon
+(2026). Adjacent shipped screens include Angoff delta-plot DIF
+([`docs/delta_plot_dif.md`](docs/delta_plot_dif.md)) and Bradley–Terry MM
+ranking ([`docs/bradley_terry_mm.md`](docs/bradley_terry_mm.md)). Primary
+citations and decision records live in
+[`docs/traceability/research-basis.md`](docs/traceability/research-basis.md)
+and [`docs/adr/README.md`](docs/adr/README.md). Score interpretation and
+fairness remain governed by AERA, APA, and NCME (2014); those methods are not
+CWE/OWASP/NIST controls.
+
 The first implementation keeps the public API small:
 
 ```python

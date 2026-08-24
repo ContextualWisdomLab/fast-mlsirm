@@ -28,6 +28,7 @@ This registry is part of the proposed canonical architecture baseline. It separa
 3. When a new edition is published, maintainers perform a delta assessment before changing repository requirements. The assessment records superseded clauses, migration impact, implementation evidence, release impact, and downstream ownership.
 4. A citation does not establish implementation, certification, legal compliance, or suitability for a regulated decision.
 5. Scientific method claims use primary peer-reviewed papers where available. Package documentation or legacy software can be a numerical comparison source but does not replace primary methodological validation.
+6. Observed-score DIF (including Angoff delta-plot) and paired-comparison ranking (Bradley–Terry / Hunter MM) are psychometric methods. Their bibliographic basis is the primary papers plus AERA/APA/NCME (2014) when scores or fairness are interpreted. CWE, OWASP, and NIST AI/risk publications may govern reusable-core security or AI-risk documentation; they are not the methodological basis for those estimators.
 
 ## Active revision projects verified for this baseline
 
@@ -86,3 +87,5 @@ National Institute of Standards and Technology. (2023). *Artificial intelligence
 National Institute of Standards and Technology. (2024). *Artificial intelligence risk management framework: Generative artificial intelligence profile* (NIST AI 600-1). https://doi.org/10.6028/NIST.AI.600-1
 
 World Wide Web Consortium. (2024, December 12). *Web content accessibility guidelines (WCAG) 2.2*. https://www.w3.org/TR/WCAG22/
+
+Method-specific psychometric papers for implemented DIF and ranking kernels are recorded in [`delta_plot_dif.md`](delta_plot_dif.md), [`bradley_terry_mm.md`](bradley_terry_mm.md), [`adr/0018-angoff-delta-plot-dif.md`](adr/0018-angoff-delta-plot-dif.md), and [`adr/0017-bradley-terry-mm.md`](adr/0017-bradley-terry-mm.md). Those citations are scientific method records, not additional governing ISO/NIST editions.
