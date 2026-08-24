@@ -7,6 +7,7 @@ import hashlib
 import numpy as np
 import pytest
 
+import fast_mlsirm.multilevel as multilevel
 import fast_mlsirm.multilevel.estimation as estimation
 from fast_mlsirm.multilevel import (
     build_context_membership,
@@ -70,7 +71,7 @@ class _HostileWorkerInt(int):
 def test_weighted_effect_worker_subclass_fails_before_callbacks_or_core(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Worker admission must reject caller subclasses before comparison callbacks."""
+    """Public worker admission rejects subclasses before comparison callbacks."""
     _HostileWorkerInt.callback_count = 0
     core_discoveries = 0
 
@@ -82,7 +83,7 @@ def test_weighted_effect_worker_subclass_fails_before_callbacks_or_core(
     monkeypatch.setattr(estimation, "multilevel_core", _unexpected_core_discovery)
 
     with pytest.raises(ValueError, match="worker_count"):
-        estimation.weighted_contextual_effect(
+        multilevel.weighted_contextual_effect(
             _design(),
             _effects(),
             worker_count=_HostileWorkerInt(1),
@@ -113,7 +114,7 @@ def test_weighted_effect_numpy_worker_normalizes_to_builtin_int(
 
     monkeypatch.setattr(estimation, "multilevel_core", lambda: _Core())
 
-    result = estimation.weighted_contextual_effect(
+    result = multilevel.weighted_contextual_effect(
         _design(),
         _effects(),
         worker_count=np.int16(2),
