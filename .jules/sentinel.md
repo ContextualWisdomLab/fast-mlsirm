@@ -50,3 +50,8 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
+## 2026-08-24 - [JSON Recursion DoS Vulnerability on String Deserialization in Conformance]
+**Vulnerability:** `json.loads` was used directly on manifest values in `cross_engine_conformance.py` prior to checking JSON depth, leading to potential RecursionError DoS.
+**Learning:** Relying on `RecursionError` exception during `json.loads` is not robust against deeply nested JSON DoS payloads. Character-by-character raw depth validation is strictly necessary before invoking Python's json engine.
+**Prevention:** Apply raw JSON character scan to enforce depth limit (e.g. `_validate_raw_manifest_depth`) before parsing the payload.
