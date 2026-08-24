@@ -100,7 +100,7 @@ def test_local_rust_toolchain_is_exact_without_raising_public_crate_msrv() -> No
 def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
     """No Rust-backed verification lane may silently float to a new stable release."""
 
-    expected_counts = ((_CI, 4), (_STUDIES, 4))
+    expected_counts = ((_CI, 4), (_STUDIES, 5))
     for workflow_path, expected in expected_counts:
         workflow = workflow_path.read_text(encoding="utf-8")
         steps = _rust_toolchain_steps(workflow)
