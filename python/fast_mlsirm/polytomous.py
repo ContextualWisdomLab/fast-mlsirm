@@ -39,22 +39,91 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
+_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted concrete scalar type."""
+    return any(value_type is trusted_type for trusted_type in trusted_types)
 
 
 def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
-    """Validate that ``value`` is an integer in ``[lower, upper]`` and return it."""
-    if (
-        not isinstance(value, (int, np.integer))
-        or isinstance(value, (bool, np.bool_))
-        or not lower <= int(value) <= upper
-    ):
+    """Validate an exact supported integer in ``[lower, upper]`` and return it."""
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
         raise ValueError(f"{name} must be an integer between {lower} and {upper}")
-    return int(value)
+    if not lower <= validated <= upper:
+        raise ValueError(f"{name} must be an integer between {lower} and {upper}")
+    return validated
 
 
 def _quadrature_points(value) -> int:
     """Validate and return the Gauss-Hermite quadrature node count ``q_theta``."""
     return _bounded_integer(value, "q_theta", 1, MAX_POLY_QUADRATURE_POINTS)
+
+
+def _fit_quadrature_points(value) -> int:
+    """Return one exact supported calibration Gauss-Hermite node count."""
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    return validated
+
+
+def _fit_model(value) -> str:
+    """Normalize one exact built-in GRM/GPCM model selector."""
+    if type(value) is not str:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    normalized = value.lower()
+    if normalized not in VALID_POLY_MODELS:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    return normalized
+
+
+def _positive_real(value, name: str) -> float:
+    """Normalize one exact trusted positive finite real scalar."""
+    value_type = type(value)
+    if not (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        raise ValueError(f"{name} must be finite and > 0")
+    try:
+        validated = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and > 0") from exc
+    if not np.isfinite(validated) or validated <= 0.0:
+        raise ValueError(f"{name} must be finite and > 0")
+    return validated
 
 
 @dataclass
@@ -94,21 +163,25 @@ def _core_module():
 
 
 def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, np.ndarray]:
-    """Validate polytomous responses (``NaN`` = missing) and return
+    """Validate polytomous responses (``NaN``/``-1`` = missing) and return
     ``(int64 categories with missing filled to 0, boolean observed mask)``."""
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    n_cat = int(n_cat)
-    yf = np.asarray(responses, dtype=np.float64)
+    n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    try:
+        raw = np.asarray(responses)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("responses must be numeric") from None
+    if np.iscomplexobj(raw):
+        raise ValueError("responses must be real-valued")
+    try:
+        yf = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("responses must be numeric") from None
     if yf.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     if np.any(np.isinf(yf)):
-        raise ValueError("responses may only use NaN for missing values")
-    observed = ~np.isnan(yf)
+        raise ValueError("responses may only use NaN or -1 for missing values")
+    missing = np.isnan(yf) | (yf == -1.0)
+    observed = ~missing
     obs_vals = yf[observed]
     if obs_vals.size and (
         np.any(obs_vals != np.floor(obs_vals)) or obs_vals.min() < 0 or obs_vals.max() >= n_cat
@@ -134,10 +207,16 @@ def _nonnegative_integer_vector(values, name: str) -> np.ndarray:
         not np.all(np.isfinite(numeric))
         or np.any(numeric < 0)
         or np.any(numeric != np.floor(numeric))
-        or np.any(numeric > np.iinfo(np.int64).max)
     ):
         raise ValueError(f"{name} must contain non-negative integers")
-    return raw.astype(np.int64)
+    try:
+        with np.errstate(invalid="ignore", over="ignore"):
+            narrowed = raw.astype(np.int64)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must contain non-negative integers") from None
+    if np.any(narrowed < 0) or not np.array_equal(narrowed.astype(np.float64), numeric):
+        raise ValueError(f"{name} must contain non-negative integers")
+    return narrowed
 
 
 def fit_polytomous(
@@ -151,7 +230,7 @@ def fit_polytomous(
     """Fit a unidimensional GRM or GPCM by marginal MLE (compute in Rust).
 
     ``responses`` is a persons x items array of integer categories
-    ``0..n_cat-1``; ``NaN`` marks a missing response (marginalized out of the
+    ``0..n_cat-1``; ``NaN`` or ``-1`` marks a missing response (marginalized out of the
     likelihood). ``model`` is ``"grm"`` (default) or ``"gpcm"``.
     ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. The returned
     convergence fields describe the observed-data likelihood at the returned
@@ -169,32 +248,18 @@ def fit_polytomous(
     *The Annals of Statistics, 11*(1), 95–103.
     https://doi.org/10.1214/aos/1176346060
     """
-    m = str(model).lower()
-    if m not in VALID_POLY_MODELS:
-        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    if q_theta not in {7, 11, 15, 21, 31, 41}:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        not isinstance(max_iter, (int, np.integer))
-        or isinstance(max_iter, (bool, np.bool_))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
-        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
+    m = _fit_model(model)
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    validated_q_theta = _fit_quadrature_points(q_theta)
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
 
-    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
     validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
         validation_y,
         "polytomous",
-        n_categories=int(n_cat),
+        n_categories=validated_n_cat,
     )
 
     core = _core_module()
@@ -207,12 +272,12 @@ def fit_polytomous(
         y_int.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(n_cat),
+        validated_n_cat,
         obs_arg,
         m,
-        int(q_theta),
-        int(max_iter),
-        float(tol),
+        validated_q_theta,
+        validated_max_iter,
+        validated_tol,
     )
     slope = np.asarray(res["slope"], dtype=np.float64)
     cat_params = np.asarray(res["cat_params"], dtype=np.float64)
@@ -243,7 +308,7 @@ def score_polytomous(
 ) -> dict[str, np.ndarray]:
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
-    a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` marks a
+    a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` or ``-1`` marks a
     missing response. The posterior mean and standard deviation are evaluated
     on a standard-normal quadrature grid (Bock & Mislevy, 1982). Returns
     ``{"theta_eap", "theta_sd"}``.
@@ -254,12 +319,7 @@ def score_polytomous(
     a microcomputer environment. *Applied Psychological Measurement, 6*(4),
     431–444. https://doi.org/10.1177/014662168200600405
     """
-    if (
-        not isinstance(q_theta, int)
-        or isinstance(q_theta, bool)
-        or q_theta not in {7, 11, 15, 21, 31, 41}
-    ):
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    validated_q_theta = _fit_quadrature_points(q_theta)
 
     slope = np.asarray(fit.slope, dtype=np.float64)
     cat_params = np.asarray(fit.cat_params, dtype=np.float64)
@@ -273,9 +333,10 @@ def score_polytomous(
         raise ValueError("fit.cat_params must be n_items x (n_cat - 1)")
     if not np.all(np.isfinite(slope)) or not np.all(np.isfinite(cat_params)):
         raise ValueError("fit item parameters must be finite")
-    model = str(fit.model).lower()
-    if model not in VALID_POLY_MODELS:
-        raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
+    try:
+        model = _fit_model(fit.model)
+    except ValueError as exc:
+        raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}") from exc
 
     n_items = slope.shape[0]
     n_cat = cat_params.shape[1] + 1
@@ -298,7 +359,7 @@ def score_polytomous(
         cat_params.reshape(-1),
         obs_arg,
         model,
-        q_theta,
+        validated_q_theta,
     )
     return {
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
@@ -397,38 +458,30 @@ def fit_lsirm_polytomous(
     """Fit a latent-space polytomous LSIRM (GRM/GPCM cell in an interaction map)
     by marginal EM — all compute in the Rust core (``poly_marginal``). The
     distance weight is fixed to 1 as this crate's scale-identification choice;
-    positions are identified up to rotation/reflection/translation. ``NaN`` marks
+    positions are identified up to rotation/reflection/translation. ``NaN`` or ``-1`` marks
     missing.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
     """
-    m = str(model).lower()
-    if m not in VALID_POLY_MODELS:
-        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    if not isinstance(latent_dim, int) or not (1 <= latent_dim <= 3):
-        raise ValueError("latent_dim must be an integer in 1..3")
-    if q_theta not in {7, 11, 15, 21, 31, 41} or q_xi not in {7, 11, 15, 21, 31, 41}:
-        raise ValueError("q_theta/q_xi must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        not isinstance(max_iter, (int, np.integer))
-        or isinstance(max_iter, (bool, np.bool_))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
-        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
+    m = _fit_model(model)
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    try:
+        validated_latent_dim = _bounded_integer(latent_dim, "latent_dim", 1, 3)
+    except ValueError as exc:
+        raise ValueError("latent_dim must be an integer in 1..3") from exc
+    try:
+        validated_q_theta = _fit_quadrature_points(q_theta)
+        validated_q_xi = _fit_quadrature_points(q_xi)
+    except ValueError as exc:
+        raise ValueError("q_theta/q_xi must be one of 7, 11, 15, 21, 31, 41") from exc
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
 
-    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
     validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
         validation_y,
         "polytomous",
-        n_categories=int(n_cat),
+        n_categories=validated_n_cat,
     )
     core = _core_module()
     if core is None or not hasattr(core, "fit_poly_lsirm"):
@@ -437,17 +490,17 @@ def fit_lsirm_polytomous(
     n_persons, n_items = y_int.shape
     obs_arg = None if observed.all() else observed.reshape(-1)
     res = core.fit_poly_lsirm(
-        y_int.reshape(-1), int(n_persons), int(n_items), int(n_cat), int(latent_dim),
-        obs_arg, m, int(q_theta), int(q_xi), int(max_iter), float(tol),
+        y_int.reshape(-1), int(n_persons), int(n_items), validated_n_cat, validated_latent_dim,
+        obs_arg, m, validated_q_theta, validated_q_xi, validated_max_iter, validated_tol,
     )
     return PolyLsirmFit(
         model=m,
         slope=np.asarray(res["slope"], dtype=np.float64),
         cat_params=np.asarray(res["cat_params"], dtype=np.float64),
-        zeta=np.asarray(res["zeta"], dtype=np.float64).reshape(n_items, latent_dim),
+        zeta=np.asarray(res["zeta"], dtype=np.float64).reshape(n_items, validated_latent_dim),
         theta_eap=np.asarray(res["theta_eap"], dtype=np.float64),
         theta_sd=np.asarray(res["theta_sd"], dtype=np.float64),
-        xi_eap=np.asarray(res["xi_eap"], dtype=np.float64).reshape(n_persons, latent_dim),
+        xi_eap=np.asarray(res["xi_eap"], dtype=np.float64).reshape(n_persons, validated_latent_dim),
         loglik=float(res["loglik"]),
         n_iter=int(res["n_iter"]),
     )
@@ -528,7 +581,7 @@ def item_fit_polytomous(
     Lord-Wingersky recursion, and returns per-item ``statistic``, ``df``,
     ``p_value``, and ``n_cells`` (the retained cell count, the reference df at
     known parameters). ``responses`` is persons x items of integer categories
-    with ``NaN`` for missing; only persons complete on every item enter the
+    with ``NaN`` or ``-1`` for missing; only persons complete on every item enter the
     summed-score table. At ``n_cat = 2`` this equals the binary Orlando-Thissen
     S-X². ``min_expected`` is the minimum expected cell frequency below which
     adjacent categories are collapsed.
@@ -591,7 +644,7 @@ def m2_polytomous(
     (compute in Rust). Extends the binary M2 to ordered categories via the
     cumulative marginals ``P(Y_i >= c)`` and ``P(Y_i >= c, Y_j >= d)``; equals
     the binary M2 at ``n_cat = 2``. ``responses`` is persons x items of integer
-    categories with ``NaN`` for missing (complete cases only enter the
+    categories with ``NaN`` or ``-1`` for missing (complete cases only enter the
     statistic). Returns ``m2``, ``df``, ``p_value``, ``rmsea2`` and its 90%
     interval (``rmsea2_ci_lower``/``rmsea2_ci_upper``), ``srmsr``, and
     ``cfi``/``tli`` from a complete-independence M2 baseline (``null_m2`` and
@@ -663,7 +716,7 @@ def local_dependence_polytomous(
     size, ``max_abs_std_resid``, and ``n_pair`` (pairwise-complete sample size).
     A large ``x2``/``cramers_v`` on a pair flags residual association beyond the
     fitted trait (a local-dependence violation). ``responses`` is persons x
-    items of integer categories with ``NaN`` for missing. The reference is
+    items of integer categories with ``NaN`` or ``-1`` for missing. The reference is
     heuristic and slightly conservative (Liu & Maydeu-Olivares, 2013), so read
     it as a diagnostic screen.
 
@@ -750,7 +803,7 @@ def fit_nominal_polytomous(
     ``P(Y=k|theta) = softmax_k(a_k*theta + c_k)``, identified by ``a_0=c_0=0``
     with ``theta ~ N(0,1)``. The generalized partial credit model is the special
     case ``a_k = a*k``, so the nominal model nests it. ``responses`` is persons x
-    items of integer categories ``0..n_cat-1``; ``NaN`` marks a missing response.
+    items of integer categories ``0..n_cat-1``; ``NaN`` or ``-1`` marks a missing response.
     As a repository-level convergence contract, the returned trace evaluates the
     observed-data log-likelihood at every returned parameter state;
     ``converged=False`` with ``termination_reason="max_iter"`` distinguishes an
@@ -764,29 +817,17 @@ def fit_nominal_polytomous(
             response model. In *Handbook of polytomous item response theory
             models* (pp. 43-75). Routledge.
     """
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    if q_theta not in {7, 11, 15, 21, 31, 41}:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        isinstance(max_iter, bool)
-        or not isinstance(max_iter, (int, np.integer))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
-        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    validated_q_theta = _fit_quadrature_points(q_theta)
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
 
-    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
     validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
         validation_y,
         "polytomous",
-        n_categories=int(n_cat),
+        n_categories=validated_n_cat,
     )
     missing_items = np.flatnonzero(~observed.any(axis=0))
     if missing_items.size:
@@ -801,11 +842,11 @@ def fit_nominal_polytomous(
         y_int.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(n_cat),
+        validated_n_cat,
         obs_arg,
-        int(q_theta),
-        int(max_iter),
-        float(tol),
+        validated_q_theta,
+        validated_max_iter,
+        validated_tol,
     )
     return NominalFit(
         scores=np.asarray(res["scores"], dtype=np.float64),
@@ -834,7 +875,7 @@ def person_fit_polytomous(
     (Snijders, 2001) at the EAP trait, plus ``theta_eap`` and a boolean
     ``flagged`` (``lz_star < flag_threshold``, i.e. an aberrant / misfitting
     response pattern). ``responses`` is persons x items of integer categories
-    with ``NaN`` for missing; ``prior_mean``/``prior_sd`` set the MAP prior used
+    with ``NaN`` or ``-1`` for missing; ``prior_mean``/``prior_sd`` set the MAP prior used
     in the Snijders correction. Reduces to the binary l_z at ``n_cat = 2``. Low
     (negative) values indicate poor person fit.
 
@@ -983,7 +1024,7 @@ def dif_polytomous(
     disorder on a sparse focal category) its ``lr``/``p_value``/``effect_size`` are
     ``NaN`` and it is left unflagged rather than silently reported as clean.
 
-    ``responses`` is persons x items of integer categories (``NaN`` = missing);
+    ``responses`` is persons x items of integer categories (``NaN`` or ``-1`` = missing);
     ``group_id`` is a length-persons integer array of group labels (any
     non-negative integers; densified internally, so non-contiguous or 1-based
     codes are fine).
@@ -1007,33 +1048,16 @@ def dif_polytomous(
             multicultural contexts* (pp. 419-433). Wiley.
             https://doi.org/10.1002/9780470609927.ch22
     """
-    if (
-        not isinstance(n_cat, (int, np.integer))
-        or isinstance(n_cat, (bool, np.bool_))
-        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
-    m = str(model).lower()
-    if m not in VALID_POLY_MODELS:
-        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if (
-        not isinstance(q_theta, (int, np.integer))
-        or isinstance(q_theta, (bool, np.bool_))
-        or q_theta not in {7, 11, 15, 21, 31, 41}
-    ):
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        not isinstance(max_iter, (int, np.integer))
-        or isinstance(max_iter, (bool, np.bool_))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
-        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
-    if not np.isfinite(fdr_q) or not 0 < fdr_q <= 1:
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    m = _fit_model(model)
+    validated_q_theta = _fit_quadrature_points(q_theta)
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
+    validated_fdr_q = _positive_real(fdr_q, "fdr_q")
+    if validated_fdr_q > 1:
         raise ValueError("fdr_q must be finite and in (0, 1]")
 
-    y_int, observed = _poly_int_and_mask(responses, int(n_cat))
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
     n_persons, n_items = y_int.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
@@ -1070,14 +1094,14 @@ def dif_polytomous(
         int(n_groups),
         int(n_persons),
         int(n_items),
-        int(n_cat),
+        validated_n_cat,
         obs_arg,
         m,
         studied_arg,
-        int(q_theta),
-        int(max_iter),
-        float(tol),
-        float(fdr_q),
+        validated_q_theta,
+        validated_max_iter,
+        validated_tol,
+        validated_fdr_q,
     )
     return {
         "item": np.asarray(res["item"], dtype=np.int64),
@@ -1105,7 +1129,7 @@ def u3_person_fit_polytomous(
     ``total_score`` (the summed ordinal score over observed items), and
     ``flagged`` (``u3poly >= cutoff``; all ``False`` when ``cutoff is None``).
 
-    ``responses`` is persons x items of integer categories with ``NaN`` for
+    ``responses`` is persons x items of integer categories with ``NaN`` or ``-1`` for
     missing (marginalized per person). Items must be keyed so a higher category
     means more of the trait -- recode reverse-keyed items first. U3poly has no
     reliable analytic null, so a critical value should come from

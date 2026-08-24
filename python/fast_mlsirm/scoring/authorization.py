@@ -18,8 +18,6 @@ from .assessment import AssessmentSpec
 from .execution import (
     EngineDescriptor,
     EngineKind,
-    EvidenceReference,
-    FixtureOutcome,
     ObservationGranularity,
     ScoreObservation,
     ScoringRequest,
@@ -148,7 +146,7 @@ def build_scoring_request(
     metadata: Mapping[str, Any] | None = None,
 ) -> ScoringRequest:
     """Build a request carrying the exact assessment engine-policy projection."""
-    if not isinstance(assessment, AssessmentSpec):
+    if type(assessment) is not AssessmentSpec:
         raise assessment_error(
             "invalid_assessment_spec",
             "$.assessment",
@@ -190,20 +188,20 @@ def build_scoring_result(
     replay the assessment's own policy, so a caller-forged but well-typed
     projection cannot authorize an engine.
     """
-    if not isinstance(request, ScoringRequest):
+    if type(request) is not ScoringRequest:
         raise assessment_error(
             "invalid_scoring_request",
             "$.request",
             "request must be a ScoringRequest",
         )
-    if not isinstance(engine, EngineDescriptor):
+    if type(engine) is not EngineDescriptor:
         raise assessment_error(
             "invalid_engine_descriptor",
             "$.engine",
             "engine must be an EngineDescriptor",
         )
     if assessment is not None:
-        if not isinstance(assessment, AssessmentSpec):
+        if type(assessment) is not AssessmentSpec:
             raise assessment_error(
                 "invalid_assessment_spec",
                 "$.assessment",
@@ -244,7 +242,7 @@ class StaticFixtureEngine(_BaseStaticFixtureEngine):
 
     def score(self, request: ScoringRequest) -> ScoringResult:
         """Authorize the fixture descriptor before deterministic execution."""
-        if not isinstance(request, ScoringRequest):
+        if type(request) is not ScoringRequest:
             raise assessment_error(
                 "invalid_scoring_request",
                 "$.request",

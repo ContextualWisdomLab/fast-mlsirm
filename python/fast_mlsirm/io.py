@@ -262,7 +262,7 @@ def _load_json_bounded(
     source: str,
     parse_constant=None,
 ):
-    """Deserialize JSON only after enforcing a byte limit on the input."""
+    """Deserialize JSON only after enforcing bounded, unambiguous input."""
     content = _read_text_bounded(
         path,
         source=source,
@@ -292,7 +292,25 @@ def _load_json_bounded(
         elif char in "]}":
             depth -= 1
 
-    kwargs = {} if parse_constant is None else {"parse_constant": parse_constant}
+    def reject_duplicate_members(pairs):
+        """Build one JSON object while rejecting repeated member names."""
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{source} contains a duplicate JSON object member")
+            result[key] = value
+        return result
+
+    def reject_nonfinite_constant(_literal: str):
+        """Reject Python JSON decoder extensions outside interoperable JSON."""
+        raise ValueError(f"{source} contains a non-finite JSON numeric value")
+
+    kwargs = {
+        "parse_constant": (
+            reject_nonfinite_constant if parse_constant is None else parse_constant
+        ),
+        "object_pairs_hook": reject_duplicate_members,
+    }
     return json.loads(content, **kwargs)
 
 

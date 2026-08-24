@@ -14,15 +14,17 @@ The demo should show a complete buyer review without customer data:
      and commit SHA.
    - Show `commercial_release_manifest.json` as the top-level evidence index
      for the buyer run.
-   - Explain that NumPy is the reference backend and Rust/PyO3 is optional
-     acceleration for the objective.
+   - Explain that Rust/PyO3 is the required production numerical backend.
+   - Show `fast_mlsirm.fit_reference` or `fit --reference` only as the named
+     NumPy parity path; production configuration never falls back silently.
 2. **Synthetic Data**
    - Generate MLS2PLM synthetic response data.
    - Show that no buyer data is required for acceptance reproduction.
    - Open `benchmark_report.html` to review runtime budget, command duration,
      backend coverage, and required artifact coverage.
 3. **Fit Workflow**
-   - Run fitting with `backend=auto` and explicit Rust evidence when required.
+   - Run production fitting with `backend=auto` or `backend=rust`; use the
+     explicit `--reference` mode only for parity inspection.
    - Show `fit_summary.json`, resolved backend, objective, log-likelihood, and
      generated parameter artifact.
 4. **Diagnostics Workflow**
