@@ -37,6 +37,7 @@ _NUMPY_FLOATING_SCALAR_TYPES = (
     np.longdouble,
 )
 _USIZE_MAX = int(np.iinfo(np.uintp).max)
+_DIF_HARDENED_ATTR = "__fast_mlsirm_dif_control_hardened__"
 
 
 def _exact_bool(value: Any, name: str) -> bool:
@@ -92,11 +93,26 @@ def _common_controls(exclude_studied_item: Any, fdr_q: Any) -> tuple[bool, float
     return exclude, q
 
 
+def _original(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Return the package-owned original behind a hardened wrapper."""
+    if getattr(function, _DIF_HARDENED_ATTR, False):
+        return function.__wrapped__
+    return function
+
+
 def install(dif_module: ModuleType) -> None:
     """Install callback-free wrappers on the observed-score DIF module."""
-    original_logistic: Callable[..., Any] = dif_module.logistic_dif
-    original_mh_purified: Callable[..., Any] = dif_module.mantel_haenszel_dif_purified
-    original_logistic_purified: Callable[..., Any] = dif_module.logistic_dif_purified
+    current = (
+        dif_module.logistic_dif,
+        dif_module.mantel_haenszel_dif_purified,
+        dif_module.logistic_dif_purified,
+    )
+    if all(getattr(function, _DIF_HARDENED_ATTR, False) for function in current):
+        return
+
+    original_logistic = _original(current[0])
+    original_mh_purified = _original(current[1])
+    original_logistic_purified = _original(current[2])
 
     @wraps(original_logistic)
     def safe_logistic_dif(
@@ -164,6 +180,11 @@ def install(dif_module: ModuleType) -> None:
             min_anchor_items=anchors,
         )
 
-    dif_module.logistic_dif = safe_logistic_dif
-    dif_module.mantel_haenszel_dif_purified = safe_mantel_haenszel_dif_purified
-    dif_module.logistic_dif_purified = safe_logistic_dif_purified
+    wrappers = (
+        safe_logistic_dif,
+        safe_mantel_haenszel_dif_purified,
+        safe_logistic_dif_purified,
+    )
+    for function in wrappers:
+        setattr(function, _DIF_HARDENED_ATTR, True)
+    dif_module.logistic_dif, dif_module.mantel_haenszel_dif_purified, dif_module.logistic_dif_purified = wrappers

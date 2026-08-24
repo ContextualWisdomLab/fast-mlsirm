@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+import fast_mlsirm._dif_control_safety as dif_control_safety
+import fast_mlsirm.dif as dif
 import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm.dif import logistic_dif, logistic_dif_purified, mantel_haenszel_dif_purified
 
@@ -208,3 +210,20 @@ def test_genuine_numpy_controls_dispatch_as_exact_builtins(monkeypatch):
     assert type(max_iter) is int
     assert (n_persons, n_items, exclude_studied_item, max_iter) == (4, 2, True, 25)
     assert fdr_q == pytest.approx(0.05, rel=0, abs=1e-6)
+
+
+def test_dif_installer_is_idempotent():
+    """Repeated package installation must not stack another validation layer."""
+    first = (
+        dif.logistic_dif,
+        dif.mantel_haenszel_dif_purified,
+        dif.logistic_dif_purified,
+    )
+
+    dif_control_safety.install(dif)
+
+    assert (
+        dif.logistic_dif,
+        dif.mantel_haenszel_dif_purified,
+        dif.logistic_dif_purified,
+    ) == first
