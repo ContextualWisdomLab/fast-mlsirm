@@ -28,6 +28,7 @@ _install_exposure_flexilevel_safety(_exposure)
 _install_icc_control_safety(_reliability)
 _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
+_legacy_init.ability_standard_error = _cat.ability_standard_error
 _legacy_init.ccat_select = _exposure.ccat_select
 _legacy_init.flexilevel_administer = _exposure.flexilevel_administer
 _legacy_init.flexilevel_score_distribution = _exposure.flexilevel_score_distribution
