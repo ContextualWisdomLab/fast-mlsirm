@@ -127,11 +127,13 @@ Architecture effect:
 - prevent atomistic flattening;
 - explicit context dimensions and weighted memberships;
 - separate repeated occasion ordering from continuous-time dynamics;
-- require Rust estimator identification/recovery before production claims.
+- recover crossed / multiple-membership `u_h` with Rust MAP + RMSE evidence;
+- keep OLS/AR and continuous-time claims on separate estimator slices.
 
 Primary basis:
 
 - Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT model. *Psychometrika, 66*, 271–288.
+- Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership multiple classification (MMMC) models. *Statistical Modelling, 1*(2), 103–124.
 - Uto, M. (2022). A Bayesian many-facet Rasch model with Markov modeling for rater severity drift. *Behavior Research Methods, 55*, 3910–3928.
 
 ## 9. Adaptive factor rotation — Proposed
