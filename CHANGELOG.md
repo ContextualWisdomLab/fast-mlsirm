@@ -60,6 +60,13 @@
 - Isolated GitHub release-asset mutation from PyPI credentials, removed the unpinned runtime Twine installation path, and kept duplicate GitHub release assets and PyPI filenames fail-closed rather than silently replacing an immutable release artifact.
 - PyPI publication now depends directly on the verified build artifacts rather than successful GitHub asset attachment, so a failed PyPI publication can be retried even when immutable release assets already exist and correctly reject replacement.
 
+#### Crossed multiple-membership person effects
+
+- Added a Rust-owned MAP estimator of crossed / weighted multiple-membership person effects `u_h` (Fox & Glas, 2001; Browne, Goldstein, & Rasbash, 2001). Persons may belong to several groups at once; one-hot nesting remains the singleton special case of the same sparse design.
+- Added a CPU-multithreaded Bernoulli score/information reduction and an optional wgpu GPU kernel for that hot loop, with f64 CPU fallback when no adapter is present. Sparse Newton accumulation stays on CPU. This slice does not estimate OLS or AR longitudinal states.
+- Added `fast_mlsirm.multilevel.estimate_crossed_person_effects` and `CrossedPersonEffectResult` as marshal-only Python access, plus a true-parameter RMSE recovery test against simulated crossed membership weights.
+- Enforced the binary-response contract before native discovery and again inside the Rust estimator: finite non-negative observed cells must be exactly `0` or `1`; negative and non-finite cells retain the established missing-data semantics.
+
 #### Govern structural-model pair decisions
 
 - Add a governed structural-model selection gate that keeps factor retention separate from structure choice, requires explicit parameter-space relation evidence, refuses pairwise selection before the relation-appropriate LR/bootstrap/Vuong procedure, and gates any winner on recovery and intended-score interpretation evidence. The new Python surface performs validation and policy orchestration only; numerical comparison and psychometric arithmetic remain Rust-owned.
@@ -327,6 +334,13 @@
 
 - Reject complex-valued polytomous response matrices before any `float64` narrowing can discard imaginary components and turn a different observed category into a valid-looking real category.
 - Preserve real integer categories plus `NaN` and `-1` missingness semantics across calibration, scoring, DIF, item/person fit, and other callers of the shared response-admission boundary without changing Rust-owned psychometric arithmetic.
+
+#### CRM response data integrity
+
+- Reject complex-valued continuous-response-model observations before NumPy can narrow them to `float64` and discard an imaginary component, and reject object-dtype response storage before caller-defined numeric conversion can run.
+- Establish a callback-free response-evidence boundary before NumPy materialization: exact NumPy arrays and ordinary built-in list/tuple trees with package-trusted concrete Python/NumPy numeric scalars remain supported, while arbitrary array providers and caller-defined container/numeric subclasses fail closed before their protocols can execute. Exact numeric NumPy arrays nested as inert rows inside built-in containers remain compatible without admitting ndarray subclasses or object/text leaves.
+- Preserve `NaN` as the CRM missing-cell marker while rejecting `+Infinity` and `-Infinity` before native discovery instead of silently reclassifying those invalid observed values as missing. Ordinary finite real-valued evidence retains the existing Rust-owned CRM fitting path.
+- Bound CRM response evidence to 20,000,000 logical cells before sequence materialization or dense real-valued work. Exact broadcast arrays and exact NumPy row leaves nested in trusted built-in matrices are rejected from shape/size metadata before allocation; shared acyclic built-in subtrees retain logical-occurrence accounting without exponential re-traversal.
 
 #### IRTree scientific-evidence admission
 
@@ -619,6 +633,11 @@
 - Hardened score, validation-evidence, and facets-calibration essay HTML renderers so caller-supplied titles admit only exact built-in strings, rejecting caller-controlled `str` subclasses before overridden text callbacks such as `strip()` or HTML-escaping operations can execute.
 - Added hostile-string-subclass regressions that prove all three public renderers reject before callback execution or artifact creation; scoring, calibration estimation, and psychometric arithmetic remain unchanged.
 
+#### Factor-rotation semantic control trust boundary
+
+- Reject caller-defined criterion/policy strings and boolean, integer, or real conversion protocols before factor-rotation Rust-core discovery across direct rotation, criterion-gradient, and empirical criterion-selection APIs.
+- Preserve exact built-in and supported concrete NumPy scalar controls while keeping rotation objectives, gradients, multi-start optimization, convergence, bootstrap diagnostics, policy scoring, and criterion selection arithmetic Rust-owned.
+
 #### Harden rubric text schema callback safety
 
 - Harden rubric, item-blueprint, and shared scoring text/identifier schema admission so caller-defined `str` subclasses fail closed before any overridable text callback executes, while preserving normalization for exact built-in strings.
@@ -667,6 +686,12 @@
 - Validate `n_iterations`, `centile`, and `seed` before native-core discovery, accepting only exact built-in integers and supported concrete NumPy integer scalars while rejecting booleans, `np.bool_`, caller-defined subclasses, and conversion providers without executing their callbacks. Workspace and `u64` seed limits fail at the same pre-discovery boundary.
 - Normalize nonnumeric `data` conversion failures to a package-owned `ValueError` before native-core discovery while preserving dimensionality and workspace validation for successfully converted arrays.
 - Preserve the existing positive-iteration, centile `0..99`, Rust `u64` seed, and 128 MiB random-benchmark workspace limits without changing Rust-owned Horn/Glorfeld factor-retention arithmetic.
+
+#### Harden validation-policy scalar trust boundaries
+
+- Reject caller-defined string and numeric subclasses at `ValidationPolicy` construction before `strip`, numeric conversion, or comparison callbacks can execute.
+- Normalize only exact built-in and package-trusted NumPy real scalar identities for scoring-policy thresholds while preserving the existing closed `0..1` domains and Rust-owned pass/fail arithmetic.
+- Require an exact built-in integer for `min_subgroup_n` before range comparison and preserve the existing `rust_kwargs()` payload contract.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.8.0] - 2026-08-17
 
