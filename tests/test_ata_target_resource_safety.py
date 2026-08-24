@@ -79,6 +79,39 @@ def test_malformed_builtin_fanout_has_bounded_traversal_before_numpy(
     assert numpy_calls == 0
 
 
+def test_nested_exact_numpy_leaf_is_charged_before_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A nested inert NumPy leaf must consume its logical size before conversion."""
+    monkeypatch.setattr(ata, "MAX_ATA_TARGET_CELLS", 1, raising=False)
+    numpy_calls = 0
+    scalar_calls = 0
+    original_asarray = ata.np.asarray
+
+    def unexpected_asarray(*args: object, **kwargs: object) -> np.ndarray:
+        nonlocal numpy_calls
+        numpy_calls += 1
+        return original_asarray(*args, **kwargs)
+
+    def unexpected_scalar_validation(*_args: object, **_kwargs: object) -> None:
+        nonlocal scalar_calls
+        scalar_calls += 1
+        raise AssertionError("oversized nested NumPy leaf reached scalar validation")
+
+    monkeypatch.setattr(ata.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(ata, "_require_lossless_float64_scalar", unexpected_scalar_validation)
+    nested = [np.broadcast_to(np.array([0.0], dtype=np.float64), (2,))]
+
+    with pytest.raises(
+        ValueError,
+        match=r"target_thetas exceeds the 1-cell ATA evidence limit",
+    ):
+        ata._trusted_real_array(nested, "target_thetas")
+
+    assert numpy_calls == 0
+    assert scalar_calls == 0
+
+
 def test_excessive_builtin_nesting_fails_before_numpy_materialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
