@@ -8,7 +8,7 @@ existing CAT validator performs value-wise scans or dense dtype marshalling.
 from __future__ import annotations
 
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
