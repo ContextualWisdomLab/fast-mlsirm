@@ -46,6 +46,35 @@ _TRUSTED_NUMERIC_SCALAR_TYPES = frozenset(
 _INSTALL_MARKER = "__fast_mlsirm_crossed_evidence_safety__"
 
 
+def _validate_integer_scalar_float64_lossless(value: object, name: str) -> None:
+    """Reject trusted integer scalars whose exact value cannot survive binary64."""
+    if type(value) in (bool, np.bool_):
+        return
+    if type(value) is not int and type(value) not in _TRUSTED_NUMPY_INTEGER_TYPES:
+        return
+    integer = int(value)
+    try:
+        converted = float(integer)
+    except OverflowError:
+        raise ValueError(f"{name} could not be converted losslessly") from None
+    if not np.isfinite(converted) or int(converted) != integer:
+        raise ValueError(f"{name} could not be converted losslessly")
+
+
+def _float64_array_lossless(raw: np.ndarray, name: str) -> np.ndarray:
+    """Normalize trusted storage to binary64 without changing exact integers."""
+    try:
+        converted = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} could not be converted safely") from None
+    if raw.dtype.kind in ("i", "u"):
+        with np.errstate(invalid="ignore", over="ignore"):
+            roundtrip = converted.astype(raw.dtype)
+        if not np.array_equal(roundtrip, raw):
+            raise ValueError(f"{name} could not be converted losslessly")
+    return converted
+
+
 def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
     """Materialize only exact numeric arrays or inert built-in sequences."""
     if type(value) is np.ndarray:
@@ -70,9 +99,12 @@ def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
             if type(current) is np.ndarray:
                 if current.dtype.kind not in ("b", "i", "u", "f", "c"):
                     raise ValueError(f"{name} must be a numeric array")
+                if current.dtype.kind in ("i", "u"):
+                    _float64_array_lossless(current, name)
                 continue
             if type(current) not in _TRUSTED_NUMERIC_SCALAR_TYPES:
                 raise ValueError(f"{name} must be a numeric array")
+            _validate_integer_scalar_float64_lossless(current, name)
         try:
             raw = np.asarray(value)
         except (TypeError, ValueError, OverflowError):
@@ -84,10 +116,7 @@ def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
         raise ValueError(f"{name} must be a numeric array")
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
-    try:
-        return np.asarray(raw, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError(f"{name} could not be converted safely") from None
+    return _float64_array_lossless(raw, name)
 
 
 def install(module: ModuleType) -> None:
