@@ -556,6 +556,11 @@
 
 - Recover interrupted Krippendorff/Finn/Maxwell/Robinson reliability-adapter installation by requiring the complete package-owned rater wrapper set before idempotent short-circuiting, while preserving callback-free evidence admission and Rust-owned reliability arithmetic.
 
+#### Close CI contract drift on the toolchain pin and metadata scalar admission
+
+- Pin the `grm-recovery` scheduled statistical-study job's `dtolnay/rust-toolchain` step to exact Rust `1.97.1`, closing a gap where it silently floated to the default stable channel while every sibling verification lane stayed pinned.
+- Align `test_metadata_normalizes_string_subclasses_without_callbacks` (formerly `test_metadata_rejects_string_subclasses_before_callbacks`) with the metadata scalar admission boundary's actual, intentional behavior: caller-defined `str` subclasses are safely normalized through the inert `str.__str__` descriptor (matching the established `int`/`float` subclass handling in the same function) without invoking any subclass-defined method, rather than being rejected outright.
+
 #### Fail closed on unsafe multilevel contextual effects
 
 - Multilevel contextual-effect evaluation now fails closed when any referenced context random-effect value is NaN or infinite and when finite inputs overflow the weighted sum, preventing non-finite predictor results from escaping the Rust boundary while leaving unreferenced table capacity outside sparse validation work.
