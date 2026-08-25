@@ -188,3 +188,30 @@ def test_bh_rejects_zero_cell_fanout_on_structural_budget(
 
     with pytest.raises(ValueError, match="structural traversal budget"):
         fitstats_module.benjamini_hochberg([[], [], []], q=0.05)
+
+
+def test_bh_resource_envelope_preserves_valid_builtin_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid 2-D p-value matrix remains admitted at the exact small-budget boundary."""
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(safety_module, "_MAX_BH_PROBABILITY_CELLS", 4, raising=False)
+    monkeypatch.setattr(safety_module, "_MAX_BH_STRUCTURAL_NODES", 6, raising=False)
+
+    class _Core:
+        def benjamini_hochberg(self, p_values: np.ndarray, q: float) -> list[bool]:
+            captured["p_values"] = p_values
+            captured["q"] = q
+            return [True, False, True, False]
+
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: _Core())
+    result = fitstats_module.benjamini_hochberg(
+        [[0.01, 0.20], [np.float32(0.03), np.float64(0.80)]],
+        q=0.05,
+    )
+
+    rust_p = captured["p_values"]
+    assert type(rust_p) is np.ndarray
+    assert rust_p.dtype == np.float64
+    assert rust_p.tolist() == pytest.approx([0.01, 0.20, 0.03, 0.80])
+    assert result.shape == (2, 2)
