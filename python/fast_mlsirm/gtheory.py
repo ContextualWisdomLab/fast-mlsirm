@@ -256,7 +256,13 @@ def _finite_real_control(
     elif value_type is float:
         parsed = value
     elif _trusted_numpy_float(value):
-        parsed = float(value)
+        try:
+            parsed = float(value)
+        except OverflowError:
+            # A finite extended-precision value beyond binary64 range raises
+            # OverflowError on some NumPy builds instead of returning inf;
+            # normalize it to the package-owned control error.
+            raise ValueError(message) from None
     else:
         raise ValueError(message)
     if not math.isfinite(parsed):

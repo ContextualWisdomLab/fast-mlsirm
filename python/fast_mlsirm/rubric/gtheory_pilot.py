@@ -104,7 +104,12 @@ def _finite_cut(value: Any) -> float:
     elif value_type is float:
         normalized = value
     elif _is_exact_numpy_floating_scalar(value_type):
-        normalized = float(value)
+        try:
+            normalized = float(value)
+        except OverflowError:
+            # Mirror the estimator-control contract: a finite wide-longdouble
+            # beyond binary64 range must fail as ValueError, not OverflowError.
+            raise ValueError("cut must be a finite number") from None
     else:
         raise ValueError("cut must be a finite number")
     if not math.isfinite(normalized):

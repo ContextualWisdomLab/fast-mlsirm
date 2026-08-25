@@ -314,3 +314,28 @@ def test_public_score_arrays_are_finite_before_core(monkeypatch, call) -> None:
 
     with pytest.raises(ValueError, match=r"data must contain only finite real values"):
         call()
+
+
+@pytest.mark.skipif(
+    np.finfo(np.longdouble).maxexp <= 1024,
+    reason="platform longdouble is not wider than binary64",
+)
+def test_huge_finite_longdouble_control_raises_value_error_not_overflow() -> None:
+    """A finite longdouble beyond float64 range fails as ValueError, never OverflowError.
+
+    Some NumPy versions raise ``OverflowError`` from ``float(np.longdouble)`` when the
+    value exceeds binary64 range; the public control contract must normalize that to
+    the package-owned ``ValueError`` in both the estimator control path and the
+    rubric-pilot mastery-cut path.
+    """
+
+    huge = np.longdouble(np.finfo(np.longdouble).max)
+    assert np.isfinite(huge)
+
+    with pytest.raises(ValueError):
+        gtheory._finite_real_control(huge, "cut must be a finite number")
+
+    from fast_mlsirm.rubric import gtheory_pilot
+
+    with pytest.raises(ValueError):
+        gtheory_pilot._finite_cut(huge)
