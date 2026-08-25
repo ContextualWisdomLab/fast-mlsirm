@@ -53,6 +53,24 @@ def test_residual_interaction_map_preserves_rank_one_reconstruction() -> None:
     np.testing.assert_allclose(result.cross_share, 0.0, atol=1e-12)
 
 
+def test_no_complete_respondent_returns_shape_consistent_empty_map() -> None:
+    """An empty complete-case rectangle stays empty on both map axes."""
+    observed = np.array([[1.0, np.nan], [np.nan, 1.0]])
+    expected = np.zeros((2, 2))
+
+    result = residual_interaction_map(observed, expected, axis_count=2)
+
+    assert result.person_indices.shape == (0,)
+    assert result.item_indices.shape == (0,)
+    assert result.person_coordinates.shape == (0, 2)
+    assert result.item_coordinates.shape == (0, 2)
+    assert result.reconstruction.shape == (0, 0)
+    assert result.unexplained.shape == (0, 0)
+    assert result.cross_share.shape == (0, 0)
+    np.testing.assert_array_equal(result.axis_shares, [0.0, 0.0])
+    assert result.singular_values.shape == (0,)
+
+
 @pytest.mark.parametrize("axis_count", [0, -1])
 def test_residual_interaction_map_rejects_nonpositive_axis_count(
     axis_count: int,
