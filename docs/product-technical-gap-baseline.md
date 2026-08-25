@@ -254,7 +254,7 @@ check on any row is not a protected-main capability until the PR is merged.
 | [#1367](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1367) | `b4e00a17f7a9` | bounds CRM response structural traversal (DoS-safe admission) | draft at observation; await fresh checks/reviews on current head |
 | [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `d232423d6427` | seals subscore scientific evidence admission trust boundary | draft at observation; checks queued on current head; mark ready only after self-review passes |
 | [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345) | `2bc7ba2a2ffb` | seals CAT administration evidence before NumPy protocols | open, non-draft; mergeability must be re-verified before acting |
-| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `92f0999ac202` | exposes Rust polytomous GRM/GPCM predictions publicly | open, non-draft; conflicting with live base — restack onto current main first |
+| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `7ddfa2c1d461` | exposes Rust polytomous GRM/GPCM predictions publicly | open, non-draft; restacked onto live base by remote writer at observation; fresh full check suite running |
 | [#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029) | `2f4a4e0306b0` | seals S-X² scalar control admission in fit diagnostics | open, non-draft; checks queued on current head |
 | [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `9bde9837d987` | replays Rust CT-AR longitudinal Rasch on current review workflow | open, non-draft; preserve exact recovery evidence through integration |
 | [#998](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/998) | `3177525dd4d8` | resyncs changelog fragments and hardens logistic-DIF controls | open, non-draft; closest to terminal checks at observation |
@@ -264,6 +264,30 @@ At this observation, GitHub REST enumerated **7 open pull requests**: `#1367,
 not a merge instruction. A completion or merge decision must begin with a fresh
 repository-wide PR and writer sweep, including exact head/base, dependency
 stack, reviews, unresolved threads, required Checks, and active path ownership.
+
+### 7.1 Superseded lineage record
+
+Two orphaned Sentinel security branches were deleted on 2026-08-25 because
+protected main already ships strictly stronger fixes for their scopes:
+
+- `sentinel-fix-json-recursion-conformance-4916450064032858492` (JSON recursion
+  DoS in `cross_engine_conformance.py`) — superseded by merged
+  [#1330](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1330)
+  (`a25833a0`: raw JSON depth guard + `tests/test_cross_engine_conformance_json_depth.py`).
+- `sentinel-medium-fix-unbounded-json-loading-11914195049005804093` (unbounded
+  JSON loading in ops scripts) — superseded by main's
+  `scripts/_bounded_json.parse_json_bounded(..., max_bytes=...)` hardening in
+  `build_pr_queue_governance.py`, which bounds GitHub stdout bytes beyond the
+  branch's proposal.
+
+Issues [#1300](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1300),
+[#1301](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1301), and
+[#1303](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1303) were
+closed on 2026-08-25 with protected-main evidence: `_TRUSTED_REAL_CONTROL_TYPES`
+excludes Boolean identity (`mhrm.py` lines 46–51) with regression
+`test_mhrm_real_control_boolean_admission.py`; `classify_model_relation()`
+enforces exact-type admission and replays `__post_init__` invariants
+(`model_relation.py` lines 144–146).
 
 ## 8. Product and technical gap matrix
 
