@@ -24,6 +24,17 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.ulonglong,
 )
 _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_NUMPY_COMPLEX_SCALAR_TYPES = (np.complex64, np.complex128, np.clongdouble)
+_TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
+    *_NUMPY_COMPLEX_SCALAR_TYPES,
+)
 _MAX_NATIVE_USIZE = int(np.iinfo(np.uintp).max)
 
 
@@ -84,12 +95,58 @@ def _trusted_polytomous_model(value: object) -> str:
     return normalized
 
 
-def _real_float64_array(value: np.ndarray, name: str) -> np.ndarray:
-    """Reject complex caller evidence before real-valued numeric marshalling."""
-    raw = np.asarray(value)
+def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
+    """Materialize only inert numeric arrays or built-in sequence trees."""
+    error = f"{name} must be a numeric array"
+    if type(value) is np.ndarray:
+        if value.dtype.kind not in ("b", "i", "u", "f", "c"):
+            raise ValueError(error)
+        return value
+    if type(value) not in (list, tuple):
+        raise ValueError(error)
+
+    active_containers: set[int] = set()
+    stack: list[tuple[object, bool]] = [(value, False)]
+    while stack:
+        current, leaving = stack.pop()
+        current_type = type(current)
+        if current_type in (list, tuple):
+            container_id = id(current)
+            if leaving:
+                active_containers.remove(container_id)
+                continue
+            if container_id in active_containers:
+                raise ValueError(error)
+            active_containers.add(container_id)
+            stack.append((current, True))
+            for index in range(len(current) - 1, -1, -1):
+                stack.append((current[index], False))
+            continue
+        if current_type is np.ndarray:
+            if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+                raise ValueError(error)
+            continue
+        if current_type not in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+            raise ValueError(error)
+
+    try:
+        raw = np.asarray(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(error) from None
+    if raw.dtype.kind not in ("b", "i", "u", "f", "c"):
+        raise ValueError(error)
+    return raw
+
+
+def _real_float64_array(value: object, name: str) -> np.ndarray:
+    """Reject callback-bearing or complex evidence before real-valued marshalling."""
+    raw = _trusted_numeric_storage(value, name)
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
-    return np.asarray(raw, dtype=np.float64)
+    try:
+        return np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be numeric and convertible to float64") from None
 
 
 def _trusted_observed_mask(value: object, shape: tuple[int, int]) -> np.ndarray:
