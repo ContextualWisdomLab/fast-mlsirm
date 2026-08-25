@@ -60,6 +60,12 @@
 - Preserve CAT's independent adaptive-efficiency gate on mean administered items, so uncertainty calibration and error recovery cannot mask a fallback to non-adaptive item selection.
 - Keep all production likelihood, marginal-ML/EM, EAP/CAT scoring, item-information/selection, stopping, and uncertainty arithmetic Rust-owned; the added Python calculations are explicit true-parameter recovery-test summaries only.
 
+#### Harden observed-score logistic DIF controls
+
+- Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
+- Reject caller-defined scalar subclasses, arbitrary conversion providers, booleans-as-numbers, invalid FDR levels, zero iteration caps, negative anchor floors, and values outside native `usize` without invoking caller callbacks.
+- Preserve genuine supported NumPy scalar compatibility and keep all logistic/Mantel-Haenszel/purification statistics and BH arithmetic Rust-owned.
+
 #### Method literature and citation ADRs
 
 - Record primary-paper citations and ADRs for the shipped Angoff delta-plot
