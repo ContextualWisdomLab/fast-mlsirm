@@ -7,6 +7,10 @@ on:
         description: "Release version to publish (e.g. 0.2.0); must match pyproject.toml"
         required: true
         type: string
+      release_commit:
+        description: "Release source commit reviewed for this version (full lowercase SHA-1)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -34,9 +38,39 @@ jobs:
             echo "release dispatch must target $expected_ref, not $DISPATCH_REF" >&2
             exit 1
           fi
+      - name: Validate release source identity
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.release_commit }}
+      - name: Verify the release source is on the current default-branch lineage
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [ "$checked_out_commit" != "$RELEASE_COMMIT" ]; then
+            echo "checked-out release source does not match release_commit" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$DISPATCH_SHA^{commit}"; then
+            echo "default-branch dispatch commit is unavailable for ancestry verification" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" "$DISPATCH_SHA"; then
+            echo "release commit must be an ancestor of the default branch" >&2
+            exit 1
+          fi
       - name: Verify the requested version is the released source version
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
@@ -82,6 +116,52 @@ jobs:
               raise SystemExit(
                   f"expected exactly one CHANGELOG section for {release_version}; "
                   f"found {len(matches)}"
+              )
+          PY
+      - name: Verify the release source is the version-cut transition
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          if ! parent_commit="$(git rev-parse "$RELEASE_COMMIT^" 2>/dev/null)"; then
+            echo "release commit must have a verifiable first parent" >&2
+            exit 1
+          fi
+          python3 - "$parent_commit" <<'PY'
+          import os
+          import subprocess
+          import sys
+          import tomllib
+
+          parent_commit = sys.argv[1]
+          release_version = os.environ["RELEASE_VERSION"]
+
+          def parent_text(path: str) -> str:
+              result = subprocess.run(
+                  ["git", "show", f"{parent_commit}:{path}"],
+                  check=False,
+                  capture_output=True,
+                  text=True,
+              )
+              if result.returncode != 0:
+                  raise SystemExit(
+                      f"release parent is missing required source file {path}"
+                  )
+              return result.stdout
+
+          parent_project = tomllib.loads(parent_text("pyproject.toml"))
+          parent_version = parent_project["project"]["version"]
+          if parent_version == release_version:
+              raise SystemExit(
+                  "parent project version already equals requested release version"
+              )
+
+          header = f"## [{release_version}] - "
+          parent_changelog = parent_text("CHANGELOG.md").splitlines()
+          if any(line.startswith(header) for line in parent_changelog):
+              raise SystemExit(
+                  "parent CHANGELOG already contains requested release section"
               )
           PY
       - name: Fail closed on fragment to CHANGELOG aggregate drift
@@ -153,6 +233,7 @@ jobs:
         id: release_tag_state
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
@@ -188,6 +269,23 @@ jobs:
               echo "resume_existing_tag=false" >> "$GITHUB_OUTPUT"
               ;;
             200)
+              python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          response = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          tag_object = response.get("object", {})
+          actual_tag_sha = tag_object.get("sha")
+          if (
+              tag_object.get("type") != "commit"
+              or actual_tag_sha != os.environ["RELEASE_COMMIT"]
+          ):
+              raise SystemExit(
+                  "existing tag does not target the requested release commit"
+              )
+          PY
               echo "tag v$RELEASE_VERSION exists without a release; resuming publication for the existing immutable tag"
               echo "resume_existing_tag=true" >> "$GITHUB_OUTPUT"
               ;;
@@ -202,6 +300,7 @@ jobs:
         if: steps.release_tag_state.outputs.resume_existing_tag != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
@@ -222,7 +321,7 @@ jobs:
               json.dumps(
                   {
                       "ref": f"refs/tags/v{os.environ['RELEASE_VERSION']}",
-                      "sha": os.environ["GITHUB_SHA"],
+                      "sha": os.environ["RELEASE_COMMIT"],
                   }
               ),
               encoding="utf-8",
@@ -255,7 +354,7 @@ jobs:
           expected_ref = f"refs/tags/v{os.environ['RELEASE_VERSION']}"
           actual_ref = response.get("ref")
           actual_sha = response.get("object", {}).get("sha")
-          if actual_ref != expected_ref or actual_sha != os.environ["GITHUB_SHA"]:
+          if actual_ref != expected_ref or actual_sha != os.environ["RELEASE_COMMIT"]:
               raise SystemExit(
                   "GitHub returned an unexpected ref or commit for the release tag"
               )
@@ -271,13 +370,18 @@ jobs:
             --verify-tag \
             --title "v$RELEASE_VERSION" \
             --notes-file release_notes.md
-      - name: Dispatch package publication from the immutable release tag
+      - name: Dispatch package publication from the verified release source
         env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
           gh workflow run publish-pypi.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref "v$RELEASE_VERSION" \
-            -f release_tag="v$RELEASE_VERSION"
+            --ref "$DEFAULT_BRANCH" \
+            -f release_tag="v$RELEASE_VERSION" \
+            -f release_commit="$RELEASE_COMMIT" \
+            -f control_plane_commit="$CONTROL_PLANE_COMMIT"
