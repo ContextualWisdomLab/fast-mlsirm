@@ -59,6 +59,11 @@ def _axis_count(value: object) -> int:
         raise TypeError("axis_count must be a positive integer")
     if parsed <= 0:
         raise ValueError("axis_count must be a positive integer")
+    if parsed > _MAX_INTERACTION_MAP_COORDINATE_CELLS:
+        raise ValueError(
+            "interaction map coordinate request exceeds "
+            f"{_MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
+        )
     return parsed
 
 
@@ -111,7 +116,8 @@ def _lossless_float64_array(name: str, value: np.ndarray) -> np.ndarray:
     if np.isinf(value).any():
         raise ValueError(f"{name} must not contain infinite values")
 
-    converted = np.ascontiguousarray(value, dtype=np.float64)
+    with np.errstate(invalid="ignore", over="ignore"):
+        converted = np.ascontiguousarray(value, dtype=np.float64)
     if value.dtype.kind in ("i", "u"):
         with np.errstate(invalid="ignore", over="ignore"):
             round_trip = converted.astype(value.dtype)
@@ -197,11 +203,11 @@ def residual_interaction_map(
     References:
         Gabriel, K. R. (1971). The biplot graphic display of matrices with
             application to principal component analysis. *Biometrika, 58*(3),
-            453–467. https://doi.org/10.1093/biomet/58.3.453
+            453-467. https://doi.org/10.1093/biomet/58.3.453
         Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
             unobserved item-respondent interactions: A latent space item
             response model with interaction map. *Psychometrika, 86*(2),
-            378–403. https://doi.org/10.1007/s11336-021-09762-5
+            378-403. https://doi.org/10.1007/s11336-021-09762-5
     """
     axis_count_value = _axis_count(axis_count)
     observed_array = _trusted_matrix("observed", observed)
