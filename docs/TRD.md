@@ -208,7 +208,8 @@ Missing or tied alignment fails closed.
 **TRD-MLT-008** Rust shall transform ALR draws to simplex probabilities and
 compute the source-weighted context prevalence difference between the full fit
 and refit separately for each deleted document, BU/PU/team/person context, and
-topic. It shall preserve signed posterior draws, uncertainty, structurally
+topic. It shall preserve complete signed posterior draws and their mean and
+variance, structurally
 unavailable empty cells, and exact dense-rank ties. It shall not fuse levels,
 contexts, or topics, infer weights, add Event Lineage weights, or emit a binary
 importance decision.
