@@ -9,6 +9,7 @@ import fast_mlsirm as fml
 import fast_mlsirm._inference_admission_safety as admission_safety
 from fast_mlsirm import _core
 from fast_mlsirm.inference import (
+    observed_information,
     second_order_test,
     standard_errors_from_vcov,
     vcov_from_hessian,
@@ -199,6 +200,7 @@ def test_second_order_preserves_trusted_sequence_and_numpy_scalar_compatibility(
 
 def test_package_level_inference_exports_use_the_guarded_callables():
     """Historical package aliases must not bypass installed inference admission."""
+    assert fml.observed_information is observed_information
     assert fml.second_order_test is second_order_test
     assert fml.vcov_from_hessian is vcov_from_hessian
     assert fml.standard_errors_from_vcov is standard_errors_from_vcov
