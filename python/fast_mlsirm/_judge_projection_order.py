@@ -1,4 +1,4 @@
-"""Explicit item-order adapter for judge-result IRT projection."""
+"""Explicit item-order helper for judge-result IRT projection."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def _ordered_criterion_ids(
     return criterion_ids
 
 
-def _row_in_explicit_order(
+def project_row_in_order(
     result: LLMJudgeResult,
     *,
     item_type: str,
@@ -50,6 +50,8 @@ def _row_in_explicit_order(
     criterion_order: list[str] | tuple[str, ...],
 ) -> tuple[int, ...]:
     """Project one result in an authoritative caller-supplied item order."""
+    if type(result) is not LLMJudgeResult:
+        raise TypeError("result must be an LLMJudgeResult")
     if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
         raise JudgeFormatError("item_type must be dichotomous or polytomous")
     criterion_ids = _ordered_criterion_ids(result, criterion_order)
@@ -115,14 +117,14 @@ def _row_in_explicit_order(
             for criterion_id in criterion_ids
         )
     try:
-        n_categories = _category_count(n_categories)
+        resolved_categories = _category_count(n_categories)
     except ValueError as exc:
         raise JudgeFormatError(
             f"polytomous IRT output requires n_categories in 2..{MAX_JUDGE_CATEGORIES}"
         ) from exc
     return tuple(
         min(
-            n_categories - 1,
+            resolved_categories - 1,
             max(
                 0,
                 math.floor(
@@ -130,7 +132,7 @@ def _row_in_explicit_order(
                         result.criterion_scores[criterion_id],
                         f"criterion_scores.{criterion_id}",
                     )
-                    * n_categories
+                    * resolved_categories
                 ),
             ),
         )
@@ -138,35 +140,4 @@ def _row_in_explicit_order(
     )
 
 
-def install() -> None:
-    """Install one idempotent explicit-order extension on ``LLMJudgeResult``."""
-    current = LLMJudgeResult.to_irt_row
-    if getattr(current, "_fast_mlsirm_explicit_order", False):
-        return
-    original = current
-
-    def ordered_to_irt_row(
-        self: LLMJudgeResult,
-        *,
-        item_type: str = "polytomous",
-        n_categories: int | None = None,
-        criterion_order: list[str] | tuple[str, ...] | None = None,
-    ) -> tuple[int, ...]:
-        if criterion_order is None:
-            return original(
-                self,
-                item_type=item_type,
-                n_categories=n_categories,
-            )
-        return _row_in_explicit_order(
-            self,
-            item_type=item_type,
-            n_categories=n_categories,
-            criterion_order=criterion_order,
-        )
-
-    ordered_to_irt_row._fast_mlsirm_explicit_order = True  # type: ignore[attr-defined]
-    LLMJudgeResult.to_irt_row = ordered_to_irt_row  # type: ignore[method-assign]
-
-
-__all__ = ["install"]
+__all__ = ["project_row_in_order"]
