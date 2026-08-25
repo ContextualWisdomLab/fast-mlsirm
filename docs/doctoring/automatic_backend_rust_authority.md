@@ -4,36 +4,35 @@
 
 `backend="auto"` is a convenience selector for the production Rust/PyO3 numerical implementation. It is not permission to switch to an independent NumPy implementation when the compiled extension is unavailable. A missing compiled core therefore fails closed before psychometric numerical work begins.
 
-The production `FitConfig` and CLI backend vocabularies are `{auto, rust}`.
-NumPy is retained only behind the explicitly named `fit_reference` API and
-`fit --reference` mode for parity and research inspection. It is never selected
-implicitly by automatic production resolution. Rust device selection remains a
-different axis: a Rust GPU request may fall back to the parity-verified Rust
-CPU implementation because the numerical owner and formula contract remain
-Rust-owned.
-
-The public `fit` signature has no reference-enabling keyword, and
-`FitConfig.validate()` has no public NumPy opt-in flag. The named reference API
-enters a scoped authority context and calls the same fit implementation with
-an explicit NumPy configuration. Low-level objective calls may still request
-`backend="numpy"` explicitly for Rust/NumPy parity; that kernel-level escape
-does not make NumPy a production fit backend.
+The explicit `backend="numpy"` surface is retained in this bounded migration as
+a reference/parity choice. It is never selected implicitly by automatic
+production resolution. Rust device selection remains a different axis: a Rust
+GPU request may fall back to the parity-verified Rust CPU implementation because
+the numerical owner and formula contract remain Rust-owned.
 
 ## Failure boundary
 
 Python's import machinery provides a direct capability probe: `importlib.util.find_spec()` returns `None` when no module specification is found and importing the module is a separate operation. The package uses that boundary to distinguish an unavailable extension from an available compiled module. The PyO3 and maturin primary documentation describe the native extension as the Python-importable compiled module produced and distributed with the package. Those mechanics support a fail-closed contract when the package's required production extension is missing; they do not justify substituting a different numerical implementation.
 
-The package exposes a stable, non-reflective error for an unavailable automatic production backend rather than reflecting local paths, ABI details, environment data, or import exception text into the fallback decision. Actual import/ABI failures remain diagnostic failures rather than being reclassified as permission to run NumPy arithmetic.
+The package exposes a stable, non-reflective error for an unavailable automatic production backend rather than reflecting local paths, ABI details, environment data, or import exception text into the resolution decision. The message tells the purchaser the next action: install a wheel or editable build that provides `fast_mlsirm._core`, or pass `backend="numpy"` only for the explicit reference/parity path. If discovery succeeds but the native module raises `ImportError` or `OSError` while loading, the package normalizes that loader failure to a stable package-owned `RuntimeError` and retains the original exception as `__cause__` for operator diagnostics; it never interprets an unloadable compiled core as permission to run NumPy arithmetic.
+
+Backend and Rust-device selector strings are also trust-boundary controls. Only exact built-in strings are normalized; arbitrary objects and `str` subclasses are rejected before caller-defined `__str__`, `strip`, or related callbacks and before native-core discovery. Exact built-in values retain the established whitespace/case normalization and allowlist behavior.
 
 ## Falsification and acceptance
 
-This decision is falsified if any ordinary `FitConfig` or `backend="auto"` call
-can select NumPy because the Rust extension is missing or incompatible.
-Acceptance requires tests proving that automatic resolution selects Rust when
-available, fails closed when absent, production configuration rejects the
-NumPy name, and `fit_reference` is the only public fitting escape hatch.
+This decision is falsified if any ordinary `backend="auto"` call can select
+NumPy because the Rust extension is missing or incompatible. It is also
+falsified if a purchaser-facing demo, layout, sales-import help, or
+release-acceptance gate still treats Rust as optional acceleration or treats
+NumPy as a valid automatic outcome. Acceptance requires tests proving that
+automatic resolution selects Rust when available, fails closed when absent or
+unloadable, rejects untrusted selector objects before callbacks/native
+discovery, and explicit NumPy resolution remains an explicit caller decision.
 Installed-wheel/package evidence must continue to prove the Rust extension is
-present in supported production artifacts.
+present in supported production artifacts. Buyer demo copy, repository-layout
+copy, sales `--check-import` help, and the `fit --backend auto` acceptance
+check must name the same next action: install `fast_mlsirm._core`, or pass
+`backend="numpy"` only for the explicit reference/parity path.
 
 ## References
 
