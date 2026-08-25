@@ -48,7 +48,7 @@ References (APA 7th ed.)
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -160,15 +160,44 @@ class JudgeConstructSpec:
             raise TypeError("criterion_ids must be a non-empty tuple of strings")
         if len(set(self.criterion_ids)) != len(self.criterion_ids):
             raise ValueError("criterion_ids must be unique")
-        if self.item_type not in {"dichotomous", "polytomous"}:
+        if type(self.item_type) is not str or self.item_type not in {
+            "dichotomous",
+            "polytomous",
+        }:
             raise ValueError("item_type must be dichotomous or polytomous")
-        if self.category_coding != ZERO_BASED_CATEGORY_CODING:
+        if self.item_type == "dichotomous":
+            if type(self.n_categories) is not int or self.n_categories != 2:
+                raise ValueError("dichotomous specs require n_categories == 2")
+        elif (
+            type(self.n_categories) is not int
+            or not 2 <= self.n_categories <= MAX_JUDGE_CATEGORIES
+        ):
+            raise ValueError(
+                f"polytomous specs require n_categories in 2..{MAX_JUDGE_CATEGORIES}"
+            )
+        if (
+            type(self.category_coding) is not str
+            or self.category_coding != ZERO_BASED_CATEGORY_CODING
+        ):
             raise ValueError(
                 "category_coding must be "
                 f"{ZERO_BASED_CATEGORY_CODING!r}"
             )
+        if type(self.meets_policy) is not bool:
+            raise TypeError("meets_policy must be a built-in bool")
+        if (
+            type(self.warnings) is not tuple
+            or any(type(warning) is not str or not warning.strip() for warning in self.warnings)
+        ):
+            raise TypeError("warnings must be a tuple of non-empty strings")
         if self.meets_policy is not True and not self.warnings:
             raise ValueError("short-form specs require explicit warnings")
+        count = len(self.criterion_ids)
+        if not ABSOLUTE_JUDGE_CONSTRUCT_FLOOR <= count <= MAX_JUDGE_CONSTRUCT_ITEMS:
+            raise ValueError(
+                "criterion_ids must contain "
+                f"{ABSOLUTE_JUDGE_CONSTRUCT_FLOOR}..{MAX_JUDGE_CONSTRUCT_ITEMS} items"
+            )
 
     @property
     def n_items(self) -> int:
@@ -323,6 +352,9 @@ def project_judge_results_to_matrix(
         (or ``{0, 1}`` when dichotomous), ready for ``fit_grm`` / ``fit_gpcm`` /
         ``fit_irt_experiment``.
     """
+    if type(spec) is not JudgeConstructSpec:
+        raise TypeError("spec must be a JudgeConstructSpec")
+    spec = replace(spec)
     rows: list[tuple[int, ...]] = []
     expected_ids = tuple(sorted(spec.criterion_ids))
     output_positions = {
