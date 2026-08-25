@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fast_mlsirm
+import fast_mlsirm._fitstats_control_safety as safety_module
 import fast_mlsirm.fitstats as fitstats_module
 import numpy as np
 import pytest
@@ -146,3 +147,44 @@ def test_bh_trusted_evidence_is_normalized_and_public_alias_is_hardened(
     assert result.dtype == np.bool_
     assert result.shape == (2, 2)
     assert fast_mlsirm.benjamini_hochberg is fitstats_module.benjamini_hochberg
+
+
+def test_bh_rejects_oversized_numpy_before_value_scan_and_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Logical NumPy size is bounded before value-wise validation or Rust work."""
+    monkeypatch.setattr(safety_module, "_MAX_BH_PROBABILITY_CELLS", 4, raising=False)
+    p_values = np.broadcast_to(np.array([0.25], dtype=np.float64), (5,))
+
+    def _bomb_isinf(_value: object) -> object:
+        raise AssertionError("oversized BH evidence reached value-wise NumPy validation")
+
+    monkeypatch.setattr(safety_module.np, "isinf", _bomb_isinf)
+    monkeypatch.setattr(fitstats_module, "_core_module", _bomb_core)
+
+    with pytest.raises(ValueError, match="resource limit"):
+        fitstats_module.benjamini_hochberg(p_values, q=0.05)
+
+
+def test_bh_rejects_oversized_nested_numpy_leaf_before_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nested exact NumPy leaves charge logical size before list materialization."""
+    monkeypatch.setattr(safety_module, "_MAX_BH_PROBABILITY_CELLS", 4, raising=False)
+    row = np.broadcast_to(np.array([0.25], dtype=np.float64), (5,))
+    monkeypatch.setattr(fitstats_module, "_core_module", _bomb_core)
+
+    with pytest.raises(ValueError, match="resource limit"):
+        fitstats_module.benjamini_hochberg([row], q=0.05)
+
+
+def test_bh_rejects_zero_cell_fanout_on_structural_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed empty-container fan-out cannot evade the logical-cell budget."""
+    monkeypatch.setattr(safety_module, "_MAX_BH_PROBABILITY_CELLS", 4, raising=False)
+    monkeypatch.setattr(safety_module, "_MAX_BH_STRUCTURAL_NODES", 2, raising=False)
+    monkeypatch.setattr(fitstats_module, "_core_module", _bomb_core)
+
+    with pytest.raises(ValueError, match="structural traversal budget"):
+        fitstats_module.benjamini_hochberg([[], [], []], q=0.05)
