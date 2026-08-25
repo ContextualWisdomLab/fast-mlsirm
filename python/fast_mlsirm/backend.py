@@ -18,6 +18,14 @@ VALID_BACKENDS = VALID_PRODUCTION_BACKENDS
 # low-level parity kernels and the explicit fit_reference API.
 VALID_DEVICES = {"cpu", "gpu", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
+# Stable, non-reflective auto-resolution error. Do not interpolate paths,
+# ABI details, environment data, or import exception text into this text.
+AUTO_BACKEND_UNAVAILABLE_MESSAGE = (
+    "compiled Rust core is required for automatic backend resolution; "
+    "install a wheel or editable build that provides fast_mlsirm._core, "
+    "or use fast_mlsirm.fit_reference (backend='numpy') for the explicit "
+    "reference/parity path"
+)
 _REFERENCE_BACKEND_ACTIVE: ContextVar[bool] = ContextVar(
     "fast_mlsirm_reference_backend_active",
     default=False,
@@ -87,7 +95,7 @@ def resolve_backend(name: str) -> str:
             raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
         return "rust"
     if core is None:
-        raise RuntimeError("compiled Rust core is required for automatic backend resolution")
+        raise RuntimeError(AUTO_BACKEND_UNAVAILABLE_MESSAGE)
     return "rust"
 
 
@@ -124,7 +132,17 @@ def load_rust_core() -> ModuleType:
 
 
 def _load_core() -> ModuleType | None:
-    """Import ``fast_mlsirm._core`` if it is installed, else return ``None``."""
+    """Import the Rust core or normalize native loader failures.
+
+    A missing extension is represented as ``None``. If discovery succeeds but
+    the native module cannot be loaded, fail closed with a package-owned error
+    and preserve the loader exception as the cause for operator diagnostics.
+    """
     if importlib.util.find_spec(CORE_MODULE) is None:
         return None
-    return importlib.import_module(CORE_MODULE)
+    try:
+        return importlib.import_module(CORE_MODULE)
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(
+            "compiled Rust core is present but could not be imported"
+        ) from exc

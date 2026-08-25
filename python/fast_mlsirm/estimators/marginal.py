@@ -4,8 +4,9 @@ Mirror of ``crates/mlsirm-core/src/marginal.rs`` — same quadrature tables
 (``numpy.polynomial.hermite_e.hermegauss`` with weights normalized to sum 1,
 the convention the Rust consts were generated from), same E-step/M-step
 algebra, same deterministic initialization and PCA alignment. Kept for parity
-testing and as the fallback when the compiled core is unavailable; any change
-here must be mirrored in the Rust core (and vice versa).
+testing. Automatic production resolution never selects this path when the
+compiled core is unavailable; pass ``backend="numpy"`` only for the explicit
+reference. Any change here must be mirrored in the Rust core (and vice versa).
 """
 
 from __future__ import annotations
