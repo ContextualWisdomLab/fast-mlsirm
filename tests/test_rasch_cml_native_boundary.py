@@ -59,6 +59,18 @@ def _lossy_longdouble() -> np.longdouble:
     return value
 
 
+def _distinct_longdouble_group_labels() -> tuple[np.longdouble, np.longdouble]:
+    """Return adjacent integral labels that collapse through binary64."""
+
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("platform long double is not wider than float64")
+    lower = np.longdouble(2**53)
+    upper = lower + np.longdouble(1)
+    assert upper != lower
+    assert float(upper) == float(lower)
+    return lower, upper
+
+
 def test_fit_rasch_cml_rejects_bad_shape_before_core_discovery(monkeypatch):
     """Malformed responses remain a package validation failure."""
 
@@ -94,6 +106,42 @@ def test_rasch_cml_rejects_lossy_extended_precision_tolerance_before_core(monkey
         fit_rasch_cml(_binary(), tol=tol)
     with pytest.raises(ValueError, match="tol"):
         andersen_lr_test(_binary(), np.array([0, 0, 1, 1]), tol=tol)
+
+
+def test_andersen_preserves_distinct_longdouble_group_identity(monkeypatch):
+    """Extended-precision integral labels remain distinct at the Rust boundary."""
+
+    lower, upper = _distinct_longdouble_group_labels()
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def andersen_lr_test(
+            self,
+            yy,
+            gid,
+            n_groups,
+            n_persons,
+            n_items,
+            max_iter,
+            tol,
+        ):
+            captured["gid"] = np.array(gid, copy=True)
+            captured["n_groups"] = n_groups
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": [2, 2],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    result = andersen_lr_test(_binary(), [lower, upper, lower, upper])
+
+    assert result["converged"] is True
+    assert captured["n_groups"] == 2
+    np.testing.assert_array_equal(captured["gid"], np.array([0, 1, 0, 1], dtype=np.int64))
 
 
 def test_andersen_rejects_bad_group_before_core_discovery(monkeypatch):
