@@ -9,6 +9,7 @@ from . import _legacy_init as _legacy_init
 from . import cat as _cat
 from . import cdm as _cdm
 from . import exposure as _exposure
+from . import fitstats as _fitstats
 from . import inference as _inference
 from . import reliability as _reliability
 from . import scaling as _scaling
@@ -18,6 +19,7 @@ from ._cat_administration_resource_safety import install as _install_cat_adminis
 from ._cdm_response_safety import install as _install_cdm_response_safety
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
+from ._fitstats_control_safety import install as _install_fitstats_control_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
@@ -31,6 +33,7 @@ from ._serving_export_safety import install as _install_serving_export_safety
 _install_cat_administration_resource_safety(_cat)
 _install_exposure_array_safety(_exposure)
 _install_exposure_flexilevel_safety(_exposure)
+_install_fitstats_control_safety(_fitstats)
 _install_cdm_response_safety(_cdm)
 _install_icc_control_safety(_reliability)
 _install_inference_admission_safety(_inference)
@@ -58,6 +61,8 @@ del (
     _install_cat_administration_resource_safety,
     _install_exposure_array_safety,
     _install_exposure_flexilevel_safety,
+    _fitstats,
+    _install_fitstats_control_safety,
     _cdm,
     _install_cdm_response_safety,
     _install_fleiss_control_safety,
