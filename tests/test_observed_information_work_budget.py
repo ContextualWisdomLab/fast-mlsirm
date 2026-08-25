@@ -11,6 +11,27 @@ from fast_mlsirm.config import FitConfig
 from fast_mlsirm.types import MLSIRMParams
 
 
+class _HostileStep(float):
+    """Finite-difference control whose numeric protocols must never execute."""
+
+    def __new__(cls):
+        instance = super().__new__(cls, 1e-4)
+        instance.calls = 0
+        return instance
+
+    def __array_ufunc__(self, *_args, **_kwargs):
+        self.calls += 1
+        raise AssertionError("caller ufunc protocol executed during step admission")
+
+    def __le__(self, _other):
+        self.calls += 1
+        raise AssertionError("caller comparison executed during step admission")
+
+    def __float__(self):
+        self.calls += 1
+        raise AssertionError("caller float conversion executed during step admission")
+
+
 def _small_mirt_problem() -> tuple[np.ndarray, np.ndarray, MLSIRMParams]:
     """Return a tiny MIRT problem with a non-empty packed parameter vector."""
     responses = np.array([[1.0], [0.0]], dtype=np.float64)
@@ -48,6 +69,61 @@ def test_observed_information_work_rejects_negative_internal_dimension() -> None
     """Internal resource accounting rejects impossible negative dimensions."""
     with pytest.raises(ValueError, match="parameter count"):
         inference._observed_information_work(-1)
+
+
+def test_observed_information_rejects_callback_step_before_parameter_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The finite-difference step is sealed before parameter/data work."""
+    responses, factor_id, params = _small_mirt_problem()
+    step = _HostileStep()
+
+    def _pack_must_not_run(*_args, **_kwargs):
+        raise AssertionError("parameter pack ran before step admission")
+
+    monkeypatch.setattr(inference, "_pack", _pack_must_not_run)
+
+    with pytest.raises(ValueError, match="step"):
+        inference.observed_information(
+            responses,
+            factor_id,
+            params,
+            config=FitConfig(model="MIRT", backend="rust"),
+            backend="rust",
+            device="cpu",
+            step=step,
+        )
+
+    assert step.calls == 0
+
+
+def test_observed_information_normalizes_numpy_step_to_builtin_float(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Supported concrete NumPy controls cross the Rust boundary as built-in float."""
+    responses, factor_id, params = _small_mirt_problem()
+    monkeypatch.setattr(inference, "neg_loglik_and_grad", _constant_objective)
+    captured: dict[str, object] = {}
+
+    def _capture(n, step, *_args):
+        captured["n"] = n
+        captured["step"] = step
+        return [0.0] * (int(n) * int(n))
+
+    monkeypatch.setattr(core, "observed_information", _capture)
+    result = inference.observed_information(
+        responses,
+        factor_id,
+        params,
+        config=FitConfig(model="MIRT", backend="rust"),
+        backend="rust",
+        device="cpu",
+        step=np.float32(1e-4),
+    )
+
+    assert result.shape[0] == result.shape[1]
+    assert type(captured["step"]) is float
+    assert captured["step"] == float(np.float32(1e-4))
 
 
 def test_observed_information_rejects_objective_call_budget_before_evaluation(
