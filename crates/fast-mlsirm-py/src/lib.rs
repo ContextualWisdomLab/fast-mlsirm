@@ -35,6 +35,7 @@ use mlsirm_core::inference::{
     standard_errors_from_vcov as core_standard_errors_from_vcov,
     vcov_from_hessian as core_vcov_from_hessian,
 };
+use mlsirm_core::interaction_map::residual_interaction_map as core_residual_interaction_map;
 use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
@@ -6303,6 +6304,33 @@ fn grm_cell_logprobs(base: f64, thresholds: PyReadonlyArray1<'_, f64>) -> PyResu
     Ok(core_grm_logprobs(base, thresholds.as_slice()?))
 }
 
+/// Batched public GRM/GPCM category probabilities and expected category scores.
+#[pyfunction]
+#[pyo3(signature = (theta, slope, cat_params, n_items, n_cat, model))]
+fn polytomous_predictions(
+    py: Python<'_>,
+    theta: PyReadonlyArray1<'_, f64>,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    n_cat: usize,
+    model: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let result = mlsirm_core::poly::polytomous_predictions(
+        theta.as_slice()?,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        n_items,
+        n_cat,
+        parse_poly_model(model)?,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("probabilities", PyArray1::from_vec(py, result.probabilities))?;
+    out.set_item("expected", PyArray1::from_vec(py, result.expected))?;
+    Ok(out.into())
+}
+
 /// Unidimensional polytomous marginal-EM fit (Rust compute path). `model` is
 /// "grm" (default) or "gpcm"; `y` holds integer categories `0..n_cat-1`.
 #[pyfunction]
@@ -9368,11 +9396,51 @@ fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f6
 /// Version of the Python-to-Rust marginal-MMLE call contract.
 const MARGINAL_CAPABILITY_VERSION: u32 = 1;
 
+#[pyfunction]
+fn residual_interaction_map(
+    py: Python<'_>,
+    observed: PyReadonlyArray2<'_, f64>,
+    expected: PyReadonlyArray2<'_, f64>,
+    axis_count: usize,
+) -> PyResult<Py<PyAny>> {
+    if observed.shape() != expected.shape() {
+        return Err(PyValueError::new_err(
+            "observed and expected must have the same two-dimensional shape",
+        ));
+    }
+    let shape = observed.shape();
+    let result = core_residual_interaction_map(
+        observed.as_slice()?,
+        expected.as_slice()?,
+        shape[0],
+        shape[1],
+        axis_count,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("person_indices", result.person_indices)?;
+    out.set_item("item_indices", result.item_indices)?;
+    out.set_item("scored_person_count", result.scored_person_count)?;
+    out.set_item("scored_item_count", result.scored_item_count)?;
+    out.set_item("person_coordinates", result.person_coordinates)?;
+    out.set_item("item_coordinates", result.item_coordinates)?;
+    out.set_item("singular_values", result.singular_values)?;
+    out.set_item("axis_shares", result.axis_shares)?;
+    out.set_item("residual", result.residual)?;
+    out.set_item("distance", result.distance)?;
+    out.set_item("reconstruction", result.reconstruction)?;
+    out.set_item("unexplained", result.unexplained)?;
+    out.set_item("cross_share", result.cross_share)?;
+    out.set_item("axis_count", result.axis_count)?;
+    Ok(out.into_any().unbind())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
+    m.add_function(wrap_pyfunction!(residual_interaction_map, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
@@ -9561,6 +9629,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
