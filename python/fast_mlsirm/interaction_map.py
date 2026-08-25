@@ -71,7 +71,7 @@ def _axis_count(value: object) -> int:
     return parsed
 
 
-def _trusted_scalar_float64(name: str, value: object) -> float:
+def _trusted_scalar_float64(name: str, value: object, *, allow_nan: bool) -> float:
     """Return one callback-free scalar whose numeric identity survives binary64."""
     value_type = type(value)
     if value_type is bool:
@@ -89,6 +89,8 @@ def _trusted_scalar_float64(name: str, value: object) -> float:
     if value_type is float:
         if math.isinf(value):
             raise ValueError(f"{name} must not contain infinite values")
+        if math.isnan(value) and not allow_nan:
+            raise ValueError(f"{name} must not contain NaN values")
         return value
     if value_type is np.bool_:
         return float(value)
@@ -107,6 +109,8 @@ def _trusted_scalar_float64(name: str, value: object) -> float:
         if np.isinf(value):
             raise ValueError(f"{name} must not contain infinite values")
         if np.isnan(value):
+            if not allow_nan:
+                raise ValueError(f"{name} must not contain NaN values")
             return float("nan")
         parsed = float(value)
         if not math.isfinite(parsed) or value_type(parsed) != value:
@@ -115,7 +119,9 @@ def _trusted_scalar_float64(name: str, value: object) -> float:
     raise ValueError(f"{name} must contain only real numeric values")
 
 
-def _lossless_float64_array(name: str, value: np.ndarray) -> np.ndarray:
+def _lossless_float64_array(
+    name: str, value: np.ndarray, *, allow_nan: bool
+) -> np.ndarray:
     """Normalize one exact numeric ndarray without silently changing evidence."""
     if value.dtype.kind not in ("b", "i", "u", "f"):
         if value.dtype.kind == "c":
@@ -123,6 +129,8 @@ def _lossless_float64_array(name: str, value: np.ndarray) -> np.ndarray:
         raise ValueError(f"{name} must contain only real numeric values")
     if np.isinf(value).any():
         raise ValueError(f"{name} must not contain infinite values")
+    if not allow_nan and np.isnan(value).any():
+        raise ValueError(f"{name} must not contain NaN values")
 
     with np.errstate(invalid="ignore", over="ignore"):
         converted = np.ascontiguousarray(value, dtype=np.float64)
@@ -139,7 +147,7 @@ def _lossless_float64_array(name: str, value: np.ndarray) -> np.ndarray:
     return converted
 
 
-def _trusted_matrix(name: str, value: object) -> np.ndarray:
+def _trusted_matrix(name: str, value: object, *, allow_nan: bool) -> np.ndarray:
     """Admit one bounded two-dimensional real-numeric matrix without protocols."""
     if type(value) is np.ndarray:
         raw = value
@@ -149,7 +157,7 @@ def _trusted_matrix(name: str, value: object) -> np.ndarray:
             raise ValueError(
                 f"{name} logical-cell count exceeds {_MAX_INTERACTION_MAP_CELLS}"
             )
-        return _lossless_float64_array(name, raw)
+        return _lossless_float64_array(name, raw, allow_nan=allow_nan)
 
     if type(value) not in (list, tuple):
         raise ValueError(
@@ -171,7 +179,9 @@ def _trusted_matrix(name: str, value: object) -> np.ndarray:
                 raise ValueError(
                     f"{name} logical-cell count exceeds {_MAX_INTERACTION_MAP_CELLS}"
                 )
-            normalized_row = _lossless_float64_array(name, row).tolist()
+            normalized_row = _lossless_float64_array(
+                name, row, allow_nan=allow_nan
+            ).tolist()
         elif type(row) in (list, tuple):
             row_width = len(row)
             logical_cells += row_width
@@ -179,7 +189,9 @@ def _trusted_matrix(name: str, value: object) -> np.ndarray:
                 raise ValueError(
                     f"{name} logical-cell count exceeds {_MAX_INTERACTION_MAP_CELLS}"
                 )
-            normalized_row = [_trusted_scalar_float64(name, cell) for cell in row]
+            normalized_row = [
+                _trusted_scalar_float64(name, cell, allow_nan=allow_nan) for cell in row
+            ]
         else:
             raise ValueError(f"{name} must be two-dimensional")
 
@@ -201,12 +213,12 @@ def residual_interaction_map(
     """Factor ``observed - expected`` using Gabriel symmetric scaling.
 
     Missing observed cells are represented by ``NaN`` and excluded through a
-    complete-case rectangle; they are never filled with zero. Infinity is not
-    treated as missing. ``axis_count`` is required because the consuming
-    measurement contract, not this library, determines how many reader-visible
-    axes are retained. Controls are sealed before caller evidence is inspected;
-    accepted matrices are callback-free, lossless at the Rust ``f64`` boundary,
-    and bounded before dense materialization.
+    complete-case rectangle; they are never filled with zero. Model expectations
+    must be finite. Infinity is not treated as missing. ``axis_count`` is required
+    because the consuming measurement contract, not this library, determines how
+    many reader-visible axes are retained. Controls are sealed before caller
+    evidence is inspected; accepted matrices are callback-free, lossless at the
+    Rust ``f64`` boundary, and bounded before dense materialization.
 
     References:
         Gabriel, K. R. (1971). The biplot graphic display of matrices with
@@ -218,8 +230,8 @@ def residual_interaction_map(
             378-403. https://doi.org/10.1007/s11336-021-09762-5
     """
     axis_count_value = _axis_count(axis_count)
-    observed_array = _trusted_matrix("observed", observed)
-    expected_array = _trusted_matrix("expected", expected)
+    observed_array = _trusted_matrix("observed", observed, allow_nan=True)
+    expected_array = _trusted_matrix("expected", expected, allow_nan=False)
     if observed_array.shape != expected_array.shape:
         raise ValueError(
             "observed and expected must have the same two-dimensional shape"
