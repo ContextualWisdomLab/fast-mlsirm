@@ -67,6 +67,22 @@ class _HostileTruthProvider:
         raise AssertionError("caller __bool__ protocol executed")
 
 
+class _MaskMeta(type):
+    """Metaclass that records unsafe class-attribute admission reads."""
+
+    calls = 0
+
+    def __getattribute__(cls, name: str):
+        if name in {"__module__", "__mro__", "__bases__"}:
+            _MaskMeta.calls += 1
+            raise AssertionError("caller metaclass attribute callback executed")
+        return super().__getattribute__(name)
+
+
+class _HostileMaskCell(metaclass=_MaskMeta):
+    """Mask cell whose class metadata must never be inspected during admission."""
+
+
 def test_oakes_rejects_control_before_caller_evidence(monkeypatch):
     """An invalid callback-bearing step must fail before response/factor work."""
     monkeypatch.setattr(_core, "oakes_standard_errors", _unexpected_oakes_dispatch)
@@ -121,6 +137,22 @@ def test_oakes_rejects_mask_truth_provider_before_truth_coercion(monkeypatch):
         )
 
     assert hostile.calls == 0
+
+
+def test_oakes_rejects_mask_metaclass_before_class_attribute_callbacks(monkeypatch):
+    """Mask admission must use type identity without inspecting caller class metadata."""
+    monkeypatch.setattr(_core, "oakes_standard_errors", _unexpected_oakes_dispatch)
+    _MaskMeta.calls = 0
+
+    with pytest.raises(ValueError, match="mask must contain concrete numeric or Boolean values"):
+        oakes_standard_errors(
+            _result(),
+            [[0.0], [1.0]],
+            [0],
+            mask=[[True], [_HostileMaskCell()]],
+        )
+
+    assert _MaskMeta.calls == 0
 
 
 def test_oakes_bounds_response_cells_before_native_arithmetic(monkeypatch):
