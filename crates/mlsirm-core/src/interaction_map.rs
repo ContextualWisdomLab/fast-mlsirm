@@ -69,6 +69,10 @@ pub struct ResidualInteractionMap {
     pub item_coordinates: Vec<f64>,
     pub singular_values: Vec<f64>,
     pub axis_shares: Vec<f64>,
+    /// Complete-case observed values in retained person-major/item-minor order.
+    pub observed: Vec<f64>,
+    /// Complete-case model expectations in retained person-major/item-minor order.
+    pub expected: Vec<f64>,
     pub residual: Vec<f64>,
     pub distance: Vec<f64>,
     pub reconstruction: Vec<f64>,
@@ -155,6 +159,8 @@ pub fn residual_interaction_map(
             item_coordinates: Vec::new(),
             singular_values: Vec::new(),
             axis_shares: vec![0.0; axis_count],
+            observed: Vec::new(),
+            expected: Vec::new(),
             residual: Vec::new(),
             distance: Vec::new(),
             reconstruction: Vec::new(),
@@ -168,10 +174,14 @@ pub fn residual_interaction_map(
     let columns = item_indices.len();
     validate_factorization_workspace(rows, columns, axis_count)?;
 
+    let mut retained_observed = Vec::with_capacity(rows * columns);
+    let mut retained_expected = Vec::with_capacity(rows * columns);
     let mut residual = Vec::with_capacity(rows * columns);
     for &person in &person_indices {
         for &item in &item_indices {
             let index = person * n_items + item;
+            retained_observed.push(observed[index]);
+            retained_expected.push(expected[index]);
             residual.push(observed[index] - expected[index]);
         }
     }
@@ -287,6 +297,8 @@ pub fn residual_interaction_map(
         item_coordinates,
         singular_values,
         axis_shares,
+        observed: retained_observed,
+        expected: retained_expected,
         residual,
         distance,
         reconstruction,
@@ -363,6 +375,8 @@ mod tests {
         assert_eq!(map.incomplete_item_count, map.scored_item_count);
         assert_eq!(map.closest_cell, None);
         assert_eq!(map.farthest_cell, None);
+        assert!(map.observed.is_empty());
+        assert!(map.expected.is_empty());
         assert!(map.person_coordinates.is_empty());
         assert!(map.item_coordinates.is_empty());
         assert!(map.reconstruction.is_empty());
