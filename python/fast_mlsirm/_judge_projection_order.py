@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 
 from .llm_judge import (
     JudgeFormatError,
@@ -13,6 +12,15 @@ from .llm_judge import (
     _category_count,
     _score,
 )
+
+
+def _exact_result_mapping(value: object, name: str) -> dict[str, object]:
+    """Admit one inert built-in result mapping before any mapping protocol runs."""
+    if type(value) is not dict:
+        raise JudgeFormatError(f"{name} must be an exact built-in dict")
+    if any(type(key) is not str for key in value):
+        raise JudgeFormatError(f"{name} keys must be strings")
+    return value
 
 
 def _ordered_criterion_ids(
@@ -31,11 +39,11 @@ def _ordered_criterion_ids(
         )
     if len(set(criterion_ids)) != len(criterion_ids):
         raise JudgeFormatError("criterion_order must contain unique criterion ids")
-    if not isinstance(result.criterion_scores, Mapping):
-        raise JudgeFormatError("criterion_scores must be an object")
-    if any(type(criterion_id) is not str for criterion_id in result.criterion_scores):
-        raise JudgeFormatError("criterion_scores keys must be strings")
-    if set(criterion_ids) != set(result.criterion_scores):
+    criterion_scores = _exact_result_mapping(
+        result.criterion_scores,
+        "criterion_scores",
+    )
+    if set(criterion_ids) != set(criterion_scores):
         raise JudgeFormatError(
             "criterion_order must contain exactly the rubric criterion ids"
         )
@@ -55,21 +63,22 @@ def project_row_in_order(
     if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
         raise JudgeFormatError("item_type must be dichotomous or polytomous")
     criterion_ids = _ordered_criterion_ids(result, criterion_order)
+    criterion_scores = _exact_result_mapping(
+        result.criterion_scores,
+        "criterion_scores",
+    )
     if result.criterion_categories is not None:
         if result.category_count is None:
             raise JudgeFormatError("criterion categories require category_count")
-        if not isinstance(result.criterion_categories, Mapping):
-            raise JudgeFormatError("criterion_categories must be an object")
-        if any(
-            type(criterion_id) is not str
-            for criterion_id in result.criterion_categories
-        ):
-            raise JudgeFormatError("criterion_categories keys must be strings")
+        criterion_categories = _exact_result_mapping(
+            result.criterion_categories,
+            "criterion_categories",
+        )
         try:
             category_count = _category_count(result.category_count)
         except ValueError as exc:
             raise JudgeFormatError(str(exc)) from exc
-        if set(result.criterion_categories) != set(criterion_ids):
+        if set(criterion_categories) != set(criterion_ids):
             raise JudgeFormatError(
                 "criterion categories must contain exactly the rubric criterion ids"
             )
@@ -80,7 +89,7 @@ def project_row_in_order(
                 )
             return tuple(
                 _category(
-                    result.criterion_categories[criterion_id],
+                    criterion_categories[criterion_id],
                     f"criterion_categories.{criterion_id}",
                     category_count,
                 )
@@ -95,7 +104,7 @@ def project_row_in_order(
             raise JudgeFormatError("n_categories must match the judge category_count")
         return tuple(
             _category(
-                result.criterion_categories[criterion_id],
+                criterion_categories[criterion_id],
                 f"criterion_categories.{criterion_id}",
                 category_count,
             )
@@ -109,7 +118,7 @@ def project_row_in_order(
         return tuple(
             int(
                 _score(
-                    result.criterion_scores[criterion_id],
+                    criterion_scores[criterion_id],
                     f"criterion_scores.{criterion_id}",
                 )
                 >= 0.5
@@ -129,7 +138,7 @@ def project_row_in_order(
                 0,
                 math.floor(
                     _score(
-                        result.criterion_scores[criterion_id],
+                        criterion_scores[criterion_id],
                         f"criterion_scores.{criterion_id}",
                     )
                     * resolved_categories
