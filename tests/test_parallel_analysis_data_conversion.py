@@ -97,6 +97,37 @@ def test_over_rank_builtin_tree_is_rejected_without_recursive_preflight(
     assert core_calls == []
 
 
+def test_lossy_integer_matrix_is_rejected_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observed integer identities cannot change during Rust-f64 marshalling."""
+    core_calls = _forbid_native_discovery(monkeypatch)
+    data = np.array([[2**53 + 1, 0], [0, 1]], dtype=np.int64)
+
+    with pytest.raises(ValueError, match="data must be exactly representable as float64"):
+        parallel_analysis(data, n_iterations=1)
+
+    assert core_calls == []
+
+
+def test_lossy_longdouble_matrix_is_rejected_before_native_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Extended-precision observations cannot be silently rounded to Rust f64."""
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("platform longdouble has no precision beyond float64")
+
+    core_calls = _forbid_native_discovery(monkeypatch)
+    wider = np.nextafter(np.longdouble(1.0), np.longdouble(2.0))
+    assert np.longdouble(float(wider)) != wider
+    data = np.array([[wider, np.longdouble(0.0)], [0.0, 1.0]], dtype=np.longdouble)
+
+    with pytest.raises(ValueError, match="data must be exactly representable as float64"):
+        parallel_analysis(data, n_iterations=1)
+
+    assert core_calls == []
+
+
 def test_builtin_matrix_with_numpy_scalars_reaches_rust_as_float64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
