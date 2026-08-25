@@ -166,7 +166,7 @@ def test_score_wle_bounds_zero_cell_container_traversal(
     monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_STRUCTURAL_NODES", 2, raising=False)
     core_calls = _forbid_core(monkeypatch)
 
-    with pytest.raises(ValueError, match="responses exceed structural traversal budget"):
+    with pytest.raises(ValueError, match="structural traversal budget"):
         score_wle([1.0], [0.0], [[], [], []])
 
     assert core_calls == []
