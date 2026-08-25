@@ -3,6 +3,45 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Rust longitudinal state layer
+
+- Added a Rust-owned independent per-respondent OLS trend and discrete-sequence
+  AR(1) state predictor behind the sealed `fast_mlsirm.multilevel` contract.
+- Preserved exact sequence gaps, missing-occasion output state, deterministic
+  respondent sharding, RMSE/count diagnostics, and PyO3/Python marshalling.
+- Documented the compatibility wire label `random_intercept_slope` as independent
+  OLS with no population random-effects distribution or shrinkage, and the AR
+  path as caller-supplied `phi` without coefficient estimation.
+- Added slope-recovery, missingness, irregular-calendar/non-contiguous-sequence,
+  worker-determinism, and fail-closed contract tests with APA 7 doctoring.
+- This fragment does not claim full multilevel IRT random-effect integration,
+  uncertainty, continuous-time transitions, or GPU recurrent-state parity.
+
+#### Joint MAP hierarchical continuous-time AR(1) Rasch
+
+- Added a Rust-owned joint MAP hierarchical continuous-time AR(1) Rasch
+  estimator behind `fit_hierarchical_longitudinal_irt`, stacked on the
+  `#976` longitudinal design handoff.
+- Estimated shared population hyperparameters `(mu, tau, lambda)` and person-
+  occasion states from exact millisecond elapsed-day gaps. State intervals
+  are Wald intervals from measurement observed information; short series
+  leave `lambda` weakly identified under joint MAP.
+- Documented the estimand as joint MAP, not independent OLS, not caller-
+  supplied discrete AR, not Fox and Glas Gibbs, and not estimated
+  multiple-membership `u_h`. GPU parity is reported false because the
+  existing wgpu path owns a different MLSIRM objective.
+- Added multi-seed true-parameter recovery, irregular-time, missing-response,
+  worker-determinism, and fail-closed marshalling tests with APA 7 ADR and
+  doctoring.
+- Normalized oversized integer and non-finite real execution controls before
+  native dispatch so Python callers receive package-owned validation errors.
+- Enforced finite, identified sum-zero Rasch item intercepts in the simulator
+  before generating recovery data.
+- Labeled hyperparameter intervals as conditional on fixed item/state nuisance
+  blocks and aligned CT-AR gradients with the active variance branch.
+
 ### Changed
 
 #### Own residual interaction-map computation in the psychometric core
@@ -28,6 +67,12 @@
 - Extend deterministic GRM, GPCM, CAT, and fixed-item-parameter recovery studies to require signed bias, MAE, finite positive Rust-returned posterior uncertainty, and empirical coverage of the normal-approximation interval `theta_eap ± 1.96 * theta_sd` alongside RMSE, while retaining correlation only as supplementary recovery evidence.
 - Preserve CAT's independent adaptive-efficiency gate on mean administered items, so uncertainty calibration and error recovery cannot mask a fallback to non-adaptive item selection.
 - Keep all production likelihood, marginal-ML/EM, EAP/CAT scoring, item-information/selection, stopping, and uncertainty arithmetic Rust-owned; the added Python calculations are explicit true-parameter recovery-test summaries only.
+
+#### Harden observed-score logistic DIF controls
+
+- Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
+- Reject caller-defined scalar subclasses, arbitrary conversion providers, booleans-as-numbers, invalid FDR levels, zero iteration caps, negative anchor floors, and values outside native `usize` without invoking caller callbacks.
+- Preserve genuine supported NumPy scalar compatibility and keep all logistic/Mantel-Haenszel/purification statistics and BH arithmetic Rust-owned.
 
 #### Method literature and citation ADRs
 
@@ -63,6 +108,12 @@
   directory again holds only genuinely unreleased notes.
 
 ### Fixed
+
+#### Harden S-X² scalar control admission
+
+- Reject caller-defined integer and floating subclasses at the public S-X² control boundary before numeric conversion or compiled-core dispatch, while preserving exact built-in and concrete NumPy scalar compatibility and leaving all S-X²/G², quadrature, and BH/FDR arithmetic Rust-owned.
+- Reject built-in or concrete NumPy integer-valued real controls when float64 normalization would change the integer identity, so `min_expected`, `fdr_q`, and `min_effect` cannot be silently rounded before domain validation.
+- Reject finite extended-precision NumPy floating controls when conversion to the Rust `f64` boundary would change their value, while preserving exact float16/float32/float64 and lossless long-double controls.
 
 #### Validate G-theory controls and score evidence before Rust discovery
 
