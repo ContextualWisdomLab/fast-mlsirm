@@ -248,7 +248,7 @@ The following table records live work observed on 2026-08-26 against protected
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
-| PR | Observed head | Observed role | Completion dependency / caution |
+| PR | Observed implementation commit | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
 | [#1418](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1418) | `0c9915948559710114498dd653fcae566571c6aa` | exact Rust TEPP posterior/Event Lineage/temporal provenance/BU-PU-team-person membership admission contract; influence remains explicitly unavailable | checks queued and independent review required; this is a contract prerequisite, not a fitted importance capability |
 
