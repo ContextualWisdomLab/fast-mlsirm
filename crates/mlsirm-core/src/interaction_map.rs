@@ -265,6 +265,11 @@ mod tests {
         let map = residual_interaction_map(&observed, &expected, 2, 2, 2).unwrap();
         assert_eq!(map.person_indices, vec![0, 1]);
         assert_eq!(map.item_indices, vec![0, 1]);
+        assert_eq!(map.effective_rank, 1);
+        assert_eq!(map.map_person_count, 2);
+        assert_eq!(map.map_item_count, 2);
+        assert_eq!(map.incomplete_person_count, 0);
+        assert_eq!(map.incomplete_item_count, 0);
         assert_eq!(map.singular_values.len(), 1);
         assert!((map.axis_shares[0] - 1.0).abs() < 1e-12);
         assert_eq!(map.axis_shares[1], 0.0);
@@ -291,6 +296,10 @@ mod tests {
         assert_eq!(map.item_indices, vec![0, 1]);
         assert_eq!(map.scored_person_count, 2);
         assert_eq!(map.scored_item_count, 2);
+        assert_eq!(map.map_person_count, 1);
+        assert_eq!(map.map_item_count, 2);
+        assert_eq!(map.incomplete_person_count, 1);
+        assert_eq!(map.incomplete_item_count, 0);
     }
 
     #[test]
@@ -305,12 +314,28 @@ mod tests {
         .unwrap();
         assert!(map.person_indices.is_empty());
         assert!(map.item_indices.is_empty());
+        assert_eq!(map.effective_rank, 0);
+        assert_eq!(map.map_person_count, 0);
+        assert_eq!(map.map_item_count, 0);
+        assert_eq!(map.incomplete_person_count, map.scored_person_count);
+        assert_eq!(map.incomplete_item_count, map.scored_item_count);
+        assert_eq!(map.closest_cell, None);
+        assert_eq!(map.farthest_cell, None);
         assert!(map.person_coordinates.is_empty());
         assert!(map.item_coordinates.is_empty());
         assert!(map.reconstruction.is_empty());
         assert!(map.unexplained.is_empty());
         assert!(map.cross_share.is_empty());
         assert_eq!(map.axis_shares, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn deterministic_cell_extrema_use_lexicographic_ties() {
+        let map = residual_interaction_map(&[1.0, 1.0, 1.0, 1.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
+            .unwrap();
+        assert_eq!(map.distance, vec![0.0; 4]);
+        assert_eq!(map.closest_cell, Some((0, 0)));
+        assert_eq!(map.farthest_cell, Some((0, 0)));
     }
 
     #[test]
