@@ -109,13 +109,15 @@ def test_uv_lock_has_no_stale_pre_3_12_resolution_markers() -> None:
     "marker",
     (
         "python_full_version == '3.11.*'",
+        "python_full_version == '3.11.5'",
+        "python_full_version == '3.10.42'",
         'python_version   <   "3.12"',
         "python_version <= '3.11'",
         'python_full_version == "3.10.*" and sys_platform == "win32"',
     ),
 )
 def test_stale_marker_detection_is_rendering_independent(marker: str) -> None:
-    """Quote, whitespace, variable spelling, and platform clauses stay covered."""
+    """Quote, whitespace, variable spelling, and exact patch pins stay covered."""
     assert _targets_only_dropped_interpreters(marker)
 
 
