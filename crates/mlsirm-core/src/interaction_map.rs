@@ -7,6 +7,42 @@
 use crate::factor::symmetric_eigen_desc;
 
 const SINGULAR_FLOOR: f64 = 1e-12;
+const MAX_INTERACTION_MAP_CELLS: usize = 20_000_000;
+const MAX_INTERACTION_MAP_COORDINATE_CELLS: usize = 20_000_000;
+const MAX_INTERACTION_MAP_EIGEN_WORKSPACE_BYTES: usize = 128 * 1024 * 1024;
+const EIGEN_WORKSPACE_MATRIX_COUNT: usize = 3;
+
+fn validate_factorization_workspace(
+    rows: usize,
+    columns: usize,
+    axis_count: usize,
+) -> Result<(), String> {
+    let coordinate_cells = rows
+        .checked_add(columns)
+        .and_then(|dimension_sum| dimension_sum.checked_mul(axis_count))
+        .ok_or_else(|| "residual interaction map coordinate request overflows".to_string())?;
+    if coordinate_cells > MAX_INTERACTION_MAP_COORDINATE_CELLS {
+        return Err(format!(
+            "residual interaction map coordinate request exceeds {MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
+        ));
+    }
+
+    // `symmetric_eigen_desc` holds the caller's Gram matrix plus an internal
+    // matrix copy and eigenvector matrix at peak, so budget all three dense
+    // `columns x columns` f64 matrices before allocating any of them.
+    let eigen_workspace_bytes = columns
+        .checked_mul(columns)
+        .and_then(|cells| cells.checked_mul(std::mem::size_of::<f64>()))
+        .and_then(|bytes| bytes.checked_mul(EIGEN_WORKSPACE_MATRIX_COUNT))
+        .ok_or_else(|| "residual interaction map eigen workspace overflows".to_string())?;
+    if eigen_workspace_bytes > MAX_INTERACTION_MAP_EIGEN_WORKSPACE_BYTES {
+        return Err(format!(
+            "residual interaction map eigen workspace exceeds {} MiB",
+            MAX_INTERACTION_MAP_EIGEN_WORKSPACE_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(())
+}
 
 /// A complete-case Gabriel biplot of `observed - expected`.
 #[derive(Debug, Clone, PartialEq)]
@@ -35,14 +71,27 @@ pub fn residual_interaction_map(
     n_items: usize,
     axis_count: usize,
 ) -> Result<ResidualInteractionMap, String> {
+    if axis_count == 0 {
+        return Err("axis_count must be positive".into());
+    }
+    // Even an empty complete-case rectangle returns `axis_shares`, so bound the
+    // requested axis vector independently of the surviving matrix dimensions.
+    if axis_count > MAX_INTERACTION_MAP_COORDINATE_CELLS {
+        return Err(format!(
+            "residual interaction map coordinate request exceeds {MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
+        ));
+    }
+
     let cell_count = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "residual interaction map shape overflows".to_string())?;
+    if cell_count > MAX_INTERACTION_MAP_CELLS {
+        return Err(format!(
+            "residual interaction map logical-cell count exceeds {MAX_INTERACTION_MAP_CELLS}"
+        ));
+    }
     if observed.len() != cell_count || expected.len() != cell_count {
         return Err("observed and expected lengths must match the declared shape".into());
-    }
-    if axis_count == 0 {
-        return Err("axis_count must be positive".into());
     }
 
     let observed_cell = |index: usize| observed[index].is_finite() && expected[index].is_finite();
@@ -65,6 +114,11 @@ pub fn residual_interaction_map(
             .all(|&person| observed_cell(person * n_items + item))
     });
     if person_indices.is_empty() || item_indices.is_empty() {
+        // An empty complete-case rectangle has no row or column coordinate
+        // space. Normalize both axes to the same empty rectangle so every
+        // returned payload remains shape-consistent at the Python boundary.
+        person_indices.clear();
+        item_indices.clear();
         return Ok(ResidualInteractionMap {
             person_indices,
             item_indices,
@@ -85,6 +139,8 @@ pub fn residual_interaction_map(
 
     let rows = person_indices.len();
     let columns = item_indices.len();
+    validate_factorization_workspace(rows, columns, axis_count)?;
+
     let mut residual = Vec::with_capacity(rows * columns);
     for &person in &person_indices {
         for &item in &item_indices {
@@ -214,7 +270,10 @@ mod tests {
         {
             assert!((raw - fitted).abs() < 1e-12);
         }
-        assert!(map.distance.iter().all(|value| value.is_finite() && *value >= 0.0));
+        assert!(map
+            .distance
+            .iter()
+            .all(|value| value.is_finite() && *value >= 0.0));
     }
 
     #[test]
@@ -226,5 +285,51 @@ mod tests {
         assert_eq!(map.item_indices, vec![0, 1]);
         assert_eq!(map.scored_person_count, 2);
         assert_eq!(map.scored_item_count, 2);
+    }
+
+    #[test]
+    fn empty_complete_case_rectangle_has_empty_indices_on_both_axes() {
+        let map = residual_interaction_map(
+            &[1.0, f64::NAN, f64::NAN, 1.0],
+            &[0.0, 0.0, 0.0, 0.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
+        assert!(map.person_indices.is_empty());
+        assert!(map.item_indices.is_empty());
+        assert!(map.person_coordinates.is_empty());
+        assert!(map.item_coordinates.is_empty());
+        assert!(map.reconstruction.is_empty());
+        assert!(map.unexplained.is_empty());
+        assert!(map.cross_share.is_empty());
+        assert_eq!(map.axis_shares, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn rejects_declared_grid_above_resource_ceiling_before_length_validation() {
+        let error = residual_interaction_map(&[], &[], 1, 20_000_001, 1).unwrap_err();
+        assert!(error.contains("logical-cell"));
+    }
+
+    #[test]
+    fn rejects_coordinate_overflow_before_allocation() {
+        let call = std::panic::catch_unwind(|| {
+            residual_interaction_map(&[1.0, 1.0], &[0.0, 0.0], 2, 1, usize::MAX)
+        });
+        assert!(
+            call.is_ok(),
+            "resource admission must return Err instead of panicking"
+        );
+        let error = call.unwrap().unwrap_err();
+        assert!(error.contains("coordinate"));
+    }
+
+    #[test]
+    fn rejects_quadratic_eigen_workspace_before_allocation() {
+        let error = validate_factorization_workspace(1, 3_000, 1).unwrap_err();
+        assert!(error.contains("eigen workspace"));
+        validate_factorization_workspace(1, 2_000, 1).unwrap();
     }
 }
