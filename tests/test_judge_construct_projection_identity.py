@@ -6,9 +6,12 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.judge_construct import (
+    ABSOLUTE_JUDGE_CONSTRUCT_FLOOR,
     JudgeConstructPolicy,
+    JudgeConstructSpec,
     JudgeFormatError,
     MAX_JUDGE_CONSTRUCT_ITEMS,
+    ZERO_BASED_CATEGORY_CODING,
     project_judge_results_to_matrix,
     validate_judge_construct,
 )
@@ -82,3 +85,53 @@ def test_custom_policy_cannot_raise_hard_facet_ceiling() -> None:
             recommended_items=7,
             max_items=MAX_JUDGE_CONSTRUCT_ITEMS + 1,
         )
+
+
+def test_direct_spec_replays_global_item_and_category_domains() -> None:
+    """The exported frozen spec must itself enforce the global handoff domain."""
+    too_short = tuple(f"criterion_{index}" for index in range(ABSOLUTE_JUDGE_CONSTRUCT_FLOOR - 1))
+    too_long = tuple(f"criterion_{index}" for index in range(MAX_JUDGE_CONSTRUCT_ITEMS + 1))
+
+    with pytest.raises(ValueError, match="criterion_ids must contain 3..11 items"):
+        JudgeConstructSpec(
+            too_short,
+            "polytomous",
+            4,
+            ZERO_BASED_CATEGORY_CODING,
+            True,
+        )
+    with pytest.raises(ValueError, match="criterion_ids must contain 3..11 items"):
+        JudgeConstructSpec(
+            too_long,
+            "polytomous",
+            4,
+            ZERO_BASED_CATEGORY_CODING,
+            True,
+        )
+    with pytest.raises(ValueError, match="dichotomous specs require n_categories == 2"):
+        JudgeConstructSpec(
+            ("a", "b", "c"),
+            "dichotomous",
+            4,
+            ZERO_BASED_CATEGORY_CODING,
+            True,
+        )
+    with pytest.raises(ValueError, match="polytomous specs require n_categories"):
+        JudgeConstructSpec(
+            ("a", "b", "c"),
+            "polytomous",
+            None,
+            ZERO_BASED_CATEGORY_CODING,
+            True,
+        )
+
+
+def test_projection_replays_spec_invariants_after_slot_rebinding() -> None:
+    """Frozen-record rebinding must not bypass the item-count boundary."""
+    spec_ids = tuple(f"criterion_{index}" for index in range(5))
+    spec = validate_judge_construct(spec_ids, n_categories=4)
+    object.__setattr__(spec, "criterion_ids", spec_ids[:2])
+    result = _result({criterion_id: index for index, criterion_id in enumerate(spec_ids[:2])})
+
+    with pytest.raises(ValueError, match="criterion_ids must contain 3..11 items"):
+        project_judge_results_to_matrix([result], spec)
