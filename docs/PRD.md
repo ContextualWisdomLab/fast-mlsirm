@@ -163,7 +163,7 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-060** Reusable contracts shall represent explicit context dimensions, context identities, membership weights, repeated occasions, and temporal state specifications without inferring random-effect families from labels.
 
-**PRD-FR-061** Multiple-membership weights and temporal ordering shall be provenance-bound. Elapsed-time effects shall not be claimed unless the fitted model actually parameterizes elapsed-time transitions.
+**PRD-FR-061** Multiple-membership weights and temporal ordering shall be provenance-bound. Elapsed-time effects shall not be claimed unless the fitted model actually parameterizes elapsed-time transitions. OLS may use exact day-scaled offsets as regression covariates, while only the joint MAP hierarchical CT-AR Rasch slice parameterizes elapsed-day transitions; the caller-supplied discrete AR layer uses sequence gaps.
 
 **PRD-FR-062** Future Rust estimators for these contracts shall establish identification and true-parameter recovery before release as production estimators.
 

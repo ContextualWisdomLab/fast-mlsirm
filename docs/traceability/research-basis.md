@@ -141,6 +141,20 @@ Primary basis:
 - American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 - Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership multiple classification (MMMC) models. *Statistical Modelling, 1*(2), 103–124.
 
+The first Rust state layer (ADR-0019) is an independent per-respondent OLS
+trend and a caller-supplied discrete AR predictor. It is not the Fox and Glas
+multilevel IRT estimand and does not estimate population random effects.
+
+ADR-0020 is a separate joint MAP hierarchical continuous-time AR(1) Rasch
+slice. It estimates shared `(mu, tau, lambda)` and person-occasion states
+with Wald observed-information intervals. It is not Fox and Glas Gibbs
+sampling, not Jeon and Rabe-Hesketh adaptive-quadrature ML, and not estimated
+multiple-membership `u_h`.
+
+- Jeon, M., & Rabe-Hesketh, S. (2016). An autoregressive growth model for longitudinal item analysis. *Psychometrika, 81*(3), 830–850. https://doi.org/10.1007/s11336-015-9489-2
+- Laird, N. M., & Ware, J. H. (1982). Random-effects models for longitudinal data. *Biometrics, 38*(4), 963–974. https://doi.org/10.2307/2529876
+- Oravecz, Z., Tuerlinckx, F., & Vandekerckhove, J. (2011). A hierarchical latent stochastic differential equation model for affective dynamics. *Psychological Methods, 16*(2), 468–490. https://doi.org/10.1037/a0024375
+
 ## 9. Adaptive factor rotation — Proposed
 
 Architecture effect:
