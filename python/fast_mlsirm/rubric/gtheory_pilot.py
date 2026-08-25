@@ -89,18 +89,30 @@ def _normalized_n_i_prime(values: Sequence[int] | Iterable[int]) -> tuple[int, .
 
 
 def _finite_cut(value: Any) -> float:
-    """Return one finite trusted mastery cut without caller conversion hooks."""
+    """Return one finite mastery cut whose identity survives Rust ``f64`` marshalling."""
     value_type = type(value)
-    if value_type is int or value_type is float:
-        normalized = float(value)
-    elif _is_exact_numpy_integer_scalar(value_type) or _is_exact_numpy_floating_scalar(
-        value_type
-    ):
+    integer_value: int | None = None
+    if value_type is int:
+        integer_value = value
+        try:
+            normalized = float(value)
+        except OverflowError:
+            raise ValueError("cut must be a finite number") from None
+    elif _is_exact_numpy_integer_scalar(value_type):
+        integer_value = int(value)
+        normalized = float(integer_value)
+    elif value_type is float:
+        normalized = value
+    elif _is_exact_numpy_floating_scalar(value_type):
         normalized = float(value)
     else:
         raise ValueError("cut must be a finite number")
     if not math.isfinite(normalized):
         raise ValueError("cut must be a finite number")
+    if integer_value is not None and int(normalized) != integer_value:
+        raise ValueError("cut must be exactly representable as float64")
+    if value_type is np.longdouble and np.longdouble(normalized) != value:
+        raise ValueError("cut must be exactly representable as float64")
     return normalized
 
 
