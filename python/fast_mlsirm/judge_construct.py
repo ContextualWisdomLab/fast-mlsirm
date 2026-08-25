@@ -149,6 +149,7 @@ class JudgeConstructSpec:
     category_coding: str
     meets_policy: bool
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    policy: JudgeConstructPolicy | None = None
 
     def __post_init__(self) -> None:
         """Freeze identity ordering and re-validate admitted content."""
@@ -201,6 +202,18 @@ class JudgeConstructSpec:
                 "criterion_ids must contain "
                 f"{ABSOLUTE_JUDGE_CONSTRUCT_FLOOR}..{MAX_JUDGE_CONSTRUCT_ITEMS} items"
             )
+        if self.policy is not None:
+            if type(self.policy) is not JudgeConstructPolicy:
+                raise TypeError("policy must be a JudgeConstructPolicy")
+            resolved_policy = replace(self.policy)
+            object.__setattr__(self, "policy", resolved_policy)
+            within_policy = (
+                resolved_policy.min_items <= count <= resolved_policy.max_items
+            )
+            if self.meets_policy is not within_policy:
+                raise ValueError("meets_policy does not match policy bounds")
+            if count > resolved_policy.max_items:
+                raise ValueError("criterion count exceeds policy max_items")
 
     @property
     def n_items(self) -> int:
@@ -217,6 +230,7 @@ class JudgeConstructSpec:
             "category_coding": self.category_coding,
             "meets_policy": self.meets_policy,
             "warnings": list(self.warnings),
+            "policy": None if self.policy is None else self.policy.to_dict(),
         }
 
 
@@ -262,8 +276,9 @@ def validate_judge_construct(
         facet size, or carries invalid identifiers or category semantics.
     """
     resolved_policy = DEFAULT_JUDGE_CONSTRUCT_POLICY if policy is None else policy
-    if not isinstance(resolved_policy, JudgeConstructPolicy):
+    if type(resolved_policy) is not JudgeConstructPolicy:
         raise TypeError("policy must be a JudgeConstructPolicy")
+    resolved_policy = replace(resolved_policy)
     ids = tuple(criterion_ids)
     if any(type(criterion_id) is not str or not criterion_id.strip() for criterion_id in ids):
         raise JudgeFormatError("criterion_ids must contain non-empty strings")
@@ -324,6 +339,7 @@ def validate_judge_construct(
         category_coding=ZERO_BASED_CATEGORY_CODING,
         meets_policy=meets_policy,
         warnings=warnings,
+        policy=resolved_policy,
     )
 
 
