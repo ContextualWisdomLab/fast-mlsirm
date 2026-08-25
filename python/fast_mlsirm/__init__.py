@@ -6,11 +6,13 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
+from . import cdm as _cdm
 from . import exposure as _exposure
 from . import inference as _inference
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import validation as _validation
+from ._cdm_response_safety import install as _install_cdm_response_safety
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
@@ -24,6 +26,7 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 # remains in the existing Rust-backed implementations.
 _install_exposure_array_safety(_exposure)
 _install_exposure_flexilevel_safety(_exposure)
+_install_cdm_response_safety(_cdm)
 _install_icc_control_safety(_reliability)
 _install_inference_admission_safety(_inference)
 _install_scaling_control_safety(_scaling)
@@ -45,6 +48,8 @@ del (
     _inference,
     _install_exposure_array_safety,
     _install_exposure_flexilevel_safety,
+    _cdm,
+    _install_cdm_response_safety,
     _install_fleiss_control_safety,
     _install_icc_control_safety,
     _install_inference_admission_safety,
