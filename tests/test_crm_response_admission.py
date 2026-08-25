@@ -151,12 +151,35 @@ def test_zero_cell_fanout_is_bounded_before_sequence_materialization(monkeypatch
     def unexpected_core() -> object:
         raise AssertionError("compiled core discovered before CRM structural admission")
 
-    monkeypatch.setattr(crm, "_MAX_CRM_RESPONSE_STRUCTURAL_NODES", 8, raising=False)
+    monkeypatch.setattr(crm, "_MAX_CRM_RESPONSE_STRUCTURAL_NODES", 8)
     monkeypatch.setattr(crm.np, "asarray", unexpected_asarray)
     monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
 
     with pytest.raises(ValueError, match="structural traversal budget"):
         crm.fit_crm(responses)
+
+
+def test_valid_builtin_matrix_fits_tight_structural_budget(monkeypatch):
+    """The 2N structural envelope preserves every valid non-empty 2-D matrix."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_crm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(crm, "_MAX_CRM_RESPONSE_CELLS", 2)
+    monkeypatch.setattr(crm, "_MAX_CRM_RESPONSE_STRUCTURAL_NODES", 4)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+
+    fitted = crm.fit_crm([[0.25], [0.75]], max_iter=1)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.25, 0.75], dtype=np.float64))
+    np.testing.assert_array_equal(args[1], np.array([True, True], dtype=bool))
+    assert args[2:4] == (2, 1)
+    assert fitted.n_parameters == 3
 
 
 def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monkeypatch):
