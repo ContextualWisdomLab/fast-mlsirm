@@ -11,17 +11,20 @@ interpreter ranges the package no longer supports, which silently breaks the
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
 import pytest
 from packaging.markers import Marker, default_environment
+from packaging.version import Version
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _UV_LOCK = _REPO_ROOT / "uv.lock"
-_UNSUPPORTED_PYTHONS = ("3.10.0", "3.10.14", "3.11.0", "3.11.9")
-_SUPPORTED_PYTHONS = ("3.12.0", "3.12.9", "3.13.0", "3.14.0")
+_PYTHON_FLOOR = Version("3.12")
+_BASE_VERSION_WITNESSES = ("3.10.0", "3.10.14", "3.11.0", "3.11.9", "3.12.0", "3.12.9", "3.13.0", "3.14.0")
+_VERSION_LITERAL_RE = re.compile(r"(?<!\d)(\d+)\.(\d+)(?:\.(\d+|\*))?")
 _PLATFORM_ENVIRONMENTS = (
     {"sys_platform": "linux", "platform_system": "Linux", "os_name": "posix"},
     {"sys_platform": "darwin", "platform_system": "Darwin", "os_name": "posix"},
@@ -57,24 +60,50 @@ def _marker_matches(marker: Marker, version: str, platform: dict[str, str]) -> b
     return marker.evaluate(environment)
 
 
+def _version_witnesses(marker_text: str) -> tuple[str, ...]:
+    """Return boundary-aware Python-version witnesses for one marker.
+
+    Fixed minor-domain witnesses catch uv's normal partition forms. Literal
+    versions embedded in the marker are added as exact witnesses; full patch
+    literals also contribute adjacent patch values so strict inequality bounds
+    cannot hide a pre-floor interval between the fixed samples.
+    """
+    witnesses = set(_BASE_VERSION_WITNESSES)
+    for match in _VERSION_LITERAL_RE.finditer(marker_text):
+        major = int(match.group(1))
+        minor = int(match.group(2))
+        patch_text = match.group(3)
+        if patch_text in (None, "*"):
+            witnesses.add(f"{major}.{minor}.0")
+            witnesses.add(f"{major}.{minor}.999")
+            continue
+        patch = int(patch_text)
+        witnesses.add(f"{major}.{minor}.{patch}")
+        if patch > 0:
+            witnesses.add(f"{major}.{minor}.{patch - 1}")
+        witnesses.add(f"{major}.{minor}.{patch + 1}")
+    return tuple(sorted(witnesses, key=Version))
+
+
 def _targets_only_dropped_interpreters(marker_text: str) -> bool:
     """Return whether a resolution marker selects only pre-3.12 interpreters.
 
     PEP 508 marker parsing normalizes quote style, whitespace, and the
-    ``python_version`` versus ``python_full_version`` spelling. Sampling the
-    dropped and supported minor-version domains across the three CI-relevant
-    platform families makes the contract semantic rather than dependent on
-    uv's current string rendering.
+    ``python_version`` versus ``python_full_version`` spelling. Version
+    witnesses include both normal minor-domain samples and every explicit
+    version literal plus adjacent patch boundaries, so exact patch pins and
+    strict inequalities cannot evade the pre-3.12 contract.
     """
     marker = Marker(marker_text)
+    witnesses = _version_witnesses(marker_text)
     matches_unsupported = any(
-        _marker_matches(marker, version, platform)
-        for version in _UNSUPPORTED_PYTHONS
+        Version(version) < _PYTHON_FLOOR and _marker_matches(marker, version, platform)
+        for version in witnesses
         for platform in _PLATFORM_ENVIRONMENTS
     )
     matches_supported = any(
-        _marker_matches(marker, version, platform)
-        for version in _SUPPORTED_PYTHONS
+        Version(version) >= _PYTHON_FLOOR and _marker_matches(marker, version, platform)
+        for version in witnesses
         for platform in _PLATFORM_ENVIRONMENTS
     )
     return matches_unsupported and not matches_supported
@@ -111,13 +140,14 @@ def test_uv_lock_has_no_stale_pre_3_12_resolution_markers() -> None:
         "python_full_version == '3.11.*'",
         "python_full_version == '3.11.5'",
         "python_full_version == '3.10.42'",
+        "python_full_version > '3.11.100' and python_version < '3.12'",
         'python_version   <   "3.12"',
         "python_version <= '3.11'",
         'python_full_version == "3.10.*" and sys_platform == "win32"',
     ),
 )
 def test_stale_marker_detection_is_rendering_independent(marker: str) -> None:
-    """Quote, whitespace, variable spelling, and exact patch pins stay covered."""
+    """Rendering, exact patch pins, and patch-bound inequalities stay covered."""
     assert _targets_only_dropped_interpreters(marker)
 
 
@@ -127,6 +157,7 @@ def test_stale_marker_detection_is_rendering_independent(marker: str) -> None:
         "python_version >= '3.12'",
         "python_version < '3.13'",
         "python_full_version == '3.12.*'",
+        "python_full_version == '3.12.5'",
     ),
 )
 def test_supported_resolution_markers_are_not_misclassified(marker: str) -> None:
