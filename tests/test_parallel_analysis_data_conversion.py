@@ -82,6 +82,21 @@ def test_container_subclass_is_rejected_without_iteration(
     assert core_calls == []
 
 
+def test_over_rank_builtin_tree_is_rejected_without_recursive_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Known 2-D evidence must not recurse through arbitrarily deep containers."""
+    core_calls = _forbid_native_discovery(monkeypatch)
+    data: object = 0.0
+    for _ in range(1500):
+        data = [data]
+
+    with pytest.raises(ValueError, match="data must be a 2-D persons x items array"):
+        parallel_analysis(data, n_iterations=1)
+
+    assert core_calls == []
+
+
 def test_builtin_matrix_with_numpy_scalars_reaches_rust_as_float64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
