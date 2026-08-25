@@ -7,6 +7,42 @@
 use crate::factor::symmetric_eigen_desc;
 
 const SINGULAR_FLOOR: f64 = 1e-12;
+const MAX_INTERACTION_MAP_CELLS: usize = 20_000_000;
+const MAX_INTERACTION_MAP_COORDINATE_CELLS: usize = 20_000_000;
+const MAX_INTERACTION_MAP_EIGEN_WORKSPACE_BYTES: usize = 128 * 1024 * 1024;
+const EIGEN_WORKSPACE_MATRIX_COUNT: usize = 3;
+
+fn validate_factorization_workspace(
+    rows: usize,
+    columns: usize,
+    axis_count: usize,
+) -> Result<(), String> {
+    let coordinate_cells = rows
+        .checked_add(columns)
+        .and_then(|dimension_sum| dimension_sum.checked_mul(axis_count))
+        .ok_or_else(|| "residual interaction map coordinate request overflows".to_string())?;
+    if coordinate_cells > MAX_INTERACTION_MAP_COORDINATE_CELLS {
+        return Err(format!(
+            "residual interaction map coordinate request exceeds {MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
+        ));
+    }
+
+    // `symmetric_eigen_desc` holds the caller's Gram matrix plus an internal
+    // matrix copy and eigenvector matrix at peak, so budget all three dense
+    // `columns x columns` f64 matrices before allocating any of them.
+    let eigen_workspace_bytes = columns
+        .checked_mul(columns)
+        .and_then(|cells| cells.checked_mul(std::mem::size_of::<f64>()))
+        .and_then(|bytes| bytes.checked_mul(EIGEN_WORKSPACE_MATRIX_COUNT))
+        .ok_or_else(|| "residual interaction map eigen workspace overflows".to_string())?;
+    if eigen_workspace_bytes > MAX_INTERACTION_MAP_EIGEN_WORKSPACE_BYTES {
+        return Err(format!(
+            "residual interaction map eigen workspace exceeds {} MiB",
+            MAX_INTERACTION_MAP_EIGEN_WORKSPACE_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(())
+}
 
 /// A complete-case Gabriel biplot of `observed - expected`.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,14 +67,27 @@ pub fn residual_interaction_map(
     n_items: usize,
     axis_count: usize,
 ) -> Result<ResidualInteractionMap, String> {
+    if axis_count == 0 {
+        return Err("axis_count must be positive".into());
+    }
+    // Even an empty complete-case rectangle returns `axis_shares`, so bound the
+    // requested axis vector independently of the surviving matrix dimensions.
+    if axis_count > MAX_INTERACTION_MAP_COORDINATE_CELLS {
+        return Err(format!(
+            "residual interaction map coordinate request exceeds {MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
+        ));
+    }
+
     let cell_count = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "residual interaction map shape overflows".to_string())?;
+    if cell_count > MAX_INTERACTION_MAP_CELLS {
+        return Err(format!(
+            "residual interaction map logical-cell count exceeds {MAX_INTERACTION_MAP_CELLS}"
+        ));
+    }
     if observed.len() != cell_count || expected.len() != cell_count {
         return Err("observed and expected lengths must match the declared shape".into());
-    }
-    if axis_count == 0 {
-        return Err("axis_count must be positive".into());
     }
 
     let observed_cell = |index: usize| observed[index].is_finite() && expected[index].is_finite();
@@ -75,6 +124,8 @@ pub fn residual_interaction_map(
 
     let rows = person_indices.len();
     let columns = item_indices.len();
+    validate_factorization_workspace(rows, columns, axis_count)?;
+
     let mut residual = Vec::with_capacity(rows * columns);
     for &person in &person_indices {
         for &item in &item_indices {
@@ -214,5 +265,12 @@ mod tests {
         assert!(call.is_ok(), "resource admission must return Err instead of panicking");
         let error = call.unwrap().unwrap_err();
         assert!(error.contains("coordinate"));
+    }
+
+    #[test]
+    fn rejects_quadratic_eigen_workspace_before_allocation() {
+        let error = validate_factorization_workspace(1, 3_000, 1).unwrap_err();
+        assert!(error.contains("eigen workspace"));
+        validate_factorization_workspace(1, 2_000, 1).unwrap();
     }
 }
