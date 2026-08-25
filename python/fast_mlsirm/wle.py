@@ -36,6 +36,8 @@ _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES = (
     *_NUMPY_COMPLEX_SCALAR_TYPES,
 )
 _MAX_NATIVE_USIZE = int(np.iinfo(np.uintp).max)
+_MAX_WLE_EVIDENCE_CELLS = 20_000_000
+_MAX_WLE_EVIDENCE_STRUCTURAL_NODES = 2 * _MAX_WLE_EVIDENCE_CELLS
 
 
 def _trusted_positive_real(value: object, name: str) -> float:
@@ -96,38 +98,87 @@ def _trusted_polytomous_model(value: object) -> str:
 
 
 def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
-    """Materialize only inert numeric arrays or built-in sequence trees."""
+    """Materialize only inert, resource-bounded numeric arrays or sequence trees."""
     error = f"{name} must be a numeric array"
+    resource_error = (
+        f"{name} must contain at most {_MAX_WLE_EVIDENCE_CELLS:,} logical cells"
+    )
+    structural_error = f"{name} exceeds structural traversal budget"
     if type(value) is np.ndarray:
         if value.dtype.kind not in ("b", "i", "u", "f", "c"):
             raise ValueError(error)
+        if int(value.size) > _MAX_WLE_EVIDENCE_CELLS:
+            raise ValueError(resource_error)
         return value
     if type(value) not in (list, tuple):
         raise ValueError(error)
 
-    active_containers: set[int] = set()
-    stack: list[tuple[object, bool]] = [(value, False)]
-    while stack:
-        current, leaving = stack.pop()
-        current_type = type(current)
-        if current_type in (list, tuple):
-            container_id = id(current)
-            if leaving:
-                active_containers.remove(container_id)
-                continue
-            if container_id in active_containers:
-                raise ValueError(error)
-            active_containers.add(container_id)
-            stack.append((current, True))
-            for index in range(len(current) - 1, -1, -1):
-                stack.append((current[index], False))
+    # WLE accepts only one-dimensional item vectors and two-dimensional
+    # response/parameter matrices downstream. A valid non-empty matrix with N
+    # scalar cells visits at most N row entries plus N scalar entries. Keep a
+    # separate traversal budget so malformed zero-cell/deep fan-out cannot
+    # evade the logical-cell ceiling.
+    structural_nodes = 0
+    frames: list[list[object]] = [[value, 0, 0]]
+    active_container_ids: set[int] = {id(value)}
+    subtree_cells: dict[int, int] = {}
+
+    while frames:
+        frame = frames[-1]
+        current = frame[0]
+        child_index = int(frame[1])
+
+        if child_index >= len(current):
+            subtotal = int(frame[2])
+            current_id = id(current)
+            active_container_ids.remove(current_id)
+            subtree_cells[current_id] = subtotal
+            frames.pop()
+            if frames:
+                parent_total = int(frames[-1][2]) + subtotal
+                if parent_total > _MAX_WLE_EVIDENCE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][2] = parent_total
             continue
-        if current_type is np.ndarray:
-            if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+
+        frame[1] = child_index + 1
+        child = current[child_index]
+        structural_nodes += 1
+        if structural_nodes > _MAX_WLE_EVIDENCE_STRUCTURAL_NODES:
+            raise ValueError(structural_error)
+        child_type = type(child)
+
+        if child_type is np.ndarray:
+            if child.dtype.kind not in ("b", "i", "u", "f", "c"):
                 raise ValueError(error)
+            subtotal = int(frame[2]) + int(child.size)
+            if subtotal > _MAX_WLE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
             continue
-        if current_type not in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+
+        if child_type in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+            subtotal = int(frame[2]) + 1
+            if subtotal > _MAX_WLE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type not in (list, tuple):
             raise ValueError(error)
+        child_id = id(child)
+        if child_id in active_container_ids:
+            raise ValueError(error)
+        cached_cells = subtree_cells.get(child_id)
+        if cached_cells is not None:
+            subtotal = int(frame[2]) + cached_cells
+            if subtotal > _MAX_WLE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        active_container_ids.add(child_id)
+        frames.append([child, 0, 0])
 
     try:
         raw = np.asarray(value)
