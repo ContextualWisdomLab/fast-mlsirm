@@ -243,31 +243,22 @@ new canonical capability-maturity state.
 
 ## 7. Current pull-request evidence
 
-The following table records high-leverage live work observed on
-2026-08-25T05:20:00Z against protected
-`main@9c12eab15fb8a187b135f9be1961f0693a431c23`. Every row is
+The following table records live work observed on 2026-08-26 against protected
+`main@9c837ec4ae99b17e4815b90aab4d1babb230fe9f`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
-| [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `d232423d…` | seals nested subscore response/group evidence traversal before NumPy materialization (issue [#1362](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1362)) | draft at observation; checks queued; re-fetch draft/ready, checks and reviews before acting |
-| [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345) | `2bc7ba2a…` | bounds CAT administration evidence before deduplication/dense marshalling (issues [#1344](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1344)/[#1347](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1347)/[#1354](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1354)) | merge-forward onto `main@9c12eab1` pushed (`2bc7ba2a`) after resolving the package-surface conflict; fresh current-head CI required |
-| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `7ddfa2c1…` | exposes Rust polytomous predictions with admission safety (issues [#1280](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1280), [#1281](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1291)) | merge-forward onto `main@9c12eab1` pushed (`7ddfa2c1`); predecessor-head reviews are historical after the head change |
-| [#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029) | `2f4a4e03…` | rejects lossy extended-precision S-X² scalar controls before Rust dispatch (issue [#1028](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1028)) | open, non-draft; first strix attempt failed on provider availability and was rerun; current-head checks/reviews still required |
-| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `9bde9837…` | Rust continuous-time/AR longitudinal Rasch estimator replayed on the current review workflow (issue [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565)) | up to date with main; preserve exact recovery evidence through integration; predecessor-head REQUEST_CHANGES was bound to a stale head SHA |
-| [#998](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/998) | `3177525d…` | release/changelog resync plus logistic-DIF control hardening (issue [#958](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/958)) | mergeable; first strix attempt failed on provider availability and was rerun; formal approval still required |
+| [#1418](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1418) | `0c9915948559710114498dd653fcae566571c6aa` | exact Rust TEPP posterior/Event Lineage/temporal provenance/BU-PU-team-person membership admission contract; influence remains explicitly unavailable | checks queued and independent review required; this is a contract prerequisite, not a fitted importance capability |
 
-At this observation, GitHub REST enumerated **6 open pull requests**: `#1363,
-#1345, #1279, #1029, #1005, #998`. Open issues numbered 42, led by the
-admission-boundary family (`#1365`, `#1364`, `#1362`, `#1354`, `#1347`,
-`#1344`), the polytomous-prediction family (`#1307`, `#1308`, `#1291`,
-`#1292`, `#1280`, `#1281`, `#1296`, `#1297`, `#1300`, `#1303`, `#1301`),
-the governance/provenance family (`#1146`, `#1144`, `#1111`, `#1150`,
-`#1131`), and the validation/conformance family (`#1096`, `#1094`, `#1092`,
-`#1078`, `#1152`). The long-lived structural gaps remain `#621` (bounded 1.0
+At this observation, GitHub enumerated **1 open pull request** (`#1418`) and
+**13 open issues**. The long-lived structural gaps remain `#621` (bounded 1.0
 capability/support matrix), `#626` (Rust-owned ordinary production boundary),
-and `#565` (multilevel/multiple-membership/longitudinal completion).
+and `#565` (multilevel/multiple-membership/longitudinal completion). ADR 0022
+adds a distinct unresolved gate: implement and recover the continuous-posterior
+MMMC deletion estimand with same-objective CPU/GPU parity before exposing topic
+importance.
 
 This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,
