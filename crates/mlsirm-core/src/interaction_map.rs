@@ -93,8 +93,11 @@ pub fn residual_interaction_map(
     if observed.len() != cell_count || expected.len() != cell_count {
         return Err("observed and expected lengths must match the declared shape".into());
     }
+    if expected.iter().any(|value| !value.is_finite()) {
+        return Err("expected values must be finite".into());
+    }
 
-    let observed_cell = |index: usize| observed[index].is_finite() && expected[index].is_finite();
+    let observed_cell = |index: usize| observed[index].is_finite();
     let mut person_indices: Vec<usize> = (0..n_persons)
         .filter(|&person| (0..n_items).any(|item| observed_cell(person * n_items + item)))
         .collect();
