@@ -82,7 +82,7 @@ class TestJudgeConstructPolicy:
 
 
 class TestValidateJudgeConstruct:
-    def test_full_policy_construct_is_admitted_without_warnings(self) -> None:
+    def test_policy_floor_construct_warns_below_recommended_count(self) -> None:
         spec = validate_judge_construct(FIVE_IDS, n_categories=4)
         assert spec.n_items == 5
         assert spec.meets_policy is True
