@@ -126,6 +126,35 @@ def test_observed_information_normalizes_numpy_step_to_builtin_float(
     assert captured["step"] == float(np.float32(1e-4))
 
 
+def test_observed_information_normalizes_zero_dim_numpy_step_to_builtin_float(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exact 0-D NumPy step controls retain inert historical compatibility."""
+    responses, factor_id, params = _small_mirt_problem()
+    monkeypatch.setattr(inference, "neg_loglik_and_grad", _constant_objective)
+    captured: dict[str, object] = {}
+
+    def _capture(n, step, *_args):
+        captured["n"] = n
+        captured["step"] = step
+        return [0.0] * (int(n) * int(n))
+
+    monkeypatch.setattr(core, "observed_information", _capture)
+    result = inference.observed_information(
+        responses,
+        factor_id,
+        params,
+        config=FitConfig(model="MIRT", backend="rust"),
+        backend="rust",
+        device="cpu",
+        step=np.array(np.float32(1e-4)),
+    )
+
+    assert result.shape[0] == result.shape[1]
+    assert type(captured["step"]) is float
+    assert captured["step"] == float(np.float32(1e-4))
+
+
 def test_observed_information_rejects_objective_call_budget_before_evaluation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
