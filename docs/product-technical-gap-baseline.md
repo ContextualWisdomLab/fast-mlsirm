@@ -1,8 +1,8 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-25T05:20:00Z**<br>
-Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
+Observed at: **2026-08-25T12:12:00Z**<br>
+Protected-main basis: **`96928aa088569eef20dbe447f63f48afc4a6478d`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
 ## 1. Purpose and authority
@@ -244,30 +244,39 @@ new canonical capability-maturity state.
 ## 7. Current pull-request evidence
 
 The following table records high-leverage live work observed on
-2026-08-25T05:20:00Z against protected
-`main@9c12eab15fb8a187b135f9be1961f0693a431c23`. Every row is
+2026-08-25T12:12:00Z against protected
+`main@96928aa0`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
-| [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `d232423d…` | seals nested subscore response/group evidence traversal before NumPy materialization (issue [#1362](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1362)) | draft at observation; checks queued; re-fetch draft/ready, checks and reviews before acting |
-| [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345) | `2bc7ba2a…` | bounds CAT administration evidence before deduplication/dense marshalling (issues [#1344](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1344)/[#1347](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1347)/[#1354](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1354)) | merge-forward onto `main@9c12eab1` pushed (`2bc7ba2a`) after resolving the package-surface conflict; fresh current-head CI required |
-| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `7ddfa2c1…` | exposes Rust polytomous predictions with admission safety (issues [#1280](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1280), [#1281](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1291)) | merge-forward onto `main@9c12eab1` pushed (`7ddfa2c1`); predecessor-head reviews are historical after the head change |
-| [#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029) | `2f4a4e03…` | rejects lossy extended-precision S-X² scalar controls before Rust dispatch (issue [#1028](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1028)) | open, non-draft; first strix attempt failed on provider availability and was rerun; current-head checks/reviews still required |
-| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `9bde9837…` | Rust continuous-time/AR longitudinal Rasch estimator replayed on the current review workflow (issue [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565)) | up to date with main; preserve exact recovery evidence through integration; predecessor-head REQUEST_CHANGES was bound to a stale head SHA |
-| [#998](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/998) | `3177525d…` | release/changelog resync plus logistic-DIF control hardening (issue [#958](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/958)) | mergeable; first strix attempt failed on provider availability and was rerun; formal approval still required |
+| [#1385](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1385) | `1ea5b696…` | replays DIF-pilot invariants through exact-record constructor reconstruction and callback-free group containers (issue [#1384](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1384)) | 5/5 local tests pass; auto-merge armed; awaiting current-head checks |
+| [#1382](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1382) | `9733cb51…` | fail-closed procurement `_source_commit()` with canonical SHA-1/SHA-256 identity validation (issue [#1144](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1144)) | all required checks green + 17/17 local tests; auto-merge armed; awaiting required-review report |
+| [#1380](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1380) | `76001ead…` | validated LLM-judge construct measurement contract (≥5/recommended-7/≤11 items per facet, forced zero-based polytomous coding, explicit-order projection) | contract constants and zero-based row projection verified locally (62/62 judge tests); auto-merge armed |
+| [#1379](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1379) | `79963cdb…` | reconstructable source-commit provenance for PR queue governance evidence | auto-merge armed; checks running at observation |
+| [#1378](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1378) | `a6c40056…` | preserves g-theory mastery-cut identity through Rust f64 boundaries | first strix failed on NIM rate limit, rerun dispatched and passing; auto-merge armed |
+| [#1376](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1376) | `44cb3bf1…` | seals parallel-analysis data evidence before NumPy protocols | strix provider-failure rerun dispatched; auto-merge armed |
+| [#1373](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1373) | `025c2230…` | fails closed on malformed PR queue evidence | strix provider-failure rerun dispatched and passing; auto-merge armed |
+| [#1370](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1370) | `1f1bf15d…` | preserves Rasch-CML control and Andersen group identity | strix provider-failure rerun dispatched; auto-merge armed |
+| [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `5b46c87c…` | seals nested subscore response/group evidence traversal before NumPy materialization (issue [#1362](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1362)) | strix provider-failure rerun dispatched; auto-merge armed |
 
-At this observation, GitHub REST enumerated **6 open pull requests**: `#1363,
-#1345, #1279, #1029, #1005, #998`. Open issues numbered 42, led by the
-admission-boundary family (`#1365`, `#1364`, `#1362`, `#1354`, `#1347`,
-`#1344`), the polytomous-prediction family (`#1307`, `#1308`, `#1291`,
-`#1292`, `#1280`, `#1281`, `#1296`, `#1297`, `#1300`, `#1303`, `#1301`),
-the governance/provenance family (`#1146`, `#1144`, `#1111`, `#1150`,
-`#1131`), and the validation/conformance family (`#1096`, `#1094`, `#1092`,
-`#1078`, `#1152`). The long-lived structural gaps remain `#621` (bounded 1.0
-capability/support matrix), `#626` (Rust-owned ordinary production boundary),
-and `#565` (multilevel/multiple-membership/longitudinal completion).
+At this observation, GitHub REST enumerated **9 open pull requests**: `#1385,
+#1382, #1380, #1379, #1378, #1376, #1373, #1370, #1363`. Open issues numbered
+29. Since the previous observation on this date (`05:20Z`, `main@9c12eab1`),
+the queue advanced substantially: merged into protected main were
+[#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) (public
+Rust polytomous predictions),
+[#1387](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1387) (Rust-owned
+residual interaction map with Gabriel symmetric factorization; issues #1388–
+#1390), [#1367](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1367)
+(CRM structural budget), plus the earlier-listed [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345),
+[#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029), and
+[#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005). A
+recurring **Strix provider-infrastructure failure mode** was diagnosed across
+seven PRs: the scan itself reported zero vulnerabilities but the gate failed
+closed on NVIDIA-NIM rate-limit signals; all seven failing jobs were rerun and
+passed, confirming the failures were environmental rather than findings.
 
 This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,
