@@ -1,8 +1,8 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-21T08:32:44Z**<br>
-Protected-main basis: **`04d0bc21a2a20693bcf16108cd76d394fe844d23`**<br>
+Observed at: **2026-08-25T00:00:00Z**<br>
+Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`** (v0.9.0 cut)<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
 ## 1. Purpose and authority
@@ -66,7 +66,7 @@ transportability, fairness, and decision utility are separate claims.
 
 The observed protected main declares:
 
-- package version **`0.8.0`**;
+- package version **`0.9.0`** (cut by [#1349](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1349));
 - Python **`>=3.12`**;
 - Maturin/PyO3 bindings to the Rust workspace;
 - PyPI classifier **`Development Status :: 3 - Alpha`**; and
@@ -244,38 +244,26 @@ new canonical capability-maturity state.
 ## 7. Current pull-request evidence
 
 The following table records high-leverage live work observed on
-2026-08-21T08:32:44Z against protected
-`main@04d0bc21a2a20693bcf16108cd76d394fe844d23`. Every row is
+2026-08-25T00:00:00Z against protected
+`main@9c12eab15fb8a187b135f9be1961f0693a431c23`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
-| [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) | `286bd2dbba5da8348643b6ad8145967972813ae9` | configuration integer hardening plus Rust-required automatic backend and runtime truth | open, non-draft at observation; re-fetch checks/reviews and overlap with #1070/#626 before acting |
-| [#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | `e47f9e6b257c6dbabff77702588d60bbb5cc5fea` | isolates NumPy parity behind explicit `fit_reference`/CLI reference surfaces | open at observation; preserve one backend authority with #951/#626 |
-| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `fd7b511e62c1f0a24190ef3fa65b06db50e6e32e` | Rust continuous-time/AR longitudinal Rasch estimator and recovery evidence | open, non-draft at observation; preserve exact recovery evidence through integration |
-| [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) | `34697b6df58c1424654bc890571a3dfbe806fd97` | crossed and weighted multiple-membership estimator | draft and stacked at observation; do not merge independently before its declared predecessor evidence is integrated |
-| [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | `3aec7c0293a6e85652fbf3c5bbc3c45513f357f4` | relation-aware structural model-selection governor | open at observation; requires relation, scoreability, held-out and recovery evidence |
-| [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | `27a831865c2f1ee42710dceb27a2e074c13ad254` | governed item-bank lifecycle JSON/HTML reports and replay hardening | open, non-draft at observation; report integrity does not itself complete calibration/linking/exposure/drift evidence |
-| [#1012](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1012) | `64e6dad6a62b2b391c0632c7a2a93cc2fdce0ca8` | durable 500-rep GRM recovery evidence workflow | open, non-draft at observation; workflow evidence must remain bound to the exact source and head |
-| [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | `47c1af6721a44493bc470d7aed71be2a99983ba7` | bounded statistical-study deadline increase | open, non-draft at observation; longer deadlines must still produce terminal, retained evidence |
-| [#1015](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1015) | `5a855b731f9857d4a177263f94c9987952be224c` | bounded subprocess capture and process-tree integrity | open, non-draft at observation; current head includes descendant pipe cleanup and awaits fresh checks/reviews |
-| [#1002](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1002) | `36e0bdd71535e56fe1329f31c2cd74d0749c64d8` | accessible report focus behavior | open, non-draft at observation; terminal checks do not replace current formal approvals |
-| [#1064](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1064) | `dc65d76c2d4641bf95c98cd581316224ee32e8d2` | exact model-spec record admission | open, non-draft at observation; required checks are green but formal approval remains required |
-| [#1081](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1081) | `4f14a754a1e016edd9a81bbd4ad4bfa367f8f4cc` | cross-engine conformance inventory and executed evidence | open, non-draft at observation; current source findings are addressed, but exact-head approval is still required |
-| [#1079](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1079) | `e6674e78b28b17c52398d8b451bc999a4e078d6d` | this product/technical gap baseline | open, non-draft at observation; documentation-only and awaiting the current OpenCode formal result |
-| [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130) | `890ba99f3d3a8f2f51898860bbc86f968b6e42e3` | ADR binding the Figma design-file identity | open, non-draft at observation; downstream design evidence is not protected-main truth until merged |
-| [#1145](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1145) | `64bfa8d932ad533182ec5d9a17e749821e41b8fb` | procurement provenance hardening stacked on #1015 | draft and based on pending head `5a855b73`; restack only after the root PR's normal transition |
+| [#1367](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1367) | `b4e00a17f7a9` | bounds CRM response structural traversal (DoS-safe admission) | draft at observation; await fresh checks/reviews on current head |
+| [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `d232423d6427` | seals subscore scientific evidence admission trust boundary | draft at observation; checks queued on current head; mark ready only after self-review passes |
+| [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345) | `2bc7ba2a2ffb` | seals CAT administration evidence before NumPy protocols | open, non-draft; mergeability must be re-verified before acting |
+| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `92f0999ac202` | exposes Rust polytomous GRM/GPCM predictions publicly | open, non-draft; conflicting with live base — restack onto current main first |
+| [#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029) | `2f4a4e0306b0` | seals S-X² scalar control admission in fit diagnostics | open, non-draft; checks queued on current head |
+| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `9bde9837d987` | replays Rust CT-AR longitudinal Rasch on current review workflow | open, non-draft; preserve exact recovery evidence through integration |
+| [#998](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/998) | `3177525dd4d8` | resyncs changelog fragments and hardens logistic-DIF controls | open, non-draft; closest to terminal checks at observation |
 
-At this observation, GitHub REST enumerated **74 open pull requests**. The
-complete number inventory was:
-
-`#1145, #1140, #1138, #1136, #1134, #1132, #1130, #1129, #1127, #1126, #1122, #1120, #1118, #1116, #1114, #1112, #1110, #1108, #1106, #1104, #1102, #1100, #1097, #1095, #1093, #1091, #1088, #1085, #1084, #1081, #1080, #1079, #1076, #1074, #1072, #1071, #1070, #1065, #1064, #1062, #1061, #1060, #1058, #1056, #1052, #1050, #1048, #1046, #1043, #1041, #1037, #1035, #1033, #1031, #1029, #1026, #1025, #1020, #1019, #1015, #1014, #1013, #1012, #1011, #1009, #1008, #1006, #1005, #1003, #1002, #998, #997, #992, #951`.
-
-This list is a reproducible snapshot, not a merge instruction. A completion or
-merge decision must begin with a fresh repository-wide PR and writer sweep,
-including exact head/base, dependency stack, reviews, unresolved threads,
-required Checks, and active path ownership.
+At this observation, GitHub REST enumerated **7 open pull requests**: `#1367,
+#1363, #1345, #1279, #1029, #1005, #998`. This list is a reproducible snapshot,
+not a merge instruction. A completion or merge decision must begin with a fresh
+repository-wide PR and writer sweep, including exact head/base, dependency
+stack, reviews, unresolved threads, required Checks, and active path ownership.
 
 ## 8. Product and technical gap matrix
 
