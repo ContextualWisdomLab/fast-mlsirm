@@ -167,6 +167,16 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-062** Future Rust estimators for these contracts shall establish identification and true-parameter recovery before release as production estimators.
 
+**PRD-FR-063** Topic-specific document influence consumed from TEPP shall retain
+posterior logistic-normal coordinates or plausible values, event time, and
+explicit time-valid business-unit, PU, team, and person memberships.
+`fast-mlsirm` owns Rust likelihood, observed information, complete-case
+deletion refits, posterior-draw combination, and case-deletion influence. It
+shall not threshold posterior coordinates into binary responses or substitute
+keywords, heuristics, hand-weighted scores, or the existing crossed-binary
+estimator. Until that exact estimator passes recovery and CPU/GPU parity, the
+public adapter fails closed.
+
 ### 6.8 Reporting and evidence
 
 **PRD-FR-070** Reports shall separate exact machine-readable values from human-readable summaries and preserve provenance needed to reconstruct the analysis.
