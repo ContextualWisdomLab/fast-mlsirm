@@ -13,10 +13,14 @@ const SINGULAR_FLOOR: f64 = 1e-12;
 pub struct ResidualInteractionMap {
     pub person_indices: Vec<usize>,
     pub item_indices: Vec<usize>,
+    pub scored_person_count: usize,
+    pub scored_item_count: usize,
     pub person_coordinates: Vec<f64>,
     pub item_coordinates: Vec<f64>,
     pub singular_values: Vec<f64>,
     pub axis_shares: Vec<f64>,
+    pub residual: Vec<f64>,
+    pub distance: Vec<f64>,
     pub reconstruction: Vec<f64>,
     pub unexplained: Vec<f64>,
     pub cross_share: Vec<Option<f64>>,
@@ -48,6 +52,8 @@ pub fn residual_interaction_map(
     let mut item_indices: Vec<usize> = (0..n_items)
         .filter(|&item| (0..n_persons).any(|person| observed_cell(person * n_items + item)))
         .collect();
+    let scored_person_count = person_indices.len();
+    let scored_item_count = item_indices.len();
     person_indices.retain(|&person| {
         item_indices
             .iter()
@@ -62,10 +68,14 @@ pub fn residual_interaction_map(
         return Ok(ResidualInteractionMap {
             person_indices,
             item_indices,
+            scored_person_count,
+            scored_item_count,
             person_coordinates: Vec::new(),
             item_coordinates: Vec::new(),
             singular_values: Vec::new(),
             axis_shares: vec![0.0; axis_count],
+            residual: Vec::new(),
+            distance: Vec::new(),
             reconstruction: Vec::new(),
             unexplained: Vec::new(),
             cross_share: Vec::new(),
@@ -128,10 +138,21 @@ pub fn residual_interaction_map(
         })
         .collect();
     let mut reconstruction = Vec::with_capacity(rows * columns);
+    let mut distance = Vec::with_capacity(rows * columns);
     let mut unexplained = Vec::with_capacity(rows * columns);
     let mut cross_share = Vec::with_capacity(rows * columns);
     for person in 0..rows {
         for item in 0..columns {
+            distance.push(
+                (0..axis_count)
+                    .map(|axis| {
+                        let difference = person_coordinates[person * axis_count + axis]
+                            - item_coordinates[item * axis_count + axis];
+                        difference * difference
+                    })
+                    .sum::<f64>()
+                    .sqrt(),
+            );
             let fitted = (0..axis_count)
                 .map(|axis| {
                     person_coordinates[person * axis_count + axis]
@@ -156,10 +177,14 @@ pub fn residual_interaction_map(
     Ok(ResidualInteractionMap {
         person_indices,
         item_indices,
+        scored_person_count,
+        scored_item_count,
         person_coordinates,
         item_coordinates,
         singular_values,
         axis_shares,
+        residual,
+        distance,
         reconstruction,
         unexplained,
         cross_share,
@@ -189,6 +214,7 @@ mod tests {
         {
             assert!((raw - fitted).abs() < 1e-12);
         }
+        assert!(map.distance.iter().all(|value| value.is_finite() && *value >= 0.0));
     }
 
     #[test]
@@ -198,5 +224,7 @@ mod tests {
                 .unwrap();
         assert_eq!(map.person_indices, vec![1]);
         assert_eq!(map.item_indices, vec![0, 1]);
+        assert_eq!(map.scored_person_count, 2);
+        assert_eq!(map.scored_item_count, 2);
     }
 }

@@ -15,10 +15,14 @@ class ResidualInteractionMap:
 
     person_indices: np.ndarray
     item_indices: np.ndarray
+    scored_person_count: int
+    scored_item_count: int
     person_coordinates: np.ndarray
     item_coordinates: np.ndarray
     singular_values: np.ndarray
     axis_shares: np.ndarray
+    residual: np.ndarray
+    distance: np.ndarray
     reconstruction: np.ndarray
     unexplained: np.ndarray
     cross_share: np.ndarray
@@ -67,6 +71,8 @@ def residual_interaction_map(
     return ResidualInteractionMap(
         person_indices=person_indices,
         item_indices=item_indices,
+        scored_person_count=int(raw["scored_person_count"]),
+        scored_item_count=int(raw["scored_item_count"]),
         person_coordinates=np.asarray(
             raw["person_coordinates"], dtype=np.float64
         ).reshape(rows, axis_count_value),
@@ -75,6 +81,8 @@ def residual_interaction_map(
         ),
         singular_values=np.asarray(raw["singular_values"], dtype=np.float64),
         axis_shares=np.asarray(raw["axis_shares"], dtype=np.float64),
+        residual=np.asarray(raw["residual"], dtype=np.float64).reshape(rows, columns),
+        distance=np.asarray(raw["distance"], dtype=np.float64).reshape(rows, columns),
         reconstruction=np.asarray(raw["reconstruction"], dtype=np.float64).reshape(
             rows, columns
         ),

@@ -9393,10 +9393,14 @@ fn residual_interaction_map(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("person_indices", result.person_indices)?;
     out.set_item("item_indices", result.item_indices)?;
+    out.set_item("scored_person_count", result.scored_person_count)?;
+    out.set_item("scored_item_count", result.scored_item_count)?;
     out.set_item("person_coordinates", result.person_coordinates)?;
     out.set_item("item_coordinates", result.item_coordinates)?;
     out.set_item("singular_values", result.singular_values)?;
     out.set_item("axis_shares", result.axis_shares)?;
+    out.set_item("residual", result.residual)?;
+    out.set_item("distance", result.distance)?;
     out.set_item("reconstruction", result.reconstruction)?;
     out.set_item("unexplained", result.unexplained)?;
     out.set_item("cross_share", result.cross_share)?;

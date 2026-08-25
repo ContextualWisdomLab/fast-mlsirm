@@ -15,9 +15,23 @@ def test_residual_interaction_map_preserves_rank_one_reconstruction() -> None:
     result = residual_interaction_map(observed, expected, axis_count=2)
 
     np.testing.assert_allclose(result.reconstruction, observed - expected, atol=1e-12)
+    np.testing.assert_allclose(result.residual, observed - expected, atol=1e-12)
+    assert np.all(np.isfinite(result.distance))
+    assert np.all(result.distance >= 0.0)
     np.testing.assert_allclose(result.axis_shares, [1.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(result.unexplained, 0.0, atol=1e-12)
     np.testing.assert_allclose(result.cross_share, 0.0, atol=1e-12)
+
+
+def test_residual_interaction_map_reports_scored_and_complete_case_coverage() -> None:
+    """Coverage distinguishes scored rows from rows admitted to the map."""
+    observed = np.array([[2.0, np.nan], [1.0, 2.0]])
+    result = residual_interaction_map(observed, np.ones((2, 2)), axis_count=2)
+
+    assert result.scored_person_count == 2
+    assert result.scored_item_count == 2
+    np.testing.assert_array_equal(result.person_indices, [1])
+    np.testing.assert_array_equal(result.item_indices, [0, 1])
 
 
 @pytest.mark.parametrize("axis_count", [0, -1])
