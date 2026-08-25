@@ -198,6 +198,38 @@ def test_second_order_preserves_trusted_sequence_and_numpy_scalar_compatibility(
     assert result["passed"] is True
 
 
+def test_inference_preserves_exact_zero_dim_numpy_real_controls(monkeypatch):
+    """Exact 0-D numeric arrays remain inert scalar controls at the Rust boundary."""
+    second_captured: dict[str, object] = {}
+    vcov_captured: dict[str, object] = {}
+
+    def _capture_second(matrix, tol):
+        second_captured["matrix"] = matrix
+        second_captured["tol"] = tol
+        return {
+            "passed": True,
+            "min_eigenvalue": 1.0,
+            "eigenvalues": np.array([1.0, 2.0], dtype=np.float64),
+        }
+
+    def _capture_vcov(matrix, rcond):
+        vcov_captured["matrix"] = matrix
+        vcov_captured["rcond"] = rcond
+        return [1.0, 0.0, 0.0, 1.0]
+
+    monkeypatch.setattr(_core, "second_order_test", _capture_second)
+    monkeypatch.setattr(_core, "vcov_from_hessian", _capture_vcov)
+
+    matrix = np.eye(2, dtype=np.float64)
+    second_order_test(matrix, tol=np.array(np.float32(1e-6)))
+    vcov_from_hessian(matrix, rcond=np.array(np.float64(1e-10)))
+
+    assert type(second_captured["tol"]) is float
+    assert second_captured["tol"] == float(np.float32(1e-6))
+    assert type(vcov_captured["rcond"]) is float
+    assert vcov_captured["rcond"] == float(np.float64(1e-10))
+
+
 def test_package_level_inference_exports_use_the_guarded_callables():
     """Historical package aliases must not bypass installed inference admission."""
     assert fml.observed_information is observed_information
