@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_MAX_SUBSCORE_EVIDENCE_CELLS = 20_000_000
+_MAX_SUBSCORE_STRUCTURE_NODES = 3 * _MAX_SUBSCORE_EVIDENCE_CELLS
 _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.int8,
     np.int16,
@@ -80,22 +82,66 @@ class SubscoreResult:
 
 
 def _trusted_numeric_array(value: object, name: str) -> np.ndarray:
-    """Materialize inert numeric evidence without invoking caller protocols."""
-    if type(value) is np.ndarray:
+    """Materialize inert numeric evidence after bounded callback-free preflight."""
+
+    resource_error = (
+        f"{name} must contain at most {_MAX_SUBSCORE_EVIDENCE_CELLS:,} logical cells"
+    )
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if value.size > _MAX_SUBSCORE_EVIDENCE_CELLS:
+            raise ValueError(resource_error)
         raw = value
-    elif type(value) in (list, tuple):
-        stack: list[object] = [value]
-        while stack:
-            current = stack.pop()
-            if type(current) in (list, tuple):
-                stack.extend(current)
+    elif value_type in (list, tuple):
+        # Use indexed frames so traversal memory is proportional to nesting
+        # depth rather than sibling width. Active-path identities reject true
+        # cycles while permitting the same acyclic subtree to appear in more
+        # than one sibling position.
+        frames: list[list[object]] = [[value, 0]]
+        active_container_ids: set[int] = {id(value)}
+        logical_cells = 0
+        structural_nodes = 0
+
+        while frames:
+            frame = frames[-1]
+            current = frame[0]
+            child_index = int(frame[1])
+
+            if child_index >= len(current):
+                active_container_ids.remove(id(current))
+                frames.pop()
                 continue
-            if type(current) is np.ndarray:
-                if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+
+            frame[1] = child_index + 1
+            structural_nodes += 1
+            if structural_nodes > _MAX_SUBSCORE_STRUCTURE_NODES:
+                raise ValueError(
+                    f"{name} exceeded structural traversal budget of "
+                    f"{_MAX_SUBSCORE_STRUCTURE_NODES:,} nodes"
+                )
+
+            child = current[child_index]
+            child_type = type(child)
+            if child_type in (list, tuple):
+                child_id = id(child)
+                if child_id in active_container_ids:
+                    raise ValueError(f"{name} must be acyclic numeric evidence")
+                active_container_ids.add(child_id)
+                frames.append([child, 0])
+                continue
+
+            if child_type is np.ndarray:
+                if child.dtype.kind not in ("b", "i", "u", "f", "c"):
                     raise ValueError(f"{name} must be real-numeric evidence")
-                continue
-            if type(current) not in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+                logical_cells += int(child.size)
+            elif child_type in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+                logical_cells += 1
+            else:
                 raise ValueError(f"{name} must be real-numeric evidence")
+
+            if logical_cells > _MAX_SUBSCORE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+
         try:
             raw = np.asarray(value)
         except (TypeError, ValueError, OverflowError):
@@ -136,8 +182,9 @@ def subscore_analysis(
     partition exhaustive by construction). Evidence admission accepts exact
     NumPy numeric arrays or exact built-in list/tuple trees containing only
     package-trusted concrete Python/NumPy numeric scalars or exact NumPy
-    numeric array leaves; callback-bearing providers fail before NumPy
-    materialization.
+    numeric array leaves. Logical-cell and structural traversal budgets are
+    enforced before NumPy materialization, and callback-bearing or cyclic
+    providers fail closed.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
