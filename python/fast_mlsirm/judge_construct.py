@@ -96,6 +96,16 @@ def _policy_integer(value: object, name: str) -> int:
     return value
 
 
+def _boolean_control(value: object, name: str) -> bool:
+    """Normalize one trusted Boolean control without caller truthiness."""
+    value_type = type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise TypeError(f"{name} must be a boolean")
+
+
 @dataclass(frozen=True)
 class JudgeConstructPolicy:
     """Validated item-count bounds for one judge-derived facet."""
@@ -280,12 +290,6 @@ def validate_judge_construct(
     if type(resolved_policy) is not JudgeConstructPolicy:
         raise TypeError("policy must be a JudgeConstructPolicy")
     resolved_policy = replace(resolved_policy)
-    ids = tuple(criterion_ids)
-    if any(type(criterion_id) is not str or not criterion_id.strip() for criterion_id in ids):
-        raise JudgeFormatError("criterion_ids must contain non-empty strings")
-    if len(set(ids)) != len(ids):
-        raise JudgeFormatError("criterion_ids must be unique")
-    count = len(ids)
     if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
         raise JudgeFormatError("item_type must be dichotomous or polytomous")
     if item_type == "dichotomous":
@@ -303,6 +307,15 @@ def validate_judge_construct(
                 f"polytomous constructs require n_categories in 2..{MAX_JUDGE_CATEGORIES}"
             )
         resolved_categories = n_categories
+    resolved_allow_short_form = _boolean_control(
+        allow_short_form, "allow_short_form"
+    )
+    ids = tuple(criterion_ids)
+    if any(type(criterion_id) is not str or not criterion_id.strip() for criterion_id in ids):
+        raise JudgeFormatError("criterion_ids must contain non-empty strings")
+    if len(set(ids)) != len(ids):
+        raise JudgeFormatError("criterion_ids must be unique")
+    count = len(ids)
     if count < ABSOLUTE_JUDGE_CONSTRUCT_FLOOR:
         raise JudgeFormatError(
             "a judge construct needs at least "
@@ -317,7 +330,7 @@ def validate_judge_construct(
                 f"facet exceeds the {resolved_policy.max_items}-item maximum; "
                 "split the rubric into multiple facets"
             )
-        if not allow_short_form:
+        if not resolved_allow_short_form:
             raise JudgeFormatError(
                 f"facet has {count} criteria but policy requires at least "
                 f"{resolved_policy.min_items}; pass allow_short_form=True to "
