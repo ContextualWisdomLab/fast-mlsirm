@@ -13,6 +13,7 @@ from . import cdm as _cdm
 from . import exposure as _exposure
 from . import fitstats as _fitstats
 from . import inference as _inference
+from . import polytomous as _polytomous
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import serving as _serving
@@ -26,12 +27,15 @@ from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._inference_admission_safety import install as _install_inference_admission_safety
+from ._polytomous_prediction_admission import (
+    install as _install_polytomous_prediction_admission,
+)
 from ._scaling_control_safety import install as _install_scaling_control_safety
 from ._serving_export_safety import install as _install_serving_export_safety
 
 # Harden historical public adapters before copying legacy exports. These
-# wrappers validate and normalize semantic controls only; result arithmetic
-# remains in the existing Rust-backed implementations.
+# wrappers validate and normalize semantic controls/evidence only; result
+# arithmetic remains in the existing Rust-backed implementations.
 _install_cat_administration_resource_safety(_cat)
 _install_exposure_array_safety(_exposure)
 _install_exposure_flexilevel_safety(_exposure)
@@ -41,6 +45,7 @@ _install_icc_control_safety(_reliability)
 _install_inference_admission_safety(_inference)
 _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
+_install_polytomous_prediction_admission(_polytomous)
 _install_serving_export_safety(_serving)
 _legacy_init.ability_standard_error = _cat.ability_standard_error
 _legacy_init.ccat_select = _exposure.ccat_select
@@ -70,8 +75,10 @@ del (
     _install_fleiss_control_safety,
     _install_icc_control_safety,
     _install_inference_admission_safety,
+    _install_polytomous_prediction_admission,
     _install_scaling_control_safety,
     _install_serving_export_safety,
+    _polytomous,
     _reliability,
     _scaling,
     _serving,
