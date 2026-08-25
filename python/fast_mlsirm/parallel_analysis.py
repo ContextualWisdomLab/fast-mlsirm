@@ -102,15 +102,17 @@ def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
         )
 
 
-def _trusted_real_evidence(value: object, active_containers: set[int]) -> None:
-    """Preflight exact inert real-numeric evidence without caller protocols."""
+def _validate_real_array_storage(value: np.ndarray) -> None:
+    """Reject non-real exact NumPy storage without converting array elements."""
+    if value.dtype.kind == "c":
+        raise ValueError("data must be real-valued")
+    if value.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("data must be numeric and convertible to float64")
+
+
+def _validate_trusted_real_scalar(value: object) -> None:
+    """Admit one concrete real scalar identity without caller conversion hooks."""
     value_type = type(value)
-    if value_type is np.ndarray:
-        if value.dtype.kind == "c":
-            raise ValueError("data must be real-valued")
-        if value.dtype.kind not in ("b", "i", "u", "f"):
-            raise ValueError("data must be numeric and convertible to float64")
-        return
     if value_type is bool or value_type is int or value_type is float:
         return
     if value_type is complex or any(
@@ -122,23 +124,40 @@ def _trusted_real_evidence(value: object, active_containers: set[int]) -> None:
         for scalar_type in (*_TRUSTED_NUMPY_INTEGER_TYPES, *_TRUSTED_NUMPY_FLOAT_TYPES)
     ):
         return
-    if value_type is list or value_type is tuple:
-        identity = id(value)
-        if identity in active_containers:
-            raise ValueError("data must be numeric and convertible to float64")
-        active_containers.add(identity)
-        try:
-            for index in range(len(value)):
-                _trusted_real_evidence(value[index], active_containers)
-        finally:
-            active_containers.remove(identity)
-        return
     raise ValueError("data must be numeric and convertible to float64")
+
+
+def _preflight_real_matrix(data: object) -> None:
+    """Validate the known 2-D carrier shape without recursive caller protocols."""
+    data_type = type(data)
+    if data_type is np.ndarray:
+        _validate_real_array_storage(data)
+        return
+    if data_type is not list and data_type is not tuple:
+        _validate_trusted_real_scalar(data)
+        return
+
+    for row_index in range(len(data)):
+        row = data[row_index]
+        row_type = type(row)
+        if row_type is np.ndarray:
+            _validate_real_array_storage(row)
+            if row.ndim != 1:
+                raise ValueError("data must be a 2-D persons x items array")
+            continue
+        if row_type is list or row_type is tuple:
+            for column_index in range(len(row)):
+                cell = row[column_index]
+                if type(cell) is list or type(cell) is tuple or type(cell) is np.ndarray:
+                    raise ValueError("data must be a 2-D persons x items array")
+                _validate_trusted_real_scalar(cell)
+            continue
+        _validate_trusted_real_scalar(row)
 
 
 def _real_numeric_matrix(data: object) -> np.ndarray:
     """Validate inert real evidence before narrowing it to contiguous ``float64``."""
-    _trusted_real_evidence(data, set())
+    _preflight_real_matrix(data)
     try:
         raw = np.asarray(data)
     except (TypeError, ValueError, OverflowError):
@@ -181,12 +200,14 @@ def parallel_analysis(
     accept exact built-in and supported concrete NumPy integer scalars while
     rejecting booleans, subclasses, and implicit conversion providers before
     compiled-core discovery. Caller data accepts exact real-numeric NumPy
-    arrays or exact built-in list/tuple trees of package-trusted concrete
+    arrays or exact built-in list/tuple matrices of package-trusted concrete
     scalar evidence; arbitrary array/container/numeric subclasses and
-    conversion providers are rejected before NumPy protocols execute. Complex
-    and non-real storage is rejected before the accepted matrix is marshalled
-    to contiguous ``float64``. The random-eigenvalue benchmark workspace is
-    bounded to 128 MiB before compiled dispatch.
+    conversion providers are rejected before NumPy protocols execute. The
+    known 2-D carrier structure is preflighted without unbounded recursive
+    container traversal. Complex and non-real storage is rejected before the
+    accepted matrix is marshalled to contiguous ``float64``. The random-
+    eigenvalue benchmark workspace is bounded to 128 MiB before compiled
+    dispatch.
 
     """
     explicit_iterations = (
