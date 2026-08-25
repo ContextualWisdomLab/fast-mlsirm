@@ -92,6 +92,34 @@ def _real_float64_array(value: np.ndarray, name: str) -> np.ndarray:
     return np.asarray(raw, dtype=np.float64)
 
 
+def _trusted_observed_mask(value: object, shape: tuple[int, int]) -> np.ndarray:
+    """Return a callback-free Boolean observation mask matching ``shape`` exactly."""
+    error = "observed must be a boolean array matching responses shape"
+    if type(value) is np.ndarray:
+        if value.dtype.kind != "b" or value.shape != shape:
+            raise ValueError(error)
+        return np.ascontiguousarray(value, dtype=np.bool_)
+
+    if type(value) not in (list, tuple) or len(value) != shape[0]:
+        raise ValueError(error)
+
+    normalized = np.empty(shape, dtype=np.bool_)
+    for row_index in range(shape[0]):
+        row = value[row_index]
+        if type(row) not in (list, tuple) or len(row) != shape[1]:
+            raise ValueError(error)
+        for item_index in range(shape[1]):
+            cell = row[item_index]
+            cell_type = type(cell)
+            if cell_type is bool:
+                normalized[row_index, item_index] = cell
+            elif cell_type is np.bool_:
+                normalized[row_index, item_index] = bool(cell)
+            else:
+                raise ValueError(error)
+    return normalized
+
+
 def score_wle(
     a: np.ndarray,
     b: np.ndarray,
@@ -152,9 +180,7 @@ def score_wle(
     if observed is None:
         observed = ~np.isnan(y)
     else:
-        observed = np.asarray(observed, dtype=bool)
-        if observed.shape != y.shape:
-            raise ValueError("observed must match responses shape")
+        observed = _trusted_observed_mask(observed, y.shape)
     yy = np.where(observed, y, 0.0)
     if not np.all(np.isin(yy[observed], (0.0, 1.0))):
         raise ValueError("responses must be 0 or 1 where observed (NaN = missing)")
@@ -259,9 +285,7 @@ def score_wle_poly(
     if observed is None:
         observed = ~np.isnan(y)
     else:
-        observed = np.asarray(observed, dtype=bool)
-        if observed.shape != y.shape:
-            raise ValueError("observed must match responses shape")
+        observed = _trusted_observed_mask(observed, y.shape)
     yy = np.where(observed, y, 0.0)
     seen = yy[observed]
     if seen.size and (
