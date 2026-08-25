@@ -263,7 +263,7 @@ def test_wle_normalizes_supported_observed_masks_to_boolean_arrays(
         assert type(seen[key]) is np.ndarray
         assert seen[key].dtype == np.bool_
         assert seen[key].flags.c_contiguous
-        np.testing.assert_array_equal(seen[key], np.array([[True]], dtype=bool))
+        np.testing.assert_array_equal(seen[key], np.array([True], dtype=bool))
 
 
 def test_wle_normalizes_supported_numpy_controls_to_builtin_primitives(
