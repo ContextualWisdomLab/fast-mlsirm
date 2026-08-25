@@ -896,8 +896,6 @@ tbody tr:hover {
   border: 1px dashed var(--line);
   border-radius: 8px;
   background: var(--hover-bg);
-  font-style: italic;
-  color: GrayText;
 }
 
 .exact-values {
