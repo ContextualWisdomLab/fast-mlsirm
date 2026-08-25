@@ -62,14 +62,15 @@ retaining a common draw-index cardinality for posterior contrasts. CPU/GPU
 receipts bind implementation, objective, parameter, and draw digests plus a
 method-derived numerical error bound; a caller-selected tolerance is forbidden.
 
-For posterior draw `s`, topic `k`, dimension `l`, and context `h`, let `p_jk^s`
-be the simplex probability obtained from the full-fit ALR coordinate and let
-`w_jh` be the source-provided, time-valid membership weight. Define
+For posterior draw `s`, topic `k`, dimension `l`, and context `h` inside that
+dimension, let `p_jk^s` be the simplex probability obtained from the full-fit
+ALR coordinate and let `w_jlh` be the source-provided, time-valid membership
+weight. Define
 
 ```text
-A_hk^s(D)      = sum_j w_jh p_jk^s      / sum_j w_jh
-A_hk^s(D \\ i) = sum_(j != i) w_jh p_-i,jk^s / sum_(j != i) w_jh
-Delta_ihk^s    = A_hk^s(D) - A_hk^s(D \\ i)
+A_lhk^s(D)      = sum_j w_jlh p_jk^s      / sum_j w_jlh
+A_lhk^s(D \\ i) = sum_(j != i) w_jlh p_-i,jk^s / sum_(j != i) w_jlh
+Delta_ilhk^s    = A_lhk^s(D) - A_lhk^s(D \\ i)
 ```
 
 This posterior contrast is the final reusable estimand. It is evaluated
