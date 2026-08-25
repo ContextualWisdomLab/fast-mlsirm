@@ -177,6 +177,11 @@ Full-data plausible values alone shall not be interpreted as a case-deleted
 posterior: the producer must additionally bind exact deleted-data refits or the
 joint per-case likelihood evidence required by a reviewed Bayesian
 case-deletion method.
+The accepted successor contract shall contain one producer-fitted
+leave-one-document-out posterior per admitted document, independently anchored
+to the full fit with unique bijective alignment and CPU/GPU parity receipts.
+The product shall expose per-topic, per-context posterior deletion contrasts
+and uncertainty without cross-level fusion or binary importance thresholds.
 
 ### 6.8 Reporting and evidence
 

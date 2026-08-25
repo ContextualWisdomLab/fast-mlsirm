@@ -44,6 +44,49 @@ true-parameter/deletion-effect recovery, interval coverage, and CPU/GPU parity.
 Python may marshal the result but may not implement the likelihood,
 case-deletion refit, weighting, or ranking.
 
+### Accepted producer contract and final estimand
+
+The preferred next wire artifact is
+`tepp.topic_context_case_deletion_posterior.v1`. Its full-fit block binds the
+run, immutable snapshot and source digest, cutoff and event clock, admitted
+document set, model configuration and prior digests, stable topic order, and
+an independent anchor basis containing per-topic anchor-term distributions and
+its digest. Every admitted document has exactly one actual `D \\ {i}` refit
+under those identical inputs. A refit records the deleted and retained document
+sets, the removed incident Event Lineage and membership assertions, a bijective
+permutation into the full-fit anchor basis, producer evidence that the
+assignment optimum is unique, and a complete refit posterior draw set.
+Non-unique or tied anchor alignment is a producer failure, never a consumer tie
+break. Full and refit draws use independent, domain-separated randomness while
+retaining a common draw-index cardinality for posterior contrasts. CPU/GPU
+receipts bind implementation, objective, parameter, and draw digests plus a
+method-derived numerical error bound; a caller-selected tolerance is forbidden.
+
+For posterior draw `s`, topic `k`, dimension `l`, and context `h`, let `p_jk^s`
+be the simplex probability obtained from the full-fit ALR coordinate and let
+`w_jh` be the source-provided, time-valid membership weight. Define
+
+```text
+A_hk^s(D)      = sum_j w_jh p_jk^s      / sum_j w_jh
+A_hk^s(D \\ i) = sum_(j != i) w_jh p_-i,jk^s / sum_(j != i) w_jh
+Delta_ihk^s    = A_hk^s(D) - A_hk^s(D \\ i)
+```
+
+This posterior contrast is the final reusable estimand. It is evaluated
+separately for business unit, process unit, team, and person contexts; there is
+no cross-topic, cross-context, or cross-dimension fusion weight. A zero
+post-deletion denominator is structurally unavailable, not zero. Event Lineage
+enters only through TEPP's actual refit after removing the deleted document's
+incident relations; fast-mlsirm assigns no relation weight and makes no causal
+claim.
+
+The consumer preserves signed draw-level contrasts and reports their posterior
+mean, variance, and order-statistic interval. Within one identical
+`(dimension, context, topic)` comparison set, document ordering may use
+`E[abs(Delta)]`; exact equal values receive the same dense rank. The raw signed
+posterior and interval remain authoritative, and no threshold converts
+uncertainty into a binary important/not-important label.
+
 ## Invariants and acceptance evidence
 
 1. Foreign schema versions, incomplete draw grids, missing hierarchy levels,
@@ -62,6 +105,13 @@ case-deletion refit, weighting, or ranking.
    likelihood contribution on the retained draws and the consumer verifies its
    diagnostics; no constant, rank, threshold, or locally reconstructed
    likelihood may substitute for that evidence.
+6. The deletion-refit artifact covers every admitted document exactly once,
+   and every retained set is exactly the admitted set minus that document.
+7. Anchor permutations are bijective and producer-certified unique. A tie
+   fails the artifact rather than being resolved by UUID, position, or lexical
+   order.
+8. Posterior contrasts never pool BU, PU, team, person, context, or topic cells
+   through a local weight. Exact scalar ties remain ties.
 
 ## Consequences and alternatives
 

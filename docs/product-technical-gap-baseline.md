@@ -264,6 +264,13 @@ producer-owned deleted-data refits or per-case joint likelihood contributions.
 The consumer now reports that absence explicitly instead of treating a
 fixed-posterior weighted mean as model-refit influence.
 
+ADR 0022 and TRD-MLT-007..008 now fix the minimum successor contract and final
+estimand: exhaustive actual `D \\ {i}` refits, independent distributional
+anchors with unique bijective alignment, and parity receipts feed separate
+BU/PU/team/person × context × topic posterior prevalence contrasts. Delivery
+remains blocked on the producer artifact; no consumer implementation may claim
+completion from the full-data v1 draw set.
+
 This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,
 including exact head/base, dependency stack, reviews, unresolved threads,
