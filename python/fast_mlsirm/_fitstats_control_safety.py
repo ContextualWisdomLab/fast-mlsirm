@@ -172,16 +172,12 @@ def _trusted_probability_array(value: Any) -> np.ndarray:
     value_type = type(value)
     if value_type is np.ndarray:
         array = value
-        if np.iscomplexobj(array) or array.dtype.kind not in "biuf":
-            raise ValueError("p_values must contain real numeric probabilities")
     elif value_type is list or value_type is tuple:
         _trusted_probability_tree(value)
         try:
             array = np.asarray(value)
         except (TypeError, ValueError, OverflowError) as error:
             raise ValueError("p_values must contain real numeric probabilities") from error
-        if np.iscomplexobj(array) or array.dtype.kind not in "biuf":
-            raise ValueError("p_values must contain real numeric probabilities")
     elif (
         value_type is bool
         or value_type is int
@@ -194,6 +190,8 @@ def _trusted_probability_array(value: Any) -> np.ndarray:
     else:
         raise ValueError("p_values must contain real numeric probabilities")
 
+    if np.iscomplexobj(array) or array.dtype.kind not in "biuf":
+        raise ValueError("p_values must contain real numeric probabilities")
     if np.any(~np.isfinite(array)) or np.any(array < 0) or np.any(array > 1):
         raise ValueError("p_values must be finite probabilities in [0, 1]")
     try:
