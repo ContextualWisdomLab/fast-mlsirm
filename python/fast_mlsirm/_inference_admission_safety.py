@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 _REAL_KINDS = frozenset({"b", "i", "u", "f"})
+_MAX_INFERENCE_MATRIX_CELLS = 20_000_000
 
 
 def _is_numpy_real_scalar(value: object, *, allow_bool: bool) -> bool:
@@ -58,6 +59,16 @@ def _normalized_nonnegative_real(value: object, name: str) -> float:
     return normalized
 
 
+def _check_matrix_cells(side: int, name: str) -> None:
+    """Bound dense square-matrix work before any float64 materialization."""
+    cells = side * side
+    if cells > _MAX_INFERENCE_MATRIX_CELLS:
+        raise ValueError(
+            f"{name} resource limit exceeded: {cells} cells requested, at most "
+            f"{_MAX_INFERENCE_MATRIX_CELLS} are supported"
+        )
+
+
 def _validate_row(row: object, name: str, expected: int) -> None:
     """Validate one inert matrix row without invoking caller protocols."""
     row_type = type(row)
@@ -91,7 +102,7 @@ def _is_numpy_complex_scalar(value: object) -> bool:
 
 
 def _real_square_matrix(value: object, name: str) -> np.ndarray:
-    """Seal square-matrix identity before NumPy float64 materialization."""
+    """Seal and bound square-matrix identity before float64 materialization."""
     value_type = type(value)
     if value_type is np.ndarray:
         if value.dtype.kind not in _REAL_KINDS:
@@ -100,6 +111,7 @@ def _real_square_matrix(value: object, name: str) -> np.ndarray:
             raise ValueError(f"{name} must contain real numeric values")
         if value.ndim != 2 or value.shape[0] == 0 or value.shape[0] != value.shape[1]:
             raise ValueError(f"{name} must be a square matrix")
+        _check_matrix_cells(int(value.shape[0]), name)
         return np.ascontiguousarray(value, dtype=np.float64)
 
     if value_type is not list and value_type is not tuple:
@@ -107,6 +119,7 @@ def _real_square_matrix(value: object, name: str) -> np.ndarray:
     size = len(value)
     if size == 0:
         raise ValueError(f"{name} must be a square matrix")
+    _check_matrix_cells(size, name)
     for row in value:
         _validate_row(row, name, size)
     return np.ascontiguousarray(np.asarray(value, dtype=np.float64))
