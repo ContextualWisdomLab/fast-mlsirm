@@ -24,6 +24,7 @@ _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _UV_LOCK = _REPO_ROOT / "uv.lock"
 _PYTHON_FLOOR = Version("3.12")
 _BASE_VERSION_WITNESSES = (
+    "0.0.0",
     "3.10.0",
     "3.10.14",
     "3.11.0",
@@ -69,13 +70,24 @@ def _marker_matches(marker: Marker, version: str, platform: dict[str, str]) -> b
     return marker.evaluate(environment)
 
 
+def _minor_neighbor(major: int, minor: int, direction: int) -> str | None:
+    """Return a nearby minor-version witness without invoking marker code."""
+    if direction < 0:
+        if minor > 0:
+            return f"{major}.{minor - 1}.999"
+        if major > 0:
+            return f"{major - 1}.999.999"
+        return None
+    return f"{major}.{minor + 1}.0"
+
+
 def _version_witnesses(marker_text: str) -> tuple[str, ...]:
     """Return boundary-aware Python-version witnesses for one marker.
 
-    Fixed minor-domain witnesses catch uv's normal partition forms. Literal
-    versions embedded in the marker are added as exact witnesses; full patch
-    literals also contribute adjacent patch values so strict inequality bounds
-    cannot hide a pre-floor interval between the fixed samples.
+    Fixed witnesses cover the current support boundary and a global lower
+    sentinel. Every explicit version literal contributes exact and adjacent
+    witnesses in patch or minor space so strict inequalities and bounded ranges
+    cannot hide unsupported intervals between the fixed samples.
     """
     witnesses = set(_BASE_VERSION_WITNESSES)
     for match in _VERSION_LITERAL_RE.finditer(marker_text):
@@ -85,11 +97,19 @@ def _version_witnesses(marker_text: str) -> tuple[str, ...]:
         if patch_text in (None, "*"):
             witnesses.add(f"{major}.{minor}.0")
             witnesses.add(f"{major}.{minor}.999")
+            previous_minor = _minor_neighbor(major, minor, -1)
+            if previous_minor is not None:
+                witnesses.add(previous_minor)
+            witnesses.add(_minor_neighbor(major, minor, 1))
             continue
         patch = int(patch_text)
         witnesses.add(f"{major}.{minor}.{patch}")
         if patch > 0:
             witnesses.add(f"{major}.{minor}.{patch - 1}")
+        else:
+            previous_minor = _minor_neighbor(major, minor, -1)
+            if previous_minor is not None:
+                witnesses.add(previous_minor)
         witnesses.add(f"{major}.{minor}.{patch + 1}")
     return tuple(sorted(witnesses, key=Version))
 
@@ -99,9 +119,10 @@ def _targets_only_dropped_interpreters(marker_text: str) -> bool:
 
     PEP 508 marker parsing normalizes quote style, whitespace, and the
     ``python_version`` versus ``python_full_version`` spelling. Version
-    witnesses include both normal minor-domain samples and every explicit
-    version literal plus adjacent patch boundaries, so exact patch pins and
-    strict inequalities cannot evade the pre-3.12 contract.
+    witnesses include a global lower sentinel plus every explicit version
+    literal and adjacent patch/minor boundaries, so exact pins, strict bounds,
+    and unsupported ranges below the historical 3.10 samples cannot evade the
+    pre-3.12 contract.
     """
     marker = Marker(marker_text)
     witnesses = _version_witnesses(marker_text)
