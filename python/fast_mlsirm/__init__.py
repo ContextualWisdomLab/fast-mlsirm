@@ -6,17 +6,21 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
+from . import cat as _cat
 from . import cdm as _cdm
 from . import exposure as _exposure
+from . import fitstats as _fitstats
 from . import inference as _inference
 from . import polytomous as _polytomous
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import serving as _serving
 from . import validation as _validation
+from ._cat_administration_resource_safety import install as _install_cat_administration_resource_safety
 from ._cdm_response_safety import install as _install_cdm_response_safety
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
+from ._fitstats_control_safety import install as _install_fitstats_control_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
@@ -30,8 +34,10 @@ from ._serving_export_safety import install as _install_serving_export_safety
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
 # arithmetic remains in the existing Rust-backed implementations.
+_install_cat_administration_resource_safety(_cat)
 _install_exposure_array_safety(_exposure)
 _install_exposure_flexilevel_safety(_exposure)
+_install_fitstats_control_safety(_fitstats)
 _install_cdm_response_safety(_cdm)
 _install_icc_control_safety(_reliability)
 _install_inference_admission_safety(_inference)
@@ -39,6 +45,7 @@ _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
 _install_polytomous_prediction_admission(_polytomous)
 _install_serving_export_safety(_serving)
+_legacy_init.ability_standard_error = _cat.ability_standard_error
 _legacy_init.ccat_select = _exposure.ccat_select
 _legacy_init.flexilevel_administer = _exposure.flexilevel_administer
 _legacy_init.flexilevel_score_distribution = _exposure.flexilevel_score_distribution
@@ -53,10 +60,14 @@ _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 _legacy_init.export_serving_bundle = _serving.export_serving_bundle
 
 del (
+    _cat,
     _exposure,
     _inference,
+    _install_cat_administration_resource_safety,
     _install_exposure_array_safety,
     _install_exposure_flexilevel_safety,
+    _fitstats,
+    _install_fitstats_control_safety,
     _cdm,
     _install_cdm_response_safety,
     _install_fleiss_control_safety,

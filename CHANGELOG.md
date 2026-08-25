@@ -3,6 +3,45 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Rust longitudinal state layer
+
+- Added a Rust-owned independent per-respondent OLS trend and discrete-sequence
+  AR(1) state predictor behind the sealed `fast_mlsirm.multilevel` contract.
+- Preserved exact sequence gaps, missing-occasion output state, deterministic
+  respondent sharding, RMSE/count diagnostics, and PyO3/Python marshalling.
+- Documented the compatibility wire label `random_intercept_slope` as independent
+  OLS with no population random-effects distribution or shrinkage, and the AR
+  path as caller-supplied `phi` without coefficient estimation.
+- Added slope-recovery, missingness, irregular-calendar/non-contiguous-sequence,
+  worker-determinism, and fail-closed contract tests with APA 7 doctoring.
+- This fragment does not claim full multilevel IRT random-effect integration,
+  uncertainty, continuous-time transitions, or GPU recurrent-state parity.
+
+#### Joint MAP hierarchical continuous-time AR(1) Rasch
+
+- Added a Rust-owned joint MAP hierarchical continuous-time AR(1) Rasch
+  estimator behind `fit_hierarchical_longitudinal_irt`, stacked on the
+  `#976` longitudinal design handoff.
+- Estimated shared population hyperparameters `(mu, tau, lambda)` and person-
+  occasion states from exact millisecond elapsed-day gaps. State intervals
+  are Wald intervals from measurement observed information; short series
+  leave `lambda` weakly identified under joint MAP.
+- Documented the estimand as joint MAP, not independent OLS, not caller-
+  supplied discrete AR, not Fox and Glas Gibbs, and not estimated
+  multiple-membership `u_h`. GPU parity is reported false because the
+  existing wgpu path owns a different MLSIRM objective.
+- Added multi-seed true-parameter recovery, irregular-time, missing-response,
+  worker-determinism, and fail-closed marshalling tests with APA 7 ADR and
+  doctoring.
+- Normalized oversized integer and non-finite real execution controls before
+  native dispatch so Python callers receive package-owned validation errors.
+- Enforced finite, identified sum-zero Rasch item intercepts in the simulator
+  before generating recovery data.
+- Labeled hyperparameter intervals as conditional on fixed item/state nuisance
+  blocks and aligned CT-AR gradients with the active variance branch.
+
 ### Changed
 
 #### Validate Rasch CML controls before data materialization
@@ -55,6 +94,12 @@
   directory again holds only genuinely unreleased notes.
 
 ### Fixed
+
+#### Harden S-X² scalar control admission
+
+- Reject caller-defined integer and floating subclasses at the public S-X² control boundary before numeric conversion or compiled-core dispatch, while preserving exact built-in and concrete NumPy scalar compatibility and leaving all S-X²/G², quadrature, and BH/FDR arithmetic Rust-owned.
+- Reject built-in or concrete NumPy integer-valued real controls when float64 normalization would change the integer identity, so `min_expected`, `fdr_q`, and `min_effect` cannot be silently rounded before domain validation.
+- Reject finite extended-precision NumPy floating controls when conversion to the Rust `f64` boundary would change their value, while preserving exact float16/float32/float64 and lossless long-double controls.
 
 #### Validate G-theory controls and score evidence before Rust discovery
 
@@ -241,6 +286,16 @@ GRM/GPCM prediction admission now enforces the fitter-supported `2..=64` categor
 - Bound trusted ATA target evidence at 20,000,000 logical cells, built-in target nesting at 64 levels, and the dense target-point × item information matrix at 20,000,000 cells before per-cell conversion, NumPy materialization, psychometric scoring, or dense allocation; built-in tree traversal now keeps transient state proportional to nesting depth and bounds malformed zero-cell fan-out.
 - Avoid a second Python per-cell lossless replay when assembly passes its already-normalized exact float64 target grid through the public item-information-matrix boundary; shape, finiteness, resource, and independent public-input validation remain intact.
 
+#### Seal dichotomous CAT administration evidence
+
+- Reject callback-bearing top-level array providers, ndarray/container subclasses, and non-real storage for partial CAT administered-item and response evidence before NumPy materialization or Rust ability-estimation dispatch.
+- Preserve exact NumPy and ordinary built-in list/tuple numeric evidence, including concrete NumPy scalar compatibility, while retaining lossless signed-64 item-index validation, item range/uniqueness rules, and the exact 0/1 response contract.
+- Reject over-rank, length-mismatched, and structurally impossible partial administrations from inert container metadata before value-wise scans or dense `int64`/`float64` marshalling; a validated EAP/MLE administration cannot exceed the calibrated bank item count because administered identities must be unique.
+- Apply the over-bank EAP/MLE administration bound before inspecting the response carrier, so an unsupported response provider cannot force dense validation of an already impossible administration.
+- Preserve `ability_standard_error`'s historical set-valued mask semantics: duplicate-laden and multidimensional administered evidence is normalized losslessly and deduplicated with `np.unique`, so the uniqueness-specific raw-length/rank preflight is not applied to that surface.
+- Bound `ability_standard_error` administered-mask evidence to 20,000,000 logical cells from inert exact-container metadata before signed-64 value scanning, dense conversion, or `np.unique`, without imposing EAP/MLE uniqueness or rank semantics on the set-valued mask.
+- Keep CAT probability, likelihood, EAP/MLE posterior/scoring, Fisher-information selection, stopping, and uncertainty arithmetic Rust-owned; this change is Python validation, bounded materialization, and marshalling only.
+
 #### Bind releases and package artifacts to reviewed source commits
 
 - Require manual release publication to name the exact reviewed release source commit, prove that commit is on the current protected default-branch lineage and is the commit that introduced both the requested project version and its released CHANGELOG section relative to its first parent, validate release metadata from that commit, and create or resume the immutable version tag only when it targets that same commit. This prevents either a later default-branch commit or an unrelated same-version descendant from being silently included in an already-cut release.
@@ -423,6 +478,11 @@ GRM/GPCM prediction admission now enforces the fitter-supported `2..=64` categor
 #### Keep judge runtime validation active under Python optimization
 
 - Replace production judge and calibration invariants that relied on removable `assert` statements with explicit package-owned `ValueError` or `RuntimeError` failures, and verify that invalid response-schema admission remains fail-closed under `python -O`.
+
+#### Harden S-X² scalar control admission
+
+- Reject caller-defined integer and floating subclasses at the public S-X² control boundary before numeric conversion or compiled-core dispatch, while preserving exact built-in and concrete NumPy scalar compatibility and leaving all S-X²/G², quadrature, and BH/FDR arithmetic Rust-owned.
+- Reject built-in or concrete NumPy integer-valued real controls when float64 normalization would change the integer identity, so `min_expected`, `fdr_q`, and `min_effect` cannot be silently rounded before domain validation.
 
 #### Item-bank transition replay callback safety
 
