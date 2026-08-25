@@ -7,6 +7,7 @@ from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
 from . import exposure as _exposure
+from . import inference as _inference
 from . import reliability as _reliability
 from . import scaling as _scaling
 from . import validation as _validation
@@ -15,6 +16,7 @@ from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
 from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
+from ._inference_admission_safety import install as _install_inference_admission_safety
 from ._scaling_control_safety import install as _install_scaling_control_safety
 
 # Harden historical public adapters before copying legacy exports. These
@@ -23,22 +25,29 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 _install_exposure_array_safety(_exposure)
 _install_exposure_flexilevel_safety(_exposure)
 _install_icc_control_safety(_reliability)
+_install_inference_admission_safety(_inference)
 _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
 _legacy_init.ccat_select = _exposure.ccat_select
 _legacy_init.flexilevel_administer = _exposure.flexilevel_administer
 _legacy_init.flexilevel_score_distribution = _exposure.flexilevel_score_distribution
 _legacy_init.icc = _reliability.icc
+_legacy_init.observed_information = _inference.observed_information
+_legacy_init.second_order_test = _inference.second_order_test
+_legacy_init.vcov_from_hessian = _inference.vcov_from_hessian
+_legacy_init.standard_errors_from_vcov = _inference.standard_errors_from_vcov
 _legacy_init.bradley_terry_mm = _scaling.bradley_terry_mm
 _legacy_init.bratt_mm = _scaling.bratt_mm
 _legacy_init.fleiss_kappa = _validation.fleiss_kappa
 
 del (
     _exposure,
+    _inference,
     _install_exposure_array_safety,
     _install_exposure_flexilevel_safety,
     _install_fleiss_control_safety,
     _install_icc_control_safety,
+    _install_inference_admission_safety,
     _install_scaling_control_safety,
     _reliability,
     _scaling,
