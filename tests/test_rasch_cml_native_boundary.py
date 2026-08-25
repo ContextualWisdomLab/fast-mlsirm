@@ -49,6 +49,16 @@ def _unexpected_core_discovery():
     raise AssertionError("compiled core must not be discovered for invalid public input")
 
 
+def _lossy_longdouble() -> np.longdouble:
+    """Return a finite positive long double that cannot round-trip through binary64."""
+
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("platform long double is not wider than float64")
+    value = np.nextafter(np.longdouble(1.0), np.longdouble(2.0))
+    assert np.longdouble(float(value)) != value
+    return value
+
+
 def test_fit_rasch_cml_rejects_bad_shape_before_core_discovery(monkeypatch):
     """Malformed responses remain a package validation failure."""
 
@@ -74,6 +84,18 @@ def test_fit_rasch_cml_rejects_hostile_controls_without_callbacks(monkeypatch):
     assert _HostileFloat.calls == 0
 
 
+def test_rasch_cml_rejects_lossy_extended_precision_tolerance_before_core(monkeypatch):
+    """A wider finite tolerance cannot silently change at the Rust f64 boundary."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
+    tol = _lossy_longdouble()
+
+    with pytest.raises(ValueError, match="tol"):
+        fit_rasch_cml(_binary(), tol=tol)
+    with pytest.raises(ValueError, match="tol"):
+        andersen_lr_test(_binary(), np.array([0, 0, 1, 1]), tol=tol)
+
+
 def test_andersen_rejects_bad_group_before_core_discovery(monkeypatch):
     """Malformed group labels fail before compiled-core discovery."""
 
@@ -97,5 +119,23 @@ def test_numpy_controls_reach_core_discovery_after_validation(monkeypatch):
 
     with pytest.raises(RuntimeError, match="fit_rasch_cml requires the compiled Rust core"):
         fit_rasch_cml(_binary(), max_iter=np.int64(10), tol=np.float64(1e-8))
+
+    assert calls == 1
+
+
+def test_exact_longdouble_tolerance_preserves_compatibility(monkeypatch):
+    """An exactly representable long double remains supported at the Rust boundary."""
+
+    calls = 0
+
+    def missing_core():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(fitstats, "_core_module", missing_core)
+
+    with pytest.raises(RuntimeError, match="fit_rasch_cml requires the compiled Rust core"):
+        fit_rasch_cml(_binary(), tol=np.longdouble(0.5))
 
     assert calls == 1
