@@ -59,6 +59,20 @@ def _trusted_integer_real(value: Any, name: str) -> float:
     return converted
 
 
+def _trusted_numpy_real(value: Any, name: str) -> float:
+    """Return a trusted NumPy real only when Rust f64 preserves its value."""
+    value_type = type(value)
+    try:
+        converted = float(value)
+    except OverflowError as error:
+        raise ValueError(f"{name} must be a finite number") from error
+    if not np.isfinite(converted):
+        raise ValueError(f"{name} must be a finite number")
+    if value_type(converted) != value:
+        raise ValueError(f"{name} must be exactly representable as float64")
+    return converted
+
+
 def _trusted_real(value: Any, name: str) -> float:
     """Return one exact trusted real scalar without caller conversion hooks."""
     value_type = type(value)
@@ -69,7 +83,7 @@ def _trusted_real(value: Any, name: str) -> float:
     if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return _trusted_integer_real(value, name)
     if any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
-        return float(value)
+        return _trusted_numpy_real(value, name)
     raise ValueError(f"{name} must be a finite number")
 
 
