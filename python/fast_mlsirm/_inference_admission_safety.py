@@ -37,6 +37,11 @@ def _is_real_scalar(value: object, *, allow_bool: bool) -> bool:
 
 def _normalized_nonnegative_real(value: object, name: str) -> float:
     """Normalize a trusted finite non-negative Rust ``f64`` control."""
+    if type(value) is np.ndarray:
+        if value.ndim != 0 or value.dtype.kind not in {"i", "u", "f"}:
+            raise ValueError(f"{name} must be a finite non-negative float")
+        return _normalized_nonnegative_real(value[()], name)
+
     if not _is_real_scalar(value, allow_bool=False):
         raise ValueError(f"{name} must be a finite non-negative float")
     try:
