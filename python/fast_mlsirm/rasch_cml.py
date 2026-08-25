@@ -96,51 +96,39 @@ def _trusted_group_source(group: object) -> object:
     return group
 
 
+def _normalized_group_label(label: object) -> int:
+    """Return one exact non-negative integral external group identity."""
+    label_type = type(label)
+    if label_type is bool or label_type is int:
+        normalized = int(label)
+    elif label_type is np.bool_ or any(
+        label_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        normalized = int(label)
+    elif label_type is float or any(
+        label_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
+    ):
+        if not np.isfinite(label) or label < 0 or label != np.floor(label):
+            raise ValueError(_GROUP_ERROR)
+        normalized = int(label)
+    else:
+        raise ValueError(_GROUP_ERROR)
+    if normalized < 0:
+        raise ValueError(_GROUP_ERROR)
+    return normalized
+
+
 def _normalized_group_ids(group: object, n_persons: int) -> tuple[np.ndarray, int]:
     """Preserve exact external label identity while producing dense Rust IDs."""
     source = _trusted_group_source(group)
-    labels: list[int]
-
     if type(source) is np.ndarray:
         if source.ndim != 1 or source.shape[0] != n_persons:
             raise ValueError("group must be a length-n_persons 1-D array")
-        kind = source.dtype.kind
-        if kind == "c":
-            raise ValueError(_GROUP_ERROR)
-        if kind == "f":
-            if (
-                not np.all(np.isfinite(source))
-                or np.any(source != np.floor(source))
-                or np.any(source < 0)
-            ):
-                raise ValueError(_GROUP_ERROR)
-        elif kind == "i" and np.any(source < 0):
-            raise ValueError(_GROUP_ERROR)
-        labels = [int(label) for label in source.tolist()]
+        labels = [_normalized_group_label(source[index]) for index in range(n_persons)]
     else:
         if len(source) != n_persons:
             raise ValueError("group must be a length-n_persons 1-D array")
-        labels = []
-        for label in source:
-            label_type = type(label)
-            if label_type is bool or label_type is int:
-                normalized = int(label)
-            elif label_type is np.bool_ or any(
-                label_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
-            ):
-                normalized = int(label)
-            elif label_type is float or any(
-                label_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
-            ):
-                numeric = float(label)
-                if not np.isfinite(numeric) or numeric < 0 or numeric != np.floor(numeric):
-                    raise ValueError(_GROUP_ERROR)
-                normalized = int(numeric)
-            else:  # Defensive: _trusted_group_source has already rejected this identity.
-                raise ValueError(_GROUP_ERROR)
-            if normalized < 0:
-                raise ValueError(_GROUP_ERROR)
-            labels.append(normalized)
+        labels = [_normalized_group_label(label) for label in source]
 
     unique_labels = sorted(set(labels))
     n_groups = len(unique_labels)
