@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import fast_mlsirm as fml
 from fast_mlsirm import _core
 from fast_mlsirm.inference import (
     second_order_test,
@@ -130,3 +131,10 @@ def test_second_order_preserves_trusted_sequence_and_numpy_scalar_compatibility(
     assert matrix.shape == (2, 2)
     assert type(captured["tol"]) is float
     assert result["passed"] is True
+
+
+def test_package_level_inference_exports_use_the_guarded_callables():
+    """Historical package aliases must not bypass installed inference admission."""
+    assert fml.second_order_test is second_order_test
+    assert fml.vcov_from_hessian is vcov_from_hessian
+    assert fml.standard_errors_from_vcov is standard_errors_from_vcov
