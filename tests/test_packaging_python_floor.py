@@ -21,6 +21,14 @@ _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _UV_LOCK = _REPO_ROOT / "uv.lock"
 
 _REQUIRES_PYTHON = re.compile(r"^requires-python\s*=\s*[\"']([^\"']+)[\"']", re.M)
+_STALE_PRE_312_MARKERS = (
+    "python_full_version == '3.10.*'",
+    "python_full_version == '3.11.*'",
+    "python_full_version < '3.11'",
+    "python_full_version < '3.12'",
+    "python_full_version <= '3.10'",
+    "python_full_version <= '3.11'",
+)
 
 
 def _read_floor(path: Path) -> str:
@@ -44,20 +52,18 @@ def test_uv_lock_floor_matches_pyproject_floor() -> None:
     assert _read_floor(_UV_LOCK) == _read_floor(_PYPROJECT)
 
 
-@pytest.mark.parametrize("forbidden", ["3.10", "3.11"])
-def test_uv_lock_has_no_stale_pre_3_12_resolution_markers(forbidden: str) -> None:
-    """The lock must not carry resolution markers for dropped interpreters.
+@pytest.mark.parametrize("stale_marker", _STALE_PRE_312_MARKERS)
+def test_uv_lock_has_no_stale_pre_3_12_resolution_markers(stale_marker: str) -> None:
+    """The lock must not retain partitions that admit dropped interpreters.
 
-    After the floor moved to 3.12 any remaining ``python_full_version``
-    marker naming 3.10/3.11 partitions would mean the lock still reasons
-    about interpreters the package does not support.
+    uv can express a dropped 3.10/3.11 partition either with an equality
+    marker such as ``== '3.11.*'`` or through an upper-bound partition such as
+    ``< '3.12'``. Guard every form the lock generator can use so a regenerated
+    lock cannot silently reintroduce unsupported interpreter partitions.
     """
     lock_text = _UV_LOCK.read_text(encoding="utf-8")
-    stale_marker = f"python_full_version < '3.12'" if forbidden == "3.11" else (
-        f"python_full_version == '{forbidden}.*'"
-    )
     assert stale_marker not in lock_text, (
-        f"uv.lock still resolves a {forbidden} partition; "
+        f"uv.lock still contains stale pre-3.12 marker {stale_marker!r}; "
         "regenerate with `uv lock` after confirming the pyproject floor"
     )
 
