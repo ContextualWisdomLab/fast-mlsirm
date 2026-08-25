@@ -22,6 +22,12 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# Build-level fixtures patch ``_source_commit`` with this canonical identity so
+# policy/package tests do not depend on a real Git checkout; boundary behavior
+# of the real helper is covered by test_procurement_git_metadata_timeout.py.
+_CANONICAL_TEST_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
 def _write_repo(root: Path) -> None:
     files = {
         "README.md": "Commercial Readiness\nscripts/build_procurement_due_diligence.py\n",
@@ -108,8 +114,9 @@ def _args(root: Path, dist: Path, commercial: Path, out: Path) -> argparse.Names
     )
 
 
-def test_procurement_due_diligence_creates_manifest_and_report(tmp_path):
+def test_procurement_due_diligence_creates_manifest_and_report(tmp_path, monkeypatch):
     module = _load_due_diligence()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     repo = tmp_path / "repo"
     dist = repo / "dist"
     _write_repo(repo)
@@ -132,8 +139,11 @@ def test_procurement_due_diligence_creates_manifest_and_report(tmp_path):
     assert "Procurement due diligence check table" in html
 
 
-def test_procurement_due_diligence_fails_when_policy_file_is_missing(tmp_path):
+def test_procurement_due_diligence_fails_when_policy_file_is_missing(
+    tmp_path, monkeypatch
+):
     module = _load_due_diligence()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     repo = tmp_path / "repo"
     dist = repo / "dist"
     _write_repo(repo)
