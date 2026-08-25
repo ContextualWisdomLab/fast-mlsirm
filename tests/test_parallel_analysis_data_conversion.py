@@ -20,6 +20,17 @@ class _FloatBomb:
         raise AssertionError("OBJECT_ELEMENT_CONVERSION_MUST_NOT_RUN")
 
 
+class _ArrayBomb:
+    """Top-level array provider that must never execute during admission."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __array__(self, *args, **kwargs):
+        self.calls += 1
+        raise AssertionError("ARRAY_PROTOCOL_MUST_NOT_RUN")
+
+
 def _forbid_native_discovery(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Replace Rust capability discovery with a sentinel and return its call log."""
     core_calls: list[str] = []
@@ -30,6 +41,20 @@ def _forbid_native_discovery(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(fitstats, "_core_module", forbidden_core)
     return core_calls
+
+
+def test_top_level_array_provider_is_rejected_without_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject caller array protocols before observed evidence can be synthesized."""
+    core_calls = _forbid_native_discovery(monkeypatch)
+    data = _ArrayBomb()
+
+    with pytest.raises(ValueError, match="data must be numeric and convertible to float64"):
+        parallel_analysis(data, n_iterations=1)
+
+    assert data.calls == 0
+    assert core_calls == []
 
 
 def test_non_numeric_data_conversion_fails_before_native_discovery(
