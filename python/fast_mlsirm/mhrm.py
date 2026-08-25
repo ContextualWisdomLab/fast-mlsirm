@@ -19,6 +19,201 @@ from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _MAX_DIMS = 64
+_MAX_RESPONSE_CELLS = 200_000_000
+_NUMPY_INTEGER_TYPES = tuple(
+    np.dtype(name).type
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
+)
+_NUMPY_FLOAT_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+_NUMPY_COMPLEX_TYPES = tuple(
+    np.dtype(name).type for name in ("complex64", "complex128", "clongdouble")
+)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+    *_NUMPY_COMPLEX_TYPES,
+)
+_TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
+_TRUSTED_INTEGRAL_CONTROL_TYPES = (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES)
+_TRUSTED_SEED_TYPES = (int, *_NUMPY_INTEGER_TYPES)
+_TRUSTED_REAL_CONTROL_TYPES = (
+    int,
+    float,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+)
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one package-trusted scalar identity."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _trusted_response_array(responses: object) -> np.ndarray:
+    """Materialize MH-RM responses only after callback-free identity/resource preflight."""
+
+    resource_error = (
+        f"responses exceed the {_MAX_RESPONSE_CELLS:,}-cell MH-RM resource limit"
+    )
+    if type(responses) is np.ndarray:
+        if int(responses.size) > _MAX_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        return responses
+
+    error = "responses must be a trusted NumPy array or built-in response matrix"
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(error)
+
+    # A valid non-empty 2-D built-in response matrix with N scalar cells visits
+    # at most N row nodes + N scalar nodes.  This preserves every valid matrix
+    # inside the native 200M-cell envelope while bounding malformed empty or
+    # over-nested container fan-out before NumPy materialization.
+    structural_budget = 2 * _MAX_RESPONSE_CELLS
+    structural_nodes = 0
+
+    # Each frame is [object, next_child_index, entered, logical_cell_count].
+    # Memoized container counts preserve shared acyclic subtrees while charging
+    # every logical occurrence against the same Rust-side persons×items ceiling.
+    frames: list[list[object]] = [[responses, 0, False, 0]]
+    active_container_ids: set[int] = set()
+    validated_container_cells: dict[int, int] = {}
+
+    while frames:
+        frame = frames[-1]
+        item = frame[0]
+        item_type = type(item)
+
+        if _is_exact_type(item_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            frames.pop()
+            cells = 1
+            if frames:
+                parent_cells = int(frames[-1][3]) + cells
+                if parent_cells > _MAX_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][3] = parent_cells
+            continue
+        if item_type is np.ndarray:
+            if item.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
+                raise ValueError(error)
+            cells = int(item.size)
+            if cells > _MAX_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frames.pop()
+            if frames:
+                parent_cells = int(frames[-1][3]) + cells
+                if parent_cells > _MAX_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][3] = parent_cells
+            continue
+
+        if item_type is not list and item_type is not tuple:
+            raise ValueError(error)
+
+        item_id = id(item)
+        if not bool(frame[2]):
+            if item_id in validated_container_cells:
+                cells = validated_container_cells[item_id]
+                frames.pop()
+                if frames:
+                    parent_cells = int(frames[-1][3]) + cells
+                    if parent_cells > _MAX_RESPONSE_CELLS:
+                        raise ValueError(resource_error)
+                    frames[-1][3] = parent_cells
+                continue
+            if item_id in active_container_ids:
+                raise ValueError(error)
+            active_container_ids.add(item_id)
+            frame[2] = True
+
+        child_index = int(frame[1])
+        if child_index < len(item):
+            frame[1] = child_index + 1
+            structural_nodes += 1
+            if structural_nodes > structural_budget:
+                raise ValueError(
+                    "responses exceeded structural traversal budget of "
+                    f"{structural_budget:,} nodes"
+                )
+            frames.append([item[child_index], 0, False, 0])
+            continue
+
+        cells = int(frame[3])
+        active_container_ids.remove(item_id)
+        validated_container_cells[item_id] = cells
+        frames.pop()
+        if frames:
+            parent_cells = int(frames[-1][3]) + cells
+            if parent_cells > _MAX_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frames[-1][3] = parent_cells
+
+    return np.asarray(responses)
+
+
+def _finite_integer_control(value: object, name: str) -> int:
+    """Normalize one finite integral control without invoking caller conversion protocols."""
+
+    value_type = type(value)
+    if not _is_exact_type(value_type, _TRUSTED_INTEGRAL_CONTROL_TYPES):
+        raise ValueError(f"{name} must be a finite integer")
+    if _is_exact_type(value_type, _NUMPY_FLOAT_TYPES) or value_type is float:
+        if not bool(np.isfinite(value)) or value != np.floor(value):
+            raise ValueError(f"{name} must be a finite integer")
+    normalized = int(value)
+    if normalized >= 2**64:
+        raise ValueError(f"{name} must be in [0, 2**64)")
+    return normalized
+
+
+def _finite_real_control(value: object, name: str) -> float:
+    """Normalize one finite real control without invoking caller conversion protocols."""
+
+    if not _is_exact_type(type(value), _TRUSTED_REAL_CONTROL_TYPES):
+        raise ValueError(f"{name} must be a finite real scalar")
+    numeric = float(value)
+    if not np.isfinite(numeric):
+        raise ValueError(f"{name} must be finite")
+    return numeric
+
+
+def _seed_control(value: object) -> int:
+    """Normalize the public unsigned-64 seed without caller integer dispatch."""
+
+    if not _is_exact_type(type(value), _TRUSTED_SEED_TYPES):
+        raise TypeError("seed must be a non-negative integer")
+    seed = int(value)
+    if not 0 <= seed < 2**64:
+        raise ValueError("seed must be in [0, 2**64)")
+    return seed
+
+
+def _boolean_control(value: object, name: str) -> bool:
+    """Normalize one Boolean flag without invoking arbitrary truth protocols."""
+
+    if type(value) is bool:
+        return value
+    if type(value) is np.bool_:
+        return bool(value)
+    raise TypeError(f"{name} must be a boolean")
+
+
+def _family_control(value: object) -> str:
+    """Normalize the response-family selector without invoking caller text conversion."""
+
+    if type(value) is not str:
+        raise ValueError("family must be '2pl' or 'gpcm'")
+    family = value.lower()
+    if family not in ("2pl", "gpcm"):
+        raise ValueError("family must be '2pl' or 'gpcm'")
+    return family
 
 
 @dataclass
@@ -138,45 +333,28 @@ def fit_mhrm(
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
             Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    resolved_model, pat = _resolve_model(model, n_items)
-    n_dims = pat.shape[1]
-    if not 1 <= n_dims <= _MAX_DIMS:
-        raise ValueError(f"loading_pattern dimensions must be between 1 and {_MAX_DIMS}")
+    max_cycles_int = _finite_integer_control(max_cycles, "max_cycles")
+    burn_in_int = _finite_integer_control(burn_in, "burn_in")
+    mh_steps_int = _finite_integer_control(mh_steps, "mh_steps")
+    proposal_sd_float = _finite_real_control(proposal_sd, "proposal_sd")
+    target_accept_float = _finite_real_control(target_accept, "target_accept")
+    tol_float = _finite_real_control(tol, "tol")
+    seed_int = _seed_control(seed)
+    estimate_se_bool = _boolean_control(estimate_se, "estimate_se")
+    estimate_corr_bool = _boolean_control(estimate_corr, "estimate_corr")
+    fam = _family_control(family)
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
 
-    def _finite_int(value, name: str) -> int:
-        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
-        scalar = np.asarray(value)
-        if (
-            scalar.ndim != 0
-            or not np.issubdtype(scalar.dtype, np.number)
-            or np.iscomplexobj(scalar)
-        ):
-            raise ValueError(f"{name} must be a finite integer")
-        numeric = float(scalar)
-        if not np.isfinite(numeric) or numeric != np.floor(numeric):
-            raise ValueError(f"{name} must be a finite integer")
-        return int(numeric)
-
-    max_cycles_int = _finite_int(max_cycles, "max_cycles")
-    burn_in_int = _finite_int(burn_in, "burn_in")
-    mh_steps_int = _finite_int(mh_steps, "mh_steps")
-    if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
-        raise TypeError("seed must be a non-negative integer")
-    seed_int = int(seed)
-    if not 0 <= seed_int < 2**64:
-        raise ValueError("seed must be in [0, 2**64)")
-    for name, val in (("proposal_sd", proposal_sd), ("target_accept", target_accept), ("tol", tol)):
-        if not np.isfinite(float(val)):
-            raise ValueError(f"{name} must be finite")
-
-    fam = str(family).lower()
-    if fam not in ("2pl", "gpcm"):
-        raise ValueError("family must be '2pl' or 'gpcm'")
-    n_cat_int = _finite_int(n_cat, "n_cat")
+    if max_cycles_int <= 0 or burn_in_int < 0 or burn_in_int >= max_cycles_int:
+        raise ValueError("require 0 <= burn_in < max_cycles")
+    if mh_steps_int <= 0:
+        raise ValueError("mh_steps must be positive")
+    if proposal_sd_float <= 0.0:
+        raise ValueError("proposal_sd must be finite and positive")
+    if not 0.0 <= target_accept_float <= 1.0:
+        raise ValueError("target_accept must be in [0, 1]")
+    if tol_float <= 0.0:
+        raise ValueError("tol must be finite and positive")
     if fam == "2pl":
         n_cat_int = 2
     elif not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
@@ -184,6 +362,20 @@ def fit_mhrm(
             "n_cat must be between 2 and "
             f"{MAX_POLYTOMOUS_CATEGORIES} for family='gpcm'"
         )
+
+    response_input = _trusted_response_array(responses)
+    if np.iscomplexobj(response_input) or response_input.dtype == object:
+        raise ValueError("responses must be real-valued")
+    if response_input.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a real numeric array")
+    y = response_input.astype(np.float64, copy=False)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    resolved_model, pat = _resolve_model(model, n_items)
+    n_dims = pat.shape[1]
+    if not 1 <= n_dims <= _MAX_DIMS:
+        raise ValueError(f"loading_pattern dimensions must be between 1 and {_MAX_DIMS}")
 
     observed = ~np.isnan(y)
     if np.any(observed):
@@ -221,14 +413,14 @@ def fit_mhrm(
         max_cycles_int,
         burn_in_int,
         mh_steps_int,
-        float(proposal_sd),
-        float(target_accept),
-        float(tol),
+        proposal_sd_float,
+        target_accept_float,
+        tol_float,
         seed_int,
-        bool(estimate_se),
-        bool(estimate_corr),
+        estimate_se_bool,
+        estimate_corr_bool,
         fam,
-        int(n_cat_int),
+        n_cat_int,
     )
     se_loading = np.asarray(res["se_loading"], dtype=np.float64)
     se_intercept = np.asarray(res["se_intercept"], dtype=np.float64)

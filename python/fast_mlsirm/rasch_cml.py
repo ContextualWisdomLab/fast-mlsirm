@@ -27,6 +27,132 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.ulonglong,
 )
 _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_TRUSTED_EVIDENCE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
+)
+_RESPONSE_ERROR = "responses must be complete 0/1 (Rasch CML has no missing-data path)"
+_GROUP_ERROR = "group labels must be finite non-negative integers"
+_MAX_RASCH_RESPONSE_CELLS = 20_000_000
+
+
+def _raise_response_resource_error() -> None:
+    """Reject response evidence outside the package materialization envelope."""
+    raise ValueError(f"responses exceed {_MAX_RASCH_RESPONSE_CELLS:,} logical cells")
+
+
+def _trusted_response_source(responses: object) -> object:
+    """Admit and bound inert response evidence before NumPy caller protocols."""
+    if type(responses) is np.ndarray:
+        if responses.size > _MAX_RASCH_RESPONSE_CELLS:
+            _raise_response_resource_error()
+        if responses.dtype.kind not in ("b", "i", "u", "f", "c"):
+            raise ValueError(_RESPONSE_ERROR)
+        return responses
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(_RESPONSE_ERROR)
+
+    logical_cells = 0
+    for row in responses:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            logical_cells += int(row.size)
+            if logical_cells > _MAX_RASCH_RESPONSE_CELLS:
+                _raise_response_resource_error()
+            if row.dtype.kind not in ("b", "i", "u", "f", "c"):
+                raise ValueError(_RESPONSE_ERROR)
+            continue
+        if row_type is list or row_type is tuple:
+            logical_cells += len(row)
+            if logical_cells > _MAX_RASCH_RESPONSE_CELLS:
+                _raise_response_resource_error()
+            if any(type(cell) not in _TRUSTED_EVIDENCE_SCALAR_TYPES for cell in row):
+                raise ValueError(_RESPONSE_ERROR)
+            continue
+        # Preserve the historical flat built-in-sequence path long enough for
+        # the established 2-D dimensionality diagnostic.
+        logical_cells += 1
+        if logical_cells > _MAX_RASCH_RESPONSE_CELLS:
+            _raise_response_resource_error()
+        if row_type not in _TRUSTED_EVIDENCE_SCALAR_TYPES:
+            raise ValueError(_RESPONSE_ERROR)
+    return responses
+
+
+def _trusted_group_source(group: object) -> object:
+    """Admit inert Andersen split labels before NumPy conversion."""
+    if type(group) is np.ndarray:
+        if group.dtype.kind not in ("b", "i", "u", "f", "c"):
+            raise ValueError(_GROUP_ERROR)
+        return group
+    if type(group) is not list and type(group) is not tuple:
+        raise ValueError(_GROUP_ERROR)
+    if any(type(label) not in _TRUSTED_EVIDENCE_SCALAR_TYPES for label in group):
+        raise ValueError(_GROUP_ERROR)
+    return group
+
+
+def _normalized_group_ids(group: object, n_persons: int) -> tuple[np.ndarray, int]:
+    """Preserve exact external label identity while producing dense Rust IDs."""
+    source = _trusted_group_source(group)
+    labels: list[int]
+
+    if type(source) is np.ndarray:
+        if source.ndim != 1 or source.shape[0] != n_persons:
+            raise ValueError("group must be a length-n_persons 1-D array")
+        kind = source.dtype.kind
+        if kind == "c":
+            raise ValueError(_GROUP_ERROR)
+        if kind == "f":
+            if (
+                not np.all(np.isfinite(source))
+                or np.any(source != np.floor(source))
+                or np.any(source < 0)
+            ):
+                raise ValueError(_GROUP_ERROR)
+        elif kind == "i" and np.any(source < 0):
+            raise ValueError(_GROUP_ERROR)
+        labels = [int(label) for label in source.tolist()]
+    else:
+        if len(source) != n_persons:
+            raise ValueError("group must be a length-n_persons 1-D array")
+        labels = []
+        for label in source:
+            label_type = type(label)
+            if label_type is bool or label_type is int:
+                normalized = int(label)
+            elif label_type is np.bool_ or any(
+                label_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+            ):
+                normalized = int(label)
+            elif label_type is float or any(
+                label_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
+            ):
+                numeric = float(label)
+                if not np.isfinite(numeric) or numeric < 0 or numeric != np.floor(numeric):
+                    raise ValueError(_GROUP_ERROR)
+                normalized = int(numeric)
+            else:  # Defensive: _trusted_group_source has already rejected this identity.
+                raise ValueError(_GROUP_ERROR)
+            if normalized < 0:
+                raise ValueError(_GROUP_ERROR)
+            labels.append(normalized)
+
+    unique_labels = sorted(set(labels))
+    n_groups = len(unique_labels)
+    if n_groups < 2:
+        raise ValueError("the Andersen LR test needs at least 2 groups")
+    dense_lookup = {label: index for index, label in enumerate(unique_labels)}
+    gid = np.fromiter(
+        (dense_lookup[label] for label in labels),
+        dtype=np.int64,
+        count=n_persons,
+    )
+    return gid, n_groups
 
 
 def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
@@ -34,15 +160,17 @@ def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
 
     Rasch CML has no missing-data path, so any non-0/1 entry is rejected.
     """
-    y = np.asarray(responses)
+    y = np.asarray(_trusted_response_source(responses))
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     if n_items < 2:
         raise ValueError("need at least 2 items")
+    if np.iscomplexobj(y):
+        raise ValueError(_RESPONSE_ERROR)
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
-        raise ValueError("responses must be complete 0/1 (Rasch CML has no missing-data path)")
+        raise ValueError(_RESPONSE_ERROR)
     return yf.astype(np.int64).reshape(-1), n_persons, n_items
 
 
@@ -98,9 +226,9 @@ def fit_rasch_cml(
         Andersen, E. B. (1972). The numerical solution of a set of conditional estimation equations.
             *Journal of the Royal Statistical Society: Series B, 34*(1), 42-54.
     """
-    yy, n_persons, n_items = _binary_matrix(responses)
     max_iter = _trusted_iteration_cap(max_iter)
     tol = _trusted_positive_tolerance(tol)
+    yy, n_persons, n_items = _binary_matrix(responses)
 
     from .fitstats import _core_module
 
@@ -139,20 +267,10 @@ def andersen_lr_test(
         Andersen, E. B. (1973). A goodness of fit test for the Rasch model. *Psychometrika, 38*(1),
             123-140. https://doi.org/10.1007/BF02291180
     """
-    yy, n_persons, n_items = _binary_matrix(responses)
-    g = np.asarray(group)
-    if g.ndim != 1 or g.shape[0] != n_persons:
-        raise ValueError("group must be a length-n_persons 1-D array")
-    gf = np.asarray(g, dtype=np.float64)
-    if not np.all(np.isfinite(gf)) or np.any(gf != np.floor(gf)) or np.any(gf < 0):
-        raise ValueError("group labels must be finite non-negative integers")
-    # densify labels so n_groups counts only populated groups
-    _, gid = np.unique(gf.astype(np.int64), return_inverse=True)
-    n_groups = int(gid.max()) + 1
-    if n_groups < 2:
-        raise ValueError("the Andersen LR test needs at least 2 groups")
     max_iter = _trusted_iteration_cap(max_iter)
     tol = _trusted_positive_tolerance(tol)
+    yy, n_persons, n_items = _binary_matrix(responses)
+    gid, n_groups = _normalized_group_ids(group, n_persons)
 
     from .fitstats import _core_module
 
@@ -161,7 +279,7 @@ def andersen_lr_test(
         raise RuntimeError("andersen_lr_test requires the compiled Rust core")
     res = core.andersen_lr_test(
         yy,
-        gid.astype(np.int64),
+        gid,
         int(n_groups),
         int(n_persons),
         int(n_items),

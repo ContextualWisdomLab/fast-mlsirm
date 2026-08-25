@@ -51,8 +51,12 @@ def test_auto_backend_fails_closed_when_rust_core_is_unavailable(monkeypatch):
     """Automatic production resolution must not silently select NumPy."""
     monkeypatch.setattr(backend, "_load_core", lambda: None)
 
-    with pytest.raises(RuntimeError, match="compiled Rust core is required"):
+    with pytest.raises(RuntimeError, match="compiled Rust core is required") as caught:
         backend.resolve_backend("auto")
+
+    assert str(caught.value) == backend.AUTO_BACKEND_UNAVAILABLE_MESSAGE
+    assert "fast_mlsirm._core" in str(caught.value)
+    assert "fit_reference" in str(caught.value)
 
 
 def test_auto_backend_resolves_to_rust_when_core_is_available(monkeypatch):

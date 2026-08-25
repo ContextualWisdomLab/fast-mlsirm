@@ -45,6 +45,22 @@ def _cli_timeout_seconds(out_label: str) -> float:
         raise RuntimeError("unsupported release acceptance operation") from None
 
 
+def _require_auto_fit_resolved_to_rust(
+    summary: dict[str, object], fit_payload: dict[str, object]
+) -> None:
+    """Fail closed unless the auto fit recorded Rust as the numerical owner.
+
+    Automatic production resolution never selects NumPy. A purchaser running
+    release acceptance without ``--require-rust`` must still see Rust on the
+    ``fit --backend auto`` path. Pass ``backend="numpy"`` only as an explicit
+    reference/parity command, not as an accepted automatic outcome.
+    """
+    if summary.get("backend") != "rust":
+        raise RuntimeError("fit auto backend must resolve to rust")
+    if fit_payload.get("backend") != "rust":
+        raise RuntimeError("fit_payload backend does not match fit_summary backend")
+
+
 def _cli_env() -> dict[str, str]:
     env = os.environ.copy()
     repo_python = Path(__file__).resolve().parents[1] / "python"
@@ -170,10 +186,7 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     report["steps"].append(fit_auto_payload)
 
     summary = read_json_object(fit_auto_out / "fit_summary.json")
-    if summary.get("backend") != "rust":
-        raise RuntimeError("automatic release acceptance fit must use Rust backend")
-    if fit_auto_payload.get("backend") != "rust":
-        raise RuntimeError("fit_payload backend does not match fit_summary backend")
+    _require_auto_fit_resolved_to_rust(summary, fit_auto_payload)
 
     if args.require_rust:
         fit_rust_payload = _run_cli(

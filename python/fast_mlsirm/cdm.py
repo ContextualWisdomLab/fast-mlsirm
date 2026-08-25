@@ -12,6 +12,8 @@ from .config import MAX_MAX_ITER
 
 
 _MAX_ATTRIBUTES = 15
+# Keep the Python trust boundary aligned with the Rust sequential-CDM resource cap.
+_SEQ_MAX_CAT = 50
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -28,6 +30,36 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
 )
 _NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
 _CDM_MODELS = frozenset(("dina", "dino"))
+
+
+def _reject_untrusted_response_container(value: object) -> None:
+    """Delegate response-container admission to the canonical safety module.
+
+    The package initializer installs the same canonical guard on ordinary import.
+    Keeping this reload fallback as a delegation, rather than a second implementation,
+    preserves identical callback-safe semantics when ``fast_mlsirm.cdm`` is reloaded
+    directly without re-running package initialization.
+    """
+
+    from ._cdm_response_safety import _reject_untrusted_response_container as reject
+
+    reject(value)
+
+
+def _response_array(value: np.ndarray) -> np.ndarray:
+    """Materialize accepted real response storage without lossy coercion."""
+    _reject_untrusted_response_container(value)
+    response_array = np.asarray(value)
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    with np.errstate(over="ignore", invalid="ignore"):
+        converted = response_array.astype(np.float64, copy=False)
+        round_tripped = converted.astype(response_array.dtype, copy=False)
+    if not np.array_equal(response_array, round_tripped, equal_nan=True):
+        raise ValueError("responses must be exactly representable as float64")
+    return converted
 
 
 def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -87,6 +119,8 @@ def _validate_q_matrix_input(
     if q.ndim != 2:
         raise ValueError(f"{name} must be a 2-D items x attributes array")
     if q.shape[0] != n_items:
+        if name == "step_q":
+            raise ValueError("step_q must have sum(n_steps) rows")
         raise ValueError(f"{name} must have one row per item")
     n_attributes = q.shape[1]
     if not 1 <= n_attributes <= _MAX_ATTRIBUTES:
@@ -98,6 +132,55 @@ def _validate_q_matrix_input(
     if not np.all(np.isfinite(q)) or not np.all((q == 0) | (q == 1)):
         raise ValueError(f"{name} entries must be finite and exactly 0 or 1")
     return q.astype(np.int64, copy=False), n_attributes
+
+
+def _validate_seq_n_steps(value: object, n_items: int) -> tuple[np.ndarray, int]:
+    """Admit sequential step counts without executing caller conversion protocols."""
+
+    value_type = type(value)
+    if value_type is np.ndarray:
+        raw_steps = value
+        if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
+            raise ValueError("n_steps must be a 1-D array of length n_items")
+        if raw_steps.dtype.kind not in ("i", "u"):
+            raise ValueError("n_steps entries must be positive integers")
+        if np.any(raw_steps < 1):
+            raise ValueError("n_steps entries must be positive integers")
+        if np.any(raw_steps > _SEQ_MAX_CAT):
+            raise ValueError(f"n_steps entries must be <= {_SEQ_MAX_CAT}")
+        steps = raw_steps.astype(np.int64, copy=False)
+        return steps, sum(int(step) for step in steps)
+
+    if value_type is not list and value_type is not tuple:
+        raise ValueError(
+            "n_steps must be a trusted 1-D integer NumPy array or built-in sequence"
+        )
+    if len(value) != n_items:
+        raise ValueError("n_steps must be a 1-D array of length n_items")
+
+    normalized: list[int] = []
+    for step in value:
+        step_type = type(step)
+        if step_type is int or any(
+            step_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+        ):
+            step_value = int(step)
+        elif step_type in (bool, float, str, bytes, np.bool_) or any(
+            step_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
+        ):
+            raise ValueError("n_steps entries must be positive integers")
+        else:
+            raise ValueError(
+                "n_steps must be a trusted 1-D integer NumPy array or built-in sequence"
+            )
+        if step_value < 1:
+            raise ValueError("n_steps entries must be positive integers")
+        if step_value > _SEQ_MAX_CAT:
+            raise ValueError(f"n_steps entries must be <= {_SEQ_MAX_CAT}")
+        normalized.append(step_value)
+
+    steps = np.asarray(normalized, dtype=np.int64)
+    return steps, sum(normalized)
 
 
 @dataclass
@@ -174,13 +257,13 @@ def fit_cdm(
             disorders using cognitive diagnosis models. *Psychological Methods,
             11*(3), 287–305. https://doi.org/10.1037/1082-989X.11.3.287
     """
-    y = np.asarray(responses, dtype=np.float64)
+    model = _validate_model_selector(model)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    model = _validate_model_selector(model)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -281,12 +364,12 @@ def fit_gdina(
             diagnosis modeling. *Journal of Statistical Software, 93*(14), 1-26.
             https://doi.org/10.18637/jss.v093.i14
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -382,12 +465,12 @@ def validate_q_matrix(
             Measurement, 45*(4), 343-362.
             https://doi.org/10.1111/j.1745-3984.2008.00069.x
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(provisional_q, "provisional_q", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -494,12 +577,12 @@ def gdina_wald_selection(
             selection, and attribute classification. *Applied Psychological
             Measurement, 40*(3), 200–217. https://doi.org/10.1177/0146621615621717
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -600,13 +683,13 @@ def fit_ho_cdm(
             cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
             https://doi.org/10.1007/BF02295640
     """
-    y = np.asarray(responses, dtype=np.float64)
+    model = _validate_model_selector(model)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    model = _validate_model_selector(model)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -718,12 +801,12 @@ def fit_ho_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
 
     from .fitstats import _core_module
@@ -857,14 +940,14 @@ def fit_seq_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
 
@@ -975,30 +1058,15 @@ def fit_seq_gdina_qr(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
             179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
-    raw_steps = np.asarray(n_steps)
-    if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
-        raise ValueError("n_steps must be a 1-D array of length n_items")
-    if not np.issubdtype(raw_steps.dtype, np.integer) or np.issubdtype(
-        raw_steps.dtype, np.bool_
-    ):
-        raise ValueError("n_steps entries must be positive integers")
-    if np.any(raw_steps < 1):
-        raise ValueError("n_steps entries must be positive integers")
-    steps = raw_steps.astype(np.int64, copy=False)
-    n_step_rows = sum(int(m) for m in steps)
-    sq = np.asarray(step_q)
-    if sq.ndim != 2:
-        raise ValueError("step_q must be a 2-D (sum_i n_steps[i]) x n_attributes array")
-    if sq.shape[0] != n_step_rows:
-        raise ValueError("step_q must have sum(n_steps) rows")
+    steps, n_step_rows = _validate_seq_n_steps(n_steps, n_items)
     sq, n_attributes = _validate_q_matrix_input(step_q, "step_q", n_step_rows)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
 

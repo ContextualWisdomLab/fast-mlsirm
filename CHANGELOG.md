@@ -169,6 +169,13 @@
 - Frozen lifecycle records mutated through Python object internals cannot shadow `_content_dict()` or evidence `to_dict()` callbacks to execute caller code while acquiring transition authority.
 - This changes provenance/integrity validation only; calibration, fit, DIF, item-information, linking, exposure, drift, uncertainty, and other production psychometric arithmetic remain Rust-owned and unchanged.
 
+#### Validate G-theory controls and score evidence before Rust discovery
+
+- G-theory D-study sizes and `Phi(lambda)` scalar controls now fail closed before caller-owned score-array materialization and before compiled Rust capability discovery when invalid, while preserving the existing callback-free Python/NumPy scalar contract.
+- D-study control containers now admit exact built-in list/tuple values and exact NumPy signed/unsigned integer arrays of the documented rank before iteration or pair unpacking, so caller-defined sequence, ndarray-subclass, and pair callbacks cannot run while `n_i_prime` / `n_prime` semantics are being established; concrete Python/NumPy integer entries remain supported.
+- `gtheory_pi()`, `gtheory_pio()`, and `phi_lambda()` now reject callback-bearing array providers, non-real storage, and complex score evidence before NumPy real narrowing or Rust discovery; ordinary exact NumPy real arrays and built-in list/tuple score trees containing concrete Python/NumPy real scalars remain supported.
+- G-study ANOVA/EMS, variance-component, D-study, and `Phi(lambda)` arithmetic remain unchanged and Rust-owned.
+
 #### Harden Rudner/Lee cut-score control admission
 
 - Validate and materialize Rudner and Lee cut-score scalars before compiled Rust capability discovery, rejecting booleans, caller-defined scalar subclasses, protocol coercion providers, malformed containers, non-finite values, and conversion overflow without invoking caller conversion hooks while preserving exact built-in and concrete NumPy real scalar compatibility. Both public paths now use one canonical package-owned normalizer; cut ordering/domain checks and all classification arithmetic remain Rust-owned.
@@ -582,6 +589,24 @@
 - Reject callback-bearing NumPy array providers, ndarray/container subclasses, and caller-defined numeric subclasses before answer-copying evidence is materialized for Wollack omega, K-index/K1/K2/S1/S2, or GBT.
 - Preserve exact NumPy numeric arrays and exact built-in list/tuple evidence containing package-trusted Python/NumPy real scalars, while keeping existing complex, dimensional, finite, index, binary, probability, and relation validation contracts.
 - Keep all result-affecting answer-copying statistics and tail/regression arithmetic in the Rust numerical core; this change only hardens Python validation and marshalling.
+
+#### Bound G-theory score evidence before dense materialization
+
+- `gtheory_pi()` and `phi_lambda()` now reject score evidence outside the documented two-dimensional persons-by-items shape before dense NumPy materialization; `gtheory_pio()` applies the same fail-first contract to its three-dimensional persons-by-items-by-occasions shape.
+- G-theory score evidence now has an explicit 20,000,000-cell logical-resource ceiling that applies to exact NumPy views and trusted built-in sequence trees before a contiguous `float64` copy is allocated.
+- Built-in score-tree preflight now advances one child at a time, so transient traversal state is bounded by nesting depth instead of eagerly scheduling every sibling before the logical-cell ceiling can fire.
+- Existing exact NumPy arrays, ordinary built-in list/tuple score trees, exact NumPy-array rows, callback-free cycle rejection, and Rust-owned G-study/D-study/`Phi(lambda)` arithmetic remain unchanged.
+
+#### Bound G-theory D-study result-row requests
+
+- `gtheory_pi()`, `gtheory_pio()`, and `phi_lambda()` now reject D-study request vectors above 10,000 rows before score materialization or compiled-core discovery.
+- D-study result-row count is bounded independently from the existing 1,000,000 per-prime magnitude ceiling, so small valid prime values cannot be repeated to request an unbounded native result table.
+- Exact built-in list/tuple controls, trusted Python/NumPy integer entries, the existing per-prime size bound, and all Rust-owned G-study/D-study/`Phi(lambda)` arithmetic remain unchanged.
+
+#### G-theory NumPy D-study control compatibility
+
+- Preserve exact NumPy signed/unsigned integer arrays for one-facet and two-facet D-study size controls, and preserve exact built-in `range` values on the one-facet `Sequence[int]` surface, while continuing to reject ndarray subclasses, arbitrary array providers, callback-bearing sequence subclasses, Boolean/float/object/text control arrays, malformed rank/shape, non-positive values, and existing resource-limit violations before Rust dispatch.
+- Normalize accepted NumPy control arrays and built-in range controls to package-owned built-in integer payloads; G-study, D-study, and `Phi(lambda)` arithmetic remain unchanged and Rust-owned.
 
 #### Rater reliability installer recovery
 
