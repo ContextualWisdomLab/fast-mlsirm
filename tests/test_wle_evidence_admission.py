@@ -132,10 +132,10 @@ def test_score_wle_charges_nested_numpy_leaf_before_materialization(
     monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_CELLS", 3, raising=False)
     monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_STRUCTURAL_NODES", 6, raising=False)
     core_calls = _forbid_core(monkeypatch)
-    row = np.broadcast_to(np.array([0.0], dtype=np.float64), (4,))
+    row = np.array([0.0, 1.0], dtype=np.float64)
 
     with pytest.raises(ValueError, match="responses must contain at most 3 logical cells"):
-        score_wle([1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0], [row])
+        score_wle([1.0, 1.0], [0.0, 0.0], [row, row])
 
     assert core_calls == []
 
