@@ -903,6 +903,30 @@ def _reject_json_constant(value: str) -> object:
     raise ValueError(f"manifest JSON contains unsupported constant: {value}")
 
 
+def _validate_raw_manifest_depth(content: str) -> None:
+    """Reject JSON strings whose nesting depth exceeds the maximum budget."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > MAX_MANIFEST_NESTING:
+                raise ValueError("manifest JSON nesting is too deep")
+        elif char in "]}":
+            depth -= 1
+
+
 def _validate_manifest_nesting(value: object) -> None:
     """Reject parsed JSON containers deeper than the replay contract allows."""
     stack: list[tuple[object, int]] = [(value, 0)]
@@ -1033,6 +1057,7 @@ class ConformanceInventory:
             raise ValueError(
                 f"manifest JSON must contain at most {MAX_MANIFEST_JSON_BYTES} bytes"
             )
+        _validate_raw_manifest_depth(value)
         try:
             parsed = json.loads(
                 value,

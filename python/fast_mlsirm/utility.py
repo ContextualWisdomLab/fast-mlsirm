@@ -101,6 +101,51 @@ def _coerce_finite_real(value: object, *, name: str) -> float:
     return marshaled
 
 
+def _require_validity(value: float) -> None:
+    """Replay the Rust validity domain before compiled-core discovery."""
+    if value <= -1.0 or value >= 1.0:
+        raise ValueError("validity rxy must be strictly inside (-1, 1)")
+
+
+def _require_resolvable_unit_probability(value: float, *, name: str) -> None:
+    """Replay the Rust open-unit and binary64 resolution guards."""
+    if value <= 0.0 or value >= 1.0:
+        raise ValueError(f"{name} must be strictly inside (0, 1)")
+    if 1.0 - value == 1.0:
+        raise ValueError(f"{name} is too close to 0 to resolve in float64")
+
+
+def _require_selection_domains(
+    *,
+    n: float,
+    sdy: float,
+    rxy: float,
+    sr: float,
+    period: float,
+) -> None:
+    """Replay Rust-owned selection-utility input domains before dispatch."""
+    if n < 1.0:
+        raise ValueError("n must be finite and >= 1")
+    if sdy < 0.0:
+        raise ValueError("sdy must be finite and >= 0")
+    _require_validity(rxy)
+    _require_resolvable_unit_probability(sr, name="selection ratio sr")
+    if period < 1.0:
+        raise ValueError("period must be finite and >= 1")
+
+
+def _require_taylor_russell_domains(*, rxy: float, sr: float, br: float) -> None:
+    """Replay Rust Taylor-Russell domains and the BVN resolution guard."""
+    _require_validity(rxy)
+    _require_resolvable_unit_probability(sr, name="selection ratio sr")
+    _require_resolvable_unit_probability(br, name="base rate br")
+    if math.sqrt(1.0 - rxy * rxy) < 1e-4:
+        raise ValueError(
+            "validity rxy is too close to +/-1 for accurate BVN quadrature "
+            "(requires sqrt(1 - rxy^2) >= 1e-4)"
+        )
+
+
 def selection_utility(
     n: float,
     sdy: float,
@@ -124,6 +169,13 @@ def selection_utility(
     marshaled_sr = _coerce_finite_real(sr, name="sr")
     marshaled_cost_total = _coerce_finite_real(cost_total, name="cost_total")
     marshaled_period = _coerce_finite_real(period, name="period")
+    _require_selection_domains(
+        n=marshaled_n,
+        sdy=marshaled_sdy,
+        rxy=marshaled_rxy,
+        sr=marshaled_sr,
+        period=marshaled_period,
+    )
 
     from . import _core
 
@@ -150,6 +202,11 @@ def taylor_russell(rxy: float, sr: float, br: float) -> TaylorRussellResult:
     marshaled_rxy = _coerce_finite_real(rxy, name="rxy")
     marshaled_sr = _coerce_finite_real(sr, name="sr")
     marshaled_br = _coerce_finite_real(br, name="br")
+    _require_taylor_russell_domains(
+        rxy=marshaled_rxy,
+        sr=marshaled_sr,
+        br=marshaled_br,
+    )
 
     from . import _core
 

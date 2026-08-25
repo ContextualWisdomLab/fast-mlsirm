@@ -18,7 +18,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](0001-domain-neutral-measurement-boundary.md) | Accepted | `fast-mlsirm` owns reusable measurement/psychometric contracts and kernels; hosted runtime belongs downstream. |
-| [0002](0002-rust-first-numerical-ownership.md) | Accepted | Rust owns production psychometric arithmetic; Python validates/orchestrates/reports and retains governed reference/fallback paths. |
+| [0002](0002-rust-first-numerical-ownership.md) | Accepted | Rust owns production psychometric arithmetic; Python validates/orchestrates/reports and retains governed reference/parity paths. `auto` fails closed without the compiled Rust core. |
 | [0003](0003-content-addressed-measurement-contracts.md) | Accepted | Assessment/rubric/scoring artifacts use canonical versioned, content-addressed provenance and replay verification. |
 | [0004](0004-governed-rubric-item-bank-lifecycle.md) | Proposed | Build candidate-blind evidence-grounded rubric/item generation into a governed psychometric item-bank lifecycle. |
 | [0005](0005-automated-scoring-raters.md) | Accepted | Human and automated scorers are fallible raters; calibration/validation must model rater effects and preserve terminal states. |

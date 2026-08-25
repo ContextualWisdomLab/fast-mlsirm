@@ -53,7 +53,7 @@ Raw scores, RAGAS values, LLM judgments, or human ratings are observations, not 
 
 ### PRD-PRN-002 Rust owns production psychometric arithmetic
 
-Likelihoods, gradients, Hessians, optimization, information, psychometric scoring/ranking, and other production mathematical kernels are Rust-owned. Python may orchestrate, validate, marshal, report, and retain transparent reference implementations for parity/fallback where explicitly governed.
+Likelihoods, gradients, Hessians, optimization, information, psychometric scoring/ranking, and other production mathematical kernels are Rust-owned. Python may orchestrate, validate, marshal, report, and retain explicit reference implementations for parity testing where governed.
 
 ### PRD-PRN-003 Correlation is not accuracy
 
@@ -80,9 +80,8 @@ The package shall expose stable versioned interfaces usable independently and by
 The following are implemented on protected `main` as of this baseline unless explicitly marked otherwise:
 
 - MLS2PLM-family binary simulation and point estimation, including `MIRT`, `MLSRM`, `MLS2PLM`, `ULSRM`, and `ULS2PLM` constraints.
-- Rust-backed likelihood/gradient/distance kernels through PyO3/maturin. The
-  production backend is Rust-only; NumPy is available through the explicit
-  `fit_reference` parity API and its CLI reference mode.
+- Rust-backed likelihood/gradient/distance kernels through PyO3/maturin, with
+  an explicit NumPy reference/parity path and parity tests; `auto` fails closed without the compiled Rust core.
 - Missing-response handling, optimization, recovery, fit and dimensionality diagnostics.
 - Fixed-item calibration/linking, CAT item-information selection, ATA form assembly.
 - Response-process diagnostics, model-fit summaries, multigroup/multilevel-context summaries exposed by current APIs.

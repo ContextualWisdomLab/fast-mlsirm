@@ -20,6 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .._multilevel_core_loader import multilevel_core
+from ._validation import exact_integer
 from .contracts import ContextMembershipDesign, LongitudinalDesign, LongitudinalStateKind
 
 ContextKey = tuple[str, str]
@@ -93,6 +94,26 @@ def _trusted_positive_real(value: object, name: str) -> float:
     if normalized <= 0.0:
         raise ValueError(f"{name} must be finite and strictly positive")
     return normalized
+
+
+def _exact_positive_real(value: object, name: str) -> float:
+    """Return one strictly positive finite real without Boolean coercion."""
+    if type(value) not in (int, float) or isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite real number greater than zero")
+    number = float(value)
+    if not np.isfinite(number) or number <= 0.0:
+        raise ValueError(f"{name} must be a finite real number greater than zero")
+    return number
+
+
+def _exact_device(value: object) -> str:
+    """Return one supported compute-device label."""
+    if type(value) is not str:
+        raise ValueError("device must be one of 'cpu', 'gpu', or 'auto'")
+    device = value.strip().casefold()
+    if device not in {"cpu", "gpu", "auto"}:
+        raise ValueError("device must be one of 'cpu', 'gpu', or 'auto'")
+    return device
 
 
 def _snapshot_context_effects(

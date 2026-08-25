@@ -20,11 +20,12 @@ evidence index over the exact artifacts being offered.
   rendering.
 - CLI workflows for simulation, fitting, fit diagnostics, dimensionality
   diagnostics, response-process diagnostics, and report rendering.
-- Rust/PyO3 production backend for fitting and psychometric numerical kernels.
-- Explicit NumPy parity through `fast_mlsirm.fit_reference` and
-  `fast-mlsirm fit --reference`; it is not a production `FitConfig` choice.
-- Production backend selection through `FitConfig(backend="rust"|"auto")`
-  and `fast-mlsirm fit --backend`; missing Rust fails closed.
+- Rust/PyO3 backend as the default `auto` runtime path through
+  `fast_mlsirm._core`. `auto` fails closed when the compiled core is
+  unavailable.
+- Explicit NumPy reference backend for parity testing only.
+- Backend selection through `FitConfig(backend=...)` and
+  `fast-mlsirm fit --backend`.
 - Dense response matrices with missing values represented by `NaN`, `-1`, or an
   explicit mask.
 - Automated benchmark evidence reporting from release-acceptance timing.
@@ -159,7 +160,9 @@ r_pi = sqrt(sum_k (xi_pk - zeta_ik)^2 + eps)
 
 - Source and editable installs require a Rust toolchain because maturin builds
   `fast_mlsirm._core`.
-- Installed wheels can use the NumPy backend by default.
+- Installed wheels ship the compiled Rust core. `auto` uses that core and
+  fails closed if it is missing. Pass `backend="numpy"` only for the explicit
+  reference/parity path.
 - The Rust backend is a dense-matrix backend. It is not a sparse storage layer.
 - Real assessment data should be handled under the buyer's own privacy,
   governance, retention, and audit policies.

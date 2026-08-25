@@ -11,7 +11,7 @@ def test_fitconfig_valid():
     config = FitConfig()
     config.validate()  # Should not raise any exception
     # Rust is the primary numeric path; the default backend is "auto" which
-    # resolves to the Rust core when available and falls back to numpy.
+    # resolves to the Rust core when available and fails closed otherwise.
     assert config.backend == "auto"
     assert config.rust_device == "auto"
 
@@ -42,9 +42,8 @@ def test_mls2plmconfig_invalid_latent_dim():
         MLS2PLMConfig(latent_dim=0).validate()
 
 def test_mls2plmconfig_invalid_phi_lower_bound():
-    config = MLS2PLMConfig(n_dims=2, phi=-1.0)
     with pytest.raises(ValueError, match="phi must produce a positive-definite equicorrelation matrix"):
-        config.validate()
+        MLS2PLMConfig(n_dims=2, phi=-1.0)
 
 def test_mls2plmconfig_invalid_phi_upper_bound():
     with pytest.raises(ValueError, match="phi must produce a positive-definite equicorrelation matrix"):
@@ -96,11 +95,6 @@ def test_fitconfig_invalid_backend():
         FitConfig(backend="cuda").validate()
 
 
-def test_fitconfig_rejects_numpy_reference_backend():
-    with pytest.raises(ValueError, match="production backend"):
-        FitConfig(backend="numpy").validate()
-
-
 @pytest.mark.parametrize("name", ["xi_points", "xi_seed"])
 @pytest.mark.parametrize("value", [True, 8.75, "9"])
 def test_fitconfig_rejects_noninteger_xi_controls(name, value):
@@ -112,3 +106,15 @@ def test_fitconfig_rejects_noninteger_xi_controls(name, value):
 def test_fitconfig_rejects_xi_seed_outside_u64(value):
     with pytest.raises(ValueError, match="xi_seed must fit an unsigned 64-bit integer"):
         FitConfig(xi_seed=value).validate()
+
+
+def test_mls2plmconfig_rejects_invalid_values_at_construction():
+    """Memory-safety bounds are enforced when the simulation config is built."""
+    with pytest.raises(ValueError, match="n_persons must be >= 1"):
+        MLS2PLMConfig(n_persons=-1)
+
+
+def test_fitconfig_rejects_invalid_values_at_construction():
+    """Memory-safety bounds are enforced when the fit config is built."""
+    with pytest.raises(ValueError, match="latent_dim must be >= 1 and <= "):
+        FitConfig(latent_dim=0)

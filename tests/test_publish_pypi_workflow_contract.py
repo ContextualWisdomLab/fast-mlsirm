@@ -27,17 +27,31 @@ def _job_block(text: str, name: str) -> str:
     return match.group(0)
 
 
-def test_release_builds_are_bound_to_the_published_version() -> None:
+def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     text = _workflow_text()
     verify = _job_block(text, "verify-release")
     sdist = _job_block(text, "sdist")
     wheels = _job_block(text, "wheels")
 
-    for job in (verify, sdist, wheels):
-        assert "ref: ${{ inputs.release_tag }}" in job
-        assert "persist-credentials: false" in job
+    assert "      release_commit:\n" in text
+    assert re.search(
+        r"(?m)^      release_commit:\n(?:        .*\n)*?        required: true$",
+        text,
+    )
 
+    for job in (verify, sdist, wheels):
+        assert "ref: ${{ inputs.release_commit }}" in job
+        assert "persist-credentials: false" in job
+        assert "ref: ${{ inputs.release_tag }}" not in job
+
+    assert "fetch-depth: 0" in verify
     assert 'RELEASE_TAG: ${{ inputs.release_tag }}' in verify
+    assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in verify
+    assert "release_commit must be a canonical 40-character lowercase SHA-1" in verify
+    assert 'git rev-parse HEAD' in verify
+    assert 'git rev-parse "$RELEASE_TAG^{commit}"' in verify
+    assert "checked-out release source does not match release_commit" in verify
+    assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
     assert text.count("maturin-version: v1.14.1") == 2
@@ -64,19 +78,42 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     publish_text = _workflow_text()
     release_text = _release_tag_workflow_text()
     release_job = _job_block(release_text, "publish-release-tag")
+    verify = _job_block(publish_text, "verify-release")
 
     # GITHUB_TOKEN-created release events do not recursively start ordinary
     # event-triggered workflows. Package publication therefore uses the one
-    # supported recursive trigger: workflow_dispatch, bound to the immutable tag.
+    # supported recursive trigger. The control-plane workflow comes from the
+    # protected default branch while artifact source identity is an immutable
+    # explicit commit, so an older release tag cannot select an outdated
+    # publication workflow definition. The dispatch also carries the exact
+    # release-tag run commit so a moving default branch cannot silently select a
+    # different publication control plane between verification and dispatch.
     assert "  workflow_dispatch:\n" in publish_text
     assert "      release_tag:\n" in publish_text
-    assert "        required: true\n" in publish_text
+    assert "      release_commit:\n" in publish_text
+    assert "      control_plane_commit:\n" in publish_text
+    assert publish_text.count("        required: true\n") >= 3
     assert "types: [published]" not in publish_text
+
+    assert 'DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}' in verify
+    assert 'PUBLISH_REF: ${{ github.ref }}' in verify
+    assert 'CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}' in verify
+    assert 'CONTROL_PLANE_SHA: ${{ github.sha }}' in verify
+    assert 'expected_ref="refs/heads/$DEFAULT_BRANCH"' in verify
+    assert 'if [ "$PUBLISH_REF" != "$expected_ref" ]' in verify
+    assert 'if [ "$CONTROL_PLANE_SHA" != "$CONTROL_PLANE_COMMIT" ]' in verify
+    assert "publication control plane moved after release verification" in verify
 
     assert "permissions:\n      contents: write\n      actions: write" in release_job
     assert "gh workflow run publish-pypi.yml" in release_job
-    assert '--ref "v$RELEASE_VERSION"' in release_job
+    assert 'DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}' in release_job
+    assert 'CONTROL_PLANE_COMMIT: ${{ github.sha }}' in release_job
+    assert '--ref "$DEFAULT_BRANCH"' in release_job
+    assert '--ref "v$RELEASE_VERSION"' not in release_job
     assert '-f release_tag="v$RELEASE_VERSION"' in release_job
+    assert '-f release_commit="$RELEASE_COMMIT"' in release_job
+    assert '-f control_plane_commit="$CONTROL_PLANE_COMMIT"' in release_job
+    assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in release_job
     assert release_job.index('gh release create "v$RELEASE_VERSION"') < release_job.index(
         "gh workflow run publish-pypi.yml"
     )

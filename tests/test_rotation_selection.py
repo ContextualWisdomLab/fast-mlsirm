@@ -123,7 +123,7 @@ def test_supported_policy_names_execute(policy: str) -> None:
 def test_selection_validation_is_fail_closed() -> None:
     """Malformed candidate, bootstrap, target, and policy contracts are rejected."""
     reference = _reference()
-    with pytest.raises(ValueError, match="sequence"):
+    with pytest.raises(ValueError, match="exact list or tuple"):
         select_rotation_criterion(reference, "varimax")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="at least two"):
         select_rotation_criterion(reference, ["varimax"])
