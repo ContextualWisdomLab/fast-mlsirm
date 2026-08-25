@@ -3,6 +3,7 @@
 ## Added
 
 - Extend the Rust residual interaction-map result with the effective numerical rank, complete-case map respondent/item counts, excluded scored-row/column counts, and deterministic closest/farthest retained-cell identities derived from the existing requested-axis distance surface.
+- Retain the complete-case observed and expected cell values in the same original-index order as residual/distance/reconstruction evidence so downstream products do not have to reconstruct the Rust calculation inputs.
 - Resolve distance ties by the lexicographically first original `(person_index, item_index)` so downstream products do not invent their own ranking convention.
 - Preserve Gabriel symmetric-scaling arithmetic, complete-case missingness, resource bounds, and the existing residual/distance/reconstruction/unexplained/cross-share calculations. This is a bounded Rust-core step toward issue #1412; public PyO3 schema/version/provenance exposure remains follow-up work.
 
