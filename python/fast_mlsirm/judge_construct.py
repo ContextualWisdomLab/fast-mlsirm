@@ -57,7 +57,6 @@ from .llm_judge import (
     JudgeFormatError,
     LLMJudgeResult,
     MAX_JUDGE_CATEGORIES,
-    MAX_JUDGE_CRITERIA,
 )
 
 MIN_JUDGE_CONSTRUCT_ITEMS = 5
@@ -120,8 +119,10 @@ class JudgeConstructPolicy:
             raise ValueError(
                 "recommended_items must be between min_items and max_items"
             )
-        if max_items > MAX_JUDGE_CRITERIA:
-            raise ValueError(f"max_items cannot exceed {MAX_JUDGE_CRITERIA}")
+        if max_items > MAX_JUDGE_CONSTRUCT_ITEMS:
+            raise ValueError(
+                f"max_items cannot exceed {MAX_JUDGE_CONSTRUCT_ITEMS}"
+            )
         object.__setattr__(self, "min_items", min_items)
         object.__setattr__(self, "recommended_items", recommended_items)
         object.__setattr__(self, "max_items", max_items)
@@ -324,7 +325,9 @@ def project_judge_results_to_matrix(
     """
     rows: list[tuple[int, ...]] = []
     expected_ids = tuple(sorted(spec.criterion_ids))
-    output_positions = {criterion_id: index for index, criterion_id in enumerate(expected_ids)}
+    output_positions = {
+        criterion_id: index for index, criterion_id in enumerate(expected_ids)
+    }
     for result in results:
         if not isinstance(result, LLMJudgeResult):
             raise TypeError("results must contain LLMJudgeResult values")
