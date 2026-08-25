@@ -134,6 +134,25 @@ def test_uv_lock_has_no_stale_pre_3_12_resolution_markers() -> None:
     )
 
 
+def test_uv_lock_stale_guard_inspects_nested_package_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Package/dependency marker fields must not bypass the floor contract."""
+    synthetic_lock: dict[str, object] = {
+        "resolution-markers": ["python_version >= '3.12'"],
+        "package": [
+            {
+                "name": "legacy-backport",
+                "marker": "python_full_version == '3.11.5'",
+            }
+        ],
+    }
+    monkeypatch.setitem(globals(), "_read_toml", lambda _path: synthetic_lock)
+
+    with pytest.raises(AssertionError, match="pre-3.12"):
+        test_uv_lock_has_no_stale_pre_3_12_resolution_markers()
+
+
 @pytest.mark.parametrize(
     "marker",
     (
