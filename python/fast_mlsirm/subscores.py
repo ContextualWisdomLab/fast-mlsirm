@@ -10,6 +10,39 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_TRUSTED_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        complex,
+        np.bool_,
+        *_TRUSTED_NUMPY_INTEGER_TYPES,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+        np.complex64,
+        np.complex128,
+        np.clongdouble,
+    }
+)
+
+
 @dataclass
 class SubscoreResult:
     """Haberman subscore added-value analysis for ``K`` subscales.
@@ -46,6 +79,31 @@ class SubscoreResult:
     subscore_sx: np.ndarray
 
 
+def _trusted_numeric_array(value: object, name: str) -> np.ndarray:
+    """Materialize inert numeric evidence without invoking caller protocols."""
+    if type(value) is np.ndarray:
+        raw = value
+    elif type(value) in (list, tuple):
+        stack: list[object] = [value]
+        while stack:
+            current = stack.pop()
+            if type(current) in (list, tuple):
+                stack.extend(current)
+                continue
+            if type(current) not in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+                raise ValueError(f"{name} must be real-numeric evidence")
+        try:
+            raw = np.asarray(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{name} must be real-numeric evidence") from None
+    else:
+        raise ValueError(f"{name} must be real-numeric evidence")
+
+    if raw.dtype.kind not in ("b", "i", "u", "f", "c"):
+        raise ValueError(f"{name} must be real-numeric evidence")
+    return raw
+
+
 def subscore_analysis(
     responses: np.ndarray,
     groups: np.ndarray,
@@ -71,7 +129,10 @@ def subscore_analysis(
     ``responses`` is a complete ``persons x items`` array of scored
     responses (``n >= 3``). ``groups`` assigns each item an integer subscale
     index in ``0..K`` (``K >= 2``, every subscale with at least 2 items,
-    partition exhaustive by construction).
+    partition exhaustive by construction). Evidence admission accepts exact
+    NumPy numeric arrays or exact built-in list/tuple trees containing only
+    package-trusted concrete Python/NumPy numeric scalars; callback-bearing
+    array/container/numeric providers fail before NumPy materialization.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
@@ -87,7 +148,7 @@ def subscore_analysis(
             H. Wainer (Eds.), *Test scoring* (pp. 343-387). Lawrence
             Erlbaum. (as cited in Sinharay, 2010)
     """
-    y_raw = np.asarray(responses)
+    y_raw = _trusted_numeric_array(responses, "responses")
     if np.iscomplexobj(y_raw):
         raise ValueError("responses must be real-valued")
     y = np.asarray(y_raw, dtype=np.float64)
@@ -102,7 +163,7 @@ def subscore_analysis(
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
 
-    g = np.asarray(groups).reshape(-1)
+    g = _trusted_numeric_array(groups, "groups").reshape(-1)
     if g.shape[0] != n_items:
         raise ValueError("groups must assign one subscale index per item")
     if np.iscomplexobj(g):
