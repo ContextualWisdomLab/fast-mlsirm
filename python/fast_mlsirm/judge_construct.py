@@ -53,14 +53,12 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from ._judge_projection_order import install as _install_judge_projection_order
+from ._judge_projection_order import project_row_in_order
 from .llm_judge import (
     JudgeFormatError,
     LLMJudgeResult,
     MAX_JUDGE_CATEGORIES,
 )
-
-_install_judge_projection_order()
 
 MIN_JUDGE_CONSTRUCT_ITEMS = 5
 """Default policy floor: fewest criteria admitted per unidimensional facet."""
@@ -352,12 +350,12 @@ def project_judge_results_to_matrix(
 ) -> np.ndarray:
     """Project validated judge results into a persons x items matrix.
 
-    Every row is produced by :meth:`LLMJudgeResult.to_irt_row`, which already
-    enforces the zero-based ``0..k-1`` category coding described by
+    Every row is projected by a package-owned explicit-order helper using the
+    zero-based ``0..k-1`` category semantics described by
     ``spec.category_coding``. Each result must contain exactly the criterion
     identities declared by ``spec``; the returned matrix columns follow
-    ``spec.criterion_ids`` order exactly, regardless of mapping insertion or
-    lexical key order. Explicit category counts must also match the spec.
+    ``spec.criterion_ids`` order exactly, regardless of mapping insertion,
+    lexical key order, or changes to the shared default row helper.
 
     Parameters
     ----------
@@ -380,13 +378,14 @@ def project_judge_results_to_matrix(
     rows: list[tuple[int, ...]] = []
     expected_ids = set(spec.criterion_ids)
     for result in results:
-        if not isinstance(result, LLMJudgeResult):
+        if type(result) is not LLMJudgeResult:
             raise TypeError("results must contain LLMJudgeResult values")
         if set(result.criterion_scores) != expected_ids:
             raise JudgeFormatError(
                 "result criterion set does not match the validated construct spec"
             )
-        row = result.to_irt_row(
+        row = project_row_in_order(
+            result,
             item_type=spec.item_type,
             n_categories=(
                 spec.n_categories if spec.item_type == "polytomous" else None
