@@ -145,6 +145,45 @@ def test_andersen_preserves_distinct_longdouble_group_identity(monkeypatch):
     np.testing.assert_array_equal(captured["gid"], np.array([0, 1, 0, 1], dtype=np.int64))
 
 
+def test_andersen_numpy_longdouble_group_array_preserves_identity(monkeypatch):
+    """NumPy long-double arrays keep distinct integral group identities."""
+
+    lower, upper = _distinct_longdouble_group_labels()
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def andersen_lr_test(
+            self,
+            yy,
+            gid,
+            n_groups,
+            n_persons,
+            n_items,
+            max_iter,
+            tol,
+        ):
+            captured["gid"] = np.array(gid, copy=True)
+            captured["n_groups"] = n_groups
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": [2, 2],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    result = andersen_lr_test(
+        _binary(),
+        np.array([lower, upper, lower, upper], dtype=np.longdouble),
+    )
+
+    assert result["converged"] is True
+    assert captured["n_groups"] == 2
+    np.testing.assert_array_equal(captured["gid"], np.array([0, 1, 0, 1], dtype=np.int64))
+
+
 def test_andersen_numpy_group_array_bulk_converts_scalars(monkeypatch):
     """Ordinary NumPy groups avoid one NumPy scalar boxing operation per person."""
 
