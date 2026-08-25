@@ -128,6 +128,7 @@ def test_procurement_due_diligence_creates_manifest_and_report(tmp_path, monkeyp
     )
 
     assert manifest["status"] == "ok"
+    assert manifest["source_commit"] == _CANONICAL_TEST_COMMIT
     assert manifest["package"]["wheel"]["metadata"]["Name"] == "fast-mlsirm"
     assert manifest["package"]["wheel"]["metadata"]["Version"] == "0.1.0"
     assert manifest["github"]["mode"] == "offline"
