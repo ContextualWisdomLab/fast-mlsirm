@@ -171,6 +171,20 @@ from .judge_calibration import (
 from .judge_calibration import (
     evaluate_paired_calibration as evaluate_paired_calibration,
 )
+from .judge_construct import (
+    ABSOLUTE_JUDGE_CONSTRUCT_FLOOR as ABSOLUTE_JUDGE_CONSTRUCT_FLOOR,
+    DEFAULT_JUDGE_CONSTRUCT_POLICY as DEFAULT_JUDGE_CONSTRUCT_POLICY,
+    JUDGE_MEASUREMENT_GUIDANCE as JUDGE_MEASUREMENT_GUIDANCE,
+    JudgeConstructPolicy as JudgeConstructPolicy,
+    JudgeConstructSpec as JudgeConstructSpec,
+    MAX_JUDGE_CONSTRUCT_ITEMS as MAX_JUDGE_CONSTRUCT_ITEMS,
+    MIN_JUDGE_CONSTRUCT_ITEMS as MIN_JUDGE_CONSTRUCT_ITEMS,
+    RECOMMENDED_JUDGE_CONSTRUCT_ITEMS as RECOMMENDED_JUDGE_CONSTRUCT_ITEMS,
+    ZERO_BASED_CATEGORY_CODING as ZERO_BASED_CATEGORY_CODING,
+    describe_measurement_contract as describe_measurement_contract,
+    project_judge_results_to_matrix as project_judge_results_to_matrix,
+    validate_judge_construct as validate_judge_construct,
+)
 from .llm_judge import (
     CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 as CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
 )
@@ -250,6 +264,18 @@ __all__ = list(_legacy_init.__all__) + [
     "JudgeCalibrationReport",
     "build_multiple_choice_calibration_cases",
     "evaluate_paired_calibration",
+    "ABSOLUTE_JUDGE_CONSTRUCT_FLOOR",
+    "DEFAULT_JUDGE_CONSTRUCT_POLICY",
+    "JUDGE_MEASUREMENT_GUIDANCE",
+    "JudgeConstructPolicy",
+    "JudgeConstructSpec",
+    "MAX_JUDGE_CONSTRUCT_ITEMS",
+    "MIN_JUDGE_CONSTRUCT_ITEMS",
+    "RECOMMENDED_JUDGE_CONSTRUCT_ITEMS",
+    "ZERO_BASED_CATEGORY_CODING",
+    "describe_measurement_contract",
+    "project_judge_results_to_matrix",
+    "validate_judge_construct",
     "IRTItemType",
     "fit_irt_experiment",
     "MIN_IRT_ITEMS",

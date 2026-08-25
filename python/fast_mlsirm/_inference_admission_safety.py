@@ -9,21 +9,30 @@ from typing import Any
 import numpy as np
 
 _REAL_KINDS = frozenset({"b", "i", "u", "f"})
+_NUMPY_REAL_SCALAR_TYPES = tuple(
+    dict.fromkeys(
+        np.dtype(code).type
+        for code in np.typecodes["All"]
+        if np.dtype(code).kind in _REAL_KINDS
+    )
+)
+_NUMPY_COMPLEX_SCALAR_TYPES = tuple(
+    dict.fromkeys(
+        np.dtype(code).type
+        for code in np.typecodes["All"]
+        if np.dtype(code).kind == "c"
+    )
+)
 _MAX_INFERENCE_MATRIX_CELLS = 20_000_000
 
 
 def _is_numpy_real_scalar(value: object, *, allow_bool: bool) -> bool:
     """Return whether ``value`` is a concrete package-trusted NumPy real scalar."""
     value_type = type(value)
-    if value_type.__module__ != "numpy" or not issubclass(value_type, np.generic):
-        return False
-    try:
-        kind = np.dtype(value_type).kind
-    except TypeError:
-        return False
-    if kind == "b":
-        return allow_bool
-    return kind in {"i", "u", "f"}
+    for scalar_type in _NUMPY_REAL_SCALAR_TYPES:
+        if value_type is scalar_type:
+            return allow_bool or scalar_type is not np.bool_
+    return False
 
 
 def _is_real_scalar(value: object, *, allow_bool: bool) -> bool:
@@ -173,12 +182,7 @@ def _validate_row(row: object, name: str, expected: int) -> None:
 
 def _is_numpy_complex_scalar(value: object) -> bool:
     value_type = type(value)
-    if value_type.__module__ != "numpy" or not issubclass(value_type, np.generic):
-        return False
-    try:
-        return np.dtype(value_type).kind == "c"
-    except TypeError:
-        return False
+    return any(value_type is scalar_type for scalar_type in _NUMPY_COMPLEX_SCALAR_TYPES)
 
 
 def _real_square_matrix(value: object, name: str) -> np.ndarray:

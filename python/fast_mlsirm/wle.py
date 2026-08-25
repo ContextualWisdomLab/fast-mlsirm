@@ -9,12 +9,223 @@ from __future__ import annotations
 import numpy as np
 
 
-def _real_float64_array(value: np.ndarray, name: str) -> np.ndarray:
-    """Reject complex caller evidence before real-valued numeric marshalling."""
-    raw = np.asarray(value)
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_NUMPY_COMPLEX_SCALAR_TYPES = (np.complex64, np.complex128, np.clongdouble)
+_TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
+    *_NUMPY_COMPLEX_SCALAR_TYPES,
+)
+_MAX_NATIVE_USIZE = int(np.iinfo(np.uintp).max)
+_MAX_WLE_EVIDENCE_CELLS = 20_000_000
+_MAX_WLE_EVIDENCE_STRUCTURAL_NODES = 2 * _MAX_WLE_EVIDENCE_CELLS
+
+
+def _trusted_positive_real(value: object, name: str) -> float:
+    """Return one finite positive control that survives the Rust ``f64`` boundary exactly."""
+    error = f"{name} must be finite and positive"
+    value_type = type(value)
+    try:
+        if value_type is int:
+            normalized = float(value)
+            if not np.isfinite(normalized) or int(normalized) != value:
+                raise ValueError(error)
+        elif value_type is float:
+            normalized = value
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+            normalized = float(value)
+            if not np.isfinite(normalized) or int(normalized) != int(value):
+                raise ValueError(error)
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
+            normalized = float(value)
+            if not np.isfinite(normalized) or value_type(normalized) != value:
+                raise ValueError(error)
+        else:
+            raise ValueError(error)
+    except (OverflowError, ValueError):
+        raise ValueError(error) from None
+    if not np.isfinite(normalized) or normalized <= 0:
+        raise ValueError(error)
+    return normalized
+
+
+def _trusted_category_count(value: object) -> int:
+    """Return one Rust-compatible category count without caller integer coercion."""
+    error = "n_cat must be an integer >= 2"
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(error)
+    if normalized < 2 or normalized > _MAX_NATIVE_USIZE:
+        raise ValueError(error)
+    return normalized
+
+
+def _trusted_polytomous_model(value: object) -> str:
+    """Return one supported package-owned polytomous model identity."""
+    value_type = type(value)
+    if value_type is str:
+        normalized = value
+    elif value_type is np.str_:
+        normalized = str(value)
+    else:
+        raise ValueError("model must be 'grm' or 'gpcm'")
+    if normalized not in {"grm", "gpcm"}:
+        raise ValueError("model must be 'grm' or 'gpcm'")
+    return normalized
+
+
+def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
+    """Materialize only inert, resource-bounded numeric arrays or sequence trees."""
+    error = f"{name} must be a numeric array"
+    resource_error = (
+        f"{name} must contain at most {_MAX_WLE_EVIDENCE_CELLS:,} logical cells"
+    )
+    structural_error = f"{name} exceeds structural traversal budget"
+    if type(value) is np.ndarray:
+        if value.dtype.kind not in ("b", "i", "u", "f", "c"):
+            raise ValueError(error)
+        if int(value.size) > _MAX_WLE_EVIDENCE_CELLS:
+            raise ValueError(resource_error)
+        return value
+    if type(value) not in (list, tuple):
+        raise ValueError(error)
+
+    # WLE accepts only one-dimensional item vectors and two-dimensional
+    # response/parameter matrices downstream. A valid non-empty matrix with N
+    # scalar cells visits at most N row entries plus N scalar entries. Keep a
+    # separate traversal budget so malformed zero-cell/deep fan-out cannot
+    # evade the logical-cell ceiling.
+    structural_nodes = 0
+    frames: list[list[object]] = [[value, 0, 0]]
+    active_container_ids: set[int] = {id(value)}
+    subtree_cells: dict[int, int] = {}
+
+    while frames:
+        frame = frames[-1]
+        current = frame[0]
+        child_index = int(frame[1])
+
+        if child_index >= len(current):
+            subtotal = int(frame[2])
+            current_id = id(current)
+            active_container_ids.remove(current_id)
+            subtree_cells[current_id] = subtotal
+            frames.pop()
+            if frames:
+                parent_total = int(frames[-1][2]) + subtotal
+                if parent_total > _MAX_WLE_EVIDENCE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][2] = parent_total
+            continue
+
+        frame[1] = child_index + 1
+        child = current[child_index]
+        structural_nodes += 1
+        if structural_nodes > _MAX_WLE_EVIDENCE_STRUCTURAL_NODES:
+            raise ValueError(structural_error)
+        child_type = type(child)
+
+        if child_type is np.ndarray:
+            if child.dtype.kind not in ("b", "i", "u", "f", "c"):
+                raise ValueError(error)
+            subtotal = int(frame[2]) + int(child.size)
+            if subtotal > _MAX_WLE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+            subtotal = int(frame[2]) + 1
+            if subtotal > _MAX_WLE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type not in (list, tuple):
+            raise ValueError(error)
+        child_id = id(child)
+        if child_id in active_container_ids:
+            raise ValueError(error)
+        cached_cells = subtree_cells.get(child_id)
+        if cached_cells is not None:
+            subtotal = int(frame[2]) + cached_cells
+            if subtotal > _MAX_WLE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        active_container_ids.add(child_id)
+        frames.append([child, 0, 0])
+
+    try:
+        raw = np.asarray(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(error) from None
+    if raw.dtype.kind not in ("b", "i", "u", "f", "c"):
+        raise ValueError(error)
+    return raw
+
+
+def _real_float64_array(value: object, name: str) -> np.ndarray:
+    """Reject callback-bearing or complex evidence before real-valued marshalling."""
+    raw = _trusted_numeric_storage(value, name)
     if np.iscomplexobj(raw):
         raise ValueError(f"{name} must be real-valued")
-    return np.asarray(raw, dtype=np.float64)
+    try:
+        return np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+
+
+def _trusted_observed_mask(value: object, shape: tuple[int, int]) -> np.ndarray:
+    """Return a callback-free Boolean observation mask matching ``shape`` exactly."""
+    error = "observed must be a boolean array matching responses shape"
+    if type(value) is np.ndarray:
+        if value.dtype.kind != "b" or value.shape != shape:
+            raise ValueError(error)
+        return np.ascontiguousarray(value, dtype=np.bool_)
+
+    if type(value) not in (list, tuple) or len(value) != shape[0]:
+        raise ValueError(error)
+
+    normalized = np.empty(shape, dtype=np.bool_)
+    for row_index in range(shape[0]):
+        row = value[row_index]
+        if type(row) not in (list, tuple) or len(row) != shape[1]:
+            raise ValueError(error)
+        for item_index in range(shape[1]):
+            cell = row[item_index]
+            cell_type = type(cell)
+            if cell_type is bool:
+                normalized[row_index, item_index] = cell
+            elif cell_type is np.bool_:
+                normalized[row_index, item_index] = bool(cell)
+            else:
+                raise ValueError(error)
+    return normalized
 
 
 def score_wle(
@@ -53,11 +264,8 @@ def score_wle(
         Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
             *Psychometrika, 54*(3), 427-450. https://doi.org/10.1007/BF02294627
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "score_wle"):
-        raise RuntimeError("score_wle requires the compiled Rust core")
+    theta_bound = _trusted_positive_real(theta_bound, "theta_bound")
+    tol = _trusted_positive_real(tol, "tol")
 
     a = _real_float64_array(a, "a").reshape(-1)
     b = _real_float64_array(b, "b").reshape(-1)
@@ -80,13 +288,16 @@ def score_wle(
     if observed is None:
         observed = ~np.isnan(y)
     else:
-        observed = np.asarray(observed, dtype=bool)
-        if observed.shape != y.shape:
-            raise ValueError("observed must match responses shape")
+        observed = _trusted_observed_mask(observed, y.shape)
     yy = np.where(observed, y, 0.0)
     if not np.all(np.isin(yy[observed], (0.0, 1.0))):
         raise ValueError("responses must be 0 or 1 where observed (NaN = missing)")
 
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_wle"):
+        raise RuntimeError("score_wle requires the compiled Rust core")
     res = core.score_wle(
         a,
         b,
@@ -96,8 +307,8 @@ def score_wle(
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
-        float(theta_bound),
-        float(tol),
+        theta_bound,
+        tol,
     )
     return {
         "theta": np.asarray(res["theta"], dtype=np.float64),
@@ -161,15 +372,11 @@ def score_wle_poly(
         Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
             *Psychometrika, 54*(3), 427-450. https://doi.org/10.1007/BF02294627
     """
-    from .fitstats import _core_module
+    n_cat = _trusted_category_count(n_cat)
+    model = _trusted_polytomous_model(model)
+    theta_bound = _trusted_positive_real(theta_bound, "theta_bound")
+    tol = _trusted_positive_real(tol, "tol")
 
-    core = _core_module()
-    if core is None or not hasattr(core, "score_wle_poly"):
-        raise RuntimeError("score_wle_poly requires the compiled Rust core")
-
-    n_cat = int(n_cat)
-    if n_cat < 2:
-        raise ValueError("n_cat must be >= 2")
     slope = _real_float64_array(slope, "slope").reshape(-1)
     n_items = slope.shape[0]
     if n_items == 0:
@@ -186,15 +393,22 @@ def score_wle_poly(
     if observed is None:
         observed = ~np.isnan(y)
     else:
-        observed = np.asarray(observed, dtype=bool)
-        if observed.shape != y.shape:
-            raise ValueError("observed must match responses shape")
+        observed = _trusted_observed_mask(observed, y.shape)
     yy = np.where(observed, y, 0.0)
     seen = yy[observed]
-    if seen.size and (not np.all(np.isfinite(seen)) or not np.all(seen == np.floor(seen))
-                      or seen.min() < 0 or seen.max() > n_cat - 1):
+    if seen.size and (
+        not np.all(np.isfinite(seen))
+        or not np.all(seen == np.floor(seen))
+        or seen.min() < 0
+        or seen.max() > n_cat - 1
+    ):
         raise ValueError("responses must be integers in 0..n_cat-1 where observed (NaN = missing)")
 
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_wle_poly"):
+        raise RuntimeError("score_wle_poly requires the compiled Rust core")
     res = core.score_wle_poly(
         yy.reshape(-1).astype(np.int64),
         int(n_persons),
@@ -203,9 +417,9 @@ def score_wle_poly(
         slope,
         cat.reshape(-1),
         observed.reshape(-1),
-        str(model),
-        float(theta_bound),
-        float(tol),
+        model,
+        theta_bound,
+        tol,
     )
     return {
         "theta": np.asarray(res["theta"], dtype=np.float64),
