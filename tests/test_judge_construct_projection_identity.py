@@ -167,3 +167,30 @@ def test_projection_replays_originating_custom_policy_after_slot_rebinding() -> 
 
     with pytest.raises(ValueError, match="meets_policy does not match policy bounds"):
         project_judge_results_to_matrix([result], spec)
+
+
+def test_validated_spec_serializes_originating_custom_policy() -> None:
+    """A reconstructable handoff must carry the policy that defined compliance."""
+    spec_ids = tuple(f"criterion_{index}" for index in range(6))
+    policy = JudgeConstructPolicy(min_items=6, recommended_items=7, max_items=9)
+
+    spec = validate_judge_construct(spec_ids, n_categories=4, policy=policy)
+
+    assert spec.policy == policy
+    assert spec.policy is not policy
+    assert spec.to_dict()["policy"] == policy.to_dict()
+
+
+def test_projection_replays_originating_policy_invariants() -> None:
+    """Frozen-policy rebinding must fail before projected row marshalling."""
+    spec_ids = tuple(f"criterion_{index}" for index in range(6))
+    spec = validate_judge_construct(
+        spec_ids,
+        n_categories=4,
+        policy=JudgeConstructPolicy(min_items=6, recommended_items=7, max_items=9),
+    )
+    assert spec.policy is not None
+    object.__setattr__(spec.policy, "min_items", 2)
+
+    with pytest.raises(ValueError, match="min_items must be between"):
+        project_judge_results_to_matrix([], spec)
