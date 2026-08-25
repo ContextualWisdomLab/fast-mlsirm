@@ -44,6 +44,14 @@
 
 ### Changed
 
+#### Own residual interaction-map computation in the psychometric core
+
+- Add a Rust-backed, complete-case Gabriel residual interaction-map contract
+  for consumers that already hold observed responses and fitted IRT
+  expectations. The API returns coordinates, singular values, axis inertia,
+  reconstruction, unexplained residual, and the exact cross term without
+  product identifiers, persistence, authorization, or presentation policy.
+
 #### Validate Rasch CML controls before data materialization
 
 - Validate `max_iter` and `tol` before caller-owned response or group arrays are materialized by the public Rasch CML and Andersen LR entry points.
@@ -59,6 +67,12 @@
 - Extend deterministic GRM, GPCM, CAT, and fixed-item-parameter recovery studies to require signed bias, MAE, finite positive Rust-returned posterior uncertainty, and empirical coverage of the normal-approximation interval `theta_eap ± 1.96 * theta_sd` alongside RMSE, while retaining correlation only as supplementary recovery evidence.
 - Preserve CAT's independent adaptive-efficiency gate on mean administered items, so uncertainty calibration and error recovery cannot mask a fallback to non-adaptive item selection.
 - Keep all production likelihood, marginal-ML/EM, EAP/CAT scoring, item-information/selection, stopping, and uncertainty arithmetic Rust-owned; the added Python calculations are explicit true-parameter recovery-test summaries only.
+
+#### Harden observed-score logistic DIF controls
+
+- Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
+- Reject caller-defined scalar subclasses, arbitrary conversion providers, booleans-as-numbers, invalid FDR levels, zero iteration caps, negative anchor floors, and values outside native `usize` without invoking caller callbacks.
+- Preserve genuine supported NumPy scalar compatibility and keep all logistic/Mantel-Haenszel/purification statistics and BH arithmetic Rust-owned.
 
 #### Method literature and citation ADRs
 
