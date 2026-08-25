@@ -206,10 +206,14 @@ hierarchical, multiply affiliated, or longitudinal:
   temporal validity rules.
 
 The `fast_mlsirm.multilevel` contracts are content-addressed and fail closed.
-Nested estimators that consume multiple-membership and longitudinal contracts
-remain explicitly paper-scoped until their Rust implementation and recovery
-evidence are complete; the presence of a contract is not a claim that the
-estimator is already production-ready.
+ADR-0019 proposes a state layer for independent OLS trends and caller-supplied
+discrete AR predictions. ADR-0020 proposes a separate joint MAP hierarchical
+continuous-time AR(1) Rasch slice with estimated `(mu, tau, lambda)`, elapsed-day
+transitions, and Wald observed-information intervals. That slice excludes
+estimated multiple-membership `u_h` and does not claim GPU parity. Remaining
+nested/crossed estimators stay paper-scoped until their own Rust
+implementation and recovery evidence are complete; the presence of a contract
+is not a claim that every estimator is production-ready.
 
 ## 5. Numerical and scientific architecture
 

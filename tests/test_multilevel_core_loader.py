@@ -29,6 +29,9 @@ def test_multilevel_core_loads_and_caches_the_real_extension() -> None:
     """The happy path returns the same cached module on a second call."""
     first = loader.multilevel_core()
     assert hasattr(first, "weighted_contextual_effect")
+    assert hasattr(first, "fit_hierarchical_ctar_rasch")
+    assert hasattr(first, "simulate_hierarchical_ctar_rasch")
+    assert hasattr(first, "fit_longitudinal_state")
     second = loader.multilevel_core()
     assert second is first
 

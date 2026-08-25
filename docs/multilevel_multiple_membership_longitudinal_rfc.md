@@ -2,9 +2,12 @@
 
 ## Status
 
-This RFC defines the provider-neutral contract boundary delivered by issue #565.
-It does not yet add a numerical estimator. All future psychometric arithmetic
-remains a Rust-core responsibility.
+This RFC defines the provider-neutral contract boundary delivered by issue #565
+and the first Rust-owned repeated-measurement state layer. The state layer is a
+small, identified handoff for independent per-respondent OLS trends and
+discrete-step AR(1) state predictions; it is not a claim that the full
+multilevel IRT likelihood, Bayesian random-effect estimation, uncertainty, or
+GPU state recurrence is complete.
 
 ## Product outcome
 
@@ -83,13 +86,21 @@ and revision identity. Within a respondent:
 - time offsets increase strictly with sequence order;
 - irregular spacing is preserved as provenance.
 
-The initial state specifications are:
+The initial state-specification wire labels are:
 
 - `random_intercept_slope`;
 - `stationary_autoregressive` with \(-1<\phi<1\).
 
-The current `autoregressive_coefficient` is a **discrete occasion-step AR(1)
-parameter**. The millisecond offsets do not transform \(\phi\), and the contract
+These labels are compatibility identifiers, not claims about the fitted
+estimand. A `random_intercept_slope` result reports
+`estimand_scope="independent_respondent_ols_trend"` and
+`population_random_effects_estimated=False`; there is no population variance
+component or shrinkage in this state predictor. A `stationary_autoregressive`
+result reports `estimand_scope="discrete_ar_state_prediction"`,
+`ar_coefficient_estimated=False`, and `ar_coefficient_source="caller_supplied"`.
+The current `autoregressive_coefficient` is therefore a **discrete occasion-step
+AR(1) parameter supplied by the caller**, not a coefficient estimated by this
+state layer. The millisecond offsets do not transform \(\phi\), and the contract
 does not claim continuous-time or interval-adjusted transitions. A later Rust
 estimator may use irregular gaps only after a separate, explicit continuous-time
 or elapsed-gap parameterization and recovery contract is introduced.
@@ -116,16 +127,17 @@ use `NVIDIA_NIM_API_KEY` rather than `COPILOT_GITHUB_TOKEN`.
 ## Numerical boundary
 
 Python performs validation, canonicalization, hashing, sparse design marshalling,
-and serialization. Future Rust PRs own:
+and serialization. Rust owns:
 
-- multilevel and cross-classified predictors;
-- random-effect integration;
-- multiple-membership weighting;
-- longitudinal state transitions;
-- likelihood and gradients;
-- optimization and uncertainty;
-- CPU multithreading and justified GPU batching;
-- true-parameter recovery.
+- the multilevel and cross-classified weighted predictor;
+- independent per-respondent OLS state estimates;
+- discrete-step stationary AR(1) state prediction using caller-supplied \(\phi\);
+- deterministic CPU respondent sharding and diagnostics for those state paths.
+
+The following remain explicit future boundaries: full multilevel IRT random-effect
+integration and estimation, uncertainty/intervals, joint item/context/state
+likelihood and gradients, GPU batching for the recurrent state path, continuous
+time transitions, and true-parameter recovery for the full joint model.
 
 A Python fallback estimator is explicitly out of scope.
 

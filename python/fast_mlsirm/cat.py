@@ -172,12 +172,67 @@ def _query_params(bank: MLSIRMParams, theta_rows: np.ndarray) -> MLSIRMParams:
     )
 
 
-def _lossless_signed_int64_indices(values: np.ndarray) -> np.ndarray:
-    """Normalize item indices without allowing signed-64 narrowing to wrap."""
+def _trusted_numeric_vector(
+    values: object,
+    *,
+    error: str,
+    allow_bool: bool,
+) -> np.ndarray:
+    """Materialize a one-dimensional numeric vector only after inert admission.
 
-    raw = np.asarray(values)
-    if np.iscomplexobj(raw):
-        raise ValueError("administered item indices must be integers")
+    Exact NumPy arrays are safe to inspect through dtype metadata without
+    invoking caller protocols. Exact built-in lists/tuples are traversed only
+    after their container identity is established; every leaf must be an exact
+    built-in numeric scalar or the canonical concrete NumPy scalar type for its
+    dtype. This keeps caller-defined ``__array__``/numeric conversion methods
+    outside the CAT evidence boundary.
+    """
+
+    allowed_kinds = {"i", "u", "f"}
+    if allow_bool:
+        allowed_kinds.add("b")
+
+    if type(values) is np.ndarray:
+        raw = values
+        if raw.dtype.kind not in allowed_kinds:
+            raise ValueError(error)
+        return raw
+    if type(values) not in (list, tuple):
+        raise ValueError(error)
+
+    for value in values:
+        value_type = type(value)
+        if value_type is bool:
+            kind = "b"
+        elif value_type is int:
+            kind = "i"
+        elif value_type is float:
+            kind = "f"
+        else:
+            try:
+                dtype = np.dtype(value_type)
+            except (TypeError, ValueError):
+                raise ValueError(error) from None
+            if dtype.type is not value_type:
+                raise ValueError(error)
+            kind = dtype.kind
+        if kind not in allowed_kinds:
+            raise ValueError(error)
+
+    try:
+        return np.asarray(values)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(error) from exc
+
+
+def _lossless_signed_int64_indices(values: np.ndarray) -> np.ndarray:
+    """Normalize item indices without allowing callbacks or signed-64 wrap."""
+
+    raw = _trusted_numeric_vector(
+        values,
+        error="administered item indices must be integers",
+        allow_bool=False,
+    )
     kind = raw.dtype.kind
     if kind == "u":
         if raw.size and np.any(raw > _INT64_MAX):
@@ -203,11 +258,13 @@ def _lossless_signed_int64_indices(values: np.ndarray) -> np.ndarray:
 
 
 def _real_response_array(responses: np.ndarray) -> np.ndarray:
-    """Normalize response data only after proving no imaginary component can be lost."""
+    """Normalize response data after proving it is inert real-numeric evidence."""
 
-    raw = np.asarray(responses)
-    if np.iscomplexobj(raw):
-        raise ValueError("responses must be real-valued")
+    raw = _trusted_numeric_vector(
+        responses,
+        error="responses must be real-valued",
+        allow_bool=True,
+    )
     try:
         return np.asarray(raw, dtype=np.float64)
     except (OverflowError, TypeError, ValueError) as exc:

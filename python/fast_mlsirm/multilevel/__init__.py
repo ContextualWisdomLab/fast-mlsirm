@@ -26,6 +26,9 @@ from .estimation import CrossedPersonEffectResult
 _install_crossed_estimation_safety(_estimation)
 estimate_crossed_person_effects = _estimation.estimate_crossed_person_effects
 weighted_contextual_effect = _estimation.weighted_contextual_effect
+fit_hierarchical_longitudinal_irt = _estimation.fit_hierarchical_longitudinal_irt
+fit_longitudinal_state = _estimation.fit_longitudinal_state
+simulate_hierarchical_longitudinal_irt = _estimation.simulate_hierarchical_longitudinal_irt
 
 del _install_crossed_estimation_safety, _estimation
 
@@ -44,5 +47,8 @@ __all__ = [
     "build_temporal_occasion",
     "CrossedPersonEffectResult",
     "estimate_crossed_person_effects",
+    "fit_hierarchical_longitudinal_irt",
+    "fit_longitudinal_state",
+    "simulate_hierarchical_longitudinal_irt",
     "weighted_contextual_effect",
 ]
