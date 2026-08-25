@@ -1,4 +1,4 @@
-"""Trust-boundary regressions for Warm WLE semantic controls."""
+"""Trust-boundary regressions for Warm WLE semantic controls and masks."""
 
 from __future__ import annotations
 
@@ -51,6 +51,17 @@ class _HostileStringProvider:
     def __str__(self) -> str:
         self.calls += 1
         raise AssertionError("caller string protocol must not run")
+
+
+class _HostileBoolProvider:
+    """Record any attempt to coerce caller-owned evidence to truth."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __bool__(self) -> bool:
+        self.calls += 1
+        raise AssertionError("caller truth protocol must not run")
 
 
 def _forbid_core(monkeypatch: pytest.MonkeyPatch) -> list[int]:
@@ -179,6 +190,80 @@ def test_score_wle_poly_rejects_callback_bearing_controls_before_data_and_core(
     assert hostile_data.calls == 0
     assert getattr(value, "calls") == 0
     assert core_calls == []
+
+
+def test_score_wle_rejects_callback_bearing_observed_array_provider_without_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = _HostileArrayProvider()
+    core_calls = _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="observed must be a boolean array matching responses shape"):
+        score_wle(
+            np.array([1.0]),
+            np.array([0.0]),
+            np.array([[1.0]]),
+            observed=observed,
+        )
+
+    assert observed.calls == 0
+    assert core_calls == []
+
+
+def test_score_wle_poly_rejects_callback_bearing_observed_truth_provider_without_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    truth = _HostileBoolProvider()
+    core_calls = _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="observed must be a boolean array matching responses shape"):
+        score_wle_poly(
+            np.array([[0.0]]),
+            np.array([1.0]),
+            np.array([[0.0]]),
+            2,
+            observed=[[truth]],
+        )
+
+    assert truth.calls == 0
+    assert core_calls == []
+
+
+def test_wle_normalizes_supported_observed_masks_to_boolean_arrays(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, np.ndarray] = {}
+
+    class _Core:
+        def score_wle(self, *args):
+            seen["observed"] = args[5]
+            return {"theta": [0.0], "se": [1.0], "boundary": [False]}
+
+        def score_wle_poly(self, *args):
+            seen["poly_observed"] = args[6]
+            return {"theta": [0.0], "se": [1.0], "boundary": [False]}
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    score_wle(
+        np.array([1.0]),
+        np.array([0.0]),
+        np.array([[1.0]]),
+        observed=np.array([[True]], dtype=np.bool_),
+    )
+    score_wle_poly(
+        np.array([[0.0]]),
+        np.array([1.0]),
+        np.array([[0.0]]),
+        2,
+        observed=[[np.bool_(True)]],
+    )
+
+    for key in ("observed", "poly_observed"):
+        assert type(seen[key]) is np.ndarray
+        assert seen[key].dtype == np.bool_
+        assert seen[key].flags.c_contiguous
+        np.testing.assert_array_equal(seen[key], np.array([[True]], dtype=bool))
 
 
 def test_wle_normalizes_supported_numpy_controls_to_builtin_primitives(
