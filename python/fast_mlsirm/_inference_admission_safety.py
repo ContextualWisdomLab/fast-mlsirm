@@ -69,6 +69,67 @@ def _check_matrix_cells(side: int, name: str) -> None:
         )
 
 
+def _lossless_matrix_error(name: str) -> ValueError:
+    return ValueError(f"{name} entries must be losslessly representable as float64")
+
+
+def _scalar_is_lossless_float64(value: object) -> bool:
+    """Return whether one already-trusted scalar preserves identity in Rust ``f64``."""
+    value_type = type(value)
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    if value_type is bool or value_type is float:
+        return True
+    if value_type is int:
+        return np.isfinite(normalized) and int(normalized) == value
+
+    # The caller reached this helper only after exact concrete NumPy-scalar admission.
+    try:
+        roundtrip = value_type(normalized)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    try:
+        if np.dtype(value_type).kind == "f" and np.isnan(value) and np.isnan(roundtrip):
+            return True
+    except TypeError:
+        return False
+    return bool(roundtrip == value)
+
+
+def _numpy_array_float64(value: np.ndarray, name: str) -> np.ndarray:
+    """Normalize one exact numeric ndarray and prove any narrowing is lossless."""
+    try:
+        normalized = np.ascontiguousarray(value, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise _lossless_matrix_error(name) from exc
+
+    kind = value.dtype.kind
+    # Boolean, <=32-bit integers, and <=64-bit IEEE floats are exactly representable
+    # in binary64 under the admitted real-numeric dtype contract.
+    if kind == "b" or (kind in {"i", "u"} and value.dtype.itemsize <= 4) or (
+        kind == "f" and value.dtype.itemsize <= 8
+    ):
+        return normalized
+
+    row_count = value.shape[0] if value.ndim > 1 else 1
+    for index in range(row_count):
+        source = value[index] if value.ndim > 1 else value
+        target = normalized[index] if value.ndim > 1 else normalized
+        try:
+            with np.errstate(invalid="ignore", over="ignore"):
+                roundtrip = target.astype(value.dtype)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise _lossless_matrix_error(name) from exc
+        equal = roundtrip == source
+        if kind == "f":
+            equal = equal | (np.isnan(roundtrip) & np.isnan(source))
+        if not bool(np.all(equal)):
+            raise _lossless_matrix_error(name)
+    return normalized
+
+
 def _validate_row(row: object, name: str, expected: int) -> None:
     """Validate one inert matrix row without invoking caller protocols."""
     row_type = type(row)
@@ -79,6 +140,7 @@ def _validate_row(row: object, name: str, expected: int) -> None:
             if row.dtype.kind == "c":
                 raise ValueError(f"{name} must be real-valued")
             raise ValueError(f"{name} must contain real numeric values")
+        _numpy_array_float64(row, name)
         return
     if row_type is not list and row_type is not tuple:
         raise ValueError(f"{name} must be an exact NumPy array or built-in matrix")
@@ -89,6 +151,8 @@ def _validate_row(row: object, name: str, expected: int) -> None:
             if type(value) is complex or _is_numpy_complex_scalar(value):
                 raise ValueError(f"{name} must be real-valued")
             raise ValueError(f"{name} must contain real numeric values")
+        if not _scalar_is_lossless_float64(value):
+            raise _lossless_matrix_error(name)
 
 
 def _is_numpy_complex_scalar(value: object) -> bool:
@@ -102,7 +166,7 @@ def _is_numpy_complex_scalar(value: object) -> bool:
 
 
 def _real_square_matrix(value: object, name: str) -> np.ndarray:
-    """Seal and bound square-matrix identity before float64 materialization."""
+    """Seal, bound, and losslessly normalize square matrices before Rust."""
     value_type = type(value)
     if value_type is np.ndarray:
         if value.dtype.kind not in _REAL_KINDS:
@@ -112,7 +176,7 @@ def _real_square_matrix(value: object, name: str) -> np.ndarray:
         if value.ndim != 2 or value.shape[0] == 0 or value.shape[0] != value.shape[1]:
             raise ValueError(f"{name} must be a square matrix")
         _check_matrix_cells(int(value.shape[0]), name)
-        return np.ascontiguousarray(value, dtype=np.float64)
+        return _numpy_array_float64(value, name)
 
     if value_type is not list and value_type is not tuple:
         raise ValueError(f"{name} must be an exact NumPy array or built-in matrix")
@@ -122,7 +186,10 @@ def _real_square_matrix(value: object, name: str) -> np.ndarray:
     _check_matrix_cells(size, name)
     for row in value:
         _validate_row(row, name, size)
-    return np.ascontiguousarray(np.asarray(value, dtype=np.float64))
+    try:
+        return np.ascontiguousarray(np.asarray(value, dtype=np.float64))
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise _lossless_matrix_error(name) from exc
 
 
 def install(inference_module: ModuleType) -> None:
