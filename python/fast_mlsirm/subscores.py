@@ -10,6 +10,41 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_MAX_SUBSCORE_EVIDENCE_CELLS = 20_000_000
+_MAX_SUBSCORE_STRUCTURE_NODES = 3 * _MAX_SUBSCORE_EVIDENCE_CELLS
+_TRUSTED_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        complex,
+        np.bool_,
+        *_TRUSTED_NUMPY_INTEGER_TYPES,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+        np.complex64,
+        np.complex128,
+        np.clongdouble,
+    }
+)
+
+
 @dataclass
 class SubscoreResult:
     """Haberman subscore added-value analysis for ``K`` subscales.
@@ -46,6 +81,79 @@ class SubscoreResult:
     subscore_sx: np.ndarray
 
 
+def _trusted_numeric_array(value: object, name: str) -> np.ndarray:
+    """Materialize inert numeric evidence after bounded callback-free preflight."""
+
+    resource_error = (
+        f"{name} must contain at most {_MAX_SUBSCORE_EVIDENCE_CELLS:,} logical cells"
+    )
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if value.size > _MAX_SUBSCORE_EVIDENCE_CELLS:
+            raise ValueError(resource_error)
+        raw = value
+    elif value_type in (list, tuple):
+        # Use indexed frames so traversal memory is proportional to nesting
+        # depth rather than sibling width. Active-path identities reject true
+        # cycles while permitting the same acyclic subtree to appear in more
+        # than one sibling position.
+        frames: list[list[object]] = [[value, 0]]
+        active_container_ids: set[int] = {id(value)}
+        logical_cells = 0
+        structural_nodes = 0
+
+        while frames:
+            frame = frames[-1]
+            current = frame[0]
+            child_index = int(frame[1])
+
+            if child_index >= len(current):
+                active_container_ids.remove(id(current))
+                frames.pop()
+                continue
+
+            frame[1] = child_index + 1
+            structural_nodes += 1
+            if structural_nodes > _MAX_SUBSCORE_STRUCTURE_NODES:
+                raise ValueError(
+                    f"{name} exceeded structural traversal budget of "
+                    f"{_MAX_SUBSCORE_STRUCTURE_NODES:,} nodes"
+                )
+
+            child = current[child_index]
+            child_type = type(child)
+            if child_type in (list, tuple):
+                child_id = id(child)
+                if child_id in active_container_ids:
+                    raise ValueError(f"{name} must be acyclic numeric evidence")
+                active_container_ids.add(child_id)
+                frames.append([child, 0])
+                continue
+
+            if child_type is np.ndarray:
+                if child.dtype.kind not in ("b", "i", "u", "f", "c"):
+                    raise ValueError(f"{name} must be real-numeric evidence")
+                logical_cells += int(child.size)
+            elif child_type in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
+                logical_cells += 1
+            else:
+                raise ValueError(f"{name} must be real-numeric evidence")
+
+            if logical_cells > _MAX_SUBSCORE_EVIDENCE_CELLS:
+                raise ValueError(resource_error)
+
+        try:
+            raw = np.asarray(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{name} must be real-numeric evidence") from None
+    else:
+        raise ValueError(f"{name} must be real-numeric evidence")
+
+    if raw.dtype.kind not in ("b", "i", "u", "f", "c"):
+        raise ValueError(f"{name} must be real-numeric evidence")
+    return raw
+
+
 def subscore_analysis(
     responses: np.ndarray,
     groups: np.ndarray,
@@ -71,7 +179,12 @@ def subscore_analysis(
     ``responses`` is a complete ``persons x items`` array of scored
     responses (``n >= 3``). ``groups`` assigns each item an integer subscale
     index in ``0..K`` (``K >= 2``, every subscale with at least 2 items,
-    partition exhaustive by construction).
+    partition exhaustive by construction). Evidence admission accepts exact
+    NumPy numeric arrays or exact built-in list/tuple trees containing only
+    package-trusted concrete Python/NumPy numeric scalars or exact NumPy
+    numeric array leaves. Logical-cell and structural traversal budgets are
+    enforced before NumPy materialization, and callback-bearing or cyclic
+    providers fail closed.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
@@ -87,7 +200,7 @@ def subscore_analysis(
             H. Wainer (Eds.), *Test scoring* (pp. 343-387). Lawrence
             Erlbaum. (as cited in Sinharay, 2010)
     """
-    y_raw = np.asarray(responses)
+    y_raw = _trusted_numeric_array(responses, "responses")
     if np.iscomplexobj(y_raw):
         raise ValueError("responses must be real-valued")
     y = np.asarray(y_raw, dtype=np.float64)
@@ -102,7 +215,7 @@ def subscore_analysis(
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
 
-    g = np.asarray(groups).reshape(-1)
+    g = _trusted_numeric_array(groups, "groups").reshape(-1)
     if g.shape[0] != n_items:
         raise ValueError("groups must assign one subscale index per item")
     if np.iscomplexobj(g):
