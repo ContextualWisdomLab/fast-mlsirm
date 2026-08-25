@@ -111,6 +111,45 @@ def test_score_wle_rejects_callback_bearing_real_control_without_callbacks(
     assert core_calls == []
 
 
+def test_score_wle_rejects_lossy_integer_control_before_arrays_and_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hostile = _HostileArrayProvider()
+    core_calls = _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="theta_bound must be finite and positive"):
+        score_wle(
+            hostile,
+            np.array([0.0]),
+            np.array([[1.0]]),
+            theta_bound=2**53 + 1,
+        )
+
+    assert hostile.calls == 0
+    assert core_calls == []
+
+
+def test_score_wle_rejects_lossy_longdouble_control_before_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("platform long double is not wider than binary64")
+    hostile = _HostileArrayProvider()
+    core_calls = _forbid_core(monkeypatch)
+    lossy = np.longdouble(1) + np.finfo(np.longdouble).eps
+
+    with pytest.raises(ValueError, match="tol must be finite and positive"):
+        score_wle(
+            hostile,
+            np.array([0.0]),
+            np.array([[1.0]]),
+            tol=lossy,
+        )
+
+    assert hostile.calls == 0
+    assert core_calls == []
+
+
 @pytest.mark.parametrize(
     ("control", "value", "message"),
     [
@@ -174,7 +213,7 @@ def test_wle_normalizes_supported_numpy_controls_to_builtin_primitives(
         np.array([1.0]),
         np.array([[0.0]]),
         np.int16(2),
-        model="gpcm",
+        model=np.str_("gpcm"),
         theta_bound=np.float32(8.0),
         tol=np.float32(0.5),
     )
@@ -183,5 +222,6 @@ def test_wle_normalizes_supported_numpy_controls_to_builtin_primitives(
     assert type(seen["tol"]) is float
     assert type(seen["n_cat"]) is int
     assert type(seen["model"]) is str
+    assert seen["model"] == "gpcm"
     assert type(seen["poly_theta_bound"]) is float
     assert type(seen["poly_tol"]) is float
