@@ -6,6 +6,8 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
+from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
+from .interaction_map import residual_interaction_map as residual_interaction_map
 from . import cat as _cat
 from . import cdm as _cdm
 from . import exposure as _exposure
