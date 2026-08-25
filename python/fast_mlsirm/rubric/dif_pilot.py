@@ -91,6 +91,8 @@ class DifPilotDesign:
             raise TypeError("DIF pilot handoff requires an exact DifPilotDesign")
         if type(self.binary_design) is not MirtPilotDesign:
             raise TypeError("binary_design must be a validated MirtPilotDesign")
+        if type(self.respondent_group_ids) is not tuple:
+            raise TypeError("respondent_group_ids must be an exact tuple")
         return replace(self, _design_token=_DIF_DESIGN_TOKEN)
 
     @property
