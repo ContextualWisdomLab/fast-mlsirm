@@ -4,6 +4,7 @@ Rust core; this module only validates and marshals."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -24,6 +25,17 @@ _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.uint64,
     np.uintp,
     np.ulonglong,
+)
+_TRUSTED_NUMPY_FLOAT_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+_TRUSTED_NUMPY_COMPLEX_TYPES = (
+    np.complex64,
+    np.complex128,
+    np.clongdouble,
 )
 
 
@@ -91,8 +103,139 @@ def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
         )
 
 
+def _raise_lossy_data() -> None:
+    """Raise the stable observed-evidence binary64 identity diagnostic."""
+    raise ValueError("data must be exactly representable as float64")
+
+
+def _lossless_float64_matrix(raw: np.ndarray) -> np.ndarray:
+    """Narrow trusted evidence only when every finite numeric identity survives."""
+    try:
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = np.ascontiguousarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("data must be numeric and convertible to float64") from None
+
+    if raw.dtype.kind in ("i", "u"):
+        bits = raw.dtype.itemsize * 8
+        lower = 0.0 if raw.dtype.kind == "u" else float(-(1 << (bits - 1)))
+        upper = float(1 << bits) if raw.dtype.kind == "u" else float(1 << (bits - 1))
+        if np.any(narrowed < lower) or np.any(narrowed >= upper):
+            _raise_lossy_data()
+        restored = narrowed.astype(raw.dtype)
+        if not np.array_equal(restored, raw):
+            _raise_lossy_data()
+    elif raw.dtype.kind == "f" and raw.dtype.itemsize > np.dtype(np.float64).itemsize:
+        restored = narrowed.astype(raw.dtype)
+        finite = np.isfinite(raw)
+        if np.any(restored[finite] != raw[finite]):
+            _raise_lossy_data()
+
+    return narrowed
+
+
+def _validate_real_array_storage(value: np.ndarray) -> None:
+    """Reject non-real exact NumPy storage without converting array elements."""
+    if value.dtype.kind == "c":
+        raise ValueError("data must be real-valued")
+    if value.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("data must be numeric and convertible to float64")
+
+
+def _validate_scalar_float64_identity(value: object) -> None:
+    """Reject concrete scalars that would change value at the Rust ``f64`` boundary."""
+    value_type = type(value)
+    if value_type is bool or value_type is np.bool_ or value_type is float:
+        return
+    if value_type is int or any(
+        value_type is scalar_type for scalar_type in _TRUSTED_NUMPY_INTEGER_TYPES
+    ):
+        integer = value if value_type is int else int(value)
+        try:
+            narrowed = float(integer)
+        except OverflowError:
+            _raise_lossy_data()
+        if not math.isfinite(narrowed) or int(narrowed) != integer:
+            _raise_lossy_data()
+        return
+    if any(
+        value_type is scalar_type
+        for scalar_type in (np.float16, np.float32, np.float64)
+    ):
+        return
+    if value_type is np.longdouble:
+        if np.isfinite(value):
+            narrowed = float(value)
+            if not math.isfinite(narrowed) or np.longdouble(narrowed) != value:
+                _raise_lossy_data()
+        return
+
+
+def _validate_trusted_real_scalar(value: object) -> None:
+    """Admit one concrete real scalar identity without caller conversion hooks."""
+    value_type = type(value)
+    if value_type is complex or any(
+        value_type is scalar_type for scalar_type in _TRUSTED_NUMPY_COMPLEX_TYPES
+    ):
+        raise ValueError("data must be real-valued")
+    if (
+        value_type is bool
+        or value_type is int
+        or value_type is float
+        or value_type is np.bool_
+        or any(
+            value_type is scalar_type
+            for scalar_type in (
+                *_TRUSTED_NUMPY_INTEGER_TYPES,
+                *_TRUSTED_NUMPY_FLOAT_TYPES,
+            )
+        )
+    ):
+        _validate_scalar_float64_identity(value)
+        return
+    raise ValueError("data must be numeric and convertible to float64")
+
+
+def _preflight_real_matrix(data: object) -> None:
+    """Validate the known 2-D carrier shape without recursive caller protocols."""
+    data_type = type(data)
+    if data_type is np.ndarray:
+        _validate_real_array_storage(data)
+        return
+    if data_type is not list and data_type is not tuple:
+        _validate_trusted_real_scalar(data)
+        return
+
+    for row_index in range(len(data)):
+        row = data[row_index]
+        row_type = type(row)
+        if row_type is np.ndarray:
+            _validate_real_array_storage(row)
+            if row.ndim != 1:
+                raise ValueError("data must be a 2-D persons x items array")
+            if row.dtype.kind in ("i", "u") or (
+                row.dtype.kind == "f"
+                and row.dtype.itemsize > np.dtype(np.float64).itemsize
+            ):
+                _lossless_float64_matrix(row)
+            continue
+        if row_type is list or row_type is tuple:
+            for column_index in range(len(row)):
+                cell = row[column_index]
+                if (
+                    type(cell) is list
+                    or type(cell) is tuple
+                    or type(cell) is np.ndarray
+                ):
+                    raise ValueError("data must be a 2-D persons x items array")
+                _validate_trusted_real_scalar(cell)
+            continue
+        _validate_trusted_real_scalar(row)
+
+
 def _real_numeric_matrix(data: object) -> np.ndarray:
-    """Materialize real numeric evidence before narrowing it to ``float64``."""
+    """Validate inert real evidence before narrowing it to contiguous ``float64``."""
+    _preflight_real_matrix(data)
     try:
         raw = np.asarray(data)
     except (TypeError, ValueError, OverflowError):
@@ -103,10 +246,7 @@ def _real_numeric_matrix(data: object) -> np.ndarray:
         raise ValueError("data must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("data must be numeric and convertible to float64")
-    try:
-        return np.ascontiguousarray(raw, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("data must be numeric and convertible to float64") from None
+    return _lossless_float64_matrix(raw)
 
 
 def parallel_analysis(
@@ -134,11 +274,17 @@ def parallel_analysis(
     paran-inspired but not bit-identical to any R run. Integer controls
     accept exact built-in and supported concrete NumPy integer scalars while
     rejecting booleans, subclasses, and implicit conversion providers before
-    compiled-core discovery. Caller data is first materialized in its source
-    dtype; complex and non-real-numeric storage is rejected before the
-    accepted matrix is marshalled to contiguous ``float64``. The random-
-    eigenvalue benchmark workspace is bounded to 128 MiB before compiled
-    dispatch.
+    compiled-core discovery. Caller data accepts exact real-numeric NumPy
+    arrays or exact built-in list/tuple matrices of package-trusted concrete
+    scalar evidence; arbitrary array/container/numeric subclasses and
+    conversion providers are rejected before NumPy protocols execute. The
+    known 2-D carrier structure is preflighted without unbounded recursive
+    container traversal. Finite integer and extended-precision floating
+    observations must preserve their numeric identity through the Rust `f64`
+    boundary, including before mixed built-in evidence can trigger NumPy dtype
+    promotion. Complex and non-real storage is rejected before the accepted
+    matrix is marshalled to contiguous ``float64``. The random-eigenvalue
+    benchmark workspace is bounded to 128 MiB before compiled dispatch.
 
     """
     explicit_iterations = (
