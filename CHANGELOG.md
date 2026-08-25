@@ -120,6 +120,14 @@
   psychometric method records, not new product capabilities and not
   CWE/OWASP/NIST controls.
 
+#### Own residual interaction-map computation in the psychometric core
+
+- Add a Rust-backed, complete-case Gabriel residual interaction-map contract
+  for consumers that already hold observed responses and fitted IRT
+  expectations. The API returns coordinates, singular values, axis inertia,
+  reconstruction, unexplained residual, and the exact cross term without
+  product identifiers, persistence, authorization, or presentation policy.
+
 ### Fixed
 
 #### Harden serving-bundle callback boundaries

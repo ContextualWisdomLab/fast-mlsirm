@@ -13,6 +13,15 @@ from fast_mlsirm.cli import main
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CHANGELOG_PATH = ROOT / "CHANGELOG.md"
+
+
+def _changelog_section(heading: str) -> str:
+    """Return one released or unreleased CHANGELOG.md subsection's exact text."""
+    text = CHANGELOG_PATH.read_text(encoding="utf-8")
+    start = text.index(heading)
+    next_heading = text.index("\n#### ", start + len(heading))
+    return text[start:next_heading]
 
 
 def test_auto_backend_failure_names_the_public_reference_api() -> None:
@@ -48,10 +57,13 @@ def test_accepted_backend_adr_keeps_the_protected_main_decision() -> None:
 
 
 def test_runtime_changelog_distinguishes_cli_and_python_reference_paths() -> None:
-    """Release guidance must name the actual CLI and Python reference entry points."""
-    text = (ROOT / "docs/changelog.d/833-runtime-contract-buyer-docs.md").read_text(
-        encoding="utf-8"
-    )
+    """Release guidance must name the actual CLI and Python reference entry points.
+
+    The originating change-fragment is deleted once its release cut consumes
+    it (``docs/changelog.d/`` fragments are transient); the durable record of
+    this guidance is the rendered ``CHANGELOG.md`` section it was folded into.
+    """
+    text = _changelog_section("#### Runtime contract buyer-facing ownership")
 
     assert "`fast-mlsirm fit --reference`" in text
     assert "`fast_mlsirm.fit_reference`" in text
