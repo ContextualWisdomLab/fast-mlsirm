@@ -25,6 +25,17 @@ _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.uintp,
     np.ulonglong,
 )
+_TRUSTED_NUMPY_FLOAT_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+_TRUSTED_NUMPY_COMPLEX_TYPES = (
+    np.complex64,
+    np.complex128,
+    np.clongdouble,
+)
 
 
 @dataclass
@@ -91,8 +102,43 @@ def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
         )
 
 
+def _trusted_real_evidence(value: object, active_containers: set[int]) -> None:
+    """Preflight exact inert real-numeric evidence without caller protocols."""
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if value.dtype.kind == "c":
+            raise ValueError("data must be real-valued")
+        if value.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError("data must be numeric and convertible to float64")
+        return
+    if value_type is bool or value_type is int or value_type is float:
+        return
+    if value_type is complex or any(
+        value_type is scalar_type for scalar_type in _TRUSTED_NUMPY_COMPLEX_TYPES
+    ):
+        raise ValueError("data must be real-valued")
+    if value_type is np.bool_ or any(
+        value_type is scalar_type
+        for scalar_type in (*_TRUSTED_NUMPY_INTEGER_TYPES, *_TRUSTED_NUMPY_FLOAT_TYPES)
+    ):
+        return
+    if value_type is list or value_type is tuple:
+        identity = id(value)
+        if identity in active_containers:
+            raise ValueError("data must be numeric and convertible to float64")
+        active_containers.add(identity)
+        try:
+            for index in range(len(value)):
+                _trusted_real_evidence(value[index], active_containers)
+        finally:
+            active_containers.remove(identity)
+        return
+    raise ValueError("data must be numeric and convertible to float64")
+
+
 def _real_numeric_matrix(data: object) -> np.ndarray:
-    """Materialize real numeric evidence before narrowing it to ``float64``."""
+    """Validate inert real evidence before narrowing it to contiguous ``float64``."""
+    _trusted_real_evidence(data, set())
     try:
         raw = np.asarray(data)
     except (TypeError, ValueError, OverflowError):
@@ -134,11 +180,13 @@ def parallel_analysis(
     paran-inspired but not bit-identical to any R run. Integer controls
     accept exact built-in and supported concrete NumPy integer scalars while
     rejecting booleans, subclasses, and implicit conversion providers before
-    compiled-core discovery. Caller data is first materialized in its source
-    dtype; complex and non-real-numeric storage is rejected before the
-    accepted matrix is marshalled to contiguous ``float64``. The random-
-    eigenvalue benchmark workspace is bounded to 128 MiB before compiled
-    dispatch.
+    compiled-core discovery. Caller data accepts exact real-numeric NumPy
+    arrays or exact built-in list/tuple trees of package-trusted concrete
+    scalar evidence; arbitrary array/container/numeric subclasses and
+    conversion providers are rejected before NumPy protocols execute. Complex
+    and non-real storage is rejected before the accepted matrix is marshalled
+    to contiguous ``float64``. The random-eigenvalue benchmark workspace is
+    bounded to 128 MiB before compiled dispatch.
 
     """
     explicit_iterations = (
