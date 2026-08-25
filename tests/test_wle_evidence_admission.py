@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.fitstats as fitstats
+import fast_mlsirm.wle as wle
 from fast_mlsirm.wle import score_wle, score_wle_poly
 
 
@@ -109,3 +110,30 @@ def test_wle_preserves_inert_numpy_rows_and_scalars(
     assert seen["poly_responses"].dtype == np.int64
     assert seen["slope"].dtype == np.float64
     assert seen["cat_params"].dtype == np.float64
+
+
+def test_score_wle_rejects_oversized_exact_numpy_evidence_before_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_CELLS", 3, raising=False)
+    monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_STRUCTURAL_NODES", 6, raising=False)
+    core_calls = _forbid_core(monkeypatch)
+    responses = np.broadcast_to(np.array([[0.0, 1.0]], dtype=np.float64), (2, 2))
+
+    with pytest.raises(ValueError, match="responses must contain at most 3 logical cells"):
+        score_wle([1.0, 1.0], [0.0, 0.0], responses)
+
+    assert core_calls == []
+
+
+def test_score_wle_bounds_zero_cell_container_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_CELLS", 10, raising=False)
+    monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_STRUCTURAL_NODES", 2, raising=False)
+    core_calls = _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="responses exceed structural traversal budget"):
+        score_wle([1.0], [0.0], [[], [], []])
+
+    assert core_calls == []
