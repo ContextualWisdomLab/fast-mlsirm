@@ -32,6 +32,7 @@ _legacy_init.ccat_select = _exposure.ccat_select
 _legacy_init.flexilevel_administer = _exposure.flexilevel_administer
 _legacy_init.flexilevel_score_distribution = _exposure.flexilevel_score_distribution
 _legacy_init.icc = _reliability.icc
+_legacy_init.observed_information = _inference.observed_information
 _legacy_init.second_order_test = _inference.second_order_test
 _legacy_init.vcov_from_hessian = _inference.vcov_from_hessian
 _legacy_init.standard_errors_from_vcov = _inference.standard_errors_from_vcov
