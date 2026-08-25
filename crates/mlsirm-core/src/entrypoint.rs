@@ -6,4 +6,5 @@
 
 include!("lib.rs");
 
+pub mod interaction_map;
 pub mod rotation;

@@ -3,7 +3,54 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Rust longitudinal state layer
+
+- Added a Rust-owned independent per-respondent OLS trend and discrete-sequence
+  AR(1) state predictor behind the sealed `fast_mlsirm.multilevel` contract.
+- Preserved exact sequence gaps, missing-occasion output state, deterministic
+  respondent sharding, RMSE/count diagnostics, and PyO3/Python marshalling.
+- Documented the compatibility wire label `random_intercept_slope` as independent
+  OLS with no population random-effects distribution or shrinkage, and the AR
+  path as caller-supplied `phi` without coefficient estimation.
+- Added slope-recovery, missingness, irregular-calendar/non-contiguous-sequence,
+  worker-determinism, and fail-closed contract tests with APA 7 doctoring.
+- This fragment does not claim full multilevel IRT random-effect integration,
+  uncertainty, continuous-time transitions, or GPU recurrent-state parity.
+
+#### Joint MAP hierarchical continuous-time AR(1) Rasch
+
+- Added a Rust-owned joint MAP hierarchical continuous-time AR(1) Rasch
+  estimator behind `fit_hierarchical_longitudinal_irt`, stacked on the
+  `#976` longitudinal design handoff.
+- Estimated shared population hyperparameters `(mu, tau, lambda)` and person-
+  occasion states from exact millisecond elapsed-day gaps. State intervals
+  are Wald intervals from measurement observed information; short series
+  leave `lambda` weakly identified under joint MAP.
+- Documented the estimand as joint MAP, not independent OLS, not caller-
+  supplied discrete AR, not Fox and Glas Gibbs, and not estimated
+  multiple-membership `u_h`. GPU parity is reported false because the
+  existing wgpu path owns a different MLSIRM objective.
+- Added multi-seed true-parameter recovery, irregular-time, missing-response,
+  worker-determinism, and fail-closed marshalling tests with APA 7 ADR and
+  doctoring.
+- Normalized oversized integer and non-finite real execution controls before
+  native dispatch so Python callers receive package-owned validation errors.
+- Enforced finite, identified sum-zero Rasch item intercepts in the simulator
+  before generating recovery data.
+- Labeled hyperparameter intervals as conditional on fixed item/state nuisance
+  blocks and aligned CT-AR gradients with the active variance branch.
+
 ### Changed
+
+#### Own residual interaction-map computation in the psychometric core
+
+- Add a Rust-backed, complete-case Gabriel residual interaction-map contract
+  for consumers that already hold observed responses and fitted IRT
+  expectations. The API returns coordinates, singular values, axis inertia,
+  reconstruction, unexplained residual, and the exact cross term without
+  product identifiers, persistence, authorization, or presentation policy.
 
 #### Validate Rasch CML controls before data materialization
 
@@ -20,6 +67,12 @@
 - Extend deterministic GRM, GPCM, CAT, and fixed-item-parameter recovery studies to require signed bias, MAE, finite positive Rust-returned posterior uncertainty, and empirical coverage of the normal-approximation interval `theta_eap ± 1.96 * theta_sd` alongside RMSE, while retaining correlation only as supplementary recovery evidence.
 - Preserve CAT's independent adaptive-efficiency gate on mean administered items, so uncertainty calibration and error recovery cannot mask a fallback to non-adaptive item selection.
 - Keep all production likelihood, marginal-ML/EM, EAP/CAT scoring, item-information/selection, stopping, and uncertainty arithmetic Rust-owned; the added Python calculations are explicit true-parameter recovery-test summaries only.
+
+#### Harden observed-score logistic DIF controls
+
+- Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
+- Reject caller-defined scalar subclasses, arbitrary conversion providers, booleans-as-numbers, invalid FDR levels, zero iteration caps, negative anchor floors, and values outside native `usize` without invoking caller callbacks.
+- Preserve genuine supported NumPy scalar compatibility and keep all logistic/Mantel-Haenszel/purification statistics and BH arithmetic Rust-owned.
 
 #### Method literature and citation ADRs
 
@@ -55,6 +108,12 @@
   directory again holds only genuinely unreleased notes.
 
 ### Fixed
+
+#### Harden S-X² scalar control admission
+
+- Reject caller-defined integer and floating subclasses at the public S-X² control boundary before numeric conversion or compiled-core dispatch, while preserving exact built-in and concrete NumPy scalar compatibility and leaving all S-X²/G², quadrature, and BH/FDR arithmetic Rust-owned.
+- Reject built-in or concrete NumPy integer-valued real controls when float64 normalization would change the integer identity, so `min_expected`, `fdr_q`, and `min_effect` cannot be silently rounded before domain validation.
+- Reject finite extended-precision NumPy floating controls when conversion to the Rust `f64` boundary would change their value, while preserving exact float16/float32/float64 and lossless long-double controls.
 
 #### Validate G-theory controls and score evidence before Rust discovery
 
@@ -162,6 +221,40 @@
 #### Bound RSM responses before dense materialization
 
 - Reject Rating Scale Model response evidence above 20,000,000 logical cells during the callback-free source preflight, including oversized exact NumPy arrays and exact NumPy rows nested in trusted built-in sequences, before NumPy stacking or contiguous `float64` allocation while preserving existing response semantics and Rust-owned Andrich arithmetic.
+
+#### Bound polytomous prediction resources
+
+- Reject public GRM/GPCM prediction grids above 20,000,000 dense probability cells before compiled-core discovery or output allocation.
+- Apply the same 20,000,000-cell ceiling inside the Rust `polytomous_predictions` owner before item-parameter validation or `Vec::with_capacity`, so direct core/PyO3 callers cannot bypass the public resource envelope.
+- Keep GRM/GPCM category-probability and expected-score arithmetic in the existing Rust implementation; the added checks govern request size and allocation only.
+
+#### Polytomous prediction evidence admission
+
+- Reject callback-bearing, complex, non-numeric, lossy, and non-finite GRM/GPCM prediction evidence before the raw prediction delegate or compiled-core discovery, including mixed built-in sequences whose integer identity would be lost by NumPy promotion.
+- Preflight theta, slope, and category-parameter rank/resource contracts together and enforce the 20,000,000-cell joint output ceiling from trusted shape metadata before any NumPy materialization or float64 copy.
+- Preserve trusted exact NumPy and built-in sequence inputs while keeping category-probability and expected-score arithmetic in the Rust prediction kernel; Python performs validation, bounded materialization, and marshalling only.
+
+#### Polytomous prediction evidence rank admission
+
+- Reject trusted-but-over-rank `theta`, slope, and category-parameter evidence before NumPy materialization or compiled-core discovery.
+- Preserve exact 1-D theta/slope and 2-D category-parameter inputs, including exact NumPy row arrays nested in trusted built-in category matrices.
+- Keep the existing prediction/evidence cell ceilings and Rust-owned GRM/GPCM probability and expected-score arithmetic unchanged.
+
+#### Polytomous prediction category-domain admission
+
+GRM/GPCM prediction admission now enforces the fitter-supported `2..=64` category domain at both the public Python boundary and direct Rust `polytomous_predictions()` boundary. Manually constructed `PolytomousFit` evidence above 64 categories fails before NumPy/native work, while direct native requests above `POLY_MAX_CAT` fail before prediction-grid allocation or item-parameter validation. Probability and expected-score arithmetic remain Rust-owned and unchanged.
+
+#### Preserve polytomous prediction fit metadata
+
+- Preserve all package-owned `PolytomousFit` convergence, trace, stopping, and threshold metadata when the public GRM/GPCM prediction admission boundary normalizes slope and category arrays before Rust dispatch.
+
+#### Preserve strict GRM threshold order during initialization
+
+- Preserve strictly decreasing finite GRM category thresholds for sparse or collapsed observed-category patterns by using the existing positive-pseudocount cumulative frequencies directly instead of independently clipping adjacent cumulative probabilities onto the same boundary. Returned GRM fits therefore remain inside the shared scoring and prediction parameter domain without changing Samejima category-probability arithmetic or GPCM behavior.
+
+#### Polytomous raw prediction category-domain replay
+
+- Replayed the fitter-supported `2..=64` category domain in the package-private Python prediction helper before resource calculation or compiled-core discovery, while preserving the valid 64-category boundary and keeping GRM/GPCM probability arithmetic Rust-owned.
 
 #### Linking evidence admission
 

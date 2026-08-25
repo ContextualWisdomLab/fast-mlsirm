@@ -30,6 +30,8 @@ __all__ = [
     "fit_polytomous",
     "score_polytomous",
     "information_polytomous",
+    "polytomous_category_probabilities",
+    "polytomous_expected_response",
     "PolyLsirmFit",
     "fit_lsirm_polytomous",
     "polytomous_information_criteria",
@@ -150,6 +152,73 @@ class PolytomousFit:
     final_delta: float = np.nan
     stopping_tolerance: float = np.nan
     thresholds: np.ndarray | None = None
+
+
+def _polytomous_predictions(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate a fitted bank and delegate its prediction grid to Rust."""
+    if not isinstance(fit, PolytomousFit):
+        raise TypeError("fit must be a PolytomousFit")
+    th = np.asarray(theta, dtype=np.float64)
+    if th.ndim != 1 or th.size == 0 or not np.all(np.isfinite(th)):
+        raise ValueError("theta must be a non-empty finite 1-D array")
+    slope = np.asarray(fit.slope, dtype=np.float64)
+    cat_params = np.asarray(fit.cat_params, dtype=np.float64)
+    if slope.ndim != 1 or slope.size == 0:
+        raise ValueError("fit.slope must be a non-empty 1-D array")
+    if (
+        cat_params.ndim != 2
+        or cat_params.shape[0] != slope.size
+        or cat_params.shape[1] < 1
+    ):
+        raise ValueError("fit.cat_params must be n_items x (n_cat - 1)")
+    n_cat = int(cat_params.shape[1]) + 1
+    if n_cat > MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(f"n_cat must be in 2..={MAX_POLYTOMOUS_CATEGORIES}")
+    if not np.all(np.isfinite(slope)) or not np.all(np.isfinite(cat_params)):
+        raise ValueError("fit item parameters must be finite")
+    model = fit.model.lower() if type(fit.model) is str else ""
+    if model not in VALID_POLY_MODELS:
+        raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
+    prediction_cells = int(th.size) * int(slope.size) * n_cat
+    if prediction_cells > 20_000_000:
+        raise ValueError(
+            f"prediction grid of {prediction_cells:,} cells exceeds the "
+            "20,000,000 prediction-cell limit"
+        )
+    core = _core_module()
+    if core is None or not hasattr(core, "polytomous_predictions"):
+        raise RuntimeError("polytomous predictions require the compiled Rust core")
+    result = core.polytomous_predictions(
+        th,
+        slope,
+        cat_params.reshape(-1),
+        int(slope.size),
+        n_cat,
+        model,
+    )
+    probabilities = np.asarray(result["probabilities"], dtype=np.float64).reshape(
+        th.size, slope.size, n_cat
+    )
+    expected = np.asarray(result["expected"], dtype=np.float64).reshape(
+        th.size, slope.size
+    )
+    return probabilities, expected
+
+
+def polytomous_category_probabilities(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> np.ndarray:
+    """Return ``P(Y=k | theta, item)`` as persons x items x categories."""
+    return _polytomous_predictions(fit, theta)[0]
+
+
+def polytomous_expected_response(fit: PolytomousFit, theta: np.ndarray) -> np.ndarray:
+    """Return ``E[Y | theta, item]`` as a persons x items matrix."""
+    return _polytomous_predictions(fit, theta)[1]
 
 
 def _core_module():
