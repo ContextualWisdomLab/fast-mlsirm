@@ -368,7 +368,10 @@ def project_judge_results_to_matrix(
     ``spec.category_coding``. Each result must contain exactly the criterion
     identities declared by ``spec``; the returned matrix columns follow
     ``spec.criterion_ids`` order exactly, regardless of mapping insertion,
-    lexical key order, or changes to the shared default row helper.
+    lexical key order, or changes to the shared default row helper. Every row
+    in one panel must also use the same category-generation semantics: either
+    all rows provide explicit criterion categories, or every row derives
+    categories from criterion scores.
 
     Parameters
     ----------
@@ -390,6 +393,7 @@ def project_judge_results_to_matrix(
     spec = replace(spec)
     rows: list[tuple[int, ...]] = []
     expected_ids = set(spec.criterion_ids)
+    panel_uses_explicit_categories: bool | None = None
     for result in results:
         if type(result) is not LLMJudgeResult:
             raise TypeError("results must contain LLMJudgeResult values")
@@ -398,6 +402,15 @@ def project_judge_results_to_matrix(
         if set(result.criterion_scores) != expected_ids:
             raise JudgeFormatError(
                 "result criterion set does not match the validated construct spec"
+            )
+        uses_explicit_categories = result.criterion_categories is not None
+        if panel_uses_explicit_categories is None:
+            panel_uses_explicit_categories = uses_explicit_categories
+        elif uses_explicit_categories is not panel_uses_explicit_categories:
+            raise JudgeFormatError(
+                "judge panel must use one category-generation mode: either all "
+                "rows provide explicit criterion categories or all rows derive "
+                "categories from criterion scores"
             )
         row = project_row_in_order(
             result,
