@@ -197,6 +197,23 @@ reviewed importance reweighting. A future estimator must consume one of those
 producer-owned evidence forms and pass deletion-effect recovery, interval
 coverage, and CPU/GPU parity; no Python or heuristic fallback is permitted.
 
+**TRD-MLT-007** The accepted deletion-refit successor contract shall bind an
+independent full-fit anchor distribution basis and one actual `D \\ {i}` refit
+per admitted document. Each refit shall prove identical prior/configuration,
+snapshot, cutoff, and event clock; exact retained membership; incident Event
+Lineage and membership deletion; unique bijective anchor alignment; complete
+posterior draws; and CPU/GPU objective, parameter, and draw parity receipts.
+Missing or tied alignment fails closed.
+
+**TRD-MLT-008** Rust shall transform ALR draws to simplex probabilities and
+compute the source-weighted context prevalence difference between the full fit
+and refit separately for each deleted document, BU/PU/team/person context, and
+topic. It shall preserve complete signed posterior draws and their mean and
+variance, structurally
+unavailable empty cells, and exact dense-rank ties. It shall not fuse levels,
+contexts, or topics, infer weights, add Event Lineage weights, or emit a binary
+importance decision.
+
 ### 4.12 Testing and scientific evidence
 
 **TRD-TEST-001** Owned production Python statement/branch coverage target is 100%; public docstrings and Rust documentation shall be complete and beginner-readable.
