@@ -1,0 +1,132 @@
+"""Regression coverage for callback-free inference evidence admission."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fast_mlsirm import _core
+from fast_mlsirm.inference import (
+    second_order_test,
+    standard_errors_from_vcov,
+    vcov_from_hessian,
+)
+
+
+class _HostileArrayProvider:
+    """Array provider that must never run during package admission."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __array__(self, *args, **kwargs):
+        self.calls += 1
+        raise AssertionError("caller __array__ executed during inference admission")
+
+
+class _HostileFloatProvider:
+    """Real-scalar provider that must never run during control admission."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __float__(self) -> float:
+        self.calls += 1
+        raise AssertionError("caller __float__ executed during inference admission")
+
+
+def _unexpected_native_dispatch(*args, **kwargs):
+    raise AssertionError("invalid inference evidence reached Rust")
+
+
+@pytest.mark.parametrize(
+    ("native_name", "public_fn", "kwargs", "message"),
+    [
+        ("second_order_test", second_order_test, {}, "hessian"),
+        ("vcov_from_hessian", vcov_from_hessian, {}, "hessian"),
+        ("standard_errors_from_vcov", standard_errors_from_vcov, {}, "vcov"),
+    ],
+)
+def test_inference_rejects_array_providers_without_callbacks(
+    monkeypatch, native_name, public_fn, kwargs, message
+):
+    """Caller array protocols must not choose curvature/covariance evidence."""
+    monkeypatch.setattr(_core, native_name, _unexpected_native_dispatch)
+    evidence = _HostileArrayProvider()
+
+    with pytest.raises(ValueError, match=message):
+        public_fn(evidence, **kwargs)
+
+    assert evidence.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("native_name", "public_fn", "control_name"),
+    [
+        ("second_order_test", second_order_test, "tol"),
+        ("vcov_from_hessian", vcov_from_hessian, "rcond"),
+    ],
+)
+def test_inference_rejects_real_control_providers_before_matrix_work(
+    monkeypatch, native_name, public_fn, control_name
+):
+    """Semantic controls must be sealed before caller matrix materialization."""
+    monkeypatch.setattr(_core, native_name, _unexpected_native_dispatch)
+    matrix = _HostileArrayProvider()
+    control = _HostileFloatProvider()
+
+    with pytest.raises(ValueError, match=control_name):
+        public_fn(matrix, **{control_name: control})
+
+    assert control.calls == 0
+    assert matrix.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("public_fn", "control_name", "control_value"),
+    [
+        (second_order_test, "tol", True),
+        (second_order_test, "tol", np.bool_(True)),
+        (vcov_from_hessian, "rcond", True),
+        (vcov_from_hessian, "rcond", np.bool_(True)),
+        (second_order_test, "tol", -1.0),
+        (vcov_from_hessian, "rcond", -1.0),
+    ],
+)
+def test_inference_rejects_invalid_real_controls_before_matrix_work(
+    public_fn, control_name, control_value
+):
+    """Boolean/negative controls fail before any caller evidence protocol."""
+    matrix = _HostileArrayProvider()
+
+    with pytest.raises(ValueError, match=control_name):
+        public_fn(matrix, **{control_name: control_value})
+
+    assert matrix.calls == 0
+
+
+def test_second_order_preserves_trusted_sequence_and_numpy_scalar_compatibility(monkeypatch):
+    """Trusted inert evidence reaches Rust as package-owned float64 primitives."""
+    captured: dict[str, object] = {}
+
+    def _capture(matrix, tol):
+        captured["matrix"] = matrix
+        captured["tol"] = tol
+        return {
+            "passed": True,
+            "min_eigenvalue": 1.0,
+            "eigenvalues": np.array([1.0, 2.0], dtype=np.float64),
+        }
+
+    monkeypatch.setattr(_core, "second_order_test", _capture)
+    result = second_order_test(
+        [[np.int16(2), np.float32(0.0)], [0, np.uint8(1)]],
+        tol=np.float32(1e-6),
+    )
+
+    matrix = captured["matrix"]
+    assert type(matrix) is np.ndarray
+    assert matrix.dtype == np.float64
+    assert matrix.shape == (2, 2)
+    assert type(captured["tol"]) is float
+    assert result["passed"] is True
