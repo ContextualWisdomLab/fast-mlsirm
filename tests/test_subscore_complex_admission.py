@@ -124,6 +124,28 @@ def test_subscore_preserves_trusted_builtin_and_numpy_scalar_sequences(monkeypat
     assert all(type(value) is int for value in normalized_groups)
 
 
+def test_subscore_preserves_exact_numpy_rows_inside_builtin_container(monkeypatch) -> None:
+    """Exact inert NumPy rows remain compatible without reopening array protocols."""
+
+    core = _CaptureCore()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+    responses = [
+        np.array([0.0, 1.0, 2.0, 0.0], dtype=np.float32),
+        np.array([1.0, 2.0, 3.0, 1.0], dtype=np.float64),
+        np.array([2, 3, 4, 2], dtype=np.int16),
+    ]
+
+    with pytest.raises(RuntimeError, match="capture subscore payload"):
+        subscore_analysis(responses, [0, 0, 1, 1])
+
+    assert core.payload is not None
+    values, n_persons, n_items, normalized_groups = core.payload
+    assert values.dtype == np.float64
+    assert values.shape == (12,)
+    assert (n_persons, n_items) == (3, 4)
+    assert normalized_groups == [0, 0, 1, 1]
+
+
 def test_subscore_rejects_complex_responses_before_real_narrowing(monkeypatch) -> None:
     """Imaginary response evidence cannot be projected onto a real score matrix."""
 
