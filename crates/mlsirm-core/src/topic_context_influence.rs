@@ -1,15 +1,87 @@
-//! Fail-closed boundary for TEPP posterior topic-context influence.
+//! TEPP posterior topic-context influence arithmetic and fail-closed fitting boundary.
 //!
 //! The current crossed binary MAP estimator cannot consume posterior
 //! logistic-normal plausible values or compute the ADR-0210 case-deletion
-//! diagnostic.  This boundary validates the producer identity and then refuses
-//! estimation so callers cannot threshold plausible values into binary data or
-//! mislabel an existing estimator as the required estimand.
+//! diagnostic's complete case-deletion refits. This module owns the exact
+//! observed-information quadratic form, validates producer identity, and then
+//! refuses fitting so callers cannot threshold plausible values into binary
+//! data or mislabel an existing estimator as the required estimand.
 
 /// Exact TEPP posterior schema required by the future estimator.
 pub const TEPP_TOPIC_CONTEXT_POSTERIOR_SCHEMA: &str = "tepp.topic_context_posterior.v1";
 /// Exact fast-mlsirm result schema reserved for the future estimator.
 pub const TOPIC_CONTEXT_INFLUENCE_SCHEMA: &str = "fast_mlsirm.topic_context_influence.v1";
+
+/// Posterior-draw case-deletion influence under one observed-information block.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CaseDeletionInfluence {
+    /// The exact diagnostic for every TEPP plausible-value draw.
+    pub per_draw: Vec<f64>,
+    /// Monte Carlo posterior expectation, the arithmetic mean across draws.
+    pub posterior_mean: f64,
+}
+
+/// Evaluate `(ψ[-d] - ψ)' I(ψ) (ψ[-d] - ψ)` for each draw.
+///
+/// Arrays are draw-major. `information` contains one row-major `p × p`
+/// observed-information matrix per draw. Equal Monte Carlo mass is inherited
+/// from TEPP's plausible-value sample; no application weight is introduced.
+pub fn case_deletion_influence_cpu(
+    full: &[f64],
+    deleted: &[f64],
+    information: &[f64],
+    draws: usize,
+    parameters: usize,
+) -> Result<CaseDeletionInfluence, &'static str> {
+    let vector_len = draws
+        .checked_mul(parameters)
+        .ok_or("topic_context_influence_shape_overflow")?;
+    let matrix_len = vector_len
+        .checked_mul(parameters)
+        .ok_or("topic_context_influence_shape_overflow")?;
+    if draws == 0
+        || parameters == 0
+        || full.len() != vector_len
+        || deleted.len() != vector_len
+        || information.len() != matrix_len
+        || full
+            .iter()
+            .chain(deleted)
+            .chain(information)
+            .any(|x| !x.is_finite())
+    {
+        return Err("invalid_topic_context_influence_inputs");
+    }
+
+    let mut per_draw = Vec::with_capacity(draws);
+    for draw in 0..draws {
+        let vector_start = draw * parameters;
+        let matrix_start = draw * parameters * parameters;
+        let delta = (0..parameters)
+            .map(|index| deleted[vector_start + index] - full[vector_start + index])
+            .collect::<Vec<_>>();
+        let mut diagnostic = 0.0;
+        for row in 0..parameters {
+            for column in 0..parameters {
+                let forward = information[matrix_start + row * parameters + column];
+                let reverse = information[matrix_start + column * parameters + row];
+                if forward != reverse {
+                    return Err("observed_information_not_symmetric");
+                }
+                diagnostic += delta[row] * forward * delta[column];
+            }
+        }
+        if !diagnostic.is_finite() || diagnostic < 0.0 {
+            return Err("invalid_observed_information_quadratic_form");
+        }
+        per_draw.push(diagnostic);
+    }
+    let posterior_mean = per_draw.iter().sum::<f64>() / draws as f64;
+    Ok(CaseDeletionInfluence {
+        per_draw,
+        posterior_mean,
+    })
+}
 
 /// Provenance needed before a posterior-aware influence fit may start.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,7 +132,7 @@ pub fn fit_topic_context_influence(
 #[cfg(test)]
 mod tests {
     use super::{
-        fit_topic_context_influence, TopicContextInfluenceRequest,
+        case_deletion_influence_cpu, fit_topic_context_influence, TopicContextInfluenceRequest,
         TEPP_TOPIC_CONTEXT_POSTERIOR_SCHEMA,
     };
 
@@ -96,6 +168,32 @@ mod tests {
         assert_eq!(
             fit_topic_context_influence(&invalid),
             Err("invalid_tepp_topic_context_posterior")
+        );
+    }
+
+    #[test]
+    fn case_deletion_primitive_recovers_injected_influence() {
+        let result = case_deletion_influence_cpu(
+            &[1.0, 2.0, 3.0, 4.0],
+            &[2.0, 4.0, 4.0, 6.0],
+            &[2.0, 0.0, 0.0, 3.0, 1.0, 0.0, 0.0, 4.0],
+            2,
+            2,
+        )
+        .unwrap();
+        assert_eq!(result.per_draw, vec![14.0, 17.0]);
+        assert_eq!(result.posterior_mean, 15.5);
+    }
+
+    #[test]
+    fn case_deletion_primitive_rejects_non_information_input() {
+        assert_eq!(
+            case_deletion_influence_cpu(&[0.0, 0.0], &[1.0, 1.0], &[1.0, 2.0, 0.0, 1.0], 1, 2),
+            Err("observed_information_not_symmetric")
+        );
+        assert_eq!(
+            case_deletion_influence_cpu(&[0.0], &[1.0], &[-1.0], 1, 1),
+            Err("invalid_observed_information_quadratic_form")
         );
     }
 }

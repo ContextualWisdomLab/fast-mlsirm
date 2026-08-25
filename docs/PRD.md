@@ -176,6 +176,8 @@ shall not threshold posterior coordinates into binary responses or substitute
 keywords, heuristics, hand-weighted scores, or the existing crossed-binary
 estimator. Until that exact estimator passes recovery and CPU/GPU parity, the
 public adapter fails closed.
+The shipped Rust core may expose independently testable influence arithmetic,
+but that primitive alone does not satisfy the estimator or GPU acceptance gate.
 
 ### 6.8 Reporting and evidence
 

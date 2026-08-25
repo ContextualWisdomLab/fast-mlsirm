@@ -1,7 +1,7 @@
 # ADR-0021: TEPP-posterior topic-context influence
 
 Status: **Accepted**  
-Implementation maturity: **strict fail-closed adapter; estimator unavailable**  
+Implementation maturity: **influence arithmetic available; estimator unavailable**
 Date: 2026-08-25
 
 ## Decision
@@ -19,13 +19,20 @@ multiple memberships. Rust owns likelihood, observed information, deletion
 refits, posterior-draw combination, influence arithmetic, CPU fixed-worker
 execution, and the real GPU path.
 
+The Rust `case_deletion_influence_cpu` primitive implements the diagnostic for
+each plausible-value draw and its equal-mass Monte Carlo posterior expectation.
+It rejects malformed, non-finite, non-symmetric, or negative-quadratic-form
+observed-information inputs. This is owner-side arithmetic only: it does not
+claim that deletion refits or observed-information blocks have been produced.
+
 The existing crossed binary MAP estimator is a different estimand. Posterior
 coordinates cannot be thresholded into binary responses or collapsed to point
 estimates. `fit_topic_context_influence` therefore validates the producer
 identity and returns `topic_context_influence_estimator_unavailable` until the
-exact Rust CPU estimator, true-parameter/deletion recovery, and real GPU parity
+exact deletion-refit estimator, true-parameter recovery, and real GPU parity
 are implemented. No fallback, keyword, heuristic, arbitrary weight, or local
-Python arithmetic is permitted.
+Python arithmetic is permitted. GPU remains unavailable rather than silently
+using CPU while claiming GPU execution.
 
 ## Acceptance
 
