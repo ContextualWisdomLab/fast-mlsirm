@@ -6,8 +6,6 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
-from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
-from .interaction_map import residual_interaction_map as residual_interaction_map
 from . import cat as _cat
 from . import cdm as _cdm
 from . import dif as _dif
@@ -19,14 +17,16 @@ from . import reliability as _reliability
 from . import scaling as _scaling
 from . import serving as _serving
 from . import validation as _validation
-from ._cat_administration_resource_safety import install as _install_cat_administration_resource_safety
+from ._cat_administration_resource_safety import (
+    install as _install_cat_administration_resource_safety,
+)
 from ._cdm_response_safety import install as _install_cdm_response_safety
 from ._dif_control_safety import install as _install_dif_control_safety
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
+from ._fit_public import fit as _public_fit
 from ._fitstats_control_safety import install as _install_fitstats_control_safety
 from ._fleiss_control_safety import install as _install_fleiss_control_safety
-from ._fit_public import fit as _public_fit
 from ._icc_control_safety import install as _install_icc_control_safety
 from ._inference_admission_safety import install as _install_inference_admission_safety
 from ._polytomous_prediction_admission import (
@@ -34,6 +34,8 @@ from ._polytomous_prediction_admission import (
 )
 from ._scaling_control_safety import install as _install_scaling_control_safety
 from ._serving_export_safety import install as _install_serving_export_safety
+from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
+from .interaction_map import residual_interaction_map as residual_interaction_map
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
@@ -114,48 +116,102 @@ fit = _public_fit
 
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
+)
+from .bifactor_scoreability import (
     bifactor_scoreability as bifactor_scoreability,
+)
+from .bifactor_scoreability import (
     bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
+)
+from .irt_contract import (
+    MIN_FACTOR_ANCHOR_ITEMS as MIN_FACTOR_ANCHOR_ITEMS,
+)
+from .irt_contract import (
+    MIN_IRT_ITEMS as MIN_IRT_ITEMS,
+)
+from .irt_contract import (
+    MIN_IRT_PERSONS as MIN_IRT_PERSONS,
+)
+from .irt_contract import (
+    MIN_ITEM_DISTINCT_VALUES as MIN_ITEM_DISTINCT_VALUES,
+)
+from .irt_contract import (
+    MIN_OBSERVED_PER_ITEM as MIN_OBSERVED_PER_ITEM,
+)
+from .irt_contract import (
+    IRTItemType as IRTItemType,
+)
+from .irt_contract import (
+    fit_irt_experiment as fit_irt_experiment,
+)
+from .irt_contract import (
+    validate_irt_experiment_readiness as validate_irt_experiment_readiness,
+)
+from .irt_contract import (
+    validate_irt_response_matrix as validate_irt_response_matrix,
+)
+from .judge_calibration import (
+    CALIBRATION_VARIANTS as CALIBRATION_VARIANTS,
+)
+from .judge_calibration import (
+    CONTAMINATION_STATUSES as CONTAMINATION_STATUSES,
+)
+from .judge_calibration import (
+    JudgeCalibrationCase as JudgeCalibrationCase,
+)
+from .judge_calibration import (
+    JudgeCalibrationOutcome as JudgeCalibrationOutcome,
+)
+from .judge_calibration import (
+    JudgeCalibrationReport as JudgeCalibrationReport,
+)
+from .judge_calibration import (
+    build_multiple_choice_calibration_cases as build_multiple_choice_calibration_cases,
+)
+from .judge_calibration import (
+    evaluate_paired_calibration as evaluate_paired_calibration,
+)
+from .llm_judge import (
+    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 as CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
+)
+from .llm_judge import (
+    MAX_BINARY_THRESHOLD_CALLS as MAX_BINARY_THRESHOLD_CALLS,
+)
+from .llm_judge import (
+    MAX_JUDGE_CATEGORIES as MAX_JUDGE_CATEGORIES,
+)
+from .llm_judge import (
+    ContextualOrchestratorJudge as ContextualOrchestratorJudge,
+)
+from .llm_judge import (
+    JudgeCriterion as JudgeCriterion,
+)
+from .llm_judge import (
+    JudgeFormatError as JudgeFormatError,
+)
+from .llm_judge import (
+    LLMJudgeResult as LLMJudgeResult,
 )
 from .rating_range import (
     RatingRangeEvidence as RatingRangeEvidence,
+)
+from .rating_range import (
     paired_rating_range_evidence as paired_rating_range_evidence,
 )
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
+)
+from .rotation import (
     RotationSolution as RotationSolution,
+)
+from .rotation import (
     available_rotation_criteria as available_rotation_criteria,
+)
+from .rotation import (
     rotate_factor_loadings as rotate_factor_loadings,
+)
+from .rotation import (
     rotation_criterion_value_gradient as rotation_criterion_value_gradient,
-)
-from .llm_judge import (
-    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1 as CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
-    ContextualOrchestratorJudge as ContextualOrchestratorJudge,
-    JudgeCriterion as JudgeCriterion,
-    JudgeFormatError as JudgeFormatError,
-    LLMJudgeResult as LLMJudgeResult,
-    MAX_BINARY_THRESHOLD_CALLS as MAX_BINARY_THRESHOLD_CALLS,
-    MAX_JUDGE_CATEGORIES as MAX_JUDGE_CATEGORIES,
-)
-from .judge_calibration import (
-    CALIBRATION_VARIANTS as CALIBRATION_VARIANTS,
-    CONTAMINATION_STATUSES as CONTAMINATION_STATUSES,
-    JudgeCalibrationCase as JudgeCalibrationCase,
-    JudgeCalibrationOutcome as JudgeCalibrationOutcome,
-    JudgeCalibrationReport as JudgeCalibrationReport,
-    build_multiple_choice_calibration_cases as build_multiple_choice_calibration_cases,
-    evaluate_paired_calibration as evaluate_paired_calibration,
-)
-from .irt_contract import (
-    IRTItemType as IRTItemType,
-    MIN_IRT_ITEMS as MIN_IRT_ITEMS,
-    MIN_IRT_PERSONS as MIN_IRT_PERSONS,
-    MIN_OBSERVED_PER_ITEM as MIN_OBSERVED_PER_ITEM,
-    MIN_ITEM_DISTINCT_VALUES as MIN_ITEM_DISTINCT_VALUES,
-    MIN_FACTOR_ANCHOR_ITEMS as MIN_FACTOR_ANCHOR_ITEMS,
-    fit_irt_experiment as fit_irt_experiment,
-    validate_irt_response_matrix as validate_irt_response_matrix,
-    validate_irt_experiment_readiness as validate_irt_experiment_readiness,
 )
 
 # Bind the rating-range API on the historical validation namespace without
