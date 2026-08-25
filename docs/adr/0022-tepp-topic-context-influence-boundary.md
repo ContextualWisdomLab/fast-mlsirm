@@ -27,11 +27,22 @@ The Rust core admits only the exact TEPP v1 artifact after validating:
 - bounded resources, finite coordinates, unique records, and evidence digests.
 
 The contract labels coordinates as posterior topic coordinates, never document
-importance. Until a Rust continuous-posterior multiple-membership estimator has
-an identification study, true-parameter/deletion-effect recovery, interval
-coverage, and exact CPU/GPU parity, the public influence entry point returns
-`EstimatorUnavailable`. Python may marshal the future result but may not
-implement the likelihood, case-deletion refit, weighting, or ranking.
+importance. The joint plausible values added by TEPP PR #253 are draws from the
+full-data posterior `p(theta | D)`. They do not identify the deleted-data
+posterior `p(theta | D \\ {i})`: v1 supplies neither producer-owned
+leave-one-document-out draws nor the per-case likelihood contribution required
+to reweight full-data draws. Consequently, the public entry point returns
+`CaseDeletionRefitEvidenceUnavailable` even for a valid v1 artifact. Computing
+a weighted context mean with one fixed draw removed was rejected because that
+is finite-population aggregation leverage, not Bayesian model-refit influence.
+
+A future producer contract may unlock the estimator only after it binds either
+exact refit posterior draws or auditable per-case likelihood contributions to
+the same model, prior, fit, snapshot, event clock, membership evidence, and
+Event Lineage evidence. The Rust consumer must then pass identification,
+true-parameter/deletion-effect recovery, interval coverage, and CPU/GPU parity.
+Python may marshal the result but may not implement the likelihood,
+case-deletion refit, weighting, or ranking.
 
 ## Invariants and acceptance evidence
 
@@ -46,6 +57,11 @@ implement the likelihood, case-deletion refit, weighting, or ranking.
 4. Releasing influence requires synthetic recovery of known deletion effects
    and calibrated uncertainty, plus Rust CPU/GPU numerical parity on the same
    objective. Contract validation tests alone do not satisfy that gate.
+5. Full-data plausible values are not refit evidence. Importance reweighting is
+   unavailable unless the producer supplies each deleted case's joint
+   likelihood contribution on the retained draws and the consumer verifies its
+   diagnostics; no constant, rank, threshold, or locally reconstructed
+   likelihood may substitute for that evidence.
 
 ## Consequences and alternatives
 
@@ -72,6 +88,14 @@ https://doi.org/10.1177/1471082X0100100202
 Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel item
 response theory model using Gibbs sampling. *Psychometrika, 66*(2), 271–288.
 https://doi.org/10.1007/BF02294839
+
+Bradlow, E. T., & Zaslavsky, A. M. (1997). Case influence analysis in Bayesian
+inference. *Journal of Computational and Graphical Statistics, 6*(3), 314–331.
+https://doi.org/10.1080/10618600.1997.10474731
+
+Jackson, C. H., Sharples, L. D., Thompson, S. G., Duffy, S. W., & Couto, E.
+(2009). Bayesian case influence diagnostics for survival models. *Biometrics,
+65*(1), 116–124. https://doi.org/10.1111/j.1541-0420.2008.01049.x
 
 American Educational Research Association, American Psychological
 Association, & National Council on Measurement in Education. (2014).
