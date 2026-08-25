@@ -24,13 +24,15 @@ from typing import Any, Callable, Final, Sequence
 
 try:
     from scripts._bounded_json import parse_json_bounded
-except ModuleNotFoundError:
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts._bounded_json"}:
+        raise
     try:
         from _bounded_json import parse_json_bounded
-    except ModuleNotFoundError:
-        def parse_json_bounded(content: str, **_: Any) -> Any:
-            """Parse JSON when the repository helper is unavailable in isolation."""
-            return json.loads(content)
+    except ModuleNotFoundError as sibling_exc:
+        if sibling_exc.name != "_bounded_json":
+            raise
+        raise RuntimeError("bounded JSON parser is unavailable") from sibling_exc
 
 
 OPEN_PR_DETAIL_FIELDS: Final = (
