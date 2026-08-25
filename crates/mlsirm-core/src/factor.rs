@@ -106,7 +106,10 @@ pub struct OmegaResult {
 /// with matching eigenvectors (columns of `v`, row-major `p x p`). Same
 /// sweep scheme as `parallel::symmetric_eigenvalues_desc`, extended with
 /// vector accumulation.
-fn symmetric_eigen_desc(matrix: &[f64], p: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
+pub(crate) fn symmetric_eigen_desc(
+    matrix: &[f64],
+    p: usize,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
     let mut a = matrix.to_vec();
     let mut v = vec![0.0; p * p];
     for i in 0..p {
