@@ -89,8 +89,12 @@ def test_custom_policy_cannot_raise_hard_facet_ceiling() -> None:
 
 def test_direct_spec_replays_global_item_and_category_domains() -> None:
     """The exported frozen spec must itself enforce the global handoff domain."""
-    too_short = tuple(f"criterion_{index}" for index in range(ABSOLUTE_JUDGE_CONSTRUCT_FLOOR - 1))
-    too_long = tuple(f"criterion_{index}" for index in range(MAX_JUDGE_CONSTRUCT_ITEMS + 1))
+    too_short = tuple(
+        f"criterion_{index}" for index in range(ABSOLUTE_JUDGE_CONSTRUCT_FLOOR - 1)
+    )
+    too_long = tuple(
+        f"criterion_{index}" for index in range(MAX_JUDGE_CONSTRUCT_ITEMS + 1)
+    )
 
     with pytest.raises(ValueError, match="criterion_ids must contain 3..11 items"):
         JudgeConstructSpec(
@@ -126,12 +130,26 @@ def test_direct_spec_replays_global_item_and_category_domains() -> None:
         )
 
 
+def test_direct_spec_rejects_blank_criterion_identity() -> None:
+    """Direct construction must match validated non-empty identifier semantics."""
+    with pytest.raises(TypeError, match="non-empty tuple of strings"):
+        JudgeConstructSpec(
+            ("criterion_a", " ", "criterion_c"),
+            "polytomous",
+            4,
+            ZERO_BASED_CATEGORY_CODING,
+            True,
+        )
+
+
 def test_projection_replays_spec_invariants_after_slot_rebinding() -> None:
     """Frozen-record rebinding must not bypass the item-count boundary."""
     spec_ids = tuple(f"criterion_{index}" for index in range(5))
     spec = validate_judge_construct(spec_ids, n_categories=4)
     object.__setattr__(spec, "criterion_ids", spec_ids[:2])
-    result = _result({criterion_id: index for index, criterion_id in enumerate(spec_ids[:2])})
+    result = _result(
+        {criterion_id: index for index, criterion_id in enumerate(spec_ids[:2])}
+    )
 
     with pytest.raises(ValueError, match="criterion_ids must contain 3..11 items"):
         project_judge_results_to_matrix([result], spec)
