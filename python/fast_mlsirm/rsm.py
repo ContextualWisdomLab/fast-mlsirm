@@ -93,19 +93,30 @@ def _trusted_iteration_cap(value: int) -> int:
 
 
 def _trusted_positive_tolerance(value: float) -> float:
-    """Return a finite positive trusted scalar without caller conversion hooks."""
+    """Return a finite positive value that survives the Rust ``f64`` boundary exactly."""
+    error = "tol must be finite and > 0"
     value_type = type(value)
-    if value_type is int or value_type is float:
-        normalized = float(value)
-    elif any(
-        value_type is scalar_type
-        for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
-    ):
-        normalized = float(value)
-    else:
-        raise ValueError("tol must be finite and > 0")
+    try:
+        if value_type is int:
+            normalized = float(value)
+            if not np.isfinite(normalized) or int(normalized) != value:
+                raise ValueError(error)
+        elif value_type is float:
+            normalized = value
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+            normalized = float(value)
+            if not np.isfinite(normalized) or int(normalized) != int(value):
+                raise ValueError(error)
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
+            normalized = float(value)
+            if not np.isfinite(normalized) or value_type(normalized) != value:
+                raise ValueError(error)
+        else:
+            raise ValueError(error)
+    except (OverflowError, ValueError):
+        raise ValueError(error) from None
     if not np.isfinite(normalized) or normalized <= 0:
-        raise ValueError("tol must be finite and > 0")
+        raise ValueError(error)
     return normalized
 
 
