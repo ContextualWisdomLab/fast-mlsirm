@@ -12,6 +12,36 @@ from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 from .irt_contract import MIN_IRT_ITEMS, validate_irt_response_matrix
 
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    np.bool_,
+    int,
+    float,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
+)
+_ALLOWED_Q_THETA = frozenset({7, 11, 15, 21, 31, 41})
+_MAX_RSM_RESPONSE_CELLS = 20_000_000
+_RSM_RESOURCE_ERROR = (
+    f"responses exceed the {_MAX_RSM_RESPONSE_CELLS}-cell RSM evidence budget"
+)
+
+
 @dataclass
 class RsmFit:
     """Fitted rating scale model (Andrich, 1978).
@@ -28,6 +58,98 @@ class RsmFit:
     n_iter: int
     converged: bool
     n_parameters: int
+
+
+def _trusted_optional_category_count(value: int | None) -> int | None:
+    """Admit the established built-in category-count contract without callbacks."""
+    if value is None:
+        return None
+    if type(value) is not int:
+        raise TypeError("n_cat must be an integer >= 2")
+    if not 2 <= value <= MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
+    return value
+
+
+def _trusted_quadrature_points(value: int) -> int:
+    """Return an established RSM quadrature size without caller hash/coercion hooks."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if normalized not in _ALLOWED_Q_THETA:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    return normalized
+
+
+def _trusted_iteration_cap(value: int) -> int:
+    """Admit the established built-in iteration cap without caller callbacks."""
+    if type(value) is not int or not 1 <= value <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
+    return value
+
+
+def _trusted_positive_tolerance(value: float) -> float:
+    """Return a finite positive trusted scalar without caller conversion hooks."""
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        normalized = float(value)
+    elif any(
+        value_type is scalar_type
+        for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        normalized = float(value)
+    else:
+        raise ValueError("tol must be finite and > 0")
+    if not np.isfinite(normalized) or normalized <= 0:
+        raise ValueError("tol must be finite and > 0")
+    return normalized
+
+
+def _trusted_response_source(value: object) -> object:
+    """Admit inert, bounded response containers before NumPy invokes protocols."""
+    if type(value) is np.ndarray:
+        if int(value.size) > _MAX_RSM_RESPONSE_CELLS:
+            raise ValueError(_RSM_RESOURCE_ERROR)
+        return value
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError("responses must be a real numeric array")
+
+    logical_cells = 0
+    for row in value:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            logical_cells += int(row.size)
+            if logical_cells > _MAX_RSM_RESPONSE_CELLS:
+                raise ValueError(_RSM_RESOURCE_ERROR)
+            continue
+        if row_type is list or row_type is tuple:
+            logical_cells += len(row)
+            if logical_cells > _MAX_RSM_RESPONSE_CELLS:
+                raise ValueError(_RSM_RESOURCE_ERROR)
+            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
+                raise ValueError("responses must be a real numeric array")
+            continue
+        # Preserve historical flat built-in sequences until the existing 2-D
+        # diagnostic, while refusing caller-defined scalar/container subclasses.
+        if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            raise ValueError("responses must be a real numeric array")
+        logical_cells += 1
+        if logical_cells > _MAX_RSM_RESPONSE_CELLS:
+            raise ValueError(_RSM_RESOURCE_ERROR)
+    return value
+
+
+def _real_numeric_response_matrix(value: object) -> np.ndarray:
+    """Admit bounded real numeric response storage before ``float64`` marshalling."""
+    source = _trusted_response_source(value)
+    array = np.asarray(source)
+    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError("responses must be a real numeric array")
+    return np.ascontiguousarray(array, dtype=np.float64)
 
 
 def fit_rsm(
@@ -58,22 +180,12 @@ def fit_rsm(
         Andrich, D. (1978). A rating formulation for ordered response categories.
             *Psychometrika, 43*(4), 561-573. https://doi.org/10.1007/BF02293814
     """
-    if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
-        raise TypeError("n_cat must be an integer >= 2")
-    if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
-        raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
-    if q_theta not in {7, 11, 15, 21, 31, 41}:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if (
-        not isinstance(max_iter, int)
-        or isinstance(max_iter, bool)
-        or not (1 <= max_iter <= MAX_MAX_ITER)
-    ):
-        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0:
-        raise ValueError("tol must be finite and > 0")
+    n_cat = _trusted_optional_category_count(n_cat)
+    q_theta = _trusted_quadrature_points(q_theta)
+    max_iter = _trusted_iteration_cap(max_iter)
+    tol = _trusted_positive_tolerance(tol)
 
-    y = np.asarray(responses, dtype=np.float64)
+    y = _real_numeric_response_matrix(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
@@ -107,7 +219,7 @@ def fit_rsm(
     missing_items = np.flatnonzero(~observed.any(axis=0))
     if missing_items.size:
         raise ValueError(f"item {int(missing_items[0])} has no observed responses")
-    validate_irt_response_matrix(y, "polytomous", n_categories=int(n_cat))
+    validate_irt_response_matrix(y, "polytomous", n_categories=n_cat)
     from .fitstats import _core_module
 
     core = _core_module()
@@ -120,10 +232,10 @@ def fit_rsm(
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(n_cat),
-        int(q_theta),
-        int(max_iter),
-        float(tol),
+        n_cat,
+        q_theta,
+        max_iter,
+        tol,
     )
     return RsmFit(
         item_location=np.asarray(res["item_location"], dtype=np.float64),

@@ -62,4 +62,3 @@ https://storybook.js.org/docs/writing-tests/interaction-testing
 
 Storybook. (n.d.). *How to test UIs with Storybook*. Storybook documentation.
 https://storybook.js.org/docs/writing-tests
-

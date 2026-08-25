@@ -21,6 +21,26 @@ class _FloatBomb:
         raise AssertionError("caller numeric conversion executed")
 
 
+class _ArrayProviderBomb:
+    """Array-like evidence whose protocols must never run during admission."""
+
+    calls = 0
+
+    def __array__(self, *_args, **_kwargs):
+        type(self).calls += 1
+        raise AssertionError("caller array conversion executed")
+
+    @property
+    def shape(self):
+        type(self).calls += 1
+        raise AssertionError("caller shape property executed")
+
+    @property
+    def size(self):
+        type(self).calls += 1
+        raise AssertionError("caller size property executed")
+
+
 def _params(*, n_items: int = 4, n_dims: int = 1, seed: int = 0) -> MLSIRMParams:
     rng = np.random.default_rng(seed)
     return MLSIRMParams(
@@ -47,6 +67,41 @@ def test_fixed_link_rejects_object_anchor_before_element_conversion():
         link_fixed_item_parameters(source, target, anchors)
 
     assert _FloatBomb.calls == 0
+
+
+def test_fixed_link_rejects_array_provider_anchor_without_callbacks():
+    source = _params(seed=10)
+    target = _params(seed=11)
+    _ArrayProviderBomb.calls = 0
+
+    with pytest.raises(ValueError, match="anchor_items must be a numeric array"):
+        link_fixed_item_parameters(source, target, _ArrayProviderBomb())
+
+    assert _ArrayProviderBomb.calls == 0
+
+
+def test_fixed_link_rejects_array_provider_parameter_without_callbacks():
+    source = _params(seed=12)
+    target = _params(seed=13)
+    source.alpha = _ArrayProviderBomb()
+    _ArrayProviderBomb.calls = 0
+
+    with pytest.raises(ValueError, match="source.alpha must be a numeric array"):
+        link_fixed_item_parameters(source, target, np.array([0, 1, 2]))
+
+    assert _ArrayProviderBomb.calls == 0
+
+
+def test_fixed_link_rejects_array_provider_target_theta_without_callbacks():
+    source = _params(seed=14)
+    target = _params(seed=15)
+    target.theta = _ArrayProviderBomb()
+    _ArrayProviderBomb.calls = 0
+
+    with pytest.raises(ValueError, match="target.theta must be a numeric array"):
+        link_fixed_item_parameters(source, target, np.array([0, 1, 2]))
+
+    assert _ArrayProviderBomb.calls == 0
 
 
 def test_fixed_link_rejects_complex_factor_identity_before_rust(monkeypatch):
@@ -105,6 +160,66 @@ def test_irt_link_rejects_complex_evidence_before_native_discovery(monkeypatch, 
 
     with pytest.raises(ValueError, match=f"{field} must be real-valued"):
         irt_link(**values, q_theta=7)
+
+
+def test_irt_link_rejects_array_provider_before_native_discovery(monkeypatch):
+    import fast_mlsirm.fitstats as fitstats
+
+    def _core_discovery_fail():
+        raise AssertionError("native discovery reached invalid evidence")
+
+    monkeypatch.setattr(fitstats, "_core_module", _core_discovery_fail)
+    _ArrayProviderBomb.calls = 0
+
+    with pytest.raises(ValueError, match="a_old must be a numeric array"):
+        irt_link(
+            _ArrayProviderBomb(),
+            np.array([-1.0, 0.0, 1.0]),
+            np.array([1.1, 1.0, 0.8]),
+            np.array([-0.8, 0.1, 0.9]),
+            q_theta=7,
+        )
+
+    assert _ArrayProviderBomb.calls == 0
+
+
+def test_irt_link_preserves_trusted_builtin_sequences_and_numpy_scalars(monkeypatch):
+    import fast_mlsirm.fitstats as fitstats
+
+    captured: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+
+    class Core:
+        def irt_link(self, ao, bo, an, bn, *_args, method):
+            assert method == "mean_mean"
+            captured.append((ao, bo, an, bn))
+            return {
+                "slope": 1.0,
+                "intercept": 0.0,
+                "criterion": 0.0,
+                "n_iter": 0,
+                "converged": True,
+                "termination_reason": "closed_form",
+                "max_iter": 0,
+                "final_objective_span": 0.0,
+                "objective_tolerance": 0.0,
+                "final_parameter_span": 0.0,
+                "parameter_tolerance": 0.0,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
+
+    result = irt_link(
+        [np.float32(1.0), np.int16(1), 0.9],
+        (np.float32(-1.0), 0, np.int8(1)),
+        [np.float64(1.1), np.uint8(1), 0.8],
+        (np.float32(-0.8), np.int16(0), 0.9),
+        method="mean_mean",
+        q_theta=7,
+    )
+
+    assert result.slope == 1.0
+    assert len(captured) == 1
+    assert all(array.dtype == np.float64 for array in captured[0])
 
 
 def test_irt_link_rejects_object_storage_without_numeric_callbacks(monkeypatch):

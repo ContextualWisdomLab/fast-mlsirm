@@ -1691,7 +1691,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--check-import",
         action="store_true",
-        help="Import installed package and optional Rust core.",
+        help="Import the installed package; also import fast_mlsirm._core when --require-rust is set.",
     )
     parser.add_argument(
         "--buyer-packet-manifest",
