@@ -82,10 +82,12 @@ claim.
 
 The consumer preserves signed draw-level contrasts and reports their posterior
 mean, variance, and order-statistic interval. Within one identical
-`(dimension, context, topic)` comparison set, document ordering may use
-`E[abs(Delta)]`; exact equal values receive the same dense rank. The raw signed
-posterior and interval remain authoritative, and no threshold converts
-uncertainty into a binary important/not-important label.
+`(dimension, context, topic)` comparison set, document ordering may use the
+absolute posterior mean shift `abs(E[Delta])`; exact equal values receive the
+same dense rank. `E[abs(Delta)]` is explicitly rejected because independent
+full/refit draw noise would make two identical posterior distributions appear
+influential. The raw signed posterior and interval remain authoritative, and no
+threshold converts uncertainty into a binary important/not-important label.
 
 ## Invariants and acceptance evidence
 
