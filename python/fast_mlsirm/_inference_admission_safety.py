@@ -59,6 +59,17 @@ def _normalized_nonnegative_real(value: object, name: str) -> float:
     return normalized
 
 
+def _normalized_positive_real(value: object, name: str) -> float:
+    """Normalize a trusted finite strictly-positive Rust ``f64`` control."""
+    try:
+        normalized = _normalized_nonnegative_real(value, name)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be > 0 and finite") from exc
+    if normalized <= 0.0:
+        raise ValueError(f"{name} must be > 0 and finite")
+    return normalized
+
+
 def _check_matrix_cells(side: int, name: str) -> None:
     """Bound dense square-matrix work before any float64 materialization."""
     cells = side * side
@@ -197,9 +208,33 @@ def install(inference_module: ModuleType) -> None:
     if getattr(inference_module.second_order_test, "_inference_admission_safe", False):
         return
 
+    raw_observed_information = inference_module.observed_information
     raw_second_order = inference_module.second_order_test
     raw_vcov = inference_module.vcov_from_hessian
     raw_standard_errors = inference_module.standard_errors_from_vcov
+
+    @wraps(raw_observed_information)
+    def safe_observed_information(
+        responses: Any,
+        factor_id: Any,
+        params: Any,
+        config: Any = None,
+        mask: Any = None,
+        backend: Any = None,
+        device: Any = "cpu",
+        step: Any = 1e-4,
+    ):
+        normalized_step = _normalized_positive_real(step, "step")
+        return raw_observed_information(
+            responses,
+            factor_id,
+            params,
+            config=config,
+            mask=mask,
+            backend=backend,
+            device=device,
+            step=normalized_step,
+        )
 
     @wraps(raw_second_order)
     def safe_second_order_test(hessian: Any, tol: Any = 1e-8):
@@ -218,10 +253,12 @@ def install(inference_module: ModuleType) -> None:
         matrix = _real_square_matrix(vcov, "vcov")
         return raw_standard_errors(matrix)
 
+    safe_observed_information._inference_admission_safe = True
     safe_second_order_test._inference_admission_safe = True
     safe_vcov_from_hessian._inference_admission_safe = True
     safe_standard_errors_from_vcov._inference_admission_safe = True
 
+    inference_module.observed_information = safe_observed_information
     inference_module.second_order_test = safe_second_order_test
     inference_module.vcov_from_hessian = safe_vcov_from_hessian
     inference_module.standard_errors_from_vcov = safe_standard_errors_from_vcov
