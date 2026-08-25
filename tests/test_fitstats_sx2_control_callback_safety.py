@@ -115,3 +115,32 @@ def test_sx2_rejects_lossy_integer_real_controls(value: object) -> None:
     """Integer-valued real controls must not change identity during float64 normalization."""
     with pytest.raises(ValueError, match="min_expected must be exactly representable as float64"):
         fitstats_module._validate_sx2_controls(7, 7, value, 0.05, 0.1)
+
+
+def test_sx2_rejects_lossy_longdouble_real_control() -> None:
+    """Extended-precision controls cannot be silently rounded to Rust f64."""
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("platform longdouble has no precision beyond float64")
+
+    value = np.nextafter(np.longdouble(1.0), np.longdouble(2.0))
+    assert np.longdouble(float(value)) != value
+
+    with pytest.raises(
+        ValueError,
+        match="min_expected must be exactly representable as float64",
+    ):
+        fitstats_module._validate_sx2_controls(7, 7, value, 0.05, 0.1)
+
+
+def test_sx2_preserves_lossless_longdouble_real_control() -> None:
+    """An exact long-double value inside the binary64 lattice remains supported."""
+    normalized = fitstats_module._validate_sx2_controls(
+        7,
+        7,
+        np.longdouble(0.5),
+        0.05,
+        0.1,
+    )
+
+    assert normalized[2] == 0.5
+    assert type(normalized[2]) is float
