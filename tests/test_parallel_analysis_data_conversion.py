@@ -31,6 +31,16 @@ class _ArrayBomb:
         raise AssertionError("ARRAY_PROTOCOL_MUST_NOT_RUN")
 
 
+class _ListBomb(list):
+    """Container subclass whose iteration must not run during admission."""
+
+    calls = 0
+
+    def __iter__(self):
+        type(self).calls += 1
+        raise AssertionError("CONTAINER_PROTOCOL_MUST_NOT_RUN")
+
+
 def _forbid_native_discovery(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Replace Rust capability discovery with a sentinel and return its call log."""
     core_calls: list[str] = []
@@ -55,6 +65,66 @@ def test_top_level_array_provider_is_rejected_without_callback(
 
     assert data.calls == 0
     assert core_calls == []
+
+
+def test_container_subclass_is_rejected_without_iteration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject callback-bearing container identities before their protocols run."""
+    core_calls = _forbid_native_discovery(monkeypatch)
+    _ListBomb.calls = 0
+    data = _ListBomb([[0.0, 1.0], [1.0, 0.0]])
+
+    with pytest.raises(ValueError, match="data must be numeric and convertible to float64"):
+        parallel_analysis(data, n_iterations=1)
+
+    assert _ListBomb.calls == 0
+    assert core_calls == []
+
+
+def test_builtin_matrix_with_numpy_scalars_reaches_rust_as_float64(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preserve inert built-in/NumPy scalar evidence at the Rust boundary."""
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def parallel_analysis(
+            self,
+            data,
+            n_persons,
+            n_items,
+            n_iterations,
+            centile,
+            seed,
+        ):
+            captured["data"] = np.array(data, copy=True)
+            captured["shape"] = (n_persons, n_items)
+            captured["controls"] = (n_iterations, centile, seed)
+            return {
+                "retained": 1,
+                "eigenvalues": [1.5, 0.5],
+                "random_eigenvalues": [1.1, 0.9],
+                "bias": [0.1, -0.1],
+                "adjusted_eigenvalues": [1.4, 0.6],
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+    data = [
+        [np.float32(1.0), np.int16(0)],
+        [np.uint8(0), np.float64(1.0)],
+    ]
+
+    result = parallel_analysis(data, n_iterations=np.int16(1), seed=np.uint8(2))
+
+    assert result.retained == 1
+    assert captured["shape"] == (2, 2)
+    assert captured["controls"] == (1, 0, 2)
+    assert isinstance(captured["data"], np.ndarray)
+    assert captured["data"].dtype == np.float64
+    np.testing.assert_array_equal(
+        captured["data"], np.array([1.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    )
 
 
 def test_non_numeric_data_conversion_fails_before_native_discovery(
