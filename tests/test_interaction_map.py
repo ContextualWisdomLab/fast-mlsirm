@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 
 import numpy as np
 import pytest
@@ -83,6 +84,16 @@ def test_axis_control_is_sealed_before_caller_matrix_protocols() -> None:
             _HostileArrayProvider(),  # type: ignore[arg-type]
             _HostileArrayProvider(),  # type: ignore[arg-type]
             axis_count=_HostileInt(1),
+        )
+
+
+def test_maximal_axis_request_fails_before_caller_matrix_protocols() -> None:
+    """A maximal positive axis request is resource-rejected before data work."""
+    with pytest.raises(ValueError, match="coordinate"):
+        residual_interaction_map(
+            _HostileArrayProvider(),  # type: ignore[arg-type]
+            _HostileArrayProvider(),  # type: ignore[arg-type]
+            axis_count=sys.maxsize,
         )
 
 
