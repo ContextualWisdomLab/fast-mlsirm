@@ -174,6 +174,28 @@ def test_oakes_rejects_mask_metaclass_before_class_attribute_callbacks(monkeypat
     assert _MaskMeta.calls == 0
 
 
+@pytest.mark.parametrize("mask_scalar", [np.longlong(1), np.ulonglong(1)])
+def test_oakes_preserves_typecode_integer_mask_scalar_compatibility(monkeypatch, mask_scalar):
+    """Built-in masks admit every concrete NumPy integer scalar supported by typecodes."""
+    captured: dict[str, np.ndarray] = {}
+
+    def fake_oakes(*args, **kwargs):
+        captured["observed"] = np.asarray(args[1])
+        return {"ok": True}
+
+    monkeypatch.setattr(_core, "oakes_standard_errors", fake_oakes)
+
+    result = oakes_standard_errors(
+        _result(),
+        [[0.0], [1.0]],
+        [0],
+        mask=[[mask_scalar], [np.bool_(True)]],
+    )
+
+    assert result == {"ok": True}
+    assert np.array_equal(captured["observed"], np.array([True, True]))
+
+
 def test_oakes_bounds_response_cells_before_native_arithmetic(monkeypatch):
     """Logical response size must be bounded before dense/native work."""
     monkeypatch.setattr(_core, "oakes_standard_errors", _unexpected_oakes_dispatch)
