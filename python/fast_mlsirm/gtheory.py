@@ -232,20 +232,45 @@ def _positive_integer_control(value: object, message: str) -> int:
     return parsed
 
 
-def _finite_real_control(value: object, message: str) -> float:
-    """Validate one finite Python/NumPy real control without arbitrary coercion."""
+def _finite_real_control(
+    value: object,
+    message: str,
+    *,
+    lossless_message: str | None = None,
+) -> float:
+    """Validate one finite real control without callbacks or lossy ``f64`` narrowing."""
 
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(message)
     value_type = type(value)
-    if value_type is int or value_type is float:
-        parsed = float(value)
-    elif _trusted_numpy_integer(value) or _trusted_numpy_float(value):
-        parsed = float(value)
+    integer_value: int | None = None
+    if value_type is int:
+        integer_value = value
+        try:
+            parsed = float(value)
+        except OverflowError:
+            raise ValueError(message) from None
+    elif _trusted_numpy_integer(value):
+        integer_value = int(value)
+        parsed = float(integer_value)
+    elif value_type is float:
+        parsed = value
+    elif _trusted_numpy_float(value):
+        try:
+            parsed = float(value)
+        except OverflowError:
+            # A finite extended-precision value beyond binary64 range raises
+            # OverflowError on some NumPy builds instead of returning inf;
+            # normalize it to the package-owned control error.
+            raise ValueError(message) from None
     else:
         raise ValueError(message)
     if not math.isfinite(parsed):
         raise ValueError(message)
+    if integer_value is not None and int(parsed) != integer_value:
+        raise ValueError(lossless_message or message)
+    if value_type is np.longdouble and np.longdouble(parsed) != value:
+        raise ValueError(lossless_message or message)
     return parsed
 
 
@@ -495,12 +520,19 @@ def phi_lambda(
     and citation-governance details).
 
     ``data`` is a complete, balanced ``n_persons x n_items`` score array;
-    ``cut`` is the cutting score ``lambda`` on the per-item metric. In
-    LLM-as-a-Judge quality management this asks how dependably a judge
-    panel classifies systems against a fixed quality threshold.
+    ``cut`` is the cutting score ``lambda`` on the per-item metric. Exact
+    built-in and supported concrete NumPy integer/floating controls are
+    accepted only when the finite cut preserves numeric identity at the Rust
+    ``f64`` boundary. In LLM-as-a-Judge quality management this asks how
+    dependably a judge panel classifies systems against a fixed quality
+    threshold.
 
     """
-    parsed_cut = _finite_real_control(cut, "cut must be a finite real scalar")
+    parsed_cut = _finite_real_control(
+        cut,
+        "cut must be a finite real scalar",
+        lossless_message="cut must be exactly representable as float64",
+    )
     primes = _positive_integer_vector(n_i_prime)
     dimension_error = "data must be a 2-D persons x items array"
     x = _validated_real_data(
