@@ -124,7 +124,7 @@ def _normalized_group_ids(group: object, n_persons: int) -> tuple[np.ndarray, in
     if type(source) is np.ndarray:
         if source.ndim != 1 or source.shape[0] != n_persons:
             raise ValueError("group must be a length-n_persons 1-D array")
-        labels = [_normalized_group_label(source[index]) for index in range(n_persons)]
+        labels = [_normalized_group_label(label) for label in source.tolist()]
     else:
         if len(source) != n_persons:
             raise ValueError("group must be a length-n_persons 1-D array")
