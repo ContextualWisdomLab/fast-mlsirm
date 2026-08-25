@@ -126,6 +126,39 @@ def test_score_wle_rejects_oversized_exact_numpy_evidence_before_core(
     assert core_calls == []
 
 
+def test_score_wle_charges_nested_numpy_leaf_before_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_CELLS", 3, raising=False)
+    monkeypatch.setattr(wle, "_MAX_WLE_EVIDENCE_STRUCTURAL_NODES", 6, raising=False)
+    core_calls = _forbid_core(monkeypatch)
+    row = np.broadcast_to(np.array([0.0], dtype=np.float64), (4,))
+
+    with pytest.raises(ValueError, match="responses must contain at most 3 logical cells"):
+        score_wle([1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0], [row])
+
+    assert core_calls == []
+
+
+def test_score_wle_preserves_shared_acyclic_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, np.ndarray] = {}
+
+    class _Core:
+        def score_wle(self, *args):
+            seen["responses"] = args[4]
+            return {"theta": [0.0, 0.0], "se": [1.0, 1.0], "boundary": [False, False]}
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+    row = [np.bool_(True), np.uint8(0)]
+
+    score_wle([1.0, 1.0], [0.0, 0.0], [row, row])
+
+    assert seen["responses"].dtype == np.float64
+    np.testing.assert_array_equal(seen["responses"], np.array([1.0, 0.0, 1.0, 0.0]))
+
+
 def test_score_wle_bounds_zero_cell_container_traversal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
