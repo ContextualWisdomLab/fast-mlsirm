@@ -155,6 +155,24 @@ multiple-membership `u_h`.
 - Laird, N. M., & Ware, J. H. (1982). Random-effects models for longitudinal data. *Biometrics, 38*(4), 963–974. https://doi.org/10.2307/2529876
 - Oravecz, Z., Tuerlinckx, F., & Vandekerckhove, J. (2011). A hierarchical latent stochastic differential equation model for affective dynamics. *Psychological Methods, 16*(2), 468–490. https://doi.org/10.1037/a0024375
 
+### 8.1 TEPP posterior topic-context influence — Proposed contract only
+
+Architecture effect:
+
+- consume complete TEPP posterior draws rather than binary assignments or a
+  diagonal normal substitute;
+- retain source-derived BU/PU/team/person multiple membership, Event Lineage,
+  event time, cutoff, evidence digest, and provenance assertion identity;
+- keep document case-deletion influence unavailable until one Rust estimator
+  passes identification, deletion-effect recovery, uncertainty coverage, and
+  same-objective CPU/GPU parity.
+
+Primary basis remains Browne, Goldstein, and Rasbash (2001) for multiple
+membership/multiple classification and Fox and Glas (2001) for multilevel IRT.
+These sources motivate the structure; they do not by themselves validate an
+unimplemented topic-deletion estimator. ADR-0022 therefore accepts only the
+wire/input prerequisite and prohibits a heuristic score.
+
 ## 9. Adaptive factor rotation — Proposed
 
 Architecture effect:

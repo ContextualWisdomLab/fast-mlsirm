@@ -186,6 +186,14 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies. The hierarchical CT-AR Rasch slice reports multi-seed state RMSE/coverage as joint MAP evidence, not as Fox–Glas Gibbs or estimated MMMC recovery.
 
+**TRD-MLT-006** The TEPP topic-context influence boundary shall validate the
+exact `tepp.topic_context_posterior.v1` schema in Rust, including complete
+posterior draws, Event Lineage, historical event time, evidence provenance,
+and source-derived BU/PU/team/person multiple memberships. The influence call
+shall return `EstimatorUnavailable` until the same continuous-posterior MMMC
+objective passes deletion-effect recovery, interval coverage, and CPU/GPU
+parity; no Python or heuristic fallback is permitted.
+
 ### 4.12 Testing and scientific evidence
 
 **TRD-TEST-001** Owned production Python statement/branch coverage target is 100%; public docstrings and Rust documentation shall be complete and beginner-readable.

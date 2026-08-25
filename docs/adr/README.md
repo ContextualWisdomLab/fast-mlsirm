@@ -37,6 +37,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0018](0018-angoff-delta-plot-dif.md) | Accepted | Adopt Angoff delta-plot (Magis & Facon threshold) as the small-sample observed-score DIF screen; distinct from MH/logistic/SIBTEST. |
 | [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
 | [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
+| [0022](0022-tepp-topic-context-influence-boundary.md) | Proposed | Admit TEPP posterior topic evidence through an exact Rust contract; topic-context case-deletion influence stays fail-closed until recovery and CPU/GPU parity. |
 
 ## ADR completeness rule
 

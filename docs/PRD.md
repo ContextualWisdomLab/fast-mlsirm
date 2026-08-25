@@ -167,6 +167,13 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-062** Future Rust estimators for these contracts shall establish identification and true-parameter recovery before release as production estimators.
 
+**PRD-FR-063** Posterior topic-context influence shall consume a complete,
+provenance-bound TEPP posterior with BU/PU/team/person multiple membership and
+Event Lineage relations. Binary topic assignments, diagonal pseudo-posteriors,
+heuristic weights, and Python psychometric kernels are prohibited; the feature
+shall remain explicitly unavailable until the Rust estimator passes recovery,
+uncertainty-coverage, and CPU/GPU parity gates.
+
 ### 6.8 Reporting and evidence
 
 **PRD-FR-070** Reports shall separate exact machine-readable values from human-readable summaries and preserve provenance needed to reconstruct the analysis.
