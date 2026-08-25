@@ -83,6 +83,10 @@ class _HostileMaskCell(metaclass=_MaskMeta):
     """Mask cell whose class metadata must never be inspected during admission."""
 
 
+class _HostileNumericCell(metaclass=_MaskMeta):
+    """Scientific numeric cell whose class metadata must never be inspected."""
+
+
 def test_oakes_rejects_control_before_caller_evidence(monkeypatch):
     """An invalid callback-bearing step must fail before response/factor work."""
     monkeypatch.setattr(_core, "oakes_standard_errors", _unexpected_oakes_dispatch)
@@ -121,6 +125,21 @@ def test_oakes_rejects_nested_numeric_provider_before_conversion(monkeypatch):
         oakes_standard_errors(_result(), [[0.0], [hostile]], [0])
 
     assert hostile.calls == 0
+
+
+@pytest.mark.parametrize("field", ["responses", "factor_id"])
+def test_oakes_rejects_numeric_metaclass_before_class_attribute_callbacks(monkeypatch, field):
+    """Numeric admission must use type identity without caller class metadata reads."""
+    monkeypatch.setattr(_core, "oakes_standard_errors", _unexpected_oakes_dispatch)
+    _MaskMeta.calls = 0
+    hostile = _HostileNumericCell()
+    responses = [[0.0], [hostile]] if field == "responses" else [[0.0], [1.0]]
+    factor_id = [hostile] if field == "factor_id" else [0]
+
+    with pytest.raises(ValueError):
+        oakes_standard_errors(_result(), responses, factor_id)
+
+    assert _MaskMeta.calls == 0
 
 
 def test_oakes_rejects_mask_truth_provider_before_truth_coercion(monkeypatch):
