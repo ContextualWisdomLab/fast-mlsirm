@@ -9,6 +9,74 @@ from __future__ import annotations
 import numpy as np
 
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_MAX_NATIVE_USIZE = int(np.iinfo(np.uintp).max)
+
+
+def _trusted_positive_real(value: object, name: str) -> float:
+    """Return one finite positive control that survives the Rust ``f64`` boundary exactly."""
+    error = f"{name} must be finite and positive"
+    value_type = type(value)
+    try:
+        if value_type is int:
+            normalized = float(value)
+            if not np.isfinite(normalized) or int(normalized) != value:
+                raise ValueError(error)
+        elif value_type is float:
+            normalized = value
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+            normalized = float(value)
+            if not np.isfinite(normalized) or int(normalized) != int(value):
+                raise ValueError(error)
+        elif any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
+            normalized = float(value)
+            if not np.isfinite(normalized) or value_type(normalized) != value:
+                raise ValueError(error)
+        else:
+            raise ValueError(error)
+    except (OverflowError, ValueError):
+        raise ValueError(error) from None
+    if not np.isfinite(normalized) or normalized <= 0:
+        raise ValueError(error)
+    return normalized
+
+
+def _trusted_category_count(value: object) -> int:
+    """Return one Rust-compatible category count without caller integer coercion."""
+    error = "n_cat must be an integer >= 2"
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(error)
+    if normalized < 2 or normalized > _MAX_NATIVE_USIZE:
+        raise ValueError(error)
+    return normalized
+
+
+def _trusted_polytomous_model(value: object) -> str:
+    """Return one supported package-owned polytomous model identity."""
+    if type(value) is not str or value not in {"grm", "gpcm"}:
+        raise ValueError("model must be 'grm' or 'gpcm'")
+    return value
+
+
 def _real_float64_array(value: np.ndarray, name: str) -> np.ndarray:
     """Reject complex caller evidence before real-valued numeric marshalling."""
     raw = np.asarray(value)
@@ -53,11 +121,8 @@ def score_wle(
         Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
             *Psychometrika, 54*(3), 427-450. https://doi.org/10.1007/BF02294627
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "score_wle"):
-        raise RuntimeError("score_wle requires the compiled Rust core")
+    theta_bound = _trusted_positive_real(theta_bound, "theta_bound")
+    tol = _trusted_positive_real(tol, "tol")
 
     a = _real_float64_array(a, "a").reshape(-1)
     b = _real_float64_array(b, "b").reshape(-1)
@@ -87,6 +152,11 @@ def score_wle(
     if not np.all(np.isin(yy[observed], (0.0, 1.0))):
         raise ValueError("responses must be 0 or 1 where observed (NaN = missing)")
 
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_wle"):
+        raise RuntimeError("score_wle requires the compiled Rust core")
     res = core.score_wle(
         a,
         b,
@@ -96,8 +166,8 @@ def score_wle(
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
-        float(theta_bound),
-        float(tol),
+        theta_bound,
+        tol,
     )
     return {
         "theta": np.asarray(res["theta"], dtype=np.float64),
@@ -161,15 +231,11 @@ def score_wle_poly(
         Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
             *Psychometrika, 54*(3), 427-450. https://doi.org/10.1007/BF02294627
     """
-    from .fitstats import _core_module
+    n_cat = _trusted_category_count(n_cat)
+    model = _trusted_polytomous_model(model)
+    theta_bound = _trusted_positive_real(theta_bound, "theta_bound")
+    tol = _trusted_positive_real(tol, "tol")
 
-    core = _core_module()
-    if core is None or not hasattr(core, "score_wle_poly"):
-        raise RuntimeError("score_wle_poly requires the compiled Rust core")
-
-    n_cat = int(n_cat)
-    if n_cat < 2:
-        raise ValueError("n_cat must be >= 2")
     slope = _real_float64_array(slope, "slope").reshape(-1)
     n_items = slope.shape[0]
     if n_items == 0:
@@ -191,10 +257,19 @@ def score_wle_poly(
             raise ValueError("observed must match responses shape")
     yy = np.where(observed, y, 0.0)
     seen = yy[observed]
-    if seen.size and (not np.all(np.isfinite(seen)) or not np.all(seen == np.floor(seen))
-                      or seen.min() < 0 or seen.max() > n_cat - 1):
+    if seen.size and (
+        not np.all(np.isfinite(seen))
+        or not np.all(seen == np.floor(seen))
+        or seen.min() < 0
+        or seen.max() > n_cat - 1
+    ):
         raise ValueError("responses must be integers in 0..n_cat-1 where observed (NaN = missing)")
 
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_wle_poly"):
+        raise RuntimeError("score_wle_poly requires the compiled Rust core")
     res = core.score_wle_poly(
         yy.reshape(-1).astype(np.int64),
         int(n_persons),
@@ -203,9 +278,9 @@ def score_wle_poly(
         slope,
         cat.reshape(-1),
         observed.reshape(-1),
-        str(model),
-        float(theta_bound),
-        float(tol),
+        model,
+        theta_bound,
+        tol,
     )
     return {
         "theta": np.asarray(res["theta"], dtype=np.float64),
