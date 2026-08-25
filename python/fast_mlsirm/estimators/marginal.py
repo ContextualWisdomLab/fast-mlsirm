@@ -1720,9 +1720,10 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     converged = False
     final_delta = np.inf
     stopping_tolerance = float(tol * (1.0 + abs(ll)))
+    y_mask = (y[:, :, None] == np.arange(k_cat)).astype(np.float64)
     for it in range(1, max_iter + 1):
         for i in range(n_items):
-            r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
+            r = post.T @ y_mask[:, i, :]
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
         next_ll, post = estep(params)
         if not np.isfinite(next_ll):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
