@@ -53,11 +53,14 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
+from ._judge_projection_order import install as _install_judge_projection_order
 from .llm_judge import (
     JudgeFormatError,
     LLMJudgeResult,
     MAX_JUDGE_CATEGORIES,
 )
+
+_install_judge_projection_order()
 
 MIN_JUDGE_CONSTRUCT_ITEMS = 5
 """Default policy floor: fewest criteria admitted per unidimensional facet."""
@@ -375,15 +378,11 @@ def project_judge_results_to_matrix(
         raise TypeError("spec must be a JudgeConstructSpec")
     spec = replace(spec)
     rows: list[tuple[int, ...]] = []
-    expected_ids = tuple(sorted(spec.criterion_ids))
-    output_positions = {
-        criterion_id: index for index, criterion_id in enumerate(expected_ids)
-    }
+    expected_ids = set(spec.criterion_ids)
     for result in results:
         if not isinstance(result, LLMJudgeResult):
             raise TypeError("results must contain LLMJudgeResult values")
-        result_ids = tuple(sorted(result.criterion_scores))
-        if result_ids != expected_ids:
+        if set(result.criterion_scores) != expected_ids:
             raise JudgeFormatError(
                 "result criterion set does not match the validated construct spec"
             )
@@ -392,10 +391,9 @@ def project_judge_results_to_matrix(
             n_categories=(
                 spec.n_categories if spec.item_type == "polytomous" else None
             ),
+            criterion_order=spec.criterion_ids,
         )
-        rows.append(
-            tuple(row[output_positions[criterion_id]] for criterion_id in spec.criterion_ids)
-        )
+        rows.append(tuple(row))
     if not rows:
         raise JudgeFormatError("at least one judged response is required")
     matrix = np.asarray(rows, dtype=np.int64)
