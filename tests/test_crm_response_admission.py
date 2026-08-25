@@ -139,6 +139,26 @@ def test_oversized_nested_numpy_rows_fail_before_sequence_materialization(monkey
         crm.fit_crm(responses)
 
 
+def test_zero_cell_fanout_is_bounded_before_sequence_materialization(monkeypatch):
+    """Malformed empty-container fan-out is bounded independently of scalar cells."""
+
+    responses = [[] for _ in range(9)]
+
+    def unexpected_asarray(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("NumPy materialization ran before CRM structural admission")
+
+    def unexpected_core() -> object:
+        raise AssertionError("compiled core discovered before CRM structural admission")
+
+    monkeypatch.setattr(crm, "_MAX_CRM_RESPONSE_STRUCTURAL_NODES", 8, raising=False)
+    monkeypatch.setattr(crm.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_core)
+
+    with pytest.raises(ValueError, match="structural traversal budget"):
+        crm.fit_crm(responses)
+
+
 def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monkeypatch):
     """Ordinary built-in rows with concrete NumPy reals remain compatible."""
 
