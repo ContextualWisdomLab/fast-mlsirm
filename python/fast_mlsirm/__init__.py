@@ -8,6 +8,7 @@ from importlib.metadata import version as _distribution_version
 from . import _legacy_init as _legacy_init
 from . import cat as _cat
 from . import cdm as _cdm
+from . import dif as _dif
 from . import exposure as _exposure
 from . import fitstats as _fitstats
 from . import inference as _inference
@@ -17,6 +18,7 @@ from . import serving as _serving
 from . import validation as _validation
 from ._cat_administration_resource_safety import install as _install_cat_administration_resource_safety
 from ._cdm_response_safety import install as _install_cdm_response_safety
+from ._dif_control_safety import install as _install_dif_control_safety
 from ._exposure_array_safety import install as _install_exposure_array_safety
 from ._exposure_flexilevel_safety import install as _install_exposure_flexilevel_safety
 from ._fitstats_control_safety import install as _install_fitstats_control_safety
@@ -36,6 +38,16 @@ _install_exposure_flexilevel_safety(_exposure)
 _install_fitstats_control_safety(_fitstats)
 _install_cdm_response_safety(_cdm)
 _install_icc_control_safety(_reliability)
+
+_install_dif_control_safety(_dif)
+for _dif_name in (
+    "logistic_dif",
+    "mantel_haenszel_dif_purified",
+    "logistic_dif_purified",
+):
+    if hasattr(_legacy_init, _dif_name):
+        setattr(_legacy_init, _dif_name, getattr(_dif, _dif_name))
+
 _install_inference_admission_safety(_inference)
 _install_scaling_control_safety(_scaling)
 _install_fleiss_control_safety(_validation)
@@ -59,6 +71,7 @@ del (
     _exposure,
     _inference,
     _install_cat_administration_resource_safety,
+    _install_dif_control_safety,
     _install_exposure_array_safety,
     _install_exposure_flexilevel_safety,
     _fitstats,
@@ -70,6 +83,8 @@ del (
     _install_inference_admission_safety,
     _install_scaling_control_safety,
     _install_serving_export_safety,
+    _dif,
+    _dif_name,
     _reliability,
     _scaling,
     _serving,
