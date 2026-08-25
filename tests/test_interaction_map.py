@@ -266,3 +266,19 @@ def test_nan_remains_the_only_nonfinite_missing_value(
 
     residual_interaction_map([[np.nan]], [[0.0]], axis_count=1)
     assert np.isnan(captured["observed"][0, 0])
+
+
+def test_expected_nan_is_rejected_before_native_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-finite model expectation is invalid evidence, not response missingness."""
+
+    def fail_core(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("compiled interaction-map core must not run")
+
+    monkeypatch.setattr(
+        interaction_map_module._core, "residual_interaction_map", fail_core
+    )
+
+    with pytest.raises(ValueError, match="expected"):
+        residual_interaction_map([[0.0]], [[np.nan]], axis_count=1)
