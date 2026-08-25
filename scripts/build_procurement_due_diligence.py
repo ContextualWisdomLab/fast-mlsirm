@@ -196,7 +196,7 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError("source commit lookup failed") from exc
     candidate = completed.stdout.strip()
     if not _FULL_OBJECT_ID_PATTERN.fullmatch(candidate):
