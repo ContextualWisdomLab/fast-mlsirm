@@ -30,3 +30,17 @@ def test_rendered_report_has_semantic_hero_metadata(tmp_path):
     assert '<dl class="hero-meta">' in html
     assert "<dt>Source</dt>" in html
     assert "<dd>fit_diagnostics.json</dd>" in html
+
+
+def test_empty_state_uses_theme_contrast_and_italic_emphasis(tmp_path):
+    """Empty-state emphasis must not override the theme-tuned muted text color."""
+    source = tmp_path / "fit_diagnostics.json"
+    output = tmp_path / "report.html"
+    source.write_text(json.dumps({"model_fit": {}}), encoding="utf-8")
+
+    render_diagnostics_report(source, output)
+
+    html = output.read_text(encoding="utf-8")
+    assert ".coverage-note,\n.empty-state {\n  color: var(--muted);" in html
+    assert "font-style: italic;" in html
+    assert "color: GrayText;" not in html
