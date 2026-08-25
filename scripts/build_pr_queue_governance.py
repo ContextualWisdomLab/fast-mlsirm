@@ -92,6 +92,7 @@ _GH_COMMAND_TIMEOUT_SECONDS = 60
 _GH_STDOUT_MAX_BYTES = MAX_JSON_BYTES
 _GH_STDERR_MAX_BYTES = 1024 * 1024
 GIT_METADATA_TIMEOUT_SECONDS = 5
+_FULL_OBJECT_ID_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -128,7 +129,14 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return the checked-out commit SHA, failing closed on a hung Git child."""
+    """Return the canonical full commit SHA for the checked-out HEAD.
+
+    The value must reconstruct the exact governance-evidence source, so every
+    failure mode fails closed: timeouts, missing executables, non-zero exits,
+    empty output, and any identity that is not a full lowercase SHA-1 or
+    SHA-256 object name raise :class:`RuntimeError` instead of degrading to an
+    unreconstructable placeholder.
+    """
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -140,9 +148,12 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except Exception:
-        return "unknown"
-    return completed.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("source commit lookup failed") from exc
+    candidate = completed.stdout.strip()
+    if not _FULL_OBJECT_ID_PATTERN.fullmatch(candidate):
+        raise RuntimeError("source commit is not a full lowercase SHA-1 or SHA-256 object id")
+    return candidate
 
 
 def _check(

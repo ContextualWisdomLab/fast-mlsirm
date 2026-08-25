@@ -20,6 +20,12 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# Build-level fixtures patch ``_source_commit`` with this canonical identity so
+# queue-classification tests do not depend on a real Git checkout; boundary
+# behavior of the real helper is covered by test_pr_queue_governance_git_timeout.py.
+_CANONICAL_TEST_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
 def _base_pr(
     number: int,
     *,
@@ -122,8 +128,9 @@ def _write_custom_snapshot(
     return path
 
 
-def test_pr_queue_governance_creates_manifest_and_report(tmp_path):
+def test_pr_queue_governance_creates_manifest_and_report(tmp_path, monkeypatch):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     snapshot = _write_snapshot(tmp_path / "snapshot.json")
 
     manifest = module.build_pr_queue_governance(
@@ -179,8 +186,9 @@ def test_classify_pr_marks_duplicate_and_release_scope_risks():
     assert classified["changed_files"] == ["src/a.py", "src/b.py"]
 
 
-def test_pr_queue_governance_fails_without_snapshot_when_offline(tmp_path):
+def test_pr_queue_governance_fails_without_snapshot_when_offline(tmp_path, monkeypatch):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
 
     manifest = module.build_pr_queue_governance(
         _args(tmp_path, None, tmp_path / "pr-queue-governance")
@@ -191,8 +199,11 @@ def test_pr_queue_governance_fails_without_snapshot_when_offline(tmp_path):
     assert "github:snapshot" in failed
 
 
-def test_duplicate_issue_claim_without_canonical_designation_fails_closed(tmp_path):
+def test_duplicate_issue_claim_without_canonical_designation_fails_closed(
+    tmp_path, monkeypatch
+):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     prs = [
         _base_pr(396, body="Closes #394", files=["src/a.py", "tests/a.py"]),
         _base_pr(399, body="Fixes: #394", files=["src/b.py", "tests/b.py"]),
@@ -213,8 +224,11 @@ def test_duplicate_issue_claim_without_canonical_designation_fails_closed(tmp_pa
     assert "queue:duplicate_issue_claims" in failed
 
 
-def test_exactly_one_canonical_designation_resolves_duplicate_claim(tmp_path):
+def test_exactly_one_canonical_designation_resolves_duplicate_claim(
+    tmp_path, monkeypatch
+):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     prs = [
         _base_pr(
             396,
@@ -235,8 +249,9 @@ def test_exactly_one_canonical_designation_resolves_duplicate_claim(tmp_path):
     assert claim["canonical_pr"] == 396
 
 
-def test_multiple_canonical_designations_remain_conflicted(tmp_path):
+def test_multiple_canonical_designations_remain_conflicted(tmp_path, monkeypatch):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     prs = [
         _base_pr(396, body="Closes #394\nCanonical-For: #394"),
         _base_pr(399, body="Closes #394\nCanonical-For: #394"),
@@ -251,8 +266,11 @@ def test_multiple_canonical_designations_remain_conflicted(tmp_path):
     assert manifest["duplicate_issue_claims"]["394"]["canonical_pr"] is None
 
 
-def test_closed_claimant_leaves_active_queue_and_remains_in_history(tmp_path):
+def test_closed_claimant_leaves_active_queue_and_remains_in_history(
+    tmp_path, monkeypatch
+):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     active = _base_pr(396, body="Closes #394")
     closed = _base_pr(399, body="Closes #394", state="CLOSED")
     snapshot = _write_custom_snapshot(
@@ -271,8 +289,9 @@ def test_closed_claimant_leaves_active_queue_and_remains_in_history(tmp_path):
     assert manifest["issue_claim_history"][1]["state"] == "CLOSED"
 
 
-def test_identical_changed_file_sets_emit_nonblocking_warning(tmp_path):
+def test_identical_changed_file_sets_emit_nonblocking_warning(tmp_path, monkeypatch):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     files = ["src/shared.py", "tests/test_shared.py"]
     prs = [
         _base_pr(1, files=files),
@@ -633,6 +652,7 @@ def test_build_fails_when_history_snapshot_still_errors_after_retries(
 ):
     """Real non-recovered transport failure still hard-fails github:snapshot."""
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
 
     def broken_snapshot(repo: str) -> dict:
         return {
@@ -674,19 +694,25 @@ def test_build_fails_when_history_snapshot_still_errors_after_retries(
 
 def test_source_commit_and_json_helpers_cover_success_and_failure(tmp_path, monkeypatch):
     module = _load_governance()
+    canonical_sha1 = "0123456789abcdef0123456789abcdef01234567"
     monkeypatch.setattr(
         module.subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "deadbeef\n", ""),
+        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, f"{canonical_sha1}\n", ""),
     )
-    assert module._source_commit(tmp_path) == "deadbeef"
+    assert module._source_commit(tmp_path) == canonical_sha1
 
     monkeypatch.setattr(
         module.subprocess,
         "run",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("missing")),
     )
-    assert module._source_commit(tmp_path) == "unknown"
+    try:
+        module._source_commit(tmp_path)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("non-timeout git failure must not degrade to 'unknown'")
 
     object_path = tmp_path / "object.json"
     object_path.write_text('{"a": 1}', encoding="utf-8")
@@ -868,6 +894,7 @@ def test_render_report_ignores_malformed_optional_records():
 
 def test_main_returns_success_failure_and_exception(tmp_path, monkeypatch, capsys):
     module = _load_governance()
+    monkeypatch.setattr(module, "_source_commit", lambda root: _CANONICAL_TEST_COMMIT)
     ok_snapshot = _write_custom_snapshot(tmp_path / "ok.json", open_prs=[])
     ok_code = module.main(
         [
