@@ -72,9 +72,16 @@ def _trusted_category_count(value: object) -> int:
 
 def _trusted_polytomous_model(value: object) -> str:
     """Return one supported package-owned polytomous model identity."""
-    if type(value) is not str or value not in {"grm", "gpcm"}:
+    value_type = type(value)
+    if value_type is str:
+        normalized = value
+    elif value_type is np.str_:
+        normalized = str(value)
+    else:
         raise ValueError("model must be 'grm' or 'gpcm'")
-    return value
+    if normalized not in {"grm", "gpcm"}:
+        raise ValueError("model must be 'grm' or 'gpcm'")
+    return normalized
 
 
 def _real_float64_array(value: np.ndarray, name: str) -> np.ndarray:
