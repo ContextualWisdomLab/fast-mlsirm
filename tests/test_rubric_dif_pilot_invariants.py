@@ -128,3 +128,26 @@ def test_nested_mirt_subclass_is_rejected_before_field_callbacks():
     with pytest.raises(TypeError, match="MirtPilotDesign"):
         _direct(hostile, design.respondent_group_ids)
     assert CallbackMirt.callbacks == 0
+
+
+def test_mutated_group_container_is_rejected_before_iteration_callbacks():
+    """Replay never iterates a callback-bearing replacement group container."""
+    design = _valid_design()
+
+    class CallbackGroups(tuple):
+        callbacks = 0
+
+        def __len__(self):
+            type(self).callbacks += 1
+            raise AssertionError("caller length callback executed")
+
+        def __iter__(self):
+            type(self).callbacks += 1
+            raise AssertionError("caller iteration callback executed")
+
+    hostile = CallbackGroups(design.respondent_group_ids)
+    object.__setattr__(design, "respondent_group_ids", hostile)
+
+    with pytest.raises(TypeError, match="respondent_group_ids"):
+        design.group_array()
+    assert CallbackGroups.callbacks == 0
