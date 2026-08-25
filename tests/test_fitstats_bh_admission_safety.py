@@ -71,21 +71,42 @@ def test_bh_rejects_array_provider_before_callback_and_core(
 @pytest.mark.parametrize(
     "p_values",
     (
-        np.array([0.01, np.nan], dtype=np.float64),
         np.array([0.01, np.inf], dtype=np.float64),
         np.array([-0.01, 0.5], dtype=np.float64),
         np.array([0.5, 1.01], dtype=np.float64),
     ),
 )
-def test_bh_rejects_nonfinite_or_out_of_range_p_values_before_core(
+def test_bh_rejects_invalid_p_values_before_core(
     monkeypatch: pytest.MonkeyPatch,
     p_values: np.ndarray,
 ) -> None:
-    """Invalid probability evidence fails before Rust BH arithmetic."""
+    """Infinity and out-of-range probability evidence fail before Rust."""
     monkeypatch.setattr(fitstats_module, "_core_module", _bomb_core)
 
     with pytest.raises(ValueError, match="p_values"):
         fitstats_module.benjamini_hochberg(p_values, q=0.05)
+
+
+def test_bh_preserves_nan_missingness_for_rust(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NaN remains the Rust-owned BH missing-p-value sentinel."""
+    captured: dict[str, object] = {}
+
+    class _Core:
+        def benjamini_hochberg(self, p_values: np.ndarray, q: float) -> list[bool]:
+            captured["p_values"] = p_values
+            captured["q"] = q
+            return [True, False, False]
+
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: _Core())
+    result = fitstats_module.benjamini_hochberg([0.01, np.nan, 0.40], q=0.05)
+
+    rust_p = captured["p_values"]
+    assert type(rust_p) is np.ndarray
+    assert rust_p.dtype == np.float64
+    assert np.isnan(rust_p[1])
+    assert result.tolist() == [True, False, False]
 
 
 def test_bh_rejects_oversized_builtin_integer_as_value_error(
