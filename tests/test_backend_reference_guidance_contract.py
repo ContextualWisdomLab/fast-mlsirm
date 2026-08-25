@@ -20,8 +20,9 @@ def _changelog_section(heading: str) -> str:
     """Return one released or unreleased CHANGELOG.md subsection's exact text."""
     text = CHANGELOG_PATH.read_text(encoding="utf-8")
     start = text.index(heading)
-    next_heading = text.index("\n#### ", start + len(heading))
-    return text[start:next_heading]
+    next_heading = text.find("\n#### ", start + len(heading))
+    end = next_heading if next_heading != -1 else len(text)
+    return text[start:end]
 
 
 def test_auto_backend_failure_names_the_public_reference_api() -> None:
