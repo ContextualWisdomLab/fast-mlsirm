@@ -403,7 +403,9 @@ def fit_irt_experiment(  # noqa: UP047  # PEP 695 syntax would break Python 3.10
     degenerate diagnostic fixtures. Production and benchmark callers must use
     this boundary so unstable estimates cannot be presented as experiment
     evidence. The callable receives the validated persons-by-items matrix as
-    its first positional argument.
+    its first positional argument. A caller-supplied ``mask`` is consumed by
+    this boundary; the normalized matrix already carries its missing-response
+    semantics, so the raw mask is never forwarded to the numerical fitter.
     """
     _validate_item_contract(item_type, n_categories)
     mask = fit_kwargs.get("mask")
@@ -414,7 +416,9 @@ def fit_irt_experiment(  # noqa: UP047  # PEP 695 syntax would break Python 3.10
         n_categories=n_categories,
         factor_ids=factor_ids,
     )
-    return fit_callable(matrix, **fit_kwargs)
+    call_kwargs = dict(fit_kwargs)
+    call_kwargs.pop("mask", None)
+    return fit_callable(matrix, **call_kwargs)
 
 
 def _normalize_experiment_responses(

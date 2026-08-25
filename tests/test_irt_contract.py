@@ -229,6 +229,37 @@ def test_fit_irt_experiment_normalizes_missing_semantics_before_readiness() -> N
     )
 
 
+def test_fit_irt_experiment_consumes_raw_mask_before_fitter() -> None:
+    """The numerical fitter receives normalized NaNs, never the raw mask object."""
+    received_kwargs: list[dict[str, object]] = []
+
+    def fake_fit(_responses, **kwargs):
+        received_kwargs.append(kwargs)
+        return "normalized"
+
+    raw = np.array(
+        [[0, 1], [1, 0], [0, 1], [-1, 0], [1, 1]],
+        dtype=float,
+    )
+    mask = np.array(
+        [[True, True], [True, True], [True, True], [True, True], [False, True]],
+        dtype=bool,
+    )
+
+    assert (
+        fit_irt_experiment(
+            fake_fit,
+            raw,
+            "dichotomous",
+            factor_ids=(0, 0),
+            mask=mask,
+            result="normalized",
+        )
+        == "normalized"
+    )
+    assert received_kwargs == [{"result": "normalized"}]
+
+
 def test_fit_irt_experiment_reports_configured_distinct_value_threshold() -> None:
     with pytest.raises(ValueError, match="at least 3 distinct observed"):
         validate_irt_experiment_readiness(
