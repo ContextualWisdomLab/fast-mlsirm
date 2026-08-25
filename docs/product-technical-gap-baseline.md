@@ -1,8 +1,8 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-21T08:32:44Z**<br>
-Protected-main basis: **`04d0bc21a2a20693bcf16108cd76d394fe844d23`**<br>
+Observed at: **2026-08-25T05:20:00Z**<br>
+Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
 ## 1. Purpose and authority
@@ -66,7 +66,7 @@ transportability, fairness, and decision utility are separate claims.
 
 The observed protected main declares:
 
-- package version **`0.8.0`**;
+- package version **`0.9.0`**;
 - Python **`>=3.12`**;
 - Maturin/PyO3 bindings to the Rust workspace;
 - PyPI classifier **`Development Status :: 3 - Alpha`**; and
@@ -244,56 +244,85 @@ new canonical capability-maturity state.
 ## 7. Current pull-request evidence
 
 The following table records high-leverage live work observed on
-2026-08-21T08:32:44Z against protected
-`main@04d0bc21a2a20693bcf16108cd76d394fe844d23`. Every row is
+2026-08-25T05:20:00Z against protected
+`main@9c12eab15fb8a187b135f9be1961f0693a431c23`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
-| [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) | `286bd2dbba5da8348643b6ad8145967972813ae9` | configuration integer hardening plus Rust-required automatic backend and runtime truth | open, non-draft at observation; re-fetch checks/reviews and overlap with #1070/#626 before acting |
-| [#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | `e47f9e6b257c6dbabff77702588d60bbb5cc5fea` | isolates NumPy parity behind explicit `fit_reference`/CLI reference surfaces | open at observation; preserve one backend authority with #951/#626 |
-| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `fd7b511e62c1f0a24190ef3fa65b06db50e6e32e` | Rust continuous-time/AR longitudinal Rasch estimator and recovery evidence | open, non-draft at observation; preserve exact recovery evidence through integration |
-| [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) | `34697b6df58c1424654bc890571a3dfbe806fd97` | crossed and weighted multiple-membership estimator | draft and stacked at observation; do not merge independently before its declared predecessor evidence is integrated |
-| [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | `3aec7c0293a6e85652fbf3c5bbc3c45513f357f4` | relation-aware structural model-selection governor | open at observation; requires relation, scoreability, held-out and recovery evidence |
-| [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | `27a831865c2f1ee42710dceb27a2e074c13ad254` | governed item-bank lifecycle JSON/HTML reports and replay hardening | open, non-draft at observation; report integrity does not itself complete calibration/linking/exposure/drift evidence |
-| [#1012](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1012) | `64e6dad6a62b2b391c0632c7a2a93cc2fdce0ca8` | durable 500-rep GRM recovery evidence workflow | open, non-draft at observation; workflow evidence must remain bound to the exact source and head |
-| [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | `47c1af6721a44493bc470d7aed71be2a99983ba7` | bounded statistical-study deadline increase | open, non-draft at observation; longer deadlines must still produce terminal, retained evidence |
-| [#1015](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1015) | `5a855b731f9857d4a177263f94c9987952be224c` | bounded subprocess capture and process-tree integrity | open, non-draft at observation; current head includes descendant pipe cleanup and awaits fresh checks/reviews |
-| [#1002](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1002) | `36e0bdd71535e56fe1329f31c2cd74d0749c64d8` | accessible report focus behavior | open, non-draft at observation; terminal checks do not replace current formal approvals |
-| [#1064](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1064) | `dc65d76c2d4641bf95c98cd581316224ee32e8d2` | exact model-spec record admission | open, non-draft at observation; required checks are green but formal approval remains required |
-| [#1081](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1081) | `4f14a754a1e016edd9a81bbd4ad4bfa367f8f4cc` | cross-engine conformance inventory and executed evidence | open, non-draft at observation; current source findings are addressed, but exact-head approval is still required |
-| [#1079](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1079) | `e6674e78b28b17c52398d8b451bc999a4e078d6d` | this product/technical gap baseline | open, non-draft at observation; documentation-only and awaiting the current OpenCode formal result |
-| [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130) | `890ba99f3d3a8f2f51898860bbc86f968b6e42e3` | ADR binding the Figma design-file identity | open, non-draft at observation; downstream design evidence is not protected-main truth until merged |
-| [#1145](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1145) | `64bfa8d932ad533182ec5d9a17e749821e41b8fb` | procurement provenance hardening stacked on #1015 | draft and based on pending head `5a855b73`; restack only after the root PR's normal transition |
+| [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `d232423d…` | seals nested subscore response/group evidence traversal before NumPy materialization (issue [#1362](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1362)) | draft at observation; checks queued; re-fetch draft/ready, checks and reviews before acting |
+| [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345) | `2bc7ba2a…` | bounds CAT administration evidence before deduplication/dense marshalling (issues [#1344](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1344)/[#1347](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1347)/[#1354](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1354)) | merge-forward onto `main@9c12eab1` pushed (`2bc7ba2a`) after resolving the package-surface conflict; fresh current-head CI required |
+| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `7ddfa2c1…` | exposes Rust polytomous predictions with admission safety (issues [#1280](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1280), [#1281](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1291)) | merge-forward onto `main@9c12eab1` pushed (`7ddfa2c1`); predecessor-head reviews are historical after the head change |
+| [#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029) | `2f4a4e03…` | rejects lossy extended-precision S-X² scalar controls before Rust dispatch (issue [#1028](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1028)) | open, non-draft; first strix attempt failed on provider availability and was rerun; current-head checks/reviews still required |
+| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `9bde9837…` | Rust continuous-time/AR longitudinal Rasch estimator replayed on the current review workflow (issue [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565)) | up to date with main; preserve exact recovery evidence through integration; predecessor-head REQUEST_CHANGES was bound to a stale head SHA |
+| [#998](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/998) | `3177525d…` | release/changelog resync plus logistic-DIF control hardening (issue [#958](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/958)) | mergeable; first strix attempt failed on provider availability and was rerun; formal approval still required |
 
-At this observation, GitHub REST enumerated **74 open pull requests**. The
-complete number inventory was:
-
-`#1145, #1140, #1138, #1136, #1134, #1132, #1130, #1129, #1127, #1126, #1122, #1120, #1118, #1116, #1114, #1112, #1110, #1108, #1106, #1104, #1102, #1100, #1097, #1095, #1093, #1091, #1088, #1085, #1084, #1081, #1080, #1079, #1076, #1074, #1072, #1071, #1070, #1065, #1064, #1062, #1061, #1060, #1058, #1056, #1052, #1050, #1048, #1046, #1043, #1041, #1037, #1035, #1033, #1031, #1029, #1026, #1025, #1020, #1019, #1015, #1014, #1013, #1012, #1011, #1009, #1008, #1006, #1005, #1003, #1002, #998, #997, #992, #951`.
+At this observation, GitHub REST enumerated **6 open pull requests**: `#1363,
+#1345, #1279, #1029, #1005, #998`. Open issues numbered 42, led by the
+admission-boundary family (`#1365`, `#1364`, `#1362`, `#1354`, `#1347`,
+`#1344`), the polytomous-prediction family (`#1307`, `#1308`, `#1291`,
+`#1292`, `#1280`, `#1281`, `#1296`, `#1297`, `#1300`, `#1303`, `#1301`),
+the governance/provenance family (`#1146`, `#1144`, `#1111`, `#1150`,
+`#1131`), and the validation/conformance family (`#1096`, `#1094`, `#1092`,
+`#1078`, `#1152`). The long-lived structural gaps remain `#621` (bounded 1.0
+capability/support matrix), `#626` (Rust-owned ordinary production boundary),
+and `#565` (multilevel/multiple-membership/longitudinal completion).
 
 This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,
 including exact head/base, dependency stack, reviews, unresolved threads,
 required Checks, and active path ownership.
 
+Since the previous observation (2026-08-21), the open-PR queue collapsed from
+74 to 6 through normal review/merge activity. Notably integrated since then:
+[#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) (automatic
+Rust backend + configuration hardening), [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014)
+(crossed multiple-membership estimator), [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130)
+(Figma design-boundary ADR), the v0.9.0 release cut, and the polytomous
+GRM/GPCM/CAT/FIPC parameter-recovery suite (#1313).
+
+### 7.1 Superseded lineage record
+
+Two orphaned Sentinel security branches were deleted on 2026-08-25 because
+protected main already ships strictly stronger fixes for their scopes:
+
+- `sentinel-fix-json-recursion-conformance-4916450064032858492` (JSON recursion
+  DoS in `cross_engine_conformance.py`) — superseded by merged
+  [#1330](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1330)
+  (`a25833a0`: raw JSON depth guard + `tests/test_cross_engine_conformance_json_depth.py`).
+- `sentinel-medium-fix-unbounded-json-loading-11914195049005804093` (unbounded
+  JSON loading in ops scripts) — superseded by main's
+  `scripts/_bounded_json.parse_json_bounded(..., max_bytes=...)` hardening in
+  `build_pr_queue_governance.py`, which bounds GitHub stdout bytes beyond the
+  branch's proposal.
+
+Issues [#1300](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1300),
+[#1301](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1301), and
+[#1303](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1303) were
+closed on 2026-08-25 with protected-main evidence: `_TRUSTED_REAL_CONTROL_TYPES`
+excludes Boolean identity (`mhrm.py` lines 46–51) with regression
+`test_mhrm_real_control_boolean_admission.py`; `classify_model_relation()`
+enforces exact-type admission and replays `__post_init__` invariants
+(`model_relation.py` lines 144–146).
+
 ## 8. Product and technical gap matrix
 
 | Gap ID | Priority | Required outcome | Existing issue / PR evidence | Completion test |
 | --- | --- | --- | --- | --- |
 | GAP-01 | P0 | Freeze a bounded 1.0 capability, support and maturity matrix; do not equate planned research with GA | [#621](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/621), [#636](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/636), [#648](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/648) | every public capability is classified, supported versions match metadata, and the release gate makes no valuation/certification claim |
-| GAP-02 | P0 | One ordinary Rust/PyO3 numerical owner; NumPy only on explicit reference/parity surfaces | [#626](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/626), [#627](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/627), PRs [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) and [#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | production config/API cannot silently select Python numerics; missing/incompatible Rust fails before result-affecting work |
-| GAP-03 | P0 | Complete non-atomistic multilevel, cross-classified, multiple-membership and longitudinal estimation with identification and recovery | [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565), PRs [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) and [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) | realistic aligned bias/MAE/RMSE/coverage/convergence and temporal leakage tests pass; both stacked scientific deltas survive |
+| GAP-02 | P0 | One ordinary Rust/PyO3 numerical owner; NumPy only on explicit reference/parity surfaces | [#626](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/626), [#627](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/627); the automatic-backend and reference-isolation slices landed on protected main via merged [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951)/[#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | production config/API cannot silently select Python numerics; missing/incompatible Rust fails before result-affecting work |
+| GAP-03 | P0 | Complete non-atomistic multilevel, cross-classified, multiple-membership and longitudinal estimation with identification and recovery | [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565); crossed multiple-membership estimator landed via merged [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) plus the crossed multiple-membership replay (#0827dfa lineage); continuous-time/AR longitudinal Rasch remains on active PR [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | realistic aligned bias/MAE/RMSE/coverage/convergence and temporal leakage tests pass; both stacked scientific deltas survive |
 | GAP-04 | P0 | Relation-safe factor retention, structural model selection and identified exploratory multidimensional estimation | [#608](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/608), [#633](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/633), [#551](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/551), PR [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | no winner is forced without relation-appropriate tests, held-out evidence, scoreability and true-structure recovery |
 | GAP-05 | P1 | Close rubric, generated-item, scoring, RAG, essay, enterprise-issue and item-bank lifecycles without parallel contracts | [#397](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/397), [#404](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/404), [#607](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/607), [#609](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/609), PR [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | one immutable assessment/rubric/scoring lineage reaches pilot, calibration, validation, lifecycle and report evidence without provider coupling or silent state promotion |
-| GAP-06 | P0 | Independently test equations and fitted estimands against explicitly matched mature engines | [#1077](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1077) | versioned capability×engine matrix, fixed-parameter equation conformance first, aligned fitted-result comparisons, visible disagreement register |
+| GAP-06 | P0 | Independently test equations and fitted estimands against explicitly matched mature engines | [#1077](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1077) closed as COMPLETED after the reusable conformance provenance manifest landed ([#1082](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1082)); residual validation-family execution evidence tracks under [#1092](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1092)/[#1094](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1094)/[#1096](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1096)/[#1152](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1152) | versioned capability×engine matrix, fixed-parameter equation conformance first, aligned fitted-result comparisons, visible disagreement register |
 | GAP-07 | P0 for validated claims | Add preregistered external validity, language/site/time transportability, fairness and criterion evidence profiles | [#1078](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1078) | external evidence is genuinely held out; claim register narrows automatically on absent, failed or indeterminate evidence |
 | GAP-08 | P0 | Stabilize public artifact, schema, serialization, fingerprint, capability and migration contracts | [#637](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/637), [#653](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/653), [#499](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/499) | strict RFC 8259 artifacts, no environment-dependent capability downgrade, versioned loaders/migrations, cross-language canonical fixtures |
 | GAP-09 | P0 | Complete release/support/supply-chain evidence and truthful compatibility policy | [#648](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/648), [#623](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/623), [#636](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/636), documentation audit PARTIAL states | supported line/runtime/platforms are tested; wheel, SBOM, provenance, license, rollback and vulnerability process are source-hash-bound |
 | GAP-10 | P1 | Publish capacity/performance envelopes instead of isolated speed claims | [#403](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/403), [#563](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/563) | representative N×item×dimension×facet×time workloads report latency, throughput, peak RSS/VRAM, failure ceilings and CPU/GPU parity |
 | GAP-11 | P0 operations | Eliminate orphaned workflow identities and retain complete terminal statistical/release evidence | [#809](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/809), PR [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | complete paginated workflow registry is reconciled; supported workflows remain; statistical studies terminate with durable evidence |
 | GAP-12 | P1 product | Prove one buyer-visible vertical through a downstream host while preserving repository ownership | [#397](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/397), [#404](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/404), [#607](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/607), [#584](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/584) | source evidence → governed observations → Rust calibration → uncertainty/fairness/validation → accessible report → downstream human decision is replayable end to end |
-| GAP-13 | P1 downstream UI | When a hosted consumer has a web surface, make UI states and interactions auditable rather than treating a static screenshot as product evidence | [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130), [`docs/figma_product_design_packet.md`](figma_product_design_packet.md), Storybook interaction-testing guidance | ADR records the exact Figma file ID; a Storybook inventory covers the ten UI/UX dimensions below; each high-risk story has an event-driven interaction assertion and an accessibility result |
+| GAP-13 | P1 downstream UI | When a hosted consumer has a web surface, make UI states and interactions auditable rather than treating a static screenshot as product evidence | [`docs/adr/0016-figma-buyer-evidence-design-boundary.md`](adr/0016-figma-buyer-evidence-design-boundary.md) (merged via [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130)), [`docs/figma_product_design_packet.md`](figma_product_design_packet.md), Storybook interaction-testing guidance | ADR records the exact Figma file ID (`qD34PfMH8Kr41tFdqLCkem`); a Storybook inventory covers the ten UI/UX dimensions below; each high-risk story has an event-driven interaction assertion and an accessibility result |
 
 ## 9. Ordered completion sequence
 
@@ -443,11 +472,12 @@ pretend that a screenshot proves an interaction contract.
 
 The existing buyer-review design packet records Figma file ID
 `qD34PfMH8Kr41tFdqLCkem` in
-[`docs/figma_product_design_packet.md`](figma_product_design_packet.md). The
-ADR binding that identity is [active PR #1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130),
-not protected-main truth until merged. A future Figma-backed change must keep
-the file ID in its ADR and keep Code Connect disabled unless a separate
-architecture decision authorizes it.
+[`docs/figma_product_design_packet.md`](figma_product_design_packet.md). The ADR
+binding that identity is protected-main truth as
+[`docs/adr/0016-figma-buyer-evidence-design-boundary.md`](adr/0016-figma-buyer-evidence-design-boundary.md),
+merged through [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130).
+A future Figma-backed change must keep the file ID in its ADR and keep
+Code Connect disabled unless a separate architecture decision authorizes it.
 
 For a downstream Storybook, each story is both a named visual state and a
 replayable test case. The story starts from explicit props/context, its
@@ -492,11 +522,18 @@ and assert the result; the corresponding evidence is linked in
 
 ### [#1077 — independent cross-engine numerical conformance](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1077)
 
-This issue closes the self-consistency gap by requiring explicit
+This issue defined the self-consistency gap by requiring explicit
 parameterization mappings, neutral fixed-parameter fixtures, aligned
 fitted-result comparisons, a capability×engine matrix, license isolation and a
-visible disagreement register. Mature external implementations are validation
-instruments only and never become production/build/package dependencies.
+visible disagreement register. It closed as **COMPLETED** on 2026-08-24 after
+the reusable source-free conformance provenance manifest landed
+([#1082](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1082));
+execution-side validation evidence continues under the open validation family
+([#1092](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1092),
+[#1094](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1094),
+[#1096](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1096),
+[#1152](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1152)).
+Mature external implementations are validation instruments only and never become production/build/package dependencies.
 
 ### [#1078 — external validity and transportability profiles](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1078)
 

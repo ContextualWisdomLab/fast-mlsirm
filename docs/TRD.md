@@ -182,9 +182,9 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-MLT-003** Cross-classified designs shall maintain dimension-qualified identities.
 
-**TRD-MLT-004** Temporal occasions shall retain ordering/time provenance and explicitly separate discrete occasion-step AR effects from continuous-time parameterizations.
+**TRD-MLT-004** Temporal occasions shall retain ordering/time provenance and explicitly separate discrete occasion-step AR effects from continuous-time parameterizations. OLS may use exact day-scaled offsets as regression covariates; discrete AR uses sequence gaps. Only the hierarchical CT-AR Rasch slice estimates elapsed-day Ornstein–Uhlenbeck transitions.
 
-**TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies.
+**TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies. The hierarchical CT-AR Rasch slice reports multi-seed state RMSE/coverage as joint MAP evidence, not as Fox–Glas Gibbs or estimated MMMC recovery.
 
 ### 4.12 Testing and scientific evidence
 
