@@ -1,4 +1,4 @@
-"""Callback-free scalar admission for public S-X² controls.
+"""Callback-free admission for public fit-statistics controls and BH evidence.
 
 This composition layer replaces only Python validation and marshalling. The
 S-X²/G² statistics, quadrature, BH/FDR decisions, and all production numerical
@@ -7,8 +7,9 @@ work remain owned by the compiled Rust fit-statistics implementation.
 
 from __future__ import annotations
 
+from functools import wraps
 from types import ModuleType
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -33,6 +34,8 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
     np.float64,
     np.longdouble,
 )
+_BH_HARDENED_ATTR = "__fast_mlsirm_bh_admission_hardened__"
+_MAX_PROBABILITY_TREE_DEPTH = 64
 
 
 def _trusted_integer(value: Any, name: str) -> int:
@@ -129,6 +132,111 @@ def _validate_sx2_controls(
     )
 
 
+def _trusted_probability_tree(value: Any) -> None:
+    """Preflight inert probability evidence without arbitrary conversion hooks."""
+    stack: list[tuple[Any, int, bool]] = [(value, 0, False)]
+    active_container_ids: set[int] = set()
+    while stack:
+        current, depth, leaving = stack.pop()
+        current_type = type(current)
+        if current_type is list or current_type is tuple:
+            identity = id(current)
+            if leaving:
+                active_container_ids.remove(identity)
+                continue
+            if identity in active_container_ids:
+                raise ValueError("p_values must not contain cyclic containers")
+            if depth >= _MAX_PROBABILITY_TREE_DEPTH:
+                raise ValueError("p_values nesting exceeds the supported depth")
+            active_container_ids.add(identity)
+            stack.append((current, depth, True))
+            stack.extend((child, depth + 1, False) for child in reversed(current))
+            continue
+        if current_type is np.ndarray:
+            if np.iscomplexobj(current) or current.dtype.kind not in "biuf":
+                raise ValueError("p_values must contain real numeric probabilities")
+            continue
+        if current_type is bool or current_type is int or current_type is float:
+            continue
+        if current_type is np.bool_:
+            continue
+        if any(current_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+            continue
+        if any(current_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES):
+            continue
+        raise ValueError("p_values must contain real numeric probabilities")
+
+
+def _trusted_probability_array(value: Any) -> np.ndarray:
+    """Return package-owned float64 p-values after callback-free validation."""
+    value_type = type(value)
+    if value_type is np.ndarray:
+        array = value
+        if np.iscomplexobj(array) or array.dtype.kind not in "biuf":
+            raise ValueError("p_values must contain real numeric probabilities")
+    elif value_type is list or value_type is tuple:
+        _trusted_probability_tree(value)
+        try:
+            array = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError("p_values must contain real numeric probabilities") from error
+        if np.iscomplexobj(array) or array.dtype.kind not in "biuf":
+            raise ValueError("p_values must contain real numeric probabilities")
+    elif (
+        value_type is bool
+        or value_type is int
+        or value_type is float
+        or value_type is np.bool_
+        or any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES)
+        or any(value_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        array = np.asarray(value)
+    else:
+        raise ValueError("p_values must contain real numeric probabilities")
+
+    if np.any(~np.isfinite(array)) or np.any(array < 0) or np.any(array > 1):
+        raise ValueError("p_values must be finite probabilities in [0, 1]")
+    try:
+        normalized = np.ascontiguousarray(array, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("p_values must contain real numeric probabilities") from error
+    if array.dtype.kind != "b":
+        round_trip = normalized.astype(array.dtype, copy=False)
+        if not np.array_equal(round_trip, array):
+            raise ValueError("p_values must be exactly representable as float64")
+    return normalized
+
+
+def _bind_legacy_bh(function: Callable[..., Any]) -> None:
+    """Rebind the historical package export to the hardened BH callable."""
+    from . import _legacy_init
+
+    if hasattr(_legacy_init, "benjamini_hochberg"):
+        _legacy_init.benjamini_hochberg = function
+
+
 def install(fitstats_module: ModuleType) -> None:
-    """Install inert S-X² scalar validation on the fit-statistics module."""
+    """Install callback-free S-X² controls and BH evidence admission."""
     fitstats_module._validate_sx2_controls = _validate_sx2_controls
+
+    current_bh: Callable[..., Any] = fitstats_module.benjamini_hochberg
+    if getattr(current_bh, _BH_HARDENED_ATTR, False):
+        _bind_legacy_bh(current_bh)
+        return
+    original_bh = current_bh
+
+    @wraps(original_bh)
+    def safe_benjamini_hochberg(p_values: Any, q: Any = 0.05) -> np.ndarray:
+        """Validate BH threshold and probability evidence before Rust discovery."""
+        q_value = _trusted_real(q, "q")
+        if not np.isfinite(q_value) or not 0.0 < q_value <= 1.0:
+            raise ValueError("q must be in (0, 1]")
+        probabilities = _trusted_probability_array(p_values)
+        output_shape = probabilities.shape
+        flat_probabilities = np.ascontiguousarray(probabilities.ravel())
+        result = original_bh(flat_probabilities, q_value)
+        return np.asarray(result, dtype=bool).reshape(output_shape)
+
+    setattr(safe_benjamini_hochberg, _BH_HARDENED_ATTR, True)
+    fitstats_module.benjamini_hochberg = safe_benjamini_hochberg
+    _bind_legacy_bh(safe_benjamini_hochberg)
