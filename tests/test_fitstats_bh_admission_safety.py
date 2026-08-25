@@ -88,6 +88,16 @@ def test_bh_rejects_nonfinite_or_out_of_range_p_values_before_core(
         fitstats_module.benjamini_hochberg(p_values, q=0.05)
 
 
+def test_bh_rejects_oversized_builtin_integer_as_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scalar dtype overflow stays inside the package-owned p-value contract."""
+    monkeypatch.setattr(fitstats_module, "_core_module", _bomb_core)
+
+    with pytest.raises(ValueError, match="p_values"):
+        fitstats_module.benjamini_hochberg(10**400, q=0.05)
+
+
 def test_bh_trusted_evidence_is_normalized_and_public_alias_is_hardened(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
