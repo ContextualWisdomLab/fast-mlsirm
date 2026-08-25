@@ -26,6 +26,24 @@ _MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES = 128 * 1024 * 1024
 # recommendations.
 _MAX_OAKES_RESPONSE_CELLS = 20_000_000
 _MAX_OAKES_STRUCTURAL_NODES = 40_000_000
+_OAKES_MASK_NUMPY_SCALAR_TYPES = (
+    np.bool_,
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+    np.complex64,
+    np.complex128,
+    np.clongdouble,
+)
 
 
 def _observed_information_work(n: int) -> tuple[int, int]:
@@ -338,14 +356,9 @@ def _trusted_oakes_factor_vector(value: object, n_items: int) -> np.ndarray:
 def _is_trusted_oakes_mask_scalar(value: object) -> bool:
     """Return whether a mask cell can be truth-normalized without caller protocols."""
     value_type = type(value)
-    if value_type in {bool, int, float, complex}:
+    if value_type is bool or value_type is int or value_type is float or value_type is complex:
         return True
-    if value_type.__module__ != "numpy" or not issubclass(value_type, np.generic):
-        return False
-    try:
-        return np.dtype(value_type).kind in {"b", "i", "u", "f", "c"}
-    except TypeError:
-        return False
+    return any(value_type is scalar_type for scalar_type in _OAKES_MASK_NUMPY_SCALAR_TYPES)
 
 
 def _trusted_oakes_mask(value: object | None, expected_shape: tuple[int, int]) -> np.ndarray | None:
