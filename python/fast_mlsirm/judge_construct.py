@@ -302,9 +302,10 @@ def project_judge_results_to_matrix(
 
     Every row is produced by :meth:`LLMJudgeResult.to_irt_row`, which already
     enforces the zero-based ``0..k-1`` category coding described by
-    ``spec.category_coding``. Results whose criterion sets disagree with the
-    spec, or whose category counts disagree with each other, are rejected
-    instead of being silently coerced into a mixed-scale matrix.
+    ``spec.category_coding``. Each result must contain exactly the criterion
+    identities declared by ``spec``; the returned matrix columns follow
+    ``spec.criterion_ids`` order exactly, regardless of mapping insertion or
+    lexical key order. Explicit category counts must also match the spec.
 
     Parameters
     ----------
@@ -316,33 +317,31 @@ def project_judge_results_to_matrix(
     Returns
     -------
     numpy.ndarray
-        Integer matrix of shape ``(len(results), spec.n_items)`` with
-        categories in ``0..k-1`` (or ``{0, 1}`` when dichotomous), ready for
-        ``fit_grm`` / ``fit_gpcm`` / ``fit_irt_experiment``.
+        Integer matrix of shape ``(len(results), spec.n_items)`` with columns
+        ordered exactly as ``spec.criterion_ids`` and categories in ``0..k-1``
+        (or ``{0, 1}`` when dichotomous), ready for ``fit_grm`` / ``fit_gpcm`` /
+        ``fit_irt_experiment``.
     """
     rows: list[tuple[int, ...]] = []
-    observed_category_count: int | None = None
+    expected_ids = tuple(sorted(spec.criterion_ids))
+    output_positions = {criterion_id: index for index, criterion_id in enumerate(expected_ids)}
     for result in results:
         if not isinstance(result, LLMJudgeResult):
             raise TypeError("results must contain LLMJudgeResult values")
-        try:
-            row = result.to_irt_row(
-                item_type=spec.item_type,
-                n_categories=(
-                    spec.n_categories if spec.item_type == "polytomous" else None
-                ),
-            )
-        except JudgeFormatError:
-            raise
-        if len(row) != spec.n_items:
+        result_ids = tuple(sorted(result.criterion_scores))
+        if result_ids != expected_ids:
             raise JudgeFormatError(
                 "result criterion set does not match the validated construct spec"
             )
-        if observed_category_count is None:
-            observed_category_count = (
-                2 if spec.item_type == "dichotomous" else spec.n_categories
-            )
-        rows.append(row)
+        row = result.to_irt_row(
+            item_type=spec.item_type,
+            n_categories=(
+                spec.n_categories if spec.item_type == "polytomous" else None
+            ),
+        )
+        rows.append(
+            tuple(row[output_positions[criterion_id]] for criterion_id in spec.criterion_ids)
+        )
     if not rows:
         raise JudgeFormatError("at least one judged response is required")
     matrix = np.asarray(rows, dtype=np.int64)
