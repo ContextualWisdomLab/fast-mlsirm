@@ -153,3 +153,17 @@ def test_projection_replays_spec_invariants_after_slot_rebinding() -> None:
 
     with pytest.raises(ValueError, match="criterion_ids must contain 3..11 items"):
         project_judge_results_to_matrix([result], spec)
+
+
+def test_projection_replays_originating_custom_policy_after_slot_rebinding() -> None:
+    """A tightened custom policy must remain part of the projected handoff."""
+    spec_ids = tuple(f"criterion_{index}" for index in range(6))
+    policy = JudgeConstructPolicy(min_items=6, recommended_items=7, max_items=9)
+    spec = validate_judge_construct(spec_ids, n_categories=4, policy=policy)
+    object.__setattr__(spec, "criterion_ids", spec_ids[:5])
+    result = _result(
+        {criterion_id: index % 4 for index, criterion_id in enumerate(spec_ids[:5])}
+    )
+
+    with pytest.raises(ValueError, match="meets_policy does not match policy bounds"):
+        project_judge_results_to_matrix([result], spec)
