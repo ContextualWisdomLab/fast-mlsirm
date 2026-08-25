@@ -1,4 +1,4 @@
-"""Regression tests for judge-construct item identity and column ordering."""
+"""Regression tests for judge-construct identity and policy boundaries."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.judge_construct import (
+    JudgeConstructPolicy,
     JudgeFormatError,
+    MAX_JUDGE_CONSTRUCT_ITEMS,
     project_judge_results_to_matrix,
     validate_judge_construct,
 )
@@ -67,3 +69,16 @@ def test_projection_columns_follow_spec_criterion_order() -> None:
 
     assert matrix.dtype == np.int64
     assert matrix.tolist() == [[3, 0, 2, 1, 1]]
+
+
+def test_custom_policy_cannot_raise_hard_facet_ceiling() -> None:
+    """Custom quality policy may tighten, but never exceed, the package cap."""
+    with pytest.raises(
+        ValueError,
+        match=rf"max_items cannot exceed {MAX_JUDGE_CONSTRUCT_ITEMS}",
+    ):
+        JudgeConstructPolicy(
+            min_items=5,
+            recommended_items=7,
+            max_items=MAX_JUDGE_CONSTRUCT_ITEMS + 1,
+        )
