@@ -308,6 +308,12 @@ mod tests {
     }
 
     #[test]
+    fn rejects_nonfinite_expected_before_complete_case_filtering() {
+        let error = residual_interaction_map(&[1.0], &[f64::NAN], 1, 1, 1).unwrap_err();
+        assert!(error.contains("expected"));
+    }
+
+    #[test]
     fn rejects_declared_grid_above_resource_ceiling_before_length_validation() {
         let error = residual_interaction_map(&[], &[], 1, 20_000_001, 1).unwrap_err();
         assert!(error.contains("logical-cell"));
