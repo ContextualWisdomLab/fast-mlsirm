@@ -317,6 +317,12 @@ mod tests {
     }
 
     #[test]
+    fn rejects_infinite_observed_instead_of_treating_it_as_missing() {
+        let error = residual_interaction_map(&[f64::INFINITY], &[0.0], 1, 1, 1).unwrap_err();
+        assert!(error.contains("observed"));
+    }
+
+    #[test]
     fn rejects_declared_grid_above_resource_ceiling_before_length_validation() {
         let error = residual_interaction_map(&[], &[], 1, 20_000_001, 1).unwrap_err();
         assert!(error.contains("logical-cell"));
