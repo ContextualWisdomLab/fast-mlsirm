@@ -192,6 +192,8 @@ def test_uv_lock_stale_guard_inspects_nested_package_markers(
         "python_full_version == '3.11.5'",
         "python_full_version == '3.10.42'",
         "python_full_version > '3.11.100' and python_version < '3.12'",
+        "python_full_version < '3.10'",
+        "python_version > '3.8' and python_version < '3.10'",
         'python_version   <   "3.12"',
         "python_version <= '3.11'",
         'python_full_version == "3.10.*" and sys_platform == "win32"',
