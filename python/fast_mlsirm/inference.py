@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from ._inference_admission_safety import (
+    _NUMPY_COMPLEX_SCALAR_TYPES,
+    _NUMPY_REAL_SCALAR_TYPES,
     _is_numpy_complex_scalar,
     _is_real_scalar,
     _normalized_positive_real,
@@ -26,24 +28,7 @@ _MAX_OBSERVED_INFORMATION_WORKSPACE_BYTES = 128 * 1024 * 1024
 # recommendations.
 _MAX_OAKES_RESPONSE_CELLS = 20_000_000
 _MAX_OAKES_STRUCTURAL_NODES = 40_000_000
-_OAKES_MASK_NUMPY_SCALAR_TYPES = (
-    np.bool_,
-    np.int8,
-    np.int16,
-    np.int32,
-    np.int64,
-    np.uint8,
-    np.uint16,
-    np.uint32,
-    np.uint64,
-    np.float16,
-    np.float32,
-    np.float64,
-    np.longdouble,
-    np.complex64,
-    np.complex128,
-    np.clongdouble,
-)
+_OAKES_MASK_NUMPY_SCALAR_TYPES = _NUMPY_REAL_SCALAR_TYPES + _NUMPY_COMPLEX_SCALAR_TYPES
 
 
 def _observed_information_work(n: int) -> tuple[int, int]:
