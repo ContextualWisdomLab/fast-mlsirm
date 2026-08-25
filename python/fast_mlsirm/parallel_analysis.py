@@ -121,7 +121,10 @@ def _validate_trusted_real_scalar(value: object) -> None:
         raise ValueError("data must be real-valued")
     if value_type is np.bool_ or any(
         value_type is scalar_type
-        for scalar_type in (*_TRUSTED_NUMPY_INTEGER_TYPES, *_TRUSTED_NUMPY_FLOAT_TYPES)
+        for scalar_type in (
+            *_TRUSTED_NUMPY_INTEGER_TYPES,
+            *_TRUSTED_NUMPY_FLOAT_TYPES,
+        )
     ):
         return
     raise ValueError("data must be numeric and convertible to float64")
@@ -148,11 +151,43 @@ def _preflight_real_matrix(data: object) -> None:
         if row_type is list or row_type is tuple:
             for column_index in range(len(row)):
                 cell = row[column_index]
-                if type(cell) is list or type(cell) is tuple or type(cell) is np.ndarray:
+                if (
+                    type(cell) is list
+                    or type(cell) is tuple
+                    or type(cell) is np.ndarray
+                ):
                     raise ValueError("data must be a 2-D persons x items array")
                 _validate_trusted_real_scalar(cell)
             continue
         _validate_trusted_real_scalar(row)
+
+
+def _lossless_float64_matrix(raw: np.ndarray) -> np.ndarray:
+    """Narrow trusted evidence only when every finite numeric identity survives."""
+    try:
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = np.ascontiguousarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("data must be numeric and convertible to float64") from None
+
+    if raw.dtype.kind in ("i", "u"):
+        info = np.iinfo(raw.dtype)
+        bits = raw.dtype.itemsize * 8
+        lower = 0.0 if raw.dtype.kind == "u" else float(-(1 << (bits - 1)))
+        upper = float(1 << bits) if raw.dtype.kind == "u" else float(1 << (bits - 1))
+        if np.any(narrowed < lower) or np.any(narrowed >= upper):
+            raise ValueError("data must be exactly representable as float64")
+        restored = narrowed.astype(raw.dtype)
+        if not np.array_equal(restored, raw):
+            raise ValueError("data must be exactly representable as float64")
+        del info
+    elif raw.dtype.kind == "f" and raw.dtype.itemsize > np.dtype(np.float64).itemsize:
+        restored = narrowed.astype(raw.dtype)
+        finite = np.isfinite(raw)
+        if np.any(restored[finite] != raw[finite]):
+            raise ValueError("data must be exactly representable as float64")
+
+    return narrowed
 
 
 def _real_numeric_matrix(data: object) -> np.ndarray:
@@ -168,10 +203,7 @@ def _real_numeric_matrix(data: object) -> np.ndarray:
         raise ValueError("data must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("data must be numeric and convertible to float64")
-    try:
-        return np.ascontiguousarray(raw, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("data must be numeric and convertible to float64") from None
+    return _lossless_float64_matrix(raw)
 
 
 def parallel_analysis(
@@ -204,10 +236,11 @@ def parallel_analysis(
     scalar evidence; arbitrary array/container/numeric subclasses and
     conversion providers are rejected before NumPy protocols execute. The
     known 2-D carrier structure is preflighted without unbounded recursive
-    container traversal. Complex and non-real storage is rejected before the
-    accepted matrix is marshalled to contiguous ``float64``. The random-
-    eigenvalue benchmark workspace is bounded to 128 MiB before compiled
-    dispatch.
+    container traversal. Finite integer and extended-precision floating
+    observations must preserve their numeric identity through the Rust `f64`
+    boundary. Complex and non-real storage is rejected before the accepted
+    matrix is marshalled to contiguous ``float64``. The random-eigenvalue
+    benchmark workspace is bounded to 128 MiB before compiled dispatch.
 
     """
     explicit_iterations = (
