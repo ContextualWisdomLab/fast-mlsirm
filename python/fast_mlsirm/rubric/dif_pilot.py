@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -49,7 +49,7 @@ class DifPilotDesign:
         """Reject direct construction and validate the complete group contract."""
         if _design_token is not _DIF_DESIGN_TOKEN:
             raise ValueError("DifPilotDesign must be created by build_dif_pilot_design")
-        if not isinstance(self.binary_design, MirtPilotDesign):
+        if type(self.binary_design) is not MirtPilotDesign:
             raise TypeError("binary_design must be a validated MirtPilotDesign")
         object.__setattr__(
             self,
@@ -84,6 +84,14 @@ class DifPilotDesign:
         if self.focal_group_id not in normalized_groups:
             raise ValueError("focal group must contain at least one respondent")
         object.__setattr__(self, "respondent_group_ids", normalized_groups)
+
+    def _revalidated_copy(self) -> DifPilotDesign:
+        """Replay package-owned group invariants on the exact sealed record."""
+        if type(self) is not DifPilotDesign:
+            raise TypeError("DIF pilot handoff requires an exact DifPilotDesign")
+        if type(self.binary_design) is not MirtPilotDesign:
+            raise TypeError("binary_design must be a validated MirtPilotDesign")
+        return replace(self, _design_token=_DIF_DESIGN_TOKEN)
 
     @property
     def pilot_study_id(self) -> str:
@@ -129,8 +137,8 @@ class DifPilotDesign:
             for state in row
         )
 
-    def _content_dict(self) -> dict[str, Any]:
-        """Return canonical design content without derived identities."""
+    def _content_dict_unchecked(self) -> dict[str, Any]:
+        """Return canonical content for an already replay-validated design."""
         return {
             "schema_version": self.schema_version,
             "pilot_study_id": self.pilot_study_id,
@@ -139,6 +147,10 @@ class DifPilotDesign:
             "respondent_group_ids": list(self.respondent_group_ids),
             "binary_design": self.binary_design.to_dict(),
         }
+
+    def _content_dict(self) -> dict[str, Any]:
+        """Return replay-validated canonical design content."""
+        return self._revalidated_copy()._content_dict_unchecked()
 
     @property
     def design_fingerprint(self) -> str:
@@ -154,8 +166,8 @@ class DifPilotDesign:
         """Return a fresh float matrix preserving non-observed cells as NaN."""
         return self.binary_design.responses_array()
 
-    def group_array(self) -> np.ndarray:
-        """Return a fresh integer vector using 0=reference and 1=focal."""
+    def _group_array_unchecked(self) -> np.ndarray:
+        """Build the binary group vector from an already validated design."""
         return np.asarray(
             [
                 0 if group_id == self.reference_group_id else 1
@@ -163,6 +175,10 @@ class DifPilotDesign:
             ],
             dtype=np.int64,
         )
+
+    def group_array(self) -> np.ndarray:
+        """Return a fresh integer vector using 0=reference and 1=focal."""
+        return self._revalidated_copy()._group_array_unchecked()
 
     def to_observed_score_dif_kwargs(self) -> dict[str, np.ndarray]:
         """Return copied arrays accepted by the repository's binary DIF APIs.
@@ -172,7 +188,8 @@ class DifPilotDesign:
         ``sibtest``. The method rejects the first non-observed cell instead of
         silently using complete-case deletion or imputation.
         """
-        for respondent_index, row in enumerate(self.response_states):
+        validated = self._revalidated_copy()
+        for respondent_index, row in enumerate(validated.response_states):
             for item_index, state in enumerate(row):
                 if state is not PilotResponseState.OBSERVED:
                     raise _error(
@@ -185,17 +202,20 @@ class DifPilotDesign:
                         "no deletion or imputation is performed",
                     )
         return {
-            "responses": np.asarray(self.responses, dtype=np.int64),
-            "group": self.group_array(),
+            "responses": np.asarray(validated.responses, dtype=np.int64),
+            "group": validated._group_array_unchecked(),
         }
 
     def to_dict(self) -> dict[str, Any]:
         """Return canonical design content and deterministic identities."""
+        validated = self._revalidated_copy()
+        content = validated._content_dict_unchecked()
+        fingerprint = _sha256_hex(content)
         return {
-            **self._content_dict(),
-            "design_id": self.design_id,
-            "design_fingerprint": self.design_fingerprint,
-            "is_complete_observed_matrix": self.is_complete_observed_matrix,
+            **content,
+            "design_id": f"dif_pilot_design_{fingerprint[:32]}",
+            "design_fingerprint": fingerprint,
+            "is_complete_observed_matrix": validated.is_complete_observed_matrix,
         }
 
 
