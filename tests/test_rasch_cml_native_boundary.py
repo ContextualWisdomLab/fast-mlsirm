@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.fitstats as fitstats
+import fast_mlsirm.rasch_cml as rasch_cml
 from fast_mlsirm.rasch_cml import andersen_lr_test, fit_rasch_cml
 
 
@@ -140,6 +141,52 @@ def test_andersen_preserves_distinct_longdouble_group_identity(monkeypatch):
     result = andersen_lr_test(_binary(), [lower, upper, lower, upper])
 
     assert result["converged"] is True
+    assert captured["n_groups"] == 2
+    np.testing.assert_array_equal(captured["gid"], np.array([0, 1, 0, 1], dtype=np.int64))
+
+
+def test_andersen_numpy_group_array_bulk_converts_scalars(monkeypatch):
+    """Ordinary NumPy groups avoid one NumPy scalar boxing operation per person."""
+
+    captured: dict[str, object] = {}
+    scalar_types: list[type[object]] = []
+    original = rasch_cml._normalized_group_label
+
+    def recording_normalizer(label: object) -> int:
+        scalar_types.append(type(label))
+        return original(label)
+
+    class _Core:
+        def andersen_lr_test(
+            self,
+            yy,
+            gid,
+            n_groups,
+            n_persons,
+            n_items,
+            max_iter,
+            tol,
+        ):
+            captured["gid"] = np.array(gid, copy=True)
+            captured["n_groups"] = n_groups
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": [2, 2],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(rasch_cml, "_normalized_group_label", recording_normalizer)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    result = andersen_lr_test(
+        _binary(),
+        np.array([0, 1, 0, 1], dtype=np.int64),
+    )
+
+    assert result["converged"] is True
+    assert scalar_types == [int, int, int, int]
     assert captured["n_groups"] == 2
     np.testing.assert_array_equal(captured["gid"], np.array([0, 1, 0, 1], dtype=np.int64))
 
