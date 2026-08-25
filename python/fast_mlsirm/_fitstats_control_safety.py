@@ -168,7 +168,7 @@ def _trusted_probability_tree(value: Any) -> None:
 
 
 def _trusted_probability_array(value: Any) -> np.ndarray:
-    """Return package-owned float64 p-values after callback-free validation."""
+    """Return package-owned float64 p-values while preserving NaN missingness."""
     value_type = type(value)
     if value_type is np.ndarray:
         array = value
@@ -192,15 +192,16 @@ def _trusted_probability_array(value: Any) -> np.ndarray:
 
     if np.iscomplexobj(array) or array.dtype.kind not in "biuf":
         raise ValueError("p_values must contain real numeric probabilities")
-    if np.any(~np.isfinite(array)) or np.any(array < 0) or np.any(array > 1):
-        raise ValueError("p_values must be finite probabilities in [0, 1]")
+    finite = np.isfinite(array)
+    if np.any(np.isinf(array)) or np.any(finite & ((array < 0) | (array > 1))):
+        raise ValueError("p_values must be NaN or finite probabilities in [0, 1]")
     try:
         normalized = np.ascontiguousarray(array, dtype=np.float64)
     except (TypeError, ValueError, OverflowError) as error:
         raise ValueError("p_values must contain real numeric probabilities") from error
     if array.dtype.kind != "b":
         round_trip = normalized.astype(array.dtype, copy=False)
-        if not np.array_equal(round_trip, array):
+        if not np.array_equal(round_trip, array, equal_nan=True):
             raise ValueError("p_values must be exactly representable as float64")
     return normalized
 
