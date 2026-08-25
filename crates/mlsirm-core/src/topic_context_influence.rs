@@ -57,21 +57,25 @@ pub fn case_deletion_influence_cpu(
     for draw in 0..draws {
         let vector_start = draw * parameters;
         let matrix_start = draw * parameters * parameters;
+        let matrix = &information[matrix_start..matrix_start + parameters * parameters];
         let delta = (0..parameters)
             .map(|index| deleted[vector_start + index] - full[vector_start + index])
             .collect::<Vec<_>>();
         let mut diagnostic = 0.0;
         for row in 0..parameters {
             for column in 0..parameters {
-                let forward = information[matrix_start + row * parameters + column];
-                let reverse = information[matrix_start + column * parameters + row];
+                let forward = matrix[row * parameters + column];
+                let reverse = matrix[column * parameters + row];
                 if forward != reverse {
                     return Err("observed_information_not_symmetric");
                 }
                 diagnostic += delta[row] * forward * delta[column];
             }
         }
-        if !diagnostic.is_finite() || diagnostic < 0.0 {
+        let positive_definite = crate::inference::second_order_test(matrix, parameters, 0.0)
+            .map(|result| result.0)
+            .unwrap_or(false);
+        if !positive_definite || !diagnostic.is_finite() || diagnostic < 0.0 {
             return Err("invalid_observed_information_quadratic_form");
         }
         per_draw.push(diagnostic);
@@ -193,6 +197,10 @@ mod tests {
         );
         assert_eq!(
             case_deletion_influence_cpu(&[0.0], &[1.0], &[-1.0], 1, 1),
+            Err("invalid_observed_information_quadratic_form")
+        );
+        assert_eq!(
+            case_deletion_influence_cpu(&[0.0, 0.0], &[1.0, 0.0], &[1.0, 0.0, 0.0, -1.0], 1, 2,),
             Err("invalid_observed_information_quadratic_form")
         );
     }
