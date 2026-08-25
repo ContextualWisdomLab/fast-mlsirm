@@ -93,6 +93,9 @@ pub fn residual_interaction_map(
     if observed.len() != cell_count || expected.len() != cell_count {
         return Err("observed and expected lengths must match the declared shape".into());
     }
+    if observed.iter().any(|value| value.is_infinite()) {
+        return Err("observed values must not be infinite".into());
+    }
     if expected.iter().any(|value| !value.is_finite()) {
         return Err("expected values must be finite".into());
     }
