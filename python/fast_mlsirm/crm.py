@@ -12,6 +12,7 @@ from .config import MAX_MAX_ITER
 
 _SUPPORTED_Q_THETA = (7, 11, 15, 21, 31, 41)
 _MAX_CRM_RESPONSE_CELLS = 20_000_000
+_MAX_CRM_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_CRM_RESPONSE_CELLS
 _NUMPY_INTEGER_TYPES = tuple(
     np.dtype(name).type
     for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
@@ -79,6 +80,7 @@ def _trusted_response_array(responses: object) -> np.ndarray:
     resource_error = (
         f"responses must contain at most {_MAX_CRM_RESPONSE_CELLS:,} logical cells"
     )
+    structural_error = "responses exceed structural traversal budget"
     if type(responses) is np.ndarray:
         if responses.size > _MAX_CRM_RESPONSE_CELLS:
             raise ValueError(resource_error)
@@ -87,6 +89,11 @@ def _trusted_response_array(responses: object) -> np.ndarray:
     error = "responses must be a trusted NumPy array or built-in response matrix"
     if type(responses) is not list and type(responses) is not tuple:
         raise ValueError(error)
+
+    # Every valid non-empty two-dimensional built-in matrix with N scalar cells
+    # visits at most N row entries plus N scalar entries. Keep a separate budget
+    # so malformed zero-cell/deep fan-out cannot evade the logical-cell ceiling.
+    structural_nodes = 0
 
     # Each frame is [exact built-in container, next child index, logical-cell subtotal].
     # Memoized subtotals let repeated/shared acyclic subtrees count by logical
@@ -115,6 +122,9 @@ def _trusted_response_array(responses: object) -> np.ndarray:
 
         frame[1] = child_index + 1
         child = item[child_index]
+        structural_nodes += 1
+        if structural_nodes > _MAX_CRM_RESPONSE_STRUCTURAL_NODES:
+            raise ValueError(structural_error)
         child_type = type(child)
 
         if _is_exact_type(child_type, _TRUSTED_RESPONSE_SCALAR_TYPES):

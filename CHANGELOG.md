@@ -44,6 +44,14 @@
 
 ### Changed
 
+#### Own residual interaction-map computation in the psychometric core
+
+- Add a Rust-backed, complete-case Gabriel residual interaction-map contract
+  for consumers that already hold observed responses and fitted IRT
+  expectations. The API returns coordinates, singular values, axis inertia,
+  reconstruction, unexplained residual, and the exact cross term without
+  product identifiers, persistence, authorization, or presentation policy.
+
 #### Validate Rasch CML controls before data materialization
 
 - Validate `max_iter` and `tol` before caller-owned response or group arrays are materialized by the public Rasch CML and Andersen LR entry points.
@@ -213,6 +221,40 @@
 #### Bound RSM responses before dense materialization
 
 - Reject Rating Scale Model response evidence above 20,000,000 logical cells during the callback-free source preflight, including oversized exact NumPy arrays and exact NumPy rows nested in trusted built-in sequences, before NumPy stacking or contiguous `float64` allocation while preserving existing response semantics and Rust-owned Andrich arithmetic.
+
+#### Bound polytomous prediction resources
+
+- Reject public GRM/GPCM prediction grids above 20,000,000 dense probability cells before compiled-core discovery or output allocation.
+- Apply the same 20,000,000-cell ceiling inside the Rust `polytomous_predictions` owner before item-parameter validation or `Vec::with_capacity`, so direct core/PyO3 callers cannot bypass the public resource envelope.
+- Keep GRM/GPCM category-probability and expected-score arithmetic in the existing Rust implementation; the added checks govern request size and allocation only.
+
+#### Polytomous prediction evidence admission
+
+- Reject callback-bearing, complex, non-numeric, lossy, and non-finite GRM/GPCM prediction evidence before the raw prediction delegate or compiled-core discovery, including mixed built-in sequences whose integer identity would be lost by NumPy promotion.
+- Preflight theta, slope, and category-parameter rank/resource contracts together and enforce the 20,000,000-cell joint output ceiling from trusted shape metadata before any NumPy materialization or float64 copy.
+- Preserve trusted exact NumPy and built-in sequence inputs while keeping category-probability and expected-score arithmetic in the Rust prediction kernel; Python performs validation, bounded materialization, and marshalling only.
+
+#### Polytomous prediction evidence rank admission
+
+- Reject trusted-but-over-rank `theta`, slope, and category-parameter evidence before NumPy materialization or compiled-core discovery.
+- Preserve exact 1-D theta/slope and 2-D category-parameter inputs, including exact NumPy row arrays nested in trusted built-in category matrices.
+- Keep the existing prediction/evidence cell ceilings and Rust-owned GRM/GPCM probability and expected-score arithmetic unchanged.
+
+#### Polytomous prediction category-domain admission
+
+GRM/GPCM prediction admission now enforces the fitter-supported `2..=64` category domain at both the public Python boundary and direct Rust `polytomous_predictions()` boundary. Manually constructed `PolytomousFit` evidence above 64 categories fails before NumPy/native work, while direct native requests above `POLY_MAX_CAT` fail before prediction-grid allocation or item-parameter validation. Probability and expected-score arithmetic remain Rust-owned and unchanged.
+
+#### Preserve polytomous prediction fit metadata
+
+- Preserve all package-owned `PolytomousFit` convergence, trace, stopping, and threshold metadata when the public GRM/GPCM prediction admission boundary normalizes slope and category arrays before Rust dispatch.
+
+#### Preserve strict GRM threshold order during initialization
+
+- Preserve strictly decreasing finite GRM category thresholds for sparse or collapsed observed-category patterns by using the existing positive-pseudocount cumulative frequencies directly instead of independently clipping adjacent cumulative probabilities onto the same boundary. Returned GRM fits therefore remain inside the shared scoring and prediction parameter domain without changing Samejima category-probability arithmetic or GPCM behavior.
+
+#### Polytomous raw prediction category-domain replay
+
+- Replayed the fitter-supported `2..=64` category domain in the package-private Python prediction helper before resource calculation or compiled-core discovery, while preserving the valid 64-category boundary and keeping GRM/GPCM probability arithmetic Rust-owned.
 
 #### Linking evidence admission
 
