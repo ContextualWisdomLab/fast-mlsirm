@@ -108,6 +108,11 @@ pub fn residual_interaction_map(
             .all(|&person| observed_cell(person * n_items + item))
     });
     if person_indices.is_empty() || item_indices.is_empty() {
+        // An empty complete-case rectangle has no row or column coordinate
+        // space. Normalize both axes to the same empty rectangle so every
+        // returned payload remains shape-consistent at the Python boundary.
+        person_indices.clear();
+        item_indices.clear();
         return Ok(ResidualInteractionMap {
             person_indices,
             item_indices,
