@@ -12,6 +12,7 @@ import numpy as np
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 
 
+_MAX_FACETS_RESPONSE_CELLS = 20_000_000
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -55,6 +56,134 @@ def _real_control(value: object, name: str) -> float:
     ):
         return float(value)
     raise ValueError(f"{name} must be a real number")
+
+
+def _response_array(value: object) -> np.ndarray:
+    """Materialize inert real-numeric response evidence after bounded preflight."""
+
+    resource_error = (
+        f"responses must contain at most {_MAX_FACETS_RESPONSE_CELLS:,} logical cells"
+    )
+    dimension_error = "responses must be a 3-D persons x items x raters array"
+    nonempty_error = (
+        "responses must contain at least one person, one item and one rater"
+    )
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if value.size > _MAX_FACETS_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        response_array = value
+    elif value_type is list or value_type is tuple:
+        if len(value) == 0:
+            raise ValueError(nonempty_error)
+
+        # A valid non-empty 3-D built-in tree with N scalar cells visits at most
+        # N person nodes + N item nodes + N scalar nodes.  Bounding traversal at
+        # three times the logical-cell ceiling therefore preserves every valid
+        # rectangular input admitted by the public 20M-cell contract while
+        # preventing malformed empty-container fan-out from consuming
+        # unbounded Python work before NumPy materialization.
+        structural_budget = 3 * _MAX_FACETS_RESPONSE_CELLS
+        structural_nodes = 0
+
+        # Indexed frames keep temporary traversal state proportional to nesting
+        # depth instead of sibling width. The public evidence contract is
+        # exactly persons -> items -> raters -> scalar leaves for built-in
+        # sequences, so rectangularity can also be proven before NumPy sees the
+        # evidence.
+        frames: list[list[object]] = [[value, 0, 0]]
+        active_container_ids: set[int] = {id(value)}
+        logical_cells = 0
+        expected_items: int | None = None
+        expected_raters: int | None = None
+
+        while frames:
+            frame = frames[-1]
+            current = frame[0]
+            child_index = int(frame[1])
+            depth = int(frame[2])
+
+            if child_index >= len(current):
+                active_container_ids.remove(id(current))
+                frames.pop()
+                continue
+
+            frame[1] = child_index + 1
+            structural_nodes += 1
+            if structural_nodes > structural_budget:
+                raise ValueError(
+                    "responses exceeded structural traversal budget of "
+                    f"{structural_budget:,} nodes"
+                )
+
+            child = current[child_index]
+            child_type = type(child)
+            next_depth = depth + 1
+
+            if child_type is list or child_type is tuple:
+                if next_depth >= 3:
+                    raise ValueError(dimension_error)
+                child_length = len(child)
+                if next_depth == 1:
+                    if expected_items is None:
+                        expected_items = child_length
+                    elif child_length != expected_items:
+                        raise ValueError(dimension_error)
+                else:
+                    if expected_raters is None:
+                        expected_raters = child_length
+                    elif child_length != expected_raters:
+                        raise ValueError(dimension_error)
+                child_id = id(child)
+                if child_id in active_container_ids:
+                    raise ValueError(dimension_error)
+                active_container_ids.add(child_id)
+                frames.append([child, 0, next_depth])
+                continue
+
+            if depth != 2:
+                raise ValueError(dimension_error)
+
+            trusted_scalar = (
+                child_type is bool
+                or child_type is np.bool_
+                or child_type is int
+                or child_type is float
+                or any(
+                    child_type is trusted_type
+                    for trusted_type in (
+                        *_NUMPY_INTEGER_SCALAR_TYPES,
+                        *_NUMPY_FLOAT_SCALAR_TYPES,
+                    )
+                )
+            )
+            if not trusted_scalar:
+                raise ValueError("responses must be a numeric array")
+
+            logical_cells += 1
+            if logical_cells > _MAX_FACETS_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+
+        if (
+            expected_items is None
+            or expected_items == 0
+            or expected_raters is None
+            or expected_raters == 0
+        ):
+            raise ValueError(nonempty_error)
+
+        try:
+            response_array = np.asarray(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("responses must be a numeric array") from exc
+    else:
+        raise ValueError("responses must be a numeric array")
+
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    return response_array
 
 
 @dataclass
@@ -136,7 +265,8 @@ def fit_facets(
     if not math.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
-    y = np.asarray(responses, dtype=np.float64)
+    response_array = _response_array(responses)
+    y = response_array.astype(np.float64, copy=False)
     if y.ndim != 3:
         raise ValueError("responses must be a 3-D persons x items x raters array")
     n_persons, n_items, n_raters = y.shape

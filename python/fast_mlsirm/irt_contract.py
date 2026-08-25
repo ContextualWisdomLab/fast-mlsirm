@@ -16,7 +16,187 @@ MIN_IRT_PERSONS = 5
 MIN_OBSERVED_PER_ITEM = 3
 MIN_ITEM_DISTINCT_VALUES = 2
 MIN_FACTOR_ANCHOR_ITEMS = 2
+MAX_IRT_RESPONSE_CELLS = 20_000_000
 _FitResultT = TypeVar("_FitResultT")
+_TRUSTED_RESPONSE_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.longlong,
+        np.ulonglong,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+_TRUSTED_NUMPY_INTEGER_SCALAR_TYPES = tuple(
+    np.dtype(code).type
+    for code in ("b", "B", "h", "H", "i", "I", "l", "L", "q", "Q", "p", "P")
+)
+
+
+def _is_exact_numpy_integer_scalar_type(value_type: type) -> bool:
+    """Return whether ``value_type`` is a package-trusted NumPy integer type."""
+    return any(
+        value_type is trusted_type
+        for trusted_type in _TRUSTED_NUMPY_INTEGER_SCALAR_TYPES
+    )
+
+
+def _readiness_integer(value: object, name: str, minimum: int) -> int:
+    """Normalize one inert readiness integer without caller-controlled coercion."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif _is_exact_numpy_integer_scalar_type(value_type):
+        normalized = int(value)
+    else:
+        raise TypeError(f"{name} must be an integer >= {minimum}")
+    if normalized < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return normalized
+
+
+def _validate_item_contract(
+    item_type: object,
+    n_categories: object,
+) -> None:
+    """Validate IRT family/category semantics before caller-owned data work."""
+    if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
+        raise ValueError("item_type must be 'dichotomous' or 'polytomous'")
+    if item_type == "dichotomous" and n_categories is not None:
+        raise ValueError("n_categories is only valid for polytomous responses")
+    if item_type == "polytomous" and (
+        type(n_categories) is not int
+        or not 2 <= n_categories <= MAX_POLYTOMOUS_CATEGORIES
+    ):
+        raise ValueError(
+            "polytomous responses require n_categories in "
+            f"2..{MAX_POLYTOMOUS_CATEGORIES}"
+        )
+
+
+def _preflight_numeric_tree(value: object, *, error: str) -> None:
+    """Validate and bound built-in numeric trees without caller callbacks."""
+    stack: list[tuple[object, int | None]] = [(value, None)]
+    active_containers: set[int] = set()
+    logical_cells = 0
+    visited_nodes = 0
+    structural_limit = 2 * MAX_IRT_RESPONSE_CELLS + 1
+    while stack:
+        current, next_index = stack.pop()
+        current_type = type(current)
+        if current_type in (list, tuple):
+            identity = id(current)
+            if next_index is None:
+                visited_nodes += 1
+                if visited_nodes > structural_limit:
+                    raise ValueError(f"{error}; evidence exceeds the structural-work limit")
+                if identity in active_containers:
+                    raise ValueError(f"{error}; cyclic list/tuple containers are not supported")
+                active_containers.add(identity)
+                if len(current) == 0:
+                    active_containers.remove(identity)
+                else:
+                    stack.append((current, 1))
+                    stack.append((current[0], None))
+            elif next_index < len(current):
+                stack.append((current, next_index + 1))
+                stack.append((current[next_index], None))
+            else:
+                active_containers.remove(identity)
+            continue
+        visited_nodes += 1
+        if visited_nodes > structural_limit:
+            raise ValueError(f"{error}; evidence exceeds the structural-work limit")
+        if current_type is np.ndarray:
+            if current.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError(error)
+            logical_cells += int(current.size)
+        elif current_type in _TRUSTED_RESPONSE_SCALAR_TYPES:
+            logical_cells += 1
+        else:
+            raise ValueError(error)
+        if logical_cells > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"{error}; evidence must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
+
+
+def _validate_response_shape(source: np.ndarray) -> None:
+    """Reject rank/resource-invalid response shapes before dense conversion."""
+    if source.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items matrix")
+    n_persons, n_items = source.shape
+    if n_persons < 1:
+        raise ValueError("responses must contain at least one person")
+    if n_items < MIN_IRT_ITEMS:
+        raise ValueError(
+            "IRT responses must contain at least two item columns; "
+            "a scalar or one-item result is not an IRT experiment"
+        )
+    if source.size > MAX_IRT_RESPONSE_CELLS:
+        raise ValueError(
+            f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+        )
+
+
+def _real_numeric_response_matrix(
+    responses: Iterable[Iterable[float]] | np.ndarray,
+) -> np.ndarray:
+    """Marshal trusted real response storage without caller numeric callbacks."""
+    if type(responses) is np.ndarray:
+        source = responses
+    elif type(responses) in (list, tuple):
+        _preflight_numeric_tree(responses, error="responses must be a real numeric matrix")
+        try:
+            source = np.asarray(responses)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("responses must be a real numeric matrix") from exc
+    else:
+        raise ValueError("responses must be a real numeric matrix")
+
+    if source.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError("responses must be a real numeric matrix")
+    _validate_response_shape(source)
+    try:
+        return np.ascontiguousarray(source, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("responses must be a real numeric matrix") from exc
+
+
+def _trusted_mask_matrix(mask: object, shape: tuple[int, ...]) -> np.ndarray:
+    """Marshal trusted mask evidence without caller array/truth callbacks."""
+    if type(mask) is np.ndarray:
+        source = mask
+    elif type(mask) in (list, tuple):
+        _preflight_numeric_tree(mask, error="mask must be Boolean or numeric evidence")
+        try:
+            source = np.asarray(mask)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("mask must be Boolean or numeric evidence") from exc
+    else:
+        raise ValueError("mask must be Boolean or numeric evidence")
+
+    if source.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError("mask must be Boolean or numeric evidence")
+    if source.shape != shape:
+        raise ValueError("mask shape must match responses")
+    try:
+        return np.ascontiguousarray(source, dtype=bool)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("mask must be Boolean or numeric evidence") from exc
 
 
 def validate_irt_response_matrix(
@@ -37,23 +217,9 @@ def validate_irt_response_matrix(
     polytomous observations are integer category indices in
     0..n_categories-1.
     """
-    if type(item_type) is not str or item_type not in {"dichotomous", "polytomous"}:
-        raise ValueError("item_type must be 'dichotomous' or 'polytomous'")
-    if item_type == "dichotomous" and n_categories is not None:
-        raise ValueError("n_categories is only valid for polytomous responses")
-    if item_type == "polytomous" and (
-        type(n_categories) is not int
-        or not 2 <= n_categories <= MAX_POLYTOMOUS_CATEGORIES
-    ):
-        raise ValueError(
-            "polytomous responses require n_categories in "
-            f"2..{MAX_POLYTOMOUS_CATEGORIES}"
-        )
+    _validate_item_contract(item_type, n_categories)
 
-    try:
-        matrix = np.asarray(responses, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("responses must be numeric") from exc
+    matrix = _real_numeric_response_matrix(responses)
     if matrix.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items matrix")
     n_persons, n_items = matrix.shape
@@ -106,24 +272,14 @@ def validate_irt_experiment_readiness(
     )
     n_persons, n_items = matrix.shape
 
-    def _validate_integer(value: object, name: str, minimum: int) -> int:
-        if not isinstance(value, (int, np.integer)) or isinstance(
-            value, (bool, np.bool_)
-        ):
-            raise TypeError(f"{name} must be an integer >= {minimum}")
-        normalized = int(value)
-        if normalized < minimum:
-            raise ValueError(f"{name} must be at least {minimum}")
-        return normalized
-
-    min_persons = _validate_integer(min_persons, "min_persons", 1)
+    min_persons = _readiness_integer(min_persons, "min_persons", 1)
     if n_persons < min_persons:
         raise ValueError(
             f"IRT experiment requires at least {min_persons} persons; "
             f"received {n_persons}"
         )
 
-    min_observed_per_item = _validate_integer(
+    min_observed_per_item = _readiness_integer(
         min_observed_per_item, "min_observed_per_item", 1
     )
     if min_observed_per_item > n_persons:
@@ -131,7 +287,7 @@ def validate_irt_experiment_readiness(
             f"min_observed_per_item cannot exceed the number of persons ({n_persons})"
         )
 
-    min_item_distinct_values = _validate_integer(
+    min_item_distinct_values = _readiness_integer(
         min_item_distinct_values, "min_item_distinct_values", 2
     )
     if item_type == "polytomous" and min_item_distinct_values > int(n_categories):
@@ -185,12 +341,13 @@ def validate_irt_experiment_readiness(
             raise ValueError(
                 "factor_ids must contain one factor label for each item"
             )
-        min_items_per_factor = _validate_integer(
+        min_items_per_factor = _readiness_integer(
             min_items_per_factor, "min_items_per_factor", 1
         )
         labels = factor_ids.tolist() if isinstance(factor_ids, np.ndarray) else factor_ids
 
         def _memberships(label: object) -> tuple[object, ...]:
+            """Normalize one item label into unique factor memberships."""
             if isinstance(label, np.ndarray):
                 if label.ndim == 0:
                     values = (label.item(),)
@@ -246,8 +403,11 @@ def fit_irt_experiment(  # noqa: UP047  # PEP 695 syntax would break Python 3.10
     degenerate diagnostic fixtures. Production and benchmark callers must use
     this boundary so unstable estimates cannot be presented as experiment
     evidence. The callable receives the validated persons-by-items matrix as
-    its first positional argument.
+    its first positional argument. A caller-supplied ``mask`` is consumed by
+    this boundary; the normalized matrix already carries its missing-response
+    semantics, so the raw mask is never forwarded to the numerical fitter.
     """
+    _validate_item_contract(item_type, n_categories)
     mask = fit_kwargs.get("mask")
     normalized = _normalize_experiment_responses(responses, item_type, mask)
     matrix = validate_irt_experiment_readiness(
@@ -256,7 +416,9 @@ def fit_irt_experiment(  # noqa: UP047  # PEP 695 syntax would break Python 3.10
         n_categories=n_categories,
         factor_ids=factor_ids,
     )
-    return fit_callable(matrix, **fit_kwargs)
+    call_kwargs = dict(fit_kwargs)
+    call_kwargs.pop("mask", None)
+    return fit_callable(matrix, **call_kwargs)
 
 
 def _normalize_experiment_responses(
@@ -265,16 +427,11 @@ def _normalize_experiment_responses(
     mask: object | None,
 ) -> np.ndarray:
     """Apply public fitter missing-response semantics before readiness checks."""
-    try:
-        matrix = np.asarray(responses, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("responses must be numeric") from exc
+    matrix = _real_numeric_response_matrix(responses)
     if mask is None:
         active = np.ones(matrix.shape, dtype=bool)
     else:
-        active = np.asarray(mask, dtype=bool)
-        if active.shape != matrix.shape:
-            raise ValueError("mask shape must match responses")
+        active = _trusted_mask_matrix(mask, matrix.shape)
     if item_type == "dichotomous":
         observed = active & np.isfinite(matrix) & (matrix != -1)
     else:

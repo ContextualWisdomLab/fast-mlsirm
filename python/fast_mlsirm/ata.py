@@ -53,6 +53,11 @@ __all__ = [
 ]
 
 _TIE_EPS = 1e-12
+# Keep caller target evidence and the dense target-point × item information
+# surface inside the repository's established scientific-evidence envelope.
+MAX_ATA_TARGET_CELLS = 20_000_000
+MAX_ATA_INFORMATION_CELLS = 20_000_000
+MAX_ATA_TARGET_NESTING = 64
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -66,6 +71,17 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uint64,
     np.uintp,
     np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+_NUMPY_REAL_SCALAR_TYPES = (
+    np.bool_,
+    *_NUMPY_INTEGER_SCALAR_TYPES,
+    *_NUMPY_FLOAT_SCALAR_TYPES,
 )
 
 
@@ -96,23 +112,294 @@ class AssembledForm:
     content_counts: dict[str, int]
 
 
-def _target_theta_rows(target_thetas: np.ndarray, n_dims: int) -> np.ndarray:
-    """Coerce target trait points to a ``(n_points, n_dims)`` array."""
-    thetas = np.asarray(target_thetas, dtype=np.float64)
+def _is_exact_public_real_scalar(value: object) -> bool:
+    """Return whether ``value`` is one package-trusted real scalar identity."""
+    value_type = type(value)
+    return value_type in {bool, int, float} or any(
+        value_type is scalar_type for scalar_type in _NUMPY_REAL_SCALAR_TYPES
+    )
+
+
+def _require_lossless_float64_scalar(value: object, name: str) -> None:
+    """Require one already-trusted scalar to preserve identity in binary64."""
+    value_type = type(value)
+    if value_type is bool or value_type is np.bool_ or value_type is float:
+        return
+    try:
+        converted = float(value)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must be real numeric evidence") from None
+
+    if value_type is int or any(
+        value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+    ):
+        if not np.isfinite(converted):
+            raise ValueError(f"{name} must be real numeric evidence")
+        if int(converted) != int(value):
+            raise ValueError(f"{name} could not be converted losslessly to float64")
+        return
+
+    # The only remaining admitted identities are concrete NumPy real scalars.
+    if not np.isfinite(converted):
+        if np.isfinite(value):
+            raise ValueError(f"{name} could not be converted losslessly to float64")
+        return
+    if value_type(converted) != value:
+        raise ValueError(f"{name} could not be converted losslessly to float64")
+
+
+def _raise_target_resource_limit(name: str) -> None:
+    """Raise the stable ATA target-evidence resource diagnostic."""
+    raise ValueError(
+        f"{name} exceeds the {MAX_ATA_TARGET_CELLS}-cell ATA evidence limit"
+    )
+
+
+def _raise_target_nesting_limit(name: str) -> None:
+    """Raise the stable ATA target-evidence nesting diagnostic."""
+    raise ValueError(
+        f"{name} exceeds the {MAX_ATA_TARGET_NESTING}-level ATA nesting limit"
+    )
+
+
+def _raise_information_resource_limit() -> None:
+    """Raise the stable ATA dense-information resource diagnostic."""
+    raise ValueError(
+        "target information matrix exceeds the "
+        f"{MAX_ATA_INFORMATION_CELLS}-cell ATA limit"
+    )
+
+
+def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[int, ...], int]:
+    """Return rectangular shape/cell count without eager sibling expansion.
+
+    The explicit stack holds one frame per active nesting level. Logical scalar
+    cells, nesting depth, and structural nodes are independently bounded so
+    malformed trees made mostly of empty containers cannot consume unbounded
+    Python traversal work. Exact NumPy real-numeric array leaves retain their
+    inert shape while their logical cells are charged before materialization.
+    """
+    # frame: [container, next child index, first child shape, logical cells]
+    stack: list[list[object]] = [[value, 0, None, 0]]
+    active: set[int] = set()
+    structural_nodes = 1
+    max_structural_nodes = 2 * MAX_ATA_TARGET_CELLS + 1
+
+    while stack:
+        current = stack[-1][0]
+        if type(current) is not list and type(current) is not tuple:
+            raise ValueError(f"{name} must be real numeric evidence")
+        child_index = int(stack[-1][1])
+        if child_index == 0:
+            current_id = id(current)
+            if current_id in active:
+                raise ValueError(f"{name} must be real numeric evidence")
+            active.add(current_id)
+
+        if child_index >= len(current):
+            active.remove(id(current))
+            first_child_shape = stack[-1][2]
+            logical_cells = int(stack[-1][3])
+            if first_child_shape is None:
+                child_shape: tuple[int, ...] = ()
+            elif type(first_child_shape) is tuple:
+                child_shape = first_child_shape
+            else:
+                raise ValueError(f"{name} must be real numeric evidence")
+            shape = (len(current),) + child_shape
+            stack.pop()
+            if not stack:
+                return shape, logical_cells
+            parent_shape = stack[-1][2]
+            if parent_shape is None:
+                stack[-1][2] = shape
+            elif parent_shape != shape:
+                raise ValueError(f"{name} must be real numeric evidence")
+            stack[-1][3] = int(stack[-1][3]) + logical_cells
+            if int(stack[-1][3]) > MAX_ATA_TARGET_CELLS:
+                _raise_target_resource_limit(name)
+            continue
+
+        child = current[child_index]
+        stack[-1][1] = child_index + 1
+        structural_nodes += 1
+        if structural_nodes > max_structural_nodes:
+            _raise_target_resource_limit(name)
+
+        child_type = type(child)
+        if child_type is list or child_type is tuple:
+            if id(child) in active:
+                raise ValueError(f"{name} must be real numeric evidence")
+            if len(stack) >= MAX_ATA_TARGET_NESTING:
+                _raise_target_nesting_limit(name)
+            stack.append([child, 0, None, 0])
+            continue
+        if child_type is np.ndarray:
+            if child.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError(f"{name} must be real numeric evidence")
+            child_cells = int(child.size)
+            next_cells = int(stack[-1][3]) + child_cells
+            if next_cells > MAX_ATA_TARGET_CELLS:
+                _raise_target_resource_limit(name)
+            child_shape = child.shape
+            first_child_shape = stack[-1][2]
+            if first_child_shape is None:
+                stack[-1][2] = child_shape
+            elif first_child_shape != child_shape:
+                raise ValueError(f"{name} must be real numeric evidence")
+            stack[-1][3] = next_cells
+            continue
+        if not _is_exact_public_real_scalar(child):
+            raise ValueError(f"{name} must be real numeric evidence")
+        first_child_shape = stack[-1][2]
+        if first_child_shape is None:
+            stack[-1][2] = ()
+        elif first_child_shape != ():
+            raise ValueError(f"{name} must be real numeric evidence")
+        stack[-1][3] = int(stack[-1][3]) + 1
+        if int(stack[-1][3]) > MAX_ATA_TARGET_CELLS:
+            _raise_target_resource_limit(name)
+
+    raise RuntimeError("ATA target preflight terminated without a result")
+
+
+def _preflight_real_evidence(value: object, name: str) -> tuple[tuple[int, ...], int]:
+    """Return trusted real-evidence shape/cell count before per-cell conversion."""
+    if type(value) is np.ndarray:
+        if value.dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError(f"{name} must be real numeric evidence")
+        if value.size > MAX_ATA_TARGET_CELLS:
+            _raise_target_resource_limit(name)
+        return value.shape, int(value.size)
+    if _is_exact_public_real_scalar(value):
+        if MAX_ATA_TARGET_CELLS < 1:
+            _raise_target_resource_limit(name)
+        return (), 1
+    if type(value) is list or type(value) is tuple:
+        return _preflight_builtin_real_tree(value, name)
+    raise ValueError(f"{name} must be real numeric evidence")
+
+
+def _trusted_real_array(value: object, name: str) -> np.ndarray:
+    """Materialize bounded inert real evidence without caller callbacks.
+
+    Exact NumPy real-numeric arrays, exact trusted real scalars, and exact
+    built-in list/tuple trees whose leaves are package-trusted real scalars or
+    exact NumPy real-numeric arrays are admitted. Logical cells, nesting depth,
+    and malformed structural traversal are bounded before NumPy conversion.
+    Every admitted scalar must preserve its value when normalized to binary64.
+    Already-normalized exact float64 arrays need no Python-level scalar replay.
+    Arbitrary array providers, ndarray/container/numeric subclasses,
+    object/text/complex storage, and cyclic built-in trees fail before NumPy
+    conversion.
+    """
+    _preflight_real_evidence(value, name)
+    if type(value) is np.ndarray:
+        if value.dtype != np.dtype(np.float64):
+            for scalar in value.flat:
+                _require_lossless_float64_scalar(scalar, name)
+    elif _is_exact_public_real_scalar(value):
+        _require_lossless_float64_scalar(value, name)
+    else:
+        if type(value) is not list and type(value) is not tuple:
+            raise ValueError(f"{name} must be real numeric evidence")
+        active: set[int] = set()
+        stack: list[tuple[list | tuple, int]] = [(value, 0)]
+        logical_cells = 0
+        structural_nodes = 1
+        max_structural_nodes = 2 * MAX_ATA_TARGET_CELLS + 1
+        while stack:
+            current, child_index = stack[-1]
+            if child_index == 0:
+                current_id = id(current)
+                if current_id in active:
+                    raise ValueError(f"{name} must be real numeric evidence")
+                active.add(current_id)
+            if child_index >= len(current):
+                active.remove(id(current))
+                stack.pop()
+                continue
+            child = current[child_index]
+            stack[-1] = (current, child_index + 1)
+            structural_nodes += 1
+            if structural_nodes > max_structural_nodes:
+                _raise_target_resource_limit(name)
+            if type(child) is list or type(child) is tuple:
+                if id(child) in active:
+                    raise ValueError(f"{name} must be real numeric evidence")
+                stack.append((child, 0))
+                continue
+            if type(child) is np.ndarray:
+                if child.dtype.kind not in {"b", "i", "u", "f"}:
+                    raise ValueError(f"{name} must be real numeric evidence")
+                child_cells = int(child.size)
+                logical_cells += child_cells
+                if logical_cells > MAX_ATA_TARGET_CELLS:
+                    _raise_target_resource_limit(name)
+                for scalar in child.flat:
+                    _require_lossless_float64_scalar(scalar, name)
+                continue
+            if not _is_exact_public_real_scalar(child):
+                raise ValueError(f"{name} must be real numeric evidence")
+            logical_cells += 1
+            if logical_cells > MAX_ATA_TARGET_CELLS:
+                _raise_target_resource_limit(name)
+            _require_lossless_float64_scalar(child, name)
+
+    try:
+        return np.asarray(value, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(f"{name} must be real numeric evidence") from None
+
+
+def _target_theta_rows(
+    target_thetas: object,
+    n_dims: int,
+    *,
+    n_items: int | None = None,
+) -> np.ndarray:
+    """Return a trusted target-trait matrix with shape ``(n_points, n_dims)``."""
+    shape, _ = _preflight_real_evidence(target_thetas, "target_thetas")
+    if len(shape) == 1:
+        if n_dims == 1:
+            n_points = shape[0]
+        elif shape == (n_dims,):
+            n_points = 1
+        else:
+            raise ValueError("target_thetas must have shape (n_points, n_dims)")
+    elif len(shape) == 2 and shape[1] == n_dims:
+        n_points = shape[0]
+    else:
+        raise ValueError("target_thetas must have shape (n_points, n_dims)")
+    if n_points < 1:
+        raise ValueError("at least one target theta point is required")
+    if n_items is not None and n_points * n_items > MAX_ATA_INFORMATION_CELLS:
+        _raise_information_resource_limit()
+
+    thetas = _trusted_real_array(target_thetas, "target_thetas")
     if thetas.ndim == 1:
         if n_dims == 1:
             thetas = thetas[:, None]
-        elif thetas.shape == (n_dims,):
-            thetas = thetas[None, :]
         else:
-            raise ValueError("target_thetas must have shape (n_points, n_dims)")
+            thetas = thetas[None, :]
     if thetas.ndim != 2 or thetas.shape[1] != n_dims:
         raise ValueError("target_thetas must have shape (n_points, n_dims)")
-    if thetas.shape[0] < 1:
-        raise ValueError("at least one target theta point is required")
     if not np.all(np.isfinite(thetas)):
         raise ValueError("target_thetas must be finite")
     return thetas
+
+
+def _target_info_vector(target_info: object, n_points: int) -> np.ndarray:
+    """Return one trusted finite non-negative target-information vector."""
+    _, logical_cells = _preflight_real_evidence(target_info, "target_info")
+    if logical_cells != n_points:
+        raise ValueError("target_info must have one entry per target theta point")
+    target = _trusted_real_array(target_info, "target_info").ravel()
+    if target.shape != (n_points,):
+        raise ValueError("target_info must have one entry per target theta point")
+    if np.any(target < 0) or not np.all(np.isfinite(target)):
+        raise ValueError("target_info must be finite and non-negative")
+    return target
 
 
 def item_information_matrix(
@@ -130,8 +417,8 @@ def item_information_matrix(
     :func:`fast_mlsirm.test_design.item_information`).
     """
     n_dims = int(np.asarray(bank.theta).shape[1])
-    thetas = _target_theta_rows(target_thetas, n_dims)
     n_items = int(np.asarray(bank.b).shape[0])
+    thetas = _target_theta_rows(target_thetas, n_dims, n_items=n_items)
     matrix = np.empty((thetas.shape[0], n_items), dtype=np.float64)
     for k in range(thetas.shape[0]):
         matrix[k] = item_information(bank, factor_id, theta=thetas[k], model=model)
@@ -336,9 +623,10 @@ def assemble_to_target(
     Content labels and constraint-map keys/counts must already be the admitted
     types (strings / exact integers); arbitrary objects and conversion hooks are
     rejected before psychometric scoring rather than coerced through caller
-    callbacks. Semantic count/range constraints and exclusion indices are also
-    validated before item-information evaluation. Deterministic given ``seed``.
-    Raises ``ValueError`` if no form satisfying the constraints can be assembled.
+    callbacks. Semantic count/range constraints, target-curve evidence, and
+    exclusion indices are validated before item-information evaluation.
+    Deterministic given ``seed``. Raises ``ValueError`` if no form satisfying the
+    constraints can be assembled.
     """
     n_items = int(np.asarray(bank.b).shape[0])
     labels = _validated_content_labels(content, n_items)
@@ -363,15 +651,16 @@ def assemble_to_target(
     if seed < 0:
         raise ValueError("seed must be non-negative")
 
-    matrix = item_information_matrix(bank, factor_id, target_thetas, model=model)
+    n_dims = int(np.asarray(bank.theta).shape[1])
+    thetas = _target_theta_rows(target_thetas, n_dims, n_items=n_items)
+    target = _target_info_vector(target_info, thetas.shape[0])
+
+    matrix = item_information_matrix(bank, factor_id, thetas, model=model)
     n_points, matrix_n_items = matrix.shape
     if matrix_n_items != n_items:
         raise ValueError("item-information matrix must match the number of items")
-    target = np.asarray(target_info, dtype=np.float64).ravel()
     if target.shape != (n_points,):
         raise ValueError("target_info must have one entry per target theta point")
-    if np.any(target < 0) or not np.all(np.isfinite(target)):
-        raise ValueError("target_info must be finite and non-negative")
 
     raw_info = matrix.sum(axis=0)
     rng = np.random.default_rng(seed)

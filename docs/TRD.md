@@ -40,7 +40,7 @@ These belong to downstream bounded contexts such as `ContextualWisdomLab/psychom
 
 ```text
 python/fast_mlsirm/       Public Python API, validation/orchestration, reports,
-                          transparent reference/fallback paths
+                          governed reference/parity paths
 crates/mlsirm-core/       Rust psychometric/numerical source of truth
 crates/fast-mlsirm-py/    PyO3 bindings and Python transport
 scripts/                  Release, evidence, governance, study runners

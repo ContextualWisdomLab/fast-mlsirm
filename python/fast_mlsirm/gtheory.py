@@ -48,6 +48,21 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
     np.float64,
     np.longdouble,
 )
+_NUMPY_COMPLEX_SCALAR_TYPES = (
+    np.complex64,
+    np.complex128,
+    np.clongdouble,
+)
+_REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
+_INTEGER_DTYPE_KINDS = frozenset({"i", "u"})
+
+# Keep each public D-study size below the rubric pilot handoff ceiling.
+MAX_GTHEORY_PRIME_SIZE = 1_000_000
+# Bound the number of D-study result rows independently from prime magnitude.
+MAX_GTHEORY_D_STUDY_ROWS = 10_000
+# Keep dense G-theory score marshalling within the repository's established
+# scientific-evidence envelope before allocating a contiguous float64 copy.
+MAX_GTHEORY_SCORE_CELLS = 20_000_000
 
 
 def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
@@ -69,6 +84,134 @@ def _trusted_numpy_float(value: object) -> bool:
     return _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES)
 
 
+def _trusted_numpy_complex(value: object) -> bool:
+    """Return whether ``value`` has an exact package-trusted NumPy complex type."""
+
+    return _has_exact_type(value, _NUMPY_COMPLEX_SCALAR_TYPES)
+
+
+def _trusted_real_scalar(value: object) -> bool:
+    """Return whether one evidence cell is an inert real numeric scalar."""
+
+    value_type = type(value)
+    return (
+        value_type is bool
+        or value_type is int
+        or value_type is float
+        or value_type is np.bool_
+        or _trusted_numpy_integer(value)
+        or _trusted_numpy_float(value)
+    )
+
+
+def _raise_score_resource_limit() -> None:
+    """Raise the stable G-theory score-evidence resource diagnostic."""
+
+    raise ValueError(
+        f"data exceeds the {MAX_GTHEORY_SCORE_CELLS}-cell G-theory limit"
+    )
+
+
+def _raise_dstudy_row_resource_limit() -> None:
+    """Raise the stable G-theory D-study result-row resource diagnostic."""
+
+    raise ValueError(
+        f"D-study requests exceed the {MAX_GTHEORY_D_STUDY_ROWS}-row G-theory limit"
+    )
+
+
+def _validate_real_sequence(
+    value: list | tuple,
+    *,
+    expected_ndim: int | None = None,
+    dimension_error: str | None = None,
+) -> None:
+    """Preflight a bounded built-in score tree without coercion callbacks."""
+
+    stack: list[tuple[list | tuple, int, int]] = [(value, 0, 1)]
+    active_container_ids: set[int] = set()
+    logical_cells = 0
+    while stack:
+        current, child_index, depth = stack[-1]
+        if child_index == 0:
+            if expected_ndim is not None and depth > expected_ndim:
+                raise ValueError(dimension_error or "data has invalid dimensionality")
+            current_id = id(current)
+            if current_id in active_container_ids:
+                raise ValueError("data must be a real numeric array")
+            active_container_ids.add(current_id)
+        if child_index >= len(current):
+            active_container_ids.remove(id(current))
+            stack.pop()
+            continue
+
+        child = current[child_index]
+        stack[-1] = (current, child_index + 1, depth)
+        child_depth = depth + 1
+        child_type = type(child)
+        if child_type is list or child_type is tuple:
+            stack.append((child, 0, child_depth))
+            continue
+        if child_type is np.ndarray:
+            if child.dtype.kind == "c":
+                raise ValueError("data must be real-valued")
+            if child.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+                raise ValueError("data must be a real numeric array")
+            effective_ndim = (child_depth - 1) + child.ndim
+            if expected_ndim is not None and effective_ndim > expected_ndim:
+                raise ValueError(dimension_error or "data has invalid dimensionality")
+            logical_cells += child.size
+        else:
+            if child_type is complex or _trusted_numpy_complex(child):
+                raise ValueError("data must be real-valued")
+            if not _trusted_real_scalar(child):
+                raise ValueError("data must be a real numeric array")
+            logical_cells += 1
+        if logical_cells > MAX_GTHEORY_SCORE_CELLS:
+            _raise_score_resource_limit()
+
+
+def _validated_real_data(
+    data: object,
+    *,
+    expected_ndim: int | None = None,
+    dimension_error: str | None = None,
+) -> np.ndarray:
+    """Marshal bounded inert real score evidence to contiguous ``float64``."""
+
+    data_type = type(data)
+    if data_type is np.ndarray:
+        if data.dtype.kind == "c":
+            raise ValueError("data must be real-valued")
+        if data.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError("data must be a real numeric array")
+        if expected_ndim is not None and data.ndim != expected_ndim:
+            raise ValueError(dimension_error or "data has invalid dimensionality")
+        if data.size > MAX_GTHEORY_SCORE_CELLS:
+            _raise_score_resource_limit()
+        return np.ascontiguousarray(data, dtype=np.float64)
+    if data_type is list or data_type is tuple:
+        _validate_real_sequence(
+            data,
+            expected_ndim=expected_ndim,
+            dimension_error=dimension_error,
+        )
+        try:
+            array = np.asarray(data)
+        except (TypeError, ValueError) as error:
+            raise ValueError("data must be a real numeric array") from error
+        if array.dtype.kind == "c":
+            raise ValueError("data must be real-valued")
+        if array.dtype.kind not in _REAL_NUMERIC_DTYPE_KINDS:
+            raise ValueError("data must be a real numeric array")
+        if expected_ndim is not None and array.ndim != expected_ndim:
+            raise ValueError(dimension_error or "data has invalid dimensionality")
+        if array.size > MAX_GTHEORY_SCORE_CELLS:
+            _raise_score_resource_limit()
+        return np.ascontiguousarray(array, dtype=np.float64)
+    raise ValueError("data must be a real numeric array")
+
+
 def _positive_integer_control(value: object, message: str) -> int:
     """Validate one positive Python/NumPy integer control without coercion hooks."""
 
@@ -82,6 +225,10 @@ def _positive_integer_control(value: object, message: str) -> int:
         raise ValueError(message)
     if parsed <= 0:
         raise ValueError(message)
+    if parsed > MAX_GTHEORY_PRIME_SIZE:
+        raise ValueError(
+            f"{message}; values must be <= {MAX_GTHEORY_PRIME_SIZE}"
+        )
     return parsed
 
 
@@ -100,6 +247,72 @@ def _finite_real_control(value: object, message: str) -> float:
     if not math.isfinite(parsed):
         raise ValueError(message)
     return parsed
+
+
+def _positive_integer_vector(value: object) -> list[int]:
+    """Normalize inert one-facet D-study size containers without callbacks."""
+
+    message = "n_i_prime entries must be positive integers"
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if value.ndim != 1 or value.dtype.kind not in _INTEGER_DTYPE_KINDS:
+            raise ValueError("n_i_prime must be a list or tuple")
+        if value.shape[0] > MAX_GTHEORY_D_STUDY_ROWS:
+            _raise_dstudy_row_resource_limit()
+        return [
+            _positive_integer_control(value[index], message)
+            for index in range(value.shape[0])
+        ]
+    if value_type is range:
+        if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
+            _raise_dstudy_row_resource_limit()
+        return [
+            _positive_integer_control(value[index], message)
+            for index in range(len(value))
+        ]
+    if value_type is not list and value_type is not tuple:
+        raise ValueError("n_i_prime must be a list or tuple")
+    if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
+        _raise_dstudy_row_resource_limit()
+    return [_positive_integer_control(entry, message) for entry in value]
+
+
+def _positive_integer_pairs(value: object) -> list[tuple[int, int]]:
+    """Normalize inert two-facet D-study size pairs without caller iteration."""
+
+    message = "n_prime entries must be pairs of positive integers"
+    value_type = type(value)
+    if value_type is np.ndarray:
+        if (
+            value.ndim != 2
+            or value.shape[1] != 2
+            or value.dtype.kind not in _INTEGER_DTYPE_KINDS
+        ):
+            raise ValueError("n_prime must be a list or tuple of pairs")
+        if value.shape[0] > MAX_GTHEORY_D_STUDY_ROWS:
+            _raise_dstudy_row_resource_limit()
+        return [
+            (
+                _positive_integer_control(value[index, 0], message),
+                _positive_integer_control(value[index, 1], message),
+            )
+            for index in range(value.shape[0])
+        ]
+    if value_type is not list and value_type is not tuple:
+        raise ValueError("n_prime must be a list or tuple of pairs")
+    if len(value) > MAX_GTHEORY_D_STUDY_ROWS:
+        _raise_dstudy_row_resource_limit()
+    pairs: list[tuple[int, int]] = []
+    for pair in value:
+        if (type(pair) is not list and type(pair) is not tuple) or len(pair) != 2:
+            raise ValueError(message)
+        pairs.append(
+            (
+                _positive_integer_control(pair[0], message),
+                _positive_integer_control(pair[1], message),
+            )
+        )
+    return pairs
 
 
 @dataclass
@@ -185,15 +398,19 @@ def gtheory_pi(
     this asks how many judge items are needed for a dependable rating.
 
     """
-    core = _core_or_raise("gtheory_pi")
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    primes = _positive_integer_vector(n_i_prime)
+    dimension_error = "data must be a 2-D persons x items array"
+    x = _validated_real_data(
+        data,
+        expected_ndim=2,
+        dimension_error=dimension_error,
+    )
     if x.ndim != 2:
-        raise ValueError("data must be a 2-D persons x items array")
+        raise ValueError(dimension_error)
+    if not np.isfinite(x).all():
+        raise ValueError("data must contain only finite real values")
     n_p, n_i = x.shape
-    primes = [
-        _positive_integer_control(v, "n_i_prime entries must be positive integers")
-        for v in n_i_prime
-    ]
+    core = _core_or_raise("gtheory_pi")
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
 
 
@@ -215,19 +432,19 @@ def gtheory_pio(
     policies match :func:`gtheory_pi`.
 
     """
-    core = _core_or_raise("gtheory_pio")
-    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    pairs = _positive_integer_pairs(n_prime)
+    dimension_error = "data must be a 3-D persons x items x occasions array"
+    x = _validated_real_data(
+        data,
+        expected_ndim=3,
+        dimension_error=dimension_error,
+    )
     if x.ndim != 3:
-        raise ValueError("data must be a 3-D persons x items x occasions array")
+        raise ValueError(dimension_error)
+    if not np.isfinite(x).all():
+        raise ValueError("data must contain only finite real values")
     n_p, n_i, n_o = x.shape
-    message = "n_prime entries must be pairs of positive integers"
-    pairs = [
-        (
-            _positive_integer_control(a, message),
-            _positive_integer_control(b, message),
-        )
-        for a, b in n_prime
-    ]
+    core = _core_or_raise("gtheory_pio")
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
     )
@@ -283,19 +500,20 @@ def phi_lambda(
     panel classifies systems against a fixed quality threshold.
 
     """
-    core = _core_or_raise("phi_lambda")
-    x = np.asarray(data)
-    if np.iscomplexobj(x):
-        raise ValueError("data must be real-valued")
-    x = np.ascontiguousarray(x, dtype=np.float64)
-    if x.ndim != 2:
-        raise ValueError("data must be a 2-D persons x items array")
-    n_p, n_i = x.shape
     parsed_cut = _finite_real_control(cut, "cut must be a finite real scalar")
-    primes = [
-        _positive_integer_control(v, "n_i_prime entries must be positive integers")
-        for v in n_i_prime
-    ]
+    primes = _positive_integer_vector(n_i_prime)
+    dimension_error = "data must be a 2-D persons x items array"
+    x = _validated_real_data(
+        data,
+        expected_ndim=2,
+        dimension_error=dimension_error,
+    )
+    if x.ndim != 2:
+        raise ValueError(dimension_error)
+    if not np.isfinite(x).all():
+        raise ValueError("data must contain only finite real values")
+    n_p, n_i = x.shape
+    core = _core_or_raise("phi_lambda")
     res = core.phi_lambda(
         x.reshape(-1),
         int(n_p),

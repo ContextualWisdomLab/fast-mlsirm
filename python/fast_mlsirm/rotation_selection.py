@@ -9,7 +9,6 @@ and policy, never a universally optimal criterion claim.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
@@ -90,11 +89,11 @@ def _policy_name(value: str) -> str:
     return normalized
 
 
-def _candidate_names(values: Sequence[str]) -> tuple[str, ...]:
-    """Return at least two distinct, normalized candidate names."""
+def _candidate_names(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Return at least two distinct names from an inert candidate container."""
 
-    if isinstance(values, (str, bytes)):
-        raise ValueError("candidates must be a sequence of criterion names")
+    if type(values) not in (list, tuple):
+        raise ValueError("candidates must be an exact list or tuple of criterion names")
     normalized = tuple(_method_name(value) for value in values)
     if len(normalized) < 2:
         raise ValueError("criterion selection requires at least two candidates")
@@ -169,7 +168,7 @@ def _result_from_core(value: dict[str, object]) -> RotationSelectionResult:
 
 def select_rotation_criterion(
     loadings: np.ndarray,
-    candidates: Sequence[str],
+    candidates: list[str] | tuple[str, ...],
     *,
     mode: str = "oblique",
     policy: str = "fully_exploratory",
