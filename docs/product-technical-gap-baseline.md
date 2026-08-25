@@ -258,7 +258,11 @@ capability/support matrix), `#626` (Rust-owned ordinary production boundary),
 and `#565` (multilevel/multiple-membership/longitudinal completion). ADR 0022
 adds a distinct unresolved gate: implement and recover the continuous-posterior
 MMMC deletion estimand with same-objective CPU/GPU parity before exposing topic
-importance.
+importance. TEPP PR #253 resolves correlated full-data plausible-value
+generation but not this gate: exact case deletion additionally requires
+producer-owned deleted-data refits or per-case joint likelihood contributions.
+The consumer now reports that absence explicitly instead of treating a
+fixed-posterior weighted mean as model-refit influence.
 
 This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,

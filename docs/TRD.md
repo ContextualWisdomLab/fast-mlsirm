@@ -189,10 +189,13 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 **TRD-MLT-006** The TEPP topic-context influence boundary shall validate the
 exact `tepp.topic_context_posterior.v1` schema in Rust, including complete
 posterior draws, Event Lineage, historical event time, evidence provenance,
-and source-derived BU/PU/team/person multiple memberships. The influence call
-shall return `EstimatorUnavailable` until the same continuous-posterior MMMC
-objective passes deletion-effect recovery, interval coverage, and CPU/GPU
-parity; no Python or heuristic fallback is permitted.
+and source-derived BU/PU/team/person multiple memberships. A v1 artifact is a
+full-data posterior only; it shall return
+`CaseDeletionRefitEvidenceUnavailable` because it contains neither exact
+case-deleted refits nor the per-case joint likelihood contributions needed for
+reviewed importance reweighting. A future estimator must consume one of those
+producer-owned evidence forms and pass deletion-effect recovery, interval
+coverage, and CPU/GPU parity; no Python or heuristic fallback is permitted.
 
 ### 4.12 Testing and scientific evidence
 

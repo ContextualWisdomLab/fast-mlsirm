@@ -27,8 +27,8 @@ pub enum TopicContextContractError {
     LimitExceeded,
     /// The input was foreign, malformed, incomplete, or internally inconsistent.
     InvalidEvidence,
-    /// The scientifically governed influence estimator is not released.
-    EstimatorUnavailable,
+    /// The producer artifact lacks case-deleted refit evidence.
+    CaseDeletionRefitEvidenceUnavailable,
 }
 
 /// One global topic activity interval.
@@ -524,11 +524,19 @@ impl TopicContextPosteriorArtifact {
     }
 }
 
-/// Refuse to emit topic-context influence until the governed Rust estimator is released.
+/// Refuse to emit model case-deletion influence from full-data draws alone.
+///
+/// A draw from `p(theta | D)` does not identify `p(theta | D \\ {i})`.
+/// Exact refitting requires a producer-owned case-deleted posterior. An
+/// importance-sampling alternative requires the deleted case's likelihood
+/// contribution evaluated at every retained joint draw, which v1 does not
+/// carry. The function therefore rejects even a completely valid v1 artifact
+/// instead of relabeling fixed-posterior weighted-mean leverage as Bayesian
+/// case-deletion influence (Bradlow & Zaslavsky, 1997; Jackson et al., 2009).
 pub fn estimate_topic_context_case_deletion_influence(
     _posterior: &ValidatedTopicContextPosterior,
 ) -> Result<(), TopicContextContractError> {
-    Err(TopicContextContractError::EstimatorUnavailable)
+    Err(TopicContextContractError::CaseDeletionRefitEvidenceUnavailable)
 }
 
 #[cfg(test)]
@@ -591,7 +599,7 @@ mod tests {
         assert_eq!(posterior.artifact().posterior_draw_count, 2);
         assert_eq!(
             estimate_topic_context_case_deletion_influence(&posterior),
-            Err(TopicContextContractError::EstimatorUnavailable)
+            Err(TopicContextContractError::CaseDeletionRefitEvidenceUnavailable)
         );
     }
 

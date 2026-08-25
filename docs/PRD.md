@@ -173,6 +173,10 @@ Event Lineage relations. Binary topic assignments, diagonal pseudo-posteriors,
 heuristic weights, and Python psychometric kernels are prohibited; the feature
 shall remain explicitly unavailable until the Rust estimator passes recovery,
 uncertainty-coverage, and CPU/GPU parity gates.
+Full-data plausible values alone shall not be interpreted as a case-deleted
+posterior: the producer must additionally bind exact deleted-data refits or the
+joint per-case likelihood evidence required by a reviewed Bayesian
+case-deletion method.
 
 ### 6.8 Reporting and evidence
 

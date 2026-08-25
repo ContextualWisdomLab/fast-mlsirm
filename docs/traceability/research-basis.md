@@ -167,11 +167,23 @@ Architecture effect:
   passes identification, deletion-effect recovery, uncertainty coverage, and
   same-objective CPU/GPU parity.
 
+Bayesian case deletion compares the full-data posterior with the posterior
+after deleting a case. Bradlow and Zaslavsky (1997) derive importance weights
+from the deleted observation's probability conditional on retained parameters;
+Jackson et al. (2009) likewise distinguish the likelihood under `D` from the
+likelihood under `D \\ {i}`. TEPP PR #253 supplies correlated full-data
+plausible values but no deleted-data posterior or per-case likelihood. Those
+draws therefore cannot identify the requested refit estimand. Fixed-draw
+weighted-mean deletion is not an admissible substitute.
+
 Primary basis remains Browne, Goldstein, and Rasbash (2001) for multiple
 membership/multiple classification and Fox and Glas (2001) for multilevel IRT.
 These sources motivate the structure; they do not by themselves validate an
 unimplemented topic-deletion estimator. ADR-0022 therefore accepts only the
 wire/input prerequisite and prohibits a heuristic score.
+
+- Bradlow, E. T., & Zaslavsky, A. M. (1997). Case influence analysis in Bayesian inference. *Journal of Computational and Graphical Statistics, 6*(3), 314–331. https://doi.org/10.1080/10618600.1997.10474731
+- Jackson, C. H., Sharples, L. D., Thompson, S. G., Duffy, S. W., & Couto, E. (2009). Bayesian case influence diagnostics for survival models. *Biometrics, 65*(1), 116–124. https://doi.org/10.1111/j.1541-0420.2008.01049.x
 
 ## 9. Adaptive factor rotation — Proposed
 
