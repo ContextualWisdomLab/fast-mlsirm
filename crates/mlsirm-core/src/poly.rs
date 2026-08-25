@@ -17,6 +17,7 @@
 
 pub(crate) const POLY_MAX_CAT: usize = 64;
 pub(crate) const POLY_MAX_ITER: usize = 100_000;
+pub(crate) const POLY_MAX_PREDICTION_CELLS: usize = 20_000_000;
 
 fn validate_observed_categories(
     y: &[usize],
@@ -194,6 +195,78 @@ pub enum PolyModel {
     Grm,
     /// Adjacent-category softmax Generalized Partial Credit Model (Muraki).
     Gpcm,
+}
+
+/// Batched category probabilities and expected integer category scores for a
+/// fitted unidimensional GRM or GPCM item bank.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolytomousPredictions {
+    pub probabilities: Vec<f64>,
+    pub expected: Vec<f64>,
+}
+
+pub fn polytomous_predictions(
+    theta: &[f64],
+    slope: &[f64],
+    cat_params: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+) -> Result<PolytomousPredictions, String> {
+    if theta.is_empty() || theta.iter().any(|value| !value.is_finite()) {
+        return Err("theta must be a non-empty finite vector".into());
+    }
+    if n_items == 0 || n_cat < 2 {
+        return Err("n_items must be positive and n_cat must be at least 2".into());
+    }
+    if n_cat > POLY_MAX_CAT {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
+    }
+    let cells = crate::checked_mul_usize(
+        theta.len(),
+        n_items,
+        "theta count * n_items exceeds the prediction buffer size",
+    )?;
+    let probability_cells = crate::checked_mul_usize(
+        cells,
+        n_cat,
+        "prediction cells * n_cat exceeds the probability buffer size",
+    )?;
+    if probability_cells > POLY_MAX_PREDICTION_CELLS {
+        return Err(format!(
+            "polytomous prediction grid of {probability_cells} cells exceeds the 20,000,000 prediction-cell limit"
+        ));
+    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
+    let mut probabilities = Vec::with_capacity(probability_cells);
+    let mut expected = Vec::with_capacity(cells);
+    let scores: Vec<f64> = (0..n_cat).map(|category| category as f64).collect();
+    for &person_theta in theta {
+        for item in 0..n_items {
+            let base = slope[item] * person_theta;
+            let params = &cat_params[item * (n_cat - 1)..(item + 1) * (n_cat - 1)];
+            let logprobs = match model {
+                PolyModel::Grm => grm_logprobs(base, params),
+                PolyModel::Gpcm => {
+                    let mut intercepts = Vec::with_capacity(n_cat);
+                    intercepts.push(0.0);
+                    intercepts.extend_from_slice(params);
+                    gpcm_logprobs(base, &scores, &intercepts)
+                }
+            };
+            let mut mean = 0.0;
+            for (category, logprob) in logprobs.into_iter().enumerate() {
+                let probability = logprob.exp();
+                probabilities.push(probability);
+                mean += category as f64 * probability;
+            }
+            expected.push(mean);
+        }
+    }
+    Ok(PolytomousPredictions {
+        probabilities,
+        expected,
+    })
 }
 
 /// Result of [`fit_poly_unidim`]. `slope[i]` is item `i`'s discrimination `a_i`;
@@ -478,8 +551,10 @@ pub fn fit_poly_unidim(
                 let mut cum = 0.0_f64;
                 for k in (1..n_cat).rev() {
                     cum += freq[k];
-                    let c = cum.clamp(1e-4, 1.0 - 1e-4);
-                    params[i][k] = (c / (1.0 - c)).ln();
+                    if !(0.0 < cum && cum < 1.0) {
+                        return Err("smoothed GRM cumulative probability must be in (0, 1)".into());
+                    }
+                    params[i][k] = (cum / (1.0 - cum)).ln();
                 }
             }
         }
@@ -1353,8 +1428,10 @@ pub fn fit_poly_multigroup(
                 let mut cum = 0.0_f64;
                 for k in (1..n_cat).rev() {
                     cum += freq[k];
-                    let c = cum.clamp(1e-4, 1.0 - 1e-4);
-                    params[i][k] = (c / (1.0 - c)).ln();
+                    if !(0.0 < cum && cum < 1.0) {
+                        return Err("smoothed GRM cumulative probability must be in (0, 1)".into());
+                    }
+                    params[i][k] = (cum / (1.0 - cum)).ln();
                 }
             }
         }
