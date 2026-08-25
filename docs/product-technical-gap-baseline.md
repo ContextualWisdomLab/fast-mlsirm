@@ -282,6 +282,30 @@ Rust backend + configuration hardening), [#1014](https://github.com/ContextualWi
 (Figma design-boundary ADR), the v0.9.0 release cut, and the polytomous
 GRM/GPCM/CAT/FIPC parameter-recovery suite (#1313).
 
+### 7.1 Superseded lineage record
+
+Two orphaned Sentinel security branches were deleted on 2026-08-25 because
+protected main already ships strictly stronger fixes for their scopes:
+
+- `sentinel-fix-json-recursion-conformance-4916450064032858492` (JSON recursion
+  DoS in `cross_engine_conformance.py`) — superseded by merged
+  [#1330](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1330)
+  (`a25833a0`: raw JSON depth guard + `tests/test_cross_engine_conformance_json_depth.py`).
+- `sentinel-medium-fix-unbounded-json-loading-11914195049005804093` (unbounded
+  JSON loading in ops scripts) — superseded by main's
+  `scripts/_bounded_json.parse_json_bounded(..., max_bytes=...)` hardening in
+  `build_pr_queue_governance.py`, which bounds GitHub stdout bytes beyond the
+  branch's proposal.
+
+Issues [#1300](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1300),
+[#1301](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1301), and
+[#1303](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1303) were
+closed on 2026-08-25 with protected-main evidence: `_TRUSTED_REAL_CONTROL_TYPES`
+excludes Boolean identity (`mhrm.py` lines 46–51) with regression
+`test_mhrm_real_control_boolean_admission.py`; `classify_model_relation()`
+enforces exact-type admission and replays `__post_init__` invariants
+(`model_relation.py` lines 144–146).
+
 ## 8. Product and technical gap matrix
 
 | Gap ID | Priority | Required outcome | Existing issue / PR evidence | Completion test |
