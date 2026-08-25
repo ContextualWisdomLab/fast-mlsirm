@@ -23,7 +23,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _UV_LOCK = _REPO_ROOT / "uv.lock"
 _PYTHON_FLOOR = Version("3.12")
-_BASE_VERSION_WITNESSES = ("3.10.0", "3.10.14", "3.11.0", "3.11.9", "3.12.0", "3.12.9", "3.13.0", "3.14.0")
+_BASE_VERSION_WITNESSES = (
+    "3.10.0",
+    "3.10.14",
+    "3.11.0",
+    "3.11.9",
+    "3.12.0",
+    "3.12.9",
+    "3.13.0",
+    "3.14.0",
+)
 _VERSION_LITERAL_RE = re.compile(r"(?<!\d)(\d+)\.(\d+)(?:\.(\d+|\*))?")
 _PLATFORM_ENVIRONMENTS = (
     {"sys_platform": "linux", "platform_system": "Linux", "os_name": "posix"},
@@ -97,16 +106,44 @@ def _targets_only_dropped_interpreters(marker_text: str) -> bool:
     marker = Marker(marker_text)
     witnesses = _version_witnesses(marker_text)
     matches_unsupported = any(
-        Version(version) < _PYTHON_FLOOR and _marker_matches(marker, version, platform)
+        Version(version) < _PYTHON_FLOOR
+        and _marker_matches(marker, version, platform)
         for version in witnesses
         for platform in _PLATFORM_ENVIRONMENTS
     )
     matches_supported = any(
-        Version(version) >= _PYTHON_FLOOR and _marker_matches(marker, version, platform)
+        Version(version) >= _PYTHON_FLOOR
+        and _marker_matches(marker, version, platform)
         for version in witnesses
         for platform in _PLATFORM_ENVIRONMENTS
     )
     return matches_unsupported and not matches_supported
+
+
+def _lock_marker_strings(lock: dict[str, object]) -> tuple[str, ...]:
+    """Collect top-level partitions and nested package/dependency markers."""
+    markers: list[str] = []
+    stack: list[object] = [lock]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key == "marker":
+                    assert isinstance(child, str), "uv.lock marker fields must be strings"
+                    markers.append(child)
+                elif key == "resolution-markers":
+                    assert isinstance(child, list), (
+                        "uv.lock resolution-markers must be a list"
+                    )
+                    assert all(isinstance(marker, str) for marker in child), (
+                        "uv.lock resolution-markers must contain only strings"
+                    )
+                    markers.extend(child)
+                else:
+                    stack.append(child)
+        elif isinstance(value, list):
+            stack.extend(value)
+    return tuple(markers)
 
 
 def test_uv_lock_floor_matches_pyproject_floor() -> None:
@@ -117,14 +154,9 @@ def test_uv_lock_floor_matches_pyproject_floor() -> None:
 def test_uv_lock_has_no_stale_pre_3_12_resolution_markers() -> None:
     """The lock must not retain partitions targeting only dropped Pythons."""
     lock = _read_toml(_UV_LOCK)
-    resolution_markers = lock.get("resolution-markers", [])
-    assert isinstance(resolution_markers, list), "uv.lock resolution-markers must be a list"
-    assert all(isinstance(marker, str) for marker in resolution_markers), (
-        "uv.lock resolution-markers must contain only strings"
-    )
     stale = [
         marker
-        for marker in resolution_markers
+        for marker in _lock_marker_strings(lock)
         if _targets_only_dropped_interpreters(marker)
     ]
     assert not stale, (
