@@ -145,6 +145,31 @@ def test_inference_rejects_oversized_builtin_dimension_before_row_replay(public_
         public_fn(evidence)
 
 
+@pytest.mark.parametrize(
+    ("native_name", "public_fn"),
+    [
+        ("second_order_test", second_order_test),
+        ("vcov_from_hessian", vcov_from_hessian),
+        ("standard_errors_from_vcov", standard_errors_from_vcov),
+    ],
+)
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        [[2**53 + 1, 0], [0, 1]],
+        np.array([[2**53 + 1, 0], [0, 1]], dtype=np.uint64),
+    ],
+)
+def test_inference_rejects_lossy_matrix_normalization_before_rust(
+    monkeypatch, native_name, public_fn, evidence
+):
+    """Curvature/covariance entries must keep exact identity through Rust f64 marshalling."""
+    monkeypatch.setattr(_core, native_name, _unexpected_native_dispatch)
+
+    with pytest.raises(ValueError, match="losslessly representable as float64"):
+        public_fn(evidence)
+
+
 def test_second_order_preserves_trusted_sequence_and_numpy_scalar_compatibility(monkeypatch):
     """Trusted inert evidence reaches Rust as package-owned float64 primitives."""
     captured: dict[str, object] = {}
