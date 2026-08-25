@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
@@ -128,14 +126,14 @@ def test_score_wle_poly_rejects_callback_bearing_controls_before_data_and_core(
 ) -> None:
     hostile_data = _HostileArrayProvider()
     core_calls = _forbid_core(monkeypatch)
-    kwargs = {control: value}
+    kwargs: dict[str, object] = {"n_cat": 2, "model": "grm"}
+    kwargs[control] = value
 
     with pytest.raises(ValueError, match=message):
         score_wle_poly(
             np.array([[0.0]]),
             hostile_data,
             np.array([[0.0]]),
-            2,
             **kwargs,
         )
 
