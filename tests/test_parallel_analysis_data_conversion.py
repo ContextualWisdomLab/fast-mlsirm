@@ -128,6 +128,22 @@ def test_lossy_longdouble_matrix_is_rejected_before_native_discovery(
     assert core_calls == []
 
 
+def test_mixed_builtin_matrix_rejects_lossy_scalar_before_numpy_promotion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mixed built-in evidence cannot lose integer identity during dtype promotion."""
+    core_calls = _forbid_native_discovery(monkeypatch)
+    data = [
+        [np.uint64(2**53 + 1), np.float64(0.0)],
+        [np.int16(0), np.float64(1.0)],
+    ]
+
+    with pytest.raises(ValueError, match="data must be exactly representable as float64"):
+        parallel_analysis(data, n_iterations=1)
+
+    assert core_calls == []
+
+
 def test_builtin_matrix_with_numpy_scalars_reaches_rust_as_float64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
