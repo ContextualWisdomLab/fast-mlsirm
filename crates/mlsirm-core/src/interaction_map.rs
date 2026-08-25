@@ -252,6 +252,26 @@ mod tests {
     }
 
     #[test]
+    fn empty_complete_case_rectangle_has_empty_indices_on_both_axes() {
+        let map = residual_interaction_map(
+            &[1.0, f64::NAN, f64::NAN, 1.0],
+            &[0.0, 0.0, 0.0, 0.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
+        assert!(map.person_indices.is_empty());
+        assert!(map.item_indices.is_empty());
+        assert!(map.person_coordinates.is_empty());
+        assert!(map.item_coordinates.is_empty());
+        assert!(map.reconstruction.is_empty());
+        assert!(map.unexplained.is_empty());
+        assert!(map.cross_share.is_empty());
+        assert_eq!(map.axis_shares, vec![0.0, 0.0]);
+    }
+
+    #[test]
     fn rejects_declared_grid_above_resource_ceiling_before_length_validation() {
         let error = residual_interaction_map(&[], &[], 1, 20_000_001, 1).unwrap_err();
         assert!(error.contains("logical-cell"));
