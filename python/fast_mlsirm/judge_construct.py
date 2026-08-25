@@ -155,7 +155,10 @@ class JudgeConstructSpec:
         if (
             type(self.criterion_ids) is not tuple
             or not self.criterion_ids
-            or any(type(criterion_id) is not str for criterion_id in self.criterion_ids)
+            or any(
+                type(criterion_id) is not str or not criterion_id.strip()
+                for criterion_id in self.criterion_ids
+            )
         ):
             raise TypeError("criterion_ids must be a non-empty tuple of strings")
         if len(set(self.criterion_ids)) != len(self.criterion_ids):
