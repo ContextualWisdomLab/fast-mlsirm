@@ -90,6 +90,10 @@ def _trusted_numeric_array(value: object, name: str) -> np.ndarray:
             if type(current) in (list, tuple):
                 stack.extend(current)
                 continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in ("b", "i", "u", "f", "c"):
+                    raise ValueError(f"{name} must be real-numeric evidence")
+                continue
             if type(current) not in _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES:
                 raise ValueError(f"{name} must be real-numeric evidence")
         try:
@@ -131,8 +135,9 @@ def subscore_analysis(
     index in ``0..K`` (``K >= 2``, every subscale with at least 2 items,
     partition exhaustive by construction). Evidence admission accepts exact
     NumPy numeric arrays or exact built-in list/tuple trees containing only
-    package-trusted concrete Python/NumPy numeric scalars; callback-bearing
-    array/container/numeric providers fail before NumPy materialization.
+    package-trusted concrete Python/NumPy numeric scalars or exact NumPy
+    numeric array leaves; callback-bearing providers fail before NumPy
+    materialization.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
