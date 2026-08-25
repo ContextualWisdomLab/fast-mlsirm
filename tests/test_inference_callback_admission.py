@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm as fml
+import fast_mlsirm._inference_admission_safety as admission_safety
 from fast_mlsirm import _core
 from fast_mlsirm.inference import (
     second_order_test,
@@ -104,6 +105,44 @@ def test_inference_rejects_invalid_real_controls_before_matrix_work(
         public_fn(matrix, **{control_name: control_value})
 
     assert matrix.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("native_name", "public_fn"),
+    [
+        ("second_order_test", second_order_test),
+        ("vcov_from_hessian", vcov_from_hessian),
+        ("standard_errors_from_vcov", standard_errors_from_vcov),
+    ],
+)
+def test_inference_rejects_oversized_numpy_matrix_before_dense_copy(
+    monkeypatch, native_name, public_fn
+):
+    """Logical matrix size must be bounded before a broadcast view is copied."""
+    side = 4_473  # side**2 == 20,007,729 cells, above the 20M support envelope.
+    evidence = np.broadcast_to(np.array(1.0, dtype=np.float64), (side, side))
+    monkeypatch.setattr(_core, native_name, _unexpected_native_dispatch)
+
+    def _unexpected_dense_copy(*args, **kwargs):
+        raise AssertionError("oversized inference evidence reached dense float64 materialization")
+
+    monkeypatch.setattr(admission_safety.np, "ascontiguousarray", _unexpected_dense_copy)
+
+    with pytest.raises(ValueError, match="resource limit"):
+        public_fn(evidence)
+
+
+@pytest.mark.parametrize(
+    "public_fn",
+    [second_order_test, vcov_from_hessian, standard_errors_from_vcov],
+)
+def test_inference_rejects_oversized_builtin_dimension_before_row_replay(public_fn):
+    """An over-budget square dimension is knowable before built-in row traversal."""
+    side = 4_473
+    evidence = [()] * side
+
+    with pytest.raises(ValueError, match="resource limit"):
+        public_fn(evidence)
 
 
 def test_second_order_preserves_trusted_sequence_and_numpy_scalar_compatibility(monkeypatch):
