@@ -15,7 +15,9 @@ class _FakeCore:
         self._result = result
 
     def residual_interaction_map_envelope(self, *_args: object) -> dict[str, object]:
-        return dict(self._result)
+        result = dict(self._result)
+        result.setdefault("input_digest", _args[1])
+        return result
 
 
 class _HostileInt:
@@ -83,6 +85,7 @@ def test_current_rust_payload_shape_remains_marshallable(
 
     assert result.map_person_count == 1
     assert result.map_item_count == 1
+    assert len(result.input_digest) == 64
     assert result.retained_person_ids == ("person-a",)
     assert result.retained_item_ids == ("item-a",)
     np.testing.assert_array_equal(result.person_indices, [0])
