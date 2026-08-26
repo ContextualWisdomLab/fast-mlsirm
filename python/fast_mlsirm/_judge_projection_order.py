@@ -17,7 +17,7 @@ from .llm_judge import (
 def _exact_result_mapping(value: object, name: str) -> dict[str, object]:
     """Admit one inert built-in result mapping before any mapping protocol runs."""
     if type(value) is not dict:
-        raise JudgeFormatError(f"{name} must be an exact built-in dict")
+        raise JudgeFormatError(f"{name} must be a plain dict keyed by criterion id")
     if any(type(key) is not str for key in value):
         raise JudgeFormatError(f"{name} keys must be strings")
     return value
