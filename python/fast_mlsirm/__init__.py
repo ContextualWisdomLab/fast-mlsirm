@@ -36,6 +36,14 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 from ._serving_export_safety import install as _install_serving_export_safety
 from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
 from .interaction_map import residual_interaction_map as residual_interaction_map
+from .sampling_design import (
+    ProportionSamplingDesign as ProportionSamplingDesign,
+)
+from .sampling_design import SAMPLING_DESIGN_SCHEMA_VERSION as SAMPLING_DESIGN_SCHEMA_VERSION
+from .sampling_design import SamplingStratum as SamplingStratum
+from .sampling_design import (
+    finite_population_proportion_design as finite_population_proportion_design,
+)
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
@@ -287,6 +295,10 @@ __all__ = list(_legacy_init.__all__) + [
     "validate_irt_experiment_readiness",
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
+    "SAMPLING_DESIGN_SCHEMA_VERSION",
+    "SamplingStratum",
+    "ProportionSamplingDesign",
+    "finite_population_proportion_design",
 ]
 
 del _PackageNotFoundError, _distribution_version, _public_fit, _public_name

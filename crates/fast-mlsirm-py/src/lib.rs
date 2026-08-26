@@ -36,6 +36,11 @@ use mlsirm_core::inference::{
     vcov_from_hessian as core_vcov_from_hessian,
 };
 use mlsirm_core::interaction_map::residual_interaction_map as core_residual_interaction_map;
+use mlsirm_core::sampling_design::{
+    finite_population_proportion_design as core_finite_population_proportion_design,
+    AllocationMethod as CoreAllocationMethod, SamplingStratum as CoreSamplingStratum,
+    SAMPLING_DESIGN_SCHEMA_VERSION,
+};
 use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
 use mlsirm_core::marginal::{
     fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
@@ -9397,6 +9402,58 @@ fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f6
 const MARGINAL_CAPABILITY_VERSION: u32 = 1;
 
 #[pyfunction]
+fn finite_population_proportion_design(
+    py: Python<'_>,
+    population_size: usize,
+    confidence_level: f64,
+    margin_of_error: f64,
+    stratum_population_sizes: Vec<usize>,
+    stratum_expected_proportions: Vec<f64>,
+    allocation_method: &str,
+) -> PyResult<Py<PyAny>> {
+    if stratum_population_sizes.len() != stratum_expected_proportions.len() {
+        return Err(PyValueError::new_err(
+            "stratum population sizes and expected proportions must have equal length",
+        ));
+    }
+    let method = CoreAllocationMethod::parse(allocation_method).ok_or_else(|| {
+        PyValueError::new_err("allocation_method must be proportional or neyman")
+    })?;
+    let strata: Vec<CoreSamplingStratum> = stratum_population_sizes
+        .into_iter()
+        .zip(stratum_expected_proportions)
+        .map(|(population_size, expected_proportion)| CoreSamplingStratum {
+            population_size,
+            expected_proportion,
+        })
+        .collect();
+    let result = core_finite_population_proportion_design(
+        population_size,
+        confidence_level,
+        margin_of_error,
+        &strata,
+        method,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("schema_version", result.schema_version)?;
+    out.set_item("population_size", result.population_size)?;
+    out.set_item("expected_proportion", result.expected_proportion)?;
+    out.set_item("confidence_level", result.confidence_level)?;
+    out.set_item("critical_value", result.critical_value)?;
+    out.set_item("margin_of_error", result.margin_of_error)?;
+    out.set_item("uncorrected_sample_size", result.uncorrected_sample_size)?;
+    out.set_item("sample_size", result.sample_size)?;
+    out.set_item(
+        "finite_population_correction",
+        result.finite_population_correction,
+    )?;
+    out.set_item("allocation_method", result.allocation_method.as_str())?;
+    out.set_item("stratum_sample_sizes", result.stratum_sample_sizes)?;
+    Ok(out.into_any().unbind())
+}
+
+#[pyfunction]
 fn residual_interaction_map(
     py: Python<'_>,
     observed: PyReadonlyArray2<'_, f64>,
@@ -9439,6 +9496,11 @@ fn residual_interaction_map(
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
+    m.add(
+        "SAMPLING_DESIGN_SCHEMA_VERSION",
+        SAMPLING_DESIGN_SCHEMA_VERSION,
+    )?;
+    m.add_function(wrap_pyfunction!(finite_population_proportion_design, m)?)?;
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(residual_interaction_map, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;

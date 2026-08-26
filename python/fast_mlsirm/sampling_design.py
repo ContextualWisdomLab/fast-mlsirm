@@ -1,0 +1,123 @@
+"""Versioned Rust-backed finite-population proportion sampling designs."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal
+
+from . import _core
+
+SAMPLING_DESIGN_SCHEMA_VERSION = "fast-mlsirm.sampling-design.v1"
+
+
+@dataclass(frozen=True)
+class SamplingStratum:
+    """One disjoint population stratum with prior- or pilot-derived prevalence."""
+
+    population_size: int
+    expected_proportion: float
+
+
+@dataclass(frozen=True)
+class ProportionSamplingDesign:
+    """Auditable finite-population sample size, FPC, and stratum allocation."""
+
+    schema_version: str
+    population_size: int
+    expected_proportion: float
+    confidence_level: float
+    critical_value: float
+    margin_of_error: float
+    uncorrected_sample_size: float
+    sample_size: int
+    finite_population_correction: float
+    allocation_method: str
+    stratum_sample_sizes: tuple[int, ...]
+
+
+def _exact_positive_integer(name: str, value: object) -> int:
+    """Admit one exact positive built-in integer without coercion callbacks."""
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{name} must be a positive built-in integer")
+    return value
+
+
+def _exact_probability(name: str, value: object) -> float:
+    """Admit one exact built-in finite probability strictly inside the unit interval."""
+    if type(value) not in (int, float):
+        raise ValueError(f"{name} must be a built-in real number")
+    parsed = float(value)
+    if not math.isfinite(parsed) or not 0.0 < parsed < 1.0:
+        raise ValueError(f"{name} must be finite and strictly between zero and one")
+    return parsed
+
+
+def finite_population_proportion_design(
+    population_size: int,
+    confidence_level: float,
+    margin_of_error: float,
+    strata: Sequence[SamplingStratum],
+    *,
+    allocation_method: Literal["proportional", "neyman"],
+) -> ProportionSamplingDesign:
+    """Return the NIST/ABS sampling design computed entirely by the Rust core.
+
+    Each expected proportion must come from declared prior or pilot evidence.
+    The API deliberately has no implicit ``0.5`` or allocation-weight default.
+    """
+    normalized_population_size = _exact_positive_integer(
+        "population_size", population_size
+    )
+    normalized_confidence_level = _exact_probability(
+        "confidence_level", confidence_level
+    )
+    normalized_margin_of_error = _exact_probability(
+        "margin_of_error", margin_of_error
+    )
+    if type(strata) not in (list, tuple) or not strata:
+        raise ValueError("strata must be a non-empty built-in list or tuple")
+    if type(allocation_method) is not str or allocation_method not in (
+        "proportional",
+        "neyman",
+    ):
+        raise ValueError("allocation_method must be proportional or neyman")
+    population_sizes: list[int] = []
+    expected_proportions: list[float] = []
+    for index, stratum in enumerate(strata):
+        if type(stratum) is not SamplingStratum:
+            raise ValueError(f"strata[{index}] must be a SamplingStratum")
+        population_sizes.append(
+            _exact_positive_integer(
+                f"strata[{index}].population_size", stratum.population_size
+            )
+        )
+        expected_proportions.append(
+            _exact_probability(
+                f"strata[{index}].expected_proportion",
+                stratum.expected_proportion,
+            )
+        )
+
+    result = _core.finite_population_proportion_design(
+        normalized_population_size,
+        normalized_confidence_level,
+        normalized_margin_of_error,
+        population_sizes,
+        expected_proportions,
+        allocation_method,
+    )
+    return ProportionSamplingDesign(
+        schema_version=result["schema_version"],
+        population_size=result["population_size"],
+        expected_proportion=result["expected_proportion"],
+        confidence_level=result["confidence_level"],
+        critical_value=result["critical_value"],
+        margin_of_error=result["margin_of_error"],
+        uncorrected_sample_size=result["uncorrected_sample_size"],
+        sample_size=result["sample_size"],
+        finite_population_correction=result["finite_population_correction"],
+        allocation_method=result["allocation_method"],
+        stratum_sample_sizes=tuple(result["stratum_sample_sizes"]),
+    )

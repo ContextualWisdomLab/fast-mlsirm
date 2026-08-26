@@ -151,6 +151,11 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-044** Bifactor model fit shall not imply general or specific-score interpretability. Scoreability evidence shall be reported separately.
 
+**PRD-FR-045** Reusable finite-population proportion sampling designs shall
+expose a versioned Rust-owned sample-size, FPC, and stratified-allocation
+artifact. Prior/pilot proportions, confidence, precision, costs, design effects,
+and response assumptions shall never be invented or hidden in Python.
+
 ### 6.6 Factor retention and rotation
 
 **PRD-FR-050** Factor retention shall be a separate decision from structural model selection.

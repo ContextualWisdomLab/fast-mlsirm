@@ -37,6 +37,8 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0018](0018-angoff-delta-plot-dif.md) | Accepted | Adopt Angoff delta-plot (Magis & Facon threshold) as the small-sample observed-score DIF screen; distinct from MH/logistic/SIBTEST. |
 | [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
 | [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
+| [0021](0021-residual-interaction-map-boundary.md) | Proposed | Rust owns complete-case residual factorization, Gabriel coordinates, and auditable cell decomposition; downstream products retain authorization, persistence, and UI. |
+| [0022](0022-finite-population-proportion-sampling-design.md) | Proposed | Rust owns the versioned NIST proportion sample-size/FPC and ABS proportional/Neyman allocation artifact; every prevalence and policy input is caller evidence. |
 
 ## ADR completeness rule
 
