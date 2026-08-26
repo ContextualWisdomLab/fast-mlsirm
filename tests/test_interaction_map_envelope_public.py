@@ -86,6 +86,27 @@ def test_public_envelope_matches_existing_rust_map_numerics() -> None:
     np.testing.assert_allclose(envelope.cross_share, existing.cross_share, equal_nan=True)
 
 
+def test_public_envelope_recovers_known_rank_one_interaction() -> None:
+    """The public binding preserves Rust rank and reconstruction recovery evidence."""
+    observed = np.array([[2.0, 0.0], [0.0, 2.0]], dtype=np.float64)
+    expected = np.ones((2, 2), dtype=np.float64)
+
+    envelope = residual_interaction_map_envelope(
+        observed,
+        expected,
+        person_ids=["person-a", "person-b"],
+        item_ids=["item-a", "item-b"],
+        axis_count=2,
+    )
+
+    assert envelope.effective_rank == 1
+    np.testing.assert_allclose(envelope.axis_shares, [1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(envelope.reconstruction, observed - expected, atol=1e-12)
+    np.testing.assert_allclose(envelope.unexplained, np.zeros((2, 2)), atol=1e-12)
+    assert envelope.retained_person_ids == ("person-a", "person-b")
+    assert envelope.retained_item_ids == ("item-a", "item-b")
+
+
 def test_public_envelope_preserves_rank_zero_and_deterministic_ties() -> None:
     """A complete zero-residual map exposes rank zero and the declared first-cell tie rule."""
     envelope = residual_interaction_map_envelope(
