@@ -102,6 +102,10 @@ fn map_is_finite(map: &ResidualInteractionMap) -> bool {
         && map.residual.iter().all(|value| value.is_finite())
         && map.distance.iter().all(|value| value.is_finite())
         && map.reconstruction.iter().all(|value| value.is_finite())
+        && map
+            .explained_share
+            .iter()
+            .all(|value| value.map_or(true, |share| share.is_finite()))
         && map.unexplained.iter().all(|value| value.is_finite())
         && map
             .cross_share
