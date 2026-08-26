@@ -34,6 +34,35 @@ def test_oversized_exact_rsm_response_array_fails_before_materialization(monkeyp
         fit_rsm(responses, n_cat=2)
 
 
+def test_one_dimensional_broadcast_fails_before_dense_materialization(monkeypatch):
+    """A large 1-D view fails the public matrix contract before a dense copy."""
+
+    responses = np.broadcast_to(
+        np.array([0], dtype=np.int8),
+        (MAX_RSM_RESPONSE_CELLS,),
+    )
+    monkeypatch.setattr(rsm.np, "asarray", _unexpected_asarray)
+
+    with pytest.raises(
+        ValueError,
+        match=r"responses must be a 2-D persons x items array",
+    ):
+        fit_rsm(responses, n_cat=2)
+
+
+def test_flat_builtin_response_fails_before_dense_materialization(monkeypatch):
+    """A flat built-in carrier fails the matrix contract before NumPy work."""
+
+    responses = [0, 1]
+    monkeypatch.setattr(rsm.np, "asarray", _unexpected_asarray)
+
+    with pytest.raises(
+        ValueError,
+        match=r"responses must be a 2-D persons x items array",
+    ):
+        fit_rsm(responses, n_cat=2)
+
+
 def test_one_item_broadcast_fails_before_dense_materialization(monkeypatch):
     """A structurally impossible one-item view is rejected before a dense copy."""
 
