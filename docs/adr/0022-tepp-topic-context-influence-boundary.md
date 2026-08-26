@@ -16,7 +16,10 @@ arithmetic, not TEPP topic fitting or downstream persistence/UI.
 
 ## Decision
 
-The Rust core admits only the exact TEPP v1 artifact after validating:
+The dedicated Rust `tepp-topic-context-adapter` integration crate admits only
+the exact TEPP v1 artifact after validating. `mlsirm-core` remains
+domain-neutral and does not depend on TEPP wire parsing, UUID, JSON, or time
+libraries. The adapter validates:
 
 - a complete document-by-draw logistic-normal posterior grid;
 - stable topic identities, topic activity and producer-fitted topic lineage;

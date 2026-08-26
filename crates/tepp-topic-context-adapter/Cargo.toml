@@ -1,0 +1,21 @@
+[package]
+name = "tepp-topic-context-adapter"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Fail-closed TEPP topic-context wire adapter for fast-mlsirm."
+homepage = "https://github.com/ContextualWisdomLab/fast-mlsirm"
+repository = "https://github.com/ContextualWisdomLab/fast-mlsirm"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+uuid = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
