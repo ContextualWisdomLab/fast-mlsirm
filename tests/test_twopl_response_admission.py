@@ -120,6 +120,56 @@ def test_fit_2pl_rejects_oversized_logical_matrix_before_dense_work(
     assert core_calls == []
 
 
+def test_fit_2pl_rejects_one_item_ndarray_before_dense_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An impossible one-item experiment is rejected from shape metadata first."""
+
+    core_calls = _install_no_core(monkeypatch)
+    import fast_mlsirm.twopl as twopl
+
+    dense_calls: list[str] = []
+
+    def _unexpected_dense(*_args: object, **_kwargs: object) -> np.ndarray:
+        dense_calls.append("dense")
+        raise AssertionError("dense response conversion executed")
+
+    monkeypatch.setattr(twopl.np, "ascontiguousarray", _unexpected_dense)
+    responses = np.broadcast_to(
+        np.array([[0.0]], dtype=np.float64),
+        (MAX_IRT_RESPONSE_CELLS, 1),
+    )
+
+    with pytest.raises(ValueError, match="at least two item columns"):
+        fit_2pl(responses)
+
+    assert dense_calls == []
+    assert core_calls == []
+
+
+def test_fit_2pl_rejects_builtin_single_item_rows_before_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid built-in row width is rejected before constructing a dense matrix."""
+
+    core_calls = _install_no_core(monkeypatch)
+    import fast_mlsirm.twopl as twopl
+
+    array_calls: list[str] = []
+
+    def _unexpected_array(*_args: object, **_kwargs: object) -> np.ndarray:
+        array_calls.append("array")
+        raise AssertionError("NumPy response materialization executed")
+
+    monkeypatch.setattr(twopl.np, "asarray", _unexpected_array)
+
+    with pytest.raises(ValueError, match="at least two item columns"):
+        fit_2pl([[0.0]] * 10_000)
+
+    assert array_calls == []
+    assert core_calls == []
+
+
 def test_fit_2pl_preserves_trusted_builtin_and_numpy_response_scalars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
