@@ -131,6 +131,18 @@ def test_sampling_resource_bounds_fail_before_rust_dispatch(monkeypatch: pytest.
             allocation_method="proportional",
         )
 
+    with pytest.raises(
+        ValueError,
+        match=r"strata\[0\]\.population_size must be between 1 and 2\^53",
+    ):
+        finite_population_proportion_design(
+            100,
+            0.95,
+            0.1,
+            [SamplingStratum((1 << 53) + 1, 0.5)],
+            allocation_method="proportional",
+        )
+
     oversized_strata = [SamplingStratum(1, 0.5)] * 100_001
     with pytest.raises(ValueError, match="strata must contain between 1 and 100000 entries"):
         finite_population_proportion_design(
@@ -142,6 +154,29 @@ def test_sampling_resource_bounds_fail_before_rust_dispatch(monkeypatch: pytest.
         )
 
     assert core_calls == 0
+
+
+def test_sampling_schema_mismatch_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A foreign Rust result schema is rejected before result marshalling."""
+    assert (
+        sampling_design_module.SAMPLING_DESIGN_SCHEMA_VERSION
+        == sampling_design_module._core.SAMPLING_DESIGN_SCHEMA_VERSION
+    )
+
+    monkeypatch.setattr(
+        sampling_design_module._core,
+        "finite_population_proportion_design",
+        lambda *args, **kwargs: {"schema_version": "fast-mlsirm.sampling-design.v2"},
+    )
+
+    with pytest.raises(ValueError, match="unsupported sampling-design schema version"):
+        finite_population_proportion_design(
+            100,
+            0.95,
+            0.1,
+            [SamplingStratum(100, 0.5)],
+            allocation_method="proportional",
+        )
 
 
 def test_giant_integer_probability_fails_with_package_value_error() -> None:
