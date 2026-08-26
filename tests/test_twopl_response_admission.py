@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from fast_mlsirm.irt_contract import MAX_IRT_RESPONSE_CELLS
 from fast_mlsirm.twopl import fit_2pl
 
 
@@ -97,6 +98,23 @@ def test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_res
     responses = np.array([[0, widened], [1, 0]], dtype=np.longdouble)
 
     with pytest.raises(ValueError, match="integer category"):
+        fit_2pl(responses)
+
+    assert core_calls == []
+
+
+def test_fit_2pl_rejects_oversized_logical_matrix_before_dense_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A small-backed broadcast view is bounded by logical cells before scanning/copying."""
+
+    core_calls = _install_no_core(monkeypatch)
+    responses = np.broadcast_to(
+        np.array([[0.0]], dtype=np.float64),
+        (MAX_IRT_RESPONSE_CELLS + 1, 1),
+    )
+
+    with pytest.raises(ValueError, match="at most 20,000,000 cells"):
         fit_2pl(responses)
 
     assert core_calls == []
