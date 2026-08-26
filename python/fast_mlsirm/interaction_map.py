@@ -48,6 +48,7 @@ class ResidualInteractionMap:
     residual: np.ndarray
     distance: np.ndarray
     reconstruction: np.ndarray
+    explained_share: np.ndarray
     unexplained: np.ndarray
     cross_share: np.ndarray
 
@@ -270,6 +271,10 @@ def residual_interaction_map(
         reconstruction=np.asarray(raw["reconstruction"], dtype=np.float64).reshape(
             rows, columns
         ),
+        explained_share=np.asarray(
+            [np.nan if value is None else value for value in raw["explained_share"]],
+            dtype=np.float64,
+        ).reshape(rows, columns),
         unexplained=np.asarray(raw["unexplained"], dtype=np.float64).reshape(
             rows, columns
         ),

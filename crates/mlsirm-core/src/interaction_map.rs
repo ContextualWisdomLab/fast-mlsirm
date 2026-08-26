@@ -58,6 +58,7 @@ pub struct ResidualInteractionMap {
     pub residual: Vec<f64>,
     pub distance: Vec<f64>,
     pub reconstruction: Vec<f64>,
+    pub explained_share: Vec<Option<f64>>,
     pub unexplained: Vec<f64>,
     pub cross_share: Vec<Option<f64>>,
     pub axis_count: usize,
@@ -137,6 +138,7 @@ pub fn residual_interaction_map(
             residual: Vec::new(),
             distance: Vec::new(),
             reconstruction: Vec::new(),
+            explained_share: Vec::new(),
             unexplained: Vec::new(),
             cross_share: Vec::new(),
             axis_count,
@@ -200,6 +202,7 @@ pub fn residual_interaction_map(
         })
         .collect();
     let mut reconstruction = Vec::with_capacity(rows * columns);
+    let mut explained_share = Vec::with_capacity(rows * columns);
     let mut distance = Vec::with_capacity(rows * columns);
     let mut unexplained = Vec::with_capacity(rows * columns);
     let mut cross_share = Vec::with_capacity(rows * columns);
@@ -223,6 +226,13 @@ pub fn residual_interaction_map(
                 .sum::<f64>();
             let raw = residual[person * columns + item];
             let remainder = raw - fitted;
+            let explained = if raw.abs() > SINGULAR_FLOOR {
+                Some(fitted * fitted / (raw * raw))
+            } else if fitted.abs() <= SINGULAR_FLOOR {
+                Some(0.0)
+            } else {
+                None
+            };
             let share = if raw.abs() > SINGULAR_FLOOR {
                 Some(2.0 * fitted * remainder / (raw * raw))
             } else if fitted.abs() <= SINGULAR_FLOOR && remainder.abs() <= SINGULAR_FLOOR {
@@ -231,6 +241,7 @@ pub fn residual_interaction_map(
                 None
             };
             reconstruction.push(fitted);
+            explained_share.push(explained.filter(|value| value.is_finite()));
             unexplained.push(remainder);
             cross_share.push(share.filter(|value| value.is_finite()));
         }
@@ -248,6 +259,7 @@ pub fn residual_interaction_map(
         residual,
         distance,
         reconstruction,
+        explained_share,
         unexplained,
         cross_share,
         axis_count,
@@ -308,9 +320,17 @@ mod tests {
         assert!(map.person_coordinates.is_empty());
         assert!(map.item_coordinates.is_empty());
         assert!(map.reconstruction.is_empty());
+        assert!(map.explained_share.is_empty());
         assert!(map.unexplained.is_empty());
         assert!(map.cross_share.is_empty());
         assert_eq!(map.axis_shares, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn reports_cellwise_squared_reconstruction_share() {
+        let map = residual_interaction_map(&[2.0, 0.0, 0.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
+            .unwrap();
+        assert_eq!(map.explained_share, vec![Some(1.0); 4]);
     }
 
     #[test]

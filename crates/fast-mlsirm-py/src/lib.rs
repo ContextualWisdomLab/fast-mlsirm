@@ -9429,6 +9429,7 @@ fn residual_interaction_map(
     out.set_item("residual", result.residual)?;
     out.set_item("distance", result.distance)?;
     out.set_item("reconstruction", result.reconstruction)?;
+    out.set_item("explained_share", result.explained_share)?;
     out.set_item("unexplained", result.unexplained)?;
     out.set_item("cross_share", result.cross_share)?;
     out.set_item("axis_count", result.axis_count)?;

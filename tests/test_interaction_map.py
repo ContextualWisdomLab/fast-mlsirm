@@ -38,6 +38,7 @@ def _fake_map_payload(axis_count: int) -> dict[str, object]:
         "residual": [1.0],
         "distance": [0.0],
         "reconstruction": [1.0],
+        "explained_share": [1.0],
         "unexplained": [0.0],
         "cross_share": [0.0],
         "axis_count": axis_count,
@@ -57,6 +58,7 @@ def test_residual_interaction_map_preserves_rank_one_reconstruction() -> None:
     assert np.all(result.distance >= 0.0)
     np.testing.assert_allclose(result.axis_shares, [1.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(result.unexplained, 0.0, atol=1e-12)
+    np.testing.assert_allclose(result.explained_share, 1.0, atol=1e-12)
     np.testing.assert_allclose(result.cross_share, 0.0, atol=1e-12)
 
 
@@ -85,6 +87,7 @@ def test_no_complete_respondent_returns_shape_consistent_empty_map() -> None:
     assert result.residual.shape == (0, 0)
     assert result.distance.shape == (0, 0)
     assert result.reconstruction.shape == (0, 0)
+    assert result.explained_share.shape == (0, 0)
     assert result.unexplained.shape == (0, 0)
     assert result.cross_share.shape == (0, 0)
     np.testing.assert_array_equal(result.axis_shares, [0.0, 0.0])
