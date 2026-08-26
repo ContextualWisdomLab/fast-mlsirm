@@ -61,10 +61,10 @@ def test_sampling_artifact_replay_has_stable_content_identity() -> None:
 
     assert replay == first
     assert first.input_sha256 == (
-        "c4c9a1dd09b3bd59fc14e4ac2824cd8a2169b3c94f5a5080bacfd2e5a964d786"
+        "b42d91dffeb48a50e3a133d7492f4ba90b42c806a2238b7c292f5ab0c52c9290"
     )
     assert first.output_sha256 == (
-        "0729aeadbb08fe0cf1c0231841453516557dd85db9146f1be5ce87e35e225cda"
+        "4ee75c38735aeb19907f4d0cc2bb7a45add698238c132529a8c85226f528dbb4"
     )
 
 
