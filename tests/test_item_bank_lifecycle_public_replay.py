@@ -7,7 +7,11 @@ import runpy
 
 import pytest
 
-from fast_mlsirm.rubric.item_bank import ItemBankLifecycleError
+from fast_mlsirm.rubric.item_bank import (
+    ItemBankLifecycleError,
+    ItemBankLifecycleRecord,
+)
+from fast_mlsirm.rubric.models import _sha256_hex
 
 
 _LIFECYCLE_FIXTURES = runpy.run_path(
@@ -33,6 +37,24 @@ def test_record_fingerprint_replays_creation_time_identity() -> None:
     assert caught.value.code == "lifecycle_record_replay_mismatch"
     assert caught.value.path == "$.current_record"
     assert original_fingerprint not in str(caught.value)
+
+
+def test_replay_rejects_coherent_content_and_fingerprint_rebinding() -> None:
+    """Rebinding both content and its digest cannot forge creation-time authority."""
+    record = _calibrated_record()
+
+    object.__setattr__(record, "transition_reason_id", "forged_reason")
+    forged_fingerprint = _sha256_hex(ItemBankLifecycleRecord._content_dict(record))
+    object.__setattr__(record, "_record_fingerprint", forged_fingerprint)
+
+    with pytest.raises(ItemBankLifecycleError) as fingerprint_error:
+        _ = record.record_fingerprint
+    with pytest.raises(ItemBankLifecycleError) as serialization_error:
+        record.to_dict()
+
+    for caught in (fingerprint_error, serialization_error):
+        assert caught.value.code == "lifecycle_record_replay_mismatch"
+        assert caught.value.path == "$.current_record"
 
 
 def test_to_dict_rejects_callback_bearing_mutation_before_iteration() -> None:
