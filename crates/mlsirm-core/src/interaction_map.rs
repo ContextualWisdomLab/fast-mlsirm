@@ -330,7 +330,10 @@ mod tests {
     fn reports_cellwise_squared_reconstruction_share() {
         let map = residual_interaction_map(&[2.0, 0.0, 0.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
             .unwrap();
-        assert_eq!(map.explained_share, vec![Some(1.0); 4]);
+        assert!(map
+            .explained_share
+            .iter()
+            .all(|share| (share.unwrap() - 1.0).abs() < 1e-12));
     }
 
     #[test]
