@@ -151,16 +151,39 @@ class ValidationEvidenceReference:
             _bounded_identifiers(self.limitation_ids, "limitation_ids"),
         )
 
+    def _validated_content(self) -> dict[str, Any]:
+        """Replay evidence invariants before granting public serialization authority."""
+        if type(self) is not ValidationEvidenceReference:
+            raise ValueError("evidence reference must be exact ValidationEvidenceReference")
+        evidence_id = _identifier(self.evidence_id, "evidence_id")
+        artifact_fingerprint = _fingerprint(
+            self.artifact_fingerprint,
+            "artifact_fingerprint",
+        )
+        evidence_class = _enum_value(
+            self.evidence_class,
+            ValidationEvidenceClass,
+            "evidence_class",
+        )
+        status = _enum_value(
+            self.status,
+            ValidationEvidenceStatus,
+            "status",
+        )
+        available_time = _utc_datetime(self.available_time, "available_time")
+        limitation_ids = _bounded_identifiers(self.limitation_ids, "limitation_ids")
+        return {
+            "evidence_id": evidence_id,
+            "artifact_fingerprint": artifact_fingerprint,
+            "evidence_class": evidence_class.value,
+            "status": status.value,
+            "available_time": _timestamp_text(available_time),
+            "limitation_ids": list(limitation_ids),
+        }
+
     def to_dict(self) -> dict[str, Any]:
         """Return deterministic JSON-compatible evidence metadata."""
-        return {
-            "evidence_id": self.evidence_id,
-            "artifact_fingerprint": self.artifact_fingerprint,
-            "evidence_class": self.evidence_class.value,
-            "status": self.status.value,
-            "available_time": _timestamp_text(self.available_time),
-            "limitation_ids": list(self.limitation_ids),
-        }
+        return self._validated_content()
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,10 +241,11 @@ class ValidationProfile:
                 raise ValueError(
                     "evidence_references must contain exact ValidationEvidenceReference values"
                 )
-            previous = seen_ids.get(reference.evidence_id)
-            if previous is not None:
+            content = reference._validated_content()
+            evidence_id = content["evidence_id"]
+            if evidence_id in seen_ids:
                 raise ValueError("evidence_id must be unique within a validation profile")
-            seen_ids[reference.evidence_id] = reference.artifact_fingerprint
+            seen_ids[evidence_id] = content["artifact_fingerprint"]
             if reference.available_time > cutoff:
                 raise ValueError("available_time must not exceed analysis_cutoff")
             normalized.append(reference)
@@ -232,36 +256,91 @@ class ValidationProfile:
             tuple(sorted(normalized, key=lambda reference: reference.evidence_id)),
         )
 
-    def _content_dict(self) -> dict[str, Any]:
-        """Return canonical source-free content without the derived profile digest."""
-        return {
-            "validation_profile_id": self.validation_profile_id,
-            "protocol_fingerprint": self.protocol_fingerprint,
-            "assessment_fingerprint": self.assessment_fingerprint,
-            "rubric_fingerprint": self.rubric_fingerprint,
-            "item_bank_fingerprint": self.item_bank_fingerprint,
-            "model_fingerprint": self.model_fingerprint,
-            "intended_construct": self.intended_construct,
-            "score_interpretation": self.score_interpretation,
-            "population": self.population,
-            "setting": self.setting,
-            "decision_use": self.decision_use,
-            "analysis_cutoff": _timestamp_text(self.analysis_cutoff),
-            "evidence_references": [
-                reference.to_dict() for reference in self.evidence_references
-            ],
+    def _validated_content(self) -> dict[str, Any]:
+        """Replay profile and nested-evidence invariants before public identity use."""
+        if type(self) is not ValidationProfile:
+            raise ValueError("validation profile must be exact ValidationProfile")
+
+        scalar_values = {
+            name: _identifier(getattr(self, name), name)
+            for name in (
+                "validation_profile_id",
+                "intended_construct",
+                "score_interpretation",
+                "population",
+                "setting",
+                "decision_use",
+            )
         }
+        fingerprint_values = {
+            name: _fingerprint(getattr(self, name), name)
+            for name in (
+                "protocol_fingerprint",
+                "assessment_fingerprint",
+                "rubric_fingerprint",
+                "item_bank_fingerprint",
+                "model_fingerprint",
+            )
+        }
+        cutoff = _utc_datetime(self.analysis_cutoff, "analysis_cutoff")
+
+        raw = self.evidence_references
+        if type(raw) not in {list, tuple}:
+            raise ValueError("evidence_references must be an exact list or tuple")
+        if len(raw) > MAX_VALIDATION_EVIDENCE:
+            raise ValueError(
+                f"evidence_references exceeds maximum {MAX_VALIDATION_EVIDENCE}"
+            )
+
+        evidence_payloads: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for reference in raw:
+            if type(reference) is not ValidationEvidenceReference:
+                raise ValueError(
+                    "evidence_references must contain exact ValidationEvidenceReference values"
+                )
+            payload = reference._validated_content()
+            evidence_id = payload["evidence_id"]
+            if evidence_id in seen_ids:
+                raise ValueError("evidence_id must be unique within a validation profile")
+            seen_ids.add(evidence_id)
+            available_time = _utc_datetime(reference.available_time, "available_time")
+            if available_time > cutoff:
+                raise ValueError("available_time must not exceed analysis_cutoff")
+            evidence_payloads.append(payload)
+
+        evidence_payloads.sort(key=lambda payload: payload["evidence_id"])
+        return {
+            "validation_profile_id": scalar_values["validation_profile_id"],
+            "protocol_fingerprint": fingerprint_values["protocol_fingerprint"],
+            "assessment_fingerprint": fingerprint_values["assessment_fingerprint"],
+            "rubric_fingerprint": fingerprint_values["rubric_fingerprint"],
+            "item_bank_fingerprint": fingerprint_values["item_bank_fingerprint"],
+            "model_fingerprint": fingerprint_values["model_fingerprint"],
+            "intended_construct": scalar_values["intended_construct"],
+            "score_interpretation": scalar_values["score_interpretation"],
+            "population": scalar_values["population"],
+            "setting": scalar_values["setting"],
+            "decision_use": scalar_values["decision_use"],
+            "analysis_cutoff": _timestamp_text(cutoff),
+            "evidence_references": evidence_payloads,
+        }
+
+    def _content_dict(self) -> dict[str, Any]:
+        """Return replay-validated source-free content without the derived digest."""
+        return self._validated_content()
 
     @property
     def profile_fingerprint(self) -> str:
         """Return the deterministic SHA-256 identity of canonical profile content."""
-        return _canonical_sha256(self._content_dict())
+        return _canonical_sha256(self._validated_content())
 
     def to_dict(self) -> dict[str, Any]:
         """Return canonical JSON-compatible profile content and its fingerprint."""
+        content = self._validated_content()
         return {
-            **self._content_dict(),
-            "profile_fingerprint": self.profile_fingerprint,
+            **content,
+            "profile_fingerprint": _canonical_sha256(content),
         }
 
 
