@@ -86,6 +86,97 @@ def test_public_envelope_matches_existing_rust_map_numerics() -> None:
     np.testing.assert_allclose(envelope.cross_share, existing.cross_share, equal_nan=True)
 
 
+def test_public_envelope_preserves_rank_zero_and_deterministic_ties() -> None:
+    """A complete zero-residual map exposes rank zero and the declared first-cell tie rule."""
+    envelope = residual_interaction_map_envelope(
+        np.ones((2, 2), dtype=np.float64),
+        np.ones((2, 2), dtype=np.float64),
+        person_ids=["person-a", "person-b"],
+        item_ids=["item-a", "item-b"],
+        axis_count=2,
+    )
+
+    assert envelope.effective_rank == 0
+    assert envelope.closest_cell == (0, 0)
+    assert envelope.farthest_cell == (0, 0)
+    assert envelope.closest_cell_ids == ("person-a", "item-a")
+    assert envelope.farthest_cell_ids == ("person-a", "item-a")
+    np.testing.assert_array_equal(envelope.distance, np.zeros((2, 2)))
+    np.testing.assert_array_equal(envelope.axis_shares, np.zeros(2))
+
+
+def test_public_envelope_preserves_empty_complete_case_contract() -> None:
+    """Missingness may remove the complete-case rectangle without inventing map cells."""
+    envelope = residual_interaction_map_envelope(
+        np.array([[1.0, np.nan], [np.nan, 1.0]], dtype=np.float64),
+        np.zeros((2, 2), dtype=np.float64),
+        person_ids=["person-a", "person-b"],
+        item_ids=["item-a", "item-b"],
+        axis_count=2,
+    )
+
+    assert envelope.effective_rank == 0
+    assert envelope.map_person_count == 0
+    assert envelope.map_item_count == 0
+    assert envelope.retained_person_ids == ()
+    assert envelope.retained_item_ids == ()
+    assert envelope.closest_cell is None
+    assert envelope.farthest_cell is None
+    assert envelope.closest_cell_ids is None
+    assert envelope.farthest_cell_ids is None
+    assert envelope.person_coordinates.shape == (0, 2)
+    assert envelope.item_coordinates.shape == (0, 2)
+    assert envelope.distance.shape == (0, 0)
+
+
+def test_public_envelope_rejects_nonfinite_expected_and_infinite_observed() -> None:
+    """Only observed NaN is missing; expected evidence must remain finite."""
+    person_ids = ["person-a"]
+    item_ids = ["item-a"]
+
+    with pytest.raises(ValueError, match="infinite"):
+        residual_interaction_map_envelope(
+            np.array([[np.inf]], dtype=np.float64),
+            np.array([[0.0]], dtype=np.float64),
+            person_ids=person_ids,
+            item_ids=item_ids,
+            axis_count=1,
+        )
+
+    with pytest.raises(ValueError, match="NaN"):
+        residual_interaction_map_envelope(
+            np.array([[1.0]], dtype=np.float64),
+            np.array([[np.nan]], dtype=np.float64),
+            person_ids=person_ids,
+            item_ids=item_ids,
+            axis_count=1,
+        )
+
+
+def test_public_envelope_rejects_duplicate_and_mismatched_identifier_sets() -> None:
+    """Opaque identity sets must match the matrix axes and remain unique."""
+    observed = np.ones((2, 2), dtype=np.float64)
+    expected = np.ones((2, 2), dtype=np.float64)
+
+    with pytest.raises(ValueError, match="duplicate person identifier"):
+        residual_interaction_map_envelope(
+            observed,
+            expected,
+            person_ids=["person-a", "person-a"],
+            item_ids=["item-a", "item-b"],
+            axis_count=1,
+        )
+
+    with pytest.raises(ValueError, match="item identifier count"):
+        residual_interaction_map_envelope(
+            observed,
+            expected,
+            person_ids=["person-a", "person-b"],
+            item_ids=["item-a"],
+            axis_count=1,
+        )
+
+
 def test_schema_and_identifier_carriers_fail_before_caller_matrix_protocols() -> None:
     """Public controls and opaque IDs are sealed before any caller array protocol can execute."""
     hostile = _HostileArrayProvider()
