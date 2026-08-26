@@ -181,6 +181,79 @@ def test_sampling_schema_mismatch_fails_closed(monkeypatch: pytest.MonkeyPatch) 
         )
 
 
+def test_sampling_algorithm_mismatch_fails_before_payload_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A same-schema result from a foreign Rust algorithm fails closed immediately."""
+    monkeypatch.setattr(
+        sampling_design_module._core,
+        "finite_population_proportion_design",
+        lambda *args, **kwargs: {
+            "schema_version": sampling_design_module.SAMPLING_DESIGN_SCHEMA_VERSION,
+            "algorithm_version": "1.0.0",
+        },
+    )
+
+    with pytest.raises(ValueError, match="unsupported sampling-design algorithm version"):
+        finite_population_proportion_design(
+            100,
+            0.95,
+            0.1,
+            [SamplingStratum(100, 0.5)],
+            allocation_method="proportional",
+        )
+
+
+def test_sampling_inclusion_ratio_contract_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed or inconsistent Rust ratio evidence cannot reach public marshalling."""
+    real_core = sampling_design_module._core.finite_population_proportion_design
+    raw_result = dict(
+        real_core(
+            100,
+            0.95,
+            0.1,
+            [60, 40],
+            [0.1, 0.5],
+            "neyman",
+        )
+    )
+
+    invalid_results: list[dict[str, object]] = []
+
+    missing = dict(raw_result)
+    missing.pop("stratum_inclusion_probability_ratios")
+    invalid_results.append(missing)
+
+    malformed = dict(raw_result)
+    malformed["stratum_inclusion_probability_ratios"] = [object(), (23, 40)]
+    invalid_results.append(malformed)
+
+    wrong_count = dict(raw_result)
+    wrong_count["stratum_inclusion_probability_ratios"] = [(20, 60)]
+    invalid_results.append(wrong_count)
+
+    inconsistent = dict(raw_result)
+    inconsistent["stratum_inclusion_probability_ratios"] = [(21, 60), (22, 40)]
+    invalid_results.append(inconsistent)
+
+    for invalid_result in invalid_results:
+        monkeypatch.setattr(
+            sampling_design_module._core,
+            "finite_population_proportion_design",
+            lambda *args, _result=invalid_result, **kwargs: _result,
+        )
+        with pytest.raises(ValueError, match="invalid sampling-design inclusion ratios"):
+            finite_population_proportion_design(
+                100,
+                0.95,
+                0.1,
+                [SamplingStratum(60, 0.1), SamplingStratum(40, 0.5)],
+                allocation_method="neyman",
+            )
+
+
 def test_giant_integer_probability_fails_with_package_value_error() -> None:
     """Strict probability controls do not overflow through unnecessary float coercion."""
     with pytest.raises(ValueError, match="confidence_level must be finite"):
