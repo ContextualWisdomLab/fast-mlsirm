@@ -1,6 +1,8 @@
 //! Python binding for the versioned Rust residual interaction-map envelope.
 
-use mlsirm_core::interaction_map_envelope::residual_interaction_map_envelope as core_residual_interaction_map_envelope;
+use mlsirm_core::interaction_map_envelope::{
+    residual_interaction_map_envelope as core_residual_interaction_map_envelope,
+};
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
