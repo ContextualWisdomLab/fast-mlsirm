@@ -807,12 +807,18 @@ def _rust_optimize(
         from . import _core as core
     except Exception as exc:  # pragma: no cover - import path exercised in CI
         raise RuntimeError(
-            "Rust backend requested but fast_mlsirm._core is unavailable"
+            "Rust backend requested but fast_mlsirm._core is unavailable; "
+            "install a wheel or editable build of this package that provides "
+            "the compiled Rust extension, or rerun through the explicit NumPy "
+            "reference path (fast_mlsirm.fit_reference, or --reference on the CLI)"
         ) from exc
     optimize = getattr(core, "jmle_optimize", None)
     if optimize is None:
         raise RuntimeError(
-            "Rust backend requested but core.jmle_optimize is unavailable"
+            "Rust backend requested but core.jmle_optimize is unavailable; "
+            "reinstall this package so the compiled extension matches the "
+            "installed Python package, or rerun through the explicit NumPy "
+            "reference path"
         )
 
     def _py_objective(x_arr: object) -> tuple[float, list[float], float]:

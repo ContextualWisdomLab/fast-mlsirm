@@ -61,7 +61,7 @@ def test_projection_rejects_callback_bearing_score_mapping_before_iteration() ->
     hostile = _HostileMapping()
     spec = validate_judge_construct(CRITERIA, n_categories=4)
 
-    with pytest.raises(JudgeFormatError, match="criterion_scores must be an exact built-in dict"):
+    with pytest.raises(JudgeFormatError, match="criterion_scores must be a plain dict keyed by criterion id"):
         project_judge_results_to_matrix(
             [_result(criterion_scores=hostile)],
             spec,
@@ -77,7 +77,7 @@ def test_projection_rejects_callback_bearing_category_mapping_before_iteration()
     scores = {criterion_id: 0.5 for criterion_id in CRITERIA}
     spec = validate_judge_construct(CRITERIA, n_categories=4)
 
-    with pytest.raises(JudgeFormatError, match="criterion_categories must be an exact built-in dict"):
+    with pytest.raises(JudgeFormatError, match="criterion_categories must be a plain dict keyed by criterion id"):
         project_judge_results_to_matrix(
             [
                 _result(
