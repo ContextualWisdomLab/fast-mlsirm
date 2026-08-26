@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contextualwisdomlab.github.io/fast-mlsirm/contracts/tepp-lineage-pair-criterion-posterior-v2.schema.json",
+  "title": "TEPP independent Event Lineage pair criterion posterior v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "estimation_run_id", "tepp_run_id", "source_snapshot_sha256", "knowledge_cutoff", "channel_codes", "admitted_pair_ids", "anchor_basis", "temporal_provenance", "draw_provenance", "pair_posteriors", "compute_receipts"],
+  "properties": {
+    "schema_version": {"const": "tepp.lineage_pair_criterion_posterior.v2"},
+    "estimation_run_id": {"type": "string", "format": "uuid"},
+    "tepp_run_id": {"type": "string", "format": "uuid"},
+    "source_snapshot_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "knowledge_cutoff": {"type": "string", "format": "date-time"},
+    "channel_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "admitted_pair_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "anchor_basis": {"type": "object", "additionalProperties": false, "required": ["basis_id", "basis_sha256", "alignment_status", "tie_count"], "properties": {"basis_id": {"type": "string", "format": "uuid"}, "basis_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "alignment_status": {"const": "unique"}, "tie_count": {"const": 0}}},
+    "temporal_provenance": {"type": "object", "additionalProperties": false, "required": ["method_code", "configuration_sha256", "event_clock_code", "temporal_dependency_sha256", "branch_transition_sha256"], "properties": {"method_code": {"enum": ["TDT", "CHRONOS", "TDT_CHRONOS_JOINT"]}, "configuration_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "event_clock_code": {"type": "string", "minLength": 1}, "temporal_dependency_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "branch_transition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "draw_provenance": {"type": "object", "additionalProperties": false, "required": ["seed_domain", "draw_count"], "properties": {"seed_domain": {"type": "string", "minLength": 1}, "draw_count": {"type": "integer", "minimum": 2}}},
+    "pair_posteriors": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["pair_id", "predecessor_record_id", "successor_record_id", "predecessor_record_created_at", "predecessor_available_at", "successor_record_created_at", "successor_available_at", "predecessor_event_time_draws", "successor_event_time_draws", "criterion_draws"], "properties": {"pair_id": {"type": "string", "format": "uuid"}, "predecessor_record_id": {"type": "string", "minLength": 1}, "successor_record_id": {"type": "string", "minLength": 1}, "predecessor_record_created_at": {"type": "string", "format": "date-time"}, "predecessor_available_at": {"type": "string", "format": "date-time"}, "successor_record_created_at": {"type": "string", "format": "date-time"}, "successor_available_at": {"type": "string", "format": "date-time"}, "predecessor_event_time_draws": {"type": "array", "minItems": 2, "items": {"type": "string", "format": "date-time"}}, "successor_event_time_draws": {"type": "array", "minItems": 2, "items": {"type": "string", "format": "date-time"}}, "criterion_draws": {"type": "array", "minItems": 2, "items": {"type": "number", "minimum": 0, "maximum": 1}}}}},
+    "compute_receipts": {"type": "object", "additionalProperties": false, "required": ["cpu", "gpu", "parity_method_code", "parity_bound"], "properties": {"cpu": {"$ref": "#/$defs/computeReceipt"}, "gpu": {"$ref": "#/$defs/computeReceipt"}, "parity_method_code": {"type": "string", "minLength": 1}, "parity_bound": {"type": "number", "exclusiveMinimum": 0}}}
+  },
+  "$defs": {
+    "computeReceipt": {"type": "object", "additionalProperties": false, "required": ["backend_code", "execution_environment_code", "objective_sha256", "parameter_sha256", "draw_sha256", "observed_maximum_difference"], "properties": {"backend_code": {"enum": ["rust_cpu", "mlx_metal_macos_native", "mlx_cpu", "mlx_cuda", "rust_opencl"]}, "execution_environment_code": {"enum": ["macos_native", "linux_container"]}, "objective_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "parameter_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "draw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "observed_maximum_difference": {"type": "number", "minimum": 0}}}
+  }
+}
