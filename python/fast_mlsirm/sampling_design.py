@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -146,7 +145,7 @@ def finite_population_proportion_design(
     population_size: int,
     confidence_level: float,
     margin_of_error: float,
-    strata: Sequence[SamplingStratum],
+    strata: list[SamplingStratum] | tuple[SamplingStratum, ...],
     *,
     allocation_method: Literal["proportional", "neyman"],
 ) -> ProportionSamplingDesign:
