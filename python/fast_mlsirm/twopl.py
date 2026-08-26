@@ -15,7 +15,7 @@ import numpy as np
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
-from .irt_contract import MAX_IRT_RESPONSE_CELLS, validate_irt_response_matrix
+from .irt_contract import MAX_IRT_RESPONSE_CELLS, MIN_IRT_ITEMS, validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
@@ -135,6 +135,16 @@ def _response_scalar(value: object) -> float:
     raise ValueError("responses must be a real numeric matrix")
 
 
+def _require_minimum_item_count(n_items: int) -> None:
+    """Replay the shared IRT minimum-item contract before dense response work."""
+
+    if n_items < MIN_IRT_ITEMS:
+        raise ValueError(
+            "IRT responses must contain at least two item columns; "
+            "a scalar or one-item result is not an IRT experiment"
+        )
+
+
 def _trusted_response_matrix(responses: object) -> np.ndarray:
     """Admit dichotomous response evidence before any lossy NumPy coercion."""
 
@@ -146,6 +156,7 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
             raise ValueError(
                 f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
             )
+        _require_minimum_item_count(int(source.shape[1]))
         if source.dtype.kind == "c":
             raise ValueError("responses must be real-valued")
         if source.dtype.kind not in {"b", "i", "u", "f"}:
@@ -180,6 +191,7 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
             row_size = int(row.size)
+            _require_minimum_item_count(row_size)
             logical_cells += row_size
             if logical_cells > MAX_IRT_RESPONSE_CELLS:
                 raise ValueError(
@@ -187,7 +199,9 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
                 )
             row_values = [_response_scalar(value) for value in row]
         elif type(row) in (list, tuple):
-            logical_cells += len(row)
+            row_size = len(row)
+            _require_minimum_item_count(row_size)
+            logical_cells += row_size
             if logical_cells > MAX_IRT_RESPONSE_CELLS:
                 raise ValueError(
                     f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
