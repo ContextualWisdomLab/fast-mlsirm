@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import pytest
 
@@ -206,6 +206,30 @@ def test_timestamps_must_be_exact_offset_aware_datetimes() -> None:
             "subclass_time",
             available_time=HostileDatetime(2026, 8, 20, tzinfo=timezone.utc),
         )
+
+
+def test_callback_bearing_timezone_fails_before_offset_protocol() -> None:
+    """A caller tzinfo provider cannot execute while validation chronology is sealed."""
+    callbacks = 0
+
+    class HostileTimezone(tzinfo):
+        def utcoffset(self, dt):
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller timezone offset must not execute")
+
+        def dst(self, dt):
+            return timedelta(0)
+
+        def tzname(self, dt):
+            return "hostile"
+
+    value = datetime(2026, 8, 20, tzinfo=HostileTimezone())
+
+    with pytest.raises(ValueError, match="available_time must use datetime.timezone"):
+        _evidence("hostile_timezone", available_time=value)
+
+    assert callbacks == 0
 
 
 def test_evidence_collection_limit_is_checked_before_member_validation() -> None:
