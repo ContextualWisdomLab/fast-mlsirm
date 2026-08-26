@@ -482,7 +482,11 @@ def score_respondents(
             for code, value in resp.items():
                 j = code_to_col.get(code)
                 if j is None:
-                    raise ValueError(f"unknown item code {code!r}")
+                    raise ValueError(
+                        f"unknown item code {code!r}; use item codes that "
+                        "appear in the serving bundle's items list when "
+                        "preparing responses"
+                    )
                 y[r, j] = float(bool(value)) if isinstance(value, bool) else float(value)
     else:
         y = np.asarray(responses, dtype=float)
@@ -763,7 +767,10 @@ def cat_next_item(
     for code, value in responses_so_far.items():
         j = code_to_col.get(code)
         if j is None:
-            raise ValueError(f"unknown item code {code!r}")
+            raise ValueError(
+                f"unknown item code {code!r}; use item codes that appear "
+                "in the serving bundle's items list when preparing responses"
+            )
         response = float(bool(value)) if isinstance(value, bool) else float(value)
         if not np.isfinite(response) or response not in (0.0, 1.0):
             raise ValueError("administered responses must be 0 or 1")
@@ -885,7 +892,11 @@ def plausible_values(
             for code, value in resp.items():
                 j = code_to_col.get(code)
                 if j is None:
-                    raise ValueError(f"unknown item code {code!r}")
+                    raise ValueError(
+                        f"unknown item code {code!r}; use item codes that "
+                        "appear in the serving bundle's items list when "
+                        "preparing responses"
+                    )
                 y[r, j] = float(bool(value)) if isinstance(value, bool) else float(value)
     else:
         y = np.asarray(responses, dtype=float)

@@ -398,7 +398,11 @@ def project_judge_results_to_matrix(
         if type(result) is not LLMJudgeResult:
             raise TypeError("results must contain LLMJudgeResult values")
         if type(result.criterion_scores) is not dict:
-            raise JudgeFormatError("criterion_scores must be an exact built-in dict")
+            raise JudgeFormatError(
+                "criterion_scores must be a plain dict keyed by criterion id; "
+                "rebuild each result with dict(result.criterion_scores) before "
+                "projecting"
+            )
         if set(result.criterion_scores) != expected_ids:
             raise JudgeFormatError(
                 "result criterion set does not match the validated construct spec"
