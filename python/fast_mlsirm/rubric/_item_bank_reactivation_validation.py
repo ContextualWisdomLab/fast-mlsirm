@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Iterable
 from typing import Any
-import weakref
 
 from . import item_bank as _base
 
@@ -31,15 +31,10 @@ def _seal_record(record: _base.ItemBankLifecycleRecord) -> None:
     """Bind one factory-created object identity to its creation-time fingerprint."""
     record_key = id(record)
     fingerprint = vars(record)["_record_fingerprint"]
-
-    def forget(
-        reference: weakref.ReferenceType[_base.ItemBankLifecycleRecord],
-        *,
-        key: int = record_key,
-    ) -> None:
-        _forget_creation_seal(key, reference)
-
-    reference = weakref.ref(record, forget)
+    reference = weakref.ref(
+        record,
+        lambda collected, key=record_key: _forget_creation_seal(key, collected),
+    )
     _CREATION_SEALS[record_key] = (reference, fingerprint)
 
 
