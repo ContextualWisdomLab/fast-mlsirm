@@ -76,6 +76,20 @@ def _call(monkeypatch: pytest.MonkeyPatch, payload: dict[str, object]):
     )
 
 
+def test_current_rust_payload_shape_remains_marshallable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _call(monkeypatch, _valid_payload())
+
+    assert result.map_person_count == 1
+    assert result.map_item_count == 1
+    assert result.retained_person_ids == ("person-a",)
+    assert result.retained_item_ids == ("item-a",)
+    np.testing.assert_array_equal(result.person_indices, [0])
+    np.testing.assert_array_equal(result.item_indices, [0])
+    np.testing.assert_allclose(result.residual, [[1.0]])
+
+
 def test_foreign_count_object_is_rejected_without_int_callback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
