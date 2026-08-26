@@ -118,33 +118,35 @@ fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
 
 #[test]
 fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
-    // This zero-mean 3 x 2 interaction has rank two. Reordering both axes must
-    // not change singular values or the requested-axis distance attached to an
-    // opaque person/item identity, and two axes must reconstruct the true input.
-    let observed = [4.0, 1.0, 2.5, 3.0, 1.5, 0.0];
-    let expected = [2.0; 6];
+    // The true interaction is the zero-mean rank-two 3 x 3 matrix with +2 on
+    // the diagonal and -1 elsewhere. Reordering both axes must preserve the
+    // singular spectrum and the requested-axis distance attached to every
+    // opaque identity, while two axes reconstruct the true interaction.
+    let observed = [4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0];
+    let expected = [2.0; 9];
     let original = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
         &ids(&["person-a", "person-b", "person-c"]),
-        &ids(&["item-a", "item-b"]),
+        &ids(&["item-a", "item-b", "item-c"]),
         &observed,
         &expected,
         3,
-        2,
+        3,
         2,
     )
     .unwrap();
 
-    let permuted_observed = [0.0, 1.5, 1.0, 4.0, 3.0, 2.5];
-    let permuted_expected = [2.0; 6];
+    // Rows: C, A, B. Columns: B, C, A.
+    let permuted_observed = [1.0, 4.0, 1.0, 1.0, 1.0, 4.0, 4.0, 1.0, 1.0];
+    let permuted_expected = [2.0; 9];
     let permuted = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
         &ids(&["person-c", "person-a", "person-b"]),
-        &ids(&["item-b", "item-a"]),
+        &ids(&["item-b", "item-c", "item-a"]),
         &permuted_observed,
         &permuted_expected,
         3,
-        2,
+        3,
         2,
     )
     .unwrap();
@@ -160,7 +162,7 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
         assert!((left - right).abs() < 1e-10);
     }
     for person_id in ["person-a", "person-b", "person-c"] {
-        for item_id in ["item-a", "item-b"] {
+        for item_id in ["item-a", "item-b", "item-c"] {
             let left = distance_for(&original, person_id, item_id);
             let right = distance_for(&permuted, person_id, item_id);
             assert!((left - right).abs() < 1e-10);
