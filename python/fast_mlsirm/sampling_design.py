@@ -10,6 +10,8 @@ from typing import Literal
 from . import _core
 
 SAMPLING_DESIGN_SCHEMA_VERSION = "fast-mlsirm.sampling-design.v1"
+_MAX_EXACT_F64_INTEGER = 1 << 53
+_MAX_SAMPLING_STRATA = 100_000
 
 
 @dataclass(frozen=True)
@@ -46,12 +48,13 @@ def _exact_positive_integer(name: str, value: object) -> int:
 
 def _exact_probability(name: str, value: object) -> float:
     """Admit one exact built-in finite probability strictly inside the unit interval."""
-    if type(value) not in (int, float):
-        raise ValueError(f"{name} must be a built-in real number")
-    parsed = float(value)
-    if not math.isfinite(parsed) or not 0.0 < parsed < 1.0:
+    if type(value) is int:
         raise ValueError(f"{name} must be finite and strictly between zero and one")
-    return parsed
+    if type(value) is not float:
+        raise ValueError(f"{name} must be a built-in real number")
+    if not math.isfinite(value) or not 0.0 < value < 1.0:
+        raise ValueError(f"{name} must be finite and strictly between zero and one")
+    return value
 
 
 def finite_population_proportion_design(
@@ -70,6 +73,8 @@ def finite_population_proportion_design(
     normalized_population_size = _exact_positive_integer(
         "population_size", population_size
     )
+    if normalized_population_size > _MAX_EXACT_F64_INTEGER:
+        raise ValueError("population_size must be between 1 and 2^53")
     normalized_confidence_level = _exact_probability(
         "confidence_level", confidence_level
     )
@@ -78,6 +83,10 @@ def finite_population_proportion_design(
     )
     if type(strata) not in (list, tuple) or not strata:
         raise ValueError("strata must be a non-empty built-in list or tuple")
+    if len(strata) > _MAX_SAMPLING_STRATA:
+        raise ValueError(
+            f"strata must contain between 1 and {_MAX_SAMPLING_STRATA} entries"
+        )
     if type(allocation_method) is not str or allocation_method not in (
         "proportional",
         "neyman",
