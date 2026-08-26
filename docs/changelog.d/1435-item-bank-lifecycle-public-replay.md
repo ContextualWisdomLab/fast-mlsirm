@@ -1,1 +1,5 @@
+# Item-bank lifecycle public identity replay
+
+## Fixed
+
 - Governed item-bank lifecycle records now replay their factory-sealed creation-time identity before returning a public fingerprint/id or serializing JSON-compatible content. Post-construction mutation therefore fails closed with the existing lifecycle replay contract instead of exposing mutated content beside a stale authoritative fingerprint; valid lifecycle identities and payloads remain unchanged. No calibration, fit, DIF, information, linking, scoring, uncertainty, or other psychometric arithmetic changes.
