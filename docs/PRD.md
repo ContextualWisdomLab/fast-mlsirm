@@ -151,6 +151,8 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-044** Bifactor model fit shall not imply general or specific-score interpretability. Scoreability evidence shall be reported separately.
 
+**PRD-FR-046** Finite-population proportion artifacts shall separate sampling design from achieved inference. A terminal population claim requires a complete design-bound sample, Rust-owned estimator and design variance, and an interval whose finite-population coverage is verified; incomplete samples and unsupported stratified estimands fail closed.
+
 **PRD-FR-045** Reusable finite-population proportion sampling designs shall
 expose a versioned Rust-owned sample-size, FPC, and stratified-allocation
 artifact. Prior/pilot proportions, confidence, precision, costs, design effects,
