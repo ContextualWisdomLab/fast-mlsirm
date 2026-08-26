@@ -44,7 +44,10 @@ def render_diagnostics_report(
 
     out = Path(output_path)
     if out.suffix.lower() != ".html":
-        raise ValueError("report output path must end with .html")
+        raise ValueError(
+            "report output path must end with .html; choose an output file "
+            "name ending in .html"
+        )
     out.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_text(
         out,
@@ -65,7 +68,9 @@ def _diagnostics_type(payload: dict[str, Any]) -> str:
     if "candidates" in payload and "best" in payload:
         return "dimensions"
     raise ValueError(
-        "unsupported diagnostics JSON: expected fit or dimensionality diagnostics"
+        "unsupported diagnostics JSON: expected fit or dimensionality "
+        "diagnostics; regenerate the file with fast-mlsirm diagnose-fit or "
+        "fast-mlsirm diagnose-dimensions before rendering"
     )
 
 
