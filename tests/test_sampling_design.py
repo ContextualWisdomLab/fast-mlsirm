@@ -324,6 +324,10 @@ def test_achieved_proportion_rejects_partial_tampered_or_stratified_designs() ->
         finite_population_achieved_proportion(
             replace(design, artifact_sha256="f" * 64), 1
         )
+    with pytest.raises(ValueError, match="retained inputs"):
+        finite_population_achieved_proportion(
+            replace(design, sample_size=design.sample_size - 1), 1
+        )
     for invalid in (True, -1, design.sample_size + 1):
         with pytest.raises(ValueError, match="success_count"):
             finite_population_achieved_proportion(design, invalid)  # type: ignore[arg-type]
