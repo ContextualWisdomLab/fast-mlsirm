@@ -17,16 +17,6 @@ def _load_builder():
     return module
 
 
-def _load_release_acceptance():
-    script = Path(__file__).resolve().parents[1] / "scripts" / "release_acceptance.py"
-    spec = importlib.util.spec_from_file_location("release_acceptance", script)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
-
-
 def _initialize_git_repo(repo_root: Path) -> None:
     """Create a minimal committed repository for source-provenance fixtures."""
     subprocess.run(
@@ -250,7 +240,6 @@ def test_relative_dist_path_is_resolved_from_repo_root(tmp_path):
 
 def test_run_command_timeout_policy(monkeypatch, tmp_path):
     module = _load_builder()
-    release_acceptance = _load_release_acceptance()
     captured_kwargs = {}
 
     def _mock_run_bounded_capture(*args, **kwargs):
@@ -265,9 +254,5 @@ def test_run_command_timeout_policy(monkeypatch, tmp_path):
     module._run_command(["python", "-m", "build", "--outdir", "dist"], tmp_path)
     assert captured_kwargs["timeout_seconds"] == 900.0
 
-    module._run_command(
-        ["python", "scripts/release_acceptance.py", "--out", "acceptance"], tmp_path
-    )
-    assert captured_kwargs["timeout_seconds"] >= (
-        sum(release_acceptance.RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values()) + 60.0
-    )
+    module._run_command(["python", "scripts/release_acceptance.py"], tmp_path)
+    assert captured_kwargs["timeout_seconds"] == 3600.0
