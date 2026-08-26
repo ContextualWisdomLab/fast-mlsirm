@@ -41,6 +41,7 @@ _MAX_RSM_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_RSM_RESPONSE_CELLS
 _RSM_RESOURCE_ERROR = (
     f"responses exceed the {_MAX_RSM_RESPONSE_CELLS}-cell RSM evidence budget"
 )
+_RSM_MATRIX_SHAPE_ERROR = "responses must be a 2-D persons x items array"
 _RSM_MINIMUM_SHAPE_ERROR = (
     "responses must contain at least one person and at least two item columns"
 )
@@ -138,9 +139,9 @@ def _trusted_response_source(value: object) -> object:
     if type(value) is np.ndarray:
         if int(value.size) > _MAX_RSM_RESPONSE_CELLS:
             raise ValueError(_RSM_RESOURCE_ERROR)
-        if value.ndim == 2 and (
-            int(value.shape[0]) < 1 or int(value.shape[1]) < MIN_IRT_ITEMS
-        ):
+        if value.ndim != 2:
+            raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        if int(value.shape[0]) < 1 or int(value.shape[1]) < MIN_IRT_ITEMS:
             raise ValueError(_RSM_MINIMUM_SHAPE_ERROR)
         return value
     if type(value) is not list and type(value) is not tuple:
@@ -181,8 +182,9 @@ def _trusted_response_source(value: object) -> object:
             elif matrix_width != row_length:
                 matrix_like = False
             continue
-        # Preserve historical flat built-in sequences until the existing 2-D
-        # diagnostic, while refusing caller-defined scalar/container subclasses.
+        # Flat built-in scalar sequences are known not to satisfy the established
+        # persons-by-items matrix contract, but still charge their bounded work
+        # before the stable 2-D diagnostic is replayed below.
         matrix_like = False
         if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
             raise ValueError("responses must be a real numeric array")
@@ -190,11 +192,13 @@ def _trusted_response_source(value: object) -> object:
         if logical_cells > _MAX_RSM_RESPONSE_CELLS:
             raise ValueError(_RSM_RESOURCE_ERROR)
 
-    if matrix_like and matrix_width is not None and matrix_width < MIN_IRT_ITEMS:
+    if not matrix_like:
+        raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+    if matrix_width is not None and matrix_width < MIN_IRT_ITEMS:
         raise ValueError(_RSM_MINIMUM_SHAPE_ERROR)
 
-    # Value-wise validation is intentionally deferred until resource and
-    # structurally impossible item-count checks have completed.
+    # Value-wise validation is intentionally deferred until resource, matrix-rank,
+    # rectangularity, and structurally impossible item-count checks have completed.
     for row in value:
         if type(row) is list or type(row) is tuple:
             if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
@@ -246,7 +250,7 @@ def fit_rsm(
 
     y = _real_numeric_response_matrix(responses)
     if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
+        raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
     n_persons, n_items = y.shape
     if n_persons < 1 or n_items < MIN_IRT_ITEMS:
         raise ValueError(_RSM_MINIMUM_SHAPE_ERROR)
