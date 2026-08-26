@@ -272,10 +272,6 @@ impl<'de> Visitor<'de> for UniqueJsonVisitor {
         Ok(())
     }
 
-    fn visit_none<E>(self) -> Result<Self::Value, E> {
-        Ok(())
-    }
-
     fn visit_unit<E>(self) -> Result<Self::Value, E> {
         Ok(())
     }
@@ -711,6 +707,45 @@ mod tests {
         assert_eq!(
             estimate_topic_context_case_deletion_influence(&posterior),
             Err(TopicContextContractError::CaseDeletionRefitEvidenceUnavailable)
+        );
+    }
+
+    #[test]
+    fn duplicate_key_scan_admits_escaped_strings_and_null_targets() {
+        // A JSON escape forces serde_json's string reader to allocate an
+        // owned buffer (visit_string) instead of borrowing (visit_str); the
+        // escape decodes back to the original identifier, so the artifact
+        // stays valid.
+        let escaped_run_id = valid_json().replacen("\"run_id\":\"run-1\"", "\"run_id\":\"run\\u002d1\"", 1);
+        let posterior = TopicContextPosteriorArtifact::from_json(&escaped_run_id).unwrap();
+        assert_eq!(posterior.artifact().run_id, "run-1");
+
+        // A birth/retirement lineage event has no target topic, so it
+        // serializes target_topic_id as JSON null (visit_unit).
+        let birth_event = format!(
+            "{{\"event_code\":\"birth\",\"source_topic_id\":\"018f3f7a-7b7c-7d00-8000-000000000101\",\"target_topic_id\":null,\"event_time\":\"2026-07-10T00:00:00Z\",\"evidence_resource_id\":\"birth-evidence\",\"provenance_assertion_id\":\"birth-assertion\",\"evidence_sha256\":\"{}\"}}",
+            "c".repeat(64)
+        );
+        let with_lineage_event = valid_json().replacen(
+            "\"lineage_events\":[]",
+            &format!("\"lineage_events\":[{birth_event}]"),
+            1,
+        );
+        let posterior = TopicContextPosteriorArtifact::from_json(&with_lineage_event).unwrap();
+        assert_eq!(posterior.artifact().lineage_events.len(), 1);
+        assert_eq!(posterior.artifact().lineage_events[0].target_topic_id, None);
+    }
+
+    #[test]
+    fn duplicate_key_scan_admits_boolean_values_but_typed_parse_still_fails_closed() {
+        // The duplicate-key scan accepts any JSON scalar, including booleans
+        // (visit_bool), before the typed parse runs; a bool smuggled into a
+        // u64 field still fails closed at the typed-parse stage.
+        let boolean_draw_count =
+            valid_json().replacen("\"posterior_draw_count\":2", "\"posterior_draw_count\":true", 1);
+        assert_eq!(
+            TopicContextPosteriorArtifact::from_json(&boolean_draw_count),
+            Err(TopicContextContractError::InvalidEvidence)
         );
     }
 
