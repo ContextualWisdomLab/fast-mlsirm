@@ -35,10 +35,35 @@ dichotomization, IRT fit, expected-information normalization, convex fusion, or
 ranking. In particular, TEPP acceptance is necessary for activation but is not
 sufficient input to reproduce or estimate weights.
 
-A future estimator requires a producer-owned successor that binds an
-independent pair-level criterion posterior or outcomes, their sampling/design
-provenance, and their exact pair identities to the same run/snapshot/cutoff.
-Before release, its model and weight functional require a separate accepted ADR,
+A future estimator requires the producer-owned
+`tepp.lineage_pair_criterion_posterior.v2` successor. Its minimum consumed
+fields are normative (absence is unavailable, never repaired):
+
+- a bijective pair id plus opaque predecessor and successor record ids;
+- complete continuous independent-criterion posterior draws for every admitted
+  pair, with one common draw count and a producer-owned seed domain -- no
+  binary threshold or diagonal pseudo-posterior;
+- estimation and TEPP run ids, snapshot SHA-256, cutoff, exact admitted-pair
+  list, and ordered channel basis;
+- separately named record-creation instants and posterior event-time draws,
+  including TDT/CHRONOS configuration, event clock, temporal-dependency and
+  branch/transition provenance. The earliest stored record is not a project
+  start and a fixed lifecycle stage is not inferred;
+- an independent anchor-basis id and digest with unique alignment and tie-fail
+  evidence; and
+- CPU/GPU receipts over the same objective, parameters and draws, evaluated
+  against a method-derived parity bound.
+
+Topic-context case deletion is a different estimand and consumes
+`tepp.topic_context_case_deletion_posterior.v1`: exhaustive actual
+`D ∖ {i}` refits, incident relation and membership removals, independent
+full/refit seed domains, unique distributional-anchor bijections, and CPU/GPU
+refit receipts. Those fields MUST NOT be mixed into channel weighting or
+approximated from full-data draws.
+
+The machine-readable minimum producer envelope is published at
+`contracts/tepp-lineage-pair-criterion-posterior-v2.schema.json`. Before
+release, its model and weight functional require a separate accepted ADR,
 Rust CPU and GPU implementations of the same objective, true-parameter and
 known-weight recovery, uncertainty coverage, and a method-derived parity bound.
 No channel floor, keyword, rank, equal share, hand-selected prior, or consumer

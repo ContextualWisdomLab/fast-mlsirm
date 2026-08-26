@@ -185,6 +185,23 @@ pub fn estimate_lineage_channel_weights(
 mod tests {
     use super::*;
 
+    #[test]
+    fn successor_producer_schema_is_machine_readable() {
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../contracts/tepp-lineage-pair-criterion-posterior-v2.schema.json"
+        ))
+        .expect("producer schema is valid JSON");
+        assert_eq!(
+            schema["properties"]["schema_version"]["const"],
+            "tepp.lineage_pair_criterion_posterior.v2"
+        );
+        assert!(schema["required"]
+            .as_array()
+            .expect("required fields")
+            .iter()
+            .any(|field| field == "pair_posteriors"));
+    }
+
     fn valid_json() -> String {
         format!(
             r#"{{"schema_version":"{LINEAGE_CHANNEL_WEIGHT_EVIDENCE_SCHEMA}","estimation_run_id":"018f47e7-7b5b-7cc0-98c6-15fdf9e3d9b1","source_snapshot_sha256":"{}","knowledge_cutoff":"2026-08-25T00:00:00Z","channel_codes":["temporal","text"],"pair_evidence":[{{"pair_id":"018f47e7-7b5b-7cc0-98c6-015fdf9e3d91","group_id":"group-a","channel_scores":[0.2,0.8]}},{{"pair_id":"018f47e7-7b5b-7cc0-98c6-015fdf9e3d92","group_id":"group-b","channel_scores":[0.7,0.3]}}],"tepp_anchor":{{"contract_version":1,"anchor_kind_code":"lineage_pair_criterion","estimation_run_id":"018f47e7-7b5b-7cc0-98c6-15fdf9e3d9b1","source_snapshot_sha256":"{}","knowledge_cutoff":"2026-08-25T00:00:00Z","criterion_validity_status":"accepted","validated_pair_count":2}}}}"#,
