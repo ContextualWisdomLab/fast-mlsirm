@@ -58,6 +58,14 @@ responsible for authorization, group/period semantics, persistence, display,
 and verifying the exact artifact schema, input digest, implementation version,
 convergence, and selection state before projection.
 
+## Consequences and trade-offs
+
+Consumers gain one auditable Rust-owned artifact and can delete duplicate
+Python arithmetic after shadow verification. Until the acceptance evidence is
+complete, the contract remains unavailable rather than selecting a model or
+returning locally reconstructed values; this delays migration but prevents an
+unsupported comparison rule from becoming production measurement policy.
+
 ## Acceptance evidence
 
 The proposal becomes Accepted only after all of the following land on a
