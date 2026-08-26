@@ -14,6 +14,7 @@ use pyo3::wrap_pyfunction;
 fn py_residual_interaction_map_envelope(
     py: Python<'_>,
     schema_version: &str,
+    input_digest: &str,
     person_ids: Vec<String>,
     item_ids: Vec<String>,
     observed: PyReadonlyArray2<'_, f64>,
@@ -31,6 +32,7 @@ fn py_residual_interaction_map_envelope(
     let n_items = observed_shape[1];
     let envelope = core_residual_interaction_map_envelope(
         schema_version,
+        input_digest,
         &person_ids,
         &item_ids,
         observed.as_slice()?,
@@ -46,6 +48,7 @@ fn py_residual_interaction_map_envelope(
     out.set_item("algorithm_id", envelope.algorithm_id)?;
     out.set_item("implementation_version", envelope.implementation_version)?;
     out.set_item("calculation_provenance", envelope.calculation_provenance)?;
+    out.set_item("input_digest", envelope.input_digest)?;
     out.set_item("requested_axis_count", envelope.requested_axis_count)?;
     out.set_item(
         "cell_extrema_tie_policy",

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
+import struct
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as distribution_version
 
@@ -33,6 +36,7 @@ class ResidualInteractionMapEnvelope:
     algorithm_id: str
     implementation_version: str
     calculation_provenance: str
+    input_digest: str
     requested_axis_count: int
     cell_extrema_tie_policy: str
     finite_value_status: bool
@@ -88,8 +92,50 @@ def _opaque_ids(name: str, value: object) -> list[str]:
     return normalized
 
 
-def _required_rust_metadata(raw: dict[str, object], key: str) -> object:
-    """Read one required Rust-owned metadata field without coercing foreign values."""
+def _digest_field(
+    digest: "hashlib._Hash", tag: str, payload: bytes | memoryview
+) -> None:
+    """Append one unambiguous tagged byte field to the request digest."""
+    tag_bytes = tag.encode("ascii")
+    digest.update(struct.pack(">H", len(tag_bytes)))
+    digest.update(tag_bytes)
+    digest.update(struct.pack(">Q", len(payload)))
+    digest.update(payload)
+
+
+def _canonical_float64_bytes(array: np.ndarray) -> memoryview:
+    """Expose validated matrix evidence as C-order little-endian float64 bytes."""
+    canonical = array.astype("<f8", copy=False)
+    return memoryview(canonical).cast("B")
+
+
+def _input_digest(
+    schema: str,
+    axis: int,
+    persons: list[str],
+    items: list[str],
+    observed: np.ndarray,
+    expected: np.ndarray,
+) -> str:
+    """Return SHA-256 over the exact validated interaction-map request evidence."""
+    digest = hashlib.sha256()
+    _digest_field(digest, "schema", schema.encode("utf-8"))
+    _digest_field(digest, "axis_count", struct.pack(">Q", axis))
+    _digest_field(digest, "person_count", struct.pack(">Q", len(persons)))
+    for identifier in persons:
+        _digest_field(digest, "person_id", identifier.encode("utf-8"))
+    _digest_field(digest, "item_count", struct.pack(">Q", len(items)))
+    for identifier in items:
+        _digest_field(digest, "item_id", identifier.encode("utf-8"))
+    rows, columns = observed.shape
+    _digest_field(digest, "matrix_shape", struct.pack(">QQ", rows, columns))
+    _digest_field(digest, "observed_f64le", _canonical_float64_bytes(observed))
+    _digest_field(digest, "expected_f64le", _canonical_float64_bytes(expected))
+    return digest.hexdigest()
+
+
+def _required_rust_value(raw: dict[str, object], key: str) -> object:
+    """Read one required Rust-owned result field without coercing foreign values."""
     try:
         return raw[key]
     except KeyError as exc:
@@ -104,17 +150,19 @@ def _installed_package_version() -> str:
         raise RuntimeError("fast-mlsirm distribution version is unavailable") from exc
 
 
-def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -> str:
+def _validate_rust_metadata(
+    raw: dict[str, object], requested_axis_count: int, expected_input_digest: str
+) -> str:
     """Replay the public v1 metadata contract before numerical payload marshalling."""
-    schema_version = _required_rust_metadata(raw, "schema_version")
+    schema_version = _required_rust_value(raw, "schema_version")
     if type(schema_version) is not str or schema_version != RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION:
         raise RuntimeError("Rust interaction-map envelope schema version mismatch")
 
-    algorithm_id = _required_rust_metadata(raw, "algorithm_id")
+    algorithm_id = _required_rust_value(raw, "algorithm_id")
     if type(algorithm_id) is not str or algorithm_id != _RESIDUAL_INTERACTION_MAP_ALGORITHM_ID:
         raise RuntimeError("Rust interaction-map envelope algorithm mismatch")
 
-    implementation_version = _required_rust_metadata(raw, "implementation_version")
+    implementation_version = _required_rust_value(raw, "implementation_version")
     expected_implementation_version = _installed_package_version()
     if (
         type(implementation_version) is not str
@@ -122,46 +170,126 @@ def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -
     ):
         raise RuntimeError("Rust interaction-map envelope implementation version mismatch")
 
-    calculation_provenance = _required_rust_metadata(raw, "calculation_provenance")
+    calculation_provenance = _required_rust_value(raw, "calculation_provenance")
     if (
         type(calculation_provenance) is not str
         or calculation_provenance != _RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE
     ):
         raise RuntimeError("Rust interaction-map envelope calculation provenance mismatch")
 
-    returned_axis_count = _required_rust_metadata(raw, "requested_axis_count")
+    input_digest = _required_rust_value(raw, "input_digest")
+    if type(input_digest) is not str or input_digest != expected_input_digest:
+        raise RuntimeError("Rust interaction-map envelope input digest mismatch")
+
+    returned_axis_count = _required_rust_value(raw, "requested_axis_count")
     if type(returned_axis_count) is not int or returned_axis_count != requested_axis_count:
         raise RuntimeError("Rust interaction-map envelope requested axis count mismatch")
 
-    tie_policy = _required_rust_metadata(raw, "cell_extrema_tie_policy")
+    tie_policy = _required_rust_value(raw, "cell_extrema_tie_policy")
     if type(tie_policy) is not str or tie_policy != _RESIDUAL_INTERACTION_MAP_TIE_POLICY:
         raise RuntimeError("Rust interaction-map envelope tie policy mismatch")
 
-    finite_value_status = _required_rust_metadata(raw, "finite_value_status")
+    finite_value_status = _required_rust_value(raw, "finite_value_status")
     if type(finite_value_status) is not bool or finite_value_status is not True:
         raise RuntimeError("Rust interaction-map envelope finite-value status mismatch")
 
     return implementation_version
 
 
-def _optional_string_pair(value: object) -> tuple[str, str] | None:
-    """Normalize one package-owned optional pair returned by the Rust binding."""
-    if value is None:
-        return None
-    pair = tuple(value)  # Rust-owned tuple/list; no caller object reaches this boundary.
-    if len(pair) != 2:
-        raise RuntimeError("Rust interaction-map envelope returned an invalid identifier pair")
-    return str(pair[0]), str(pair[1])
+def _rust_nonnegative_int(raw: dict[str, object], key: str) -> int:
+    """Return one exact non-negative Rust integer without invoking coercion hooks."""
+    value = _required_rust_value(raw, key)
+    if type(value) is not int or value < 0:
+        raise RuntimeError(f"Rust interaction-map envelope {key} must be a non-negative integer")
+    return value
 
 
-def _optional_index_pair(value: object) -> tuple[int, int] | None:
-    """Normalize one package-owned optional index pair returned by the Rust binding."""
+def _rust_sequence(raw: dict[str, object], key: str) -> list[object] | tuple[object, ...]:
+    """Return one exact Rust list/tuple result without accepting protocol-bearing carriers."""
+    value = _required_rust_value(raw, key)
+    if type(value) not in (list, tuple):
+        raise RuntimeError(f"Rust interaction-map envelope {key} must be an exact list or tuple")
+    return value
+
+
+def _rust_string_vector(raw: dict[str, object], key: str, expected_length: int) -> tuple[str, ...]:
+    """Validate one exact Rust string vector and its expected cardinality."""
+    value = _rust_sequence(raw, key)
+    if len(value) != expected_length:
+        raise RuntimeError(f"Rust interaction-map envelope {key} length mismatch")
+    if any(type(item) is not str for item in value):
+        raise RuntimeError(f"Rust interaction-map envelope {key} must contain exact strings")
+    return tuple(value)
+
+
+def _rust_index_vector(
+    raw: dict[str, object],
+    key: str,
+    expected_length: int,
+    upper_bound: int,
+) -> tuple[int, ...]:
+    """Validate one exact Rust original-index vector before NumPy materialization."""
+    value = _rust_sequence(raw, key)
+    if len(value) != expected_length:
+        raise RuntimeError(f"Rust interaction-map envelope {key} length mismatch")
+    normalized: list[int] = []
+    previous = -1
+    for item in value:
+        if type(item) is not int or item < 0 or item >= upper_bound:
+            raise RuntimeError(f"Rust interaction-map envelope {key} contains an invalid index")
+        if item <= previous:
+            raise RuntimeError(f"Rust interaction-map envelope {key} must be strictly increasing")
+        normalized.append(item)
+        previous = item
+    return tuple(normalized)
+
+
+def _rust_float_vector(
+    raw: dict[str, object],
+    key: str,
+    expected_length: int,
+    *,
+    allow_none: bool = False,
+) -> tuple[float | None, ...]:
+    """Validate one Rust f64/Option<f64> vector before NumPy coercion."""
+    value = _rust_sequence(raw, key)
+    if len(value) != expected_length:
+        raise RuntimeError(f"Rust interaction-map envelope {key} length mismatch")
+    normalized: list[float | None] = []
+    for item in value:
+        if allow_none and item is None:
+            normalized.append(None)
+            continue
+        if type(item) is not float:
+            raise RuntimeError(f"Rust interaction-map envelope {key} must contain exact floats")
+        if not math.isfinite(item):
+            raise RuntimeError(f"Rust interaction-map envelope {key} contains a non-finite value")
+        normalized.append(item)
+    return tuple(normalized)
+
+
+def _rust_string_pair(raw: dict[str, object], key: str) -> tuple[str, str] | None:
+    """Validate one package-owned optional string pair without caller coercion."""
+    value = _required_rust_value(raw, key)
     if value is None:
         return None
-    pair = tuple(value)
-    if len(pair) != 2:
-        raise RuntimeError("Rust interaction-map envelope returned an invalid index pair")
-    return int(pair[0]), int(pair[1])
+    if type(value) not in (list, tuple) or len(value) != 2:
+        raise RuntimeError(f"Rust interaction-map envelope {key} returned an invalid pair")
+    if type(value[0]) is not str or type(value[1]) is not str:
+        raise RuntimeError(f"Rust interaction-map envelope {key} must contain exact strings")
+    return value[0], value[1]
+
+
+def _rust_index_pair(raw: dict[str, object], key: str) -> tuple[int, int] | None:
+    """Validate one package-owned optional original-index pair without coercion."""
+    value = _required_rust_value(raw, key)
+    if value is None:
+        return None
+    if type(value) not in (list, tuple) or len(value) != 2:
+        raise RuntimeError(f"Rust interaction-map envelope {key} returned an invalid pair")
+    if type(value[0]) is not int or type(value[1]) is not int or value[0] < 0 or value[1] < 0:
+        raise RuntimeError(f"Rust interaction-map envelope {key} must contain non-negative integers")
+    return value[0], value[1]
 
 
 def residual_interaction_map_envelope(
@@ -190,71 +318,140 @@ def residual_interaction_map_envelope(
     if observed_array.shape != expected_array.shape:
         raise ValueError("observed and expected must have the same two-dimensional shape")
 
-    raw = dict(
-        interaction_map_core().residual_interaction_map_envelope(
-            schema,
-            persons,
-            items,
-            observed_array,
-            expected_array,
-            axis,
-        )
+    input_digest = _input_digest(schema, axis, persons, items, observed_array, expected_array)
+    raw_result = interaction_map_core().residual_interaction_map_envelope(
+        schema,
+        input_digest,
+        persons,
+        items,
+        observed_array,
+        expected_array,
+        axis,
     )
-    implementation_version = _validate_rust_metadata(raw, axis)
-    map_person_count = int(raw["map_person_count"])
-    map_item_count = int(raw["map_item_count"])
+    if type(raw_result) is not dict:
+        raise RuntimeError("Rust interaction-map envelope must return an exact dict")
+    raw = raw_result
+    implementation_version = _validate_rust_metadata(raw, axis, input_digest)
+
+    map_person_count = _rust_nonnegative_int(raw, "map_person_count")
+    map_item_count = _rust_nonnegative_int(raw, "map_item_count")
+    scored_person_count = _rust_nonnegative_int(raw, "scored_person_count")
+    scored_item_count = _rust_nonnegative_int(raw, "scored_item_count")
+    effective_rank = _rust_nonnegative_int(raw, "effective_rank")
+    incomplete_person_count = _rust_nonnegative_int(raw, "incomplete_person_count")
+    incomplete_item_count = _rust_nonnegative_int(raw, "incomplete_item_count")
+
+    input_person_count, input_item_count = observed_array.shape
+    if scored_person_count > input_person_count or scored_item_count > input_item_count:
+        raise RuntimeError("Rust interaction-map envelope scored counts exceed input shape")
+    if map_person_count > scored_person_count or map_item_count > scored_item_count:
+        raise RuntimeError("Rust interaction-map envelope map counts exceed scored counts")
+    if incomplete_person_count != scored_person_count - map_person_count:
+        raise RuntimeError("Rust interaction-map envelope incomplete_person_count mismatch")
+    if incomplete_item_count != scored_item_count - map_item_count:
+        raise RuntimeError("Rust interaction-map envelope incomplete_item_count mismatch")
+    if effective_rank > min(map_person_count, map_item_count):
+        raise RuntimeError("Rust interaction-map envelope effective_rank exceeds map dimensions")
+
+    person_indices = _rust_index_vector(
+        raw, "person_indices", map_person_count, input_person_count
+    )
+    item_indices = _rust_index_vector(raw, "item_indices", map_item_count, input_item_count)
+    retained_person_ids = _rust_string_vector(raw, "retained_person_ids", map_person_count)
+    retained_item_ids = _rust_string_vector(raw, "retained_item_ids", map_item_count)
+    if retained_person_ids != tuple(persons[index] for index in person_indices):
+        raise RuntimeError("Rust interaction-map envelope retained_person_ids mismatch")
+    if retained_item_ids != tuple(items[index] for index in item_indices):
+        raise RuntimeError("Rust interaction-map envelope retained_item_ids mismatch")
+
+    closest_cell = _rust_index_pair(raw, "closest_cell")
+    farthest_cell = _rust_index_pair(raw, "farthest_cell")
+    closest_cell_ids = _rust_string_pair(raw, "closest_cell_ids")
+    farthest_cell_ids = _rust_string_pair(raw, "farthest_cell_ids")
+    retained_person_index_set = set(person_indices)
+    retained_item_index_set = set(item_indices)
+    for name, cell, cell_ids in (
+        ("closest", closest_cell, closest_cell_ids),
+        ("farthest", farthest_cell, farthest_cell_ids),
+    ):
+        if cell is None:
+            if cell_ids is not None:
+                raise RuntimeError(f"Rust interaction-map envelope {name} cell identity mismatch")
+            continue
+        person_index, item_index = cell
+        if person_index not in retained_person_index_set or item_index not in retained_item_index_set:
+            raise RuntimeError(f"Rust interaction-map envelope {name} cell index mismatch")
+        expected_ids = (persons[person_index], items[item_index])
+        if cell_ids != expected_ids:
+            raise RuntimeError(f"Rust interaction-map envelope {name} cell identifier mismatch")
+
+    cell_count = map_person_count * map_item_count
+    person_coordinates = _rust_float_vector(
+        raw, "person_coordinates", map_person_count * axis
+    )
+    item_coordinates = _rust_float_vector(raw, "item_coordinates", map_item_count * axis)
+    singular_values = _rust_float_vector(raw, "singular_values", effective_rank)
+    axis_shares = _rust_float_vector(raw, "axis_shares", axis)
+    observed_values = _rust_float_vector(raw, "observed", cell_count)
+    expected_values = _rust_float_vector(raw, "expected", cell_count)
+    residual_values = _rust_float_vector(raw, "residual", cell_count)
+    distance_values = _rust_float_vector(raw, "distance", cell_count)
+    reconstruction_values = _rust_float_vector(raw, "reconstruction", cell_count)
+    unexplained_values = _rust_float_vector(raw, "unexplained", cell_count)
+    cross_share_values = _rust_float_vector(raw, "cross_share", cell_count, allow_none=True)
 
     return ResidualInteractionMapEnvelope(
         schema_version=RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
         algorithm_id=_RESIDUAL_INTERACTION_MAP_ALGORITHM_ID,
         implementation_version=implementation_version,
         calculation_provenance=_RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE,
+        input_digest=input_digest,
         requested_axis_count=axis,
         cell_extrema_tie_policy=_RESIDUAL_INTERACTION_MAP_TIE_POLICY,
         finite_value_status=True,
-        retained_person_ids=tuple(str(value) for value in raw["retained_person_ids"]),
-        retained_item_ids=tuple(str(value) for value in raw["retained_item_ids"]),
-        closest_cell_ids=_optional_string_pair(raw["closest_cell_ids"]),
-        farthest_cell_ids=_optional_string_pair(raw["farthest_cell_ids"]),
-        person_indices=np.asarray(raw["person_indices"], dtype=np.int64),
-        item_indices=np.asarray(raw["item_indices"], dtype=np.int64),
-        scored_person_count=int(raw["scored_person_count"]),
-        scored_item_count=int(raw["scored_item_count"]),
-        effective_rank=int(raw["effective_rank"]),
+        retained_person_ids=retained_person_ids,
+        retained_item_ids=retained_item_ids,
+        closest_cell_ids=closest_cell_ids,
+        farthest_cell_ids=farthest_cell_ids,
+        person_indices=np.asarray(person_indices, dtype=np.int64),
+        item_indices=np.asarray(item_indices, dtype=np.int64),
+        scored_person_count=scored_person_count,
+        scored_item_count=scored_item_count,
+        effective_rank=effective_rank,
         map_person_count=map_person_count,
         map_item_count=map_item_count,
-        incomplete_person_count=int(raw["incomplete_person_count"]),
-        incomplete_item_count=int(raw["incomplete_item_count"]),
-        closest_cell=_optional_index_pair(raw["closest_cell"]),
-        farthest_cell=_optional_index_pair(raw["farthest_cell"]),
-        person_coordinates=np.asarray(raw["person_coordinates"], dtype=np.float64).reshape(
+        incomplete_person_count=incomplete_person_count,
+        incomplete_item_count=incomplete_item_count,
+        closest_cell=closest_cell,
+        farthest_cell=farthest_cell,
+        person_coordinates=np.asarray(person_coordinates, dtype=np.float64).reshape(
             map_person_count, axis
         ),
-        item_coordinates=np.asarray(raw["item_coordinates"], dtype=np.float64).reshape(
+        item_coordinates=np.asarray(item_coordinates, dtype=np.float64).reshape(
             map_item_count, axis
         ),
-        singular_values=np.asarray(raw["singular_values"], dtype=np.float64),
-        axis_shares=np.asarray(raw["axis_shares"], dtype=np.float64),
-        observed=np.asarray(raw["observed"], dtype=np.float64).reshape(
+        singular_values=np.asarray(singular_values, dtype=np.float64),
+        axis_shares=np.asarray(axis_shares, dtype=np.float64),
+        observed=np.asarray(observed_values, dtype=np.float64).reshape(
             map_person_count, map_item_count
         ),
-        expected=np.asarray(raw["expected"], dtype=np.float64).reshape(
+        expected=np.asarray(expected_values, dtype=np.float64).reshape(
             map_person_count, map_item_count
         ),
-        residual=np.asarray(raw["residual"], dtype=np.float64).reshape(
+        residual=np.asarray(residual_values, dtype=np.float64).reshape(
             map_person_count, map_item_count
         ),
-        distance=np.asarray(raw["distance"], dtype=np.float64).reshape(
+        distance=np.asarray(distance_values, dtype=np.float64).reshape(
             map_person_count, map_item_count
         ),
-        reconstruction=np.asarray(raw["reconstruction"], dtype=np.float64).reshape(
+        reconstruction=np.asarray(reconstruction_values, dtype=np.float64).reshape(
             map_person_count, map_item_count
         ),
-        unexplained=np.asarray(raw["unexplained"], dtype=np.float64).reshape(
+        unexplained=np.asarray(unexplained_values, dtype=np.float64).reshape(
             map_person_count, map_item_count
         ),
         cross_share=np.asarray(
-            [np.nan if value is None else value for value in raw["cross_share"]],
+            [np.nan if value is None else value for value in cross_share_values],
             dtype=np.float64,
         ).reshape(map_person_count, map_item_count),
     )
