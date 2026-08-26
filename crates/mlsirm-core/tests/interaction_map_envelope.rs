@@ -4,6 +4,9 @@ use mlsirm_core::interaction_map_envelope::{
     RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION, RESIDUAL_INTERACTION_MAP_TIE_POLICY,
 };
 
+const INPUT_DIGEST: &str =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 fn ids(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
 }
@@ -44,6 +47,7 @@ fn retained_cell_values_are_rust_owned_in_original_index_order() {
 fn envelope_persists_requested_axis_count_and_tie_contract() {
     let envelope = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        INPUT_DIGEST,
         &ids(&["person-0", "person-1"]),
         &ids(&["item-0", "item-1"]),
         &[1.0, 1.0, 1.0, 1.0],
@@ -54,6 +58,7 @@ fn envelope_persists_requested_axis_count_and_tie_contract() {
     )
     .unwrap();
 
+    assert_eq!(envelope.input_digest, INPUT_DIGEST);
     assert_eq!(envelope.requested_axis_count, 2);
     assert_eq!(
         envelope.cell_extrema_tie_policy,
@@ -79,6 +84,7 @@ fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
     let expected = [1.0, 1.0, 1.0, 1.0];
     let envelope = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        INPUT_DIGEST,
         &ids(&["person-a", "person-b"]),
         &ids(&["item-a", "item-b"]),
         &observed,
@@ -126,6 +132,7 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
     let expected = [2.0; 9];
     let original = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        INPUT_DIGEST,
         &ids(&["person-a", "person-b", "person-c"]),
         &ids(&["item-a", "item-b", "item-c"]),
         &observed,
@@ -141,6 +148,7 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
     let permuted_expected = [2.0; 9];
     let permuted = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        INPUT_DIGEST,
         &ids(&["person-c", "person-a", "person-b"]),
         &ids(&["item-b", "item-c", "item-a"]),
         &permuted_observed,
