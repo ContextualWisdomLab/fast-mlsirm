@@ -29,6 +29,8 @@ pub struct ResidualInteractionMapEnvelope {
     pub algorithm_id: &'static str,
     pub implementation_version: &'static str,
     pub calculation_provenance: &'static str,
+    /// SHA-256 identity of the exact validated request evidence.
+    pub input_digest: String,
     /// Axis count explicitly requested by the caller and validated by the Rust map.
     pub requested_axis_count: usize,
     /// Public deterministic policy used when closest/farthest distances are tied.
@@ -45,6 +47,18 @@ pub struct ResidualInteractionMapEnvelope {
     pub farthest_cell_ids: Option<(String, String)>,
     /// Rust-owned numerical result; downstream consumers must not recompute it.
     pub map: ResidualInteractionMap,
+}
+
+fn validate_input_digest(input_digest: &str) -> Result<(), String> {
+    if input_digest.len() != 64
+        || !input_digest
+            .as_bytes()
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+    {
+        return Err("residual interaction map input digest must be lowercase SHA-256".into());
+    }
+    Ok(())
 }
 
 fn validate_identifiers(ids: &[String], expected: usize, axis: &str) -> Result<(), String> {
@@ -115,10 +129,11 @@ fn map_is_finite(map: &ResidualInteractionMap) -> bool {
 
 /// Build one versioned, domain-neutral envelope from Rust-owned map arithmetic.
 ///
-/// Schema and opaque-identifier validation is intentionally completed before
-/// numerical work so unsupported consumers and identity mismatches fail closed.
+/// Schema, digest, and opaque-identifier validation is intentionally completed
+/// before numerical work so unsupported consumers and identity mismatches fail closed.
 pub fn residual_interaction_map_envelope(
     schema_version: &str,
+    input_digest: &str,
     person_ids: &[String],
     item_ids: &[String],
     observed: &[f64],
@@ -130,6 +145,7 @@ pub fn residual_interaction_map_envelope(
     if schema_version != RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION {
         return Err("unsupported residual interaction map schema version".into());
     }
+    validate_input_digest(input_digest)?;
     validate_identifiers(person_ids, n_persons, "person")?;
     validate_identifiers(item_ids, n_items, "item")?;
 
@@ -148,6 +164,7 @@ pub fn residual_interaction_map_envelope(
         algorithm_id: RESIDUAL_INTERACTION_MAP_ALGORITHM_ID,
         implementation_version: RESIDUAL_INTERACTION_MAP_IMPLEMENTATION_VERSION,
         calculation_provenance: RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE,
+        input_digest: input_digest.to_string(),
         requested_axis_count: axis_count,
         cell_extrema_tie_policy: RESIDUAL_INTERACTION_MAP_TIE_POLICY,
         finite_value_status: true,
@@ -163,6 +180,9 @@ pub fn residual_interaction_map_envelope(
 mod tests {
     use super::*;
 
+    const INPUT_DIGEST: &str =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     fn ids(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
     }
@@ -171,6 +191,7 @@ mod tests {
     fn preserves_opaque_ids_and_versioned_provenance() {
         let envelope = residual_interaction_map_envelope(
             RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+            INPUT_DIGEST,
             &ids(&["person-0", "person-1"]),
             &ids(&["item-0", "item-1"]),
             &[9.0, f64::NAN, 2.0, 3.0],
@@ -191,6 +212,7 @@ mod tests {
             envelope.calculation_provenance,
             RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE
         );
+        assert_eq!(envelope.input_digest, INPUT_DIGEST);
         assert_eq!(envelope.requested_axis_count, 1);
         assert_eq!(
             envelope.cell_extrema_tie_policy,
@@ -215,6 +237,7 @@ mod tests {
     fn rejects_unsupported_schema_before_numerical_validation() {
         let error = residual_interaction_map_envelope(
             "fast-mlsirm.residual-interaction-map.v2",
+            INPUT_DIGEST,
             &ids(&[]),
             &ids(&[]),
             &[],
@@ -228,9 +251,27 @@ mod tests {
     }
 
     #[test]
+    fn rejects_malformed_input_digest_before_numerical_validation() {
+        let error = residual_interaction_map_envelope(
+            RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+            "NOT-A-SHA256",
+            &ids(&[]),
+            &ids(&[]),
+            &[],
+            &[],
+            usize::MAX,
+            usize::MAX,
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("input digest"));
+    }
+
+    #[test]
     fn rejects_duplicate_and_mismatched_identifiers_before_numerical_work() {
         let duplicate = residual_interaction_map_envelope(
             RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+            INPUT_DIGEST,
             &ids(&["person", "person"]),
             &ids(&["item"]),
             &[],
@@ -244,6 +285,7 @@ mod tests {
 
         let mismatch = residual_interaction_map_envelope(
             RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+            INPUT_DIGEST,
             &ids(&["person"]),
             &ids(&["item"]),
             &[],
