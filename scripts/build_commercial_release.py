@@ -18,8 +18,10 @@ GIT_METADATA_TIMEOUT_SECONDS = 5
 
 try:
     from scripts._bounded_json import parse_json_bounded, read_json_object
+    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 except ModuleNotFoundError:
     from _bounded_json import parse_json_bounded, read_json_object
+    from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 
 
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
@@ -78,7 +80,21 @@ def _content_security_policy() -> str:
 
 def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run one release-stage command and capture its text output."""
-    return subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    try:
+        return run_bounded_capture(
+            command,
+            cwd=cwd,
+            timeout_seconds=300.0,
+            max_stdout_bytes=10 * 1024 * 1024,
+            max_stderr_bytes=10 * 1024 * 1024,
+        )
+    except (BoundedSubprocessOutputError, subprocess.TimeoutExpired) as exc:
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr=str(exc),
+        )
 
 
 def _parse_last_json_line(stdout: str) -> dict[str, Any] | None:
