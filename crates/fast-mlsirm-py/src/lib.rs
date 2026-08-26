@@ -9437,6 +9437,9 @@ fn finite_population_proportion_design(
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("schema_version", result.schema_version)?;
+    out.set_item("source_identity", result.source_identity)?;
+    out.set_item("source_sha256", result.source_sha256)?;
+    out.set_item("algorithm_version", result.algorithm_version)?;
     out.set_item("population_size", result.population_size)?;
     out.set_item("expected_proportion", result.expected_proportion)?;
     out.set_item("confidence_level", result.confidence_level)?;
@@ -9449,7 +9452,26 @@ fn finite_population_proportion_design(
         result.finite_population_correction,
     )?;
     out.set_item("allocation_method", result.allocation_method.as_str())?;
+    out.set_item(
+        "stratum_population_sizes",
+        result
+            .strata
+            .iter()
+            .map(|stratum| stratum.population_size)
+            .collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "stratum_expected_proportions",
+        result
+            .strata
+            .iter()
+            .map(|stratum| stratum.expected_proportion)
+            .collect::<Vec<_>>(),
+    )?;
     out.set_item("stratum_sample_sizes", result.stratum_sample_sizes)?;
+    out.set_item("input_sha256", result.input_sha256)?;
+    out.set_item("output_sha256", result.output_sha256)?;
+    out.set_item("artifact_sha256", result.artifact_sha256)?;
     Ok(out.into_any().unbind())
 }
 

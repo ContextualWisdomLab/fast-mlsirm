@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 import fast_mlsirm.sampling_design as sampling_design_module
+import pytest
 from fast_mlsirm import (
     SAMPLING_DESIGN_SCHEMA_VERSION,
     SamplingStratum,
@@ -22,10 +22,48 @@ def test_finite_population_design_matches_rust_reference() -> None:
     )
 
     assert design.schema_version == SAMPLING_DESIGN_SCHEMA_VERSION
+    assert design.source_identity == "fast-mlsirm.mlsirm-core.sampling-design"
+    assert design.algorithm_version == "1.0.0"
+    assert design.strata == (SamplingStratum(1_000, 0.5),)
     assert design.sample_size == 278
     assert design.stratum_sample_sizes == (278,)
     assert design.finite_population_correction == pytest.approx(
         (722.0 / 999.0) ** 0.5
+    )
+    assert all(
+        len(identity) == 64
+        for identity in (
+            design.source_sha256,
+            design.input_sha256,
+            design.output_sha256,
+            design.artifact_sha256,
+        )
+    )
+
+
+def test_sampling_artifact_replay_has_stable_content_identity() -> None:
+    """Exact canonical inputs reproduce every Rust-owned artifact identity."""
+    first = finite_population_proportion_design(
+        100,
+        0.95,
+        0.1,
+        [SamplingStratum(60, 0.1), SamplingStratum(40, 0.5)],
+        allocation_method="neyman",
+    )
+    replay = finite_population_proportion_design(
+        first.population_size,
+        first.confidence_level,
+        first.margin_of_error,
+        list(first.strata),
+        allocation_method=first.allocation_method,  # type: ignore[arg-type]
+    )
+
+    assert replay == first
+    assert first.input_sha256 == (
+        "c4c9a1dd09b3bd59fc14e4ac2824cd8a2169b3c94f5a5080bacfd2e5a964d786"
+    )
+    assert first.output_sha256 == (
+        "0729aeadbb08fe0cf1c0231841453516557dd85db9146f1be5ce87e35e225cda"
     )
 
 

@@ -15,6 +15,7 @@ path = "src/entrypoint.rs"
 [dependencies]
 bytemuck = { version = "1.25.0", features = ["derive"], optional = true }
 pollster = { version = "1.0.1", optional = true }
+sha2 = "0.10.9"
 wgpu = { version = "30.0.0", optional = true }
 
 [features]

@@ -6,6 +6,13 @@ This is a reusable measurement-design primitive owned by `fast-mlsirm`, not a
 TEPP temporal-relational estimator and not a downstream product threshold.
 ADR 0022 is normative; this note records its external evidence.
 
+The artifact is self-replayable: it retains the ordered stratum populations
+and expected proportions and exposes Rust-generated source, input, output, and
+complete artifact SHA-256 identities. Downstream systems retain sample-frame
+and selected-membership provenance separately; those records do not alter the
+arithmetic. The hashes do not establish an achieved estimator, variance,
+interval, semantic coverage, or corpus-inference claim.
+
 ## Adopted evidence
 
 NIST connects a caller-selected confidence level, absolute sampling error, and

@@ -24,6 +24,21 @@ selected strata.
 `fast-mlsirm` owns the versioned
 `fast-mlsirm.sampling-design.v1` Rust/PyO3 contract.
 
+The returned immutable artifact retains every canonical numeric input and the
+computed result. Rust emits SHA-256 identities for the canonical input and
+output encodings and the exact compiled Rust source file, then binds those
+identities with the schema, stable source identity, and algorithm version into
+one artifact SHA-256. A consumer can
+recompute the design from the retained inputs and compare the complete result;
+caller-authored hashes are neither accepted nor trusted. Sample-frame identity
+and selected-unit membership remain caller-owned provenance and are not inputs
+to the measurement arithmetic or its content identity.
+
+This artifact proves only the declared sample-size, FPC, and allocation
+calculation. It does not attest selected membership, an achieved estimator,
+variance estimate, confidence interval, semantic-coverage result, or permission
+for corpus inference; those require separately bound downstream evidence.
+
 For a caller-declared two-sided confidence level `1 - alpha`, absolute margin
 `e`, and prior- or pilot-derived proportion `p`, Rust computes
 
@@ -64,7 +79,8 @@ optimization are outside v1.
 - Every stratum proportion, confidence level, and margin is finite and strictly
   inside `(0, 1)`.
 - Rust owns the inverse-normal quantile, FPC, sample-size, variance term,
-  allocation weights, census-cap redistribution, rounding, and totals.
+  allocation weights, census-cap redistribution, rounding, totals, canonical
+  identity encodings, and content hashes.
 - Python performs callback-free type/range admission and result marshalling
   only; it contains no sampling formula.
 - The allocation sums to `n`, never exceeds a stratum population, and never

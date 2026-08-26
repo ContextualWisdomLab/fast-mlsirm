@@ -27,6 +27,9 @@ class ProportionSamplingDesign:
     """Auditable finite-population sample size, FPC, and stratum allocation."""
 
     schema_version: str
+    source_identity: str
+    source_sha256: str
+    algorithm_version: str
     population_size: int
     expected_proportion: float
     confidence_level: float
@@ -36,7 +39,11 @@ class ProportionSamplingDesign:
     sample_size: int
     finite_population_correction: float
     allocation_method: str
+    strata: tuple[SamplingStratum, ...]
     stratum_sample_sizes: tuple[int, ...]
+    input_sha256: str
+    output_sha256: str
+    artifact_sha256: str
 
 
 def _exact_positive_integer(name: str, value: object) -> int:
@@ -119,6 +126,9 @@ def finite_population_proportion_design(
     )
     return ProportionSamplingDesign(
         schema_version=result["schema_version"],
+        source_identity=result["source_identity"],
+        source_sha256=result["source_sha256"],
+        algorithm_version=result["algorithm_version"],
         population_size=result["population_size"],
         expected_proportion=result["expected_proportion"],
         confidence_level=result["confidence_level"],
@@ -128,5 +138,16 @@ def finite_population_proportion_design(
         sample_size=result["sample_size"],
         finite_population_correction=result["finite_population_correction"],
         allocation_method=result["allocation_method"],
+        strata=tuple(
+            SamplingStratum(population, proportion)
+            for population, proportion in zip(
+                result["stratum_population_sizes"],
+                result["stratum_expected_proportions"],
+                strict=True,
+            )
+        ),
         stratum_sample_sizes=tuple(result["stratum_sample_sizes"]),
+        input_sha256=result["input_sha256"],
+        output_sha256=result["output_sha256"],
+        artifact_sha256=result["artifact_sha256"],
     )

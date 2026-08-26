@@ -9,9 +9,14 @@
 use std::cmp::Ordering;
 
 use crate::nodes::inv_normal_cdf;
+use sha2::{Digest, Sha256};
 
 /// Wire/schema identity for the Rust and PyO3 sampling-design result.
 pub const SAMPLING_DESIGN_SCHEMA_VERSION: &str = "fast-mlsirm.sampling-design.v1";
+/// Stable identity of the Rust implementation that owns the artifact.
+pub const SAMPLING_DESIGN_SOURCE_IDENTITY: &str = "fast-mlsirm.mlsirm-core.sampling-design";
+/// Version of the sample-size, FPC, allocation, and integerization algorithm.
+pub const SAMPLING_DESIGN_ALGORITHM_VERSION: &str = "1.0.0";
 const MAX_EXACT_F64_INTEGER: usize = 1_usize << 53;
 const MAX_STRATA: usize = 100_000;
 
@@ -57,6 +62,12 @@ pub struct SamplingStratum {
 pub struct ProportionSamplingDesign {
     /// Exact wire/schema version.
     pub schema_version: &'static str,
+    /// Stable package-owned source identity.
+    pub source_identity: &'static str,
+    /// SHA-256 of this exact Rust source file at build time.
+    pub source_sha256: String,
+    /// Version of the complete Rust-owned algorithm.
+    pub algorithm_version: &'static str,
     /// Finite population size.
     pub population_size: usize,
     /// Population-weighted expected proportion derived from the strata.
@@ -75,8 +86,80 @@ pub struct ProportionSamplingDesign {
     pub finite_population_correction: f64,
     /// Allocation rule used for the ordered strata.
     pub allocation_method: AllocationMethod,
+    /// Canonical ordered inputs retained for independent replay.
+    pub strata: Vec<SamplingStratum>,
     /// Integer sample count for each input stratum, in input order.
     pub stratum_sample_sizes: Vec<usize>,
+    /// SHA-256 of the canonical input encoding.
+    pub input_sha256: String,
+    /// SHA-256 of the canonical computed-output encoding.
+    pub output_sha256: String,
+    /// SHA-256 binding schema, source, algorithm, input, and output identities.
+    pub artifact_sha256: String,
+}
+
+fn put_text(bytes: &mut Vec<u8>, value: &str) {
+    bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(value.as_bytes());
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn input_identity(
+    population_size: usize,
+    confidence_level: f64,
+    margin_of_error: f64,
+    strata: &[SamplingStratum],
+    allocation_method: AllocationMethod,
+) -> String {
+    let mut bytes = Vec::new();
+    put_text(&mut bytes, SAMPLING_DESIGN_SCHEMA_VERSION);
+    put_text(&mut bytes, SAMPLING_DESIGN_SOURCE_IDENTITY);
+    put_text(&mut bytes, SAMPLING_DESIGN_ALGORITHM_VERSION);
+    bytes.extend_from_slice(&(population_size as u64).to_be_bytes());
+    bytes.extend_from_slice(&confidence_level.to_bits().to_be_bytes());
+    bytes.extend_from_slice(&margin_of_error.to_bits().to_be_bytes());
+    put_text(&mut bytes, allocation_method.as_str());
+    bytes.extend_from_slice(&(strata.len() as u64).to_be_bytes());
+    for stratum in strata {
+        bytes.extend_from_slice(&(stratum.population_size as u64).to_be_bytes());
+        bytes.extend_from_slice(&stratum.expected_proportion.to_bits().to_be_bytes());
+    }
+    sha256_hex(&bytes)
+}
+
+fn output_identity(
+    expected_proportion: f64,
+    critical_value: f64,
+    uncorrected_sample_size: f64,
+    sample_size: usize,
+    finite_population_correction: f64,
+    stratum_sample_sizes: &[usize],
+) -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&expected_proportion.to_bits().to_be_bytes());
+    bytes.extend_from_slice(&critical_value.to_bits().to_be_bytes());
+    bytes.extend_from_slice(&uncorrected_sample_size.to_bits().to_be_bytes());
+    bytes.extend_from_slice(&(sample_size as u64).to_be_bytes());
+    bytes.extend_from_slice(&finite_population_correction.to_bits().to_be_bytes());
+    bytes.extend_from_slice(&(stratum_sample_sizes.len() as u64).to_be_bytes());
+    for count in stratum_sample_sizes {
+        bytes.extend_from_slice(&(*count as u64).to_be_bytes());
+    }
+    sha256_hex(&bytes)
+}
+
+fn artifact_identity(source_sha256: &str, input_sha256: &str, output_sha256: &str) -> String {
+    let mut bytes = Vec::new();
+    put_text(&mut bytes, SAMPLING_DESIGN_SCHEMA_VERSION);
+    put_text(&mut bytes, SAMPLING_DESIGN_SOURCE_IDENTITY);
+    put_text(&mut bytes, source_sha256);
+    put_text(&mut bytes, SAMPLING_DESIGN_ALGORITHM_VERSION);
+    put_text(&mut bytes, input_sha256);
+    put_text(&mut bytes, output_sha256);
+    sha256_hex(&bytes)
 }
 
 /// Design a two-sided proportion estimate for sampling without replacement.
@@ -139,9 +222,29 @@ pub fn finite_population_proportion_design(
         ((population_size - sample_size) as f64 / (population_size - 1) as f64).sqrt()
     };
     let stratum_sample_sizes = allocate_strata(sample_size, strata, allocation_method)?;
+    let source_sha256 = sha256_hex(include_bytes!("sampling_design.rs"));
+    let input_sha256 = input_identity(
+        population_size,
+        confidence_level,
+        margin_of_error,
+        strata,
+        allocation_method,
+    );
+    let output_sha256 = output_identity(
+        expected_proportion,
+        critical_value,
+        uncorrected_sample_size,
+        sample_size,
+        finite_population_correction,
+        &stratum_sample_sizes,
+    );
+    let artifact_sha256 = artifact_identity(&source_sha256, &input_sha256, &output_sha256);
 
     Ok(ProportionSamplingDesign {
         schema_version: SAMPLING_DESIGN_SCHEMA_VERSION,
+        source_identity: SAMPLING_DESIGN_SOURCE_IDENTITY,
+        source_sha256,
+        algorithm_version: SAMPLING_DESIGN_ALGORITHM_VERSION,
         population_size,
         expected_proportion,
         confidence_level,
@@ -151,7 +254,11 @@ pub fn finite_population_proportion_design(
         sample_size,
         finite_population_correction,
         allocation_method,
+        strata: strata.to_vec(),
         stratum_sample_sizes,
+        input_sha256,
+        output_sha256,
+        artifact_sha256,
     })
 }
 
@@ -258,8 +365,48 @@ mod tests {
         assert_eq!(design.schema_version, SAMPLING_DESIGN_SCHEMA_VERSION);
         assert_eq!(design.sample_size, 278);
         assert_eq!(design.stratum_sample_sizes, vec![278]);
+        assert_eq!(design.strata[0].population_size, 1_000);
+        assert_eq!(design.source_identity, SAMPLING_DESIGN_SOURCE_IDENTITY);
+        assert_eq!(design.source_sha256.len(), 64);
+        assert_eq!(design.algorithm_version, SAMPLING_DESIGN_ALGORITHM_VERSION);
+        assert_eq!(design.input_sha256.len(), 64);
+        assert_eq!(design.output_sha256.len(), 64);
+        assert_eq!(design.artifact_sha256.len(), 64);
         assert!((design.uncorrected_sample_size - 384.145_882).abs() < 1e-5);
         assert!((design.finite_population_correction - (722.0_f64 / 999.0).sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn content_identity_is_deterministic_and_binds_inputs_and_outputs() {
+        let build = |proportion| {
+            finite_population_proportion_design(
+                100,
+                0.95,
+                0.1,
+                &[SamplingStratum {
+                    population_size: 100,
+                    expected_proportion: proportion,
+                }],
+                AllocationMethod::Proportional,
+            )
+            .unwrap()
+        };
+        let first = build(0.5);
+        let replay = build(0.5);
+        let changed = build(0.4);
+        assert_eq!(first.input_sha256, replay.input_sha256);
+        assert_eq!(first.output_sha256, replay.output_sha256);
+        assert_eq!(first.artifact_sha256, replay.artifact_sha256);
+        assert_eq!(
+            first.input_sha256,
+            "1447766881e80e4ffe9745eec3a43667c30a97ec0709abe5f7a3fa03ef157e51"
+        );
+        assert_eq!(
+            first.output_sha256,
+            "2fdc03b308813de28df0d73d7f6f7031fb4e380b71905f16c31c3b5d1aadd9b3"
+        );
+        assert_ne!(first.input_sha256, changed.input_sha256);
+        assert_ne!(first.artifact_sha256, changed.artifact_sha256);
     }
 
     #[test]
