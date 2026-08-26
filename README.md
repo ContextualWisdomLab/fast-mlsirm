@@ -94,9 +94,8 @@ print(fixed_item_calibration.best)
   error, and second-order stability helpers.
 - Fixed item parameter linking, CAT item-information selection, and greedy ATA
   form assembly with content min/max constraints.
-- aFIPC-style fixed-item calibration diagnostics that select candidate
-  probability tensors using fixed evaluation-item likelihood and kaefa-style
-  item-fit penalty.
+- Fixed-item calibration diagnostics that select candidate probability tensors
+  using fixed evaluation-item likelihood and an item-fit penalty.
 - Rubric-centered schemas, deterministic bounded item-blueprint compilation,
   and canonical provider-neutral generation contracts. See
   [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
@@ -425,11 +424,13 @@ is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
 factor id per item before running optimization or diagnostics.
 `diagnose-fixed-item-calibration` writes `dimension_diagnostics.json` with
 `best_candidate`, `calibration_score`, fixed-item coverage counts, and
-kaefa-style item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
+item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
 mask or item-index vector; when omitted, all items are treated as the fixed
 calibration set.
 
-`fit --backend numpy` uses the Python reference objective. `fit --backend rust`
+The explicit NumPy reference objective runs through `fast_mlsirm.fit_reference`
+(Python) or the CLI's `fast-mlsirm fit --reference` flag; production `--backend`
+choices are `{rust, auto}`. `fit --backend rust`
 requires the installed `fast_mlsirm._core` extension and fails clearly if it is
 unavailable. `fit --backend auto` uses the Rust objective when the compiled
 core is available and fails closed otherwise. Automatic resolution never
