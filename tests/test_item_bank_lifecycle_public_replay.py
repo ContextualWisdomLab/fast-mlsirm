@@ -13,6 +13,8 @@ from fast_mlsirm.rubric import _item_bank_reactivation_validation as lifecycle_s
 from fast_mlsirm.rubric.item_bank import (
     ItemBankLifecycleError,
     ItemBankLifecycleRecord,
+    ItemBankLifecycleState,
+    transition_item_bank_record,
 )
 from fast_mlsirm.rubric.models import _sha256_hex
 
@@ -54,8 +56,15 @@ def test_replay_rejects_coherent_content_and_fingerprint_rebinding() -> None:
         _ = record.record_fingerprint
     with pytest.raises(ItemBankLifecycleError) as serialization_error:
         record.to_dict()
+    with pytest.raises(ItemBankLifecycleError) as transition_error:
+        transition_item_bank_record(
+            record,
+            ItemBankLifecycleState.APPROVED,
+            evidence_references=(),
+            transition_reason_id="forged_transition",
+        )
 
-    for caught in (fingerprint_error, serialization_error):
+    for caught in (fingerprint_error, serialization_error, transition_error):
         assert caught.value.code == "lifecycle_record_replay_mismatch"
         assert caught.value.path == "$.current_record"
 
