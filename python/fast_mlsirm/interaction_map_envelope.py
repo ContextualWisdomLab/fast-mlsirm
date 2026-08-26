@@ -11,6 +11,7 @@ from .interaction_map import _axis_count, _trusted_matrix
 
 
 RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION = "fast-mlsirm.residual-interaction-map.v1"
+_MAX_INTERACTION_MAP_IDENTIFIER_COUNT = 20_000_000
 
 
 @dataclass(frozen=True)
@@ -65,9 +66,14 @@ def _schema_version(value: object) -> str:
 
 
 def _opaque_ids(name: str, value: object) -> list[str]:
-    """Copy exact inert opaque identifiers without caller iteration/coercion hooks."""
+    """Copy bounded exact opaque identifiers without caller coercion hooks."""
     if type(value) not in (list, tuple):
         raise ValueError(f"{name} must be an exact built-in list or tuple of strings")
+    identifier_count = len(value)
+    if identifier_count > _MAX_INTERACTION_MAP_IDENTIFIER_COUNT:
+        raise ValueError(
+            f"{name} identifier count exceeds {_MAX_INTERACTION_MAP_IDENTIFIER_COUNT}"
+        )
     normalized: list[str] = []
     for identifier in value:
         if type(identifier) is not str:

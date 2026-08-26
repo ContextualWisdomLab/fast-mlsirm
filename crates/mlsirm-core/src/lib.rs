@@ -16,6 +16,7 @@ pub mod gpcm;
 pub mod grm;
 pub mod gtheory;
 pub mod ksirt;
+pub mod lineage_channel_weight;
 pub mod linking;
 pub mod lltm;
 pub mod longitudinal;

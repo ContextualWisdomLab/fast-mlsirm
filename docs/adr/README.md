@@ -37,8 +37,10 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0018](0018-angoff-delta-plot-dif.md) | Accepted | Adopt Angoff delta-plot (Magis & Facon threshold) as the small-sample observed-score DIF screen; distinct from MH/logistic/SIBTEST. |
 | [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
 | [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
-| [0021](0021-residual-interaction-map-boundary.md) | Accepted | Rust owns the missing-aware residual interaction map, Gabriel factorization, reconstruction, inertia, and exact cross-term arithmetic. |
-| [0022](0022-polytomous-period-artifact.md) | Proposed | Rust will own one content-addressed GRM/GPCM period artifact and will fail closed rather than select a non-nested model without formal distinguishability evidence. |
+| [0021](0021-residual-interaction-map-boundary.md) | Accepted | Rust owns residual interaction-map arithmetic and provenance-bearing diagnostics. |
+| [0023](0023-tepp-anchored-lineage-channel-weight-boundary.md) | Proposed | Admit continuous channel evidence and exact accepted TEPP v1 identity, while estimation fails closed until pair-level independent criterion evidence exists. |
+| [0024](0024-macos-native-rust-mlx-metal-consumer-boundary.md) | Accepted | Consume macOS-native Rust-owned MLX Metal through authenticated host transport with exact backend/parity receipts; Linux never claims Metal. |
+| [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule
 
