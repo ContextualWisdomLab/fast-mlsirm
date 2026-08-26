@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import fast_mlsirm.sampling_design as sampling_design_module
 from fast_mlsirm import (
     SAMPLING_DESIGN_SCHEMA_VERSION,
     SamplingStratum,
@@ -66,3 +67,52 @@ def test_sampling_design_rejects_implicit_or_invalid_evidence(
     arguments.update(kwargs)
     with pytest.raises(ValueError):
         finite_population_proportion_design(**arguments)  # type: ignore[arg-type]
+
+
+def test_sampling_resource_bounds_fail_before_rust_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rust resource/domain bounds are replayed before caller evidence or core work."""
+    core_calls = 0
+
+    def forbidden_core(*args: object, **kwargs: object) -> object:
+        nonlocal core_calls
+        core_calls += 1
+        raise AssertionError("Rust dispatch must not run for invalid resource controls")
+
+    monkeypatch.setattr(
+        sampling_design_module._core,
+        "finite_population_proportion_design",
+        forbidden_core,
+    )
+
+    with pytest.raises(ValueError, match=r"population_size must be between 1 and 2\^53"):
+        finite_population_proportion_design(
+            (1 << 53) + 1,
+            0.95,
+            0.1,
+            [SamplingStratum((1 << 53) + 1, 0.5)],
+            allocation_method="proportional",
+        )
+
+    oversized_strata = [SamplingStratum(1, 0.5)] * 100_001
+    with pytest.raises(ValueError, match="strata must contain between 1 and 100000 entries"):
+        finite_population_proportion_design(
+            100_001,
+            0.95,
+            0.1,
+            oversized_strata,
+            allocation_method="proportional",
+        )
+
+    assert core_calls == 0
+
+
+def test_giant_integer_probability_fails_with_package_value_error() -> None:
+    """Strict probability controls do not overflow through unnecessary float coercion."""
+    with pytest.raises(ValueError, match="confidence_level must be finite"):
+        finite_population_proportion_design(
+            100,
+            10**400,
+            0.1,
+            [SamplingStratum(100, 0.5)],
+            allocation_method="proportional",
+        )
