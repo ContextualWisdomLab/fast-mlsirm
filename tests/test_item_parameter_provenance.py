@@ -142,6 +142,44 @@ def test_parameter_evidence_rejects_mixed_or_missing_provenance(
         )
 
 
+@pytest.mark.parametrize(
+    "status, kwargs, message",
+    [
+        pytest.param(
+            ItemParameterStatus.PROVISIONAL,
+            {
+                "provisional_method": ProvisionalParameterMethod.TEMPLATE_PRIOR,
+                "provisional_basis_fingerprint": _fingerprint("a"),
+            },
+            "provisional basis must not be the parameter artifact itself",
+            id="provisional-self-basis",
+        ),
+        pytest.param(
+            ItemParameterStatus.CALIBRATED,
+            {"calibration_evidence_fingerprint": _fingerprint("a")},
+            "calibration evidence must not be the parameter artifact itself",
+            id="calibrated-self-evidence",
+        ),
+    ],
+)
+def test_parameter_evidence_rejects_self_referential_provenance(
+    status: ItemParameterStatus,
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    """A parameter artifact cannot serve as its own provenance source."""
+
+    with pytest.raises(ValueError, match=message):
+        build_item_parameter_evidence(
+            item_id="generated_item",
+            item_version="1.0.0",
+            response_model_id="rasch_model",
+            parameter_artifact_fingerprint=_fingerprint("a"),
+            status=status,
+            **kwargs,
+        )
+
+
 def test_parameter_evidence_replays_creation_identity_before_serialization() -> None:
     """Frozen-record bypasses cannot relabel provisional parameters as calibrated."""
 
