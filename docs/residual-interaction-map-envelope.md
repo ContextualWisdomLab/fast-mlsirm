@@ -25,11 +25,19 @@ Unsupported schema versions fail closed. The schema identifier is a compatibilit
 
 Opaque identifiers are returned unchanged for retained persons/items and deterministic closest/farthest cells. They are identities only: the numerical core does not parse domain meaning from them.
 
+## Cryptographic input provenance
+
+After caller evidence has passed the public validation and lossless binary64 boundary, Python derives a SHA-256 digest over one unambiguous tagged byte stream. The stream includes the exact schema identity, requested axis count, ordered person identifiers, ordered item identifiers, matrix shape, and the validated observed/expected matrices encoded as C-order little-endian float64 bytes. Every tag and payload is length-prefixed, so concatenation cannot create an ambiguous identity.
+
+This digest is provenance serialization, not psychometric arithmetic. The exact lowercase 64-hex digest is passed through the PyO3 boundary. Rust validates its SHA-256 identity format before identifier or numerical validation, stores it in the versioned envelope, and returns it with the Rust-owned result. The public Python binding then requires the returned digest to equal the digest of the current validated request before any numerical payload marshalling. A stale or foreign native result with otherwise current-looking metadata therefore fails closed on input identity mismatch.
+
+Equivalent admitted NumPy and built-in carriers that normalize to the same ordered identities and float64 evidence have the same digest. Changing a validated matrix value, opaque identifier, schema, shape, or requested axis count changes the digest.
+
 ## Returned evidence
 
 `ResidualInteractionMapEnvelope` returns:
 
-- schema, algorithm, implementation, and calculation-provenance identifiers;
+- schema, algorithm, implementation, calculation-provenance, and SHA-256 input-digest identifiers;
 - the caller-requested axis count and the explicit closest/farthest tie policy;
 - finite-value status after Rust validates all persisted numerical values;
 - retained person/item opaque identifiers and original indices;
@@ -56,11 +64,7 @@ A non-empty complete-case matrix may also have effective rank 0, for example whe
 
 ## Downstream rule
 
-A downstream consumer may validate the schema and provenance, persist the returned values, and render them. It must not recompute selection, effective rank, coverage differences, cell extrema, residuals, requested-axis distances, coordinates, reconstruction, or cross-share and then present those derived values as the `fast-mlsirm` result.
-
-## Current provenance limitation
-
-Version 1 currently records schema, algorithm, implementation version, calculation owner, requested-axis contract, tie policy, opaque identities, and finite-value status. Issue #1412 additionally requires a cryptographic input digest with mismatch verification before this envelope is considered release-complete for immutable cross-repository handoff. Until that lands, consumers must not infer cryptographic input integrity from the existing metadata.
+A downstream consumer may validate the schema, cryptographic input identity, and provenance, persist the returned values, and render them. It must not recompute selection, effective rank, coverage differences, cell extrema, residuals, requested-axis distances, coordinates, reconstruction, or cross-share and then present those derived values as the `fast-mlsirm` result.
 
 ## Research basis
 
