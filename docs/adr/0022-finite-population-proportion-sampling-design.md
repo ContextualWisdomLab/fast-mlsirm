@@ -89,6 +89,21 @@ optimization are outside v1.
   allocations, invalid prior evidence, population mismatch, and infeasible
   stratum coverage.
 
+## Alternatives considered
+
+- Python-side sample-size and allocation arithmetic was rejected because ADR
+  0002 assigns ordinary production measurement arithmetic to the Rust core and
+  Python is limited to validation, marshalling, orchestration, and reporting.
+- Exact-binomial sizing was not substituted for v1 because it is a different
+  method with different guarantees and requires an explicit separately
+  versioned scientific contract rather than a silent formula change.
+- Unequal-cost optimum allocation was excluded because v1 has no governed cost
+  evidence contract; inventing or defaulting cost weights would change the
+  design without caller evidence.
+- An implicit conservative `p=0.5` was rejected because the expected
+  proportion is caller-declared prior or pilot evidence and the package must
+  not manufacture that evidence.
+
 ## Consequences and trade-offs
 
 The contract is independently usable by any Python/Rust consumer without TEPP
