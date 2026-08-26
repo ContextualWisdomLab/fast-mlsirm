@@ -222,6 +222,17 @@ struct UniqueJsonVisitor;
 impl<'de> Visitor<'de> for UniqueJsonVisitor {
     type Value = ();
 
+    // `deserialize_any` only ever routes a JSON token to one of the `visit_*`
+    // overrides below (unit/bool/i64/u64/f64/str/seq/map — see
+    // `serde_json::de::Deserializer::deserialize_any` and
+    // `ParserNumber::visit`, which never yields anything but F64/U64/I64
+    // without the `arbitrary_precision` feature). Every one of those
+    // overrides returns `Ok(())` so a maximally permissive pre-scan admits
+    // any value shape the later typed parse might still accept, matching
+    // this scan's job of catching duplicate keys only. That leaves this
+    // `expecting` formatter unreachable by construction: it is only ever
+    // invoked from the default `Visitor` methods' `Error::invalid_type`,
+    // and this visitor never falls through to a default method.
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("JSON without duplicate object keys")
     }
@@ -264,11 +275,13 @@ impl<'de> Visitor<'de> for UniqueJsonVisitor {
         Ok(())
     }
 
+    // serde_json's `deserialize_any` never calls `visit_string`: it always
+    // passes a borrowed `&str` (`Reference::Borrowed`/`Reference::Copied` in
+    // `serde_json::de`, including for escaped strings that require an owned
+    // scratch buffer internally) and dispatches through `visit_str` (or
+    // `visit_borrowed_str`, whose default forwards to `visit_str`). A
+    // `visit_string` override here is therefore unreachable dead code.
     fn visit_str<E>(self, _value: &str) -> Result<Self::Value, E> {
-        Ok(())
-    }
-
-    fn visit_string<E>(self, _value: String) -> Result<Self::Value, E> {
         Ok(())
     }
 
@@ -712,10 +725,11 @@ mod tests {
 
     #[test]
     fn duplicate_key_scan_admits_escaped_strings_and_null_targets() {
-        // A JSON escape forces serde_json's string reader to allocate an
-        // owned buffer (visit_string) instead of borrowing (visit_str); the
-        // escape decodes back to the original identifier, so the artifact
-        // stays valid.
+        // A JSON escape forces serde_json's string reader to copy into an
+        // owned scratch buffer rather than borrowing from the input, but it
+        // is still handed to the visitor as a `&str` (`visit_str`), not
+        // `visit_string`; the escape decodes back to the original
+        // identifier, so the artifact stays valid.
         let escaped_run_id = valid_json().replacen("\"run_id\":\"run-1\"", "\"run_id\":\"run\\u002d1\"", 1);
         let posterior = TopicContextPosteriorArtifact::from_json(&escaped_run_id).unwrap();
         assert_eq!(posterior.artifact().run_id, "run-1");
@@ -734,6 +748,23 @@ mod tests {
         let posterior = TopicContextPosteriorArtifact::from_json(&with_lineage_event).unwrap();
         assert_eq!(posterior.artifact().lineage_events.len(), 1);
         assert_eq!(posterior.artifact().lineage_events[0].target_topic_id, None);
+    }
+
+    #[test]
+    fn duplicate_key_scan_admits_bare_negative_integer_coordinates() {
+        // A plausible-value coordinate is a real-valued f64, so a producer
+        // may legitimately emit a bare negative integer literal (no decimal
+        // point) for an integral coordinate value; serde_json's
+        // `deserialize_any` routes that through `visit_i64` during the
+        // duplicate-key scan, and the typed parse still accepts it into the
+        // `f64` field afterward.
+        let negative_coordinate =
+            valid_json().replacen("\"logistic_normal_coordinates\":[0.1]", "\"logistic_normal_coordinates\":[-1]", 1);
+        let posterior = TopicContextPosteriorArtifact::from_json(&negative_coordinate).unwrap();
+        assert_eq!(
+            posterior.artifact().plausible_values[0].logistic_normal_coordinates,
+            vec![-1.0]
+        );
     }
 
     #[test]
