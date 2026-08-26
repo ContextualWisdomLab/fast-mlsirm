@@ -1,11 +1,29 @@
 use mlsirm_core::interaction_map::residual_interaction_map;
 use mlsirm_core::interaction_map_envelope::{
-    residual_interaction_map_envelope, RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
-    RESIDUAL_INTERACTION_MAP_TIE_POLICY,
+    residual_interaction_map_envelope, ResidualInteractionMapEnvelope,
+    RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION, RESIDUAL_INTERACTION_MAP_TIE_POLICY,
 };
 
 fn ids(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn distance_for(
+    envelope: &ResidualInteractionMapEnvelope,
+    person_id: &str,
+    item_id: &str,
+) -> f64 {
+    let person = envelope
+        .retained_person_ids
+        .iter()
+        .position(|value| value == person_id)
+        .expect("person id must be retained");
+    let item = envelope
+        .retained_item_ids
+        .iter()
+        .position(|value| value == item_id)
+        .expect("item id must be retained");
+    envelope.map.distance[person * envelope.map.map_item_count + item]
 }
 
 #[test]
@@ -96,4 +114,70 @@ fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
         .unexplained
         .iter()
         .all(|value| value.abs() < 1e-12));
+}
+
+#[test]
+fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
+    // This zero-mean 3 x 2 interaction has rank two. Reordering both axes must
+    // not change singular values or the requested-axis distance attached to an
+    // opaque person/item identity, and two axes must reconstruct the true input.
+    let observed = [4.0, 1.0, 2.5, 3.0, 1.5, 0.0];
+    let expected = [2.0; 6];
+    let original = residual_interaction_map_envelope(
+        RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        &ids(&["person-a", "person-b", "person-c"]),
+        &ids(&["item-a", "item-b"]),
+        &observed,
+        &expected,
+        3,
+        2,
+        2,
+    )
+    .unwrap();
+
+    let permuted_observed = [0.0, 1.5, 1.0, 4.0, 3.0, 2.5];
+    let permuted_expected = [2.0; 6];
+    let permuted = residual_interaction_map_envelope(
+        RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        &ids(&["person-c", "person-a", "person-b"]),
+        &ids(&["item-b", "item-a"]),
+        &permuted_observed,
+        &permuted_expected,
+        3,
+        2,
+        2,
+    )
+    .unwrap();
+
+    assert_eq!(original.map.effective_rank, 2);
+    assert_eq!(permuted.map.effective_rank, 2);
+    for (left, right) in original
+        .map
+        .singular_values
+        .iter()
+        .zip(permuted.map.singular_values.iter())
+    {
+        assert!((left - right).abs() < 1e-10);
+    }
+    for person_id in ["person-a", "person-b", "person-c"] {
+        for item_id in ["item-a", "item-b"] {
+            let left = distance_for(&original, person_id, item_id);
+            let right = distance_for(&permuted, person_id, item_id);
+            assert!((left - right).abs() < 1e-10);
+        }
+    }
+    for ((observed_value, expected_value), fitted) in observed
+        .iter()
+        .zip(expected.iter())
+        .zip(original.map.reconstruction.iter())
+    {
+        assert!((observed_value - expected_value - fitted).abs() < 1e-10);
+    }
+    for ((observed_value, expected_value), fitted) in permuted_observed
+        .iter()
+        .zip(permuted_expected.iter())
+        .zip(permuted.map.reconstruction.iter())
+    {
+        assert!((observed_value - expected_value - fitted).abs() < 1e-10);
+    }
 }
