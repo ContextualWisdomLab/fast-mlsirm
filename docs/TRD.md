@@ -186,7 +186,15 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies. The hierarchical CT-AR Rasch slice reports multi-seed state RMSE/coverage as joint MAP evidence, not as Fox–Glas Gibbs or estimated MMMC recovery.
 
-**TRD-MLT-006** The TEPP topic-context influence boundary shall validate the
+**TRD-MLT-006** Rust shall validate the continuous Event Lineage channel matrix
+and exact TEPP v1 accepted-anchor identity without dichotomizing scores or
+estimating weights. Because v1 contains no independent pair-level criterion
+observations, estimation returns
+`IndependentCriterionObservationsUnavailable`. A future estimator requires a
+producer successor, Rust CPU/GPU same-objective parity, true-parameter and
+known-weight recovery, and uncertainty coverage before activation.
+
+**TRD-MLT-007** The TEPP topic-context influence boundary shall validate the
 exact `tepp.topic_context_posterior.v1` schema in Rust, including complete
 posterior draws, Event Lineage, historical event time, evidence provenance,
 and source-derived BU/PU/team/person multiple memberships. A v1 artifact is a
@@ -197,7 +205,7 @@ reviewed importance reweighting. A future estimator must consume one of those
 producer-owned evidence forms and pass deletion-effect recovery, interval
 coverage, and CPU/GPU parity; no Python or heuristic fallback is permitted.
 
-**TRD-MLT-007** The accepted deletion-refit successor contract shall bind an
+**TRD-MLT-008** The accepted deletion-refit successor contract shall bind an
 independent full-fit anchor distribution basis and one actual `D \\ {i}` refit
 per admitted document. Each refit shall prove identical prior/configuration,
 snapshot, cutoff, and event clock; exact retained membership; incident Event
@@ -205,7 +213,7 @@ Lineage and membership deletion; unique bijective anchor alignment; complete
 posterior draws; and CPU/GPU objective, parameter, and draw parity receipts.
 Missing or tied alignment fails closed.
 
-**TRD-MLT-008** Rust shall transform ALR draws to simplex probabilities and
+**TRD-MLT-009** Rust shall transform ALR draws to simplex probabilities and
 compute the source-weighted context prevalence difference between the full fit
 and refit separately for each deleted document, BU/PU/team/person context, and
 topic. It shall preserve complete signed posterior draws and their mean and

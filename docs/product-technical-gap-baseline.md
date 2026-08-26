@@ -668,6 +668,23 @@ The Internet Engineering Task Force. (2017). *The JavaScript Object Notation
 (JSON) data interchange format* (RFC 8259).
 https://www.rfc-editor.org/rfc/rfc8259
 
+### Gap: Event Lineage channel weights still lack estimable independent outcomes
+
+LineageWeave ADR 0208 routes channel-weight arithmetic here, while TEPP PR #237
+publishes the accepted `tepp.lineage_criterion_anchor.v1` run-level decision.
+That artifact does not contain pair-level independent criterion observations.
+The legacy Python path's score-floor dichotomization and internally anchored
+MLS2PLM therefore cannot be ported and presented as calibrated measurement.
+
+This change adds the Rust continuous-evidence and exact anchor-identity
+prerequisite, with 100% line/function/branch coverage for its module. The
+estimation result remains explicitly unavailable. Completion requires a TEPP
+successor binding independent criterion posterior/outcomes to pair identities,
+followed by an accepted estimator ADR, Rust CPU/GPU same-objective path,
+true-parameter and known-weight recovery, uncertainty coverage, and protected
+integration. Period-report calibration/aggregates remain a separate owner debt
+and are not silently bundled into this contract.
+
 ## 16. Change boundary for this baseline
 
 This document introduces no production code, numerical formula, public API,

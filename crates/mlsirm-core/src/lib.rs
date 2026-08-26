@@ -16,6 +16,7 @@ pub mod gpcm;
 pub mod grm;
 pub mod gtheory;
 pub mod ksirt;
+pub mod lineage_channel_weight;
 pub mod linking;
 pub mod lltm;
 pub mod longitudinal;
@@ -48,7 +49,6 @@ pub mod standard_setting;
 pub mod subscores;
 pub mod test_form;
 pub mod testlet;
-pub mod topic_context_influence;
 pub mod twopl;
 pub mod utility;
 

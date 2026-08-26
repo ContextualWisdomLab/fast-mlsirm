@@ -7,7 +7,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Deserialize;
+use serde::{
+    de::{DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor},
+    Deserialize, Deserializer,
+};
+use std::fmt;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use uuid::Uuid;
 
@@ -169,6 +173,7 @@ pub struct ValidatedTopicContextPosterior(TopicContextPosteriorArtifact);
 
 impl ValidatedTopicContextPosterior {
     /// Borrow the validated producer artifact.
+    #[must_use]
     pub fn artifact(&self) -> &TopicContextPosteriorArtifact {
         &self.0
     }
@@ -199,18 +204,120 @@ fn evidence(resource_id: &str, assertion_id: &str, sha256: &str) -> bool {
     identifier(resource_id) && identifier(assertion_id) && digest(sha256)
 }
 
+struct UniqueJsonSeed;
+
+impl<'de> DeserializeSeed<'de> for UniqueJsonSeed {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(UniqueJsonVisitor)
+    }
+}
+
+struct UniqueJsonVisitor;
+
+impl<'de> Visitor<'de> for UniqueJsonVisitor {
+    type Value = ();
+
+    // `deserialize_any` only ever routes a JSON token to one of the `visit_*`
+    // overrides below (unit/bool/i64/u64/f64/str/seq/map — see
+    // `serde_json::de::Deserializer::deserialize_any` and
+    // `ParserNumber::visit`, which never yields anything but F64/U64/I64
+    // without the `arbitrary_precision` feature). Every one of those
+    // overrides returns `Ok(())` so a maximally permissive pre-scan admits
+    // any value shape the later typed parse might still accept, matching
+    // this scan's job of catching duplicate keys only. That leaves this
+    // `expecting` formatter unreachable by construction: it is only ever
+    // invoked from the default `Visitor` methods' `Error::invalid_type`,
+    // and this visitor never falls through to a default method.
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JSON without duplicate object keys")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut keys = BTreeSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !keys.insert(key) {
+                return Err(A::Error::custom("duplicate JSON object key"));
+            }
+            map.next_value_seed(UniqueJsonSeed)?;
+        }
+        Ok(())
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        while sequence.next_element_seed(UniqueJsonSeed)?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_i64<E>(self, _value: i64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_u64<E>(self, _value: u64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    // serde_json's `deserialize_any` never calls `visit_string`: it always
+    // passes a borrowed `&str` (`Reference::Borrowed`/`Reference::Copied` in
+    // `serde_json::de`, including for escaped strings that require an owned
+    // scratch buffer internally) and dispatches through `visit_str` (or
+    // `visit_borrowed_str`, whose default forwards to `visit_str`). A
+    // `visit_string` override here is therefore unreachable dead code.
+    fn visit_str<E>(self, _value: &str) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(())
+    }
+}
+
+fn reject_duplicate_json_keys(payload: &str) -> Result<(), TopicContextContractError> {
+    let mut deserializer = serde_json::Deserializer::from_str(payload);
+    UniqueJsonSeed
+        .deserialize(&mut deserializer)
+        .map_err(|_| TopicContextContractError::InvalidEvidence)?;
+    deserializer
+        .end()
+        .map_err(|_| TopicContextContractError::InvalidEvidence)
+}
+
 fn finite_coordinates(values: &[f64], expected: usize) -> bool {
     values.len() == expected && values.iter().all(|value| value.is_finite())
 }
 
 impl TopicContextPosteriorArtifact {
     /// Parse and fully validate one bounded TEPP artifact.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable fail-closed error for oversized, malformed, foreign,
+    /// incomplete, or internally inconsistent evidence.
     pub fn from_json(
         payload: &str,
     ) -> Result<ValidatedTopicContextPosterior, TopicContextContractError> {
         if payload.len() > TOPIC_CONTEXT_POSTERIOR_BYTE_LIMIT {
             return Err(TopicContextContractError::LimitExceeded);
         }
+        reject_duplicate_json_keys(payload)?;
         let artifact: Self = serde_json::from_str(payload)
             .map_err(|_| TopicContextContractError::InvalidEvidence)?;
         artifact.validate()?;
@@ -283,10 +390,12 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "topic:{}:{}:{}:{}",
+                    "topic:{}:{}:{}:{}:{}:{}",
                     value.event_code,
                     value.source_topic_id,
                     value.target_topic_id.as_deref().unwrap_or(""),
+                    value.event_time,
+                    value.evidence_resource_id,
                     value.evidence_sha256
                 ),
             )?;
@@ -295,10 +404,12 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "document:{}:{}:{}:{}",
+                    "document:{}:{}:{}:{}:{}:{}",
                     value.relation_kind_code,
                     value.source_document_id,
                     value.target_document_id,
+                    value.event_time,
+                    value.evidence_resource_id,
                     value.evidence_sha256
                 ),
             )?;
@@ -307,10 +418,14 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "membership:{}:{}:{}:{}",
+                    "membership:{}:{}:{}:{}:{}:{}:{}:{}",
                     value.dimension_code,
                     value.document_id,
                     value.context_id,
+                    value.weight,
+                    value.valid_from,
+                    value.valid_to,
+                    value.evidence_resource_id,
                     value.evidence_sha256
                 ),
             )?;
@@ -533,6 +648,11 @@ impl TopicContextPosteriorArtifact {
 /// carry. The function therefore rejects even a completely valid v1 artifact
 /// instead of relabeling fixed-posterior weighted-mean leverage as Bayesian
 /// case-deletion influence (Bradlow & Zaslavsky, 1997; Jackson et al., 2009).
+///
+/// # Errors
+///
+/// Always returns `CaseDeletionRefitEvidenceUnavailable` because this v1
+/// artifact cannot identify the deleted-data posterior.
 pub fn estimate_topic_context_case_deletion_influence(
     _posterior: &ValidatedTopicContextPosterior,
 ) -> Result<(), TopicContextContractError> {
@@ -604,6 +724,63 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_key_scan_admits_escaped_strings_and_null_targets() {
+        // A JSON escape forces serde_json's string reader to copy into an
+        // owned scratch buffer rather than borrowing from the input, but it
+        // is still handed to the visitor as a `&str` (`visit_str`), not
+        // `visit_string`; the escape decodes back to the original
+        // identifier, so the artifact stays valid.
+        let escaped_run_id = valid_json().replacen("\"run_id\":\"run-1\"", "\"run_id\":\"run\\u002d1\"", 1);
+        let posterior = TopicContextPosteriorArtifact::from_json(&escaped_run_id).unwrap();
+        assert_eq!(posterior.artifact().run_id, "run-1");
+
+        // A birth/retirement lineage event has no target topic, so it
+        // serializes target_topic_id as JSON null (visit_unit).
+        let birth_event = format!(
+            "{{\"event_code\":\"birth\",\"source_topic_id\":\"018f3f7a-7b7c-7d00-8000-000000000101\",\"target_topic_id\":null,\"event_time\":\"2026-07-10T00:00:00Z\",\"evidence_resource_id\":\"birth-evidence\",\"provenance_assertion_id\":\"birth-assertion\",\"evidence_sha256\":\"{}\"}}",
+            "c".repeat(64)
+        );
+        let with_lineage_event = valid_json().replacen(
+            "\"lineage_events\":[]",
+            &format!("\"lineage_events\":[{birth_event}]"),
+            1,
+        );
+        let posterior = TopicContextPosteriorArtifact::from_json(&with_lineage_event).unwrap();
+        assert_eq!(posterior.artifact().lineage_events.len(), 1);
+        assert_eq!(posterior.artifact().lineage_events[0].target_topic_id, None);
+    }
+
+    #[test]
+    fn duplicate_key_scan_admits_bare_negative_integer_coordinates() {
+        // A plausible-value coordinate is a real-valued f64, so a producer
+        // may legitimately emit a bare negative integer literal (no decimal
+        // point) for an integral coordinate value; serde_json's
+        // `deserialize_any` routes that through `visit_i64` during the
+        // duplicate-key scan, and the typed parse still accepts it into the
+        // `f64` field afterward.
+        let negative_coordinate =
+            valid_json().replacen("\"logistic_normal_coordinates\":[0.1]", "\"logistic_normal_coordinates\":[-1]", 1);
+        let posterior = TopicContextPosteriorArtifact::from_json(&negative_coordinate).unwrap();
+        assert_eq!(
+            posterior.artifact().plausible_values[0].logistic_normal_coordinates,
+            vec![-1.0]
+        );
+    }
+
+    #[test]
+    fn duplicate_key_scan_admits_boolean_values_but_typed_parse_still_fails_closed() {
+        // The duplicate-key scan accepts any JSON scalar, including booleans
+        // (visit_bool), before the typed parse runs; a bool smuggled into a
+        // u64 field still fails closed at the typed-parse stage.
+        let boolean_draw_count =
+            valid_json().replacen("\"posterior_draw_count\":2", "\"posterior_draw_count\":true", 1);
+        assert_eq!(
+            TopicContextPosteriorArtifact::from_json(&boolean_draw_count),
+            Err(TopicContextContractError::InvalidEvidence)
+        );
+    }
+
+    #[test]
     fn malformed_foreign_and_incomplete_artifacts_fail_closed() {
         assert_eq!(
             TopicContextPosteriorArtifact::from_json("{}"),
@@ -615,6 +792,24 @@ mod tests {
         );
         assert_eq!(
             TopicContextPosteriorArtifact::from_json(&foreign),
+            Err(TopicContextContractError::InvalidEvidence)
+        );
+        let duplicate_top = valid_json().replacen(
+            "{\"schema_version\"",
+            "{\"schema_version\":\"tepp.topic_context_posterior.v1\",\"schema_version\"",
+            1,
+        );
+        assert_eq!(
+            TopicContextPosteriorArtifact::from_json(&duplicate_top),
+            Err(TopicContextContractError::InvalidEvidence)
+        );
+        let duplicate_nested = valid_json().replacen(
+            "{\"topic_id\"",
+            "{\"topic_id\":\"018f3f7a-7b7c-7d00-8000-000000000101\",\"topic_id\"",
+            1,
+        );
+        assert_eq!(
+            TopicContextPosteriorArtifact::from_json(&duplicate_nested),
             Err(TopicContextContractError::InvalidEvidence)
         );
         let missing_dimension = valid_json().replace(",{\"document_id\":\"018f3f7a-7b7c-7d00-8000-000000000002\",\"dimension_code\":\"person\"", ",{\"document_id\":\"018f3f7a-7b7c-7d00-8000-000000000099\",\"dimension_code\":\"person\"");
@@ -805,6 +1000,12 @@ mod tests {
             let e = lineage_event("birth", None);
             a.lineage_events = vec![e.clone(), e];
         });
+        invalid!(|a: &mut TopicContextPosteriorArtifact| {
+            let first = lineage_event("birth", None);
+            let mut second = first.clone();
+            second.event_time = "2026-07-11T00:00:00Z".into();
+            a.lineage_events = vec![first, second];
+        });
 
         invalid!(
             |a: &mut TopicContextPosteriorArtifact| a.plausible_values[0].document_id =
@@ -931,6 +1132,12 @@ mod tests {
             a.memberships[0].provenance_assertion_id =
                 a.document_relations[0].provenance_assertion_id.clone();
             a.memberships[0].evidence_sha256 = "d".repeat(64);
+        });
+        invalid!(|a: &mut TopicContextPosteriorArtifact| {
+            let mut conflicting = a.memberships[0].clone();
+            conflicting.context_id = "context-2".into();
+            conflicting.evidence_resource_id = "different-resource".into();
+            a.memberships.push(conflicting);
         });
 
         let mut multiple = artifact();

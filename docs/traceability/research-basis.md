@@ -275,6 +275,26 @@ Primary basis:
 
 Decision record: ADR-0017. Method page: `docs/bradley_terry_mm.md`. Changelog notes that Bradley and Terry (1952) or Hunter (2004) were unread at port time are historical source-governance comments, not a reason to omit these citations.
 
+## 15. TEPP-anchored Event Lineage channel weights — Proposed contract only
+
+Architecture effect:
+
+- preserve the continuous pair-by-channel evidence matrix and reconstruction
+  groups instead of converting scores at a consumer-selected floor;
+- require the exact accepted TEPP run/snapshot/cutoff/pair-count identity;
+- keep estimation unavailable because TEPP v1 is a run-level validity decision,
+  not pair-level independent criterion observations; and
+- require a later Rust CPU/GPU same-objective estimator with true-parameter,
+  known-weight, uncertainty-coverage, and parity evidence.
+
+Birnbaum (1968) defines item information conditional on an identified trait;
+Fox and Glas (2001) ground multilevel IRT structure. Neither result turns an
+internally dichotomized channel matrix into an independently valid Event
+Lineage criterion. The *Standards for Educational and Psychological Testing*
+(AERA, APA, & NCME, 2014) require validity evidence for the proposed score use.
+ADR-0023 therefore refuses to manufacture missing pair-level criterion values
+from TEPP's accepted flag.
+
 ## Maintenance rule
 
 When a new research finding changes a released formula, score interpretation, factor/model relation, validity gate, item/rubric lifecycle or rater-evaluation rule, update the relevant ADR, requirement IDs and this traceability record in the same reviewed change.
