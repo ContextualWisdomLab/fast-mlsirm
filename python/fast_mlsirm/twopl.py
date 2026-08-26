@@ -57,7 +57,7 @@ def _finite_integer(value: object, name: str) -> int:
 
 
 def _positive_finite_real(value: object, name: str) -> float:
-    """Normalize one trusted positive finite real without caller coercion hooks."""
+    """Normalize one trusted positive real losslessly to the Rust ``f64`` domain."""
 
     value_type = type(value)
     if value_type not in (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES):
@@ -68,6 +68,18 @@ def _positive_finite_real(value: object, name: str) -> float:
         raise ValueError(f"{name} must be finite and > 0") from exc
     if not np.isfinite(numeric) or numeric <= 0.0:
         raise ValueError(f"{name} must be finite and > 0")
+
+    lossless = True
+    if value_type is int:
+        lossless = numeric.is_integer() and int(numeric) == value
+    elif value_type in _NUMPY_INTEGER_TYPES:
+        lossless = numeric.is_integer() and int(numeric) == int(value)
+    elif value_type in _NUMPY_FLOAT_TYPES:
+        lossless = value_type(numeric) == value
+    if not lossless:
+        raise ValueError(
+            f"{name} must be finite and > 0 and exactly representable as Rust f64"
+        )
     return numeric
 
 
