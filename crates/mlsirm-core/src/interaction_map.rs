@@ -51,13 +51,33 @@ pub struct ResidualInteractionMap {
     pub item_indices: Vec<usize>,
     pub scored_person_count: usize,
     pub scored_item_count: usize,
+    /// Numerical rank of the complete-case centered residual matrix.
+    pub effective_rank: usize,
+    /// Number of respondents retained in the complete-case map rectangle.
+    pub map_person_count: usize,
+    /// Number of items retained in the complete-case map rectangle.
+    pub map_item_count: usize,
+    /// Scored respondents excluded from the complete-case map rectangle.
+    pub incomplete_person_count: usize,
+    /// Scored items excluded from the complete-case map rectangle.
+    pub incomplete_item_count: usize,
+    /// Lexicographically first retained cell at the minimum requested-axis distance.
+    pub closest_cell: Option<(usize, usize)>,
+    /// Lexicographically first retained cell at the maximum requested-axis distance.
+    pub farthest_cell: Option<(usize, usize)>,
     pub person_coordinates: Vec<f64>,
     pub item_coordinates: Vec<f64>,
     pub singular_values: Vec<f64>,
     pub axis_shares: Vec<f64>,
+    /// Complete-case observed values in retained person-major/item-minor order.
+    pub observed: Vec<f64>,
+    /// Complete-case model expectations in retained person-major/item-minor order.
+    pub expected: Vec<f64>,
     pub residual: Vec<f64>,
     pub distance: Vec<f64>,
     pub reconstruction: Vec<f64>,
+    /// Cellwise squared reconstruction share `Rhat^2 / R^2`; unavailable at
+    /// near-zero residual cells unless the reconstruction is also near zero.
     pub explained_share: Vec<Option<f64>>,
     pub unexplained: Vec<f64>,
     pub cross_share: Vec<Option<f64>>,
@@ -131,10 +151,19 @@ pub fn residual_interaction_map(
             item_indices,
             scored_person_count,
             scored_item_count,
+            effective_rank: 0,
+            map_person_count: 0,
+            map_item_count: 0,
+            incomplete_person_count: scored_person_count,
+            incomplete_item_count: scored_item_count,
+            closest_cell: None,
+            farthest_cell: None,
             person_coordinates: Vec::new(),
             item_coordinates: Vec::new(),
             singular_values: Vec::new(),
             axis_shares: vec![0.0; axis_count],
+            observed: Vec::new(),
+            expected: Vec::new(),
             residual: Vec::new(),
             distance: Vec::new(),
             reconstruction: Vec::new(),
@@ -149,10 +178,14 @@ pub fn residual_interaction_map(
     let columns = item_indices.len();
     validate_factorization_workspace(rows, columns, axis_count)?;
 
+    let mut retained_observed = Vec::with_capacity(rows * columns);
+    let mut retained_expected = Vec::with_capacity(rows * columns);
     let mut residual = Vec::with_capacity(rows * columns);
     for &person in &person_indices {
         for &item in &item_indices {
             let index = person * n_items + item;
+            retained_observed.push(observed[index]);
+            retained_expected.push(expected[index]);
             residual.push(observed[index] - expected[index]);
         }
     }
@@ -206,18 +239,32 @@ pub fn residual_interaction_map(
     let mut distance = Vec::with_capacity(rows * columns);
     let mut unexplained = Vec::with_capacity(rows * columns);
     let mut cross_share = Vec::with_capacity(rows * columns);
+    let mut closest_cell = None;
+    let mut farthest_cell = None;
+    let mut closest_distance = f64::INFINITY;
+    let mut farthest_distance = f64::NEG_INFINITY;
     for person in 0..rows {
         for item in 0..columns {
-            distance.push(
-                (0..axis_count)
-                    .map(|axis| {
-                        let difference = person_coordinates[person * axis_count + axis]
-                            - item_coordinates[item * axis_count + axis];
-                        difference * difference
-                    })
-                    .sum::<f64>()
-                    .sqrt(),
-            );
+            let cell_distance = (0..axis_count)
+                .map(|axis| {
+                    let difference = person_coordinates[person * axis_count + axis]
+                        - item_coordinates[item * axis_count + axis];
+                    difference * difference
+                })
+                .sum::<f64>()
+                .sqrt();
+            // `person_indices` and `item_indices` are ascending, so strict
+            // comparisons retain the lexicographically first cell on ties.
+            let cell_identity = (person_indices[person], item_indices[item]);
+            if cell_distance < closest_distance {
+                closest_distance = cell_distance;
+                closest_cell = Some(cell_identity);
+            }
+            if cell_distance > farthest_distance {
+                farthest_distance = cell_distance;
+                farthest_cell = Some(cell_identity);
+            }
+            distance.push(cell_distance);
             let fitted = (0..axis_count)
                 .map(|axis| {
                     person_coordinates[person * axis_count + axis]
@@ -252,10 +299,19 @@ pub fn residual_interaction_map(
         item_indices,
         scored_person_count,
         scored_item_count,
+        effective_rank: retained,
+        map_person_count: rows,
+        map_item_count: columns,
+        incomplete_person_count: scored_person_count - rows,
+        incomplete_item_count: scored_item_count - columns,
+        closest_cell,
+        farthest_cell,
         person_coordinates,
         item_coordinates,
         singular_values,
         axis_shares,
+        observed: retained_observed,
+        expected: retained_expected,
         residual,
         distance,
         reconstruction,
@@ -277,6 +333,11 @@ mod tests {
         let map = residual_interaction_map(&observed, &expected, 2, 2, 2).unwrap();
         assert_eq!(map.person_indices, vec![0, 1]);
         assert_eq!(map.item_indices, vec![0, 1]);
+        assert_eq!(map.effective_rank, 1);
+        assert_eq!(map.map_person_count, 2);
+        assert_eq!(map.map_item_count, 2);
+        assert_eq!(map.incomplete_person_count, 0);
+        assert_eq!(map.incomplete_item_count, 0);
         assert_eq!(map.singular_values.len(), 1);
         assert!((map.axis_shares[0] - 1.0).abs() < 1e-12);
         assert_eq!(map.axis_shares[1], 0.0);
@@ -292,6 +353,20 @@ mod tests {
             .distance
             .iter()
             .all(|value| value.is_finite() && *value >= 0.0));
+        assert!(map
+            .explained_share
+            .iter()
+            .all(|share| (share.expect("rank-one residual is nonzero") - 1.0).abs() < 1e-12));
+    }
+
+    #[test]
+    fn reports_cellwise_squared_reconstruction_share() {
+        let map = residual_interaction_map(&[2.0, 0.0, 0.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
+            .unwrap();
+        assert!(map
+            .explained_share
+            .iter()
+            .all(|share| (share.unwrap() - 1.0).abs() < 1e-12));
     }
 
     #[test]
@@ -303,6 +378,10 @@ mod tests {
         assert_eq!(map.item_indices, vec![0, 1]);
         assert_eq!(map.scored_person_count, 2);
         assert_eq!(map.scored_item_count, 2);
+        assert_eq!(map.map_person_count, 1);
+        assert_eq!(map.map_item_count, 2);
+        assert_eq!(map.incomplete_person_count, 1);
+        assert_eq!(map.incomplete_item_count, 0);
     }
 
     #[test]
@@ -317,6 +396,15 @@ mod tests {
         .unwrap();
         assert!(map.person_indices.is_empty());
         assert!(map.item_indices.is_empty());
+        assert_eq!(map.effective_rank, 0);
+        assert_eq!(map.map_person_count, 0);
+        assert_eq!(map.map_item_count, 0);
+        assert_eq!(map.incomplete_person_count, map.scored_person_count);
+        assert_eq!(map.incomplete_item_count, map.scored_item_count);
+        assert_eq!(map.closest_cell, None);
+        assert_eq!(map.farthest_cell, None);
+        assert!(map.observed.is_empty());
+        assert!(map.expected.is_empty());
         assert!(map.person_coordinates.is_empty());
         assert!(map.item_coordinates.is_empty());
         assert!(map.reconstruction.is_empty());
@@ -327,13 +415,12 @@ mod tests {
     }
 
     #[test]
-    fn reports_cellwise_squared_reconstruction_share() {
-        let map = residual_interaction_map(&[2.0, 0.0, 0.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
+    fn deterministic_cell_extrema_use_lexicographic_ties() {
+        let map = residual_interaction_map(&[1.0, 1.0, 1.0, 1.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
             .unwrap();
-        assert!(map
-            .explained_share
-            .iter()
-            .all(|share| (share.unwrap() - 1.0).abs() < 1e-12));
+        assert_eq!(map.distance, vec![0.0; 4]);
+        assert_eq!(map.closest_cell, Some((0, 0)));
+        assert_eq!(map.farthest_cell, Some((0, 0)));
     }
 
     #[test]
