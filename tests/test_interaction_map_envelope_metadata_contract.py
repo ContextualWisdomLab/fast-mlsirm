@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from importlib.metadata import version as distribution_version
 
 import numpy as np
 import pytest
@@ -24,7 +25,7 @@ def _current_metadata() -> dict[str, object]:
     return {
         "schema_version": "fast-mlsirm.residual-interaction-map.v1",
         "algorithm_id": "gabriel-complete-case-symmetric-residual-map.v1",
-        "implementation_version": "0.9.1",
+        "implementation_version": distribution_version("fast-mlsirm"),
         "calculation_provenance": "mlsirm-core::interaction_map::residual_interaction_map",
         "requested_axis_count": 1,
         "cell_extrema_tie_policy": "lexicographic-first-original-index",
@@ -37,6 +38,7 @@ def _current_metadata() -> dict[str, object]:
     [
         ("schema_version", "fast-mlsirm.residual-interaction-map.v2", "schema version"),
         ("algorithm_id", "foreign-algorithm.v1", "algorithm"),
+        ("implementation_version", "999.0.0", "implementation version"),
         ("calculation_provenance", "foreign::implementation", "calculation provenance"),
         ("requested_axis_count", 2, "requested axis count"),
         ("cell_extrema_tie_policy", "last-cell-wins", "tie policy"),
