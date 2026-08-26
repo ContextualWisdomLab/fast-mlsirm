@@ -57,6 +57,7 @@ def test_public_envelope_exposes_rust_owned_identity_and_map_evidence() -> None:
     assert result.item_coordinates.shape == (2, 1)
     assert result.residual.shape == (1, 2)
     assert result.distance.shape == (1, 2)
+    assert result.explained_share.shape == (1, 2)
 
 
 def test_public_envelope_matches_existing_rust_map_numerics() -> None:
@@ -82,6 +83,9 @@ def test_public_envelope_matches_existing_rust_map_numerics() -> None:
     np.testing.assert_allclose(envelope.residual, existing.residual)
     np.testing.assert_allclose(envelope.distance, existing.distance)
     np.testing.assert_allclose(envelope.reconstruction, existing.reconstruction)
+    np.testing.assert_allclose(
+        envelope.explained_share, existing.explained_share, equal_nan=True
+    )
     np.testing.assert_allclose(envelope.unexplained, existing.unexplained)
     np.testing.assert_allclose(envelope.cross_share, existing.cross_share, equal_nan=True)
 
@@ -102,6 +106,7 @@ def test_public_envelope_recovers_known_rank_one_interaction() -> None:
     assert envelope.effective_rank == 1
     np.testing.assert_allclose(envelope.axis_shares, [1.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(envelope.reconstruction, observed - expected, atol=1e-12)
+    np.testing.assert_allclose(envelope.explained_share, np.ones((2, 2)), atol=1e-12)
     np.testing.assert_allclose(envelope.unexplained, np.zeros((2, 2)), atol=1e-12)
     assert envelope.retained_person_ids == ("person-a", "person-b")
     assert envelope.retained_item_ids == ("item-a", "item-b")
@@ -124,6 +129,7 @@ def test_public_envelope_preserves_rank_zero_and_deterministic_ties() -> None:
     assert envelope.farthest_cell_ids == ("person-a", "item-a")
     np.testing.assert_array_equal(envelope.distance, np.zeros((2, 2)))
     np.testing.assert_array_equal(envelope.axis_shares, np.zeros(2))
+    np.testing.assert_array_equal(envelope.explained_share, np.zeros((2, 2)))
 
 
 def test_public_envelope_preserves_empty_complete_case_contract() -> None:
@@ -148,6 +154,7 @@ def test_public_envelope_preserves_empty_complete_case_contract() -> None:
     assert envelope.person_coordinates.shape == (0, 2)
     assert envelope.item_coordinates.shape == (0, 2)
     assert envelope.distance.shape == (0, 0)
+    assert envelope.explained_share.shape == (0, 0)
 
 
 def test_public_envelope_rejects_nonfinite_expected_and_infinite_observed() -> None:
