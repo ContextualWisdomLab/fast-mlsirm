@@ -23,6 +23,17 @@ except ModuleNotFoundError:
     from _bounded_json import parse_json_bounded, read_json_object
     from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 
+try:
+    from scripts.release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts.release_acceptance"}:
+        raise
+    from release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
+
 
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
 
@@ -80,7 +91,11 @@ def _content_security_policy() -> str:
 
 _DEFAULT_STAGE_TIMEOUT_SECONDS = 300.0
 _BUILD_DIST_TIMEOUT_SECONDS = 900.0
-_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = 3600.0
+_RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS = 60.0
+_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = (
+    sum(_INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values())
+    + _RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS
+)
 
 
 def _is_build_dist_command(command: list[str]) -> bool:
