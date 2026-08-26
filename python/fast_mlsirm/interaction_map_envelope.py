@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 
 import numpy as np
 
@@ -11,6 +12,11 @@ from .interaction_map import _axis_count, _trusted_matrix
 
 
 RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION = "fast-mlsirm.residual-interaction-map.v1"
+_RESIDUAL_INTERACTION_MAP_ALGORITHM_ID = "gabriel-complete-case-symmetric-residual-map.v1"
+_RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE = (
+    "mlsirm-core::interaction_map::residual_interaction_map"
+)
+_RESIDUAL_INTERACTION_MAP_TIE_POLICY = "lexicographic-first-original-index"
 _MAX_INTERACTION_MAP_IDENTIFIER_COUNT = 20_000_000
 
 
@@ -82,6 +88,62 @@ def _opaque_ids(name: str, value: object) -> list[str]:
     return normalized
 
 
+def _required_rust_metadata(raw: dict[str, object], key: str) -> object:
+    """Read one required Rust-owned metadata field without coercing foreign values."""
+    try:
+        return raw[key]
+    except KeyError as exc:
+        raise RuntimeError(f"Rust interaction-map envelope is missing {key}") from exc
+
+
+def _installed_package_version() -> str:
+    """Return the installed Python distribution identity used to load the Rust extension."""
+    try:
+        return distribution_version("fast-mlsirm")
+    except PackageNotFoundError as exc:
+        raise RuntimeError("fast-mlsirm distribution version is unavailable") from exc
+
+
+def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -> str:
+    """Replay the public v1 metadata contract before numerical payload marshalling."""
+    schema_version = _required_rust_metadata(raw, "schema_version")
+    if type(schema_version) is not str or schema_version != RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION:
+        raise RuntimeError("Rust interaction-map envelope schema version mismatch")
+
+    algorithm_id = _required_rust_metadata(raw, "algorithm_id")
+    if type(algorithm_id) is not str or algorithm_id != _RESIDUAL_INTERACTION_MAP_ALGORITHM_ID:
+        raise RuntimeError("Rust interaction-map envelope algorithm mismatch")
+
+    implementation_version = _required_rust_metadata(raw, "implementation_version")
+    expected_implementation_version = _installed_package_version()
+    if (
+        type(implementation_version) is not str
+        or implementation_version != expected_implementation_version
+    ):
+        raise RuntimeError("Rust interaction-map envelope implementation version mismatch")
+
+    calculation_provenance = _required_rust_metadata(raw, "calculation_provenance")
+    if (
+        type(calculation_provenance) is not str
+        or calculation_provenance != _RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE
+    ):
+        raise RuntimeError("Rust interaction-map envelope calculation provenance mismatch")
+
+    returned_axis_count = _required_rust_metadata(raw, "requested_axis_count")
+    if type(returned_axis_count) is not int or returned_axis_count != requested_axis_count:
+        raise RuntimeError("Rust interaction-map envelope requested axis count mismatch")
+
+    tie_policy = _required_rust_metadata(raw, "cell_extrema_tie_policy")
+    if type(tie_policy) is not str or tie_policy != _RESIDUAL_INTERACTION_MAP_TIE_POLICY:
+        raise RuntimeError("Rust interaction-map envelope tie policy mismatch")
+
+    finite_value_status = _required_rust_metadata(raw, "finite_value_status")
+    if type(finite_value_status) is not bool or finite_value_status is not True:
+        raise RuntimeError("Rust interaction-map envelope finite-value status mismatch")
+
+    return implementation_version
+
+
 def _optional_string_pair(value: object) -> tuple[str, str] | None:
     """Normalize one package-owned optional pair returned by the Rust binding."""
     if value is None:
@@ -138,17 +200,18 @@ def residual_interaction_map_envelope(
             axis,
         )
     )
+    implementation_version = _validate_rust_metadata(raw, axis)
     map_person_count = int(raw["map_person_count"])
     map_item_count = int(raw["map_item_count"])
 
     return ResidualInteractionMapEnvelope(
-        schema_version=str(raw["schema_version"]),
-        algorithm_id=str(raw["algorithm_id"]),
-        implementation_version=str(raw["implementation_version"]),
-        calculation_provenance=str(raw["calculation_provenance"]),
-        requested_axis_count=int(raw["requested_axis_count"]),
-        cell_extrema_tie_policy=str(raw["cell_extrema_tie_policy"]),
-        finite_value_status=bool(raw["finite_value_status"]),
+        schema_version=RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        algorithm_id=_RESIDUAL_INTERACTION_MAP_ALGORITHM_ID,
+        implementation_version=implementation_version,
+        calculation_provenance=_RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE,
+        requested_axis_count=axis,
+        cell_extrema_tie_policy=_RESIDUAL_INTERACTION_MAP_TIE_POLICY,
+        finite_value_status=True,
         retained_person_ids=tuple(str(value) for value in raw["retained_person_ids"]),
         retained_item_ids=tuple(str(value) for value in raw["retained_item_ids"]),
         closest_cell_ids=_optional_string_pair(raw["closest_cell_ids"]),
