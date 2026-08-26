@@ -78,32 +78,14 @@ def _content_security_policy() -> str:
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
-_DEFAULT_STAGE_TIMEOUT_SECONDS = 300.0
-# The build_dist stage runs `python -m build`, which compiles the Rust
-# extension via maturin; a cold from-scratch compile can approach the default
-# 300s bound on slow CI, so it gets the same generous ceiling release
-# acceptance already grants Rust-backed stages (see
-# RELEASE_ACCEPTANCE_TIMEOUT_SECONDS["fit_rust"] in release_acceptance.py).
-_BUILD_DIST_TIMEOUT_SECONDS = 900.0
-
-
-def _is_build_dist_command(command: list[str]) -> bool:
-    """Return True for the `python -m build` dist-packaging stage command."""
-    return len(command) >= 3 and command[1:3] == ["-m", "build"]
-
-
 def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run one release-stage command and capture its text output."""
-    timeout_seconds = (
-        _BUILD_DIST_TIMEOUT_SECONDS
-        if _is_build_dist_command(command)
-        else _DEFAULT_STAGE_TIMEOUT_SECONDS
-    )
     try:
+        timeout = 900.0 if "-m" in command and "build" in command else 300.0
         return run_bounded_capture(
             command,
             cwd=cwd,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=timeout,
             max_stdout_bytes=10 * 1024 * 1024,
             max_stderr_bytes=10 * 1024 * 1024,
         )

@@ -225,27 +225,6 @@ def test_build_dist_stage_writes_to_configured_dist_directory(tmp_path):
     assert command == ["python", "-m", "build", "--outdir", str(Path(args.dist).resolve())]
 
 
-def test_build_dist_command_gets_a_longer_timeout_than_other_stages(monkeypatch):
-    """The Rust-compiling build_dist stage must not share the 300s default."""
-    module = _load_builder()
-    observed: list[tuple[list[str], float]] = []
-
-    def fake_run(command, *, cwd, timeout_seconds, max_stdout_bytes, max_stderr_bytes):
-        observed.append((list(command), timeout_seconds))
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr(module, "run_bounded_capture", fake_run)
-
-    module._run_command(["python", "-m", "build", "--outdir", "dist"], Path("."))
-    module._run_command(["python", "release_acceptance.py", "--out", "acceptance"], Path("."))
-
-    assert observed == [
-        (["python", "-m", "build", "--outdir", "dist"], module._BUILD_DIST_TIMEOUT_SECONDS),
-        (["python", "release_acceptance.py", "--out", "acceptance"], module._DEFAULT_STAGE_TIMEOUT_SECONDS),
-    ]
-    assert module._BUILD_DIST_TIMEOUT_SECONDS > module._DEFAULT_STAGE_TIMEOUT_SECONDS
-
-
 def test_relative_dist_path_is_resolved_from_repo_root(tmp_path):
     module = _load_builder()
     repo_root = tmp_path / "repo"
@@ -257,3 +236,20 @@ def test_relative_dist_path_is_resolved_from_repo_root(tmp_path):
 
     assert name == "build_dist"
     assert command[-2:] == ["--outdir", str((repo_root / "custom-dist").resolve())]
+
+
+def test_run_command_timeout_policy(monkeypatch, tmp_path):
+    module = _load_builder()
+    captured_kwargs = {}
+
+    def _mock_run_bounded_capture(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(args[0], 0, "", "")
+
+    monkeypatch.setattr(module, "run_bounded_capture", _mock_run_bounded_capture)
+
+    module._run_command(["python", "--version"], tmp_path)
+    assert captured_kwargs["timeout_seconds"] == 300.0
+
+    module._run_command(["python", "-m", "build", "--outdir", "dist"], tmp_path)
+    assert captured_kwargs["timeout_seconds"] == 900.0
