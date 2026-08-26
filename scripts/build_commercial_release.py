@@ -38,6 +38,24 @@ except ModuleNotFoundError as exc:
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
 
 
+class _ReleaseCompletedProcess(subprocess.CompletedProcess[str]):
+    """Completed process carrying a stable commercial-release failure category."""
+
+    failure_kind: str | None
+
+    def __init__(
+        self,
+        args: list[str],
+        returncode: int,
+        stdout: str,
+        stderr: str,
+        *,
+        failure_kind: str | None = None,
+    ) -> None:
+        super().__init__(args=args, returncode=returncode, stdout=stdout, stderr=stderr)
+        self.failure_kind = failure_kind
+
+
 def _sha256(path: Path) -> str:
     """Return the SHA-256 digest of one release artifact."""
     digest = hashlib.sha256()
@@ -124,12 +142,21 @@ def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[s
             max_stdout_bytes=10 * 1024 * 1024,
             max_stderr_bytes=10 * 1024 * 1024,
         )
-    except (BoundedSubprocessOutputError, subprocess.TimeoutExpired) as exc:
-        return subprocess.CompletedProcess(
+    except BoundedSubprocessOutputError as exc:
+        return _ReleaseCompletedProcess(
             args=command,
             returncode=1,
             stdout="",
             stderr=str(exc),
+            failure_kind="output_limit",
+        )
+    except subprocess.TimeoutExpired as exc:
+        return _ReleaseCompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr=str(exc),
+            failure_kind="timeout",
         )
 
 
@@ -176,6 +203,10 @@ def _stage(
         "stdout_tail": _tail(completed.stdout),
         "stderr_tail": _tail(completed.stderr),
     }
+    if completed.returncode != 0:
+        stage["failure_kind"] = getattr(
+            completed, "failure_kind", None
+        ) or "subprocess_exit"
     if parsed is not None:
         stage["result"] = parsed
     return stage
