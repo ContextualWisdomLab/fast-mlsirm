@@ -36,6 +36,15 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 from ._serving_export_safety import install as _install_serving_export_safety
 from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
 from .interaction_map import residual_interaction_map as residual_interaction_map
+from .interaction_map_envelope import (
+    RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION as RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+)
+from .interaction_map_envelope import (
+    ResidualInteractionMapEnvelope as ResidualInteractionMapEnvelope,
+)
+from .interaction_map_envelope import (
+    residual_interaction_map_envelope as residual_interaction_map_envelope,
+)
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
@@ -246,6 +255,9 @@ __all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
+    "ResidualInteractionMapEnvelope",
+    "RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION",
+    "residual_interaction_map_envelope",
     "RotationCriterionInfo",
     "RotationSolution",
     "available_rotation_criteria",
