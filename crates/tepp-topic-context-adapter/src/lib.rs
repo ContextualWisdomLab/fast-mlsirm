@@ -381,10 +381,11 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "topic:{}:{}:{}:{}:{}",
+                    "topic:{}:{}:{}:{}:{}:{}",
                     value.event_code,
                     value.source_topic_id,
                     value.target_topic_id.as_deref().unwrap_or(""),
+                    value.event_time,
                     value.evidence_resource_id,
                     value.evidence_sha256
                 ),
@@ -932,6 +933,12 @@ mod tests {
         invalid!(|a: &mut TopicContextPosteriorArtifact| {
             let e = lineage_event("birth", None);
             a.lineage_events = vec![e.clone(), e];
+        });
+        invalid!(|a: &mut TopicContextPosteriorArtifact| {
+            let first = lineage_event("birth", None);
+            let mut second = first.clone();
+            second.event_time = "2026-07-11T00:00:00Z".into();
+            a.lineage_events = vec![first, second];
         });
 
         invalid!(
