@@ -18,7 +18,9 @@ class _FakeCore:
         self._result = dict(result)
 
     def residual_interaction_map_envelope(self, *_args: object) -> dict[str, object]:
-        return dict(self._result)
+        result = dict(self._result)
+        result.setdefault("input_digest", _args[1])
+        return result
 
 
 def _current_metadata() -> dict[str, object]:
