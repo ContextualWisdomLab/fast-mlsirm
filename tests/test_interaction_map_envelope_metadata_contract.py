@@ -64,3 +64,21 @@ def test_public_binding_rejects_foreign_rust_metadata_before_payload_marshalling
             item_ids=["item-a"],
             axis_count=1,
         )
+
+
+def test_public_binding_rejects_foreign_input_digest_before_payload_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A current-looking Rust result must be bound to the exact validated request."""
+    metadata = _current_metadata()
+    metadata["input_digest"] = "0" * 64
+    monkeypatch.setattr(envelope_module, "interaction_map_core", lambda: _FakeCore(metadata))
+
+    with pytest.raises(RuntimeError, match="input digest"):
+        envelope_module.residual_interaction_map_envelope(
+            np.ones((1, 1), dtype=np.float64),
+            np.zeros((1, 1), dtype=np.float64),
+            person_ids=["person-a"],
+            item_ids=["item-a"],
+            axis_count=1,
+        )
