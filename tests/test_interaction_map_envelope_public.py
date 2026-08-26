@@ -8,6 +8,7 @@ import pytest
 from fast_mlsirm import (
     RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
     ResidualInteractionMapEnvelope,
+    residual_interaction_map,
     residual_interaction_map_envelope,
 )
 
@@ -56,6 +57,33 @@ def test_public_envelope_exposes_rust_owned_identity_and_map_evidence() -> None:
     assert result.item_coordinates.shape == (2, 1)
     assert result.residual.shape == (1, 2)
     assert result.distance.shape == (1, 2)
+
+
+def test_public_envelope_matches_existing_rust_map_numerics() -> None:
+    """The new binding marshals the existing Rust map without numerical recomputation."""
+    observed = np.array([[2.0, 0.0], [0.0, 2.0]], dtype=np.float64)
+    expected = np.ones((2, 2), dtype=np.float64)
+
+    existing = residual_interaction_map(observed, expected, axis_count=2)
+    envelope = residual_interaction_map_envelope(
+        observed,
+        expected,
+        person_ids=["person-a", "person-b"],
+        item_ids=["item-a", "item-b"],
+        axis_count=2,
+    )
+
+    np.testing.assert_array_equal(envelope.person_indices, existing.person_indices)
+    np.testing.assert_array_equal(envelope.item_indices, existing.item_indices)
+    np.testing.assert_allclose(envelope.person_coordinates, existing.person_coordinates)
+    np.testing.assert_allclose(envelope.item_coordinates, existing.item_coordinates)
+    np.testing.assert_allclose(envelope.singular_values, existing.singular_values)
+    np.testing.assert_allclose(envelope.axis_shares, existing.axis_shares)
+    np.testing.assert_allclose(envelope.residual, existing.residual)
+    np.testing.assert_allclose(envelope.distance, existing.distance)
+    np.testing.assert_allclose(envelope.reconstruction, existing.reconstruction)
+    np.testing.assert_allclose(envelope.unexplained, existing.unexplained)
+    np.testing.assert_allclose(envelope.cross_share, existing.cross_share, equal_nan=True)
 
 
 def test_schema_and_identifier_carriers_fail_before_caller_matrix_protocols() -> None:
