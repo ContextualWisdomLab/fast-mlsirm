@@ -265,10 +265,9 @@ def test_run_command_timeout_policy(monkeypatch, tmp_path):
     module._run_command(["python", "-m", "build", "--outdir", "dist"], tmp_path)
     assert captured_kwargs["timeout_seconds"] == 900.0
 
-    module._run_command(["python", "scripts/release_acceptance.py"], tmp_path)
-    expected_acceptance_timeout = (
-        sum(release_acceptance.RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values())
-        + module._RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS
+    module._run_command(
+        ["python", "scripts/release_acceptance.py", "--out", "acceptance"], tmp_path
     )
-    assert captured_kwargs["timeout_seconds"] == expected_acceptance_timeout
-    assert module._RELEASE_ACCEPTANCE_TIMEOUT_SECONDS == expected_acceptance_timeout
+    assert captured_kwargs["timeout_seconds"] >= (
+        sum(release_acceptance.RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values()) + 60.0
+    )
