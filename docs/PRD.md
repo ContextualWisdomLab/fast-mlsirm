@@ -182,6 +182,10 @@ leave-one-document-out posterior per admitted document, independently anchored
 to the full fit with unique bijective alignment and CPU/GPU parity receipts.
 The product shall expose per-topic, per-context posterior deletion contrasts
 and uncertainty without cross-level fusion or binary importance thresholds.
+Project Journey shall preserve TEPP TDT/CHRONOS posterior event time separately
+from record creation time and admit provenance-bearing branches, transitions,
+temporal dependencies, and multiple predecessor event kinds without a fixed
+start-stage or earliest-row rule.
 
 ### 6.8 Reporting and evidence
 
