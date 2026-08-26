@@ -26,6 +26,14 @@ AUTO_BACKEND_UNAVAILABLE_MESSAGE = (
     "or use fast_mlsirm.fit_reference (backend='numpy') for the explicit "
     "reference/parity path"
 )
+# Stable, non-reflective explicit-rust-request error. Keeps the missing
+# artifact name for operator diagnostics and adds the customer next action.
+RUST_BACKEND_UNAVAILABLE_MESSAGE = (
+    "Rust backend requested but fast_mlsirm._core is unavailable; install a "
+    "wheel or editable build of this package that provides the compiled Rust "
+    "extension, or rerun through the explicit NumPy reference path "
+    "(fast_mlsirm.fit_reference, or --reference on the CLI)"
+)
 _REFERENCE_BACKEND_ACTIVE: ContextVar[bool] = ContextVar(
     "fast_mlsirm_reference_backend_active",
     default=False,
@@ -92,7 +100,9 @@ def resolve_backend(name: str) -> str:
     core = _load_core()
     if backend == "rust":
         if core is None:
-            raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
+            raise RuntimeError(
+                RUST_BACKEND_UNAVAILABLE_MESSAGE
+            )
         return "rust"
     if core is None:
         raise RuntimeError(AUTO_BACKEND_UNAVAILABLE_MESSAGE)
@@ -127,7 +137,7 @@ def load_rust_core() -> ModuleType:
     """Import and return the compiled Rust core, raising if it is unavailable."""
     core = _load_core()
     if core is None:
-        raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
+        raise RuntimeError(RUST_BACKEND_UNAVAILABLE_MESSAGE)
     return core
 
 
