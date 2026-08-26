@@ -78,6 +78,43 @@ normalization may fill the missing producer evidence.
 - Period-report calibration, expected-response aggregation, interaction maps,
   and channel weighting remain separate owner contracts and PR stacks.
 
+## Invariants and acceptance evidence
+
+The v1 parser rejects foreign schema versions, malformed or duplicate
+identities, mixed run/snapshot/cutoff provenance, rejected anchors, non-finite
+scores, inconsistent channel matrices, and pair-count mismatches. Focused Rust
+tests exercise every validation branch and the unavailable terminal state. A
+future estimator is not accepted until recovery, uncertainty coverage and
+method-derived CPU/GPU parity tests pass on the same objective.
+
+## Alternatives considered
+
+The rejected alternatives were local score-floor dichotomization, using one
+run-level accepted flag as every pair's response, equal weights, covariance or
+rank-based surrogates, and treating full-data draws as deletion refits. Each
+changes or fails to identify the intended independent-criterion estimand.
+
+## Failure, degraded mode, and recovery
+
+Every missing or invalid prerequisite returns a stable unavailable/error state;
+there is no repair, renormalization, default prior, fallback estimator, or
+partial publication. Recovery is replay with a complete producer artifact
+bound to the same identities and provenance.
+
+## Security and privacy
+
+Inputs are bounded before parsing, reject unknown fields, and carry only opaque
+record identities and digests. Source content, personal names and credentials
+are outside this contract. Callers remain responsible for authorization before
+constructing an admitted pair set.
+
+## Compatibility, migration, and rollback
+
+The v1 prerequisite is additive and returns no numerical result. Consumers may
+pin or roll back the owner commit without data migration. A v2 estimator needs
+a new accepted ADR and schema-version branch; it cannot reinterpret stored v1
+evidence. Supersession requires protected-main producer and consumer evidence.
+
 ## References
 
 American Educational Research Association, American Psychological Association,
