@@ -186,6 +186,14 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies. The hierarchical CT-AR Rasch slice reports multi-seed state RMSE/coverage as joint MAP evidence, not as Fox–Glas Gibbs or estimated MMMC recovery.
 
+**TRD-MLT-006** Rust shall validate the continuous Event Lineage channel matrix
+and exact TEPP v1 accepted-anchor identity without dichotomizing scores or
+estimating weights. Because v1 contains no independent pair-level criterion
+observations, estimation returns
+`IndependentCriterionObservationsUnavailable`. A future estimator requires a
+producer successor, Rust CPU/GPU same-objective parity, true-parameter and
+known-weight recovery, and uncertainty coverage before activation.
+
 ### 4.12 Testing and scientific evidence
 
 **TRD-TEST-001** Owned production Python statement/branch coverage target is 100%; public docstrings and Rust documentation shall be complete and beginner-readable.
