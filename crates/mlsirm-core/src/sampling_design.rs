@@ -282,6 +282,18 @@ fn allocate_strata(
     strata: &[SamplingStratum],
     method: AllocationMethod,
 ) -> Result<Vec<usize>, String> {
+    allocate_strata_with_cap_probe(sample_size, strata, method, || {})
+}
+
+fn allocate_strata_with_cap_probe<F>(
+    sample_size: usize,
+    strata: &[SamplingStratum],
+    method: AllocationMethod,
+    mut inspect_cap_candidate: F,
+) -> Result<Vec<usize>, String>
+where
+    F: FnMut(),
+{
     let weights: Vec<f64> = strata
         .iter()
         .map(|stratum| match method {
@@ -293,59 +305,65 @@ fn allocate_strata(
         })
         .collect();
     let mut allocated = vec![0_usize; strata.len()];
-    let mut active = vec![true; strata.len()];
     let mut remaining = sample_size;
+    let mut weight_sum: f64 = weights.iter().sum();
+    if !weight_sum.is_finite() || weight_sum <= 0.0 {
+        return Err("stratum allocation has no positive finite weight".into());
+    }
 
-    loop {
-        let weight_sum: f64 = weights
-            .iter()
-            .zip(&active)
-            .filter(|(_, enabled)| **enabled)
-            .map(|(weight, _)| *weight)
-            .sum();
-        if !weight_sum.is_finite() || weight_sum <= 0.0 {
+    // The capped proportional-allocation solution is a water-filling problem.
+    // For an active stratum i, capping occurs when
+    // remaining / weight_sum >= population_i / weight_i. Sorting those fixed
+    // thresholds once lets the cap phase inspect every stratum at most once;
+    // the prior implementation rescanned the whole active set after each cap.
+    let mut cap_order: Vec<usize> = (0..strata.len()).collect();
+    cap_order.sort_by(|left, right| {
+        let left_threshold = strata[*left].population_size as f64 / weights[*left];
+        let right_threshold = strata[*right].population_size as f64 / weights[*right];
+        left_threshold
+            .partial_cmp(&right_threshold)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.cmp(right))
+    });
+
+    for index in cap_order {
+        if remaining == 0 {
+            break;
+        }
+        inspect_cap_candidate();
+        let quota = remaining as f64 * weights[index] / weight_sum;
+        if quota < strata[index].population_size as f64 {
+            break;
+        }
+        allocated[index] = strata[index].population_size;
+        remaining -= allocated[index];
+        weight_sum -= weights[index];
+        if remaining > 0 && (!weight_sum.is_finite() || weight_sum <= 0.0) {
             return Err("stratum allocation has no positive finite weight".into());
         }
-        let capped = active.iter().enumerate().find_map(|(index, enabled)| {
-            if !enabled {
-                return None;
+    }
+
+    if remaining > 0 {
+        let mut fractions = Vec::new();
+        for index in 0..strata.len() {
+            if allocated[index] != 0 {
+                continue;
             }
             let quota = remaining as f64 * weights[index] / weight_sum;
-            (quota >= strata[index].population_size as f64).then_some(index)
+            let base = quota.floor() as usize;
+            allocated[index] = base;
+            fractions.push((index, quota - base as f64));
+        }
+        let assigned: usize = allocated.iter().sum();
+        fractions.sort_by(|left, right| {
+            right
+                .1
+                .partial_cmp(&left.1)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.0.cmp(&right.0))
         });
-        match capped {
-            Some(index) => {
-                allocated[index] = strata[index].population_size;
-                remaining -= allocated[index];
-                active[index] = false;
-                if remaining == 0 {
-                    break;
-                }
-            }
-            None => {
-                let mut fractions = Vec::new();
-                for (index, enabled) in active.iter().enumerate() {
-                    if !enabled {
-                        continue;
-                    }
-                    let quota = remaining as f64 * weights[index] / weight_sum;
-                    let base = quota.floor() as usize;
-                    allocated[index] = base;
-                    fractions.push((index, quota - base as f64));
-                }
-                let assigned: usize = allocated.iter().sum();
-                fractions.sort_by(|left, right| {
-                    right
-                        .1
-                        .partial_cmp(&left.1)
-                        .unwrap_or(Ordering::Equal)
-                        .then_with(|| left.0.cmp(&right.0))
-                });
-                for (index, _) in fractions.into_iter().take(sample_size - assigned) {
-                    allocated[index] += 1;
-                }
-                break;
-            }
+        for (index, _) in fractions.into_iter().take(sample_size - assigned) {
+            allocated[index] += 1;
         }
     }
 
@@ -463,6 +481,27 @@ mod tests {
         );
         assert_eq!(proportional.sample_size, 43);
         assert_eq!(neyman.sample_size, 43);
+    }
+
+    #[test]
+    fn census_cap_phase_inspects_each_stratum_at_most_once() {
+        let strata = vec![
+            SamplingStratum {
+                population_size: 1,
+                expected_proportion: 0.5,
+            };
+            MAX_STRATA
+        ];
+        let mut cap_checks = 0_usize;
+        let allocated = allocate_strata_with_cap_probe(
+            MAX_STRATA,
+            &strata,
+            AllocationMethod::Proportional,
+            || cap_checks += 1,
+        )
+        .unwrap();
+        assert_eq!(cap_checks, MAX_STRATA);
+        assert!(allocated.iter().all(|count| *count == 1));
     }
 
     #[test]
