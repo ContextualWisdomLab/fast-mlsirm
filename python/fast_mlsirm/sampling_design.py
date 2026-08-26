@@ -10,6 +10,7 @@ from typing import Literal
 from . import _core
 
 SAMPLING_DESIGN_SCHEMA_VERSION: str = _core.SAMPLING_DESIGN_SCHEMA_VERSION
+_SAMPLING_DESIGN_ALGORITHM_VERSION = "1.1.0"
 _MAX_EXACT_F64_INTEGER = 1 << 53
 _MAX_SAMPLING_STRATA = 100_000
 
@@ -65,6 +66,80 @@ def _exact_probability(name: str, value: object) -> float:
     if not math.isfinite(value) or not 0.0 < value < 1.0:
         raise ValueError(f"{name} must be finite and strictly between zero and one")
     return value
+
+
+def _required_result_field(result: object, name: str) -> object:
+    """Read one package-owned Rust result field with a stable fail-closed error."""
+    if type(result) is not dict or name not in result:
+        raise ValueError(f"invalid sampling-design result: missing {name}")
+    return result[name]
+
+
+def _validated_inclusion_ratios(
+    result: object,
+) -> tuple[tuple[int, int], tuple[int, ...], tuple[int, ...], tuple[float, ...]]:
+    """Replay the Rust stratum/inclusion contract before public construction."""
+    raw_population_sizes = _required_result_field(result, "stratum_population_sizes")
+    raw_expected_proportions = _required_result_field(
+        result, "stratum_expected_proportions"
+    )
+    raw_sample_sizes = _required_result_field(result, "stratum_sample_sizes")
+    raw_ratios = _required_result_field(
+        result, "stratum_inclusion_probability_ratios"
+    )
+    if (
+        type(raw_population_sizes) is not list
+        or type(raw_expected_proportions) is not list
+        or type(raw_sample_sizes) is not list
+        or type(raw_ratios) is not list
+    ):
+        raise ValueError("invalid sampling-design inclusion ratios")
+    if not (
+        len(raw_population_sizes)
+        == len(raw_expected_proportions)
+        == len(raw_sample_sizes)
+        == len(raw_ratios)
+    ):
+        raise ValueError("invalid sampling-design inclusion ratios")
+
+    population_sizes: list[int] = []
+    expected_proportions: list[float] = []
+    sample_sizes: list[int] = []
+    ratios: list[tuple[int, int]] = []
+    for index, (population, proportion, sample, ratio) in enumerate(
+        zip(
+            raw_population_sizes,
+            raw_expected_proportions,
+            raw_sample_sizes,
+            raw_ratios,
+            strict=True,
+        )
+    ):
+        if (
+            type(population) is not int
+            or type(proportion) is not float
+            or type(sample) is not int
+            or type(ratio) not in (list, tuple)
+            or len(ratio) != 2
+            or type(ratio[0]) is not int
+            or type(ratio[1]) is not int
+            or ratio[0] != sample
+            or ratio[1] != population
+        ):
+            raise ValueError(
+                f"invalid sampling-design inclusion ratios at stratum {index}"
+            )
+        population_sizes.append(population)
+        expected_proportions.append(proportion)
+        sample_sizes.append(sample)
+        ratios.append((ratio[0], ratio[1]))
+
+    return (
+        tuple(ratios),
+        tuple(sample_sizes),
+        tuple(population_sizes),
+        tuple(expected_proportions),
+    )
 
 
 def finite_population_proportion_design(
@@ -125,39 +200,54 @@ def finite_population_proportion_design(
         expected_proportions,
         allocation_method,
     )
-    schema_version = result["schema_version"]
+    schema_version = _required_result_field(result, "schema_version")
     if schema_version != SAMPLING_DESIGN_SCHEMA_VERSION:
         raise ValueError(
             "unsupported sampling-design schema version: "
             f"{schema_version!r}"
         )
+    algorithm_version = _required_result_field(result, "algorithm_version")
+    if algorithm_version != _SAMPLING_DESIGN_ALGORITHM_VERSION:
+        raise ValueError(
+            "unsupported sampling-design algorithm version: "
+            f"{algorithm_version!r}"
+        )
+    (
+        inclusion_ratios,
+        result_sample_sizes,
+        result_population_sizes,
+        result_expected_proportions,
+    ) = _validated_inclusion_ratios(result)
+
     return ProportionSamplingDesign(
         schema_version=schema_version,
-        source_identity=result["source_identity"],
-        source_sha256=result["source_sha256"],
-        algorithm_version=result["algorithm_version"],
-        population_size=result["population_size"],
-        expected_proportion=result["expected_proportion"],
-        confidence_level=result["confidence_level"],
-        critical_value=result["critical_value"],
-        margin_of_error=result["margin_of_error"],
-        uncorrected_sample_size=result["uncorrected_sample_size"],
-        sample_size=result["sample_size"],
-        finite_population_correction=result["finite_population_correction"],
-        allocation_method=result["allocation_method"],
+        source_identity=_required_result_field(result, "source_identity"),
+        source_sha256=_required_result_field(result, "source_sha256"),
+        algorithm_version=algorithm_version,
+        population_size=_required_result_field(result, "population_size"),
+        expected_proportion=_required_result_field(result, "expected_proportion"),
+        confidence_level=_required_result_field(result, "confidence_level"),
+        critical_value=_required_result_field(result, "critical_value"),
+        margin_of_error=_required_result_field(result, "margin_of_error"),
+        uncorrected_sample_size=_required_result_field(
+            result, "uncorrected_sample_size"
+        ),
+        sample_size=_required_result_field(result, "sample_size"),
+        finite_population_correction=_required_result_field(
+            result, "finite_population_correction"
+        ),
+        allocation_method=_required_result_field(result, "allocation_method"),
         strata=tuple(
             SamplingStratum(population, proportion)
             for population, proportion in zip(
-                result["stratum_population_sizes"],
-                result["stratum_expected_proportions"],
+                result_population_sizes,
+                result_expected_proportions,
                 strict=True,
             )
         ),
-        stratum_sample_sizes=tuple(result["stratum_sample_sizes"]),
-        stratum_inclusion_probability_ratios=tuple(
-            tuple(ratio) for ratio in result["stratum_inclusion_probability_ratios"]
-        ),
-        input_sha256=result["input_sha256"],
-        output_sha256=result["output_sha256"],
-        artifact_sha256=result["artifact_sha256"],
+        stratum_sample_sizes=result_sample_sizes,
+        stratum_inclusion_probability_ratios=inclusion_ratios,
+        input_sha256=_required_result_field(result, "input_sha256"),
+        output_sha256=_required_result_field(result, "output_sha256"),
+        artifact_sha256=_required_result_field(result, "artifact_sha256"),
     )
