@@ -169,6 +169,7 @@ pub struct ValidatedTopicContextPosterior(TopicContextPosteriorArtifact);
 
 impl ValidatedTopicContextPosterior {
     /// Borrow the validated producer artifact.
+    #[must_use]
     pub fn artifact(&self) -> &TopicContextPosteriorArtifact {
         &self.0
     }
@@ -205,6 +206,11 @@ fn finite_coordinates(values: &[f64], expected: usize) -> bool {
 
 impl TopicContextPosteriorArtifact {
     /// Parse and fully validate one bounded TEPP artifact.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable fail-closed error for oversized, malformed, foreign,
+    /// incomplete, or internally inconsistent evidence.
     pub fn from_json(
         payload: &str,
     ) -> Result<ValidatedTopicContextPosterior, TopicContextContractError> {
@@ -283,10 +289,11 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "topic:{}:{}:{}:{}",
+                    "topic:{}:{}:{}:{}:{}",
                     value.event_code,
                     value.source_topic_id,
                     value.target_topic_id.as_deref().unwrap_or(""),
+                    value.evidence_resource_id,
                     value.evidence_sha256
                 ),
             )?;
@@ -295,10 +302,12 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "document:{}:{}:{}:{}",
+                    "document:{}:{}:{}:{}:{}:{}",
                     value.relation_kind_code,
                     value.source_document_id,
                     value.target_document_id,
+                    value.event_time,
+                    value.evidence_resource_id,
                     value.evidence_sha256
                 ),
             )?;
@@ -307,10 +316,14 @@ impl TopicContextPosteriorArtifact {
             bind(
                 &value.provenance_assertion_id,
                 format!(
-                    "membership:{}:{}:{}:{}",
+                    "membership:{}:{}:{}:{}:{}:{}:{}:{}",
                     value.dimension_code,
                     value.document_id,
                     value.context_id,
+                    value.weight,
+                    value.valid_from,
+                    value.valid_to,
+                    value.evidence_resource_id,
                     value.evidence_sha256
                 ),
             )?;
@@ -533,6 +546,11 @@ impl TopicContextPosteriorArtifact {
 /// carry. The function therefore rejects even a completely valid v1 artifact
 /// instead of relabeling fixed-posterior weighted-mean leverage as Bayesian
 /// case-deletion influence (Bradlow & Zaslavsky, 1997; Jackson et al., 2009).
+///
+/// # Errors
+///
+/// Always returns `CaseDeletionRefitEvidenceUnavailable` because this v1
+/// artifact cannot identify the deleted-data posterior.
 pub fn estimate_topic_context_case_deletion_influence(
     _posterior: &ValidatedTopicContextPosterior,
 ) -> Result<(), TopicContextContractError> {
@@ -931,6 +949,12 @@ mod tests {
             a.memberships[0].provenance_assertion_id =
                 a.document_relations[0].provenance_assertion_id.clone();
             a.memberships[0].evidence_sha256 = "d".repeat(64);
+        });
+        invalid!(|a: &mut TopicContextPosteriorArtifact| {
+            let mut conflicting = a.memberships[0].clone();
+            conflicting.context_id = "context-2".into();
+            conflicting.evidence_resource_id = "different-resource".into();
+            a.memberships.push(conflicting);
         });
 
         let mut multiple = artifact();
