@@ -78,6 +78,7 @@ fn py_residual_interaction_map_envelope(
     out.set_item("residual", map.residual)?;
     out.set_item("distance", map.distance)?;
     out.set_item("reconstruction", map.reconstruction)?;
+    out.set_item("explained_share", map.explained_share)?;
     out.set_item("unexplained", map.unexplained)?;
     out.set_item("cross_share", map.cross_share)?;
     Ok(out.into())
