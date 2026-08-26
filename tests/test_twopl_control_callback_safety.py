@@ -157,6 +157,62 @@ def test_fit_2pl_rejects_control_boundaries_before_data(
     assert core_calls == []
 
 
+@pytest.mark.parametrize(
+    "tol",
+    [
+        pytest.param(2**53 + 1, id="python-int-beyond-exact-binary64"),
+    ],
+)
+def test_fit_2pl_rejects_lossy_tolerance_before_response_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tol: object,
+) -> None:
+    """A convergence tolerance may not change identity at the Rust f64 boundary."""
+
+    responses = _ExplosiveResponses()
+    core_calls: list[str] = []
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: core_calls.append("core") or None,
+    )
+
+    with pytest.raises(ValueError, match="tol must be finite and > 0"):
+        fit_2pl(responses, tol=tol)  # type: ignore[arg-type]
+
+    assert responses.calls == []
+    assert core_calls == []
+
+
+def test_fit_2pl_rejects_lossy_longdouble_tolerance_before_response_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Extended-precision tolerance evidence cannot be silently rounded to f64."""
+
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("np.longdouble has no additional precision on this platform")
+
+    responses = _ExplosiveResponses()
+    core_calls: list[str] = []
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: core_calls.append("core") or None,
+    )
+    one = np.longdouble(1)
+    tol = np.nextafter(one, np.longdouble(2), dtype=np.longdouble)
+
+    with pytest.raises(ValueError, match="tol must be finite and > 0"):
+        fit_2pl(responses, tol=tol)
+
+    assert responses.calls == []
+    assert core_calls == []
+
+
 def test_fit_2pl_normalizes_supported_numpy_controls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -212,7 +268,7 @@ def test_fit_2pl_normalizes_supported_numpy_controls(
         q=np.int64(21),
         estimate_corr=np.bool_(False),
         max_iter=np.int64(2),
-        tol=np.float64(1e-6),
+        tol=np.longdouble(0.5),
         xi_points=np.int64(100),
         xi_seed=np.uint64(7),
     )
@@ -221,6 +277,7 @@ def test_fit_2pl_normalizes_supported_numpy_controls(
     assert type(captured["estimate_corr"]) is bool
     assert type(captured["max_iter"]) is int
     assert type(captured["tol"]) is float
+    assert captured["tol"] == 0.5
     assert type(captured["node_rule"]) is str
     assert type(captured["xi_points"]) is int
     assert type(captured["xi_seed"]) is int
