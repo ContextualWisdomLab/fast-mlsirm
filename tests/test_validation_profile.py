@@ -265,3 +265,59 @@ def test_limitation_identifiers_are_bounded_and_canonicalized() -> None:
         "criterion_reliability",
         "underpowered_subgroup",
     )
+
+
+def test_profile_public_identity_replays_post_construction_invariants() -> None:
+    """Post-construction profile mutation cannot gain fingerprint/serialization authority."""
+    profile = _profile(_evidence("technical_evidence"))
+    original_payload = profile.to_dict()
+    original_fingerprint = profile.profile_fingerprint
+
+    object.__setattr__(profile, "validation_profile_id", "bad profile id")
+
+    with pytest.raises(ValueError, match="validation_profile_id must be an opaque identifier"):
+        _ = profile.profile_fingerprint
+    with pytest.raises(ValueError, match="validation_profile_id must be an opaque identifier"):
+        profile.to_dict()
+
+    valid = _profile(_evidence("technical_evidence"))
+    assert valid.profile_fingerprint == original_fingerprint
+    assert valid.to_dict() == original_payload
+
+
+def test_profile_replay_rejects_callback_bearing_mutated_collection_before_iteration() -> None:
+    """Serialization replay rejects substituted collection subclasses without callbacks."""
+    callbacks = 0
+
+    class HostileTuple(tuple):
+        def __iter__(self):
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("caller iteration must not execute")
+
+    profile = _profile(_evidence("technical_evidence"))
+    object.__setattr__(
+        profile,
+        "evidence_references",
+        HostileTuple(profile.evidence_references),
+    )
+
+    with pytest.raises(ValueError, match="evidence_references must be an exact list or tuple"):
+        profile.to_dict()
+    assert callbacks == 0
+
+
+def test_profile_replay_rejects_mutated_nested_evidence_chronology() -> None:
+    """Nested evidence is revalidated before it contributes to profile identity."""
+    reference = _evidence("technical_evidence")
+    profile = _profile(reference)
+    object.__setattr__(
+        reference,
+        "available_time",
+        datetime(2026, 8, 22, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(ValueError, match="available_time must not exceed analysis_cutoff"):
+        _ = profile.profile_fingerprint
+    with pytest.raises(ValueError, match="available_time must not exceed analysis_cutoff"):
+        profile.to_dict()
