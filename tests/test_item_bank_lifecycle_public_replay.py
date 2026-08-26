@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 import runpy
+import weakref
 
 import pytest
 
+from fast_mlsirm.rubric import _item_bank_reactivation_validation as lifecycle_safety
 from fast_mlsirm.rubric.item_bank import (
     ItemBankLifecycleError,
     ItemBankLifecycleRecord,
@@ -55,6 +58,40 @@ def test_replay_rejects_coherent_content_and_fingerprint_rebinding() -> None:
     for caught in (fingerprint_error, serialization_error):
         assert caught.value.code == "lifecycle_record_replay_mismatch"
         assert caught.value.path == "$.current_record"
+
+
+def test_creation_seal_rejects_reused_object_identity_entry() -> None:
+    """A registry entry for another live object cannot authorize this record id."""
+    record = _calibrated_record()
+    other = _calibrated_record()
+    record_key = id(record)
+    original_entry = lifecycle_safety._CREATION_SEALS[record_key]
+    lifecycle_safety._CREATION_SEALS[record_key] = (
+        weakref.ref(other),
+        original_entry[1],
+    )
+    try:
+        with pytest.raises(ItemBankLifecycleError) as caught:
+            _ = record.record_fingerprint
+    finally:
+        lifecycle_safety._CREATION_SEALS[record_key] = original_entry
+
+    assert caught.value.code == "lifecycle_record_replay_mismatch"
+    assert caught.value.path == "$.current_record"
+
+
+def test_creation_seal_registry_releases_discarded_records() -> None:
+    """The external creation seal does not retain discarded lifecycle records."""
+    record = _calibrated_record()
+    record_key = id(record)
+    reference = weakref.ref(record)
+
+    assert record_key in lifecycle_safety._CREATION_SEALS
+    del record
+    gc.collect()
+
+    assert reference() is None
+    assert record_key not in lifecycle_safety._CREATION_SEALS
 
 
 def test_to_dict_rejects_callback_bearing_mutation_before_iteration() -> None:
