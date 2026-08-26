@@ -9,7 +9,9 @@ from typing import Literal
 from . import _core
 
 SAMPLING_DESIGN_SCHEMA_VERSION: str = _core.SAMPLING_DESIGN_SCHEMA_VERSION
+ACHIEVED_PROPORTION_SCHEMA_VERSION: str = _core.ACHIEVED_PROPORTION_SCHEMA_VERSION
 _SAMPLING_DESIGN_ALGORITHM_VERSION = "1.1.0"
+_ACHIEVED_PROPORTION_ALGORITHM_VERSION = "1.0.0"
 _MAX_EXACT_F64_INTEGER = 1 << 53
 _MAX_SAMPLING_STRATA = 100_000
 
@@ -47,12 +49,44 @@ class ProportionSamplingDesign:
     artifact_sha256: str
 
 
+@dataclass(frozen=True)
+class AchievedProportion:
+    """Terminal SRSWOR estimate, design variance, and exact interval."""
+
+    schema_version: str
+    source_identity: str
+    source_sha256: str
+    algorithm_version: str
+    design_artifact_sha256: str
+    population_size: int
+    sample_size: int
+    success_count: int
+    estimated_proportion: float
+    design_variance: float
+    confidence_level: float
+    interval_method: str
+    lower_success_count: int
+    upper_success_count: int
+    lower_proportion: float
+    upper_proportion: float
+    input_sha256: str
+    output_sha256: str
+    artifact_sha256: str
+
+
 def _exact_positive_integer(name: str, value: object) -> int:
     """Admit one exact positive built-in integer inside the Rust f64 identity domain."""
     if type(value) is not int or value <= 0:
         raise ValueError(f"{name} must be a positive built-in integer")
     if value > _MAX_EXACT_F64_INTEGER:
         raise ValueError(f"{name} must be between 1 and 2^53")
+    return value
+
+
+def _exact_nonnegative_integer(name: str, value: object) -> int:
+    """Admit one exact nonnegative built-in integer inside the Rust identity domain."""
+    if type(value) is not int or value < 0 or value > _MAX_EXACT_F64_INTEGER:
+        raise ValueError(f"{name} must be a built-in integer between zero and 2^53")
     return value
 
 
@@ -246,6 +280,76 @@ def finite_population_proportion_design(
         ),
         stratum_sample_sizes=result_sample_sizes,
         stratum_inclusion_probability_ratios=inclusion_ratios,
+        input_sha256=_required_result_field(result, "input_sha256"),
+        output_sha256=_required_result_field(result, "output_sha256"),
+        artifact_sha256=_required_result_field(result, "artifact_sha256"),
+    )
+
+
+def finite_population_achieved_proportion(
+    design: ProportionSamplingDesign,
+    success_count: int,
+) -> AchievedProportion:
+    """Terminate one complete one-stratum SRSWOR design through Rust.
+
+    The sample denominator is the bound design's required sample size. A caller
+    cannot submit a partial result or silently replace failed sampled units.
+    """
+    if type(design) is not ProportionSamplingDesign:
+        raise ValueError("design must be a ProportionSamplingDesign")
+    normalized_success_count = _exact_nonnegative_integer(
+        "success_count", success_count
+    )
+    if len(design.strata) != 1 or len(design.stratum_sample_sizes) != 1:
+        raise ValueError("achieved proportion currently requires one SRSWOR stratum")
+    replayed = finite_population_proportion_design(
+        design.population_size,
+        design.confidence_level,
+        design.margin_of_error,
+        list(design.strata),
+        allocation_method=design.allocation_method,
+    )
+    if replayed.artifact_sha256 != design.artifact_sha256:
+        raise ValueError("sampling design artifact does not match its retained inputs")
+    if normalized_success_count > design.sample_size:
+        raise ValueError("success_count must be between zero and design.sample_size")
+    result = _core.finite_population_achieved_proportion(
+        design.artifact_sha256,
+        design.population_size,
+        design.sample_size,
+        normalized_success_count,
+        design.confidence_level,
+    )
+    schema_version = _required_result_field(result, "schema_version")
+    if schema_version != ACHIEVED_PROPORTION_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported achieved-proportion schema version: {schema_version!r}"
+        )
+    algorithm_version = _required_result_field(result, "algorithm_version")
+    if algorithm_version != _ACHIEVED_PROPORTION_ALGORITHM_VERSION:
+        raise ValueError(
+            "unsupported achieved-proportion algorithm version: "
+            f"{algorithm_version!r}"
+        )
+    return AchievedProportion(
+        schema_version=schema_version,
+        source_identity=_required_result_field(result, "source_identity"),
+        source_sha256=_required_result_field(result, "source_sha256"),
+        algorithm_version=algorithm_version,
+        design_artifact_sha256=_required_result_field(
+            result, "design_artifact_sha256"
+        ),
+        population_size=_required_result_field(result, "population_size"),
+        sample_size=_required_result_field(result, "sample_size"),
+        success_count=_required_result_field(result, "success_count"),
+        estimated_proportion=_required_result_field(result, "estimated_proportion"),
+        design_variance=_required_result_field(result, "design_variance"),
+        confidence_level=_required_result_field(result, "confidence_level"),
+        interval_method=_required_result_field(result, "interval_method"),
+        lower_success_count=_required_result_field(result, "lower_success_count"),
+        upper_success_count=_required_result_field(result, "upper_success_count"),
+        lower_proportion=_required_result_field(result, "lower_proportion"),
+        upper_proportion=_required_result_field(result, "upper_proportion"),
         input_sha256=_required_result_field(result, "input_sha256"),
         output_sha256=_required_result_field(result, "output_sha256"),
         artifact_sha256=_required_result_field(result, "artifact_sha256"),

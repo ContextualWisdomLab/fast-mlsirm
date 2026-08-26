@@ -17,6 +17,10 @@ pub const SAMPLING_DESIGN_SCHEMA_VERSION: &str = "fast-mlsirm.sampling-design.v1
 pub const SAMPLING_DESIGN_SOURCE_IDENTITY: &str = "fast-mlsirm.mlsirm-core.sampling-design";
 /// Version of the sample-size, FPC, allocation, and integerization algorithm.
 pub const SAMPLING_DESIGN_ALGORITHM_VERSION: &str = "1.1.0";
+/// Wire/schema identity for an achieved one-stratum proportion result.
+pub const ACHIEVED_PROPORTION_SCHEMA_VERSION: &str = "fast-mlsirm.achieved-proportion.v1";
+/// Version of the SRSWOR estimator, variance, and Wang/Konijn interval.
+pub const ACHIEVED_PROPORTION_ALGORITHM_VERSION: &str = "1.0.0";
 const MAX_EXACT_F64_INTEGER: usize = 1_usize << 53;
 const MAX_STRATA: usize = 100_000;
 
@@ -100,6 +104,49 @@ pub struct ProportionSamplingDesign {
     pub artifact_sha256: String,
 }
 
+/// Terminal estimate and exact interval for one completed SRSWOR sample.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AchievedProportion {
+    /// Exact wire/schema version.
+    pub schema_version: &'static str,
+    /// Stable package-owned source identity.
+    pub source_identity: &'static str,
+    /// SHA-256 of this exact Rust source file at build time.
+    pub source_sha256: String,
+    /// Version of the complete Rust-owned algorithm.
+    pub algorithm_version: &'static str,
+    /// Sampling-design artifact this result terminates.
+    pub design_artifact_sha256: String,
+    /// Finite population size.
+    pub population_size: usize,
+    /// Completed sample size.
+    pub sample_size: usize,
+    /// Count of sampled units possessing the declared attribute.
+    pub success_count: usize,
+    /// Sample proportion estimator.
+    pub estimated_proportion: f64,
+    /// Unbiased SRSWOR design-variance estimate for the sample proportion.
+    pub design_variance: f64,
+    /// Caller-declared two-sided confidence level.
+    pub confidence_level: f64,
+    /// Exact interval method identifier.
+    pub interval_method: &'static str,
+    /// Inclusive lower bound for the finite-population success count.
+    pub lower_success_count: usize,
+    /// Inclusive upper bound for the finite-population success count.
+    pub upper_success_count: usize,
+    /// Lower proportion bound on the finite-population grid.
+    pub lower_proportion: f64,
+    /// Upper proportion bound on the finite-population grid.
+    pub upper_proportion: f64,
+    /// SHA-256 of the canonical input encoding.
+    pub input_sha256: String,
+    /// SHA-256 of the canonical computed-output encoding.
+    pub output_sha256: String,
+    /// SHA-256 binding schema, source, algorithm, design, input, and output.
+    pub artifact_sha256: String,
+}
+
 fn put_text(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
     bytes.extend_from_slice(value.as_bytes());
@@ -168,6 +215,199 @@ fn artifact_identity(source_sha256: &str, input_sha256: &str, output_sha256: &st
     put_text(&mut bytes, input_sha256);
     put_text(&mut bytes, output_sha256);
     sha256_hex(&bytes)
+}
+
+fn ln_choose(total: usize, selected: usize) -> f64 {
+    if selected > total {
+        return f64::NEG_INFINITY;
+    }
+    let selected = selected.min(total - selected);
+    (1..=selected).fold(0.0, |sum, index| {
+        sum + ((total - selected + index) as f64).ln() - (index as f64).ln()
+    })
+}
+
+fn log_add_exp(left: f64, right: f64) -> f64 {
+    if left == f64::NEG_INFINITY {
+        return right;
+    }
+    let maximum = left.max(right);
+    maximum + ((left - maximum).exp() + (right - maximum).exp()).ln()
+}
+
+fn hypergeometric_log_cdf(
+    population_size: usize,
+    population_successes: usize,
+    sample_size: usize,
+    cutoff: usize,
+) -> f64 {
+    let support_lower = sample_size.saturating_sub(population_size - population_successes);
+    let support_upper = sample_size.min(population_successes);
+    if cutoff < support_lower {
+        return f64::NEG_INFINITY;
+    }
+    if cutoff >= support_upper {
+        return 0.0;
+    }
+    let mut count = support_lower;
+    let mut log_probability = ln_choose(population_successes, count)
+        + ln_choose(population_size - population_successes, sample_size - count)
+        - ln_choose(population_size, sample_size);
+    let mut log_sum = log_probability;
+    while count < cutoff {
+        let numerator_left = population_successes - count;
+        let numerator_right = sample_size - count;
+        let denominator_left = count + 1;
+        let denominator_right =
+            (population_size - population_successes) - (sample_size - count) + 1;
+        log_probability += (numerator_left as f64).ln() + (numerator_right as f64).ln()
+            - (denominator_left as f64).ln()
+            - (denominator_right as f64).ln();
+        log_sum = log_add_exp(log_sum, log_probability);
+        count += 1;
+    }
+    log_sum.min(0.0)
+}
+
+fn wang_konijn_lower_bound(
+    population_size: usize,
+    sample_size: usize,
+    success_count: usize,
+    lower_tail_probability: f64,
+) -> usize {
+    if success_count == 0 {
+        return 0;
+    }
+    let log_threshold = (1.0 - lower_tail_probability).ln();
+    let mut lower = success_count;
+    let mut upper = population_size - sample_size + success_count;
+    while lower < upper {
+        let candidate = lower + (upper - lower).div_ceil(2);
+        let log_cdf = hypergeometric_log_cdf(
+            population_size,
+            candidate - 1,
+            sample_size,
+            success_count - 1,
+        );
+        if log_cdf >= log_threshold {
+            lower = candidate;
+        } else {
+            upper = candidate - 1;
+        }
+    }
+    lower
+}
+
+/// Estimate a finite-population proportion after one complete SRSWOR sample.
+pub fn finite_population_achieved_proportion(
+    design_artifact_sha256: &str,
+    population_size: usize,
+    sample_size: usize,
+    success_count: usize,
+    confidence_level: f64,
+) -> Result<AchievedProportion, String> {
+    if design_artifact_sha256.len() != 64
+        || !design_artifact_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("design_artifact_sha256 must be 64 lowercase hexadecimal characters".into());
+    }
+    if population_size == 0 || population_size > MAX_EXACT_F64_INTEGER {
+        return Err("population_size must be between 1 and 2^53".into());
+    }
+    if sample_size == 0 || sample_size > population_size {
+        return Err("sample_size must be between 1 and population_size".into());
+    }
+    if success_count > sample_size {
+        return Err("success_count must be between zero and sample_size".into());
+    }
+    if !(0.0 < confidence_level && confidence_level < 1.0) {
+        return Err("confidence_level must be strictly between zero and one".into());
+    }
+    if sample_size == 1 && population_size > 1 {
+        return Err("a non-census design variance requires at least two sampled units".into());
+    }
+
+    let estimated_proportion = success_count as f64 / sample_size as f64;
+    let design_variance = if sample_size == population_size {
+        0.0
+    } else {
+        (population_size - sample_size) as f64 / population_size as f64
+            * estimated_proportion
+            * (1.0 - estimated_proportion)
+            / (sample_size - 1) as f64
+    };
+    let tail_probability = (1.0 - confidence_level) / 2.0;
+    let lower_success_count = wang_konijn_lower_bound(
+        population_size,
+        sample_size,
+        success_count,
+        tail_probability,
+    );
+    let upper_success_count = population_size
+        - wang_konijn_lower_bound(
+            population_size,
+            sample_size,
+            sample_size - success_count,
+            tail_probability,
+        );
+    let lower_proportion = lower_success_count as f64 / population_size as f64;
+    let upper_proportion = upper_success_count as f64 / population_size as f64;
+    let source_sha256 = sha256_hex(include_bytes!("sampling_design.rs"));
+
+    let mut input_bytes = Vec::new();
+    put_text(&mut input_bytes, ACHIEVED_PROPORTION_SCHEMA_VERSION);
+    put_text(&mut input_bytes, SAMPLING_DESIGN_SOURCE_IDENTITY);
+    put_text(&mut input_bytes, ACHIEVED_PROPORTION_ALGORITHM_VERSION);
+    put_text(&mut input_bytes, design_artifact_sha256);
+    input_bytes.extend_from_slice(&(population_size as u64).to_be_bytes());
+    input_bytes.extend_from_slice(&(sample_size as u64).to_be_bytes());
+    input_bytes.extend_from_slice(&(success_count as u64).to_be_bytes());
+    input_bytes.extend_from_slice(&confidence_level.to_bits().to_be_bytes());
+    let input_sha256 = sha256_hex(&input_bytes);
+
+    let mut output_bytes = Vec::new();
+    output_bytes.extend_from_slice(&estimated_proportion.to_bits().to_be_bytes());
+    output_bytes.extend_from_slice(&design_variance.to_bits().to_be_bytes());
+    put_text(&mut output_bytes, "wang_konijn_equal_tailed");
+    output_bytes.extend_from_slice(&(lower_success_count as u64).to_be_bytes());
+    output_bytes.extend_from_slice(&(upper_success_count as u64).to_be_bytes());
+    output_bytes.extend_from_slice(&lower_proportion.to_bits().to_be_bytes());
+    output_bytes.extend_from_slice(&upper_proportion.to_bits().to_be_bytes());
+    let output_sha256 = sha256_hex(&output_bytes);
+
+    let mut artifact_bytes = Vec::new();
+    put_text(&mut artifact_bytes, ACHIEVED_PROPORTION_SCHEMA_VERSION);
+    put_text(&mut artifact_bytes, SAMPLING_DESIGN_SOURCE_IDENTITY);
+    put_text(&mut artifact_bytes, &source_sha256);
+    put_text(&mut artifact_bytes, ACHIEVED_PROPORTION_ALGORITHM_VERSION);
+    put_text(&mut artifact_bytes, design_artifact_sha256);
+    put_text(&mut artifact_bytes, &input_sha256);
+    put_text(&mut artifact_bytes, &output_sha256);
+    let artifact_sha256 = sha256_hex(&artifact_bytes);
+
+    Ok(AchievedProportion {
+        schema_version: ACHIEVED_PROPORTION_SCHEMA_VERSION,
+        source_identity: SAMPLING_DESIGN_SOURCE_IDENTITY,
+        source_sha256,
+        algorithm_version: ACHIEVED_PROPORTION_ALGORITHM_VERSION,
+        design_artifact_sha256: design_artifact_sha256.to_owned(),
+        population_size,
+        sample_size,
+        success_count,
+        estimated_proportion,
+        design_variance,
+        confidence_level,
+        interval_method: "wang_konijn_equal_tailed",
+        lower_success_count,
+        upper_success_count,
+        lower_proportion,
+        upper_proportion,
+        input_sha256,
+        output_sha256,
+        artifact_sha256,
+    })
 }
 
 /// Design a two-sided proportion estimate for sampling without replacement.
@@ -568,5 +808,126 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("sum"));
+    }
+
+    #[test]
+    fn matches_wang_konijn_published_equal_tailed_belt() {
+        let expected_lower = [0, 1, 3, 8, 13, 19, 26, 33, 40, 48, 57];
+        let expected_upper = [32, 47, 61, 73, 85, 95, 106, 116, 125, 134, 143];
+        for success_count in 0..=10 {
+            let result = finite_population_achieved_proportion(
+                &"a".repeat(64),
+                200,
+                20,
+                success_count,
+                0.95,
+            )
+            .unwrap();
+            assert_eq!(result.lower_success_count, expected_lower[success_count]);
+            assert_eq!(result.upper_success_count, expected_upper[success_count]);
+        }
+    }
+
+    #[test]
+    fn exact_interval_meets_exhaustive_finite_population_coverage() {
+        for population_size in 2..=20 {
+            for sample_size in 2..=population_size {
+                let intervals = (0..=sample_size)
+                    .map(|success_count| {
+                        finite_population_achieved_proportion(
+                            &"b".repeat(64),
+                            population_size,
+                            sample_size,
+                            success_count,
+                            0.95,
+                        )
+                        .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                for pair in intervals.windows(2) {
+                    assert!(pair[0].lower_success_count <= pair[1].lower_success_count);
+                    assert!(pair[0].upper_success_count <= pair[1].upper_success_count);
+                }
+                for success_count in 0..=sample_size {
+                    let complement = &intervals[sample_size - success_count];
+                    assert_eq!(
+                        intervals[success_count].lower_success_count,
+                        population_size - complement.upper_success_count
+                    );
+                    assert_eq!(
+                        intervals[success_count].upper_success_count,
+                        population_size - complement.lower_success_count
+                    );
+                }
+                for population_successes in 0..=population_size {
+                    let support_lower =
+                        sample_size.saturating_sub(population_size - population_successes);
+                    let support_upper = sample_size.min(population_successes);
+                    let coverage = (support_lower..=support_upper)
+                        .filter(|success_count| {
+                            let interval = &intervals[*success_count];
+                            interval.lower_success_count <= population_successes
+                                && population_successes <= interval.upper_success_count
+                        })
+                        .map(|success_count| {
+                            (ln_choose(population_successes, success_count)
+                                + ln_choose(
+                                    population_size - population_successes,
+                                    sample_size - success_count,
+                                )
+                                - ln_choose(population_size, sample_size))
+                            .exp()
+                        })
+                        .sum::<f64>();
+                    assert!(coverage >= 0.95 - 1e-12, "coverage={coverage}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn achieved_artifact_binds_design_and_preserves_extreme_uncertainty() {
+        let result =
+            finite_population_achieved_proportion(&"c".repeat(64), 43_814, 100, 100, 0.95).unwrap();
+        assert_eq!(result.schema_version, ACHIEVED_PROPORTION_SCHEMA_VERSION);
+        assert_eq!(
+            result.algorithm_version,
+            ACHIEVED_PROPORTION_ALGORITHM_VERSION
+        );
+        assert_eq!(result.estimated_proportion, 1.0);
+        assert_eq!(result.design_variance, 0.0);
+        assert!(result.lower_success_count < result.population_size);
+        assert_eq!(result.upper_success_count, result.population_size);
+        assert!(result.lower_proportion < 1.0);
+        assert_eq!(result.upper_proportion, 1.0);
+        assert_eq!(result.source_sha256.len(), 64);
+        assert_eq!(result.input_sha256.len(), 64);
+        assert_eq!(result.output_sha256.len(), 64);
+        assert_eq!(result.artifact_sha256.len(), 64);
+
+        let changed =
+            finite_population_achieved_proportion(&"d".repeat(64), 43_814, 100, 100, 0.95).unwrap();
+        assert_ne!(result.input_sha256, changed.input_sha256);
+        assert_ne!(result.artifact_sha256, changed.artifact_sha256);
+    }
+
+    #[test]
+    fn achieved_artifact_fails_closed_on_incomplete_or_invalid_inputs() {
+        let valid_hash = "e".repeat(64);
+        let cases = [
+            finite_population_achieved_proportion("bad", 10, 2, 1, 0.95),
+            finite_population_achieved_proportion(&valid_hash, 0, 2, 1, 0.95),
+            finite_population_achieved_proportion(&valid_hash, 10, 0, 0, 0.95),
+            finite_population_achieved_proportion(&valid_hash, 10, 11, 1, 0.95),
+            finite_population_achieved_proportion(&valid_hash, 10, 2, 3, 0.95),
+            finite_population_achieved_proportion(&valid_hash, 10, 2, 1, 1.0),
+            finite_population_achieved_proportion(&valid_hash, 10, 1, 1, 0.95),
+        ];
+        assert!(cases.into_iter().all(|result| result.is_err()));
+
+        let census = finite_population_achieved_proportion(&valid_hash, 1, 1, 1, 0.95).unwrap();
+        assert_eq!(census.lower_success_count, 1);
+        assert_eq!(census.upper_success_count, 1);
+        assert_eq!(census.design_variance, 0.0);
     }
 }

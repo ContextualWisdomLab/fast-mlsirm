@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import fast_mlsirm.sampling_design as sampling_design_module
 import pytest
 from fast_mlsirm import (
+    ACHIEVED_PROPORTION_SCHEMA_VERSION,
     SAMPLING_DESIGN_SCHEMA_VERSION,
     SamplingStratum,
+    finite_population_achieved_proportion,
     finite_population_proportion_design,
 )
 
@@ -264,3 +268,103 @@ def test_giant_integer_probability_fails_with_package_value_error() -> None:
             [SamplingStratum(100, 0.5)],
             allocation_method="proportional",
         )
+
+
+def test_achieved_proportion_preserves_uncertainty_after_all_successes() -> None:
+    """A perfect sample does not become an unsupported perfect-population claim."""
+    design = finite_population_proportion_design(
+        43_814,
+        0.95,
+        0.1,
+        [SamplingStratum(43_814, 0.5)],
+        allocation_method="proportional",
+    )
+    result = finite_population_achieved_proportion(design, design.sample_size)
+
+    assert result.schema_version == ACHIEVED_PROPORTION_SCHEMA_VERSION
+    assert result.algorithm_version == "1.0.0"
+    assert result.design_artifact_sha256 == design.artifact_sha256
+    assert result.estimated_proportion == 1.0
+    assert result.design_variance == 0.0
+    assert result.interval_method == "wang_konijn_equal_tailed"
+    assert result.lower_proportion < 1.0
+    assert result.upper_proportion == 1.0
+    assert all(
+        len(identity) == 64
+        for identity in (
+            result.source_sha256,
+            result.input_sha256,
+            result.output_sha256,
+            result.artifact_sha256,
+        )
+    )
+
+
+def test_achieved_proportion_rejects_partial_tampered_or_stratified_designs() -> None:
+    """Only one complete replayable SRSWOR design reaches terminal arithmetic."""
+    design = finite_population_proportion_design(
+        100,
+        0.95,
+        0.1,
+        [SamplingStratum(100, 0.5)],
+        allocation_method="proportional",
+    )
+    stratified = finite_population_proportion_design(
+        100,
+        0.95,
+        0.1,
+        [SamplingStratum(60, 0.5), SamplingStratum(40, 0.5)],
+        allocation_method="proportional",
+    )
+    with pytest.raises(ValueError, match="ProportionSamplingDesign"):
+        finite_population_achieved_proportion(object(), 1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="one SRSWOR stratum"):
+        finite_population_achieved_proportion(stratified, 1)
+    with pytest.raises(ValueError, match="retained inputs"):
+        finite_population_achieved_proportion(
+            replace(design, artifact_sha256="f" * 64), 1
+        )
+    for invalid in (True, -1, design.sample_size + 1):
+        with pytest.raises(ValueError, match="success_count"):
+            finite_population_achieved_proportion(design, invalid)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("schema_version", "future", "schema version"),
+        ("algorithm_version", "future", "algorithm version"),
+    ],
+)
+def test_achieved_proportion_rejects_unknown_rust_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    """Unknown terminal Rust contracts fail before public marshalling."""
+    design = finite_population_proportion_design(
+        100,
+        0.95,
+        0.1,
+        [SamplingStratum(100, 0.5)],
+        allocation_method="proportional",
+    )
+    real_core = sampling_design_module._core.finite_population_achieved_proportion
+    raw = dict(
+        real_core(
+            design.artifact_sha256,
+            design.population_size,
+            design.sample_size,
+            1,
+            design.confidence_level,
+        )
+    )
+    raw[field] = value
+    monkeypatch.setattr(
+        sampling_design_module._core,
+        "finite_population_achieved_proportion",
+        lambda *args, **kwargs: raw,
+    )
+    with pytest.raises(ValueError, match=message):
+        finite_population_achieved_proportion(design, 1)

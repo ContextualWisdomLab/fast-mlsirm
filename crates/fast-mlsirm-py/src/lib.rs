@@ -37,9 +37,10 @@ use mlsirm_core::inference::{
 };
 use mlsirm_core::interaction_map::residual_interaction_map as core_residual_interaction_map;
 use mlsirm_core::sampling_design::{
+    finite_population_achieved_proportion as core_finite_population_achieved_proportion,
     finite_population_proportion_design as core_finite_population_proportion_design,
     AllocationMethod as CoreAllocationMethod, SamplingStratum as CoreSamplingStratum,
-    SAMPLING_DESIGN_SCHEMA_VERSION,
+    ACHIEVED_PROPORTION_SCHEMA_VERSION, SAMPLING_DESIGN_SCHEMA_VERSION,
 };
 use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
 use mlsirm_core::marginal::{
@@ -9480,6 +9481,46 @@ fn finite_population_proportion_design(
 }
 
 #[pyfunction]
+fn finite_population_achieved_proportion(
+    py: Python<'_>,
+    design_artifact_sha256: &str,
+    population_size: usize,
+    sample_size: usize,
+    success_count: usize,
+    confidence_level: f64,
+) -> PyResult<Py<PyAny>> {
+    let result = core_finite_population_achieved_proportion(
+        design_artifact_sha256,
+        population_size,
+        sample_size,
+        success_count,
+        confidence_level,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("schema_version", result.schema_version)?;
+    out.set_item("source_identity", result.source_identity)?;
+    out.set_item("source_sha256", result.source_sha256)?;
+    out.set_item("algorithm_version", result.algorithm_version)?;
+    out.set_item("design_artifact_sha256", result.design_artifact_sha256)?;
+    out.set_item("population_size", result.population_size)?;
+    out.set_item("sample_size", result.sample_size)?;
+    out.set_item("success_count", result.success_count)?;
+    out.set_item("estimated_proportion", result.estimated_proportion)?;
+    out.set_item("design_variance", result.design_variance)?;
+    out.set_item("confidence_level", result.confidence_level)?;
+    out.set_item("interval_method", result.interval_method)?;
+    out.set_item("lower_success_count", result.lower_success_count)?;
+    out.set_item("upper_success_count", result.upper_success_count)?;
+    out.set_item("lower_proportion", result.lower_proportion)?;
+    out.set_item("upper_proportion", result.upper_proportion)?;
+    out.set_item("input_sha256", result.input_sha256)?;
+    out.set_item("output_sha256", result.output_sha256)?;
+    out.set_item("artifact_sha256", result.artifact_sha256)?;
+    Ok(out.into_any().unbind())
+}
+
+#[pyfunction]
 fn residual_interaction_map(
     py: Python<'_>,
     observed: PyReadonlyArray2<'_, f64>,
@@ -9526,7 +9567,12 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "SAMPLING_DESIGN_SCHEMA_VERSION",
         SAMPLING_DESIGN_SCHEMA_VERSION,
     )?;
+    m.add(
+        "ACHIEVED_PROPORTION_SCHEMA_VERSION",
+        ACHIEVED_PROPORTION_SCHEMA_VERSION,
+    )?;
     m.add_function(wrap_pyfunction!(finite_population_proportion_design, m)?)?;
+    m.add_function(wrap_pyfunction!(finite_population_achieved_proportion, m)?)?;
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(residual_interaction_map, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
