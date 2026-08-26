@@ -51,8 +51,11 @@ fields are normative (absence is unavailable, never repaired):
   start and a fixed lifecycle stage is not inferred;
 - an independent anchor-basis id and digest with unique alignment and tie-fail
   evidence; and
-- CPU/GPU receipts over the same objective, parameters and draws, evaluated
-  against a method-derived parity bound.
+- CPU/accelerator receipts over the same objective, parameters and draws,
+  evaluated against a method-derived parity bound under ADR 0024. Metal is
+  accepted only as `mlx_metal_macos_native`; Linux records only an actually
+  executed `rust_cpu`, `mlx_cpu`, `mlx_cuda`, or `rust_opencl` backend and
+  never `mlx_opencl`.
 
 Topic-context case deletion is a different estimand and consumes
 `tepp.topic_context_case_deletion_posterior.v1`: exhaustive actual

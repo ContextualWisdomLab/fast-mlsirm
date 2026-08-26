@@ -39,6 +39,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
 | [0021](0021-residual-interaction-map-boundary.md) | Accepted | Rust owns residual interaction-map arithmetic and provenance-bearing diagnostics. |
 | [0023](0023-tepp-anchored-lineage-channel-weight-boundary.md) | Proposed | Admit continuous channel evidence and exact accepted TEPP v1 identity, while estimation fails closed until pair-level independent criterion evidence exists. |
+| [0024](0024-macos-native-rust-mlx-metal-consumer-boundary.md) | Accepted | Consume macOS-native Rust-owned MLX Metal through authenticated host transport with exact backend/parity receipts; Linux never claims Metal. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule
