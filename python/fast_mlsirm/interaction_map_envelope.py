@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 
 import numpy as np
 
@@ -95,6 +96,14 @@ def _required_rust_metadata(raw: dict[str, object], key: str) -> object:
         raise RuntimeError(f"Rust interaction-map envelope is missing {key}") from exc
 
 
+def _installed_package_version() -> str:
+    """Return the installed Python distribution identity used to load the Rust extension."""
+    try:
+        return distribution_version("fast-mlsirm")
+    except PackageNotFoundError as exc:
+        raise RuntimeError("fast-mlsirm distribution version is unavailable") from exc
+
+
 def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -> str:
     """Replay the public v1 metadata contract before numerical payload marshalling."""
     schema_version = _required_rust_metadata(raw, "schema_version")
@@ -104,6 +113,14 @@ def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -
     algorithm_id = _required_rust_metadata(raw, "algorithm_id")
     if type(algorithm_id) is not str or algorithm_id != _RESIDUAL_INTERACTION_MAP_ALGORITHM_ID:
         raise RuntimeError("Rust interaction-map envelope algorithm mismatch")
+
+    implementation_version = _required_rust_metadata(raw, "implementation_version")
+    expected_implementation_version = _installed_package_version()
+    if (
+        type(implementation_version) is not str
+        or implementation_version != expected_implementation_version
+    ):
+        raise RuntimeError("Rust interaction-map envelope implementation version mismatch")
 
     calculation_provenance = _required_rust_metadata(raw, "calculation_provenance")
     if (
@@ -124,9 +141,6 @@ def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -
     if type(finite_value_status) is not bool or finite_value_status is not True:
         raise RuntimeError("Rust interaction-map envelope finite-value status mismatch")
 
-    implementation_version = _required_rust_metadata(raw, "implementation_version")
-    if type(implementation_version) is not str or not implementation_version:
-        raise RuntimeError("Rust interaction-map envelope implementation version mismatch")
     return implementation_version
 
 
