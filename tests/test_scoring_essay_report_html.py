@@ -118,6 +118,10 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "@media (prefers-color-scheme: dark)" in first
     assert "--review-required: #e57373;" in first
     assert "--review-clear: #81c784;" in first
+    assert "--muted: #60656f;" in first
+    assert "--line: #d9ded6;" in first
+    assert "--muted: #9e9e9e;" in first
+    assert "--line: #333333;" in first
     assert "border-inline-start: 8px solid var(--review-required);" in first
     assert "border-inline-start: 8px solid var(--review-clear);" in first
     assert "@media print" in first
