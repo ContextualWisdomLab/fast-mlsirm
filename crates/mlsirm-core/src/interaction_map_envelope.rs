@@ -13,6 +13,9 @@ pub const RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION: &str =
 /// Stable algorithm identity for the existing complete-case Gabriel map.
 pub const RESIDUAL_INTERACTION_MAP_ALGORITHM_ID: &str =
     "gabriel-complete-case-symmetric-residual-map.v1";
+/// Deterministic tie rule for closest/farthest retained-cell selection.
+pub const RESIDUAL_INTERACTION_MAP_TIE_POLICY: &str =
+    "lexicographic-first-original-index";
 /// Package version that produced the envelope.
 pub const RESIDUAL_INTERACTION_MAP_IMPLEMENTATION_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Stable calculation-provenance identity for the numerical owner.
@@ -26,6 +29,10 @@ pub struct ResidualInteractionMapEnvelope {
     pub algorithm_id: &'static str,
     pub implementation_version: &'static str,
     pub calculation_provenance: &'static str,
+    /// Axis count explicitly requested by the caller and validated by the Rust map.
+    pub requested_axis_count: usize,
+    /// Public deterministic policy used when closest/farthest distances are tied.
+    pub cell_extrema_tie_policy: &'static str,
     /// True only after every returned numeric value has passed a finite-value check.
     pub finite_value_status: bool,
     /// Caller identifiers corresponding to `map.person_indices`.
@@ -137,6 +144,8 @@ pub fn residual_interaction_map_envelope(
         algorithm_id: RESIDUAL_INTERACTION_MAP_ALGORITHM_ID,
         implementation_version: RESIDUAL_INTERACTION_MAP_IMPLEMENTATION_VERSION,
         calculation_provenance: RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE,
+        requested_axis_count: axis_count,
+        cell_extrema_tie_policy: RESIDUAL_INTERACTION_MAP_TIE_POLICY,
         finite_value_status: true,
         retained_person_ids,
         retained_item_ids,
@@ -177,6 +186,11 @@ mod tests {
         assert_eq!(
             envelope.calculation_provenance,
             RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE
+        );
+        assert_eq!(envelope.requested_axis_count, 1);
+        assert_eq!(
+            envelope.cell_extrema_tie_policy,
+            RESIDUAL_INTERACTION_MAP_TIE_POLICY
         );
         assert!(envelope.finite_value_status);
         assert_eq!(envelope.retained_person_ids, ids(&["person-1"]));
