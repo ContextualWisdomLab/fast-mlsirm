@@ -48,21 +48,32 @@ def _confine_cli_path(path: str | Path, *, kind: str) -> str:
     """
     requested = os.fspath(path)
     if not requested.strip():
-        raise ValueError(f"{kind} path must not be empty")
+        raise ValueError(
+            f"{kind} path must not be empty; pass the file or directory "
+            "path after the matching option"
+        )
     try:
         root = Path.cwd().resolve(strict=True)
     except (OSError, RuntimeError) as exc:
-        raise ValueError("current working directory could not be resolved safely") from exc
+        raise ValueError(
+            "current working directory could not be resolved safely; rerun "
+            "the command from a valid working directory"
+        ) from exc
     lexical = Path(os.path.abspath(requested))
     try:
         resolved = lexical.resolve(strict=False)
     except (OSError, RuntimeError) as exc:
-        raise ValueError(f"{kind} path could not be resolved safely") from exc
+        raise ValueError(
+            f"{kind} path could not be resolved safely; check that the path "
+            "and its parent folders exist and are readable, then retry"
+        ) from exc
     try:
         resolved.relative_to(root)
     except ValueError:
         raise ValueError(
-            f"{kind} path must remain within the current working directory"
+            f"{kind} path must remain within the current working directory; "
+            "move or copy the file under the current working directory (or "
+            "rerun the command from its folder), then retry"
         ) from None
     return requested
 
@@ -74,7 +85,10 @@ def _confine_candidate_specs(specs: list[str]) -> list[str]:
         if "=" in spec:
             label, path = spec.split("=", 1)
             if not label:
-                raise ValueError("candidate label must not be empty")
+                raise ValueError(
+                    "candidate label must not be empty; pass candidates as "
+                    "label=path.npy"
+                )
             confined.append(
                 f"{label}={_confine_cli_path(path, kind='candidate probability')}"
             )
@@ -335,7 +349,7 @@ def _main(argv: list[str] | None = None) -> int:
     fixed_calibration = sub.add_parser(
         "diagnose-fixed-item-calibration",
         help="Select a response-process candidate using fixed-item calibration diagnostics.",
-        description="Score candidate probability tensors on fixed evaluation items with kaefa-style item-fit risk.",
+        description="Score candidate probability tensors on fixed evaluation items using item-fit risk weighting.",
     )
     fixed_calibration.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
     fixed_calibration.add_argument(
@@ -842,7 +856,8 @@ def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
     """
     if len(specs) > MAX_CANDIDATE_COUNT:
         raise ValueError(
-            f"candidate count exceeds the {MAX_CANDIDATE_COUNT}-candidate limit"
+            f"candidate count exceeds the {MAX_CANDIDATE_COUNT}-candidate "
+            "limit; combine related candidates or pass fewer --candidate flags"
         )
     candidates = {}
     total_elements = 0
@@ -850,20 +865,32 @@ def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
     for spec in specs:
         label, path = spec.split("=", 1) if "=" in spec else (Path(spec).stem, spec)
         if not label:
-            raise ValueError("candidate label must not be empty")
+            raise ValueError(
+                "candidate label must not be empty; pass candidates as "
+                "label=path.npy"
+            )
         if label in candidates:
-            raise ValueError(f"duplicate candidate label: {label}")
+            raise ValueError(
+                f"duplicate candidate label: {label}; give each --candidate "
+                "flag a unique label"
+            )
         candidate = _load_numpy_bounded(path)
         if not isinstance(candidate, np.ndarray):
             candidate.close()
-            raise ValueError("candidate probability inputs must be single .npy arrays")
+            raise ValueError(
+                "candidate probability inputs must be single .npy arrays; "
+                "export each candidate as a plain .npy array and retry"
+            )
         total_elements += int(candidate.size)
         total_bytes += int(candidate.nbytes)
         if (
             total_elements > MAX_CANDIDATE_ELEMENTS
             or total_bytes > MAX_CANDIDATE_BYTES
         ):
-            raise ValueError("candidate probability inputs exceed the aggregate size limit")
+            raise ValueError(
+                "candidate probability inputs exceed the aggregate size "
+                "limit; score fewer or smaller candidate sets per run"
+            )
         candidates[label] = candidate
     return candidates
 
