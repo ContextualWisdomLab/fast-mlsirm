@@ -309,16 +309,16 @@ def finite_population_achieved_proportion(
         list(design.strata),
         allocation_method=design.allocation_method,
     )
-    if replayed.artifact_sha256 != design.artifact_sha256:
+    if replayed != design:
         raise ValueError("sampling design artifact does not match its retained inputs")
-    if normalized_success_count > design.sample_size:
+    if normalized_success_count > replayed.sample_size:
         raise ValueError("success_count must be between zero and design.sample_size")
     result = _core.finite_population_achieved_proportion(
-        design.artifact_sha256,
-        design.population_size,
-        design.sample_size,
+        replayed.artifact_sha256,
+        replayed.population_size,
+        replayed.sample_size,
         normalized_success_count,
-        design.confidence_level,
+        replayed.confidence_level,
     )
     schema_version = _required_result_field(result, "schema_version")
     if schema_version != ACHIEVED_PROPORTION_SCHEMA_VERSION:
