@@ -334,7 +334,7 @@ fn allocate_strata(
         }
     }
 
-    if allocated.iter().any(|count| *count == 0) {
+    if allocated.contains(&0) {
         return Err(
             "the requested precision cannot allocate at least one unit to every stratum".into(),
         );
