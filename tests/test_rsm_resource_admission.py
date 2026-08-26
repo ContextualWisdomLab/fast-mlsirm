@@ -50,6 +50,28 @@ def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeyp
         fit_rsm([row], n_cat=2)
 
 
+def test_empty_row_fanout_hits_structural_budget_before_materialization(monkeypatch):
+    """Zero-cell container fan-out cannot bypass the RSM resource envelope."""
+
+    monkeypatch.setattr(rsm, "_MAX_RSM_RESPONSE_STRUCTURAL_NODES", 4)
+    monkeypatch.setattr(rsm.np, "asarray", _unexpected_asarray)
+
+    with pytest.raises(
+        ValueError,
+        match=r"responses exceed the 4-node RSM structural evidence budget",
+    ):
+        fit_rsm([[], [], [], [], []], n_cat=2)
+
+
+def test_structural_budget_preserves_valid_small_matrix(monkeypatch):
+    """A normal non-empty matrix remains admissible inside the structural bound."""
+
+    responses = [[0, 1]]
+    monkeypatch.setattr(rsm, "_MAX_RSM_RESPONSE_STRUCTURAL_NODES", 4)
+
+    assert rsm._trusted_response_source(responses) is responses
+
+
 def test_rsm_resource_preflight_preserves_small_shared_rows():
     """Repeated inert built-in rows remain valid inside the bounded envelope."""
 
