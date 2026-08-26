@@ -41,6 +41,9 @@ _MAX_RSM_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_RSM_RESPONSE_CELLS
 _RSM_RESOURCE_ERROR = (
     f"responses exceed the {_MAX_RSM_RESPONSE_CELLS}-cell RSM evidence budget"
 )
+_RSM_MINIMUM_SHAPE_ERROR = (
+    "responses must contain at least one person and at least two item columns"
+)
 
 
 def _rsm_structural_resource_error() -> str:
@@ -135,12 +138,18 @@ def _trusted_response_source(value: object) -> object:
     if type(value) is np.ndarray:
         if int(value.size) > _MAX_RSM_RESPONSE_CELLS:
             raise ValueError(_RSM_RESOURCE_ERROR)
+        if value.ndim == 2 and (
+            int(value.shape[0]) < 1 or int(value.shape[1]) < MIN_IRT_ITEMS
+        ):
+            raise ValueError(_RSM_MINIMUM_SHAPE_ERROR)
         return value
     if type(value) is not list and type(value) is not tuple:
         raise ValueError("responses must be a real numeric array")
 
     logical_cells = 0
     structural_nodes = 0
+    matrix_like = len(value) > 0
+    matrix_width: int | None = None
     for row in value:
         structural_nodes += 1
         if structural_nodes > _MAX_RSM_RESPONSE_STRUCTURAL_NODES:
@@ -150,6 +159,14 @@ def _trusted_response_source(value: object) -> object:
             logical_cells += int(row.size)
             if logical_cells > _MAX_RSM_RESPONSE_CELLS:
                 raise ValueError(_RSM_RESOURCE_ERROR)
+            if row.ndim != 1:
+                matrix_like = False
+            else:
+                row_width = int(row.shape[0])
+                if matrix_width is None:
+                    matrix_width = row_width
+                elif matrix_width != row_width:
+                    matrix_like = False
             continue
         if row_type is list or row_type is tuple:
             row_length = len(row)
@@ -159,16 +176,29 @@ def _trusted_response_source(value: object) -> object:
             structural_nodes += row_length
             if structural_nodes > _MAX_RSM_RESPONSE_STRUCTURAL_NODES:
                 raise ValueError(_rsm_structural_resource_error())
-            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
-                raise ValueError("responses must be a real numeric array")
+            if matrix_width is None:
+                matrix_width = row_length
+            elif matrix_width != row_length:
+                matrix_like = False
             continue
         # Preserve historical flat built-in sequences until the existing 2-D
         # diagnostic, while refusing caller-defined scalar/container subclasses.
+        matrix_like = False
         if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
             raise ValueError("responses must be a real numeric array")
         logical_cells += 1
         if logical_cells > _MAX_RSM_RESPONSE_CELLS:
             raise ValueError(_RSM_RESOURCE_ERROR)
+
+    if matrix_like and matrix_width is not None and matrix_width < MIN_IRT_ITEMS:
+        raise ValueError(_RSM_MINIMUM_SHAPE_ERROR)
+
+    # Value-wise validation is intentionally deferred until resource and
+    # structurally impossible item-count checks have completed.
+    for row in value:
+        if type(row) is list or type(row) is tuple:
+            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
+                raise ValueError("responses must be a real numeric array")
     return value
 
 
@@ -219,9 +249,7 @@ def fit_rsm(
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     if n_persons < 1 or n_items < MIN_IRT_ITEMS:
-        raise ValueError(
-            "responses must contain at least one person and at least two item columns"
-        )
+        raise ValueError(_RSM_MINIMUM_SHAPE_ERROR)
     missing = np.isnan(y)
     if np.any(~missing & ~np.isfinite(y)):
         raise ValueError("observed responses must be finite integer categories")
