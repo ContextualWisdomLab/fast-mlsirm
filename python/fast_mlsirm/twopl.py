@@ -15,7 +15,7 @@ import numpy as np
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
-from .irt_contract import validate_irt_response_matrix
+from .irt_contract import MAX_IRT_RESPONSE_CELLS, validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
@@ -130,6 +130,10 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
         source = responses
         if source.ndim != 2:
             raise ValueError("responses must be a 2-D persons x items array")
+        if source.size > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
         if source.dtype.kind == "c":
             raise ValueError("responses must be real-valued")
         if source.dtype.kind not in {"b", "i", "u", "f"}:
@@ -149,9 +153,12 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
 
     if type(responses) not in (list, tuple):
         raise ValueError("responses must be a real numeric matrix")
+    if len(responses) > 2 * MAX_IRT_RESPONSE_CELLS + 1:
+        raise ValueError("responses exceed the structural-work limit")
 
     normalized_rows: list[list[float]] = []
     expected_width: int | None = None
+    logical_cells = 0
     for row in responses:
         if type(row) is np.ndarray:
             if row.ndim != 1:
@@ -160,8 +167,19 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
                 raise ValueError("responses must be real-valued")
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
+            row_size = int(row.size)
+            logical_cells += row_size
+            if logical_cells > MAX_IRT_RESPONSE_CELLS:
+                raise ValueError(
+                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+                )
             row_values = [_response_scalar(value) for value in row]
         elif type(row) in (list, tuple):
+            logical_cells += len(row)
+            if logical_cells > MAX_IRT_RESPONSE_CELLS:
+                raise ValueError(
+                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+                )
             row_values = [_response_scalar(value) for value in row]
         else:
             raise ValueError("responses must be a 2-D persons x items array")
