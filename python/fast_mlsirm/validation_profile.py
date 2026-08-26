@@ -75,11 +75,13 @@ def _enum_value(value: Any, enum_type: type[Enum], name: str) -> Enum:
 
 
 def _utc_datetime(value: Any, name: str) -> datetime:
-    """Normalize one exact offset-aware timestamp to UTC."""
+    """Normalize one exact callback-free fixed-offset timestamp to UTC."""
     if type(value) is not datetime:
         raise ValueError(f"{name} must be an exact datetime")
-    if value.tzinfo is None or value.utcoffset() is None:
+    if value.tzinfo is None:
         raise ValueError(f"{name} must be offset-aware")
+    if type(value.tzinfo) is not timezone:
+        raise ValueError(f"{name} must use datetime.timezone")
     return value.astimezone(timezone.utc)
 
 
