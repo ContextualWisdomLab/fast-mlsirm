@@ -465,6 +465,10 @@ dependencies = [
  "bytemuck",
  "pollster",
  "proptest",
+ "serde",
+ "serde_json",
+ "time",
+ "uuid",
  "wgpu",
 ]
 

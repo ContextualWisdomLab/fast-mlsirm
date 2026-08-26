@@ -167,7 +167,13 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-062** Future Rust estimators for these contracts shall establish identification and true-parameter recovery before release as production estimators.
 
-**PRD-FR-063** Posterior topic-context influence shall consume a complete,
+**PRD-FR-063** Event Lineage channel weights shall require an independently
+produced, pair-identity-bound TEPP criterion. An accepted run-level decision
+without pair-level criterion observations shall remain explicitly unavailable
+for estimation; channel score floors, internal covariance, ranks, equal shares,
+and Python numerical kernels are prohibited substitutes.
+
+**PRD-FR-064** Posterior topic-context influence shall consume a complete,
 provenance-bound TEPP posterior with BU/PU/team/person multiple membership and
 Event Lineage relations. Binary topic assignments, diagonal pseudo-posteriors,
 heuristic weights, and Python psychometric kernels are prohibited; the feature
