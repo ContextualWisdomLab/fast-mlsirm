@@ -818,7 +818,7 @@ def _rust_optimize(
             "Rust backend requested but core.jmle_optimize is unavailable; "
             "reinstall this package so the compiled extension matches the "
             "installed Python package, or rerun through the explicit NumPy "
-            "reference path"
+            "reference path (fast_mlsirm.fit_reference, or --reference on the CLI)"
         )
 
     def _py_objective(x_arr: object) -> tuple[float, list[float], float]:
