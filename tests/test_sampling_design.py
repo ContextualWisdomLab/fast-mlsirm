@@ -23,10 +23,11 @@ def test_finite_population_design_matches_rust_reference() -> None:
 
     assert design.schema_version == SAMPLING_DESIGN_SCHEMA_VERSION
     assert design.source_identity == "fast-mlsirm.mlsirm-core.sampling-design"
-    assert design.algorithm_version == "1.0.0"
+    assert design.algorithm_version == "1.1.0"
     assert design.strata == (SamplingStratum(1_000, 0.5),)
     assert design.sample_size == 278
     assert design.stratum_sample_sizes == (278,)
+    assert design.stratum_inclusion_probability_ratios == ((278, 1_000),)
     assert design.finite_population_correction == pytest.approx(
         (722.0 / 999.0) ** 0.5
     )
@@ -79,6 +80,7 @@ def test_neyman_allocation_uses_caller_supplied_stratum_variability() -> None:
 
     assert design.sample_size == 43
     assert design.stratum_sample_sizes == (20, 23)
+    assert design.stratum_inclusion_probability_ratios == ((20, 60), (23, 40))
 
 
 @pytest.mark.parametrize(

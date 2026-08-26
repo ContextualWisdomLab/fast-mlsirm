@@ -9469,6 +9469,10 @@ fn finite_population_proportion_design(
             .collect::<Vec<_>>(),
     )?;
     out.set_item("stratum_sample_sizes", result.stratum_sample_sizes)?;
+    out.set_item(
+        "stratum_inclusion_probability_ratios",
+        result.stratum_inclusion_probability_ratios,
+    )?;
     out.set_item("input_sha256", result.input_sha256)?;
     out.set_item("output_sha256", result.output_sha256)?;
     out.set_item("artifact_sha256", result.artifact_sha256)?;

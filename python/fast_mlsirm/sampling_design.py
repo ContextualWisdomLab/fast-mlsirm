@@ -41,6 +41,7 @@ class ProportionSamplingDesign:
     allocation_method: str
     strata: tuple[SamplingStratum, ...]
     stratum_sample_sizes: tuple[int, ...]
+    stratum_inclusion_probability_ratios: tuple[tuple[int, int], ...]
     input_sha256: str
     output_sha256: str
     artifact_sha256: str
@@ -124,6 +125,8 @@ def finite_population_proportion_design(
         expected_proportions,
         allocation_method,
     )
+    if result.get("schema_version") != SAMPLING_DESIGN_SCHEMA_VERSION:
+        raise ValueError("unsupported sampling-design schema version")
     return ProportionSamplingDesign(
         schema_version=result["schema_version"],
         source_identity=result["source_identity"],
@@ -147,6 +150,9 @@ def finite_population_proportion_design(
             )
         ),
         stratum_sample_sizes=tuple(result["stratum_sample_sizes"]),
+        stratum_inclusion_probability_ratios=tuple(
+            tuple(ratio) for ratio in result["stratum_inclusion_probability_ratios"]
+        ),
         input_sha256=result["input_sha256"],
         output_sha256=result["output_sha256"],
         artifact_sha256=result["artifact_sha256"],

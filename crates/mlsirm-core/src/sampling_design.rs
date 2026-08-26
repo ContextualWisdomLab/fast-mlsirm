@@ -16,7 +16,7 @@ pub const SAMPLING_DESIGN_SCHEMA_VERSION: &str = "fast-mlsirm.sampling-design.v1
 /// Stable identity of the Rust implementation that owns the artifact.
 pub const SAMPLING_DESIGN_SOURCE_IDENTITY: &str = "fast-mlsirm.mlsirm-core.sampling-design";
 /// Version of the sample-size, FPC, allocation, and integerization algorithm.
-pub const SAMPLING_DESIGN_ALGORITHM_VERSION: &str = "1.0.0";
+pub const SAMPLING_DESIGN_ALGORITHM_VERSION: &str = "1.1.0";
 const MAX_EXACT_F64_INTEGER: usize = 1_usize << 53;
 const MAX_STRATA: usize = 100_000;
 
@@ -90,6 +90,8 @@ pub struct ProportionSamplingDesign {
     pub strata: Vec<SamplingStratum>,
     /// Integer sample count for each input stratum, in input order.
     pub stratum_sample_sizes: Vec<usize>,
+    /// Exact first-order inclusion probability `n_h / N_h` for each stratum.
+    pub stratum_inclusion_probability_ratios: Vec<(usize, usize)>,
     /// SHA-256 of the canonical input encoding.
     pub input_sha256: String,
     /// SHA-256 of the canonical computed-output encoding.
@@ -137,6 +139,7 @@ fn output_identity(
     sample_size: usize,
     finite_population_correction: f64,
     stratum_sample_sizes: &[usize],
+    stratum_inclusion_probability_ratios: &[(usize, usize)],
 ) -> String {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&expected_proportion.to_bits().to_be_bytes());
@@ -147,6 +150,11 @@ fn output_identity(
     bytes.extend_from_slice(&(stratum_sample_sizes.len() as u64).to_be_bytes());
     for count in stratum_sample_sizes {
         bytes.extend_from_slice(&(*count as u64).to_be_bytes());
+    }
+    bytes.extend_from_slice(&(stratum_inclusion_probability_ratios.len() as u64).to_be_bytes());
+    for (numerator, denominator) in stratum_inclusion_probability_ratios {
+        bytes.extend_from_slice(&(*numerator as u64).to_be_bytes());
+        bytes.extend_from_slice(&(*denominator as u64).to_be_bytes());
     }
     sha256_hex(&bytes)
 }
@@ -222,6 +230,11 @@ pub fn finite_population_proportion_design(
         ((population_size - sample_size) as f64 / (population_size - 1) as f64).sqrt()
     };
     let stratum_sample_sizes = allocate_strata(sample_size, strata, allocation_method)?;
+    let stratum_inclusion_probability_ratios = stratum_sample_sizes
+        .iter()
+        .zip(strata)
+        .map(|(sample_count, stratum)| (*sample_count, stratum.population_size))
+        .collect::<Vec<_>>();
     let source_sha256 = sha256_hex(include_bytes!("sampling_design.rs"));
     let input_sha256 = input_identity(
         population_size,
@@ -237,6 +250,7 @@ pub fn finite_population_proportion_design(
         sample_size,
         finite_population_correction,
         &stratum_sample_sizes,
+        &stratum_inclusion_probability_ratios,
     );
     let artifact_sha256 = artifact_identity(&source_sha256, &input_sha256, &output_sha256);
 
@@ -256,6 +270,7 @@ pub fn finite_population_proportion_design(
         allocation_method,
         strata: strata.to_vec(),
         stratum_sample_sizes,
+        stratum_inclusion_probability_ratios,
         input_sha256,
         output_sha256,
         artifact_sha256,
@@ -365,6 +380,10 @@ mod tests {
         assert_eq!(design.schema_version, SAMPLING_DESIGN_SCHEMA_VERSION);
         assert_eq!(design.sample_size, 278);
         assert_eq!(design.stratum_sample_sizes, vec![278]);
+        assert_eq!(
+            design.stratum_inclusion_probability_ratios,
+            vec![(278, 1_000)]
+        );
         assert_eq!(design.strata[0].population_size, 1_000);
         assert_eq!(design.source_identity, SAMPLING_DESIGN_SOURCE_IDENTITY);
         assert_eq!(design.source_sha256.len(), 64);
@@ -399,11 +418,11 @@ mod tests {
         assert_eq!(first.artifact_sha256, replay.artifact_sha256);
         assert_eq!(
             first.input_sha256,
-            "1447766881e80e4ffe9745eec3a43667c30a97ec0709abe5f7a3fa03ef157e51"
+            "8d4b0c374e9c6c39fa872e8bf1e195c4d39c91d1a9ce8991836a5a66ee3bd269"
         );
         assert_eq!(
             first.output_sha256,
-            "2fdc03b308813de28df0d73d7f6f7031fb4e380b71905f16c31c3b5d1aadd9b3"
+            "bb9bc3ca52b6f2642226b80b5ea2f41b83eac225ee8dc448c8f9e29de13c68b9"
         );
         assert_ne!(first.input_sha256, changed.input_sha256);
         assert_ne!(first.artifact_sha256, changed.artifact_sha256);
@@ -434,6 +453,14 @@ mod tests {
                 .unwrap();
         assert_eq!(proportional.stratum_sample_sizes, vec![26, 17]);
         assert_eq!(neyman.stratum_sample_sizes, vec![20, 23]);
+        assert_eq!(
+            proportional.stratum_inclusion_probability_ratios,
+            vec![(26, 60), (17, 40)]
+        );
+        assert_eq!(
+            neyman.stratum_inclusion_probability_ratios,
+            vec![(20, 60), (23, 40)]
+        );
         assert_eq!(proportional.sample_size, 43);
         assert_eq!(neyman.sample_size, 43);
     }

@@ -34,8 +34,10 @@ caller-authored hashes are neither accepted nor trusted. Sample-frame identity
 and selected-unit membership remain caller-owned provenance and are not inputs
 to the measurement arithmetic or its content identity.
 
-This artifact proves only the declared sample-size, FPC, and allocation
-calculation. It does not attest selected membership, an achieved estimator,
+The output also carries each stratum's exact first-order inclusion probability
+as the integer ratio `n_h / N_h`; those ordered ratios participate in the
+output and artifact hashes. This artifact proves only the declared sample-size,
+FPC, allocation, and inclusion-probability calculation. It does not attest selected membership, an achieved estimator,
 variance estimate, confidence interval, semantic-coverage result, or permission
 for corpus inference; those require separately bound downstream evidence.
 
@@ -85,6 +87,8 @@ optimization are outside v1.
   only; it contains no sampling formula.
 - The allocation sums to `n`, never exceeds a stratum population, and never
   silently drops a declared stratum.
+- Every stratum inclusion probability is emitted as the exact ordered integer
+  ratio `(n_h, N_h)` by Rust and participates in the content identity.
 - Tests cover a known finite-population result, distinct proportional/Neyman
   allocations, invalid prior evidence, population mismatch, and infeasible
   stratum coverage.
