@@ -172,6 +172,12 @@ and response assumptions shall never be invented or hidden in Python.
 
 **PRD-FR-062** Future Rust estimators for these contracts shall establish identification and true-parameter recovery before release as production estimators.
 
+**PRD-FR-063** Event Lineage channel weights shall require an independently
+produced, pair-identity-bound TEPP criterion. An accepted run-level decision
+without pair-level criterion observations shall remain explicitly unavailable
+for estimation; channel score floors, internal covariance, ranks, equal shares,
+and Python numerical kernels are prohibited substitutes.
+
 ### 6.8 Reporting and evidence
 
 **PRD-FR-070** Reports shall separate exact machine-readable values from human-readable summaries and preserve provenance needed to reconstruct the analysis.
