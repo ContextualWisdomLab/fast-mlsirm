@@ -47,6 +47,16 @@ true-parameter/deletion-effect recovery, interval coverage, and CPU/GPU parity.
 Python may marshal the result but may not implement the likelihood,
 case-deletion refit, weighting, or ranking.
 
+Project Journey time is not the first stored row or a fixed starting stage.
+TEPP must keep record creation time distinct from inferred event time and use
+its governed TDT/CHRONOS temporal posterior to admit multiple possible
+predecessors such as an earlier project, customer requirement, notice,
+negotiated or competitive bid, external sensing event, consultation, or lead.
+The producer artifact therefore binds posterior event-time evidence plus
+branch, transition, and temporal-dependency provenance. fast-mlsirm consumes
+that posterior unchanged; it does not select an earliest timestamp, linearize a
+branch, or infer a transition from stage names.
+
 ### Accepted producer contract and final estimand
 
 The preferred next wire artifact is
@@ -120,6 +130,8 @@ converts uncertainty into a binary important/not-important label.
    order.
 8. Posterior contrasts never pool BU, PU, team, person, context, or topic cells
    through a local weight. Exact scalar ties remain ties.
+9. Creation timestamps and posterior event times remain separate. No fixed
+   journey start, first-row rule, or single-predecessor fallback is accepted.
 
 ## Consequences and alternatives
 

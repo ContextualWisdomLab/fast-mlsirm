@@ -222,6 +222,12 @@ unavailable empty cells, and exact dense-rank ties. It shall not fuse levels,
 contexts, or topics, infer weights, add Event Lineage weights, or emit a binary
 importance decision.
 
+**TRD-MLT-009** Project Journey inputs shall consume TEPP TDT/CHRONOS posterior
+event times separately from source creation timestamps and preserve
+provenance-bearing branch, transition, temporal-dependency, and multiple
+predecessor evidence. Rust influence code shall not select an earliest row,
+impose a fixed starting stage, or linearize the journey graph.
+
 ### 4.12 Testing and scientific evidence
 
 **TRD-TEST-001** Owned production Python statement/branch coverage target is 100%; public docstrings and Rust documentation shall be complete and beginner-readable.
