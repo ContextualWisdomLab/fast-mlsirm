@@ -137,6 +137,10 @@ class ItemParameterEvidence:
                 raise ValueError(
                     "provisional parameter evidence requires a provisional basis"
                 )
+            if self.provisional_basis_fingerprint == self.parameter_artifact_fingerprint:
+                raise ValueError(
+                    "provisional basis must not be the parameter artifact itself"
+                )
             if self.calibration_evidence_fingerprint is not None:
                 raise ValueError(
                     "provisional parameter evidence must not carry calibration evidence"
@@ -152,6 +156,10 @@ class ItemParameterEvidence:
             if self.calibration_evidence_fingerprint is None:
                 raise ValueError(
                     "calibrated parameter evidence requires calibration evidence"
+                )
+            if self.calibration_evidence_fingerprint == self.parameter_artifact_fingerprint:
+                raise ValueError(
+                    "calibration evidence must not be the parameter artifact itself"
                 )
         object.__setattr__(
             self,
