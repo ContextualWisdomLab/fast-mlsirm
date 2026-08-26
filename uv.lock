@@ -23,7 +23,7 @@ wheels = [
 
 [[package]]
 name = "fast-mlsirm"
-version = "0.9.0"
+version = "0.9.1"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -32,7 +32,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "hypothesis" },
-    { name = "packaging" },
     { name = "pytest" },
 ]
 fuzz = [
@@ -46,7 +45,6 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "hypothesis", marker = "extra == 'fuzz'", specifier = ">=6" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "packaging", marker = "extra == 'dev'", specifier = ">=23" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
 ]
 provides-extras = ["dev", "fuzz"]

@@ -3,6 +3,42 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.9.1
+
+- Project version is bumped to 0.9.1 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.9.1] - 2026-08-25` release section: new governed contracts (a judge
+  construct-measurement contract for LLM-as-a-Judge orchestration, a Rust-owned
+  independent longitudinal state layer, and a joint MAP hierarchical
+  continuous-time AR(1) Rasch estimator), extended-precision identity
+  preservation at the Rust boundary (Rasch CML control/group identity,
+  G-theory mastery-cut identity, RSM tolerance identity through `f64`), a
+  continuation of the hostile-callback/conversion-protocol hardening sweep
+  across dozens of public entry points (CAT, ATA, CDM, DIF, equating, facets,
+  fitting diagnostics, G-theory, inference, interaction maps, judge panels,
+  linking, MHRM, Mokken, Oakes uncertainty, parallel analysis, polytomous
+  prediction/recovery, Rasch CML, RSM, subscores, Warm WLE, and
+  Benjamini-Hochberg admission, among others), governance/provenance fail-closed
+  controls for release, buyer-evidence, PR queue, and procurement source-commit
+  provenance, method-literature citation ADRs, and reproducibility work
+  binding `uv.lock` resolution to the declared Python floor.
+- This cut also removes seven authoritative fragments that no longer carried
+  genuinely unreleased content: six whose content was already recorded verbatim
+  in the `[0.9.0] - 2026-08-24` section by that release's fold but whose files
+  were never deleted (`1028-fitstats-sx2-control-callback-safety.md`,
+  `1032-gtheory-control-preflight.md`, `1266-gtheory-resource-admission.md`,
+  `1268-gtheory-dstudy-row-bound.md`, `1269-gtheory-numpy-dstudy-controls.md`,
+  `1314-linking-evidence-admission.md`), plus the standing predecessor note
+  `release-0.9.0-cut.md`, whose substance is permanently recorded in that same
+  section and in git history, mirroring the precedent set by the v0.9.0 cut's
+  removal of the stale 0.8.0 leftover.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.9.1] - 2026-08-25
+
 ### Added
 
 #### Judge construct measurement contract
@@ -71,11 +107,6 @@
 - Preserve CAT's independent adaptive-efficiency gate on mean administered items, so uncertainty calibration and error recovery cannot mask a fallback to non-adaptive item selection.
 - Keep all production likelihood, marginal-ML/EM, EAP/CAT scoring, item-information/selection, stopping, and uncertainty arithmetic Rust-owned; the added Python calculations are explicit true-parameter recovery-test summaries only.
 
-#### Declare packaging as an explicit dev dependency
-
-- Add `packaging>=23` to the `dev` extra in `pyproject.toml` so `tests/test_packaging_python_floor.py` (which imports `packaging.markers` and `packaging.version`) resolves an explicit, declared dependency instead of relying on it arriving transitively through `pytest`.
-- Regenerate `uv.lock` so `packaging` appears as a direct `dev`-extra dependency of `fast-mlsirm`, keeping `uv lock --check` green.
-
 #### Harden observed-score logistic DIF controls
 
 - Validate logistic and purified observed-score DIF semantic controls before caller-owned response/group materialization and before compiled Rust-core discovery.
@@ -89,46 +120,15 @@
   psychometric method records, not new product capabilities and not
   CWE/OWASP/NIST controls.
 
-#### Release cut 0.9.0
+#### Own residual interaction-map computation in the psychometric core
 
-- Project version is bumped to 0.9.0 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.9.0] - 2026-08-24` release section: new governed contracts (cross-engine
-  conformance inventory/provenance/manifest-replay evidence, an external
-  validation and transportability profile, a governed structural-model
-  pair-decision gate, buyer-facing item-bank lifecycle reports), a new
-  Rust-owned crossed/weighted multiple-membership person-effects estimator
-  (Fox & Glas, 2001; Browne, Goldstein, & Rasbash, 2001) with CPU-threaded and
-  optional GPU kernels, reproducible release-tag-bound PyPI sdist/wheel
-  publishing, restriction of production backend selection to Rust-owned
-  paths (NumPy parity moved behind an explicit `fit_reference` API), a Rust
-  1.97.1 toolchain pin across verification, and a broad continuation of the
-  hostile-callback/conversion-protocol hardening sweep across dozens of public
-  entry points (CAT, ATA, DIF, equating, scaling, reliability, multilevel,
-  response-time, fit-statistics, inference, linking, LLM-judge orchestration,
-  parallel-analysis, and rotation/loader concurrency, among others).
-- This cut also removes the stale, never-rendered `release-0.8.0-cut.md`
-  fragment left over from the abandoned 0.8.0 release attempt (that version
-  was never actually tagged or published); its already-recorded
-  `[0.8.0] - 2026-08-17` section in `CHANGELOG.md` is left untouched as
-  history, and this release supersedes it directly.
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
+- Add a Rust-backed, complete-case Gabriel residual interaction-map contract
+  for consumers that already hold observed responses and fitted IRT
+  expectations. The API returns coordinates, singular values, axis inertia,
+  reconstruction, unexplained residual, and the exact cross term without
+  product identifiers, persistence, authorization, or presentation policy.
 
 ### Fixed
-
-#### Harden S-X² scalar control admission
-
-- Reject caller-defined integer and floating subclasses at the public S-X² control boundary before numeric conversion or compiled-core dispatch, while preserving exact built-in and concrete NumPy scalar compatibility and leaving all S-X²/G², quadrature, and BH/FDR arithmetic Rust-owned.
-- Reject built-in or concrete NumPy integer-valued real controls when float64 normalization would change the integer identity, so `min_expected`, `fdr_q`, and `min_effect` cannot be silently rounded before domain validation.
-- Reject finite extended-precision NumPy floating controls when conversion to the Rust `f64` boundary would change their value, while preserving exact float16/float32/float64 and lossless long-double controls.
-
-#### Validate G-theory controls and score evidence before Rust discovery
-
-- G-theory D-study sizes and `Phi(lambda)` scalar controls now fail closed before caller-owned score-array materialization and before compiled Rust capability discovery when invalid, while preserving the existing callback-free Python/NumPy scalar contract.
-- D-study control containers now admit exact built-in list/tuple values and exact NumPy signed/unsigned integer arrays of the documented rank before iteration or pair unpacking, so caller-defined sequence, ndarray-subclass, and pair callbacks cannot run while `n_i_prime` / `n_prime` semantics are being established; concrete Python/NumPy integer entries remain supported.
-- `gtheory_pi()`, `gtheory_pio()`, and `phi_lambda()` now reject callback-bearing array providers, non-real storage, and complex score evidence before NumPy real narrowing or Rust discovery; ordinary exact NumPy real arrays and built-in list/tuple score trees containing concrete Python/NumPy real scalars remain supported.
-- G-study ANOVA/EMS, variance-component, D-study, and `Phi(lambda)` arithmetic remain unchanged and Rust-owned.
 
 #### Harden serving-bundle callback boundaries
 
@@ -218,24 +218,6 @@ PR queue governance scripts now require the repository-owned bounded JSON helper
 - Reject caller-defined integer subclasses and arbitrary integer-conversion providers at IRT experiment-readiness controls before caller callbacks can run, while preserving exact built-in and concrete NumPy integer scalar compatibility and existing readiness domains/errors.
 - Keep production psychometric/statistical arithmetic Rust-owned; these changes are limited to Python validation, bounded materialization, and marshalling.
 
-#### Bound G-theory score evidence before dense materialization
-
-- `gtheory_pi()` and `phi_lambda()` now reject score evidence outside the documented two-dimensional persons-by-items shape before dense NumPy materialization; `gtheory_pio()` applies the same fail-first contract to its three-dimensional persons-by-items-by-occasions shape.
-- G-theory score evidence now has an explicit 20,000,000-cell logical-resource ceiling that applies to exact NumPy views and trusted built-in sequence trees before a contiguous `float64` copy is allocated.
-- Built-in score-tree preflight now advances one child at a time, so transient traversal state is bounded by nesting depth instead of eagerly scheduling every sibling before the logical-cell ceiling can fire.
-- Existing exact NumPy arrays, ordinary built-in list/tuple score trees, exact NumPy-array rows, callback-free cycle rejection, and Rust-owned G-study/D-study/`Phi(lambda)` arithmetic remain unchanged.
-
-#### Bound G-theory D-study result-row requests
-
-- `gtheory_pi()`, `gtheory_pio()`, and `phi_lambda()` now reject D-study request vectors above 10,000 rows before score materialization or compiled-core discovery.
-- D-study result-row count is bounded independently from the existing 1,000,000 per-prime magnitude ceiling, so small valid prime values cannot be repeated to request an unbounded native result table.
-- Exact built-in list/tuple controls, trusted Python/NumPy integer entries, the existing per-prime size bound, and all Rust-owned G-study/D-study/`Phi(lambda)` arithmetic remain unchanged.
-
-#### G-theory NumPy D-study control compatibility
-
-- Preserve exact NumPy signed/unsigned integer arrays for one-facet and two-facet D-study size controls, and preserve exact built-in `range` values on the one-facet `Sequence[int]` surface, while continuing to reject ndarray subclasses, arbitrary array providers, callback-bearing sequence subclasses, Boolean/float/object/text control arrays, malformed rank/shape, non-positive values, and existing resource-limit violations before Rust dispatch.
-- Normalize accepted NumPy control arrays and built-in range controls to package-owned built-in integer payloads; G-study, D-study, and `Phi(lambda)` arithmetic remain unchanged and Rust-owned.
-
 #### Bound CDM evidence before dense materialization
 
 - Reject response and Q-matrix evidence above 20,000,000 logical cells during callback-free preflight, including oversized exact NumPy leaves nested in trusted built-in sequences, before NumPy materialization or `float64` allocation while preserving existing valid evidence and Rust-owned CDM arithmetic.
@@ -279,12 +261,6 @@ GRM/GPCM prediction admission now enforces the fitter-supported `2..=64` categor
 #### Polytomous raw prediction category-domain replay
 
 - Replayed the fitter-supported `2..=64` category domain in the package-private Python prediction helper before resource calculation or compiled-core discovery, while preserving the valid 64-category boundary and keeping GRM/GPCM probability arithmetic Rust-owned.
-
-#### Linking evidence admission
-
-- Seal fixed-anchor and common-item IRT linking numeric evidence before NumPy materialization so arbitrary array/container/numeric protocols cannot execute while scientific inputs are being admitted.
-- Validate the fixed-link source fields preserved in the returned parameter record (`xi`, `zeta`, and `tau`) before Rust dispatch, then reconstruct that record from package-owned normalized values instead of invoking caller-controlled copy/conversion hooks after the numerical transform.
-- Preserve exact NumPy real-numeric arrays and ordinary built-in list/tuple evidence containing package-trusted Python/NumPy real scalars while keeping linking arithmetic Rust-owned.
 
 #### Selection utility semantic-domain admission
 
@@ -489,7 +465,7 @@ WLE scientific evidence is additionally bounded before dense marshalling. Exact 
 #### Seal rotation candidate-container admission
 
 - Reject caller-defined rotation candidate-container subclasses before package-triggered iteration or Rust selector discovery, while preserving exact built-in list/tuple candidate sets and the existing exact-string criterion, uniqueness, policy, mode, and Rust-owned selection semantics.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## [0.9.0] - 2026-08-24
 
 

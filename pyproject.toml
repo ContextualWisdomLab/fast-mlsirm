@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fast-mlsirm"
-version = "0.9.0"
+version = "0.9.1"
 description = "Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -28,7 +28,7 @@ Issues = "https://github.com/ContextualWisdomLab/fast-mlsirm/issues"
 Changelog = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "hypothesis>=6", "packaging>=23"]
+dev = ["pytest>=8", "hypothesis>=6"]
 # Coverage-guided fuzzing harnesses (fuzz/atheris/*). Atheris is Apache-2.0 and
 # Hypothesis is MPL-2.0 and used only as a dev/test dependency. Atheris ships
 # wheels for CPython 3.8-3.12 on Linux/macOS.
