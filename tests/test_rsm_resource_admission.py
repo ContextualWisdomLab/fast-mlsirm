@@ -34,6 +34,35 @@ def test_oversized_exact_rsm_response_array_fails_before_materialization(monkeyp
         fit_rsm(responses, n_cat=2)
 
 
+def test_one_item_broadcast_fails_before_dense_materialization(monkeypatch):
+    """A structurally impossible one-item view is rejected before a dense copy."""
+
+    responses = np.broadcast_to(
+        np.array([[0]], dtype=np.int8),
+        (MAX_RSM_RESPONSE_CELLS, 1),
+    )
+    monkeypatch.setattr(rsm.np, "asarray", _unexpected_asarray)
+
+    with pytest.raises(
+        ValueError,
+        match=r"responses must contain at least one person and at least two item columns",
+    ):
+        fit_rsm(responses, n_cat=2)
+
+
+def test_one_item_builtin_rows_fail_before_dense_materialization(monkeypatch):
+    """Built-in one-item rows fail on shape before NumPy materializes them."""
+
+    responses = [[0], [1]]
+    monkeypatch.setattr(rsm.np, "asarray", _unexpected_asarray)
+
+    with pytest.raises(
+        ValueError,
+        match=r"responses must contain at least one person and at least two item columns",
+    ):
+        fit_rsm(responses, n_cat=2)
+
+
 def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeypatch):
     """An oversized trusted NumPy row is bounded before list stacking."""
 
