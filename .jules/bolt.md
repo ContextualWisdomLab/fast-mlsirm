@@ -48,3 +48,10 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2024-05-18 - Simplify log_sigmoid in Expected Counts
+**Learning:** Expected binomial log-likelihood formulas of the form `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)` require calculating two expensive transcendental functions per item.
+**Action:** Mathematically simplify to `r * x + n * _log_sigmoid(-x)` using the identity `_log_sigmoid(x) - _log_sigmoid(-x) = x`. This halves the number of expensive evaluations required in the EM loop without sacrificing analytical precision.
+
+## 2024-05-18 - Einsum for 2D Sum of Squares
+**Learning:** `np.sum(diff * diff, axis=1)` when `diff` is a 2D array involves an intermediate allocation for `diff * diff` before reduction.
+**Action:** Replace with `np.einsum('ij,ij->i', diff, diff)` to compute the sum of squares across the specified axis directly, dramatically reducing memory bandwidth and avoiding intermediate allocations.
