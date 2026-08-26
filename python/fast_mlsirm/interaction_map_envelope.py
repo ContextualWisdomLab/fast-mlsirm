@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import struct
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as distribution_version
 
@@ -34,6 +36,7 @@ class ResidualInteractionMapEnvelope:
     algorithm_id: str
     implementation_version: str
     calculation_provenance: str
+    input_digest: str
     requested_axis_count: int
     cell_extrema_tie_policy: str
     finite_value_status: bool
@@ -89,6 +92,48 @@ def _opaque_ids(name: str, value: object) -> list[str]:
     return normalized
 
 
+def _digest_field(
+    digest: "hashlib._Hash", tag: str, payload: bytes | memoryview
+) -> None:
+    """Append one unambiguous tagged byte field to the request digest."""
+    tag_bytes = tag.encode("ascii")
+    digest.update(struct.pack(">H", len(tag_bytes)))
+    digest.update(tag_bytes)
+    digest.update(struct.pack(">Q", len(payload)))
+    digest.update(payload)
+
+
+def _canonical_float64_bytes(array: np.ndarray) -> memoryview:
+    """Expose validated matrix evidence as C-order little-endian float64 bytes."""
+    canonical = array.astype("<f8", copy=False)
+    return memoryview(canonical).cast("B")
+
+
+def _input_digest(
+    schema: str,
+    axis: int,
+    persons: list[str],
+    items: list[str],
+    observed: np.ndarray,
+    expected: np.ndarray,
+) -> str:
+    """Return SHA-256 over the exact validated interaction-map request evidence."""
+    digest = hashlib.sha256()
+    _digest_field(digest, "schema", schema.encode("utf-8"))
+    _digest_field(digest, "axis_count", struct.pack(">Q", axis))
+    _digest_field(digest, "person_count", struct.pack(">Q", len(persons)))
+    for identifier in persons:
+        _digest_field(digest, "person_id", identifier.encode("utf-8"))
+    _digest_field(digest, "item_count", struct.pack(">Q", len(items)))
+    for identifier in items:
+        _digest_field(digest, "item_id", identifier.encode("utf-8"))
+    rows, columns = observed.shape
+    _digest_field(digest, "matrix_shape", struct.pack(">QQ", rows, columns))
+    _digest_field(digest, "observed_f64le", _canonical_float64_bytes(observed))
+    _digest_field(digest, "expected_f64le", _canonical_float64_bytes(expected))
+    return digest.hexdigest()
+
+
 def _required_rust_value(raw: dict[str, object], key: str) -> object:
     """Read one required Rust-owned result field without coercing foreign values."""
     try:
@@ -105,7 +150,9 @@ def _installed_package_version() -> str:
         raise RuntimeError("fast-mlsirm distribution version is unavailable") from exc
 
 
-def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -> str:
+def _validate_rust_metadata(
+    raw: dict[str, object], requested_axis_count: int, expected_input_digest: str
+) -> str:
     """Replay the public v1 metadata contract before numerical payload marshalling."""
     schema_version = _required_rust_value(raw, "schema_version")
     if type(schema_version) is not str or schema_version != RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION:
@@ -129,6 +176,10 @@ def _validate_rust_metadata(raw: dict[str, object], requested_axis_count: int) -
         or calculation_provenance != _RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE
     ):
         raise RuntimeError("Rust interaction-map envelope calculation provenance mismatch")
+
+    input_digest = _required_rust_value(raw, "input_digest")
+    if type(input_digest) is not str or input_digest != expected_input_digest:
+        raise RuntimeError("Rust interaction-map envelope input digest mismatch")
 
     returned_axis_count = _required_rust_value(raw, "requested_axis_count")
     if type(returned_axis_count) is not int or returned_axis_count != requested_axis_count:
@@ -267,8 +318,10 @@ def residual_interaction_map_envelope(
     if observed_array.shape != expected_array.shape:
         raise ValueError("observed and expected must have the same two-dimensional shape")
 
+    input_digest = _input_digest(schema, axis, persons, items, observed_array, expected_array)
     raw_result = interaction_map_core().residual_interaction_map_envelope(
         schema,
+        input_digest,
         persons,
         items,
         observed_array,
@@ -278,7 +331,7 @@ def residual_interaction_map_envelope(
     if type(raw_result) is not dict:
         raise RuntimeError("Rust interaction-map envelope must return an exact dict")
     raw = raw_result
-    implementation_version = _validate_rust_metadata(raw, axis)
+    implementation_version = _validate_rust_metadata(raw, axis, input_digest)
 
     map_person_count = _rust_nonnegative_int(raw, "map_person_count")
     map_item_count = _rust_nonnegative_int(raw, "map_item_count")
@@ -352,6 +405,7 @@ def residual_interaction_map_envelope(
         algorithm_id=_RESIDUAL_INTERACTION_MAP_ALGORITHM_ID,
         implementation_version=implementation_version,
         calculation_provenance=_RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE,
+        input_digest=input_digest,
         requested_axis_count=axis,
         cell_extrema_tie_policy=_RESIDUAL_INTERACTION_MAP_TIE_POLICY,
         finite_value_status=True,
