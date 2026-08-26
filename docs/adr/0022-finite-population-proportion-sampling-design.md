@@ -37,9 +37,10 @@ to the measurement arithmetic or its content identity.
 The output also carries each stratum's exact first-order inclusion probability
 as the integer ratio `n_h / N_h`; those ordered ratios participate in the
 output and artifact hashes. This artifact proves only the declared sample-size,
-FPC, allocation, and inclusion-probability calculation. It does not attest selected membership, an achieved estimator,
-variance estimate, confidence interval, semantic-coverage result, or permission
-for corpus inference; those require separately bound downstream evidence.
+FPC, allocation, and inclusion-probability calculation. It does not attest
+selected membership, an achieved estimator, variance estimate, confidence
+interval, semantic-coverage result, or permission for corpus inference; those
+require separately bound downstream evidence.
 
 For a caller-declared two-sided confidence level `1 - alpha`, absolute margin
 `e`, and prior- or pilot-derived proportion `p`, Rust computes
@@ -92,6 +93,21 @@ optimization are outside v1.
 - Tests cover a known finite-population result, distinct proportional/Neyman
   allocations, invalid prior evidence, population mismatch, and infeasible
   stratum coverage.
+
+## Alternatives considered
+
+- Python-side sample-size and allocation arithmetic was rejected because ADR
+  0002 assigns ordinary production measurement arithmetic to the Rust core and
+  Python is limited to validation, marshalling, orchestration, and reporting.
+- Exact-binomial sizing was not substituted for v1 because it is a different
+  method with different guarantees and requires an explicit separately
+  versioned scientific contract rather than a silent formula change.
+- Unequal-cost optimum allocation was excluded because v1 has no governed cost
+  evidence contract; inventing or defaulting cost weights would change the
+  design without caller evidence.
+- An implicit conservative `p=0.5` was rejected because the expected
+  proportion is caller-declared prior or pilot evidence and the package must
+  not manufacture that evidence.
 
 ## Consequences and trade-offs
 
