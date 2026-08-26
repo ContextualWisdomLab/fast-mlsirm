@@ -113,7 +113,7 @@ def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():
     workflow = _STUDIES.read_text(encoding="utf-8")
     workspace = _WORKSPACE.read_text(encoding="utf-8")
     runner = _SHARD_RUNNER.read_text(encoding="utf-8")
-    assert 'members = ["crates/mlsirm-core"]' in workspace
+    assert 'members = ["crates/mlsirm-core", "crates/tepp-topic-context-adapter"]' in workspace
     assert 'exclude = ["crates/fast-mlsirm-py"]' in workspace
     assert "cargo_metadata_command" in runner
     assert '"metadata"' in runner
