@@ -83,9 +83,9 @@ def _validated_inclusion_ratios(
         result, "stratum_expected_proportions"
     )
     raw_sample_sizes = _required_result_field(result, "stratum_sample_sizes")
-    raw_ratios = _required_result_field(
-        result, "stratum_inclusion_probability_ratios"
-    )
+    if type(result) is not dict or "stratum_inclusion_probability_ratios" not in result:
+        raise ValueError("invalid sampling-design inclusion ratios")
+    raw_ratios = result["stratum_inclusion_probability_ratios"]
     if (
         type(raw_population_sizes) is not list
         or type(raw_expected_proportions) is not list
