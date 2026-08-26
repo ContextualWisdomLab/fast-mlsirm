@@ -9,7 +9,7 @@ from typing import Literal
 
 from . import _core
 
-SAMPLING_DESIGN_SCHEMA_VERSION = "fast-mlsirm.sampling-design.v1"
+SAMPLING_DESIGN_SCHEMA_VERSION: str = _core.SAMPLING_DESIGN_SCHEMA_VERSION
 _MAX_EXACT_F64_INTEGER = 1 << 53
 _MAX_SAMPLING_STRATA = 100_000
 
@@ -47,9 +47,11 @@ class ProportionSamplingDesign:
 
 
 def _exact_positive_integer(name: str, value: object) -> int:
-    """Admit one exact positive built-in integer without coercion callbacks."""
+    """Admit one exact positive built-in integer inside the Rust f64 identity domain."""
     if type(value) is not int or value <= 0:
         raise ValueError(f"{name} must be a positive built-in integer")
+    if value > _MAX_EXACT_F64_INTEGER:
+        raise ValueError(f"{name} must be between 1 and 2^53")
     return value
 
 
@@ -80,8 +82,6 @@ def finite_population_proportion_design(
     normalized_population_size = _exact_positive_integer(
         "population_size", population_size
     )
-    if normalized_population_size > _MAX_EXACT_F64_INTEGER:
-        raise ValueError("population_size must be between 1 and 2^53")
     normalized_confidence_level = _exact_probability(
         "confidence_level", confidence_level
     )
@@ -124,8 +124,14 @@ def finite_population_proportion_design(
         expected_proportions,
         allocation_method,
     )
+    schema_version = result["schema_version"]
+    if schema_version != SAMPLING_DESIGN_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported sampling-design schema version: "
+            f"{schema_version!r}"
+        )
     return ProportionSamplingDesign(
-        schema_version=result["schema_version"],
+        schema_version=schema_version,
         source_identity=result["source_identity"],
         source_sha256=result["source_sha256"],
         algorithm_version=result["algorithm_version"],
