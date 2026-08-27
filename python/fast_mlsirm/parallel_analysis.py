@@ -124,6 +124,11 @@ def _raise_lossy_data() -> None:
     raise ValueError("data must be exactly representable as float64")
 
 
+def _raise_nonfinite_data() -> None:
+    """Raise the public complete-data diagnostic before dense/native work."""
+    raise ValueError("data must be finite (no NaN/inf; complete data required)")
+
+
 def _lossless_float64_matrix(raw: np.ndarray) -> np.ndarray:
     """Narrow trusted evidence only when every finite numeric identity survives."""
     try:
@@ -151,17 +156,23 @@ def _lossless_float64_matrix(raw: np.ndarray) -> np.ndarray:
 
 
 def _validate_real_array_storage(value: np.ndarray) -> None:
-    """Reject non-real exact NumPy storage without converting array elements."""
+    """Reject non-real/non-finite exact NumPy storage without element coercion."""
     if value.dtype.kind == "c":
         raise ValueError("data must be real-valued")
     if value.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("data must be numeric and convertible to float64")
+    if value.dtype.kind == "f" and not bool(np.all(np.isfinite(value))):
+        _raise_nonfinite_data()
 
 
 def _validate_scalar_float64_identity(value: object) -> None:
     """Reject concrete scalars that would change value at the Rust ``f64`` boundary."""
     value_type = type(value)
-    if value_type is bool or value_type is np.bool_ or value_type is float:
+    if value_type is bool or value_type is np.bool_:
+        return
+    if value_type is float:
+        if not math.isfinite(value):
+            _raise_nonfinite_data()
         return
     if value_type is int or any(
         value_type is scalar_type for scalar_type in _TRUSTED_NUMPY_INTEGER_TYPES
@@ -178,12 +189,15 @@ def _validate_scalar_float64_identity(value: object) -> None:
         value_type is scalar_type
         for scalar_type in (np.float16, np.float32, np.float64)
     ):
+        if not bool(np.isfinite(value)):
+            _raise_nonfinite_data()
         return
     if value_type is np.longdouble:
-        if np.isfinite(value):
-            narrowed = float(value)
-            if not math.isfinite(narrowed) or np.longdouble(narrowed) != value:
-                _raise_lossy_data()
+        if not bool(np.isfinite(value)):
+            _raise_nonfinite_data()
+        narrowed = float(value)
+        if not math.isfinite(narrowed) or np.longdouble(narrowed) != value:
+            _raise_lossy_data()
         return
 
 
@@ -320,11 +334,13 @@ def parallel_analysis(
     conversion providers are rejected before NumPy protocols execute. The
     known 2-D rectangular carrier structure, a 20,000,000-cell logical
     evidence ceiling, and a 40,000,000-node built-in traversal ceiling are
-    preflighted before contiguous ``float64`` materialization. Finite integer
-    and extended-precision floating observations must preserve their numeric
-    identity through the Rust `f64` boundary, including before mixed built-in
-    evidence can trigger NumPy dtype promotion. Complex and non-real storage
-    is rejected before the accepted matrix is marshalled to contiguous
+    preflighted before contiguous ``float64`` materialization. Non-finite
+    floating evidence is rejected during the same preflight, before dense
+    conversion or compiled-core discovery. Finite integer and extended-
+    precision floating observations must preserve their numeric identity
+    through the Rust `f64` boundary, including before mixed built-in evidence
+    can trigger NumPy dtype promotion. Complex and non-real storage is
+    rejected before the accepted matrix is marshalled to contiguous
     ``float64``. The random-eigenvalue benchmark workspace is bounded to 128
     MiB before compiled dispatch.
 
