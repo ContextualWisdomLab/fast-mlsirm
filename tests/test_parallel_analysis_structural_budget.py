@@ -111,6 +111,34 @@ def test_ragged_builtin_matrix_fails_before_numpy_or_core(
     assert discovery_calls == []
 
 
+def test_flat_builtin_sequence_fails_before_numpy_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A known 1-D built-in carrier fails before dense shape inference."""
+    module = importlib.import_module("fast_mlsirm.parallel_analysis")
+    numpy_calls: list[bool] = []
+    discovery_calls: list[bool] = []
+
+    def reject_numpy_materialization(*args, **kwargs):
+        numpy_calls.append(True)
+        raise AssertionError("NumPy materialization executed before 2-D preflight")
+
+    def reject_core_discovery() -> object:
+        discovery_calls.append(True)
+        raise AssertionError("native core discovered before 2-D preflight")
+
+    monkeypatch.setattr(module.np, "asarray", reject_numpy_materialization)
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(fitstats, "_core_module", reject_core_discovery)
+
+    with pytest.raises(ValueError, match="2-D persons x items"):
+        module.parallel_analysis([0.1, 0.4], n_iterations=1)
+
+    assert numpy_calls == []
+    assert discovery_calls == []
+
+
 def test_equal_width_builtin_and_numpy_rows_reach_rust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
