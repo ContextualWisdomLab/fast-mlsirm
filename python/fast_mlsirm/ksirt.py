@@ -44,6 +44,18 @@ _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES = frozenset(
 _KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
 _MAX_KSIRT_RESPONSE_CELLS = 20_000_000
 _MAX_KSIRT_RESPONSE_STRUCTURAL_NODES = 40_000_000
+_KSIRT_RESULT_KEYS = frozenset(
+    {
+        "theta",
+        "grid",
+        "bandwidth",
+        "options",
+        "occ",
+        "expected",
+        "expected_total",
+    }
+)
+_KSIRT_RESULT_ERROR = "invalid KSIRT Rust result payload"
 
 
 @dataclass
@@ -265,6 +277,97 @@ def _bandwidth_control(value: object | None, n_items: int) -> list[float] | None
     return [float(v) for v in bandwidth]
 
 
+def _invalid_ksirt_result() -> None:
+    """Raise the stable fail-closed error for a foreign/stale native result."""
+    raise RuntimeError(_KSIRT_RESULT_ERROR)
+
+
+def _native_float_vector(
+    value: object,
+    *,
+    expected_length: int | None = None,
+    nonempty: bool = False,
+) -> list[float]:
+    """Validate one native Rust vector without invoking conversion protocols."""
+    if type(value) not in (list, tuple):
+        _invalid_ksirt_result()
+    if expected_length is not None and len(value) != expected_length:
+        _invalid_ksirt_result()
+    if nonempty and not value:
+        _invalid_ksirt_result()
+
+    validated: list[float] = []
+    for scalar in value:
+        if type(scalar) is not float or not np.isfinite(scalar):
+            _invalid_ksirt_result()
+        validated.append(scalar)
+    return validated
+
+
+def _validated_ksirt_result(
+    value: object,
+    *,
+    n_persons: int,
+    n_items: int,
+    nevalpoints: int,
+) -> tuple[
+    list[float],
+    list[float],
+    list[float],
+    list[list[float]],
+    list[list[float]],
+    list[list[float]],
+    list[float],
+]:
+    """Replay the exact current Rust result contract before NumPy marshalling."""
+    if type(value) is not dict:
+        _invalid_ksirt_result()
+    keys = list(value.keys())
+    if any(type(key) is not str for key in keys) or set(keys) != _KSIRT_RESULT_KEYS:
+        _invalid_ksirt_result()
+
+    theta = _native_float_vector(value["theta"], expected_length=n_persons)
+    grid = _native_float_vector(value["grid"], expected_length=nevalpoints)
+    bandwidth = _native_float_vector(value["bandwidth"], expected_length=n_items)
+    if any(item_bandwidth <= 0.0 for item_bandwidth in bandwidth):
+        _invalid_ksirt_result()
+
+    raw_options = value["options"]
+    raw_occ = value["occ"]
+    raw_expected = value["expected"]
+    if type(raw_options) not in (list, tuple) or len(raw_options) != n_items:
+        _invalid_ksirt_result()
+    if type(raw_occ) not in (list, tuple) or len(raw_occ) != n_items:
+        _invalid_ksirt_result()
+    if type(raw_expected) not in (list, tuple) or len(raw_expected) != n_items:
+        _invalid_ksirt_result()
+
+    options: list[list[float]] = []
+    occ: list[list[float]] = []
+    expected: list[list[float]] = []
+    for item_index in range(n_items):
+        item_options = _native_float_vector(raw_options[item_index], nonempty=True)
+        options.append(item_options)
+        occ.append(
+            _native_float_vector(
+                raw_occ[item_index],
+                expected_length=len(item_options) * nevalpoints,
+            )
+        )
+        expected.append(
+            _native_float_vector(
+                raw_expected[item_index],
+                expected_length=nevalpoints,
+            )
+        )
+
+    expected_total = _native_float_vector(
+        value["expected_total"],
+        expected_length=nevalpoints,
+    )
+    return theta, grid, bandwidth, options, occ, expected, expected_total
+
+
 def ksirt_analysis(
     responses: np.ndarray,
     kernel: str = "gaussian",
@@ -299,7 +402,9 @@ def ksirt_analysis(
     Rust ``f64`` normalization are validated before dispatch. Evidence admission
     accepts exact NumPy arrays or plain built-in list/tuple trees of trusted
     concrete numeric scalars; callback-bearing providers, complex values, and
-    object/text storage fail before real-valued marshalling.
+    object/text storage fail before real-valued marshalling. The Rust result
+    payload is replayed for exact carrier, length, and finite-value invariants
+    before any public NumPy materialization.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
@@ -329,7 +434,7 @@ def ksirt_analysis(
     if core is None or not hasattr(core, "ksirt_occ"):
         raise RuntimeError("ksirt_analysis requires the compiled Rust core")
 
-    res = core.ksirt_occ(
+    raw_result = core.ksirt_occ(
         y.reshape(-1),
         int(n_persons),
         int(n_items),
@@ -337,19 +442,27 @@ def ksirt_analysis(
         nevalpoints_value,
         bw,
     )
-    grid = np.asarray(res["grid"], dtype=np.float64)
-    q = grid.shape[0]
-    options = [np.asarray(o, dtype=np.float64) for o in res["options"]]
+    theta_values, grid_values, bandwidth_values, option_values, occ_values, expected_values, expected_total_values = _validated_ksirt_result(
+        raw_result,
+        n_persons=n_persons,
+        n_items=n_items,
+        nevalpoints=nevalpoints_value,
+    )
+    grid = np.asarray(grid_values, dtype=np.float64)
+    options = [np.asarray(item_options, dtype=np.float64) for item_options in option_values]
     occ = [
-        np.asarray(flat, dtype=np.float64).reshape(len(opts), q)
-        for flat, opts in zip(res["occ"], options)
+        np.asarray(flat, dtype=np.float64).reshape(len(item_options), nevalpoints_value)
+        for flat, item_options in zip(occ_values, option_values, strict=True)
     ]
     return KsirtResult(
-        theta=np.asarray(res["theta"], dtype=np.float64),
+        theta=np.asarray(theta_values, dtype=np.float64),
         grid=grid,
-        bandwidth=np.asarray(res["bandwidth"], dtype=np.float64),
+        bandwidth=np.asarray(bandwidth_values, dtype=np.float64),
         options=options,
         occ=occ,
-        expected=[np.asarray(e, dtype=np.float64) for e in res["expected"]],
-        expected_total=np.asarray(res["expected_total"], dtype=np.float64),
+        expected=[
+            np.asarray(item_expected, dtype=np.float64)
+            for item_expected in expected_values
+        ],
+        expected_total=np.asarray(expected_total_values, dtype=np.float64),
     )
