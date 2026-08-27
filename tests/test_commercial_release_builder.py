@@ -1,4 +1,5 @@
 import argparse
+import builtins
 import hashlib
 import importlib.util
 import json
@@ -271,3 +272,24 @@ def test_run_command_timeout_policy(monkeypatch, tmp_path):
     assert captured_kwargs["timeout_seconds"] >= (
         sum(release_acceptance.RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values()) + 60.0
     )
+
+
+def test_builder_import_does_not_mask_internal_helper_dependency_failure(monkeypatch):
+    original_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "scripts._bounded_subprocess":
+            raise ModuleNotFoundError(
+                "No module named 'release_internal_dependency'",
+                name="release_internal_dependency",
+            )
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+    try:
+        _load_builder()
+    except ModuleNotFoundError as exc:
+        assert exc.name == "release_internal_dependency"
+    else:
+        raise AssertionError("internal helper dependency failure must propagate")
