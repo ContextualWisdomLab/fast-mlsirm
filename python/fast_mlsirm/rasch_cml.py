@@ -38,11 +38,19 @@ _TRUSTED_EVIDENCE_SCALAR_TYPES = (
 _RESPONSE_ERROR = "responses must be complete 0/1 (Rasch CML has no missing-data path)"
 _GROUP_ERROR = "group labels must be finite non-negative integers"
 _MAX_RASCH_RESPONSE_CELLS = 20_000_000
+_MAX_RASCH_RESPONSE_STRUCTURAL_NODES = 40_000_000
 
 
 def _raise_response_resource_error() -> None:
     """Reject response evidence outside the package materialization envelope."""
     raise ValueError(f"responses exceed {_MAX_RASCH_RESPONSE_CELLS:,} logical cells")
+
+
+def _raise_response_structural_resource_error() -> None:
+    """Reject built-in response trees outside the package traversal envelope."""
+    raise ValueError(
+        f"responses exceed {_MAX_RASCH_RESPONSE_STRUCTURAL_NODES:,} structural nodes"
+    )
 
 
 def _trusted_response_source(responses: object) -> object:
@@ -57,19 +65,28 @@ def _trusted_response_source(responses: object) -> object:
         raise ValueError(_RESPONSE_ERROR)
 
     logical_cells = 0
+    structural_nodes = 0
     for row in responses:
         row_type = type(row)
         if row_type is np.ndarray:
-            logical_cells += int(row.size)
+            row_cells = int(row.size)
+            logical_cells += row_cells
             if logical_cells > _MAX_RASCH_RESPONSE_CELLS:
                 _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_RASCH_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
             if row.dtype.kind not in ("b", "i", "u", "f", "c"):
                 raise ValueError(_RESPONSE_ERROR)
             continue
         if row_type is list or row_type is tuple:
-            logical_cells += len(row)
+            row_cells = len(row)
+            logical_cells += row_cells
             if logical_cells > _MAX_RASCH_RESPONSE_CELLS:
                 _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_RASCH_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
             if any(type(cell) not in _TRUSTED_EVIDENCE_SCALAR_TYPES for cell in row):
                 raise ValueError(_RESPONSE_ERROR)
             continue
@@ -78,6 +95,9 @@ def _trusted_response_source(responses: object) -> object:
         logical_cells += 1
         if logical_cells > _MAX_RASCH_RESPONSE_CELLS:
             _raise_response_resource_error()
+        structural_nodes += 1
+        if structural_nodes > _MAX_RASCH_RESPONSE_STRUCTURAL_NODES:
+            _raise_response_structural_resource_error()
         if row_type not in _TRUSTED_EVIDENCE_SCALAR_TYPES:
             raise ValueError(_RESPONSE_ERROR)
     return responses
