@@ -114,3 +114,28 @@ def test_transition_rejects_callback_bearing_evidence_mutation_without_dispatch(
     assert caught.value.code == "invalid_evidence_reference"
     assert caught.value.path == "$.evidence_references[0]"
     assert callbacks == {"str": 0}
+
+
+def test_record_replay_translates_tampered_embedded_reference_to_lifecycle_error() -> None:
+    """Record authority keeps the stable lifecycle error when nested replay fails."""
+    pilot = build_item_bank_pilot_record(
+        _LIFECYCLE_FIXTURES["_pilot_record"](),
+        item_version="1.0.0",
+    )
+    calibrated = transition_item_bank_record(
+        pilot,
+        ItemBankLifecycleState.CALIBRATED,
+        evidence_references=_LIFECYCLE_FIXTURES["_calibration_evidence"](),
+        transition_reason_id="calibration_completed",
+    )
+    object.__setattr__(
+        calibrated.evidence_references[0],
+        "evidence_fingerprint",
+        "not-a-fingerprint",
+    )
+
+    with pytest.raises(ItemBankLifecycleError) as caught:
+        _ = calibrated.record_fingerprint
+
+    assert caught.value.code == "lifecycle_record_replay_mismatch"
+    assert caught.value.path == "$.current_record"
