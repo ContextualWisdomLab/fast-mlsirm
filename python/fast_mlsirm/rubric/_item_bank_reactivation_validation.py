@@ -57,8 +57,13 @@ def _creation_fingerprint(record: _base.ItemBankLifecycleRecord) -> str | None:
 
 
 def _verify_current_record(record: Any) -> _base.ItemBankLifecycleRecord:
-    """Replay mutable state and require its external factory-time identity seal."""
-    verified = _ORIGINAL_VERIFY_CURRENT_RECORD(record)
+    """Replay mutable state and preserve the stable lifecycle failure boundary."""
+    try:
+        verified = _ORIGINAL_VERIFY_CURRENT_RECORD(record)
+    except _base.ItemBankLifecycleError:
+        raise
+    except ValueError:
+        _base._raise_lifecycle_replay_mismatch()
     sealed_fingerprint = _creation_fingerprint(verified)
     if (
         sealed_fingerprint is None
