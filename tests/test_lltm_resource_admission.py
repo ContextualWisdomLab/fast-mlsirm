@@ -30,8 +30,8 @@ def test_design_cell_budget_precedes_dense_marshalling(monkeypatch):
 
     monkeypatch.setattr(lltm, "_MAX_LLTM_MATRIX_CELLS", 2, raising=False)
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
-    responses = np.array([[0.0, 1.0, 0.0]], dtype=np.float64)
-    q_design = np.broadcast_to(np.array([[1.0]], dtype=np.float64), (3, 1))
+    responses = np.array([[0.0, 1.0]], dtype=np.float64)
+    q_design = np.broadcast_to(np.array([[1.0]], dtype=np.float64), (2, 2))
 
     with pytest.raises(ValueError, match="q_design.*resource limit"):
         lltm.fit_lltm(responses, q_design)
