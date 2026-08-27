@@ -27,6 +27,7 @@ _TRUSTED_EBDIF_SCALAR_TYPES = frozenset(
         np.longdouble,
     }
 )
+_MAX_EBDIF_ITEMS = 20_000_000
 
 
 @dataclass
@@ -51,11 +52,22 @@ class EbDifResult:
     cat_probs: np.ndarray
 
 
+def _enforce_item_budget(name: str, length: int) -> None:
+    """Bound item evidence before package-owned dense float64 allocation."""
+
+    if length > _MAX_EBDIF_ITEMS:
+        raise ValueError(f"{name} exceeds the {_MAX_EBDIF_ITEMS}-item resource limit")
+
+
 def _validated_1d(x, name: str) -> np.ndarray:
-    """Validate trusted real 1-D evidence without caller conversion hooks."""
+    """Validate trusted, resource-bounded real 1-D evidence without caller hooks."""
     if type(x) is np.ndarray:
+        if x.ndim != 1:
+            raise ValueError(f"{name} must be a 1-D array")
+        _enforce_item_budget(name, int(x.shape[0]))
         xa = x
     elif type(x) in (list, tuple):
+        _enforce_item_budget(name, len(x))
         if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in x):
             raise ValueError(f"{name} must be a numeric array")
         try:
