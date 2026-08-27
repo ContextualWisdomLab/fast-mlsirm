@@ -48,6 +48,25 @@ def test_ksirt_rejects_empty_row_fanout_before_numpy_or_core(
         ksirt.ksirt_analysis([[], [], []])
 
 
+def test_ksirt_rejects_undersized_shape_before_dense_conversion_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Known one-person designs fail before dense response materialization."""
+    responses = np.broadcast_to(np.array([[0.0]], dtype=np.float32), (1, 2))
+
+    def _unexpected_asarray(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("NumPy materialization occurred")
+
+    def _unexpected_core() -> object:
+        raise AssertionError("compiled core was discovered")
+
+    monkeypatch.setattr(ksirt.np, "asarray", _unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match=r"responses needs at least 2 persons and 1 item"):
+        ksirt.ksirt_analysis(responses)
+
+
 def test_ksirt_preserves_valid_response_at_logical_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
