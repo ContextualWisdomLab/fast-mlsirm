@@ -11,6 +11,7 @@ import numpy as np
 
 
 _MAX_PARALLEL_RANDOM_WORKSPACE_BYTES = 128 * 1024 * 1024
+_MAX_PARALLEL_DATA_CELLS = 20_000_000
 _U64_MAX = (1 << 64) - 1
 _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.int8,
@@ -101,6 +102,12 @@ def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
         raise ValueError(
             "parallel analysis random benchmark workspace exceeds 128 MiB"
         )
+
+
+def _validate_data_cell_budget(cell_count: int) -> None:
+    """Reject observed evidence above the bounded dense-marshalling envelope."""
+    if cell_count > _MAX_PARALLEL_DATA_CELLS:
+        raise ValueError("parallel analysis observed matrix exceeds governed cell limit")
 
 
 def _raise_lossy_data() -> None:
@@ -197,22 +204,28 @@ def _validate_trusted_real_scalar(value: object) -> None:
 
 
 def _preflight_real_matrix(data: object) -> None:
-    """Validate the known 2-D carrier shape without recursive caller protocols."""
+    """Validate 2-D carrier shape and size without recursive caller protocols."""
     data_type = type(data)
     if data_type is np.ndarray:
+        if data.ndim != 2:
+            raise ValueError("data must be a 2-D persons x items array")
+        _validate_data_cell_budget(int(data.size))
         _validate_real_array_storage(data)
         return
     if data_type is not list and data_type is not tuple:
         _validate_trusted_real_scalar(data)
         return
 
+    cell_count = 0
     for row_index in range(len(data)):
         row = data[row_index]
         row_type = type(row)
         if row_type is np.ndarray:
-            _validate_real_array_storage(row)
             if row.ndim != 1:
                 raise ValueError("data must be a 2-D persons x items array")
+            cell_count += int(row.size)
+            _validate_data_cell_budget(cell_count)
+            _validate_real_array_storage(row)
             if row.dtype.kind in ("i", "u") or (
                 row.dtype.kind == "f"
                 and row.dtype.itemsize > np.dtype(np.float64).itemsize
@@ -220,6 +233,8 @@ def _preflight_real_matrix(data: object) -> None:
                 _lossless_float64_matrix(row)
             continue
         if row_type is list or row_type is tuple:
+            cell_count += len(row)
+            _validate_data_cell_budget(cell_count)
             for column_index in range(len(row)):
                 cell = row[column_index]
                 if (
@@ -230,6 +245,8 @@ def _preflight_real_matrix(data: object) -> None:
                     raise ValueError("data must be a 2-D persons x items array")
                 _validate_trusted_real_scalar(cell)
             continue
+        cell_count += 1
+        _validate_data_cell_budget(cell_count)
         _validate_trusted_real_scalar(row)
 
 
@@ -278,13 +295,14 @@ def parallel_analysis(
     arrays or exact built-in list/tuple matrices of package-trusted concrete
     scalar evidence; arbitrary array/container/numeric subclasses and
     conversion providers are rejected before NumPy protocols execute. The
-    known 2-D carrier structure is preflighted without unbounded recursive
-    container traversal. Finite integer and extended-precision floating
-    observations must preserve their numeric identity through the Rust `f64`
-    boundary, including before mixed built-in evidence can trigger NumPy dtype
-    promotion. Complex and non-real storage is rejected before the accepted
-    matrix is marshalled to contiguous ``float64``. The random-eigenvalue
-    benchmark workspace is bounded to 128 MiB before compiled dispatch.
+    known 2-D carrier structure and a 20,000,000-cell logical evidence ceiling
+    are preflighted before contiguous ``float64`` materialization. Finite
+    integer and extended-precision floating observations must preserve their
+    numeric identity through the Rust `f64` boundary, including before mixed
+    built-in evidence can trigger NumPy dtype promotion. Complex and non-real
+    storage is rejected before the accepted matrix is marshalled to contiguous
+    ``float64``. The random-eigenvalue benchmark workspace is bounded to 128
+    MiB before compiled dispatch.
 
     """
     explicit_iterations = (
