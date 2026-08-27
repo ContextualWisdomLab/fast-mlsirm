@@ -36,8 +36,9 @@
 //! 3. **Guards narrowed.** The oracle feeds `cor()`/`eigen()` whatever it is
 //!    given; this implementation rejects `n_persons < 3`, `n_items < 2`,
 //!    non-finite cells, zero-variance columns, `n_iterations == 0`, and
-//!    `centile > 99` with explicit errors. The random-eigenvalue simulation
-//!    workspace is capped at 128 MiB before allocation.
+//!    `centile > 99` with explicit errors. Observed matrices are capped at
+//!    20,000,000 logical cells and the random-eigenvalue simulation workspace
+//!    is capped at 128 MiB before allocation.
 //! 4. `iterations = 0` does NOT default to `30 * p` here; the core is
 //!    explicit and callers supply the default.
 //!
@@ -80,6 +81,7 @@ pub struct ParallelAnalysisResult {
 
 const JACOBI_MAX_SWEEPS: usize = 100;
 const JACOBI_TOL: f64 = 1e-12;
+const MAX_PARALLEL_DATA_CELLS: usize = 20_000_000;
 const MAX_PARALLEL_RANDOM_WORKSPACE_BYTES: usize = 128 * 1024 * 1024;
 
 /// Horn's parallel analysis (PCA path of `paran`, see module docs).
@@ -113,6 +115,11 @@ pub fn parallel_analysis(
     let cells = n_persons
         .checked_mul(n_items)
         .ok_or("data dimensions overflow usize")?;
+    if cells > MAX_PARALLEL_DATA_CELLS {
+        return Err(format!(
+            "parallel analysis observed matrix exceeds {MAX_PARALLEL_DATA_CELLS} cells"
+        ));
+    }
     if data.len() != cells {
         return Err(format!(
             "data length {} does not match n_persons * n_items = {cells}",
