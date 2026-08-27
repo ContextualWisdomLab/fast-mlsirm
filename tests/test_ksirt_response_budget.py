@@ -33,6 +33,17 @@ def test_ksirt_rejects_oversized_response_before_dense_conversion_or_core(
         ksirt.ksirt_analysis(responses)
 
 
+def test_ksirt_nested_shape_rejection_preserves_logical_resource_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Known logical overflow wins before inspecting nested row-cell shape."""
+    monkeypatch.setattr(ksirt, "_MAX_KSIRT_RESPONSE_CELLS", 1, raising=False)
+    _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match=r"responses exceed 1 logical cells"):
+        ksirt.ksirt_analysis([[[0.0], [1.0]]])
+
+
 def test_ksirt_rejects_empty_row_fanout_before_numpy_or_core(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
