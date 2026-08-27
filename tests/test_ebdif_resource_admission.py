@@ -106,6 +106,19 @@ def test_mismatched_lengths_fail_before_dense_float64_conversion(
         ebdif.eb_mh_dif(mh, se)
 
 
+def test_malformed_first_carrier_keeps_type_precedence_before_length_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Structural count preflight must not hide the first carrier's type error."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    malformed = np.array([object(), object()], dtype=object)
+    longer = np.broadcast_to(np.array([0.3], dtype=np.float64), (3,))
+
+    with pytest.raises(ValueError, match="mh must be a numeric array"):
+        ebdif.eb_mh_dif(malformed, longer)
+
+
 def test_lossy_integer_evidence_fails_before_core_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
