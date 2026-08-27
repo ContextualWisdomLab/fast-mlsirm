@@ -31,6 +31,7 @@ _TRUSTED_REAL_SCALAR_TYPES = (
 )
 _TRUSTED_COMPLEX_SCALAR_TYPES = (complex, *_NUMPY_COMPLEX_TYPES)
 _MAX_LLTM_MATRIX_CELLS = 20_000_000
+_MAX_LLTM_MATRIX_NODES = 2 * _MAX_LLTM_MATRIX_CELLS
 
 
 def _boolean(value: object, name: str) -> bool:
@@ -89,6 +90,15 @@ def _enforce_matrix_budget(name: str, n_rows: int, n_columns: int) -> None:
         )
 
 
+def _enforce_matrix_structure_budget(name: str, n_nodes: int) -> None:
+    """Bound Python container traversal independently of logical scalar cells."""
+
+    if n_nodes > _MAX_LLTM_MATRIX_NODES:
+        raise ValueError(
+            f"{name} exceeds the {_MAX_LLTM_MATRIX_NODES}-node structural resource limit"
+        )
+
+
 def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int:
     """Validate one exact NumPy carrier without invoking caller conversion protocols."""
 
@@ -130,6 +140,7 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
         raise ValueError(_matrix_shape_error(name))
 
     n_rows = len(value)
+    structural_nodes = n_rows
     width: int | None = None
     for row_value in value:
         row_type = type(row_value)
@@ -147,12 +158,16 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
             raise ValueError(_matrix_shape_error(name))
 
         if row_type in (list, tuple):
+            structural_nodes += row_width
+            _enforce_matrix_structure_budget(name, structural_nodes)
             for scalar in row_value:
                 scalar_type = type(scalar)
                 if scalar_type in _TRUSTED_COMPLEX_SCALAR_TYPES:
                     raise ValueError(f"{name} must be real-valued")
                 if scalar_type not in _TRUSTED_REAL_SCALAR_TYPES:
                     raise ValueError(f"{name} must contain real-valued numeric evidence")
+        else:
+            _enforce_matrix_structure_budget(name, structural_nodes)
 
     return _materialize_real_matrix(value, name)
 
