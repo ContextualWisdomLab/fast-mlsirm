@@ -79,7 +79,7 @@ def _matrix_shape_error(name: str) -> str:
     return "q_design must be a 2-D items x basic-operations array"
 
 
-def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int | None:
+def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int:
     """Validate one exact NumPy carrier without invoking caller conversion protocols."""
 
     expected_ndim = 1 if row else 2
@@ -90,7 +90,19 @@ def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int
         raise ValueError(f"{name} must be real-valued")
     if kind not in "biuf":
         raise ValueError(f"{name} must contain real-valued numeric evidence")
-    return int(value.shape[0]) if row else None
+    return int(value.shape[0] if row else value.shape[1])
+
+
+def _materialize_real_matrix(value: object, name: str) -> np.ndarray:
+    """Create the package-owned float64 matrix after callback-free preflight."""
+
+    try:
+        materialized = np.asarray(value, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must contain real-valued numeric evidence") from exc
+    if materialized.ndim != 2:
+        raise ValueError(_matrix_shape_error(name))
+    return materialized
 
 
 def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
@@ -99,7 +111,7 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
     value_type = type(value)
     if value_type is np.ndarray:
         _validate_ndarray_storage(value, name, row=False)
-        return np.asarray(value, dtype=np.float64)
+        return _materialize_real_matrix(value, name)
 
     if value_type not in (list, tuple):
         raise ValueError(f"{name} must be an exact NumPy array or built-in matrix")
@@ -111,7 +123,6 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
         row_type = type(row_value)
         if row_type is np.ndarray:
             row_width = _validate_ndarray_storage(row_value, name, row=True)
-            assert row_width is not None
         elif row_type in (list, tuple):
             row_width = len(row_value)
             for scalar in row_value:
@@ -128,10 +139,7 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
         elif row_width != width:
             raise ValueError(_matrix_shape_error(name))
 
-    materialized = np.asarray(value, dtype=np.float64)
-    if materialized.ndim != 2:
-        raise ValueError(_matrix_shape_error(name))
-    return materialized
+    return _materialize_real_matrix(value, name)
 
 
 @dataclass
