@@ -14,6 +14,7 @@ def _integer_safe_factory(factory: Callable[..., Any]) -> Callable[..., Any]:
 
     @wraps(factory)
     def guarded(*args: Any, **kwargs: Any) -> Any:
+        """Re-seal integer admission before invoking one supported essay factory."""
         _install_integer_safety(_contracts)
         return factory(*args, **kwargs)
 
