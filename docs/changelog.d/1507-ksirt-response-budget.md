@@ -1,0 +1,8 @@
+# Bounded KSIRT response admission
+
+## Fixed
+
+- Bound KSIRT response evidence to 20,000,000 logical cells before dense `float64` marshalling, using exact NumPy shape metadata or bounded rectangular built-in row metadata without opening caller-owned array/container protocols.
+- Bound exact built-in response traversal to 40,000,000 structural nodes so zero-cell empty-row fan-out fails before NumPy materialization or compiled-core discovery while every valid non-empty matrix inside the logical-cell envelope remains admissible.
+- Replay the existing minimum `2 persons × 1 item` KSIRT design before dense response conversion once callback-free shape/resource admission has established the dimensions.
+- Preserve Rust ownership of rank-based ordinal ability, Nadaraya–Watson option characteristic curves, kernel evaluation, bandwidth application, and expected-score arithmetic.
