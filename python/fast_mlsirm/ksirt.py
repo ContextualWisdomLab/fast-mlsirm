@@ -43,6 +43,7 @@ _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES = frozenset(
 )
 _KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
 _MAX_KSIRT_RESPONSE_CELLS = 20_000_000
+_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES = 40_000_000
 
 
 @dataclass
@@ -115,6 +116,7 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
     n_persons = len(value)
     n_items: int | None = None
     logical_cells = 0
+    structural_nodes = 0
     for row in value:
         if type(row) in (list, tuple):
             row_items = len(row)
@@ -132,6 +134,13 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
         if logical_cells > _MAX_KSIRT_RESPONSE_CELLS:
             raise ValueError(
                 f"responses exceed {_MAX_KSIRT_RESPONSE_CELLS} logical cells"
+            )
+
+        structural_nodes += 1 + row_items
+        if structural_nodes > _MAX_KSIRT_RESPONSE_STRUCTURAL_NODES:
+            raise ValueError(
+                "responses exceed "
+                f"{_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES} structural nodes"
             )
 
     return n_persons, 0 if n_items is None else n_items
@@ -205,11 +214,11 @@ def ksirt_analysis(
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
-    or compiled-core discovery. Response shape and logical cell count are
-    bounded before dense ``float64`` marshalling. Evidence admission accepts
-    exact NumPy arrays or plain built-in list/tuple trees of trusted concrete
-    numeric scalars; callback-bearing providers, complex values, and object/text
-    storage fail before real-valued marshalling.
+    or compiled-core discovery. Response shape, logical cell count, and
+    built-in structural work are bounded before dense ``float64`` marshalling.
+    Evidence admission accepts exact NumPy arrays or plain built-in list/tuple
+    trees of trusted concrete numeric scalars; callback-bearing providers,
+    complex values, and object/text storage fail before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
