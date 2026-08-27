@@ -15,10 +15,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 GIT_METADATA_TIMEOUT_SECONDS = 5
-_DEFAULT_STAGE_TIMEOUT_SECONDS = 300.0
-_BUILD_STAGE_TIMEOUT_SECONDS = 900.0
-_RELEASE_ACCEPTANCE_STAGE_TIMEOUT_SECONDS = 3600.0
-_RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS = 60.0
 
 try:
     from scripts._bounded_json import parse_json_bounded, read_json_object
@@ -27,8 +23,37 @@ except ModuleNotFoundError:
     from _bounded_json import parse_json_bounded, read_json_object
     from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 
+try:
+    from scripts.release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts.release_acceptance"}:
+        raise
+    from release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
+
 
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
+
+
+class _ReleaseCompletedProcess(subprocess.CompletedProcess[str]):
+    """Completed process carrying a stable commercial-release failure category."""
+
+    failure_kind: str | None
+
+    def __init__(
+        self,
+        args: list[str],
+        returncode: int,
+        stdout: str,
+        stderr: str,
+        *,
+        failure_kind: str | None = None,
+    ) -> None:
+        super().__init__(args=args, returncode=returncode, stdout=stdout, stderr=stderr)
+        self.failure_kind = failure_kind
 
 
 def _sha256(path: Path) -> str:
@@ -82,31 +107,56 @@ def _content_security_policy() -> str:
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
-def _stage_timeout_seconds(command: list[str]) -> float:
-    """Return the outer deadline for one commercial-release subprocess stage."""
-    if command[1:3] == ["-m", "build"]:
-        return _BUILD_STAGE_TIMEOUT_SECONDS
-    if len(command) > 1 and Path(command[1]).name == "release_acceptance.py":
-        return _RELEASE_ACCEPTANCE_STAGE_TIMEOUT_SECONDS
-    return _DEFAULT_STAGE_TIMEOUT_SECONDS
+_DEFAULT_STAGE_TIMEOUT_SECONDS = 300.0
+_BUILD_DIST_TIMEOUT_SECONDS = 900.0
+_RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS = 60.0
+_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = (
+    sum(_INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values())
+    + _RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS
+)
+
+
+def _is_build_dist_command(command: list[str]) -> bool:
+    """Return True for the `python -m build` dist-packaging stage command."""
+    return len(command) >= 3 and command[1:3] == ["-m", "build"]
+
+
+def _is_release_acceptance_command(command: list[str]) -> bool:
+    """Return True if the command is running release_acceptance.py."""
+    return len(command) >= 2 and Path(command[1]).name == "release_acceptance.py"
 
 
 def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run one release-stage command and capture its text output."""
+    timeout_seconds = _DEFAULT_STAGE_TIMEOUT_SECONDS
+    if _is_build_dist_command(command):
+        timeout_seconds = _BUILD_DIST_TIMEOUT_SECONDS
+    elif _is_release_acceptance_command(command):
+        timeout_seconds = _RELEASE_ACCEPTANCE_TIMEOUT_SECONDS
+
     try:
         return run_bounded_capture(
             command,
             cwd=cwd,
-            timeout_seconds=_stage_timeout_seconds(command),
+            timeout_seconds=timeout_seconds,
             max_stdout_bytes=10 * 1024 * 1024,
             max_stderr_bytes=10 * 1024 * 1024,
         )
-    except (BoundedSubprocessOutputError, subprocess.TimeoutExpired) as exc:
-        return subprocess.CompletedProcess(
+    except BoundedSubprocessOutputError as exc:
+        return _ReleaseCompletedProcess(
             args=command,
             returncode=1,
             stdout="",
             stderr=str(exc),
+            failure_kind="output_limit",
+        )
+    except subprocess.TimeoutExpired as exc:
+        return _ReleaseCompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr=str(exc),
+            failure_kind="timeout",
         )
 
 
@@ -153,6 +203,10 @@ def _stage(
         "stdout_tail": _tail(completed.stdout),
         "stderr_tail": _tail(completed.stderr),
     }
+    if completed.returncode != 0:
+        stage["failure_kind"] = getattr(
+            completed, "failure_kind", None
+        ) or "subprocess_exit"
     if parsed is not None:
         stage["result"] = parsed
     return stage
