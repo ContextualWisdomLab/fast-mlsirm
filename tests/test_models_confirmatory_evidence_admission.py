@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_mlsirm.models import confirmatory
+from fast_mlsirm.models import _resolve_model, confirmatory
 
 
 def test_confirmatory_rejects_top_level_array_provider_before_callback():
@@ -90,3 +90,43 @@ def test_confirmatory_giant_integer_uses_stable_binary_error():
 
     with pytest.raises(ValueError, match="finite and exactly 0 or 1"):
         confirmatory([[10**400]])
+
+
+def test_confirmatory_n_dims_replays_structure_before_shape_callback():
+    """Reject rebound structure before reading caller-controlled shape metadata."""
+
+    calls: list[str] = []
+
+    class HostilePattern:
+        @property
+        def shape(self):
+            calls.append("shape")
+            raise AssertionError("shape callback executed")
+
+    spec = confirmatory([[1, 0], [0, 1]])
+    object.__setattr__(spec, "loading_pattern", HostilePattern())
+
+    with pytest.raises(ValueError, match="confirmatory model loading_pattern"):
+        _ = spec.n_dims
+
+    assert calls == []
+
+
+def test_resolve_confirmatory_replays_structure_before_shape_callback():
+    """Model resolution must not read shape from rebound caller evidence."""
+
+    calls: list[str] = []
+
+    class HostilePattern:
+        @property
+        def shape(self):
+            calls.append("shape")
+            raise AssertionError("shape callback executed")
+
+    spec = confirmatory([[1], [1]])
+    object.__setattr__(spec, "loading_pattern", HostilePattern())
+
+    with pytest.raises(ValueError, match="confirmatory model loading_pattern"):
+        _resolve_model(spec, 2)
+
+    assert calls == []
