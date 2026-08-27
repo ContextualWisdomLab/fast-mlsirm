@@ -67,6 +67,67 @@ class FactorRetentionEvidence:
         _require_candidate_count(self.candidate_count)
 
 
+def _canonical_result_state(
+    evidence: object,
+) -> tuple[
+    FactorRetentionDecision,
+    int | None,
+    tuple[int, int] | None,
+    tuple[FactorRetentionEvidence, ...],
+]:
+    """Replay evidence invariants and derive the only valid governed result state."""
+    if type(evidence) is not tuple:
+        raise TypeError("result evidence must be a tuple of FactorRetentionEvidence")
+
+    records: list[FactorRetentionEvidence] = []
+    seen_methods: set[FactorRetentionMethod] = set()
+    for record in evidence:
+        if type(record) is not FactorRetentionEvidence:
+            raise TypeError("evidence entries must be FactorRetentionEvidence")
+        method = record.method
+        candidate_count = record.candidate_count
+        _require_method(method)
+        _require_candidate_count(candidate_count)
+        if method in seen_methods:
+            raise ValueError("duplicate factor-retention method evidence")
+        seen_methods.add(method)
+        records.append(FactorRetentionEvidence(method, candidate_count))
+
+    ordered = tuple(sorted(records, key=lambda record: record.method.value))
+    if not ordered:
+        return (
+            FactorRetentionDecision.INSUFFICIENT_EVIDENCE,
+            None,
+            None,
+            ordered,
+        )
+
+    counts = tuple(record.candidate_count for record in ordered)
+    candidate_range = (min(counts), max(counts))
+    if len(ordered) < 2:
+        return (
+            FactorRetentionDecision.INSUFFICIENT_EVIDENCE,
+            None,
+            candidate_range,
+            ordered,
+        )
+
+    if candidate_range[0] == candidate_range[1]:
+        return (
+            FactorRetentionDecision.CONSENSUS,
+            candidate_range[0],
+            candidate_range,
+            ordered,
+        )
+
+    return (
+        FactorRetentionDecision.DISAGREEMENT,
+        None,
+        candidate_range,
+        ordered,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class FactorRetentionResult:
     """Deterministic governed summary over a factor-retention evidence set."""
@@ -75,6 +136,34 @@ class FactorRetentionResult:
     retained_count: int | None
     candidate_range: tuple[int, int] | None
     evidence: tuple[FactorRetentionEvidence, ...]
+
+    def __post_init__(self) -> None:
+        """Reject result states that contradict the package-owned evidence semantics."""
+        if type(self.decision) is not FactorRetentionDecision:
+            raise TypeError("decision must be a FactorRetentionDecision")
+        if self.retained_count is not None:
+            _require_candidate_count(self.retained_count)
+        if self.candidate_range is not None:
+            if type(self.candidate_range) is not tuple or len(self.candidate_range) != 2:
+                raise ValueError("candidate_range must be a two-integer tuple or None")
+            lower, upper = self.candidate_range
+            _require_candidate_count(lower)
+            _require_candidate_count(upper)
+            if lower > upper:
+                raise ValueError("candidate_range lower bound cannot exceed upper bound")
+
+        expected_decision, expected_retained, expected_range, expected_evidence = (
+            _canonical_result_state(self.evidence)
+        )
+        if (
+            self.decision is not expected_decision
+            or self.retained_count != expected_retained
+            or self.candidate_range != expected_range
+            or self.evidence != expected_evidence
+        ):
+            raise ValueError(
+                "result state does not match governed factor-retention evidence"
+            )
 
     @property
     def evidence_count(self) -> int:
@@ -128,36 +217,12 @@ def govern_factor_retention(
         seen_methods.add(method)
         records.append(FactorRetentionEvidence(method, candidate_count))
 
-    ordered = tuple(sorted(records, key=lambda record: record.method.value))
-    if not ordered:
-        return FactorRetentionResult(
-            decision=FactorRetentionDecision.INSUFFICIENT_EVIDENCE,
-            retained_count=None,
-            candidate_range=None,
-            evidence=ordered,
-        )
-
-    counts = tuple(record.candidate_count for record in ordered)
-    candidate_range = (min(counts), max(counts))
-    if len(ordered) < 2:
-        return FactorRetentionResult(
-            decision=FactorRetentionDecision.INSUFFICIENT_EVIDENCE,
-            retained_count=None,
-            candidate_range=candidate_range,
-            evidence=ordered,
-        )
-
-    if candidate_range[0] == candidate_range[1]:
-        return FactorRetentionResult(
-            decision=FactorRetentionDecision.CONSENSUS,
-            retained_count=candidate_range[0],
-            candidate_range=candidate_range,
-            evidence=ordered,
-        )
-
+    decision, retained_count, candidate_range, ordered = _canonical_result_state(
+        tuple(records)
+    )
     return FactorRetentionResult(
-        decision=FactorRetentionDecision.DISAGREEMENT,
-        retained_count=None,
+        decision=decision,
+        retained_count=retained_count,
         candidate_range=candidate_range,
         evidence=ordered,
     )
