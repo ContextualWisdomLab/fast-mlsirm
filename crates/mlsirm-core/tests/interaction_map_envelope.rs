@@ -76,10 +76,6 @@ fn envelope_persists_requested_axis_count_and_tie_contract() {
 
 #[test]
 fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
-    // The true interaction is the zero-mean rank-one matrix
-    // [[+1, -1], [-1, +1]].  With two requested axes, the Rust-owned
-    // factorization must recover rank one, allocate all inertia to that axis,
-    // and reconstruct the complete interaction without unexplained residual.
     let observed = [2.0, 0.0, 0.0, 2.0];
     let expected = [1.0, 1.0, 1.0, 1.0];
     let envelope = residual_interaction_map_envelope(
@@ -124,10 +120,6 @@ fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
 
 #[test]
 fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
-    // The true interaction is the zero-mean rank-two 3 x 3 matrix with +2 on
-    // the diagonal and -1 elsewhere. Reordering both axes must preserve the
-    // singular spectrum and the requested-axis distance attached to every
-    // opaque identity, while two axes reconstruct the true interaction.
     let observed = [4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0];
     let expected = [2.0; 9];
     let original = residual_interaction_map_envelope(
@@ -143,7 +135,6 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
     )
     .unwrap();
 
-    // Rows: C, A, B. Columns: B, C, A.
     let permuted_observed = [1.0, 4.0, 1.0, 1.0, 1.0, 4.0, 4.0, 1.0, 1.0];
     let permuted_expected = [2.0; 9];
     let permuted = residual_interaction_map_envelope(
@@ -190,4 +181,24 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
     {
         assert!((observed_value - expected_value - fitted).abs() < 1e-10);
     }
+}
+
+#[test]
+fn envelope_rejects_a_valid_but_foreign_input_digest_before_map_work() {
+    let persons = ids(&["person-a"]);
+    let items = ids(&["item-a"]);
+    let error = residual_interaction_map_envelope(
+        RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        INPUT_DIGEST,
+        &persons,
+        &items,
+        &[2.0],
+        &[1.0],
+        1,
+        1,
+        1,
+    )
+    .unwrap_err();
+
+    assert!(error.contains("input digest mismatch"));
 }
