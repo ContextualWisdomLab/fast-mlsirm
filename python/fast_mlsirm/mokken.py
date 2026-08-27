@@ -33,6 +33,7 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = (bool, int, float) + _TRUSTED_NUMPY_REAL_TYPES
 _INT64_MAX = (1 << 63) - 1
 _INT64_EXCLUSIVE_UPPER_FLOAT = float(1 << 63)
 _MAX_MOKKEN_RESPONSE_CELLS = 20_000_000
+_MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_MOKKEN_RESPONSE_CELLS
 
 
 @dataclass
@@ -83,6 +84,14 @@ def _raise_response_resource_error() -> None:
     )
 
 
+def _raise_response_structural_resource_error() -> None:
+    """Reject built-in response traversal outside the package work envelope."""
+    raise ValueError(
+        "responses exceed "
+        f"{_MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:,} structural nodes"
+    )
+
+
 def _trusted_score_source(responses: object) -> object:
     """Admit and bound inert response containers before NumPy protocols run."""
     if type(responses) is np.ndarray:
@@ -93,17 +102,26 @@ def _trusted_score_source(responses: object) -> object:
         raise ValueError("responses must be a numeric array")
 
     logical_cells = 0
+    structural_nodes = 0
     for row in responses:
         row_type = type(row)
         if row_type is np.ndarray:
-            logical_cells += int(row.size)
+            row_cells = int(row.size)
+            logical_cells += row_cells
             if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
                 _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
             continue
         if row_type is list or row_type is tuple:
-            logical_cells += len(row)
+            row_cells = len(row)
+            logical_cells += row_cells
             if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
                 _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
             if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
                 raise ValueError("responses must be a numeric array")
             continue
@@ -113,6 +131,9 @@ def _trusted_score_source(responses: object) -> object:
         logical_cells += 1
         if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
             _raise_response_resource_error()
+        structural_nodes += 1
+        if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+            _raise_response_structural_resource_error()
         if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
             raise ValueError("responses must be a numeric array")
     return responses
