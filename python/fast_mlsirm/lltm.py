@@ -32,6 +32,7 @@ _TRUSTED_REAL_SCALAR_TYPES = (
 _TRUSTED_COMPLEX_SCALAR_TYPES = (complex, *_NUMPY_COMPLEX_TYPES)
 _MAX_LLTM_MATRIX_CELLS = 20_000_000
 _MAX_LLTM_MATRIX_NODES = 2 * _MAX_LLTM_MATRIX_CELLS
+_MINIMUM_SHAPE_ERROR = "n_persons, n_items and n_basic must be >= 1"
 
 
 def _boolean(value: object, name: str) -> bool:
@@ -105,6 +106,13 @@ def _enforce_matrix_structure_budget(name: str, n_nodes: int) -> None:
         )
 
 
+def _enforce_minimum_matrix_shape(n_rows: int, n_columns: int) -> None:
+    """Replay Rust's non-empty LLTM matrix dimensions before native discovery."""
+
+    if n_rows < 1 or n_columns < 1:
+        raise ValueError(_MINIMUM_SHAPE_ERROR)
+
+
 def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int:
     """Validate one exact NumPy carrier without invoking caller conversion protocols."""
 
@@ -136,8 +144,10 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
 
     value_type = type(value)
     if value_type is np.ndarray:
+        n_rows = int(value.shape[0]) if value.ndim == 2 else 0
         width = _validate_ndarray_storage(value, name, row=False)
-        _enforce_matrix_budget(name, int(value.shape[0]), width)
+        _enforce_matrix_budget(name, n_rows, width)
+        _enforce_minimum_matrix_shape(n_rows, width)
         return _materialize_real_matrix(value, name)
 
     if value_type not in (list, tuple):
@@ -147,6 +157,7 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
 
     n_rows = len(value)
     structural_nodes = n_rows
+    _enforce_matrix_structure_budget(name, structural_nodes)
     width: int | None = None
     for row_value in value:
         row_type = type(row_value)
@@ -175,6 +186,9 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
         else:
             _enforce_matrix_structure_budget(name, structural_nodes)
 
+    if width is None:
+        raise ValueError(_matrix_shape_error(name))
+    _enforce_minimum_matrix_shape(n_rows, width)
     return _materialize_real_matrix(value, name)
 
 
