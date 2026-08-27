@@ -19,7 +19,9 @@ GIT_METADATA_TIMEOUT_SECONDS = 5
 try:
     from scripts._bounded_json import parse_json_bounded, read_json_object
     from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
-except ModuleNotFoundError:
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts._bounded_json", "scripts._bounded_subprocess"}:
+        raise
     from _bounded_json import parse_json_bounded, read_json_object
     from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 
