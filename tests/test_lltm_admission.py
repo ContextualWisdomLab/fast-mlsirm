@@ -114,6 +114,14 @@ def test_invalid_control_domains_fail_before_data_or_native_discovery(monkeypatc
             lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), **kwargs)
 
 
+def test_lossy_tolerance_fails_before_data_or_native_discovery(monkeypatch):
+    """The exact tolerance identity must survive the Rust binary64 boundary."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    with pytest.raises(ValueError, match="tol must be finite and non-negative"):
+        lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), tol=2**53 + 1)
+
+
 def test_trusted_numpy_controls_preserve_native_marshalling(monkeypatch):
     """Concrete NumPy scalar controls normalize to inert built-in Rust arguments."""
 
@@ -149,6 +157,29 @@ def test_trusted_numpy_controls_preserve_native_marshalling(monkeypatch):
     assert type(args[8]) is int and args[8] == 1
     assert type(args[9]) is float and args[9] == 0.0
     assert fitted.n_iter == 1
+
+
+def test_exact_large_integer_tolerance_preserves_native_marshalling(monkeypatch):
+    """An exactly representable integer tolerance remains a package-owned Rust float."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_lltm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    lltm.fit_lltm(
+        np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
+        np.array([[0.0], [1.0]], dtype=np.float64),
+        compute_lr=False,
+        max_iter=1,
+        tol=2**53,
+    )
+
+    assert type(captured["args"][9]) is float
+    assert captured["args"][9] == float(2**53)
 
 
 def test_untrusted_scientific_carriers_fail_before_numpy_or_native_discovery(monkeypatch):
