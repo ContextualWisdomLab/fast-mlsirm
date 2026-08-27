@@ -48,7 +48,16 @@ _MAX_KSIRT_RESPONSE_STRUCTURAL_NODES = 40_000_000
 
 @dataclass
 class KsirtResult:
-    """Kernel-smoothed option characteristic curves."""
+    """Kernel-smoothed option characteristic curves.
+
+    ``theta`` are the rank-based ordinal ability estimates
+    ``Phi^-1(rank(total_i)/(n+1))`` in subject order; ``grid`` the
+    equally-spaced evaluation points; ``bandwidth`` the per-item bandwidths
+    used. ``options[j]`` lists item ``j``'s distinct observed scores
+    (ascending), ``occ[j]`` is the matching ``m_j x len(grid)`` option
+    characteristic curve matrix, ``expected[j]`` the expected item score
+    curve, and ``expected_total`` their sum over items.
+    """
 
     theta: np.ndarray
     grid: np.ndarray
