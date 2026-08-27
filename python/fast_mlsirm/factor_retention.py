@@ -138,7 +138,7 @@ class FactorRetentionResult:
     evidence: tuple[FactorRetentionEvidence, ...]
 
     def __post_init__(self) -> None:
-        """Reject result states that contradict the package-owned evidence semantics."""
+        """Reject contradictory states and canonicalize valid evidence ordering."""
         if type(self.decision) is not FactorRetentionDecision:
             raise TypeError("decision must be a FactorRetentionDecision")
         if self.retained_count is not None:
@@ -159,11 +159,11 @@ class FactorRetentionResult:
             self.decision is not expected_decision
             or self.retained_count != expected_retained
             or self.candidate_range != expected_range
-            or self.evidence != expected_evidence
         ):
             raise ValueError(
                 "result state does not match governed factor-retention evidence"
             )
+        object.__setattr__(self, "evidence", expected_evidence)
 
     @property
     def evidence_count(self) -> int:
