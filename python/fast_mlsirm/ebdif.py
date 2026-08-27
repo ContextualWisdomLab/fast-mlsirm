@@ -72,6 +72,21 @@ def _enforce_item_budget(name: str, length: int) -> None:
         raise ValueError(f"{name} exceeds the {_MAX_EBDIF_ITEMS}-item resource limit")
 
 
+def _trusted_1d_length(x, name: str) -> int:
+    """Return bounded 1-D carrier length without materializing caller evidence."""
+
+    if type(x) is np.ndarray:
+        if x.ndim != 1:
+            raise ValueError(f"{name} must be a 1-D array")
+        length = int(x.shape[0])
+    elif type(x) in (list, tuple):
+        length = len(x)
+    else:
+        raise ValueError(f"{name} must be a numeric 1-D array")
+    _enforce_item_budget(name, length)
+    return length
+
+
 def _scalar_preserves_float64_identity(value: object) -> bool:
     """Return whether one trusted scalar survives exact Rust-f64 normalization."""
 
@@ -184,12 +199,15 @@ def eb_mh_dif(mh, se) -> EbDifResult:
     of Mantel-Haenszel DIF analysis for computer-adaptive tests* (LSAC
     Research Report Series; ERIC ED481063).
     """
+    mh_length = _trusted_1d_length(mh, "mh")
+    se_length = _trusted_1d_length(se, "se")
+    if mh_length != se_length:
+        raise ValueError("mh and se must have the same length")
+    if mh_length < 2:
+        raise ValueError("need at least 2 items")
+
     mhf = _validated_1d(mh, "mh")
     sef = _validated_1d(se, "se")
-    if mhf.shape[0] != sef.shape[0]:
-        raise ValueError("mh and se must have the same length")
-    if mhf.shape[0] < 2:
-        raise ValueError("need at least 2 items")
     if not np.all(np.isfinite(mhf)):
         raise ValueError("mh entries must be finite (filter NaN MH rows first)")
     if not np.all(np.isfinite(sef) & (sef > 0.0)):
