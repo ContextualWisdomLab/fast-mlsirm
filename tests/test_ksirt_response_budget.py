@@ -29,11 +29,31 @@ def test_ksirt_rejects_oversized_response_before_dense_conversion_or_core(
         ksirt.ksirt_analysis(responses)
 
 
+def test_ksirt_rejects_empty_row_fanout_before_numpy_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zero-cell row fan-out consumes a bounded structural budget."""
+    monkeypatch.setattr(ksirt, "_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES", 2, raising=False)
+
+    def _unexpected_asarray(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("NumPy materialization occurred")
+
+    def _unexpected_core() -> object:
+        raise AssertionError("compiled core was discovered")
+
+    monkeypatch.setattr(ksirt.np, "asarray", _unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match=r"responses exceed 2 structural nodes"):
+        ksirt.ksirt_analysis([[], [], []])
+
+
 def test_ksirt_preserves_valid_response_at_logical_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A valid 2x1 response matrix at the ceiling still reaches Rust unchanged."""
+    """A valid 2x1 response matrix at the resource boundary reaches Rust unchanged."""
     monkeypatch.setattr(ksirt, "_MAX_KSIRT_RESPONSE_CELLS", 2, raising=False)
+    monkeypatch.setattr(ksirt, "_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES", 4, raising=False)
     captured: dict[str, object] = {}
 
     class _Core:
