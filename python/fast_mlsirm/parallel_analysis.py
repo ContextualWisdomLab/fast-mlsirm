@@ -227,6 +227,7 @@ def _preflight_real_matrix(data: object) -> None:
 
     cell_count = 0
     structure_count = 0
+    row_width: int | None = None
     for row_index in range(len(data)):
         row = data[row_index]
         structure_count += 1
@@ -235,7 +236,12 @@ def _preflight_real_matrix(data: object) -> None:
         if row_type is np.ndarray:
             if row.ndim != 1:
                 raise ValueError("data must be a 2-D persons x items array")
-            cell_count += int(row.size)
+            current_width = int(row.size)
+            if row_width is None:
+                row_width = current_width
+            elif current_width != row_width:
+                raise ValueError("data must be a 2-D persons x items array")
+            cell_count += current_width
             _validate_data_cell_budget(cell_count)
             _validate_real_array_storage(row)
             if row.dtype.kind in ("i", "u") or (
@@ -245,11 +251,16 @@ def _preflight_real_matrix(data: object) -> None:
                 _lossless_float64_matrix(row)
             continue
         if row_type is list or row_type is tuple:
-            cell_count += len(row)
+            current_width = len(row)
+            if row_width is None:
+                row_width = current_width
+            elif current_width != row_width:
+                raise ValueError("data must be a 2-D persons x items array")
+            cell_count += current_width
             _validate_data_cell_budget(cell_count)
-            structure_count += len(row)
+            structure_count += current_width
             _validate_data_structure_budget(structure_count)
-            for column_index in range(len(row)):
+            for column_index in range(current_width):
                 cell = row[column_index]
                 if (
                     type(cell) is list
@@ -309,10 +320,10 @@ def parallel_analysis(
     arrays or exact built-in list/tuple matrices of package-trusted concrete
     scalar evidence; arbitrary array/container/numeric subclasses and
     conversion providers are rejected before NumPy protocols execute. The
-    known 2-D carrier structure, a 20,000,000-cell logical evidence ceiling,
-    and a 40,000,000-node built-in traversal ceiling are preflighted before
-    contiguous ``float64`` materialization. Finite integer and
-    extended-precision floating observations must preserve their numeric
+    known 2-D rectangular carrier structure, a 20,000,000-cell logical
+    evidence ceiling, and a 40,000,000-node built-in traversal ceiling are
+    preflighted before contiguous ``float64`` materialization. Finite integer
+    and extended-precision floating observations must preserve their numeric
     identity through the Rust `f64` boundary, including before mixed built-in
     evidence can trigger NumPy dtype promotion. Complex and non-real storage
     is rejected before the accepted matrix is marshalled to contiguous
