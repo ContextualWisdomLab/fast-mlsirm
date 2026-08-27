@@ -42,6 +42,7 @@ _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES = frozenset(
     }
 )
 _KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
+_MAX_KSIRT_RESPONSE_CELLS = 20_000_000
 
 
 @dataclass
@@ -94,6 +95,46 @@ def _nevalpoints_control(value: object) -> int:
         # trust boundary: nevalpoints drives Rust-side allocations
         raise ValueError("nevalpoints must be at most 100000")
     return parsed
+
+
+def _response_shape_before_materialization(value: object) -> tuple[int, int]:
+    """Return a bounded rectangular response shape without NumPy conversion."""
+    if type(value) is np.ndarray:
+        if value.ndim != 2:
+            raise ValueError("responses must be a 2-D persons x items array")
+        n_persons, n_items = value.shape
+        if value.size > _MAX_KSIRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses exceed {_MAX_KSIRT_RESPONSE_CELLS} logical cells"
+            )
+        return int(n_persons), int(n_items)
+
+    if type(value) not in (list, tuple) or not value:
+        raise ValueError("responses must be a 2-D persons x items array")
+
+    n_persons = len(value)
+    n_items: int | None = None
+    logical_cells = 0
+    for row in value:
+        if type(row) in (list, tuple):
+            row_items = len(row)
+        elif type(row) is np.ndarray and row.ndim == 1:
+            row_items = int(row.shape[0])
+        else:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        if n_items is None:
+            n_items = row_items
+        elif row_items != n_items:
+            raise ValueError("responses must be a numeric array")
+
+        logical_cells += row_items
+        if logical_cells > _MAX_KSIRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses exceed {_MAX_KSIRT_RESPONSE_CELLS} logical cells"
+            )
+
+    return n_persons, 0 if n_items is None else n_items
 
 
 def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
@@ -164,10 +205,11 @@ def ksirt_analysis(
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
-    or compiled-core discovery. Evidence admission accepts exact NumPy arrays
-    or plain built-in list/tuple trees of trusted concrete numeric scalars;
-    callback-bearing providers, complex values, and object/text storage fail
-    before real-valued marshalling.
+    or compiled-core discovery. Response shape and logical cell count are
+    bounded before dense ``float64`` marshalling. Evidence admission accepts
+    exact NumPy arrays or plain built-in list/tuple trees of trusted concrete
+    numeric scalars; callback-bearing providers, complex values, and object/text
+    storage fail before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
@@ -182,10 +224,8 @@ def ksirt_analysis(
     kernel_value = _kernel_control(kernel)
     nevalpoints_value = _nevalpoints_control(nevalpoints)
 
+    n_persons, n_items = _response_shape_before_materialization(responses)
     y = _real_float_array(responses, "responses")
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
     if n_persons < 2 or n_items < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
     if not np.all(np.isfinite(y)):
