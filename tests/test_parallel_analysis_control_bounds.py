@@ -221,12 +221,15 @@ def test_oversized_observed_matrix_fails_before_dense_conversion_or_core(
 def test_observed_matrix_at_cell_budget_reaches_rust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A small matrix at the logical-cell boundary keeps the public contract."""
+    """A valid minimum-shape matrix at the cell boundary keeps the public contract."""
     module = importlib.import_module("fast_mlsirm.parallel_analysis")
-    monkeypatch.setattr(module, "_MAX_PARALLEL_DATA_CELLS", 4, raising=False)
+    monkeypatch.setattr(module, "_MAX_PARALLEL_DATA_CELLS", 6, raising=False)
     core = _RecordingCore()
     _install_core(monkeypatch, core)
-    data = np.array([[0.1, 1.0], [0.4, 0.5]], dtype=np.float64)
+    data = np.array(
+        [[0.1, 1.0], [0.4, 0.5], [0.9, -0.2]],
+        dtype=np.float64,
+    )
 
     result = parallel_analysis(data, n_iterations=1)
 
