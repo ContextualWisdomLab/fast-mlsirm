@@ -1,12 +1,14 @@
-//! Fail-closed Event Lineage channel-weight evidence boundary.
+//! Fail-closed lineage channel-weight evidence boundary.
 //!
-//! TEPP's `tepp.lineage_criterion_anchor.v1` reports whether a proposed run
-//! passed an independent criterion-validity assessment. It intentionally does
-//! not disclose the pair-level criterion observations needed to estimate that
-//! run. Consequently this module validates continuous channel evidence and the
-//! exact accepted-anchor identity but does not fit or normalize weights.
-//! Treating channel covariance, a score floor, or the anchor's accepted flag as
-//! response data would recreate an unanchored latent factor and is prohibited.
+//! A versioned criterion anchor reports whether a proposed estimation run
+//! passed an independent criterion-validity assessment. The core deliberately
+//! does not assume which upstream product produced that anchor, and the anchor
+//! does not substitute for the pair-level criterion observations needed to
+//! estimate weights. Consequently this module validates continuous channel
+//! evidence and exact accepted-anchor identity but does not fit or normalize
+//! weights. Treating channel covariance, a score floor, or the anchor's
+//! accepted flag as response data would recreate an unanchored latent factor
+//! and is prohibited.
 
 use std::collections::BTreeSet;
 
@@ -27,14 +29,14 @@ pub enum LineageChannelWeightError {
     LimitExceeded,
     /// Evidence was malformed, incomplete, foreign, or mixed-provenance.
     InvalidEvidence,
-    /// TEPP v1 has no pair-level independent criterion observations.
+    /// The accepted anchor has no pair-level independent criterion observations.
     IndependentCriterionObservationsUnavailable,
 }
 
-/// Exact TEPP v1 criterion-validity projection.
+/// Product-neutral v1 criterion-validity projection.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct TeppLineageCriterionAnchorV1 {
+pub struct LineageCriterionAnchorV1 {
     /// Contract version; exactly one.
     pub contract_version: u16,
     /// Exact artifact kind.
@@ -45,7 +47,7 @@ pub struct TeppLineageCriterionAnchorV1 {
     pub source_snapshot_sha256: String,
     /// Exact historical knowledge cutoff.
     pub knowledge_cutoff: String,
-    /// TEPP-owned validity decision.
+    /// Upstream criterion-validity decision.
     pub criterion_validity_status: String,
     /// Number of independently validated pairs.
     pub validated_pair_count: u64,
@@ -79,8 +81,13 @@ pub struct LineageChannelWeightEvidence {
     pub channel_codes: Vec<String>,
     /// Complete continuous pair-by-channel matrix.
     pub pair_evidence: Vec<LineagePairChannelEvidence>,
-    /// Exact TEPP v1 accepted-anchor projection.
-    pub tepp_anchor: TeppLineageCriterionAnchorV1,
+    /// Product-neutral accepted criterion anchor.
+    ///
+    /// `tepp_anchor` is accepted only as a serialized compatibility alias for
+    /// payloads produced before the core contract was restored to its
+    /// domain-neutral boundary.
+    #[serde(alias = "tepp_anchor")]
+    pub criterion_anchor: LineageCriterionAnchorV1,
 }
 
 /// Validated evidence that still cannot identify estimation responses.
@@ -133,7 +140,7 @@ impl LineageChannelWeightEvidence {
     }
 
     fn validate(&self) -> Result<(), LineageChannelWeightError> {
-        let anchor = &self.tepp_anchor;
+        let anchor = &self.criterion_anchor;
         let channels: BTreeSet<&str> = self.channel_codes.iter().map(String::as_str).collect();
         let pair_ids: BTreeSet<&str> = self
             .pair_evidence
@@ -185,26 +192,9 @@ pub fn estimate_lineage_channel_weights(
 mod tests {
     use super::*;
 
-    #[test]
-    fn successor_producer_schema_is_machine_readable() {
-        let schema: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../contracts/tepp-lineage-pair-criterion-posterior-v2.schema.json"
-        ))
-        .expect("producer schema is valid JSON");
-        assert_eq!(
-            schema["properties"]["schema_version"]["const"],
-            "tepp.lineage_pair_criterion_posterior.v2"
-        );
-        assert!(schema["required"]
-            .as_array()
-            .expect("required fields")
-            .iter()
-            .any(|field| field == "pair_posteriors"));
-    }
-
     fn valid_json() -> String {
         format!(
-            r#"{{"schema_version":"{LINEAGE_CHANNEL_WEIGHT_EVIDENCE_SCHEMA}","estimation_run_id":"018f47e7-7b5b-7cc0-98c6-15fdf9e3d9b1","source_snapshot_sha256":"{}","knowledge_cutoff":"2026-08-25T00:00:00Z","channel_codes":["temporal","text"],"pair_evidence":[{{"pair_id":"018f47e7-7b5b-7cc0-98c6-015fdf9e3d91","group_id":"group-a","channel_scores":[0.2,0.8]}},{{"pair_id":"018f47e7-7b5b-7cc0-98c6-015fdf9e3d92","group_id":"group-b","channel_scores":[0.7,0.3]}}],"tepp_anchor":{{"contract_version":1,"anchor_kind_code":"lineage_pair_criterion","estimation_run_id":"018f47e7-7b5b-7cc0-98c6-15fdf9e3d9b1","source_snapshot_sha256":"{}","knowledge_cutoff":"2026-08-25T00:00:00Z","criterion_validity_status":"accepted","validated_pair_count":2}}}}"#,
+            r#"{{"schema_version":"{LINEAGE_CHANNEL_WEIGHT_EVIDENCE_SCHEMA}","estimation_run_id":"018f47e7-7b5b-7cc0-98c6-15fdf9e3d9b1","source_snapshot_sha256":"{}","knowledge_cutoff":"2026-08-25T00:00:00Z","channel_codes":["temporal","text"],"pair_evidence":[{{"pair_id":"018f47e7-7b5b-7cc0-98c6-015fdf9e3d91","group_id":"group-a","channel_scores":[0.2,0.8]}},{{"pair_id":"018f47e7-7b5b-7cc0-98c6-015fdf9e3d92","group_id":"group-b","channel_scores":[0.7,0.3]}}],"criterion_anchor":{{"contract_version":1,"anchor_kind_code":"lineage_pair_criterion","estimation_run_id":"018f47e7-7b5b-7cc0-98c6-15fdf9e3d9b1","source_snapshot_sha256":"{}","knowledge_cutoff":"2026-08-25T00:00:00Z","criterion_validity_status":"accepted","validated_pair_count":2}}}}"#,
             "a".repeat(64),
             "a".repeat(64)
         )
@@ -273,29 +263,29 @@ mod tests {
         invalid!(
             |v: &mut LineageChannelWeightEvidence| v.pair_evidence[0].channel_scores[0] = -0.1
         );
-        invalid!(|v: &mut LineageChannelWeightEvidence| v.tepp_anchor.contract_version = 2);
+        invalid!(|v: &mut LineageChannelWeightEvidence| v.criterion_anchor.contract_version = 2);
         invalid!(
-            |v: &mut LineageChannelWeightEvidence| v.tepp_anchor.anchor_kind_code =
+            |v: &mut LineageChannelWeightEvidence| v.criterion_anchor.anchor_kind_code =
                 "internal".into()
         );
         invalid!(
-            |v: &mut LineageChannelWeightEvidence| v.tepp_anchor.estimation_run_id =
+            |v: &mut LineageChannelWeightEvidence| v.criterion_anchor.estimation_run_id =
                 "018f47e7-7b5b-7cc0-98c6-15fdf9e3d99".into()
         );
         invalid!(
-            |v: &mut LineageChannelWeightEvidence| v.tepp_anchor.source_snapshot_sha256 =
+            |v: &mut LineageChannelWeightEvidence| v.criterion_anchor.source_snapshot_sha256 =
                 "b".repeat(64)
         );
         invalid!(
-            |v: &mut LineageChannelWeightEvidence| v.tepp_anchor.knowledge_cutoff =
+            |v: &mut LineageChannelWeightEvidence| v.criterion_anchor.knowledge_cutoff =
                 "2026-08-25T00:00:01Z".into()
         );
         invalid!(
-            |v: &mut LineageChannelWeightEvidence| v.tepp_anchor.criterion_validity_status =
+            |v: &mut LineageChannelWeightEvidence| v.criterion_anchor.criterion_validity_status =
                 "rejected".into()
         );
-        invalid!(|v: &mut LineageChannelWeightEvidence| v.tepp_anchor.validated_pair_count = 0);
-        invalid!(|v: &mut LineageChannelWeightEvidence| v.tepp_anchor.validated_pair_count = 1);
+        invalid!(|v: &mut LineageChannelWeightEvidence| v.criterion_anchor.validated_pair_count = 0);
+        invalid!(|v: &mut LineageChannelWeightEvidence| v.criterion_anchor.validated_pair_count = 1);
         assert!(!identifier(&"x".repeat(257)));
         assert!(digest(&"0".repeat(64)));
         assert!(!digest("short"));

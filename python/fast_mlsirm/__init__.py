@@ -45,6 +45,23 @@ from .interaction_map_envelope import (
 from .interaction_map_envelope import (
     residual_interaction_map_envelope as residual_interaction_map_envelope,
 )
+from .sampling_design import (
+    ACHIEVED_PROPORTION_SCHEMA_VERSION as ACHIEVED_PROPORTION_SCHEMA_VERSION,
+)
+from .sampling_design import (
+    AchievedProportion as AchievedProportion,
+)
+from .sampling_design import (
+    ProportionSamplingDesign as ProportionSamplingDesign,
+)
+from .sampling_design import SAMPLING_DESIGN_SCHEMA_VERSION as SAMPLING_DESIGN_SCHEMA_VERSION
+from .sampling_design import SamplingStratum as SamplingStratum
+from .sampling_design import (
+    finite_population_achieved_proportion as finite_population_achieved_proportion,
+)
+from .sampling_design import (
+    finite_population_proportion_design as finite_population_proportion_design,
+)
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
@@ -299,6 +316,13 @@ __all__ = list(_legacy_init.__all__) + [
     "validate_irt_experiment_readiness",
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
+    "SAMPLING_DESIGN_SCHEMA_VERSION",
+    "ACHIEVED_PROPORTION_SCHEMA_VERSION",
+    "SamplingStratum",
+    "ProportionSamplingDesign",
+    "AchievedProportion",
+    "finite_population_proportion_design",
+    "finite_population_achieved_proportion",
 ]
 
 del _PackageNotFoundError, _distribution_version, _public_fit, _public_name
