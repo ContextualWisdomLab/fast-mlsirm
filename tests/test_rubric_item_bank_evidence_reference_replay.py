@@ -1,12 +1,23 @@
-"""Replay contracts for standalone governed item-bank evidence references."""
+"""Replay contracts for governed item-bank evidence references."""
 
 from __future__ import annotations
+
+from pathlib import Path
+import runpy
 
 import pytest
 
 from fast_mlsirm.rubric.item_bank import (
     ItemBankEvidenceKind,
     ItemBankEvidenceReference,
+    ItemBankLifecycleError,
+    ItemBankLifecycleState,
+    build_item_bank_pilot_record,
+    transition_item_bank_record,
+)
+
+_LIFECYCLE_FIXTURES = runpy.run_path(
+    str(Path(__file__).with_name("test_rubric_item_bank_lifecycle.py"))
 )
 
 
@@ -51,3 +62,23 @@ def test_evidence_reference_rejects_callback_bearing_mutation_without_dispatch()
         reference.to_dict()
 
     assert callbacks == {"str": 0}
+
+
+def test_transition_replays_mutated_evidence_reference_before_successor_authority() -> None:
+    pilot = build_item_bank_pilot_record(
+        _LIFECYCLE_FIXTURES["_pilot_record"](),
+        item_version="1.0.0",
+    )
+    evidence = list(_LIFECYCLE_FIXTURES["_calibration_evidence"]())
+    object.__setattr__(evidence[0], "evidence_fingerprint", "not-a-fingerprint")
+
+    with pytest.raises(ItemBankLifecycleError) as caught:
+        transition_item_bank_record(
+            pilot,
+            ItemBankLifecycleState.CALIBRATED,
+            evidence_references=evidence,
+            transition_reason_id="calibration_completed",
+        )
+
+    assert caught.value.code == "invalid_evidence_reference"
+    assert caught.value.path == "$.evidence_references[0]"
