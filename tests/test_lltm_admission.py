@@ -194,3 +194,46 @@ def test_trusted_builtin_and_exact_numpy_rows_preserve_marshalling(monkeypatch):
     np.testing.assert_array_equal(args[0], np.array([0.0, 1.0, 1.0, 0.0]))
     np.testing.assert_array_equal(args[2], np.array([0.0, 1.0]))
     assert args[3:6] == (2, 2, 1)
+
+
+def test_response_infinity_is_not_reclassified_as_missing(monkeypatch):
+    """Only NaN is LLTM missingness; infinities are invalid observed evidence."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    q_design = np.array([[0.0], [1.0]], dtype=np.float64)
+    for invalid in (float("inf"), float("-inf")):
+        responses = np.array([[invalid, 1.0], [0.0, 1.0]], dtype=np.float64)
+        with pytest.raises(ValueError, match="responses must contain only finite values or NaN missingness"):
+            lltm.fit_lltm(responses, q_design)
+
+
+def test_nonfinite_design_fails_before_native_discovery(monkeypatch):
+    """The public boundary should replay Rust's finite explanatory-design contract."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    responses = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
+    for invalid in (float("nan"), float("inf"), float("-inf")):
+        q_design = np.array([[0.0], [invalid]], dtype=np.float64)
+        with pytest.raises(ValueError, match="q_design entries must be finite"):
+            lltm.fit_lltm(responses, q_design)
+
+
+def test_nan_response_remains_explicit_missingness(monkeypatch):
+    """NaN remains the sole supported public missing-response sentinel."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_lltm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    responses = np.array([[np.nan, 1.0], [0.0, 1.0]], dtype=np.float64)
+    q_design = np.array([[0.0], [1.0]], dtype=np.float64)
+
+    lltm.fit_lltm(responses, q_design, max_iter=1, tol=0.0)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.0, 1.0, 0.0, 1.0]))
+    np.testing.assert_array_equal(args[1], np.array([False, True, True, True]))
