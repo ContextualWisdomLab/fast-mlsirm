@@ -48,15 +48,7 @@ _MAX_KSIRT_RESPONSE_STRUCTURAL_NODES = 40_000_000
 
 @dataclass
 class KsirtResult:
-    """Kernel-smoothed option characteristic curves.
-
-    ``theta`` are the rank-based ordinal ability estimates
-    ``Phi^-1(rank(total_i)/(n+1))`` in subject order; ``grid`` the
-    equally-spaced evaluation points; ``bandwidth`` the per-item bandwidths
-    used. ``options[j]`` lists item ``j``'s distinct observed scores
-    (ascending), ``occ[j]`` is the matching ``m_j x len(grid)`` option
-    characteristic curve matrix, ``expected[j]`` the expected item score
-    curve, and ``expected_total`` their sum over items."""
+    """Kernel-smoothed option characteristic curves."""
 
     theta: np.ndarray
     grid: np.ndarray
@@ -93,7 +85,6 @@ def _nevalpoints_control(value: object) -> int:
     if parsed < 2:
         raise ValueError("nevalpoints must be at least 2")
     if parsed > 100_000:
-        # trust boundary: nevalpoints drives Rust-side allocations
         raise ValueError("nevalpoints must be at most 100000")
     return parsed
 
@@ -146,8 +137,51 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
     return n_persons, 0 if n_items is None else n_items
 
 
+def _scalar_preserves_float64_identity(value: object) -> bool:
+    """Return whether one trusted scalar survives exact Rust-f64 normalization."""
+    value_type = type(value)
+    if value_type in (bool, np.bool_):
+        return True
+    if value_type is int or any(
+        value_type is trusted for trusted in _TRUSTED_NUMPY_INTEGER_TYPES
+    ):
+        exact = int(value)
+        try:
+            narrowed = float(exact)
+        except OverflowError:
+            return False
+        return np.isfinite(narrowed) and int(narrowed) == exact
+    if value_type in (float, np.float16, np.float32, np.float64):
+        return True
+    if value_type is np.longdouble:
+        if not np.isfinite(value):
+            return True
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = np.float64(value)
+        return bool(np.isfinite(narrowed) and np.longdouble(narrowed) == value)
+    if value_type in (complex, np.complex64, np.complex128, np.clongdouble):
+        return True
+    return False
+
+
+def _array_preserves_float64_identity(value: np.ndarray) -> bool:
+    """Return whether finite real array values survive exact float64 normalization."""
+    if value.dtype.kind in ("i", "u") and value.dtype.itemsize > 4:
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = value.astype(np.float64)
+            roundtrip = narrowed.astype(value.dtype)
+        return bool(np.array_equal(roundtrip, value))
+    if value.dtype.kind == "f" and value.dtype.itemsize > np.dtype(np.float64).itemsize:
+        finite = np.isfinite(value)
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = value.astype(np.float64)
+            roundtrip = narrowed.astype(value.dtype)
+        return bool(np.array_equal(roundtrip[finite], value[finite]))
+    return True
+
+
 def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
-    """Materialize only inert numeric array/sequence identities."""
+    """Materialize only inert numeric identities without losing finite values."""
     if type(value) is np.ndarray:
         raw = value
     elif type(value) in (list, tuple):
@@ -160,9 +194,17 @@ def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
             if type(current) is np.ndarray:
                 if current.dtype.kind not in ("b", "i", "u", "f", "c"):
                     raise ValueError(f"{name} must be a numeric array")
+                if not _array_preserves_float64_identity(current):
+                    raise ValueError(
+                        f"{name} entries must be exactly representable as float64"
+                    )
                 continue
             if type(current) not in _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES:
                 raise ValueError(f"{name} must be a numeric array")
+            if not _scalar_preserves_float64_identity(current):
+                raise ValueError(
+                    f"{name} entries must be exactly representable as float64"
+                )
         try:
             raw = np.asarray(value)
         except (TypeError, ValueError, OverflowError):
@@ -172,6 +214,16 @@ def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
     return raw
 
 
+def _lossless_float64_array(raw: np.ndarray, name: str) -> np.ndarray:
+    """Normalize trusted real evidence without changing any finite value."""
+    if not _array_preserves_float64_identity(raw):
+        raise ValueError(f"{name} entries must be exactly representable as float64")
+    try:
+        return np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+
+
 def _real_float_array(value: object, name: str) -> np.ndarray:
     """Materialize trusted real numeric storage without caller callbacks."""
     raw = _trusted_numeric_storage(value, name)
@@ -179,10 +231,7 @@ def _real_float_array(value: object, name: str) -> np.ndarray:
         raise ValueError(f"{name} must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError(f"{name} must be a numeric array")
-    try:
-        return np.asarray(raw, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+    return _lossless_float64_array(raw, name)
 
 
 def ksirt_analysis(
@@ -215,11 +264,11 @@ def ksirt_analysis(
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
     or compiled-core discovery. Response shape, logical cell count, minimum
-    dimensions, and built-in structural work are validated before dense
-    ``float64`` marshalling. Evidence admission accepts exact NumPy arrays or
-    plain built-in list/tuple trees of trusted concrete numeric scalars;
-    callback-bearing providers, complex values, and object/text storage fail
-    before real-valued marshalling.
+    dimensions, built-in structural work, and finite-value identity through
+    Rust ``f64`` normalization are validated before dispatch. Evidence admission
+    accepts exact NumPy arrays or plain built-in list/tuple trees of trusted
+    concrete numeric scalars; callback-bearing providers, complex values, and
+    object/text storage fail before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
