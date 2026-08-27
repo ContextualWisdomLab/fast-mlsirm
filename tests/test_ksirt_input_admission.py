@@ -123,6 +123,16 @@ def test_ksirt_rejects_array_provider_responses_without_callbacks(
         ksirt.ksirt_analysis(_HostileArrayProvider())
 
 
+def test_ksirt_rejects_nested_builtin_response_rows_before_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nested rows cannot masquerade as a persons x items response rectangle."""
+    _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="responses must be a 2-D persons x items array"):
+        ksirt.ksirt_analysis([[[0.0]], [[1.0]]])
+
+
 def test_ksirt_rejects_array_provider_bandwidth_without_callbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
