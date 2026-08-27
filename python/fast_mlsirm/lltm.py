@@ -61,7 +61,7 @@ def _positive_integer(value: object, name: str) -> int:
 
 
 def _nonnegative_finite_real(value: object, name: str) -> float:
-    """Normalize one trusted finite non-negative real without caller coercion hooks."""
+    """Normalize one trusted finite non-negative real without lossy Rust-f64 narrowing."""
 
     value_type = type(value)
     if value_type not in (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES):
@@ -71,6 +71,12 @@ def _nonnegative_finite_real(value: object, name: str) -> float:
     except OverflowError as exc:
         raise ValueError(f"{name} must be finite and non-negative") from exc
     if not np.isfinite(normalized) or normalized < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative")
+
+    if value_type is int or value_type in _NUMPY_INTEGER_TYPES:
+        if int(normalized) != int(value):
+            raise ValueError(f"{name} must be finite and non-negative")
+    elif value_type in _NUMPY_FLOAT_TYPES and value_type(normalized) != value:
         raise ValueError(f"{name} must be finite and non-negative")
     return normalized
 
