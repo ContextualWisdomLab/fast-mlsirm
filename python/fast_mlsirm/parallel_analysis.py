@@ -121,8 +121,10 @@ def _validate_data_structure_budget(node_count: int) -> None:
 
 def _validate_minimum_matrix_shape(n_persons: int, n_items: int) -> None:
     """Replay the Rust minimum design contract before dense marshalling."""
-    if n_persons < 3 or n_items < 2:
-        raise ValueError("parallel_analysis requires at least 3 persons and 2 items")
+    if n_persons < 3:
+        raise ValueError("parallel analysis needs n_persons >= 3")
+    if n_items < 2:
+        raise ValueError("parallel analysis needs n_items >= 2")
 
 
 def _raise_lossy_data() -> None:
