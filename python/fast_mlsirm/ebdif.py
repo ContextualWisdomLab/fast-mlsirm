@@ -27,6 +27,19 @@ _TRUSTED_EBDIF_SCALAR_TYPES = frozenset(
         np.longdouble,
     }
 )
+_TRUSTED_EBDIF_INTEGER_TYPES = frozenset(
+    {
+        int,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+    }
+)
 _MAX_EBDIF_ITEMS = 20_000_000
 
 
@@ -59,6 +72,54 @@ def _enforce_item_budget(name: str, length: int) -> None:
         raise ValueError(f"{name} exceeds the {_MAX_EBDIF_ITEMS}-item resource limit")
 
 
+def _scalar_preserves_float64_identity(value: object) -> bool:
+    """Return whether one trusted scalar survives exact Rust-f64 normalization."""
+
+    value_type = type(value)
+    if value_type in (bool, np.bool_):
+        return True
+    if value_type in _TRUSTED_EBDIF_INTEGER_TYPES:
+        exact = int(value)
+        try:
+            narrowed = float(exact)
+        except OverflowError:
+            return False
+        return np.isfinite(narrowed) and int(narrowed) == exact
+    if value_type in (float, np.float16, np.float32, np.float64):
+        return True
+    if value_type is np.longdouble:
+        if not np.isfinite(value):
+            return True
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = np.float64(value)
+        return bool(np.isfinite(narrowed) and np.longdouble(narrowed) == value)
+    return False
+
+
+def _lossless_float64_array(xa: np.ndarray, name: str) -> np.ndarray:
+    """Normalize trusted numeric evidence without changing any finite value."""
+
+    try:
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = np.ascontiguousarray(xa, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a numeric array") from exc
+
+    if xa.dtype.kind in ("i", "u") and xa.dtype.itemsize > 4:
+        with np.errstate(over="ignore", invalid="ignore"):
+            roundtrip = narrowed.astype(xa.dtype)
+        if not np.array_equal(roundtrip, xa):
+            raise ValueError(f"{name} entries must be exactly representable as float64")
+    elif xa.dtype.kind == "f" and xa.dtype.itemsize > np.dtype(np.float64).itemsize:
+        finite = np.isfinite(xa)
+        with np.errstate(over="ignore", invalid="ignore"):
+            roundtrip = narrowed.astype(xa.dtype)
+        if not np.array_equal(roundtrip[finite], xa[finite]):
+            raise ValueError(f"{name} entries must be exactly representable as float64")
+
+    return narrowed
+
+
 def _validated_1d(x, name: str) -> np.ndarray:
     """Validate trusted, resource-bounded real 1-D evidence without caller hooks."""
     if type(x) is np.ndarray:
@@ -70,6 +131,8 @@ def _validated_1d(x, name: str) -> np.ndarray:
         _enforce_item_budget(name, len(x))
         if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in x):
             raise ValueError(f"{name} must be a numeric array")
+        if any(not _scalar_preserves_float64_identity(value) for value in x):
+            raise ValueError(f"{name} entries must be exactly representable as float64")
         try:
             xa = np.asarray(x)
         except (TypeError, ValueError, OverflowError) as exc:
@@ -85,10 +148,7 @@ def _validated_1d(x, name: str) -> np.ndarray:
         xa = xa.astype(np.float64)
     if xa.dtype.kind not in ("i", "u", "f"):
         raise ValueError(f"{name} must be a numeric array")
-    try:
-        return np.ascontiguousarray(xa, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be a numeric array") from exc
+    return _lossless_float64_array(xa, name)
 
 
 def eb_mh_dif(mh, se) -> EbDifResult:
