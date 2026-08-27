@@ -24,7 +24,7 @@ def test_mokken_rejects_empty_row_fanout_before_numpy_or_core(
     monkeypatch.setattr(mokken.np, "asarray", _unexpected_asarray)
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
-    with pytest.raises(ValueError, match="responses exceed .* structural nodes"):
+    with pytest.raises(ValueError, match=r"responses exceed .* structural nodes"):
         mokken.mokken_analysis([[], [], []])
 
 
