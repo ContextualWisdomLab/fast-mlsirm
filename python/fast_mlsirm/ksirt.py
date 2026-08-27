@@ -120,13 +120,9 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
     logical_cells = 0
     structural_nodes = 0
     for row in value:
-        if type(row) in (list, tuple):
+        row_is_builtin = type(row) in (list, tuple)
+        if row_is_builtin:
             row_items = len(row)
-            for cell in row:
-                if type(cell) in (list, tuple) or (
-                    type(cell) is np.ndarray and cell.ndim != 0
-                ):
-                    raise ValueError("responses must be a 2-D persons x items array")
         elif type(row) is np.ndarray and row.ndim == 1:
             row_items = int(row.shape[0])
         else:
@@ -149,6 +145,13 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
                 "responses exceed "
                 f"{_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES} structural nodes"
             )
+
+        if row_is_builtin:
+            for cell in row:
+                if type(cell) in (list, tuple) or (
+                    type(cell) is np.ndarray and cell.ndim != 0
+                ):
+                    raise ValueError("responses must be a 2-D persons x items array")
 
     return n_persons, 0 if n_items is None else n_items
 
