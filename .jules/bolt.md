@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-05-19 - 수학적 항등식을 활용한 log_sigmoid 연산 최소화
+**Learning:** `_log_sigmoid(x)` 함수는 내부적으로 `np.logaddexp`를 호출하는 무거운 연산입니다. 마지널 추정에서 `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)`와 같은 기대 로그도함수 계산 패턴은 `_log_sigmoid(x) - _log_sigmoid(-x) = x`라는 수학적 항등식을 사용하면 `r * x + n * _log_sigmoid(-x)`로 정확하게 단순화될 수 있습니다. 이를 통해 `_log_sigmoid(x)` 호출을 완전히 제거하고 `n - r`과 같은 배열 빼기 연산을 없애 속도를 향상시킬 수 있습니다.
+**Action:** 로지스틱 및 시그모이드 기반의 우도 함수(Likelihood)나 손실 함수 최적화 시, 항상 수학적 항등식을 활용하여 초월함수(exp, log, log_sigmoid 등)의 호출 횟수를 절반으로 줄일 수 있는지 확인합니다. 단, 최적화 시 배열 모양 차이로 인해 오류를 유발할 수 있는 `np.vdot()`보다는 안전하게 브로드캐스팅을 지원하는 `np.sum(A * B)`를 사용하는 것이 실무에서 더 안전합니다.
