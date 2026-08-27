@@ -67,20 +67,20 @@ def test_valid_matrix_at_structural_budget_reaches_rust(
     monkeypatch.setattr(
         module,
         "_MAX_PARALLEL_DATA_STRUCTURE_NODES",
-        6,
+        9,
         raising=False,
     )
     core = _RecordingCore()
     import fast_mlsirm.fitstats as fitstats
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
-    data = [[0.1, 1.0], [0.4, 0.5]]
+    data = [[0.1, 1.0], [0.4, 0.5], [0.9, -0.2]]
 
     result = module.parallel_analysis(data, n_iterations=1)
 
     assert result.retained == 1
     assert len(core.calls) == 1
-    assert core.calls[0][0] == pytest.approx([0.1, 1.0, 0.4, 0.5])
+    assert core.calls[0][0] == pytest.approx([0.1, 1.0, 0.4, 0.5, 0.9, -0.2])
 
 
 def test_ragged_builtin_matrix_fails_before_numpy_or_core(
@@ -148,10 +148,14 @@ def test_equal_width_builtin_and_numpy_rows_reach_rust(
     import fast_mlsirm.fitstats as fitstats
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
-    data = [[0.1, 1.0], np.array([0.4, 0.5], dtype=np.float32)]
+    data = [
+        [0.1, 1.0],
+        np.array([0.4, 0.5], dtype=np.float32),
+        [0.9, -0.2],
+    ]
 
     result = module.parallel_analysis(data, n_iterations=1)
 
     assert result.retained == 1
     assert len(core.calls) == 1
-    assert core.calls[0][0] == pytest.approx([0.1, 1.0, 0.4, 0.5])
+    assert core.calls[0][0] == pytest.approx([0.1, 1.0, 0.4, 0.5, 0.9, -0.2])
