@@ -110,7 +110,9 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
             )
         return int(n_persons), int(n_items)
 
-    if type(value) not in (list, tuple) or not value:
+    if type(value) not in (list, tuple):
+        raise ValueError("responses must be a numeric array")
+    if not value:
         raise ValueError("responses must be a 2-D persons x items array")
 
     n_persons = len(value)
