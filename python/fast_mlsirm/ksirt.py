@@ -6,6 +6,7 @@ core; this module only validates and marshals arrays."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NoReturn
 
 import numpy as np
 
@@ -277,7 +278,7 @@ def _bandwidth_control(value: object | None, n_items: int) -> list[float] | None
     return [float(v) for v in bandwidth]
 
 
-def _invalid_ksirt_result() -> None:
+def _invalid_ksirt_result() -> NoReturn:
     """Raise the stable fail-closed error for a foreign/stale native result."""
     raise RuntimeError(_KSIRT_RESULT_ERROR)
 
