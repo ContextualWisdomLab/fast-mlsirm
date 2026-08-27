@@ -214,11 +214,12 @@ def ksirt_analysis(
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
-    or compiled-core discovery. Response shape, logical cell count, and
-    built-in structural work are bounded before dense ``float64`` marshalling.
-    Evidence admission accepts exact NumPy arrays or plain built-in list/tuple
-    trees of trusted concrete numeric scalars; callback-bearing providers,
-    complex values, and object/text storage fail before real-valued marshalling.
+    or compiled-core discovery. Response shape, logical cell count, minimum
+    dimensions, and built-in structural work are validated before dense
+    ``float64`` marshalling. Evidence admission accepts exact NumPy arrays or
+    plain built-in list/tuple trees of trusted concrete numeric scalars;
+    callback-bearing providers, complex values, and object/text storage fail
+    before real-valued marshalling.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
@@ -234,9 +235,9 @@ def ksirt_analysis(
     nevalpoints_value = _nevalpoints_control(nevalpoints)
 
     n_persons, n_items = _response_shape_before_materialization(responses)
-    y = _real_float_array(responses, "responses")
     if n_persons < 2 or n_items < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
+    y = _real_float_array(responses, "responses")
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
 
