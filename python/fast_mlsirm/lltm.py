@@ -30,6 +30,7 @@ _TRUSTED_REAL_SCALAR_TYPES = (
     *_NUMPY_FLOAT_TYPES,
 )
 _TRUSTED_COMPLEX_SCALAR_TYPES = (complex, *_NUMPY_COMPLEX_TYPES)
+_MAX_LLTM_MATRIX_CELLS = 20_000_000
 
 
 def _boolean(value: object, name: str) -> bool:
@@ -79,6 +80,15 @@ def _matrix_shape_error(name: str) -> str:
     return "q_design must be a 2-D items x basic-operations array"
 
 
+def _enforce_matrix_budget(name: str, n_rows: int, n_columns: int) -> None:
+    """Bound logical matrix size before dense package-owned materialization."""
+
+    if n_rows * n_columns > _MAX_LLTM_MATRIX_CELLS:
+        raise ValueError(
+            f"{name} exceeds the {_MAX_LLTM_MATRIX_CELLS}-cell resource limit"
+        )
+
+
 def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int:
     """Validate one exact NumPy carrier without invoking caller conversion protocols."""
 
@@ -106,11 +116,12 @@ def _materialize_real_matrix(value: object, name: str) -> np.ndarray:
 
 
 def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
-    """Materialize one callback-free real matrix after exact carrier preflight."""
+    """Materialize one callback-free, resource-bounded real matrix after preflight."""
 
     value_type = type(value)
     if value_type is np.ndarray:
-        _validate_ndarray_storage(value, name, row=False)
+        width = _validate_ndarray_storage(value, name, row=False)
+        _enforce_matrix_budget(name, int(value.shape[0]), width)
         return _materialize_real_matrix(value, name)
 
     if value_type not in (list, tuple):
@@ -118,6 +129,7 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
     if not value:
         raise ValueError(_matrix_shape_error(name))
 
+    n_rows = len(value)
     width: int | None = None
     for row_value in value:
         row_type = type(row_value)
@@ -125,19 +137,22 @@ def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
             row_width = _validate_ndarray_storage(row_value, name, row=True)
         elif row_type in (list, tuple):
             row_width = len(row_value)
+        else:
+            raise ValueError(_matrix_shape_error(name))
+
+        if width is None:
+            width = row_width
+            _enforce_matrix_budget(name, n_rows, width)
+        elif row_width != width:
+            raise ValueError(_matrix_shape_error(name))
+
+        if row_type in (list, tuple):
             for scalar in row_value:
                 scalar_type = type(scalar)
                 if scalar_type in _TRUSTED_COMPLEX_SCALAR_TYPES:
                     raise ValueError(f"{name} must be real-valued")
                 if scalar_type not in _TRUSTED_REAL_SCALAR_TYPES:
                     raise ValueError(f"{name} must contain real-valued numeric evidence")
-        else:
-            raise ValueError(_matrix_shape_error(name))
-
-        if width is None:
-            width = row_width
-        elif row_width != width:
-            raise ValueError(_matrix_shape_error(name))
 
     return _materialize_real_matrix(value, name)
 
