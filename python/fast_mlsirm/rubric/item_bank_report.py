@@ -20,10 +20,15 @@ from .item_bank import (
     PolicyCriticality,
     _verify_current_record,
 )
+from .item_parameter_evidence import (
+    ItemParameterEvidence,
+    ItemParameterStatus,
+    _verify_item_parameter_evidence,
+)
 
 _MAX_REPORT_RECORDS = 256
 _MAX_TITLE_CHARACTERS = 160
-_REPORT_SCHEMA_VERSION = "fast-mlsirm-item-bank-report-v1"
+_REPORT_SCHEMA_VERSION = "fast-mlsirm-item-bank-report-v2"
 _RECORD_INSTANCE_FIELDS = frozenset(
     {
         "item_id",
@@ -235,8 +240,49 @@ def _limitations(
     return limitations
 
 
+def _parameter_report_payload(
+    current: ItemBankLifecycleRecord,
+    parameter_evidence: ItemParameterEvidence | None,
+) -> tuple[str, dict[str, Any] | None]:
+    """Validate optional parameter provenance against the current lifecycle state."""
+    if parameter_evidence is None:
+        return "not_supplied", None
+    if type(parameter_evidence) is not ItemParameterEvidence:
+        raise ItemBankReportError(
+            "parameter evidence must be an exact ItemParameterEvidence"
+        )
+    try:
+        verified = _verify_item_parameter_evidence(parameter_evidence)
+    except ValueError:
+        raise ItemBankReportError(
+            "parameter evidence no longer matches its creation-time identity"
+        ) from None
+    if (verified.item_id, verified.item_version) != (
+        current.item_id,
+        current.item_version,
+    ):
+        raise ItemBankReportError(
+            "parameter evidence item identity does not match lifecycle record"
+        )
+    if (
+        current.lifecycle_state is ItemBankLifecycleState.PILOTING
+        and verified.status is ItemParameterStatus.CALIBRATED
+    ):
+        raise ItemBankReportError("piloting cannot claim calibrated parameter evidence")
+    if (
+        current.lifecycle_state is not ItemBankLifecycleState.PILOTING
+        and verified.status is not ItemParameterStatus.CALIBRATED
+    ):
+        raise ItemBankReportError(
+            "calibrated lifecycle requires calibrated parameter evidence"
+        )
+    return verified.status.value, verified.to_dict()
+
+
 def build_item_bank_report(
     records: tuple[ItemBankLifecycleRecord, ...],
+    *,
+    parameter_evidence: ItemParameterEvidence | None = None,
 ) -> dict[str, Any]:
     """Build a source-text-free report from one complete lifecycle lineage.
 
@@ -245,6 +291,11 @@ def build_item_bank_report(
     records:
         Exact package-owned lifecycle records ordered from the initial piloting
         record through the current state. The chain must be contiguous.
+    parameter_evidence:
+        Optional explicit parameter-provenance record. When omitted, the report
+        says ``not_supplied`` and never infers calibration merely from lifecycle
+        state. When supplied, item/version and lifecycle/status compatibility are
+        replayed before any parameter claim is rendered.
 
     Returns
     -------
@@ -253,6 +304,10 @@ def build_item_bank_report(
     """
     normalized = _normalize_records(records)
     current = normalized[-1]
+    parameter_status, parameter_payload = _parameter_report_payload(
+        current,
+        parameter_evidence,
+    )
     present = _present_evidence_kinds(current)
     comparability = (
         "supported_by_linking_evidence"
@@ -275,6 +330,8 @@ def build_item_bank_report(
         "item_id": current.item_id,
         "item_version": current.item_version,
         "current_state": current.lifecycle_state.value,
+        "parameter_status": parameter_status,
+        "parameter_evidence": parameter_payload,
         "policy_criticality": current.policy_criticality.value,
         "blueprint_id": current.blueprint_id,
         "rubric_id": current.rubric_id,
@@ -300,9 +357,11 @@ def build_item_bank_report(
 
 def render_item_bank_report_json(
     records: tuple[ItemBankLifecycleRecord, ...],
+    *,
+    parameter_evidence: ItemParameterEvidence | None = None,
 ) -> str:
     """Render one deterministic UTF-8 JSON representation of the bank report."""
-    report = build_item_bank_report(records)
+    report = build_item_bank_report(records, parameter_evidence=parameter_evidence)
     return json.dumps(
         report,
         ensure_ascii=False,
@@ -336,6 +395,7 @@ def render_item_bank_report_html(
     records: tuple[ItemBankLifecycleRecord, ...],
     *,
     title: str = "Item bank lifecycle report",
+    parameter_evidence: ItemParameterEvidence | None = None,
 ) -> str:
     """Render a standalone accessible HTML lifecycle report.
 
@@ -344,8 +404,14 @@ def render_item_bank_report_html(
     fingerprints, state, and evidence metadata from the lifecycle records.
     """
     normalized_title = _normalize_title(title)
-    report = build_item_bank_report(records)
+    report = build_item_bank_report(records, parameter_evidence=parameter_evidence)
     escaped_title = escape(normalized_title)
+    parameter_payload = report["parameter_evidence"]
+    parameter_fingerprint = (
+        "not supplied"
+        if parameter_payload is None
+        else str(parameter_payload["evidence_fingerprint"])
+    )
 
     summary = "".join(
         (
@@ -353,6 +419,8 @@ def render_item_bank_report_html(
             _table_row("Version", str(report["item_version"])),
             _table_row("Blueprint", str(report["blueprint_id"])),
             _table_row("Current state", str(report["current_state"])),
+            _table_row("Parameter status", str(report["parameter_status"])),
+            _table_row("Parameter evidence", parameter_fingerprint),
             _table_row("Rubric", str(report["rubric_id"])),
             _table_row("Rubric version", str(report["rubric_version"])),
             _table_row("Policy criticality", str(report["policy_criticality"])),
