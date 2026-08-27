@@ -42,6 +42,27 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
     np.uintp,
     np.ulonglong,
 )
+_NUMPY_FLOATING_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
+_NUMPY_COMPLEX_SCALAR_TYPES = (
+    np.complex64,
+    np.complex128,
+    np.clongdouble,
+)
+
+_CONFIRMATORY_SHAPE_ERROR = (
+    "confirmatory loading_pattern must be a non-empty 2-D items x dimensions array"
+)
+_CONFIRMATORY_NUMERIC_ERROR = "confirmatory loading_pattern entries must be numeric 0 or 1"
+_CONFIRMATORY_REAL_ERROR = "confirmatory loading_pattern entries must be real 0 or 1"
+_CONFIRMATORY_BINARY_ERROR = (
+    "confirmatory loading_pattern entries must be finite and exactly 0 or 1"
+)
+_CONFIRMATORY_REPLAY_ERROR = "confirmatory model loading_pattern is not canonical"
 
 
 def _is_exact_numpy_integer_scalar(value: object) -> bool:
@@ -49,6 +70,20 @@ def _is_exact_numpy_integer_scalar(value: object) -> bool:
 
     value_type = type(value)
     return any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES)
+
+
+def _is_exact_numpy_floating_scalar(value: object) -> bool:
+    """Return whether ``value`` has an exact supported NumPy floating type."""
+
+    value_type = type(value)
+    return any(value_type is scalar_type for scalar_type in _NUMPY_FLOATING_SCALAR_TYPES)
+
+
+def _is_exact_numpy_complex_scalar(value: object) -> bool:
+    """Return whether ``value`` has an exact supported NumPy complex type."""
+
+    value_type = type(value)
+    return any(value_type is scalar_type for scalar_type in _NUMPY_COMPLEX_SCALAR_TYPES)
 
 
 def _require_exploratory_dimensions(value: object) -> int:
@@ -63,6 +98,109 @@ def _require_exploratory_dimensions(value: object) -> int:
     if dimensions < 1:
         raise ValueError("exploratory dimensions must be a positive integer")
     return dimensions
+
+
+def _confirmatory_scalar(value: object) -> int:
+    """Normalize one trusted binary loading entry without caller coercion hooks."""
+
+    value_type = type(value)
+    if value_type is complex or _is_exact_numpy_complex_scalar(value):
+        raise ValueError(_CONFIRMATORY_REAL_ERROR)
+    if value_type is bool or value_type is np.bool_:
+        return int(value)
+    if value_type is int or _is_exact_numpy_integer_scalar(value):
+        if value != 0 and value != 1:
+            raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+        return int(value)
+    if value_type is float or _is_exact_numpy_floating_scalar(value):
+        if not np.isfinite(value) or (value != 0 and value != 1):
+            raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+        return int(value)
+    raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
+
+
+def _confirmatory_ndarray_row(
+    row: np.ndarray,
+    width: int | None,
+) -> tuple[list[int], int]:
+    """Normalize one exact numeric NumPy row without array-protocol dispatch."""
+
+    if row.ndim != 1 or row.shape[0] < 1:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+    row_width = int(row.shape[0])
+    if width is not None and row_width != width:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+    if row.dtype.kind == "c":
+        raise ValueError(_CONFIRMATORY_REAL_ERROR)
+    if row.dtype.kind not in "biuf":
+        raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
+    if not np.all(np.isfinite(row)) or not np.all((row == 0) | (row == 1)):
+        raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+    return row.astype(np.int64, copy=False).tolist(), row_width
+
+
+def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
+    """Return canonical binary loading evidence without caller NumPy protocols."""
+
+    if type(value) is np.ndarray:
+        raw = value
+        if raw.ndim != 2 or raw.shape[0] < 1 or raw.shape[1] < 1:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        if raw.dtype.kind == "c":
+            raise ValueError(_CONFIRMATORY_REAL_ERROR)
+        if raw.dtype.kind not in "biuf":
+            raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
+        if not np.all(np.isfinite(raw)) or not np.all((raw == 0) | (raw == 1)):
+            raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+        pattern = np.array(raw, dtype=np.int64, copy=True, order="C")
+        pattern.setflags(write=False)
+        return pattern
+
+    if type(value) is not list and type(value) is not tuple:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+    if len(value) < 1:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+
+    normalized_rows: list[list[int]] = []
+    width: int | None = None
+    for row in value:
+        if type(row) is np.ndarray:
+            normalized, row_width = _confirmatory_ndarray_row(row, width)
+        elif type(row) is list or type(row) is tuple:
+            if len(row) < 1:
+                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+            row_width = len(row)
+            if width is not None and row_width != width:
+                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+            normalized = [_confirmatory_scalar(entry) for entry in row]
+        else:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        if width is None:
+            width = row_width
+        normalized_rows.append(normalized)
+
+    pattern = np.asarray(normalized_rows, dtype=np.int64)
+    pattern.setflags(write=False)
+    return pattern
+
+
+def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
+    """Replay the package-owned canonical structure before public field use."""
+
+    pattern = model.loading_pattern
+    if type(pattern) is not np.ndarray:
+        raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
+    if (
+        pattern.dtype != np.dtype(np.int64)
+        or pattern.ndim != 2
+        or pattern.shape[0] < 1
+        or pattern.shape[1] < 1
+        or pattern.flags.writeable
+        or not pattern.flags.c_contiguous
+        or not np.all((pattern == 0) | (pattern == 1))
+    ):
+        raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
+    return pattern
 
 
 @dataclass(frozen=True)
@@ -92,35 +230,17 @@ class ConfirmatoryModel:
     loading_pattern: np.ndarray
 
     def __post_init__(self) -> None:
-        raw = np.asarray(self.loading_pattern)
-        if raw.ndim != 2 or raw.shape[0] < 1 or raw.shape[1] < 1:
-            raise ValueError(
-                "confirmatory loading_pattern must be a non-empty 2-D items x dimensions array"
-            )
-        if not np.issubdtype(raw.dtype, np.number) and not np.issubdtype(
-            raw.dtype, np.bool_
-        ):
-            raise ValueError(
-                "confirmatory loading_pattern entries must be numeric 0 or 1"
-            )
-        if np.iscomplexobj(raw):
-            raise ValueError("confirmatory loading_pattern entries must be real 0 or 1")
-        numeric = raw.astype(np.float64)
-        if not np.all(np.isfinite(numeric)) or not np.all(
-            (numeric == 0) | (numeric == 1)
-        ):
-            raise ValueError(
-                "confirmatory loading_pattern entries must be finite and exactly 0 or 1"
-            )
-        pattern = numeric.astype(np.int64)
-        pattern.setflags(write=False)
-        object.__setattr__(self, "loading_pattern", pattern)
+        object.__setattr__(
+            self,
+            "loading_pattern",
+            _trusted_confirmatory_pattern(self.loading_pattern),
+        )
 
     @property
     def n_dims(self) -> int:
         """Derived latent dimension count."""
 
-        return int(self.loading_pattern.shape[1])
+        return int(_current_confirmatory_pattern(self).shape[1])
 
 
 IrtModel = ExploratoryModel | ConfirmatoryModel
@@ -156,9 +276,10 @@ def _resolve_model(
             )
         return model, np.ones((n_items, 1), dtype=np.int64)
     if type(model) is ConfirmatoryModel:
-        if model.loading_pattern.shape[0] != n_items:
+        pattern = _current_confirmatory_pattern(model)
+        if pattern.shape[0] != n_items:
             raise ValueError(
                 "confirmatory model must have one loading-pattern row per item"
             )
-        return model, model.loading_pattern
+        return model, pattern
     raise TypeError("model must be a factor count or an IRT model specification")
