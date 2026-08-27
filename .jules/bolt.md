@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-19 - Intermediate allocations in distance calculations (marginal estimator)
+**Learning:** `np.sum(diff * diff, axis=1)` creates an unnecessary intermediate 2D array before performing the sum over the axis. This causes a significant performance bottleneck when calculating distances over a grid of points (e.g. NxK arrays).
+**Action:** Replace `np.sum(diff * diff, axis=1)` with `np.einsum('ij,ij->i', diff, diff)` to avoid allocating the intermediate 2D array and achieve measurable performance gains.
