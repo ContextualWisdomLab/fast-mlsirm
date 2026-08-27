@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 import pytest
 
@@ -191,6 +193,46 @@ def test_oversized_random_benchmark_workspace_fails_before_core_discovery(
         parallel_analysis(_DATA, n_iterations=2**62)
 
     assert discovery_calls == []
+
+
+def test_oversized_observed_matrix_fails_before_dense_conversion_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Logical data size is bounded before contiguous float64 allocation."""
+    module = importlib.import_module("fast_mlsirm.parallel_analysis")
+    monkeypatch.setattr(module, "_MAX_PARALLEL_DATA_CELLS", 2, raising=False)
+    discovery_calls = _reject_core_discovery(monkeypatch)
+    dense_calls: list[bool] = []
+
+    def reject_dense_conversion(raw: np.ndarray) -> np.ndarray:
+        dense_calls.append(True)
+        raise AssertionError("dense float64 conversion executed before data-size validation")
+
+    monkeypatch.setattr(module, "_lossless_float64_matrix", reject_dense_conversion)
+    oversized = np.broadcast_to(np.array([[0.25]], dtype=np.float64), (3, 1))
+
+    with pytest.raises(ValueError, match="observed matrix exceeds"):
+        parallel_analysis(oversized, n_iterations=1)
+
+    assert dense_calls == []
+    assert discovery_calls == []
+
+
+def test_observed_matrix_at_cell_budget_reaches_rust(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A small matrix at the logical-cell boundary keeps the public contract."""
+    module = importlib.import_module("fast_mlsirm.parallel_analysis")
+    monkeypatch.setattr(module, "_MAX_PARALLEL_DATA_CELLS", 4, raising=False)
+    core = _RecordingCore()
+    _install_core(monkeypatch, core)
+    data = np.array([[0.1, 1.0], [0.4, 0.5]], dtype=np.float64)
+
+    result = parallel_analysis(data, n_iterations=1)
+
+    assert result.retained == 1
+    assert len(core.calls) == 1
+    assert core.calls[0][0] == pytest.approx(data.reshape(-1).tolist())
 
 
 def test_seed_must_fit_rust_u64_before_core_discovery(
