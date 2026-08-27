@@ -68,6 +68,39 @@ def _verify_current_record(record: Any) -> _base.ItemBankLifecycleRecord:
     return verified
 
 
+def _evidence_reference_state(
+    reference: Any,
+) -> dict[str, Any]:
+    """Replay one standalone evidence identity without caller protocol dispatch."""
+    if type(reference) is not _base.ItemBankEvidenceReference:
+        raise ValueError("evidence reference must be an exact ItemBankEvidenceReference")
+    state = vars(reference)
+    field_names = tuple(state)
+    if (
+        any(type(name) is not str for name in field_names)
+        or frozenset(field_names) != _base._EVIDENCE_REFERENCE_INSTANCE_FIELDS
+        or type(state["evidence_kind"]) is not _base.ItemBankEvidenceKind
+        or type(state["evidence_id"]) is not str
+        or type(state["evidence_fingerprint"]) is not str
+    ):
+        raise ValueError("evidence reference no longer matches its normalized identity")
+    _base._identifier(state["evidence_id"], "evidence_id")
+    _base._fingerprint(state["evidence_fingerprint"], "evidence_fingerprint")
+    return state
+
+
+def _evidence_reference_to_dict(
+    reference: _base.ItemBankEvidenceReference,
+) -> dict[str, str]:
+    """Serialize one evidence identity only after package-owned invariant replay."""
+    state = _evidence_reference_state(reference)
+    return {
+        "evidence_kind": state["evidence_kind"].value,
+        "evidence_id": state["evidence_id"],
+        "evidence_fingerprint": state["evidence_fingerprint"],
+    }
+
+
 def transition_item_bank_record(
     current_record: _base.ItemBankLifecycleRecord,
     target_state: _base.ItemBankLifecycleState,
@@ -120,6 +153,7 @@ def install(module: Any) -> None:
     """Install lifecycle identity and fresh-evidence enforcement."""
     module._create_record = _create_record
     module._verify_current_record = _verify_current_record
+    module.ItemBankEvidenceReference.to_dict = _evidence_reference_to_dict
     module.transition_item_bank_record = transition_item_bank_record
 
 
