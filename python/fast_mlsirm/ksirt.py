@@ -253,6 +253,18 @@ def _real_float_array(value: object, name: str) -> np.ndarray:
     return _lossless_float64_array(raw, name)
 
 
+def _bandwidth_control(value: object | None, n_items: int) -> list[float] | None:
+    """Validate optional per-item bandwidth before response value marshalling."""
+    if value is None:
+        return None
+    bandwidth = _real_float_array(value, "bandwidth").reshape(-1)
+    if bandwidth.shape[0] != n_items:
+        raise ValueError("bandwidth must supply one value per item")
+    if not np.all(np.isfinite(bandwidth)) or np.any(bandwidth <= 0.0):
+        raise ValueError("bandwidths must be finite and positive")
+    return [float(v) for v in bandwidth]
+
+
 def ksirt_analysis(
     responses: np.ndarray,
     kernel: str = "gaussian",
@@ -305,18 +317,11 @@ def ksirt_analysis(
     n_persons, n_items = _response_shape_before_materialization(responses)
     if n_persons < 2 or n_items < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
+    bw = _bandwidth_control(bandwidth, n_items)
+
     y = _real_float_array(responses, "responses")
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
-
-    bw = None
-    if bandwidth is not None:
-        bw_arr = _real_float_array(bandwidth, "bandwidth").reshape(-1)
-        if bw_arr.shape[0] != n_items:
-            raise ValueError("bandwidth must supply one value per item")
-        if not np.all(np.isfinite(bw_arr)) or np.any(bw_arr <= 0.0):
-            raise ValueError("bandwidths must be finite and positive")
-        bw = [float(v) for v in bw_arr]
 
     from .fitstats import _core_module
 
