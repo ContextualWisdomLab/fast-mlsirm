@@ -1,0 +1,69 @@
+"""Regression coverage for callback-free confirmatory loading-pattern admission."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fast_mlsirm.models import confirmatory
+
+
+def test_confirmatory_rejects_top_level_array_provider_before_callback():
+    """Do not execute caller ``__array__`` while admitting model structure."""
+
+    calls: list[str] = []
+
+    class HostileArray:
+        def __array__(self, *args, **kwargs):
+            calls.append("__array__")
+            raise AssertionError("array conversion callback executed")
+
+    with pytest.raises(ValueError, match="confirmatory loading_pattern"):
+        confirmatory(HostileArray())
+
+    assert calls == []
+
+
+def test_confirmatory_rejects_container_subclass_before_array_callback():
+    """Reject callback-bearing sequence subclasses before NumPy sees them."""
+
+    calls: list[str] = []
+
+    class HostileList(list):
+        def __array__(self, *args, **kwargs):
+            calls.append("__array__")
+            raise AssertionError("array conversion callback executed")
+
+    value = HostileList([[1, 0], [0, 1]])
+    with pytest.raises(ValueError, match="confirmatory loading_pattern"):
+        confirmatory(value)
+
+    assert calls == []
+
+
+def test_confirmatory_preserves_trusted_builtin_and_numpy_scalar_rows():
+    """Keep ordinary exact rows and concrete NumPy scalar evidence compatible."""
+
+    spec = confirmatory(
+        [
+            [np.bool_(True), np.int8(0)],
+            (np.float32(0.0), np.uint16(1)),
+        ]
+    )
+
+    assert spec.loading_pattern.dtype == np.int64
+    np.testing.assert_array_equal(spec.loading_pattern, np.array([[1, 0], [0, 1]]))
+    assert not spec.loading_pattern.flags.writeable
+
+
+def test_confirmatory_preserves_exact_numpy_rows_inside_builtin_container():
+    """Exact numeric ndarray rows are inert and remain supported."""
+
+    spec = confirmatory(
+        [
+            np.array([1, 0], dtype=np.int16),
+            np.array([0.0, 1.0], dtype=np.float32),
+        ]
+    )
+
+    np.testing.assert_array_equal(spec.loading_pattern, np.array([[1, 0], [0, 1]]))
