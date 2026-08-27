@@ -218,6 +218,10 @@ def fit_lltm(
 
     y = _trusted_real_matrix(responses, "responses")
     q = _trusted_real_matrix(q_design, "q_design")
+    if np.isinf(y).any():
+        raise ValueError("responses must contain only finite values or NaN missingness")
+    if not np.isfinite(q).all():
+        raise ValueError("q_design entries must be finite")
 
     n_persons, n_items = y.shape
     if q.shape[0] != n_items:
@@ -230,7 +234,7 @@ def fit_lltm(
     if core is None or not hasattr(core, "fit_lltm"):
         raise RuntimeError("fit_lltm requires the compiled Rust core")
 
-    observed = np.isfinite(y)
+    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_lltm(
         yy,
