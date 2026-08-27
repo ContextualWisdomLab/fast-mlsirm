@@ -49,7 +49,7 @@ def test_default_workspace_fails_before_dense_observed_conversion(
     monkeypatch.setattr(
         module,
         "_MAX_PARALLEL_RANDOM_WORKSPACE_BYTES",
-        479,
+        959,
         raising=False,
     )
     discovery_calls = _reject_core_discovery(monkeypatch)
@@ -77,7 +77,7 @@ def test_default_workspace_at_boundary_reaches_rust(
     monkeypatch.setattr(
         module,
         "_MAX_PARALLEL_RANDOM_WORKSPACE_BYTES",
-        480,
+        960,
         raising=False,
     )
     core = _RecordingCore()
