@@ -41,6 +41,22 @@ def test_confirmatory_rejects_container_subclass_before_array_callback():
     assert calls == []
 
 
+def test_confirmatory_rejects_nested_numeric_provider_before_callback():
+    """Reject nested conversion providers without invoking ``__float__``."""
+
+    calls: list[str] = []
+
+    class HostileFloat:
+        def __float__(self) -> float:
+            calls.append("__float__")
+            raise AssertionError("numeric conversion callback executed")
+
+    with pytest.raises(ValueError, match="numeric 0 or 1"):
+        confirmatory([[HostileFloat(), 0]])
+
+    assert calls == []
+
+
 def test_confirmatory_preserves_trusted_builtin_and_numpy_scalar_rows():
     """Keep ordinary exact rows and concrete NumPy scalar evidence compatible."""
 
@@ -67,3 +83,10 @@ def test_confirmatory_preserves_exact_numpy_rows_inside_builtin_container():
     )
 
     np.testing.assert_array_equal(spec.loading_pattern, np.array([[1, 0], [0, 1]]))
+
+
+def test_confirmatory_giant_integer_uses_stable_binary_error():
+    """Do not route arbitrary-size exact integers through NumPy finiteness ufuncs."""
+
+    with pytest.raises(ValueError, match="finite and exactly 0 or 1"):
+        confirmatory([[10**400]])
