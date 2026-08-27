@@ -70,6 +70,42 @@ def test_oversized_builtin_vector_fails_before_numpy_materialization(
         ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4, 0.5])
 
 
+def test_too_few_items_fail_before_dense_float64_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one-item domain is known from inert metadata before dense conversion."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    def unexpected_contiguous(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("one-item evidence reached contiguous float64 conversion")
+
+    monkeypatch.setattr(ebdif.np, "ascontiguousarray", unexpected_contiguous)
+    mh = np.broadcast_to(np.array([0.1], dtype=np.float64), (1,))
+    se = np.broadcast_to(np.array([0.3], dtype=np.float64), (1,))
+
+    with pytest.raises(ValueError, match="need at least 2 items"):
+        ebdif.eb_mh_dif(mh, se)
+
+
+def test_mismatched_lengths_fail_before_dense_float64_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unequal exact carrier lengths fail before either vector is densely converted."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    def unexpected_contiguous(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("length-mismatched evidence reached contiguous float64 conversion")
+
+    monkeypatch.setattr(ebdif.np, "ascontiguousarray", unexpected_contiguous)
+    mh = np.broadcast_to(np.array([0.1], dtype=np.float64), (2,))
+    se = np.broadcast_to(np.array([0.3], dtype=np.float64), (3,))
+
+    with pytest.raises(ValueError, match="mh and se must have the same length"):
+        ebdif.eb_mh_dif(mh, se)
+
+
 def test_lossy_integer_evidence_fails_before_core_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
