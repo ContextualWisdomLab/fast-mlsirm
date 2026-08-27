@@ -62,6 +62,7 @@ _CONFIRMATORY_REAL_ERROR = "confirmatory loading_pattern entries must be real 0 
 _CONFIRMATORY_BINARY_ERROR = (
     "confirmatory loading_pattern entries must be finite and exactly 0 or 1"
 )
+_CONFIRMATORY_REPLAY_ERROR = "confirmatory model loading_pattern is not canonical"
 
 
 def _is_exact_numpy_integer_scalar(value: object) -> bool:
@@ -183,6 +184,25 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
     return pattern
 
 
+def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
+    """Replay the package-owned canonical structure before public field use."""
+
+    pattern = model.loading_pattern
+    if type(pattern) is not np.ndarray:
+        raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
+    if (
+        pattern.dtype != np.dtype(np.int64)
+        or pattern.ndim != 2
+        or pattern.shape[0] < 1
+        or pattern.shape[1] < 1
+        or pattern.flags.writeable
+        or not pattern.flags.c_contiguous
+        or not np.all((pattern == 0) | (pattern == 1))
+    ):
+        raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
+    return pattern
+
+
 @dataclass(frozen=True)
 class ExploratoryModel:
     """An exploratory model identified by its number of latent dimensions."""
@@ -220,7 +240,7 @@ class ConfirmatoryModel:
     def n_dims(self) -> int:
         """Derived latent dimension count."""
 
-        return int(self.loading_pattern.shape[1])
+        return int(_current_confirmatory_pattern(self).shape[1])
 
 
 IrtModel = ExploratoryModel | ConfirmatoryModel
@@ -256,9 +276,10 @@ def _resolve_model(
             )
         return model, np.ones((n_items, 1), dtype=np.int64)
     if type(model) is ConfirmatoryModel:
-        if model.loading_pattern.shape[0] != n_items:
+        pattern = _current_confirmatory_pattern(model)
+        if pattern.shape[0] != n_items:
             raise ValueError(
                 "confirmatory model must have one loading-pattern row per item"
             )
-        return model, model.loading_pattern
+        return model, pattern
     raise TypeError("model must be a factor count or an IRT model specification")
