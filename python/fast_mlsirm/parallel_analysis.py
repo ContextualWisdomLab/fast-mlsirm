@@ -119,6 +119,12 @@ def _validate_data_structure_budget(node_count: int) -> None:
         )
 
 
+def _validate_minimum_matrix_shape(n_persons: int, n_items: int) -> None:
+    """Replay the Rust minimum design contract before dense marshalling."""
+    if n_persons < 3 or n_items < 2:
+        raise ValueError("parallel_analysis requires at least 3 persons and 2 items")
+
+
 def _raise_lossy_data() -> None:
     """Raise the stable observed-evidence binary64 identity diagnostic."""
     raise ValueError("data must be exactly representable as float64")
@@ -233,16 +239,21 @@ def _preflight_real_matrix(data: object) -> None:
         if data.ndim != 2:
             raise ValueError("data must be a 2-D persons x items array")
         _validate_data_cell_budget(int(data.size))
+        _validate_minimum_matrix_shape(int(data.shape[0]), int(data.shape[1]))
         _validate_real_array_storage(data)
         return
     if data_type is not list and data_type is not tuple:
         _validate_trusted_real_scalar(data)
         return
 
+    n_persons = len(data)
     cell_count = 0
     structure_count = 0
     row_width: int | None = None
-    for row_index in range(len(data)):
+
+    # First pass: replay only inert carrier metadata and resource bounds. This
+    # allows known-invalid shape to fail before value-wise scalar admission.
+    for row_index in range(n_persons):
         row = data[row_index]
         structure_count += 1
         _validate_data_structure_budget(structure_count)
@@ -251,12 +262,27 @@ def _preflight_real_matrix(data: object) -> None:
             if row.ndim != 1:
                 raise ValueError("data must be a 2-D persons x items array")
             current_width = int(row.size)
-            if row_width is None:
-                row_width = current_width
-            elif current_width != row_width:
-                raise ValueError("data must be a 2-D persons x items array")
-            cell_count += current_width
-            _validate_data_cell_budget(cell_count)
+        elif row_type is list or row_type is tuple:
+            current_width = len(row)
+            structure_count += current_width
+            _validate_data_structure_budget(structure_count)
+        else:
+            raise ValueError("data must be a 2-D persons x items array")
+
+        if row_width is None:
+            row_width = current_width
+        elif current_width != row_width:
+            raise ValueError("data must be a 2-D persons x items array")
+        cell_count += current_width
+        _validate_data_cell_budget(cell_count)
+
+    n_items = 0 if row_width is None else row_width
+    _validate_minimum_matrix_shape(n_persons, n_items)
+
+    # Second pass: validate values only after resource/shape admission succeeds.
+    for row_index in range(n_persons):
+        row = data[row_index]
+        if type(row) is np.ndarray:
             _validate_real_array_storage(row)
             if row.dtype.kind in ("i", "u") or (
                 row.dtype.kind == "f"
@@ -264,27 +290,16 @@ def _preflight_real_matrix(data: object) -> None:
             ):
                 _lossless_float64_matrix(row)
             continue
-        if row_type is list or row_type is tuple:
-            current_width = len(row)
-            if row_width is None:
-                row_width = current_width
-            elif current_width != row_width:
+
+        for column_index in range(len(row)):
+            cell = row[column_index]
+            if (
+                type(cell) is list
+                or type(cell) is tuple
+                or type(cell) is np.ndarray
+            ):
                 raise ValueError("data must be a 2-D persons x items array")
-            cell_count += current_width
-            _validate_data_cell_budget(cell_count)
-            structure_count += current_width
-            _validate_data_structure_budget(structure_count)
-            for column_index in range(current_width):
-                cell = row[column_index]
-                if (
-                    type(cell) is list
-                    or type(cell) is tuple
-                    or type(cell) is np.ndarray
-                ):
-                    raise ValueError("data must be a 2-D persons x items array")
-                _validate_trusted_real_scalar(cell)
-            continue
-        raise ValueError("data must be a 2-D persons x items array")
+            _validate_trusted_real_scalar(cell)
 
 
 def _real_numeric_matrix(data: object) -> np.ndarray:
@@ -333,16 +348,16 @@ def parallel_analysis(
     scalar evidence; arbitrary array/container/numeric subclasses and
     conversion providers are rejected before NumPy protocols execute. The
     known 2-D rectangular carrier structure, a 20,000,000-cell logical
-    evidence ceiling, and a 40,000,000-node built-in traversal ceiling are
-    preflighted before contiguous ``float64`` materialization. Non-finite
-    floating evidence is rejected during the same preflight, before dense
-    conversion or compiled-core discovery. Finite integer and extended-
-    precision floating observations must preserve their numeric identity
-    through the Rust `f64` boundary, including before mixed built-in evidence
-    can trigger NumPy dtype promotion. Complex and non-real storage is
-    rejected before the accepted matrix is marshalled to contiguous
-    ``float64``. The random-eigenvalue benchmark workspace is bounded to 128
-    MiB before compiled dispatch.
+    evidence ceiling, a 40,000,000-node built-in traversal ceiling, and the
+    Rust minimum design of three persons by two items are preflighted before
+    contiguous ``float64`` materialization. Non-finite floating evidence is
+    rejected during the same preflight, before dense conversion or compiled-
+    core discovery. Finite integer and extended-precision floating
+    observations must preserve their numeric identity through the Rust `f64`
+    boundary, including before mixed built-in evidence can trigger NumPy dtype
+    promotion. Complex and non-real storage is rejected before the accepted
+    matrix is marshalled to contiguous ``float64``. The random-eigenvalue
+    benchmark workspace is bounded to 128 MiB before compiled dispatch.
 
     """
     explicit_iterations = (
