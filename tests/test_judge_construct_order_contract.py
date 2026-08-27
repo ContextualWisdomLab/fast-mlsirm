@@ -27,10 +27,8 @@ def _result(categories: dict[str, int]) -> LLMJudgeResult:
     )
 
 
-def test_projector_uses_authoritative_spec_order_without_global_method_patch(
-    monkeypatch,
-) -> None:
-    """Projection must not depend on or mutate the shared default row method."""
+def test_projector_uses_authoritative_spec_order_without_mutating_shared_method() -> None:
+    """Projection delegates to, but never rewrites, the shared canonical row method."""
     criterion_ids = (
         "criterion_zeta",
         "criterion_alpha",
@@ -48,12 +46,9 @@ def test_projector_uses_authoritative_spec_order_without_global_method_patch(
             "criterion_zeta": 3,
         }
     )
-
-    def unexpected_default_projection(*args, **kwargs):
-        raise AssertionError("construct projection must not call the shared default row method")
-
-    monkeypatch.setattr(LLMJudgeResult, "to_irt_row", unexpected_default_projection)
+    canonical_projection = LLMJudgeResult.to_irt_row
 
     matrix = project_judge_results_to_matrix([result], spec)
 
     assert np.array_equal(matrix, np.array([[3, 1, 2, 3, 0]], dtype=np.int64))
+    assert LLMJudgeResult.to_irt_row is canonical_projection

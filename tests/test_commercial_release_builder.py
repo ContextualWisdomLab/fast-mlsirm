@@ -1,4 +1,5 @@
 import argparse
+import builtins
 import hashlib
 import importlib.util
 import json
@@ -10,6 +11,16 @@ from pathlib import Path
 def _load_builder():
     script = Path(__file__).resolve().parents[1] / "scripts" / "build_commercial_release.py"
     spec = importlib.util.spec_from_file_location("build_commercial_release", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_release_acceptance():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "release_acceptance.py"
+    spec = importlib.util.spec_from_file_location("release_acceptance", script)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -236,3 +247,49 @@ def test_relative_dist_path_is_resolved_from_repo_root(tmp_path):
 
     assert name == "build_dist"
     assert command[-2:] == ["--outdir", str((repo_root / "custom-dist").resolve())]
+
+
+def test_run_command_timeout_policy(monkeypatch, tmp_path):
+    module = _load_builder()
+    release_acceptance = _load_release_acceptance()
+    captured_kwargs = {}
+
+    def _mock_run_bounded_capture(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(args[0], 0, "", "")
+
+    monkeypatch.setattr(module, "run_bounded_capture", _mock_run_bounded_capture)
+
+    module._run_command(["python", "--version"], tmp_path)
+    assert captured_kwargs["timeout_seconds"] == 300.0
+
+    module._run_command(["python", "-m", "build", "--outdir", "dist"], tmp_path)
+    assert captured_kwargs["timeout_seconds"] == 900.0
+
+    module._run_command(
+        ["python", "scripts/release_acceptance.py", "--out", "acceptance"], tmp_path
+    )
+    assert captured_kwargs["timeout_seconds"] >= (
+        sum(release_acceptance.RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values()) + 60.0
+    )
+
+
+def test_builder_import_does_not_mask_internal_helper_dependency_failure(monkeypatch):
+    original_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "scripts._bounded_subprocess":
+            raise ModuleNotFoundError(
+                "No module named 'release_internal_dependency'",
+                name="release_internal_dependency",
+            )
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+    try:
+        _load_builder()
+    except ModuleNotFoundError as exc:
+        assert exc.name == "release_internal_dependency"
+    else:
+        raise AssertionError("internal helper dependency failure must propagate")

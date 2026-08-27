@@ -38,9 +38,11 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
 | [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
 | [0021](0021-residual-interaction-map-boundary.md) | Accepted | Rust owns residual interaction-map arithmetic and provenance-bearing diagnostics. |
-| [0022](0022-polytomous-period-artifact.md) | Proposed | Rust will own one content-addressed GRM/GPCM period artifact and will fail closed rather than select a non-nested model without formal distinguishability evidence. |
+| [0022](0022-finite-population-proportion-sampling-design.md) | Proposed | Rust owns the versioned NIST proportion sample-size/FPC and ABS proportional/Neyman allocation artifact; every prevalence and policy input is caller evidence. |
 | [0023](0023-tepp-anchored-lineage-channel-weight-boundary.md) | Proposed | Admit continuous channel evidence and exact accepted TEPP v1 identity, while estimation fails closed until pair-level independent criterion evidence exists. |
 | [0024](0024-macos-native-rust-mlx-metal-consumer-boundary.md) | Accepted | Consume macOS-native Rust-owned MLX Metal through authenticated host transport with exact backend/parity receipts; Linux never claims Metal. |
+| [0025](0025-finite-population-achieved-proportion.md) | Proposed | Rust terminates a complete one-stratum SRSWOR design with the achieved proportion, design variance, and Wang/Konijn exact interval. |
+| [0026](0026-public-polytomous-prediction-boundary.md) | Proposed | Expose Rust-owned GRM/GPCM category probabilities and expected responses through the public Python boundary. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule

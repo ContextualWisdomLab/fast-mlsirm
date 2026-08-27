@@ -4,7 +4,7 @@
 
 ## Scientific and ownership boundary
 
-The numerical map remains the Gabriel symmetric factorization implemented by `mlsirm-core`. The caller supplies observed values, model expectations, opaque person/item identifiers, and an explicit axis count. Python validates and losslessly marshals these inputs; Rust owns complete-case selection and all persisted numerical results.
+The numerical map remains the Gabriel symmetric factorization implemented by `mlsirm-core`. The caller supplies observed values, model expectations, opaque person/item identifiers, and an explicit axis count. Python validates and losslessly marshals these inputs; Rust owns complete-case selection and all persisted numerical results. Publishing requested-axis distances, deterministic extrema, and provenance does not extend the MLS2PLM model or introduce a new interaction estimator; it exposes the existing Gabriel/interaction-map interpretation in a versioned result contract.
 
 The public schema is currently:
 
@@ -29,7 +29,7 @@ Opaque identifiers are returned unchanged for retained persons/items and determi
 
 After caller evidence has passed the public validation and lossless binary64 boundary, Python derives a SHA-256 digest over one unambiguous tagged byte stream. The stream includes the exact schema identity, requested axis count, ordered person identifiers, ordered item identifiers, matrix shape, and the validated observed/expected matrices encoded as C-order little-endian float64 bytes. Every tag and payload is length-prefixed, so concatenation cannot create an ambiguous identity.
 
-This digest is provenance serialization, not psychometric arithmetic. The exact lowercase 64-hex digest is passed through the PyO3 boundary. Rust validates its SHA-256 identity format before identifier or numerical validation, stores it in the versioned envelope, and returns it with the Rust-owned result. The public Python binding then requires the returned digest to equal the digest of the current validated request before any numerical payload marshalling. A stale or foreign native result with otherwise current-looking metadata therefore fails closed on input identity mismatch.
+This digest is provenance serialization, not psychometric arithmetic. The exact lowercase 64-hex digest is passed through the PyO3 boundary. Rust validates the digest format, independently derives the same canonical SHA-256 from its validated schema/axis/identity/shape/observed/expected inputs, and rejects a mismatch before `residual_interaction_map(...)` numerical work. Rust persists the canonical digest in the versioned envelope. The public Python binding then requires the returned digest to equal the digest of the current validated request before any numerical payload marshalling. A stale or foreign native result, or a direct native caller attaching a valid digest to different evidence, therefore fails closed on input identity mismatch.
 
 Equivalent admitted NumPy and built-in carriers that normalize to the same ordered identities and float64 evidence have the same digest. Changing a validated matrix value, opaque identifier, schema, shape, or requested axis count changes the digest.
 
@@ -47,6 +47,8 @@ Equivalent admitted NumPy and built-in carriers that normalize to the same order
 - person/item coordinates, singular values, and Gabriel inertia shares;
 - retained observed and expected values;
 - residual, requested-axis distance, reconstruction, unexplained residual, and cross-share evidence.
+
+All NumPy arrays returned by the public Python envelope are package-owned and read-only. This prevents post-validation mutation of indices or numerical evidence while retaining the original provenance digest.
 
 The deterministic extrema tie rule is:
 

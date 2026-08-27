@@ -449,20 +449,23 @@ class ItemBankLifecycleRecord:
 
     @property
     def record_fingerprint(self) -> str:
-        """Return the creation-time complete SHA-256 identity of this record."""
-        return self._record_fingerprint
+        """Return the replay-verified creation-time SHA-256 identity of this record."""
+        verified = _verify_current_record(self)
+        return verified._record_fingerprint
 
     @property
     def record_id(self) -> str:
-        """Return a descriptive 128-bit public lifecycle-record handle."""
+        """Return a replay-verified descriptive 128-bit public lifecycle handle."""
         return f"item_bank_record_{self.record_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return canonical content and deterministic public identities."""
+        """Return canonical content and public identities after invariant replay."""
+        verified = _verify_current_record(self)
+        fingerprint = verified._record_fingerprint
         return {
-            **self._content_dict(),
-            "record_id": self.record_id,
-            "record_fingerprint": self.record_fingerprint,
+            **ItemBankLifecycleRecord._content_dict(verified),
+            "record_id": f"item_bank_record_{fingerprint[:32]}",
+            "record_fingerprint": fingerprint,
         }
 
 

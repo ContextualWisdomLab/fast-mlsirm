@@ -292,6 +292,20 @@ def _rust_index_pair(raw: dict[str, object], key: str) -> tuple[int, int] | None
     return value[0], value[1]
 
 
+def _readonly_array(
+    values: object,
+    *,
+    dtype: np.dtype | type[np.generic],
+    shape: tuple[int, ...] | None = None,
+) -> np.ndarray:
+    """Materialize package-owned numerical evidence and seal it against mutation."""
+    array = np.asarray(values, dtype=dtype)
+    if shape is not None:
+        array = array.reshape(shape)
+    array.setflags(write=False)
+    return array
+
+
 def residual_interaction_map_envelope(
     observed: object,
     expected: object,
@@ -413,8 +427,8 @@ def residual_interaction_map_envelope(
         retained_item_ids=retained_item_ids,
         closest_cell_ids=closest_cell_ids,
         farthest_cell_ids=farthest_cell_ids,
-        person_indices=np.asarray(person_indices, dtype=np.int64),
-        item_indices=np.asarray(item_indices, dtype=np.int64),
+        person_indices=_readonly_array(person_indices, dtype=np.int64),
+        item_indices=_readonly_array(item_indices, dtype=np.int64),
         scored_person_count=scored_person_count,
         scored_item_count=scored_item_count,
         effective_rank=effective_rank,
@@ -424,34 +438,37 @@ def residual_interaction_map_envelope(
         incomplete_item_count=incomplete_item_count,
         closest_cell=closest_cell,
         farthest_cell=farthest_cell,
-        person_coordinates=np.asarray(person_coordinates, dtype=np.float64).reshape(
-            map_person_count, axis
+        person_coordinates=_readonly_array(
+            person_coordinates, dtype=np.float64, shape=(map_person_count, axis)
         ),
-        item_coordinates=np.asarray(item_coordinates, dtype=np.float64).reshape(
-            map_item_count, axis
+        item_coordinates=_readonly_array(
+            item_coordinates, dtype=np.float64, shape=(map_item_count, axis)
         ),
-        singular_values=np.asarray(singular_values, dtype=np.float64),
-        axis_shares=np.asarray(axis_shares, dtype=np.float64),
-        observed=np.asarray(observed_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        singular_values=_readonly_array(singular_values, dtype=np.float64),
+        axis_shares=_readonly_array(axis_shares, dtype=np.float64),
+        observed=_readonly_array(
+            observed_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        expected=np.asarray(expected_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        expected=_readonly_array(
+            expected_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        residual=np.asarray(residual_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        residual=_readonly_array(
+            residual_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        distance=np.asarray(distance_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        distance=_readonly_array(
+            distance_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        reconstruction=np.asarray(reconstruction_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        reconstruction=_readonly_array(
+            reconstruction_values,
+            dtype=np.float64,
+            shape=(map_person_count, map_item_count),
         ),
-        unexplained=np.asarray(unexplained_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        unexplained=_readonly_array(
+            unexplained_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        cross_share=np.asarray(
+        cross_share=_readonly_array(
             [np.nan if value is None else value for value in cross_share_values],
             dtype=np.float64,
-        ).reshape(map_person_count, map_item_count),
+            shape=(map_person_count, map_item_count),
+        ),
     )
