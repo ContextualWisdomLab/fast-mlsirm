@@ -89,7 +89,7 @@ def _preflight_record_identity(record: ItemBankLifecycleRecord) -> None:
         raise ItemBankReportError(
             "lifecycle record no longer matches its creation-time identity"
         )
-    if type(record.record_fingerprint) is not str:
+    if type(vars(record)["_record_fingerprint"]) is not str:
         raise ItemBankReportError(
             "lifecycle record no longer matches its creation-time identity"
         )
