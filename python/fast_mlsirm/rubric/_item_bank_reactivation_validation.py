@@ -101,6 +101,40 @@ def _evidence_reference_to_dict(
     }
 
 
+def _transition_evidence_references(
+    values: Iterable[_base.ItemBankEvidenceReference],
+) -> tuple[_base.ItemBankEvidenceReference, ...]:
+    """Bound and replay newly supplied transition evidence before normalization."""
+    try:
+        raw = _base._bounded_values(
+            values,
+            "evidence_references",
+            minimum=0,
+            maximum=_base._MAX_EVIDENCE_REFERENCES,
+        )
+    except ValueError:
+        raise _base.ItemBankLifecycleError(
+            "invalid_evidence_references",
+            "$.evidence_references",
+            "evidence references must be a bounded collection",
+        ) from None
+
+    for index, reference in enumerate(raw):
+        try:
+            _evidence_reference_state(reference)
+        except ValueError:
+            raise _base.ItemBankLifecycleError(
+                "invalid_evidence_reference",
+                f"$.evidence_references[{index}]",
+                "evidence reference no longer matches its normalized identity",
+            ) from None
+
+    return _base._normalize_evidence_references(
+        raw,
+        error_type=_base.ItemBankLifecycleError,
+    )
+
+
 def transition_item_bank_record(
     current_record: _base.ItemBankLifecycleRecord,
     target_state: _base.ItemBankLifecycleState,
@@ -109,11 +143,8 @@ def transition_item_bank_record(
     transition_reason_id: str,
     approved_use_ids: Iterable[str] | None = None,
 ) -> _base.ItemBankLifecycleRecord:
-    """Reject historical evidence fingerprints on suspended-item reactivation."""
-    additions = _base._normalize_evidence_references(
-        evidence_references,
-        error_type=_base.ItemBankLifecycleError,
-    )
+    """Replay transition evidence and reject historical reactivation fingerprints."""
+    additions = _transition_evidence_references(evidence_references)
     successor = _ORIGINAL_TRANSITION_ITEM_BANK_RECORD(
         current_record,
         target_state,
