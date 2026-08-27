@@ -270,9 +270,7 @@ def _preflight_real_matrix(data: object) -> None:
                     raise ValueError("data must be a 2-D persons x items array")
                 _validate_trusted_real_scalar(cell)
             continue
-        cell_count += 1
-        _validate_data_cell_budget(cell_count)
-        _validate_trusted_real_scalar(row)
+        raise ValueError("data must be a 2-D persons x items array")
 
 
 def _real_numeric_matrix(data: object) -> np.ndarray:
