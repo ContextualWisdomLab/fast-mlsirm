@@ -45,3 +45,19 @@ def test_builtin_rectangular_shape_uses_same_cell_budget(monkeypatch):
 
     with pytest.raises(ValueError, match="responses.*resource limit"):
         lltm.fit_lltm([[0.0, 1.0], [1.0, 0.0]], [[0.0], [1.0]])
+
+
+def test_zero_cell_row_fanout_has_independent_structural_budget(monkeypatch):
+    """Empty-row fan-out must fail before NumPy materialization or native discovery."""
+
+    rows = [[], [], []]
+
+    def unexpected_asarray(*args, **kwargs):
+        raise AssertionError("NumPy materialization reached before LLTM structural admission")
+
+    monkeypatch.setattr(lltm, "_MAX_LLTM_MATRIX_NODES", 2, raising=False)
+    monkeypatch.setattr(lltm.np, "asarray", unexpected_asarray)
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="responses.*structural resource limit"):
+        lltm.fit_lltm(rows, [[1.0]])
