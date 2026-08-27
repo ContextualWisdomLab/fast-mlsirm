@@ -122,6 +122,11 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
     for row in value:
         if type(row) in (list, tuple):
             row_items = len(row)
+            for cell in row:
+                if type(cell) in (list, tuple) or (
+                    type(cell) is np.ndarray and cell.ndim != 0
+                ):
+                    raise ValueError("responses must be a 2-D persons x items array")
         elif type(row) is np.ndarray and row.ndim == 1:
             row_items = int(row.shape[0])
         else:
