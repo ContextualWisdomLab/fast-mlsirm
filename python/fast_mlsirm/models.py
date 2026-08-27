@@ -102,20 +102,26 @@ def _require_exploratory_dimensions(value: object) -> int:
 def _confirmatory_scalar(value: object) -> int:
     """Normalize one trusted binary loading entry without caller coercion hooks."""
 
-    if type(value) is complex or _is_exact_numpy_complex_scalar(value):
+    value_type = type(value)
+    if value_type is complex or _is_exact_numpy_complex_scalar(value):
         raise ValueError(_CONFIRMATORY_REAL_ERROR)
-    if type(value) is bool or type(value) is int:
-        candidate = value
-    elif type(value) is float or _is_exact_numpy_integer_scalar(value) or _is_exact_numpy_floating_scalar(value):
-        candidate = value
-    else:
-        raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
-    if not np.isfinite(candidate) or (candidate != 0 and candidate != 1):
-        raise ValueError(_CONFIRMATORY_BINARY_ERROR)
-    return int(candidate)
+    if value_type is bool or value_type is np.bool_:
+        return int(value)
+    if value_type is int or _is_exact_numpy_integer_scalar(value):
+        if value != 0 and value != 1:
+            raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+        return int(value)
+    if value_type is float or _is_exact_numpy_floating_scalar(value):
+        if not np.isfinite(value) or (value != 0 and value != 1):
+            raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+        return int(value)
+    raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
 
 
-def _confirmatory_ndarray_row(row: np.ndarray, width: int | None) -> tuple[list[int], int]:
+def _confirmatory_ndarray_row(
+    row: np.ndarray,
+    width: int | None,
+) -> tuple[list[int], int]:
     """Normalize one exact numeric NumPy row without array-protocol dispatch."""
 
     if row.ndim != 1 or row.shape[0] < 1:
