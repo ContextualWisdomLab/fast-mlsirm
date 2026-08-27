@@ -73,18 +73,25 @@ def _enforce_item_budget(name: str, length: int) -> None:
 
 
 def _trusted_1d_length(x, name: str) -> int:
-    """Return bounded 1-D carrier length without materializing caller evidence."""
+    """Return bounded 1-D carrier length after callback-free storage checks."""
 
     if type(x) is np.ndarray:
         if x.ndim != 1:
             raise ValueError(f"{name} must be a 1-D array")
         length = int(x.shape[0])
-    elif type(x) in (list, tuple):
+        _enforce_item_budget(name, length)
+        if x.dtype.kind == "c":
+            raise ValueError(f"{name} must be real-valued")
+        if x.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError(f"{name} must be a numeric array")
+        return length
+    if type(x) in (list, tuple):
         length = len(x)
-    else:
-        raise ValueError(f"{name} must be a numeric 1-D array")
-    _enforce_item_budget(name, length)
-    return length
+        _enforce_item_budget(name, length)
+        if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in x):
+            raise ValueError(f"{name} must be a numeric array")
+        return length
+    raise ValueError(f"{name} must be a numeric 1-D array")
 
 
 def _scalar_preserves_float64_identity(value: object) -> bool:
