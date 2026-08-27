@@ -153,3 +153,95 @@ def test_governance_rejects_non_evidence_entries() -> None:
 
     with pytest.raises(TypeError, match="FactorRetentionEvidence"):
         govern((object(),))
+
+
+def test_result_constructor_rejects_impossible_consensus_state() -> None:
+    """Public result construction cannot assert consensus without supporting evidence."""
+    from fast_mlsirm.factor_retention import (
+        FactorRetentionDecision,
+        FactorRetentionResult,
+    )
+
+    with pytest.raises(
+        ValueError, match="result state does not match governed factor-retention evidence"
+    ):
+        FactorRetentionResult(
+            decision=FactorRetentionDecision.CONSENSUS,
+            retained_count=None,
+            candidate_range=None,
+            evidence=(),
+        )
+
+
+def test_result_constructor_rejects_range_that_disagrees_with_evidence() -> None:
+    """A direct result record cannot publish a range different from its evidence."""
+    from fast_mlsirm.factor_retention import (
+        FactorRetentionDecision,
+        FactorRetentionEvidence,
+        FactorRetentionMethod,
+        FactorRetentionResult,
+    )
+
+    evidence = (
+        FactorRetentionEvidence(FactorRetentionMethod.PARALLEL_ANALYSIS, 2),
+        FactorRetentionEvidence(FactorRetentionMethod.VELICER_MAP, 3),
+    )
+    with pytest.raises(
+        ValueError, match="result state does not match governed factor-retention evidence"
+    ):
+        FactorRetentionResult(
+            decision=FactorRetentionDecision.DISAGREEMENT,
+            retained_count=None,
+            candidate_range=(2, 2),
+            evidence=evidence,
+        )
+
+
+def test_result_constructor_replays_mutated_evidence_invariants() -> None:
+    """Frozen-record rebinding cannot make invalid evidence authoritative in a result."""
+    from fast_mlsirm.factor_retention import (
+        FactorRetentionDecision,
+        FactorRetentionEvidence,
+        FactorRetentionMethod,
+        FactorRetentionResult,
+    )
+
+    evidence = FactorRetentionEvidence(FactorRetentionMethod.PARALLEL_ANALYSIS, 2)
+    object.__setattr__(evidence, "candidate_count", 0)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        FactorRetentionResult(
+            decision=FactorRetentionDecision.INSUFFICIENT_EVIDENCE,
+            retained_count=None,
+            candidate_range=(2, 2),
+            evidence=(evidence,),
+        )
+
+
+def test_result_constructor_preserves_governed_states() -> None:
+    """Every package-produced decision state remains valid under constructor replay."""
+    from fast_mlsirm.factor_retention import FactorRetentionResult
+
+    _, _, Evidence, Method, govern = _surface()
+    cases = (
+        (),
+        (Evidence(Method.EXTERNAL_SUPPORTED, 5),),
+        (
+            Evidence(Method.PARALLEL_ANALYSIS, 3),
+            Evidence(Method.VELICER_MAP, 3),
+        ),
+        (
+            Evidence(Method.PARALLEL_ANALYSIS, 2),
+            Evidence(Method.PREDICTIVE, 4),
+        ),
+    )
+
+    for case in cases:
+        governed = govern(case)
+        replayed = FactorRetentionResult(
+            decision=governed.decision,
+            retained_count=governed.retained_count,
+            candidate_range=governed.candidate_range,
+            evidence=governed.evidence,
+        )
+        assert replayed == governed
