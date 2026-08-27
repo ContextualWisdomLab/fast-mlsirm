@@ -61,3 +61,40 @@ def test_zero_cell_row_fanout_has_independent_structural_budget(monkeypatch):
 
     with pytest.raises(ValueError, match="responses.*structural resource limit"):
         lltm.fit_lltm(rows, [[1.0]])
+
+
+def test_valid_builtin_matrix_at_structural_boundary_reaches_rust(monkeypatch):
+    """A non-empty matrix at the structural ceiling must preserve native marshalling."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_lltm(self, *args):
+            captured["args"] = args
+            return {
+                "eta": [0.0],
+                "intercept": 0.0,
+                "b": [0.0],
+                "theta": [0.0],
+                "loglik_trace": [0.0],
+                "n_iter": 1,
+                "converged": True,
+                "n_parameters": 1,
+                "loglik_rasch": 0.0,
+                "lr_stat": 0.0,
+                "lr_df": 0,
+                "lr_p": float("nan"),
+            }
+
+    monkeypatch.setattr(lltm, "_MAX_LLTM_MATRIX_CELLS", 1, raising=False)
+    monkeypatch.setattr(lltm, "_MAX_LLTM_MATRIX_NODES", 2, raising=False)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+
+    fitted = lltm.fit_lltm([[0.0]], [[1.0]], compute_lr=False, max_iter=1, tol=0.0)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.0]))
+    np.testing.assert_array_equal(args[1], np.array([True]))
+    np.testing.assert_array_equal(args[2], np.array([1.0]))
+    assert args[3:6] == (1, 1, 1)
+    assert fitted.n_iter == 1
