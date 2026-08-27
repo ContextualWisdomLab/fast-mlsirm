@@ -8,11 +8,49 @@ import json
 from .cross_engine_conformance import ConformanceInventory
 
 
-_CSP = (
-    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
-    "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'none'"
-)
+import hashlib
+import base64
+
+def _css() -> str:
+    return """
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+main { max-width: 72rem; margin: 0 auto; padding: 2rem 1.25rem; }
+main:focus:not(:focus-visible) { outline: none; }
+main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
+.skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
+.skip-link:focus { top: 8px; }
+.skip-link:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+section { margin-top: 20px; }
+table { width: 100%; border-collapse: collapse; margin-block: 1rem; }
+caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
+thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+tbody th { font-weight: normal; }
+tbody tr { transition: background-color 0.15s ease-in-out; }
+tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media print {
+  body { background: white; color: black; }
+  .skip-link { display: none !important; }
+}
+""".strip()
+
+def _content_security_policy() -> str:
+    digest = hashlib.sha256(_css().encode("utf-8")).digest()
+    encoded = base64.b64encode(digest).decode("ascii")
+    return (
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
+        "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
+        f"style-src 'sha256-{encoded}'"
+    )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
     "high-stakes approval. Independent-engine agreement is validation evidence, "
@@ -350,12 +388,14 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         '<html lang="en">',
         "<head>",
         '<meta charset="utf-8">',
-        f'<meta http-equiv="Content-Security-Policy" content="{escape(_CSP, quote=True)}">',
+        f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cross-engine conformance evidence</title>",
+        f"<style>{_css()}</style>",
         "</head>",
         "<body>",
-        "<main>",
+        '<a class="skip-link" href="#main-content">Skip to report content</a>',
+        '<main id="main-content" tabindex="-1">',
         "<h1>Cross-engine conformance evidence</h1>",
         f"<p>{escape(_DISCLAIMER, quote=True)}</p>",
         "<p>Exact values are shown in text; this report has no hover-only evidence.</p>",
