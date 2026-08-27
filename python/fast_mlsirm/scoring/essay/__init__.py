@@ -1,10 +1,24 @@
 """Essay-specific adapters for the shared provider-neutral scoring contracts."""
 
+from functools import wraps
+from typing import Any, Callable
+
 from . import contracts as _contracts
 from ._integer_safety import install as _install_integer_safety
 
 _install_integer_safety(_contracts)
-del _contracts, _install_integer_safety
+
+
+def _integer_safe_factory(factory: Callable[..., Any]) -> Callable[..., Any]:
+    """Keep public essay integer admission sealed after implementation-module reloads."""
+
+    @wraps(factory)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        _install_integer_safety(_contracts)
+        return factory(*args, **kwargs)
+
+    return guarded
+
 
 from .calibration_reporting import (
     MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS,
@@ -35,12 +49,10 @@ from .contracts import (
 )
 from .contracts import MAX_ESSAY_RESPONSE_UNITS as MAX_ESSAY_RESPONSE_UNITS
 from .contracts import MAX_ESSAY_REVIEW_FLAGS as MAX_ESSAY_REVIEW_FLAGS
-from .contracts import build_essay_prompt as build_essay_prompt
-from .contracts import (
-    build_essay_response_evidence as build_essay_response_evidence,
-)
+from .contracts import build_essay_prompt as _build_essay_prompt
+from .contracts import build_essay_response_evidence as _build_essay_response_evidence
 from .contracts import build_essay_scoring_request as build_essay_scoring_request
-from .contracts import build_essay_submission as build_essay_submission
+from .contracts import build_essay_submission as _build_essay_submission
 from .contracts import score_essay_request as score_essay_request
 from .report_html import (
     render_essay_score_report_html as render_essay_score_report_html,
@@ -63,6 +75,10 @@ from .validation_reporting import EssayValidationMetric as EssayValidationMetric
 from .validation_reporting import (
     build_essay_validation_evidence_report as build_essay_validation_evidence_report,
 )
+
+build_essay_prompt = _integer_safe_factory(_build_essay_prompt)
+build_essay_response_evidence = _integer_safe_factory(_build_essay_response_evidence)
+build_essay_submission = _integer_safe_factory(_build_essay_submission)
 
 __all__ = [
     "MAX_ESSAY_EVIDENCE_REFERENCES",
