@@ -20,6 +20,16 @@ _NUMPY_INTEGER_TYPES = (
     np.uint64,
 )
 _NUMPY_FLOAT_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_NUMPY_COMPLEX_TYPES = (np.complex64, np.complex128, np.clongdouble)
+_TRUSTED_REAL_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+)
+_TRUSTED_COMPLEX_SCALAR_TYPES = (complex, *_NUMPY_COMPLEX_TYPES)
 
 
 def _boolean(value: object, name: str) -> bool:
@@ -61,6 +71,67 @@ def _nonnegative_finite_real(value: object, name: str) -> float:
     if not np.isfinite(normalized) or normalized < 0.0:
         raise ValueError(f"{name} must be finite and non-negative")
     return normalized
+
+
+def _matrix_shape_error(name: str) -> str:
+    if name == "responses":
+        return "responses must be a 2-D persons x items array"
+    return "q_design must be a 2-D items x basic-operations array"
+
+
+def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int | None:
+    """Validate one exact NumPy carrier without invoking caller conversion protocols."""
+
+    expected_ndim = 1 if row else 2
+    if value.ndim != expected_ndim:
+        raise ValueError(_matrix_shape_error(name))
+    kind = value.dtype.kind
+    if kind == "c":
+        raise ValueError(f"{name} must be real-valued")
+    if kind not in "biuf":
+        raise ValueError(f"{name} must contain real-valued numeric evidence")
+    return int(value.shape[0]) if row else None
+
+
+def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
+    """Materialize one callback-free real matrix after exact carrier preflight."""
+
+    value_type = type(value)
+    if value_type is np.ndarray:
+        _validate_ndarray_storage(value, name, row=False)
+        return np.asarray(value, dtype=np.float64)
+
+    if value_type not in (list, tuple):
+        raise ValueError(f"{name} must be an exact NumPy array or built-in matrix")
+    if not value:
+        raise ValueError(_matrix_shape_error(name))
+
+    width: int | None = None
+    for row_value in value:
+        row_type = type(row_value)
+        if row_type is np.ndarray:
+            row_width = _validate_ndarray_storage(row_value, name, row=True)
+            assert row_width is not None
+        elif row_type in (list, tuple):
+            row_width = len(row_value)
+            for scalar in row_value:
+                scalar_type = type(scalar)
+                if scalar_type in _TRUSTED_COMPLEX_SCALAR_TYPES:
+                    raise ValueError(f"{name} must be real-valued")
+                if scalar_type not in _TRUSTED_REAL_SCALAR_TYPES:
+                    raise ValueError(f"{name} must contain real-valued numeric evidence")
+        else:
+            raise ValueError(_matrix_shape_error(name))
+
+        if width is None:
+            width = row_width
+        elif row_width != width:
+            raise ValueError(_matrix_shape_error(name))
+
+    materialized = np.asarray(value, dtype=np.float64)
+    if materialized.ndim != 2:
+        raise ValueError(_matrix_shape_error(name))
+    return materialized
 
 
 @dataclass
@@ -137,19 +208,8 @@ def fit_lltm(
     normalized_max_iter = _positive_integer(max_iter, "max_iter")
     normalized_tol = _nonnegative_finite_real(tol, "tol")
 
-    y_input = np.asarray(responses)
-    if np.iscomplexobj(y_input):
-        raise ValueError("responses must be real-valued")
-    y = np.asarray(y_input, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-
-    q_input = np.asarray(q_design)
-    if np.iscomplexobj(q_input):
-        raise ValueError("q_design must be real-valued")
-    q = np.asarray(q_input, dtype=np.float64)
-    if q.ndim != 2:
-        raise ValueError("q_design must be a 2-D items x basic-operations array")
+    y = _trusted_real_matrix(responses, "responses")
+    q = _trusted_real_matrix(q_design, "q_design")
 
     n_persons, n_items = y.shape
     if q.shape[0] != n_items:
