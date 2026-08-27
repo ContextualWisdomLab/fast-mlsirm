@@ -70,6 +70,36 @@ def test_oversized_builtin_vector_fails_before_numpy_materialization(
         ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4, 0.5])
 
 
+def test_lossy_integer_evidence_fails_before_core_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scientific evidence must not change when narrowed to the Rust f64 boundary."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    lossy = 2**53 + 1
+
+    with pytest.raises(ValueError, match="mh entries must be exactly representable as float64"):
+        ebdif.eb_mh_dif([lossy, 0], [0.3, 0.4])
+
+    with pytest.raises(ValueError, match="se entries must be exactly representable as float64"):
+        ebdif.eb_mh_dif([0.1, -0.2], np.array([lossy, 2**53], dtype=np.int64))
+
+
+def test_wider_numpy_float_evidence_is_lossless_or_rejected_before_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wider concrete NumPy float may reach Rust only when binary64 preserves it."""
+
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("platform longdouble does not exceed binary64 precision")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    lossy = np.nextafter(np.longdouble(1.0), np.longdouble(2.0))
+
+    with pytest.raises(ValueError, match="mh entries must be exactly representable as float64"):
+        ebdif.eb_mh_dif(np.array([lossy, np.longdouble(0.0)]), [0.3, 0.4])
+
+
 def test_exact_resource_boundary_preserves_rust_marshalling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -96,3 +126,25 @@ def test_exact_resource_boundary_preserves_rust_marshalling(
     np.testing.assert_allclose(captured["mh"], [0.1, 0.1])
     np.testing.assert_allclose(captured["se"], [0.3, 0.4])
     assert result.cat_probs.shape == (2, 5)
+
+
+def test_exact_large_integer_boundary_preserves_rust_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exactly representable large integer evidence remains supported."""
+
+    captured: dict[str, np.ndarray] = {}
+
+    class Core:
+        @staticmethod
+        def py_eb_mh_dif(mh: np.ndarray, se: np.ndarray) -> dict[str, object]:
+            captured["mh"] = mh.copy()
+            captured["se"] = se.copy()
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
+    exact = 2**53
+    ebdif.eb_mh_dif([exact, 0], np.array([exact, 1], dtype=np.int64))
+
+    np.testing.assert_array_equal(captured["mh"], np.array([float(exact), 0.0]))
+    np.testing.assert_array_equal(captured["se"], np.array([float(exact), 1.0]))
