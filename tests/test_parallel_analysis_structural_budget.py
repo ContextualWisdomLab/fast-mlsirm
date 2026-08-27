@@ -1,4 +1,4 @@
-"""Fail-first resource contracts for parallel-analysis matrix traversal."""
+"""Fail-first resource and shape contracts for parallel-analysis matrix traversal."""
 
 from __future__ import annotations
 
@@ -75,6 +75,52 @@ def test_valid_matrix_at_structural_budget_reaches_rust(
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: core)
     data = [[0.1, 1.0], [0.4, 0.5]]
+
+    result = module.parallel_analysis(data, n_iterations=1)
+
+    assert result.retained == 1
+    assert len(core.calls) == 1
+    assert core.calls[0][0] == pytest.approx([0.1, 1.0, 0.4, 0.5])
+
+
+def test_ragged_builtin_matrix_fails_before_numpy_or_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Known ragged row widths fail during bounded preflight, not NumPy inference."""
+    module = importlib.import_module("fast_mlsirm.parallel_analysis")
+    numpy_calls: list[bool] = []
+    discovery_calls: list[bool] = []
+
+    def reject_numpy_materialization(*args, **kwargs):
+        numpy_calls.append(True)
+        raise AssertionError("NumPy materialization executed before rectangularity replay")
+
+    def reject_core_discovery() -> object:
+        discovery_calls.append(True)
+        raise AssertionError("native core discovered before rectangularity replay")
+
+    monkeypatch.setattr(module.np, "asarray", reject_numpy_materialization)
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(fitstats, "_core_module", reject_core_discovery)
+
+    with pytest.raises(ValueError, match="2-D persons x items"):
+        module.parallel_analysis([[0.1, 1.0], [0.4]], n_iterations=1)
+
+    assert numpy_calls == []
+    assert discovery_calls == []
+
+
+def test_equal_width_builtin_and_numpy_rows_reach_rust(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rectangularity replay preserves mixed trusted row carriers."""
+    module = importlib.import_module("fast_mlsirm.parallel_analysis")
+    core = _RecordingCore()
+    import fast_mlsirm.fitstats as fitstats
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+    data = [[0.1, 1.0], np.array([0.4, 0.5], dtype=np.float32)]
 
     result = module.parallel_analysis(data, n_iterations=1)
 
