@@ -267,7 +267,7 @@ fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileEr
     let adjacent_count = level_count
         .checked_add(1)
         .ok_or(OrderedProfileError::CredibleIntervalWorkLimit { levels: level_count })?;
-    let candidate_count = if level_count.is_multiple_of(2) {
+    let candidate_count = if level_count % 2 == 0 {
         (level_count / 2).checked_mul(adjacent_count)
     } else {
         level_count.checked_mul(adjacent_count / 2)
