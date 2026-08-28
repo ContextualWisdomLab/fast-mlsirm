@@ -130,10 +130,12 @@ def test_negative_information_cost_is_rejected_before_native_dispatch(
     assert calls == 0
 
 
+@pytest.mark.parametrize("boolean_leaf", [True, np.bool_(True)])
 def test_mixed_boolean_probability_evidence_is_rejected_before_native_dispatch(
     monkeypatch: pytest.MonkeyPatch,
+    boolean_leaf: object,
 ) -> None:
-    """A bool leaf cannot be promoted into a numeric decision probability."""
+    """Python and NumPy bool leaves cannot become numeric decision probabilities."""
     calls = 0
 
     class Core:
@@ -146,7 +148,7 @@ def test_mixed_boolean_probability_evidence_is_rejected_before_native_dispatch(
 
     with pytest.raises(ValueError, match="state_probabilities.*booleans"):
         decision_support.evaluate_decision_support(
-            [True, 0.0],
+            [boolean_leaf, 0.0],
             [[0.0, 0.0]],
             [0.0],
         )
