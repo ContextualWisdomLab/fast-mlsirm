@@ -71,6 +71,25 @@ fn chooses_the_lower_interval_when_equal_mass_intervals_tie() {
 }
 
 #[test]
+fn breaks_shortest_interval_ties_by_lower_start_not_probability_mass() {
+    let samples = [-1.0, 1.0];
+    let weights = [2.0, 3.0];
+    let cut_scores = [0.0];
+
+    let summary = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &samples,
+        sample_weights: Some(&weights),
+        cut_scores: &cut_scores,
+        credible_mass: 0.3,
+    })
+    .expect("both one-level intervals meet the requested credible mass");
+
+    assert_eq!(summary.level_probabilities, vec![0.4, 0.6]);
+    assert_eq!(summary.reported_level_index, Some(1));
+    assert_eq!(summary.credible_level_indices, vec![0]);
+}
+
+#[test]
 fn is_invariant_to_joint_sample_and_weight_permutation() {
     let cut_scores = [-0.5, 0.5];
     let first = summarize_ordered_profile(OrderedProfileInput {
