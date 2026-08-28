@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass
+import weakref
 
 from .audit import CandidateLifecycleState
 from .audit import PilotCandidateRecord as _CorePilotCandidateRecord
@@ -27,6 +28,44 @@ _PUBLIC_FIELD_NAMES = (
     "lifecycle_state",
     "schema_version",
 )
+_CREATION_SEALS: dict[
+    int,
+    tuple[weakref.ReferenceType[object], tuple[object, ...]],
+] = {}
+
+
+def _forget_creation_seal(
+    record_key: int,
+    reference: weakref.ReferenceType[object],
+) -> None:
+    """Discard one dead pilot-record seal without deleting a reused identity."""
+    current = _CREATION_SEALS.get(record_key)
+    if current is not None and current[0] is reference:
+        _CREATION_SEALS.pop(record_key, None)
+
+
+def _seal_record(record: PilotCandidateRecord) -> None:
+    """Bind one admitted object identity to its normalized creation-time fields."""
+    record_key = id(record)
+    state = vars(record)
+    snapshot = tuple(state[name] for name in _PUBLIC_FIELD_NAMES)
+    reference = weakref.ref(
+        record,
+        lambda collected, key=record_key: _forget_creation_seal(key, collected),
+    )
+    _CREATION_SEALS[record_key] = (reference, snapshot)
+
+
+def _verify_creation_seal(record: PilotCandidateRecord) -> None:
+    """Reject post-construction rebinding before replaying any mutable field."""
+    sealed = _CREATION_SEALS.get(id(record))
+    if sealed is None or sealed[0]() is not record:
+        raise ValueError("pilot record no longer matches its factory seal")
+    state = vars(record)
+    for name, expected in zip(_PUBLIC_FIELD_NAMES, sealed[1], strict=True):
+        current = state.get(name)
+        if type(current) is not type(expected) or current != expected:
+            raise ValueError("pilot record no longer matches its factory seal")
 
 
 @dataclass(frozen=True)
@@ -34,8 +73,10 @@ class PilotCandidateRecord:
     """Public pilot record created only after audit and screening replay succeeds.
 
     Python objects are not cryptographic capabilities. The private admission
-    token prevents ordinary direct construction through the supported API;
-    downstream trust decisions must still verify the serialized fingerprints.
+    token prevents ordinary direct construction through the supported API, and
+    a package-owned creation seal rejects later field rebinding before public
+    serialization or identity replay. Downstream trust decisions must still
+    verify the serialized fingerprints.
     """
 
     pilot_study_id: str
@@ -57,7 +98,7 @@ class PilotCandidateRecord:
     _admission_token: InitVar[object | None] = None
 
     def __post_init__(self, _admission_token: object | None) -> None:
-        """Reject direct construction and normalize through the core contract."""
+        """Reject direct construction, normalize, and retain creation-time identity."""
         if _admission_token is not _PILOT_ADMISSION_TOKEN:
             raise ValueError(
                 "PilotCandidateRecord must be created by "
@@ -83,9 +124,11 @@ class PilotCandidateRecord:
         )
         for name in _PUBLIC_FIELD_NAMES:
             object.__setattr__(self, name, getattr(normalized, name))
+        _seal_record(self)
 
     def _core_record(self) -> _CorePilotCandidateRecord:
         """Return the validated internal representation of this public record."""
+        _verify_creation_seal(self)
         return _CorePilotCandidateRecord(
             pilot_study_id=self.pilot_study_id,
             query_testlet_id=self.query_testlet_id,
