@@ -15,3 +15,10 @@
   is version `2.0.0`. Legacy pilot-record schema `1.0` is rejected explicitly;
   unrelated rubric/blueprint contracts retain their existing shared schema
   version rather than being silently re-versioned.
+- Screening checks, screening-result identity, and pilot admission now consume
+  package-owned snapshots returned by successful creation-seal replay rather
+  than rereading caller-owned live fields afterward. A post-verifier rebinding
+  therefore cannot change candidate/audit provenance, eligibility, serialized
+  screening evidence, or the screening fingerprint admitted into a pilot
+  record. This is provenance/reliability validation only; model and
+  psychometric arithmetic remain unchanged.
