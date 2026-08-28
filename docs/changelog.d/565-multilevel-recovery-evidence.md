@@ -15,3 +15,7 @@
   every declared classification, using the same `1e-12` absolute tolerance as
   the canonical Python membership contract. This preserves direct Rust/Python
   admission parity without changing MAP likelihood or estimator arithmetic.
+- The direct Rust crossed estimator now rejects declared response matrices above
+  20,000,000 logical cells before response-slice validation or Newton work,
+  matching the canonical Python public-admission resource ceiling without
+  changing response semantics or numerical estimation.
