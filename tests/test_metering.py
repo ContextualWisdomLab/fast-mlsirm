@@ -190,6 +190,23 @@ def test_identity_cannot_override_versioned_event_fields() -> None:
         raise AssertionError("reserved identity field was accepted")
 
 
+def test_identity_rejects_noncanonical_fields_before_producer_boundary() -> None:
+    """Private content cannot enter the count-only producer payload as identity."""
+    captured: dict[str, object] = {}
+    try:
+        CanonicalComputeUsageSink(
+            event_builder=_canonical_builder(captured),
+            event_validator=_validate_usage_event_v1,
+            enqueue=lambda _: None,
+            identity={"response_text": "must-not-reach-producer"},
+        )
+    except ValueError as error:
+        assert "response_text" in str(error)
+    else:
+        raise AssertionError("noncanonical identity field was accepted")
+    assert captured == {}
+
+
 def test_optional_project_reference_is_omitted_when_unset() -> None:
     """Older builders do not receive an omitted optional field."""
     captured: dict[str, object] = {}
