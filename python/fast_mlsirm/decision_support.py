@@ -209,6 +209,8 @@ def evaluate_decision_support(
     costs = _real_array(intervention_costs, name="intervention_costs", ndim=1)
     action_index = _trusted_index(no_action_index, name="no_action_index")
     info_cost = _coerce_finite_real(information_cost, name="information_cost")
+    if info_cost < 0.0:
+        raise ValueError("information_cost must be non-negative")
 
     state_count = probabilities.shape[0]
     action_count = utilities.shape[0]
