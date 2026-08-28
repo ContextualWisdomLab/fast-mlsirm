@@ -143,6 +143,28 @@ fn does_not_report_a_unique_modal_level_outside_the_credible_set() {
 }
 
 #[test]
+fn uses_compensated_mass_for_credible_interval_admission() {
+    let samples = (0..23).map(f64::from).collect::<Vec<_>>();
+    let cut_scores = (0..22)
+        .map(|index| f64::from(index) + 0.5)
+        .collect::<Vec<_>>();
+    let mut weights = Vec::with_capacity(23);
+    weights.push(0.5);
+    weights.extend(std::iter::repeat_n(1.0e-17, 20));
+    weights.extend([0.49, 0.01]);
+
+    let summary = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &samples,
+        sample_weights: Some(&weights),
+        cut_scores: &cut_scores,
+        credible_mass: 0.5000000000000001,
+    })
+    .expect("compensated probability mass must admit the shortest qualifying interval");
+
+    assert_eq!(summary.credible_level_indices, (0..=17).collect::<Vec<_>>());
+}
+
+#[test]
 fn is_invariant_to_joint_sample_and_weight_permutation() {
     let cut_scores = [-0.5, 0.5];
     let first = summarize_ordered_profile(OrderedProfileInput {
