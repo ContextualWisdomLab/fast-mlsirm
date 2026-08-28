@@ -70,6 +70,9 @@ pub const MAX_CROSSED_EFFECTS: usize = 128;
 /// Upper bound on Newton iterations accepted from a caller.
 pub const MAX_CROSSED_ITER: usize = 10_000;
 
+/// Maximum declared response cells accepted by the crossed estimator.
+pub const MAX_CROSSED_RESPONSE_CELLS: usize = 20_000_000;
+
 const MEMBERSHIP_WEIGHT_TOLERANCE: f64 = 1e-12;
 
 type EstimatorResult<T> = Result<T, String>;
@@ -274,6 +277,11 @@ fn validate_estimator_inputs(
         ));
     }
     let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
+    if expected > MAX_CROSSED_RESPONSE_CELLS {
+        return Err(format!(
+            "crossed response matrix exceeds the logical-cell cap of {MAX_CROSSED_RESPONSE_CELLS}"
+        ));
+    }
     if y.len() != expected {
         return Err("y must have length n_persons * n_items".to_string());
     }
