@@ -34,7 +34,7 @@ pub struct OrderedProfileSummary {
     /// Weighted posterior mean on the supplied latent scale.
     pub posterior_mean: f64,
     /// Weighted posterior standard deviation used as score uncertainty.
-    pub posterior_standard_error: f64,
+    pub posterior_standard_deviation: f64,
 }
 
 /// Fail-closed validation and numerical errors for ordered profile summaries.
@@ -205,7 +205,7 @@ pub fn summarize_ordered_profile(
         credible_level_indices,
         level_probabilities,
         posterior_mean,
-        posterior_standard_error: posterior_variance.sqrt(),
+        posterior_standard_deviation: posterior_variance.sqrt(),
     })
 }
 
@@ -277,7 +277,7 @@ fn shortest_contiguous_interval(probabilities: &[f64], target_mass: f64) -> Vec<
         let mut mass = 0.0;
         for (end, probability) in probabilities.iter().enumerate().skip(start) {
             mass += probability;
-            if mass + PROBABILITY_TOLERANCE < target_mass {
+            if mass < target_mass {
                 continue;
             }
             let candidate_length = end - start + 1;

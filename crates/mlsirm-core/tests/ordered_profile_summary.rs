@@ -28,7 +28,7 @@ fn summarizes_unweighted_draws_with_upper_inclusive_cut_scores() {
     assert_eq!(summary.reported_level_index, None);
     assert_eq!(summary.credible_level_indices, vec![1, 2]);
     assert_close(summary.posterior_mean, 0.0);
-    assert_close(summary.posterior_standard_error, 0.5_f64.sqrt());
+    assert_close(summary.posterior_standard_deviation, 0.5_f64.sqrt());
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn normalizes_nonnegative_weights_and_reports_a_unique_modal_level() {
     assert_eq!(summary.reported_level_index, Some(1));
     assert_eq!(summary.credible_level_indices, vec![1]);
     assert_close(summary.posterior_mean, 0.0);
-    assert_close(summary.posterior_standard_error, 0.5_f64.sqrt());
+    assert_close(summary.posterior_standard_deviation, 0.5_f64.sqrt());
 }
 
 #[test]
@@ -68,6 +68,22 @@ fn chooses_the_lower_interval_when_equal_mass_intervals_tie() {
     assert_eq!(summary.level_probabilities, vec![0.5, 0.5]);
     assert_eq!(summary.reported_level_index, None);
     assert_eq!(summary.credible_level_indices, vec![0]);
+}
+
+#[test]
+fn requires_the_selected_interval_to_meet_credible_mass_strictly() {
+    let samples = [-1.0, 1.0];
+    let cut_scores = [0.0];
+
+    let summary = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &samples,
+        sample_weights: None,
+        cut_scores: &cut_scores,
+        credible_mass: 0.5000000000005,
+    })
+    .expect("the full ordered scale meets the requested credible mass");
+
+    assert_eq!(summary.credible_level_indices, vec![0, 1]);
 }
 
 #[test]
