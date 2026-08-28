@@ -95,6 +95,31 @@ fn rejects_crossed_worker_count_above_public_control_bound() {
 }
 
 #[test]
+fn rejects_invalid_crossed_control_before_response_value_traversal() {
+    let error = estimate_crossed_person_effects(
+        &[2.0, 0.0],
+        &[0, 1, 2],
+        &[0, 1],
+        &[1.0, 1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            worker_count: 10_001,
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("inert crossed controls must fail before response-value traversal");
+
+    assert_eq!(error, "worker_count must be in 1..=10000");
+}
+
+#[test]
 fn rejects_oversized_classification_offset_work_before_shape_validation() {
     let mut classification_offsets: Vec<usize> = (0..=128).collect();
     classification_offsets.push(128);
