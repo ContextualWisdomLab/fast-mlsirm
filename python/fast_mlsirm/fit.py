@@ -54,6 +54,8 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     if type(raw) is _np.ndarray:
         arr = raw
     elif type(raw) in (list, tuple):
+        if len(raw) != n_persons:
+            raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
         if any(type(value) not in _TRUSTED_POPULATION_LABEL_SCALAR_TYPES for value in raw):
             raise ValueError(f"{name} must contain exact real numeric scalars")
         int64_info = _np.iinfo(_np.int64)
