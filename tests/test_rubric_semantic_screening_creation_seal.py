@@ -155,6 +155,60 @@ def test_screening_result_rejects_equivalent_replacement_check_objects() -> None
         result.to_dict()
 
 
+def test_screening_check_serialization_uses_verified_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-check rebinding cannot alter serialized screening-check evidence."""
+    check = screening.build_semantic_screening_check(
+        dimension="answerability",
+        status="blocking",
+        decision_evidence_fingerprint=fp("a"),
+    )
+    original_status = check.status
+    verify_seal = screening.SemanticScreeningCheck._verify_seal
+
+    def verify_then_rebind(target):
+        verified = verify_seal(target)
+        object.__setattr__(target, "status", screening.ScreeningStatus.PASS)
+        return verified
+
+    monkeypatch.setattr(
+        screening.SemanticScreeningCheck,
+        "_verify_seal",
+        verify_then_rebind,
+    )
+
+    payload = check.to_dict()
+
+    assert check.status is screening.ScreeningStatus.PASS
+    assert payload["status"] == original_status.value
+
+
+def test_screening_result_identity_uses_verified_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-check digest rebinding cannot alter the public screening identity."""
+    result = _result(evaluator_fingerprint=fp("a"))
+    original_fingerprint = result.screening_result_fingerprint
+    verify_seal = screening.CandidateScreeningResult._verify_seal
+
+    def verify_then_rebind(target):
+        verified = verify_seal(target)
+        object.__setattr__(target, "_screening_result_fingerprint", "0" * 64)
+        return verified
+
+    monkeypatch.setattr(
+        screening.CandidateScreeningResult,
+        "_verify_seal",
+        verify_then_rebind,
+    )
+
+    result_id = result.screening_result_id
+
+    assert vars(result)["_screening_result_fingerprint"] == "0" * 64
+    assert result_id == f"screening_result_{original_fingerprint[:32]}"
+
+
 def test_valid_screening_creation_seals_preserve_public_identity() -> None:
     """Replay hardening leaves valid screening check/result payloads unchanged."""
     result = _result(evaluator_fingerprint=fp("a"))
