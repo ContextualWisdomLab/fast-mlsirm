@@ -8,6 +8,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 const PROBABILITY_TOLERANCE: f64 = 1.0e-12;
+const MAX_POSTERIOR_SAMPLES: usize = 1_000_000;
 const MAX_CREDIBLE_INTERVAL_CANDIDATES: usize = 20_000_000;
 
 /// Borrowed inputs for one ordered proficiency-domain summary.
@@ -43,6 +44,8 @@ pub struct OrderedProfileSummary {
 pub enum OrderedProfileError {
     /// No posterior draw was supplied.
     EmptyPosterior,
+    /// The posterior draw count exceeds the package work budget.
+    PosteriorWorkLimit { samples: usize },
     /// A posterior draw was NaN or infinite.
     NonFinitePosterior { index: usize },
     /// The optional weight vector did not match the draw count.
@@ -71,6 +74,10 @@ impl Display for OrderedProfileError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmptyPosterior => formatter.write_str("posterior samples must be nonempty"),
+            Self::PosteriorWorkLimit { samples } => write!(
+                formatter,
+                "posterior summary for {samples} draws exceeds the package work limit"
+            ),
             Self::NonFinitePosterior { index } => {
                 write!(formatter, "posterior sample at index {index} must be finite")
             }
@@ -219,6 +226,11 @@ pub fn summarize_ordered_profile(
 fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileError> {
     if input.posterior_samples.is_empty() {
         return Err(OrderedProfileError::EmptyPosterior);
+    }
+    if input.posterior_samples.len() > MAX_POSTERIOR_SAMPLES {
+        return Err(OrderedProfileError::PosteriorWorkLimit {
+            samples: input.posterior_samples.len(),
+        });
     }
     for (index, sample) in input.posterior_samples.iter().enumerate() {
         if !sample.is_finite() {
