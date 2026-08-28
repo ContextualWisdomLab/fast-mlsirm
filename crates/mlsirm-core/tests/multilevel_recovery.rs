@@ -157,3 +157,32 @@ fn crossed_multiple_membership_map_recovers_centered_context_effects() {
     assert!(mae < 0.20, "centered-effect MAE too high: {mae}");
     assert!(rmse < 0.25, "centered-effect RMSE too high: {rmse}");
 }
+
+#[test]
+fn crossed_estimator_rejects_nonunit_membership_total_within_classification() {
+    let result = estimate_crossed_person_effects(
+        &[1.0],
+        &[0, 2],
+        &[0, 2],
+        &[0.5, 1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2, 4],
+        1,
+        1,
+        4,
+        CrossedPersonEffectConfig {
+            prior_precision: 1.0,
+            max_iter: 5,
+            tol: 1e-8,
+            worker_count: 1,
+            device: Device::Cpu,
+        },
+    );
+
+    assert_eq!(
+        result.expect_err("non-unit per-classification membership must fail"),
+        "membership weights must sum to one within every classification"
+    );
+}
