@@ -122,30 +122,50 @@ fn recovery_metrics(estimated: &[f64], truth: &[f64]) -> (f64, f64, f64) {
     (bias, mae, rmse)
 }
 
-#[test]
-fn crossed_multiple_membership_map_recovers_centered_context_effects() {
-    let (responses, row_offsets, context_indices, weights, intercepts, truth) = recovery_fixture();
-    let estimate = estimate_crossed_person_effects(
-        &responses,
-        &row_offsets,
-        &context_indices,
-        &weights,
+fn recovery_config() -> CrossedPersonEffectConfig {
+    CrossedPersonEffectConfig {
+        prior_precision: 0.25,
+        max_iter: 40,
+        tol: 1e-8,
+        worker_count: 4,
+        device: Device::Cpu,
+    }
+}
+
+fn fit_recovery_fixture(
+    responses: &[f64],
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+    intercepts: &[f64],
+) -> mlsirm_core::multilevel::CrossedPersonEffectEstimate {
+    estimate_crossed_person_effects(
+        responses,
+        row_offsets,
+        context_indices,
+        weights,
         &[1.0; N_ITEMS],
-        &intercepts,
+        intercepts,
         &[],
         &[0, N_SCHOOLS, N_SCHOOLS + N_NEIGHBOURHOODS],
         N_SCHOOLS * N_NEIGHBOURHOODS * COPIES_PER_CELL,
         N_ITEMS,
         N_SCHOOLS + N_NEIGHBOURHOODS,
-        CrossedPersonEffectConfig {
-            prior_precision: 0.25,
-            max_iter: 40,
-            tol: 1e-8,
-            worker_count: 4,
-            device: Device::Cpu,
-        },
+        recovery_config(),
     )
-    .expect("known-truth recovery fixture must fit");
+    .expect("known-truth recovery fixture must fit")
+}
+
+#[test]
+fn crossed_multiple_membership_map_recovers_centered_context_effects() {
+    let (responses, row_offsets, context_indices, weights, intercepts, truth) = recovery_fixture();
+    let estimate = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+    );
 
     assert!(
         estimate.converged,
@@ -156,6 +176,51 @@ fn crossed_multiple_membership_map_recovers_centered_context_effects() {
     assert!(bias.abs() < 0.10, "centered-effect bias too high: {bias}");
     assert!(mae < 0.20, "centered-effect MAE too high: {mae}");
     assert!(rmse < 0.25, "centered-effect RMSE too high: {rmse}");
+}
+
+#[test]
+fn crossed_multiple_membership_map_recovers_under_design_dependent_missingness() {
+    let (mut responses, row_offsets, context_indices, weights, intercepts, truth) =
+        recovery_fixture();
+    let n_persons = N_SCHOOLS * N_NEIGHBOURHOODS * COPIES_PER_CELL;
+    let mut missing = 0usize;
+    for person in 0..n_persons {
+        for item in 0..N_ITEMS {
+            if (person + 2 * item) % 7 == 0 {
+                responses[person * N_ITEMS + item] = f64::NAN;
+                missing += 1;
+            }
+        }
+    }
+    assert!(missing > 0);
+    assert!(missing < responses.len());
+
+    let estimate = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+    );
+    assert!(
+        estimate.converged,
+        "termination under design-dependent missingness: {}",
+        estimate.termination_reason
+    );
+
+    let (bias, mae, rmse) = recovery_metrics(&estimate.effects, &truth);
+    assert!(
+        bias.abs() < 0.12,
+        "missingness recovery centered-effect bias too high: {bias}"
+    );
+    assert!(
+        mae < 0.24,
+        "missingness recovery centered-effect MAE too high: {mae}"
+    );
+    assert!(
+        rmse < 0.30,
+        "missingness recovery centered-effect RMSE too high: {rmse}"
+    );
 }
 
 #[test]
