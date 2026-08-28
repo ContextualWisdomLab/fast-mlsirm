@@ -105,6 +105,31 @@ def test_native_result_net_evsi_is_bound_to_admitted_information_cost(
         )
 
 
+def test_negative_information_cost_is_rejected_before_native_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public non-negative cost domain does not depend on native behavior."""
+    calls = 0
+
+    class Core:
+        def evaluate_decision_support(self, *args: object) -> dict[object, object]:
+            nonlocal calls
+            calls += 1
+            return _payload()
+
+    monkeypatch.setattr(decision_support, "_core_module", lambda: Core())
+    probabilities, utilities, costs = _inputs()
+
+    with pytest.raises(ValueError, match="information_cost must be non-negative"):
+        decision_support.evaluate_decision_support(
+            probabilities,
+            utilities,
+            costs,
+            information_cost=-1.0,
+        )
+    assert calls == 0
+
+
 def _invalid_payloads() -> list[tuple[object, int, bool]]:
     """Build structurally invalid native payloads for branch-complete replay."""
     payloads: list[tuple[object, int, bool]] = [([], 1, False)]
