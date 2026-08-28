@@ -96,7 +96,9 @@ class CanonicalComputeUsageSink:
         contract_version = event.get("event_contract_version")
         if type(contract_version) is not int or contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
-        validation_errors = self._event_validator(event)
+        validation_event = dict.copy(event)
+        enqueue_event = dict.copy(event)
+        validation_errors = self._event_validator(validation_event)
         if type(validation_errors) is not tuple:
             raise ValueError("event_validator must return an exact tuple")
         if any(type(error) is not str for error in validation_errors):
@@ -107,7 +109,7 @@ class CanonicalComputeUsageSink:
                 "event_builder output violates canonical usage-event v1 contract"
                 + (f": {detail}" if detail else "")
             )
-        self._enqueue(event)
+        self._enqueue(enqueue_event)
 
     def emit_simulation(
         self,
