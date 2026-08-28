@@ -232,11 +232,6 @@ fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileEr
             samples: input.posterior_samples.len(),
         });
     }
-    for (index, sample) in input.posterior_samples.iter().enumerate() {
-        if !sample.is_finite() {
-            return Err(OrderedProfileError::NonFinitePosterior { index });
-        }
-    }
 
     if let Some(weights) = input.sample_weights {
         if weights.len() != input.posterior_samples.len() {
@@ -245,23 +240,10 @@ fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileEr
                 actual: weights.len(),
             });
         }
-        for (index, weight) in weights.iter().enumerate() {
-            if !weight.is_finite() || *weight < 0.0 {
-                return Err(OrderedProfileError::InvalidWeight { index });
-            }
-        }
     }
 
     if input.cut_scores.is_empty() {
         return Err(OrderedProfileError::EmptyCutScores);
-    }
-    for (index, cut_score) in input.cut_scores.iter().enumerate() {
-        if !cut_score.is_finite() {
-            return Err(OrderedProfileError::NonFiniteCutScore { index });
-        }
-        if index > 0 && *cut_score <= input.cut_scores[index - 1] {
-            return Err(OrderedProfileError::NonIncreasingCutScores { index });
-        }
     }
 
     if !input.credible_mass.is_finite()
@@ -288,6 +270,30 @@ fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileEr
     if candidate_count > MAX_CREDIBLE_INTERVAL_CANDIDATES {
         return Err(OrderedProfileError::CredibleIntervalWorkLimit { levels: level_count });
     }
+
+    for (index, sample) in input.posterior_samples.iter().enumerate() {
+        if !sample.is_finite() {
+            return Err(OrderedProfileError::NonFinitePosterior { index });
+        }
+    }
+
+    if let Some(weights) = input.sample_weights {
+        for (index, weight) in weights.iter().enumerate() {
+            if !weight.is_finite() || *weight < 0.0 {
+                return Err(OrderedProfileError::InvalidWeight { index });
+            }
+        }
+    }
+
+    for (index, cut_score) in input.cut_scores.iter().enumerate() {
+        if !cut_score.is_finite() {
+            return Err(OrderedProfileError::NonFiniteCutScore { index });
+        }
+        if index > 0 && *cut_score <= input.cut_scores[index - 1] {
+            return Err(OrderedProfileError::NonIncreasingCutScores { index });
+        }
+    }
+
     Ok(())
 }
 
