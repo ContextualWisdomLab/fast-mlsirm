@@ -41,6 +41,18 @@ fn rejects_weight_length_mismatch_before_posterior_value_scan() {
 }
 
 #[test]
+fn rejects_zero_weight_mass_before_posterior_value_scan() {
+    let result = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &[f64::NAN, 1.0],
+        sample_weights: Some(&[0.0, 0.0]),
+        cut_scores: &[0.0],
+        credible_mass: 0.95,
+    });
+
+    assert!(matches!(result, Err(OrderedProfileError::ZeroWeightMass)));
+}
+
+#[test]
 fn rejects_empty_cut_scores_before_posterior_value_scan() {
     let result = summarize_ordered_profile(OrderedProfileInput {
         posterior_samples: &[f64::NAN],
