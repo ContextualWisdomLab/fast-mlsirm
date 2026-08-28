@@ -122,12 +122,12 @@ fn recovery_metrics(estimated: &[f64], truth: &[f64]) -> (f64, f64, f64) {
     (bias, mae, rmse)
 }
 
-fn recovery_config() -> CrossedPersonEffectConfig {
+fn recovery_config(worker_count: usize) -> CrossedPersonEffectConfig {
     CrossedPersonEffectConfig {
         prior_precision: 0.25,
         max_iter: 40,
         tol: 1e-8,
-        worker_count: 4,
+        worker_count,
         device: Device::Cpu,
     }
 }
@@ -138,6 +138,7 @@ fn fit_recovery_fixture(
     context_indices: &[usize],
     weights: &[f64],
     intercepts: &[f64],
+    worker_count: usize,
 ) -> mlsirm_core::multilevel::CrossedPersonEffectEstimate {
     estimate_crossed_person_effects(
         responses,
@@ -151,7 +152,7 @@ fn fit_recovery_fixture(
         N_SCHOOLS * N_NEIGHBOURHOODS * COPIES_PER_CELL,
         N_ITEMS,
         N_SCHOOLS + N_NEIGHBOURHOODS,
-        recovery_config(),
+        recovery_config(worker_count),
     )
     .expect("known-truth recovery fixture must fit")
 }
@@ -165,6 +166,7 @@ fn crossed_multiple_membership_map_recovers_centered_context_effects() {
         &context_indices,
         &weights,
         &intercepts,
+        4,
     );
 
     assert!(
@@ -176,6 +178,29 @@ fn crossed_multiple_membership_map_recovers_centered_context_effects() {
     assert!(bias.abs() < 0.10, "centered-effect bias too high: {bias}");
     assert!(mae < 0.20, "centered-effect MAE too high: {mae}");
     assert!(rmse < 0.25, "centered-effect RMSE too high: {rmse}");
+}
+
+#[test]
+fn crossed_multiple_membership_map_is_deterministic_across_worker_counts() {
+    let (responses, row_offsets, context_indices, weights, intercepts, _) = recovery_fixture();
+    let single_worker = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        1,
+    );
+    let four_workers = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        4,
+    );
+
+    assert_eq!(single_worker, four_workers);
 }
 
 #[test]
@@ -201,6 +226,7 @@ fn crossed_multiple_membership_map_recovers_under_design_dependent_missingness()
         &context_indices,
         &weights,
         &intercepts,
+        4,
     );
     assert!(
         estimate.converged,
