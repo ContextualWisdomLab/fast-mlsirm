@@ -91,22 +91,24 @@ def build_pilot_candidate_record(
     if type(screening_result) is not CandidateScreeningResult:
         raise TypeError("screening_result must be a CandidateScreeningResult")
     try:
-        screening_result_fingerprint = screening_result.screening_result_fingerprint
-        screening_eligible = screening_result.is_pilot_eligible
+        screening_content, screening_result_fingerprint = screening_result._verify_seal()
+        screening_eligible = screening_result._pilot_eligible_from_content(
+            screening_content
+        )
     except ValueError:
         raise PilotAdmissionError(
             "screening_result_unverified",
             "$.screening_result",
             "screening result does not match its creation-time identity",
         ) from None
-    if screening_result.candidate_fingerprint != candidate_fingerprint:
+    if screening_content["candidate_fingerprint"] != candidate_fingerprint:
         raise PilotAdmissionError(
             "screening_candidate_mismatch",
             "$.screening_result.candidate_fingerprint",
             "screening result does not bind the exact candidate",
         )
     if (
-        screening_result.audit_report_fingerprint
+        screening_content["audit_report_fingerprint"]
         != audit_report.audit_report_fingerprint
     ):
         raise PilotAdmissionError(
