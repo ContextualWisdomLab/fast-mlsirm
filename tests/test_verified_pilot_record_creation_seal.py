@@ -103,6 +103,27 @@ def test_pilot_replay_rejects_callback_bearing_rebinding_before_comparison() -> 
     assert callbacks == 0
 
 
+def test_pilot_replay_uses_sealed_snapshot_after_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-check rebinding cannot become public pilot-record authority."""
+    record = _verified_pilot_record()
+    original_item_id = record.item_id
+    verify_creation_seal = pilot_safety._verify_creation_seal
+
+    def verify_then_rebind(target):
+        verified = verify_creation_seal(target)
+        object.__setattr__(target, "item_id", "concurrent-rebound-item")
+        return verified
+
+    monkeypatch.setattr(pilot_safety, "_verify_creation_seal", verify_then_rebind)
+
+    payload = record.to_dict()
+
+    assert record.item_id == "concurrent-rebound-item"
+    assert payload["item_id"] == original_item_id
+
+
 def test_valid_pilot_creation_seal_preserves_identity_and_serialization() -> None:
     """Replay hardening leaves valid public pilot identity and payload unchanged."""
     record = _verified_pilot_record()
