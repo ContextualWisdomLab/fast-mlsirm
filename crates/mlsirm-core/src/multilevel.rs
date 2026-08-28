@@ -34,6 +34,9 @@ pub use estimator::{
     MAX_CROSSED_EFFECTS, MAX_CROSSED_ITER,
 };
 
+/// Maximum contextual-membership edges accepted at the public Rust boundary.
+pub const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
+
 fn validate_unique_context_indices_per_row(
     row_offsets: &[usize],
     context_indices: &[usize],
@@ -89,6 +92,11 @@ pub fn weighted_contextual_effect(
     effects: &[f64],
     worker_count: usize,
 ) -> Result<Vec<f64>, String> {
+    if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
+        return Err(format!(
+            "context_indices exceeds the membership-edge cap of {MAX_CONTEXT_MEMBERSHIPS}"
+        ));
+    }
     validate_unique_context_indices_per_row(row_offsets, context_indices)?;
     validate_referenced_finite_effects(context_indices, effects)?;
     let output = kernel::weighted_contextual_effect(
