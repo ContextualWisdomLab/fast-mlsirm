@@ -7,7 +7,12 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from fast_mlsirm.subscores import SubscoreResult, subscore_analysis
+from fast_mlsirm.subscores import (
+    SubscoreResult,
+    _native_float_scalar,
+    _native_float_vector,
+    subscore_analysis,
+)
 
 
 class _HostileArray:
@@ -175,6 +180,19 @@ def test_subscore_analysis_rejects_decisions_inconsistent_with_prmse(
 
     with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
         _run_with_result(result)
+
+
+def test_native_float_admission_avoids_numpy_scalar_ufunc_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(*_args: object, **_kwargs: object) -> bool:
+        raise AssertionError("NumPy scalar ufunc dispatch executed")
+
+    monkeypatch.setattr("fast_mlsirm.subscores.np.isnan", forbidden)
+    monkeypatch.setattr("fast_mlsirm.subscores.np.isfinite", forbidden)
+
+    assert _native_float_vector([0.25, 0.75]) == [0.25, 0.75]
+    assert _native_float_scalar(0.5) == 0.5
 
 
 def test_subscore_analysis_accepts_current_rust_shaped_payload() -> None:
