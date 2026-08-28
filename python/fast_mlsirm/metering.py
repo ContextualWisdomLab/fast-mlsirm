@@ -11,7 +11,7 @@ from .types import FitResult, SimulationData
 class ComputeUsageEventBuilder(Protocol):
     """Version-one builder boundary supplied by the metering producer SDK."""
 
-    def __call__(self, **payload: Any) -> Mapping[str, Any]: ...
+    def __call__(self, **payload: Any) -> dict[str, Any]: ...
 
 
 class ComputeUsageEventValidator(Protocol):
@@ -87,8 +87,10 @@ class CanonicalComputeUsageSink:
             key: value for key, value in identity_snapshot.items() if value is not None
         }
 
-    def _validate_and_enqueue(self, event: Mapping[str, Any]) -> None:
+    def _validate_and_enqueue(self, event: object) -> None:
         """Fail closed unless the producer output is a valid canonical v1 event."""
+        if type(event) is not dict:
+            raise ValueError("event_builder must return an exact dict")
         if event.get("event_contract_version") != 1:
             raise ValueError("event_builder must return event_contract_version=1")
         validation_errors = self._event_validator(event)
