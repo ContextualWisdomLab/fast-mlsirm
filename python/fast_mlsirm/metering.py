@@ -29,6 +29,8 @@ _CANONICAL_IDENTITY_FIELDS = frozenset(
         "cost_center_reference",
     }
 )
+_MAX_EVENT_SNAPSHOT_DEPTH = 16
+_MAX_EVENT_SNAPSHOT_NODES = 4096
 
 
 def _exact_string(name: str, value: object, *, optional: bool = False) -> str | None:
@@ -49,6 +51,47 @@ def _nonnegative_int(
     if type(value) is not int or value < 0:
         raise ValueError(f"{name} must be an exact non-negative integer")
     return value
+
+
+def _snapshot_exact_json(
+    value: object,
+    *,
+    depth: int = 0,
+    remaining_nodes: list[int] | None = None,
+) -> Any:
+    """Copy one bounded exact-JSON tree without invoking caller protocols."""
+    if depth > _MAX_EVENT_SNAPSHOT_DEPTH:
+        raise ValueError("event_builder result exact JSON nesting is too deep")
+    if remaining_nodes is None:
+        remaining_nodes = [_MAX_EVENT_SNAPSHOT_NODES]
+    remaining_nodes[0] -= 1
+    if remaining_nodes[0] < 0:
+        raise ValueError("event_builder result exact JSON tree is too large")
+
+    value_type = type(value)
+    if value is None or value_type in (str, int, float, bool):
+        return value
+    if value_type is list:
+        return [
+            _snapshot_exact_json(
+                item,
+                depth=depth + 1,
+                remaining_nodes=remaining_nodes,
+            )
+            for item in value
+        ]
+    if value_type is dict:
+        if any(type(key) is not str for key in value):
+            raise ValueError("event_builder result exact JSON keys must be exact strings")
+        return {
+            key: _snapshot_exact_json(
+                item,
+                depth=depth + 1,
+                remaining_nodes=remaining_nodes,
+            )
+            for key, item in value.items()
+        }
+    raise ValueError("event_builder result must use exact JSON carriers and scalars")
 
 
 class CanonicalComputeUsageSink:
@@ -96,8 +139,8 @@ class CanonicalComputeUsageSink:
         contract_version = event.get("event_contract_version")
         if type(contract_version) is not int or contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
-        validation_event = dict.copy(event)
-        enqueue_event = dict.copy(event)
+        validation_event = _snapshot_exact_json(event)
+        enqueue_event = _snapshot_exact_json(validation_event)
         validation_errors = self._event_validator(validation_event)
         if type(validation_errors) is not tuple:
             raise ValueError("event_validator must return an exact tuple")
