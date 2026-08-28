@@ -66,6 +66,8 @@ class CanonicalComputeUsageSink:
         if type(identity) is not dict:
             raise ValueError("identity must be an exact dict")
         identity_snapshot = dict.copy(identity)
+        if any(type(key) is not str for key in identity_snapshot):
+            raise ValueError("identity keys must be exact strings")
         unexpected = set(identity_snapshot).difference(_CANONICAL_IDENTITY_FIELDS)
         if unexpected:
             names = ", ".join(sorted(unexpected))
