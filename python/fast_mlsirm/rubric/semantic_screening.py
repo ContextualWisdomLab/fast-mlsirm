@@ -113,8 +113,8 @@ def _verify_creation(
     fields: tuple[str, ...],
     registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
     message: str,
-) -> None:
-    """Reject post-construction field or local-digest rebinding fail-closed."""
+) -> dict[str, Any]:
+    """Validate live state and return its package-owned creation snapshot."""
     sealed = registry.get(id(record))
     if sealed is None or sealed[0]() is not record:
         raise ValueError(message)
@@ -125,6 +125,7 @@ def _verify_creation(
         for name, expected in zip(fields, sealed[1], strict=True)
     ):
         raise ValueError(message)
+    return dict(zip(fields, sealed[1], strict=True))
 
 
 class ScreeningDimension(str, Enum):
@@ -244,22 +245,32 @@ class SemanticScreeningCheck:
             "limitation_decision_fingerprint": self.limitation_decision_fingerprint,
         }
 
-    def _verify_seal(self) -> None:
-        """Reject post-construction mutation of a screening decision."""
+    def _verify_seal(self) -> dict[str, str | None]:
+        """Validate the live check and return sealed canonical content."""
         message = "screening check no longer matches its factory seal"
-        _verify_creation(
+        snapshot = _verify_creation(
             self,
             _CHECK_INSTANCE_FIELDS,
             _CHECK_CREATION_SEALS,
             message,
         )
-        if self._check_fingerprint != _sha256_hex(self._content_dict()):
+        content = {
+            "dimension": snapshot["dimension"].value,
+            "status": snapshot["status"].value,
+            "decision_evidence_fingerprint": snapshot[
+                "decision_evidence_fingerprint"
+            ],
+            "limitation_decision_fingerprint": snapshot[
+                "limitation_decision_fingerprint"
+            ],
+        }
+        if snapshot["_check_fingerprint"] != _sha256_hex(content):
             raise ValueError(message)
+        return content
 
     def to_dict(self) -> dict[str, str | None]:
         """Return source-text-free JSON-compatible screening decision content."""
-        self._verify_seal()
-        return self._content_dict()
+        return self._verify_seal()
 
 
 def build_semantic_screening_check(
@@ -380,27 +391,47 @@ class CandidateScreeningResult:
         )
         _seal_creation(self, _RESULT_INSTANCE_FIELDS, _RESULT_CREATION_SEALS)
 
-    def _verify_seal(self) -> None:
-        """Reject post-construction mutation of a screening result."""
+    def _verify_seal(self) -> tuple[dict[str, Any], str]:
+        """Validate the live result and return sealed content plus identity."""
         message = "screening result no longer matches its factory seal"
-        _verify_creation(
+        snapshot = _verify_creation(
             self,
             _RESULT_INSTANCE_FIELDS,
             _RESULT_CREATION_SEALS,
             message,
         )
-        if self._screening_result_fingerprint != _sha256_hex(self._content_dict()):
+        content = {
+            "schema_version": snapshot["schema_version"],
+            "screening_policy_id": snapshot["screening_policy_id"],
+            "screening_policy_version": snapshot["screening_policy_version"],
+            "evaluator_kind": snapshot["evaluator_kind"].value,
+            "evaluator_fingerprint": snapshot["evaluator_fingerprint"],
+            "candidate_fingerprint": snapshot["candidate_fingerprint"],
+            "audit_report_fingerprint": snapshot["audit_report_fingerprint"],
+            "checks": [check.to_dict() for check in snapshot["checks"]],
+        }
+        fingerprint = snapshot["_screening_result_fingerprint"]
+        if fingerprint != _sha256_hex(content):
             raise ValueError(message)
+        return content, fingerprint
+
+    @staticmethod
+    def _pilot_eligible_from_content(content: dict[str, Any]) -> bool:
+        """Replay pilot eligibility from already verified screening content."""
+        return all(
+            check["status"]
+            in {
+                ScreeningStatus.PASS.value,
+                ScreeningStatus.ACCEPTED_LIMITATION.value,
+            }
+            for check in content["checks"]
+        )
 
     @property
     def is_pilot_eligible(self) -> bool:
         """Return whether every dimension passed or has a governed limitation."""
-        self._verify_seal()
-        return all(
-            check.status
-            in {ScreeningStatus.PASS, ScreeningStatus.ACCEPTED_LIMITATION}
-            for check in self.checks
-        )
+        content, _ = self._verify_seal()
+        return self._pilot_eligible_from_content(content)
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical result content without derived public identities."""
@@ -418,23 +449,23 @@ class CandidateScreeningResult:
     @property
     def screening_result_fingerprint(self) -> str:
         """Return the SHA-256 identity of the complete screening decision."""
-        self._verify_seal()
-        return self._screening_result_fingerprint
+        _, fingerprint = self._verify_seal()
+        return fingerprint
 
     @property
     def screening_result_id(self) -> str:
         """Return a descriptive 128-bit public handle for this screening result."""
-        self._verify_seal()
-        return f"screening_result_{self._screening_result_fingerprint[:32]}"
+        _, fingerprint = self._verify_seal()
+        return f"screening_result_{fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
         """Return source-text-free result content plus deterministic identities."""
-        self._verify_seal()
+        content, fingerprint = self._verify_seal()
         return {
-            **self._content_dict(),
-            "screening_result_id": self.screening_result_id,
-            "screening_result_fingerprint": self.screening_result_fingerprint,
-            "is_pilot_eligible": self.is_pilot_eligible,
+            **content,
+            "screening_result_id": f"screening_result_{fingerprint[:32]}",
+            "screening_result_fingerprint": fingerprint,
+            "is_pilot_eligible": self._pilot_eligible_from_content(content),
         }
 
 
