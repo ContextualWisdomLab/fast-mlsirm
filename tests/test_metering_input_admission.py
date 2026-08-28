@@ -85,3 +85,78 @@ def test_fit_rejects_invalid_counts_before_producer(
             SimpleNamespace(model="MLS2PLM", backend="rust"),
             **payload,  # type: ignore[arg-type]
         )
+
+
+def test_builder_result_rejects_boolean_contract_version_before_validator() -> None:
+    """Boolean equality cannot impersonate the exact usage-event version integer."""
+    validator_calls = 0
+    queued: list[object] = []
+
+    def builder(**_: object) -> dict[str, object]:
+        return {"event_contract_version": True}
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(ValueError, match="event_contract_version=1"):
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            **_valid_fit_payload(),  # type: ignore[arg-type]
+        )
+
+    assert validator_calls == 0
+    assert queued == []
+
+
+def test_builder_result_rejects_callback_bearing_contract_version_without_comparison() -> None:
+    """Version admission uses type identity before equality can execute callbacks."""
+    callbacks = 0
+    validator_calls = 0
+    queued: list[object] = []
+
+    class HostileVersion(int):
+        def __eq__(self, other: object) -> bool:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError(f"version equality callback executed for {other!r}")
+
+        def __ne__(self, other: object) -> bool:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError(f"version inequality callback executed for {other!r}")
+
+    version = HostileVersion(1)
+
+    def builder(**_: object) -> dict[str, object]:
+        return {"event_contract_version": version}
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(ValueError, match="event_contract_version=1"):
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            **_valid_fit_payload(),  # type: ignore[arg-type]
+        )
+
+    assert callbacks == 0
+    assert validator_calls == 0
+    assert queued == []
