@@ -1,7 +1,7 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-28T02:37:24Z**<br>
+Observed at: **2026-08-28T02:46:50Z**<br>
 Protected-main basis: **`main@45627700…`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
@@ -244,7 +244,7 @@ new canonical capability-maturity state.
 ## 7. Current pull-request evidence
 
 The following table records high-leverage live work observed on
-2026-08-28T02:37:24Z against protected `main@45627700…`. Every row is
+2026-08-28T02:46:50Z against protected `main@45627700…`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
@@ -267,7 +267,7 @@ check on any row is not a protected-main capability until the PR is merged.
 | [#1473](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1473) | `bf1a7782…` | binds validation profiles to preregistration time (issue [#1472](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1472)) | targets release PR #1471; no required checks were reported on this child branch, so it is not protected-delivery evidence |
 | [#1417](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1417) | `05e06766…` | extends the Rust residual interaction-map result envelope (issue [#1412](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1412)) | draft; current checks passed, but review/merge is absent and child PRs depend on this parent |
 | [#1436](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1436) | `a90db19f…` | documents the Rust polytomous period artifact | draft child of #1417; clean/mergeable only describes the stack candidate, not protected main |
-| [#1457](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1457) | `fe6625d9…` | exposes the Rust interaction-map explained-share projection | draft child of #1417; currently conflicting and requires parent synchronization before review |
+| [#1457](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1457) | `94699c5b…` | exposes the Rust interaction-map explained-share projection | draft child of #1417; currently conflicting and requires parent synchronization before review |
 
 At this observation, GitHub REST enumerated **18 open pull requests** and GitHub
 search enumerated **49 open issues**. The current direct-to-main queue is
