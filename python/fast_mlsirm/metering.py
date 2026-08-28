@@ -60,13 +60,12 @@ class CanonicalComputeUsageSink:
         event_builder: ComputeUsageEventBuilder,
         event_validator: ComputeUsageEventValidator,
         enqueue: Callable[[Mapping[str, Any]], None],
-        identity: Mapping[str, str | None],
+        identity: dict[str, str | None],
     ) -> None:
         """Store producer-owned build/validation boundaries and durable enqueue."""
-        try:
-            identity_snapshot = dict(identity)
-        except Exception:
-            raise ValueError("identity could not be read safely") from None
+        if type(identity) is not dict:
+            raise ValueError("identity must be an exact dict")
+        identity_snapshot = dict.copy(identity)
         unexpected = set(identity_snapshot).difference(_CANONICAL_IDENTITY_FIELDS)
         if unexpected:
             names = ", ".join(sorted(unexpected))
