@@ -6,8 +6,8 @@ from dataclasses import InitVar, dataclass
 import weakref
 
 from .audit import CandidateLifecycleState
+from .audit import PILOT_RECORD_SCHEMA_VERSION
 from .audit import PilotCandidateRecord as _CorePilotCandidateRecord
-from .models import SCHEMA_VERSION
 
 _PILOT_ADMISSION_TOKEN = object()
 _PUBLIC_FIELD_NAMES = (
@@ -94,7 +94,7 @@ class PilotCandidateRecord:
     rubric_id: str
     rubric_version: str
     lifecycle_state: CandidateLifecycleState = CandidateLifecycleState.PILOT
-    schema_version: str = SCHEMA_VERSION
+    schema_version: str = PILOT_RECORD_SCHEMA_VERSION
     _admission_token: InitVar[object | None] = None
 
     def __post_init__(self, _admission_token: object | None) -> None:
