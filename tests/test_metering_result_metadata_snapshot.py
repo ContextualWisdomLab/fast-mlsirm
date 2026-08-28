@@ -98,6 +98,14 @@ def test_simulation_rejects_protocol_bearing_shape_before_indexing() -> None:
     assert callbacks == 0
 
 
+def test_simulation_rejects_wrong_length_exact_shape_before_producer() -> None:
+    """Malformed exact tuple cardinality fails with a package-owned diagnostic."""
+    data = SimpleNamespace(Y=SimpleNamespace(shape=(3,)))
+
+    with pytest.raises(ValueError, match="response shape must be an exact 2-D shape"):
+        _forbidden_sink().emit_simulation(data, **_simulation_kwargs())  # type: ignore[arg-type]
+
+
 def test_fit_model_and_backend_are_each_read_once_before_normalization() -> None:
     """Validated fit metadata snapshots alone may cross the producer boundary."""
     model_reads = 0
