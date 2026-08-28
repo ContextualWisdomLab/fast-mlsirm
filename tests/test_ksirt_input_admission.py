@@ -133,6 +133,16 @@ def test_ksirt_rejects_nested_builtin_response_rows_before_core(
         ksirt.ksirt_analysis([[[0.0]], [[1.0]]])
 
 
+def test_ksirt_rejects_ragged_builtin_response_rows_with_shape_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ragged rows report a shape defect before numeric materialization."""
+    _forbid_core(monkeypatch)
+
+    with pytest.raises(ValueError, match="responses must be a 2-D persons x items array"):
+        ksirt.ksirt_analysis([[0.0], [1.0, 2.0]])
+
+
 def test_ksirt_rejects_array_provider_bandwidth_without_callbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

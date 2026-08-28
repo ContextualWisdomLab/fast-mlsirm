@@ -144,7 +144,7 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
         if n_items is None:
             n_items = row_items
         elif row_items != n_items:
-            raise ValueError("responses must be a numeric array")
+            raise ValueError("responses must be a 2-D persons x items array")
 
         logical_cells += row_items
         if logical_cells > _MAX_KSIRT_RESPONSE_CELLS:
