@@ -31,6 +31,26 @@ _CANONICAL_IDENTITY_FIELDS = frozenset(
 )
 
 
+def _exact_string(name: str, value: object, *, optional: bool = False) -> str | None:
+    """Admit one callback-free string reference before producer code can observe it."""
+    if value is None and optional:
+        return None
+    if type(value) is not str:
+        raise ValueError(f"{name} must be an exact string")
+    return value
+
+
+def _nonnegative_int(
+    name: str, value: object, *, optional: bool = False
+) -> int | None:
+    """Admit one exact non-negative count without numeric coercion callbacks."""
+    if value is None and optional:
+        return None
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{name} must be an exact non-negative integer")
+    return value
+
+
 class CanonicalComputeUsageSink:
     """Build, validate, and enqueue count-only events for real compute results."""
 
@@ -92,22 +112,39 @@ class CanonicalComputeUsageSink:
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one simulation's response-cell and artifact counts."""
+        admitted_run_reference = _exact_string("run_reference", run_reference)
+        admitted_artifact_reference = _exact_string(
+            "artifact_reference", artifact_reference
+        )
+        admitted_configuration_reference = _exact_string(
+            "configuration_reference", configuration_reference
+        )
+        admitted_seed_reference = _exact_string("seed_reference", seed_reference)
+        admitted_occurred_at = _exact_string("occurred_at", occurred_at)
+        admitted_project_reference = _exact_string(
+            "project_reference", project_reference, optional=True
+        )
+        admitted_artifact_bytes = _nonnegative_int(
+            "artifact_bytes", artifact_bytes, optional=True
+        )
+        response_rows = _nonnegative_int("response_rows", data.Y.shape[0])
+        response_items = _nonnegative_int("response_items", data.Y.shape[1])
         payload: dict[str, Any] = {
             **self._identity,
-            "run_reference": run_reference,
-            "artifact_reference": artifact_reference,
-            "configuration_reference": configuration_reference,
-            "seed_reference": seed_reference,
+            "run_reference": admitted_run_reference,
+            "artifact_reference": admitted_artifact_reference,
+            "configuration_reference": admitted_configuration_reference,
+            "seed_reference": admitted_seed_reference,
             "model_code": "mls2plm",
             "backend_code": "numpy",
-            "occurred_at": occurred_at,
-            "response_rows": int(data.Y.shape[0]),
-            "response_items": int(data.Y.shape[1]),
+            "occurred_at": admitted_occurred_at,
+            "response_rows": response_rows,
+            "response_items": response_items,
         }
-        if project_reference is not None:
-            payload["project_reference"] = project_reference
-        if artifact_bytes is not None:
-            payload["artifact_bytes"] = artifact_bytes
+        if admitted_project_reference is not None:
+            payload["project_reference"] = admitted_project_reference
+        if admitted_artifact_bytes is not None:
+            payload["artifact_bytes"] = admitted_artifact_bytes
         self._validate_and_enqueue(self._event_builder(**payload))
 
     def emit_fit(
@@ -125,22 +162,43 @@ class CanonicalComputeUsageSink:
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one fit's response-cell and artifact counts."""
+        admitted_run_reference = _exact_string("run_reference", run_reference)
+        admitted_artifact_reference = _exact_string(
+            "artifact_reference", artifact_reference
+        )
+        admitted_configuration_reference = _exact_string(
+            "configuration_reference", configuration_reference
+        )
+        admitted_seed_reference = _exact_string("seed_reference", seed_reference)
+        admitted_occurred_at = _exact_string("occurred_at", occurred_at)
+        admitted_project_reference = _exact_string(
+            "project_reference", project_reference, optional=True
+        )
+        admitted_response_rows = _nonnegative_int("response_rows", response_rows)
+        admitted_response_items = _nonnegative_int("response_items", response_items)
+        admitted_artifact_bytes = _nonnegative_int(
+            "artifact_bytes", artifact_bytes, optional=True
+        )
+        if type(result.model) is not str:
+            raise ValueError("result.model must be an exact string")
+        if type(result.backend) is not str:
+            raise ValueError("result.backend must be an exact string")
         payload: dict[str, Any] = {
             **self._identity,
-            "run_reference": run_reference,
-            "artifact_reference": artifact_reference,
-            "configuration_reference": configuration_reference,
-            "seed_reference": seed_reference,
+            "run_reference": admitted_run_reference,
+            "artifact_reference": admitted_artifact_reference,
+            "configuration_reference": admitted_configuration_reference,
+            "seed_reference": admitted_seed_reference,
             "model_code": result.model.lower(),
             "backend_code": result.backend.lower(),
-            "occurred_at": occurred_at,
-            "response_rows": response_rows,
-            "response_items": response_items,
+            "occurred_at": admitted_occurred_at,
+            "response_rows": admitted_response_rows,
+            "response_items": admitted_response_items,
         }
-        if project_reference is not None:
-            payload["project_reference"] = project_reference
-        if artifact_bytes is not None:
-            payload["artifact_bytes"] = artifact_bytes
+        if admitted_project_reference is not None:
+            payload["project_reference"] = admitted_project_reference
+        if admitted_artifact_bytes is not None:
+            payload["artifact_bytes"] = admitted_artifact_bytes
         self._validate_and_enqueue(self._event_builder(**payload))
 
 
