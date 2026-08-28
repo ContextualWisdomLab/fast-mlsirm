@@ -91,7 +91,8 @@ class CanonicalComputeUsageSink:
         """Fail closed unless the producer output is a valid canonical v1 event."""
         if type(event) is not dict:
             raise ValueError("event_builder must return an exact dict")
-        if event.get("event_contract_version") != 1:
+        contract_version = event.get("event_contract_version")
+        if type(contract_version) is not int or contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
         validation_errors = self._event_validator(event)
         if validation_errors:
