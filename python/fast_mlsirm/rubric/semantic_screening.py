@@ -9,6 +9,7 @@ records; exact content fingerprints bind the decision to governed evidence.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from typing import Any, Iterable
@@ -30,6 +31,100 @@ from .models import (
 _CHECK_CREATION_TOKEN = object()
 _RESULT_CREATION_TOKEN = object()
 _MAX_FINGERPRINT_CHARACTERS = 64
+_CHECK_INSTANCE_FIELDS = (
+    "dimension",
+    "status",
+    "decision_evidence_fingerprint",
+    "limitation_decision_fingerprint",
+    "_check_fingerprint",
+)
+_RESULT_INSTANCE_FIELDS = (
+    "screening_policy_id",
+    "screening_policy_version",
+    "evaluator_kind",
+    "evaluator_fingerprint",
+    "candidate_fingerprint",
+    "audit_report_fingerprint",
+    "checks",
+    "schema_version",
+    "_screening_result_fingerprint",
+)
+_CHECK_CREATION_SEALS: dict[
+    int,
+    tuple[weakref.ReferenceType[object], tuple[object, ...]],
+] = {}
+_RESULT_CREATION_SEALS: dict[
+    int,
+    tuple[weakref.ReferenceType[object], tuple[object, ...]],
+] = {}
+
+
+def _forget_creation_seal(
+    registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
+    record_key: int,
+    reference: weakref.ReferenceType[object],
+) -> None:
+    """Discard one dead seal without deleting a reused object-identity entry."""
+    current = registry.get(record_key)
+    if current is not None and current[0] is reference:
+        registry.pop(record_key, None)
+
+
+def _seal_creation(
+    record: object,
+    fields: tuple[str, ...],
+    registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
+) -> None:
+    """Bind one exact factory-created object to its normalized creation state."""
+    record_key = id(record)
+    state = vars(record)
+    snapshot = tuple(state[name] for name in fields)
+    reference = weakref.ref(
+        record,
+        lambda collected, key=record_key, target=registry: _forget_creation_seal(
+            target,
+            key,
+            collected,
+        ),
+    )
+    registry[record_key] = (reference, snapshot)
+
+
+def _same_creation_value(current: object, expected: object) -> bool:
+    """Compare normalized immutable state without invoking caller-defined equality."""
+    if type(current) is not type(expected):
+        return False
+    if type(expected) is tuple:
+        current_tuple = current
+        expected_tuple = expected
+        return len(current_tuple) == len(expected_tuple) and all(
+            current_value is expected_value
+            for current_value, expected_value in zip(
+                current_tuple,
+                expected_tuple,
+                strict=True,
+            )
+        )
+    return current == expected
+
+
+def _verify_creation(
+    record: object,
+    fields: tuple[str, ...],
+    registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
+    message: str,
+) -> None:
+    """Reject post-construction field or local-digest rebinding fail-closed."""
+    sealed = registry.get(id(record))
+    if sealed is None or sealed[0]() is not record:
+        raise ValueError(message)
+    state = vars(record)
+    if any(
+        name not in state
+        or not _same_creation_value(state[name], expected)
+        for name, expected in zip(fields, sealed[1], strict=True)
+    ):
+        raise ValueError(message)
 
 
 class ScreeningDimension(str, Enum):
@@ -138,6 +233,7 @@ class SemanticScreeningCheck:
             "_check_fingerprint",
             _sha256_hex(self._content_dict()),
         )
+        _seal_creation(self, _CHECK_INSTANCE_FIELDS, _CHECK_CREATION_SEALS)
 
     def _content_dict(self) -> dict[str, str | None]:
         """Return canonical decision content without derived identity."""
@@ -150,8 +246,15 @@ class SemanticScreeningCheck:
 
     def _verify_seal(self) -> None:
         """Reject post-construction mutation of a screening decision."""
+        message = "screening check no longer matches its factory seal"
+        _verify_creation(
+            self,
+            _CHECK_INSTANCE_FIELDS,
+            _CHECK_CREATION_SEALS,
+            message,
+        )
         if self._check_fingerprint != _sha256_hex(self._content_dict()):
-            raise ValueError("screening check no longer matches its factory seal")
+            raise ValueError(message)
 
     def to_dict(self) -> dict[str, str | None]:
         """Return source-text-free JSON-compatible screening decision content."""
@@ -275,11 +378,19 @@ class CandidateScreeningResult:
             "_screening_result_fingerprint",
             _sha256_hex(self._content_dict()),
         )
+        _seal_creation(self, _RESULT_INSTANCE_FIELDS, _RESULT_CREATION_SEALS)
 
     def _verify_seal(self) -> None:
         """Reject post-construction mutation of a screening result."""
+        message = "screening result no longer matches its factory seal"
+        _verify_creation(
+            self,
+            _RESULT_INSTANCE_FIELDS,
+            _RESULT_CREATION_SEALS,
+            message,
+        )
         if self._screening_result_fingerprint != _sha256_hex(self._content_dict()):
-            raise ValueError("screening result no longer matches its factory seal")
+            raise ValueError(message)
 
     @property
     def is_pilot_eligible(self) -> bool:
