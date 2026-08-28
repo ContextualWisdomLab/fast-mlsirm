@@ -315,6 +315,7 @@ def _validated_andersen_result(
     *,
     n_groups: int,
     n_items: int,
+    n_persons: int,
 ) -> dict[str, object]:
     """Replay the Rust Andersen result contract before public NumPy marshalling."""
     result = _exact_result_mapping(
@@ -338,7 +339,10 @@ def _validated_andersen_result(
     if len(n_used_value) != n_groups:
         raise RuntimeError(_ANDERSEN_RESULT_ERROR)
     n_used = [
-        _exact_nonnegative_int(item, error=_ANDERSEN_RESULT_ERROR) for item in n_used_value
+        _exact_nonnegative_int(
+            item, error=_ANDERSEN_RESULT_ERROR, upper=n_persons
+        )
+        for item in n_used_value
     ]
     converged = result["converged"]
     if type(converged) is not bool:
@@ -439,7 +443,12 @@ def andersen_lr_test(
         max_iter,
         tol,
     )
-    res = _validated_andersen_result(native, n_groups=n_groups, n_items=n_items)
+    res = _validated_andersen_result(
+        native,
+        n_groups=n_groups,
+        n_items=n_items,
+        n_persons=n_persons,
+    )
     return {
         "lr": res["lr"],
         "df": res["df"],

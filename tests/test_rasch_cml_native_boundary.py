@@ -371,6 +371,26 @@ def test_andersen_rejects_hostile_native_result_before_array_callback(monkeypatc
     assert _HostileArray.calls == 0
 
 
+def test_andersen_rejects_native_n_used_outside_person_bound(monkeypatch):
+    """Impossible native counts fail before int64 NumPy marshalling."""
+
+    class _Core:
+        def andersen_lr_test(self, *args):
+            del args
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": [2**100, 2],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    with pytest.raises(RuntimeError, match="invalid Andersen Rust result payload"):
+        andersen_lr_test(_binary(), [0, 0, 1, 1])
+
+
 def test_native_result_replay_preserves_valid_current_shaped_payloads(monkeypatch):
     """Current Rust-shaped built-in payloads preserve public return compatibility."""
 
