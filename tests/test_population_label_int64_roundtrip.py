@@ -129,6 +129,14 @@ def test_population_labels_reject_integer_sequence_at_signed_boundary() -> None:
         _compact_population_labels(labels, 2, "group_id")
 
 
+def test_population_labels_reject_integer_sequence_below_signed_boundary() -> None:
+    """A Python sequence below INT64_MIN must keep the signed-range diagnostic."""
+    labels = [0, -(2**63) - 1]
+
+    with pytest.raises(ValueError, match="signed 64-bit"):
+        _compact_population_labels(labels, 2, "group_id")
+
+
 def test_population_labels_preserve_signed_int64_upper_boundary() -> None:
     """The largest valid signed label remains admissible and order preserving."""
     labels = np.array([0, np.iinfo(np.int64).max], dtype=np.int64)
