@@ -29,3 +29,9 @@
 - The direct Rust crossed estimator now rejects more than `n_effects + 1`
   classification-offset entries before scanning their ordering, keeping
   classification admission bounded by the existing dense-effect cap.
+- The public Rust crossed estimator now preflights its inert precision,
+  iteration, tolerance, and worker controls after dimension/response-work/length
+  admission but before response-value traversal. Invalid execution controls
+  therefore fail closed without scanning response evidence, matching the
+  canonical Python control-first boundary while leaving admitted MAP arithmetic
+  unchanged.
