@@ -70,6 +70,9 @@ pub const MAX_CROSSED_EFFECTS: usize = 128;
 /// Upper bound on Newton iterations accepted from a caller.
 pub const MAX_CROSSED_ITER: usize = 10_000;
 
+/// Upper bound on deterministic CPU worker control accepted from a caller.
+pub const MAX_CROSSED_WORKERS: usize = 10_000;
+
 /// Maximum declared response cells accepted by the crossed estimator.
 pub const MAX_CROSSED_RESPONSE_CELLS: usize = 20_000_000;
 
@@ -86,7 +89,7 @@ pub struct CrossedPersonEffectConfig {
     pub max_iter: usize,
     /// Absolute effect-step convergence tolerance.
     pub tol: f64,
-    /// Deterministic CPU worker count (`>= 1`); does not change the result.
+    /// Deterministic CPU worker count (`1..=10000`); does not change the result.
     pub worker_count: usize,
     /// CPU / GPU / auto device policy for the person-score reduction.
     pub device: Device,
@@ -339,8 +342,10 @@ fn validate_estimator_inputs(
     if !config.tol.is_finite() || config.tol <= 0.0 {
         return Err("tol must be finite and strictly positive".to_string());
     }
-    if config.worker_count == 0 {
-        return Err("worker_count must be at least one".to_string());
+    if !(1..=MAX_CROSSED_WORKERS).contains(&config.worker_count) {
+        return Err(format!(
+            "worker_count must be in 1..={MAX_CROSSED_WORKERS}"
+        ));
     }
     if row_offsets.len() != n_persons + 1 {
         return Err("row_offsets must have length n_persons + 1".to_string());
