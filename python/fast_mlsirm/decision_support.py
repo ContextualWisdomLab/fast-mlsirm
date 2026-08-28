@@ -115,6 +115,7 @@ def _validated_rust_result(
     *,
     action_count: int,
     has_sample_information: bool,
+    information_cost: float = 0.0,
 ) -> tuple[list[float], int, float, float, float | None, float | None]:
     """Replay the concrete PyO3 result contract before public marshalling."""
     invalid = RuntimeError("invalid decision-support Rust result payload")
@@ -154,6 +155,8 @@ def _validated_rust_result(
         if type(evsi) is not float or not isfinite(evsi):
             raise invalid
         if type(net_evsi) is not float or not isfinite(net_evsi):
+            raise invalid
+        if net_evsi != evsi - information_cost:
             raise invalid
     elif evsi is not None or net_evsi is not None:
         raise invalid
@@ -258,6 +261,7 @@ def evaluate_decision_support(
         native_result,
         action_count=action_count,
         has_sample_information=signals is not None,
+        information_cost=info_cost,
     )
     return DecisionSupportResult(
         action_expected_net_values=np.array(action_values, dtype=np.float64),
