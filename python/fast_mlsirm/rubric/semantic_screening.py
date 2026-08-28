@@ -364,13 +364,14 @@ class CandidateScreeningResult:
                 raise ValueError(
                     f"checks[{index}] must be a SemanticScreeningCheck"
                 )
-            check._verify_seal()
-            if check.dimension in by_dimension:
+            verified_check = check._verify_seal()
+            dimension = ScreeningDimension(verified_check["dimension"])
+            if dimension in by_dimension:
                 raise ValueError(
                     "checks must contain exactly one decision for every required "
                     "screening dimension"
                 )
-            by_dimension[check.dimension] = check
+            by_dimension[dimension] = check
         if set(by_dimension) != set(REQUIRED_SCREENING_DIMENSIONS):
             raise ValueError(
                 "checks must contain exactly one decision for every required "
