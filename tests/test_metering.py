@@ -232,6 +232,39 @@ def test_identity_rejects_callback_bearing_mapping_without_observation() -> None
     assert producer_calls == 0
 
 
+def test_identity_rejects_callback_bearing_key_without_comparison() -> None:
+    """An exact dict cannot smuggle a protocol-bearing key into allowlist checks."""
+    callbacks = 0
+
+    class HostileKey(str):
+        def __hash__(self) -> int:
+            nonlocal callbacks
+            callbacks += 1
+            return str.__hash__(self)
+
+        def __eq__(self, other: object) -> bool:
+            nonlocal callbacks
+            callbacks += 1
+            return str.__eq__(self, other)
+
+    key = HostileKey("tenant_reference")
+    identity = {key: "urn:cwl:tenant:test"}
+    callbacks = 0
+
+    try:
+        CanonicalComputeUsageSink(
+            event_builder=_canonical_builder(),
+            event_validator=_validate_usage_event_v1,
+            enqueue=lambda _: None,
+            identity=identity,  # type: ignore[arg-type]
+        )
+    except ValueError as error:
+        assert "identity keys must be exact strings" in str(error)
+    else:
+        raise AssertionError("callback-bearing identity key was accepted")
+    assert callbacks == 0
+
+
 def test_identity_rejects_noncanonical_fields_before_producer_boundary() -> None:
     """Private content cannot enter the count-only producer payload as identity."""
     captured: dict[str, object] = {}
