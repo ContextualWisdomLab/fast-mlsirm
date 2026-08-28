@@ -87,6 +87,30 @@ def test_fit_rejects_invalid_counts_before_producer(
         )
 
 
+def test_identity_over_cardinality_rejects_before_key_scan() -> None:
+    """Impossible identity cardinality is inertly rejected before field scans."""
+
+    class NonExactKey(str):
+        pass
+
+    identity: dict[str, str | None] = {
+        "tenant_reference": "tenant",
+        "billing_account_reference": "account",
+        "billing_principal_reference": "principal",
+        "credential_reference": "credential",
+        "cost_center_reference": "cost-center",
+        NonExactKey("sixth_reference"): "unreachable",
+    }
+
+    with pytest.raises(ValueError, match="identity contains too many fields"):
+        CanonicalComputeUsageSink(
+            event_builder=lambda **_: {"event_contract_version": 1},
+            event_validator=lambda _: (),
+            enqueue=lambda _: None,
+            identity=identity,
+        )
+
+
 def test_builder_result_rejects_boolean_contract_version_before_validator() -> None:
     """Boolean equality cannot impersonate the exact usage-event version integer."""
     validator_calls = 0
