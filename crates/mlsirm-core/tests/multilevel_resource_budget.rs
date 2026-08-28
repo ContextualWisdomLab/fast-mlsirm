@@ -127,6 +127,84 @@ fn rejects_estimator_oversized_row_pointer_work_before_response_value_traversal(
 }
 
 #[test]
+fn rejects_item_parameter_cardinality_before_response_value_traversal() {
+    let error = estimate_crossed_person_effects(
+        &[2.0, 0.0],
+        &[0, 1, 2],
+        &[0, 1],
+        &[1.0, 1.0],
+        &[],
+        &[0.0],
+        &[],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("item-parameter cardinality must fail before response-value traversal");
+
+    assert_eq!(
+        error,
+        "item_slopes and item_intercepts must have length n_items"
+    );
+}
+
+#[test]
+fn rejects_person_offset_cardinality_before_response_value_traversal() {
+    let error = estimate_crossed_person_effects(
+        &[2.0, 0.0],
+        &[0, 1, 2],
+        &[0, 1],
+        &[1.0, 1.0],
+        &[1.0],
+        &[0.0],
+        &[0.0],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("person-offset cardinality must fail before response-value traversal");
+
+    assert_eq!(
+        error,
+        "person_offsets must be empty or have length n_persons"
+    );
+}
+
+#[test]
+fn rejects_row_pointer_cardinality_before_response_value_traversal() {
+    let error = estimate_crossed_person_effects(
+        &[2.0, 0.0],
+        &[0, 2],
+        &[0, 1],
+        &[1.0, 1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("row-pointer cardinality must fail before response-value traversal");
+
+    assert_eq!(error, "row_offsets must have length n_persons + 1");
+}
+
+#[test]
 fn rejects_crossed_worker_count_above_public_control_bound() {
     let error = estimate_crossed_person_effects(
         &[1.0, 0.0],
