@@ -165,6 +165,26 @@ fn uses_compensated_mass_for_credible_interval_admission() {
 }
 
 #[test]
+fn rejects_credible_interval_search_work_above_package_budget() {
+    let samples = [-1.0];
+    let cut_scores = (0..6324)
+        .map(|index| f64::from(index) + 0.5)
+        .collect::<Vec<_>>();
+
+    let result = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &samples,
+        sample_weights: None,
+        cut_scores: &cut_scores,
+        credible_mass: 1.0,
+    });
+
+    assert!(
+        result.is_err(),
+        "credible-set search work above the package budget must fail closed"
+    );
+}
+
+#[test]
 fn is_invariant_to_joint_sample_and_weight_permutation() {
     let cut_scores = [-0.5, 0.5];
     let first = summarize_ordered_profile(OrderedProfileInput {
