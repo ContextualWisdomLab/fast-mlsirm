@@ -346,6 +346,67 @@ def test_optional_project_reference_is_omitted_when_unset() -> None:
     assert "artifact_bytes" not in captured
 
 
+def test_sink_rejects_callback_bearing_builder_result_without_observation() -> None:
+    """Producer result mapping callbacks cannot execute before package admission."""
+    event_callbacks = 0
+    validator_calls = 0
+    queued: list[object] = []
+
+    class HostileEvent(Mapping[str, object]):
+        def __getitem__(self, key: str) -> object:
+            nonlocal event_callbacks
+            event_callbacks += 1
+            raise AssertionError(f"event callback executed for {key}")
+
+        def __iter__(self) -> Iterator[str]:
+            nonlocal event_callbacks
+            event_callbacks += 1
+            raise AssertionError("event iteration callback executed")
+
+        def __len__(self) -> int:
+            nonlocal event_callbacks
+            event_callbacks += 1
+            raise AssertionError("event length callback executed")
+
+        def get(self, key: str, default: object = None) -> object:
+            nonlocal event_callbacks
+            event_callbacks += 1
+            raise AssertionError(f"event get callback executed for {key}")
+
+    def builder(**_: object) -> Mapping[str, object]:
+        return HostileEvent()
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+    try:
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            run_reference="run",
+            artifact_reference="artifact",
+            configuration_reference="config",
+            seed_reference="seed",
+            occurred_at="2026-08-28T00:00:00Z",
+            response_rows=1,
+            response_items=1,
+        )
+    except ValueError as error:
+        assert "event_builder must return an exact dict" in str(error)
+    else:
+        raise AssertionError("callback-bearing producer result was accepted")
+    assert event_callbacks == 0
+    assert validator_calls == 0
+    assert queued == []
+
+
 def test_sink_rejects_non_v1_builder_output() -> None:
     """A producer cannot enqueue an event from a different contract version."""
     queued: list[dict[str, object]] = []
