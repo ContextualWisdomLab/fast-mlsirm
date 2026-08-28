@@ -110,6 +110,8 @@ class CanonicalComputeUsageSink:
         """Store producer-owned build/validation boundaries and durable enqueue."""
         if type(identity) is not dict:
             raise ValueError("identity must be an exact dict")
+        if len(identity) > len(_CANONICAL_IDENTITY_FIELDS):
+            raise ValueError("identity contains too many fields")
         identity_snapshot = dict.copy(identity)
         if any(type(key) is not str for key in identity_snapshot):
             raise ValueError("identity keys must be exact strings")
