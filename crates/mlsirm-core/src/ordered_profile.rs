@@ -8,6 +8,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 const PROBABILITY_TOLERANCE: f64 = 1.0e-12;
+const MAX_CREDIBLE_INTERVAL_CANDIDATES: usize = 20_000_000;
 
 /// Borrowed inputs for one ordered proficiency-domain summary.
 #[derive(Clone, Copy, Debug)]
@@ -60,6 +61,8 @@ pub enum OrderedProfileError {
     NonIncreasingCutScores { index: usize },
     /// The requested credible mass was not finite and in `(0, 1]`.
     InvalidCredibleMass,
+    /// The worst-case contiguous credible-set search exceeds the package work budget.
+    CredibleIntervalWorkLimit { levels: usize },
     /// A posterior moment or normalized probability became non-finite.
     NonFinitePosteriorMoment,
 }
@@ -94,6 +97,10 @@ impl Display for OrderedProfileError {
             Self::InvalidCredibleMass => {
                 formatter.write_str("credible mass must be finite and in (0, 1]")
             }
+            Self::CredibleIntervalWorkLimit { levels } => write!(
+                formatter,
+                "credible-level interval search for {levels} levels exceeds the package work limit"
+            ),
             Self::NonFinitePosteriorMoment => {
                 formatter.write_str("posterior summary exceeded the finite numeric range")
             }
@@ -250,6 +257,24 @@ fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileEr
         || input.credible_mass > 1.0
     {
         return Err(OrderedProfileError::InvalidCredibleMass);
+    }
+
+    let level_count = input
+        .cut_scores
+        .len()
+        .checked_add(1)
+        .ok_or(OrderedProfileError::CredibleIntervalWorkLimit { levels: usize::MAX })?;
+    let adjacent_count = level_count
+        .checked_add(1)
+        .ok_or(OrderedProfileError::CredibleIntervalWorkLimit { levels: level_count })?;
+    let candidate_count = if level_count.is_multiple_of(2) {
+        (level_count / 2).checked_mul(adjacent_count)
+    } else {
+        level_count.checked_mul(adjacent_count / 2)
+    }
+    .ok_or(OrderedProfileError::CredibleIntervalWorkLimit { levels: level_count })?;
+    if candidate_count > MAX_CREDIBLE_INTERVAL_CANDIDATES {
+        return Err(OrderedProfileError::CredibleIntervalWorkLimit { levels: level_count });
     }
     Ok(())
 }
