@@ -10,3 +10,8 @@
   screening contract to the governed item-bank path without adding provider
   calls or Python psychometric arithmetic; calibration and validity remain
   downstream Rust-backed evidence gates.
+- Screening-bound pilot records now advertise the dedicated
+  `schema_version="2.0"`, while the public generated-item audit/admission policy
+  is version `2.0.0`. Legacy pilot-record schema `1.0` is rejected explicitly;
+  unrelated rubric/blueprint contracts retain their existing shared schema
+  version rather than being silently re-versioned.
