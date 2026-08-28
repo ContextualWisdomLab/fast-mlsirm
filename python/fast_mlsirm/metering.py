@@ -43,14 +43,28 @@ class CanonicalComputeUsageSink:
         identity: Mapping[str, str | None],
     ) -> None:
         """Store producer-owned build/validation boundaries and durable enqueue."""
-        unexpected = set(identity).difference(_CANONICAL_IDENTITY_FIELDS)
+        try:
+            identity_snapshot = dict(identity)
+        except Exception:
+            raise ValueError("identity could not be read safely") from None
+        unexpected = set(identity_snapshot).difference(_CANONICAL_IDENTITY_FIELDS)
         if unexpected:
             names = ", ".join(sorted(unexpected))
             raise ValueError(f"identity contains noncanonical fields: {names}")
+        invalid_values = sorted(
+            key
+            for key, value in identity_snapshot.items()
+            if value is not None and type(value) is not str
+        )
+        if invalid_values:
+            names = ", ".join(invalid_values)
+            raise ValueError(f"identity references must be exact strings or None: {names}")
         self._event_builder = event_builder
         self._event_validator = event_validator
         self._enqueue = enqueue
-        self._identity = dict(identity)
+        self._identity = {
+            key: value for key, value in identity_snapshot.items() if value is not None
+        }
 
     def _validate_and_enqueue(self, event: Mapping[str, Any]) -> None:
         """Fail closed unless the producer output is a valid canonical v1 event."""
