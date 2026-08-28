@@ -365,3 +365,56 @@ fn crossed_estimator_matches_python_fsum_at_membership_tolerance_boundary() {
         "membership weights must sum to one within every classification"
     );
 }
+
+#[test]
+fn crossed_estimator_accepts_python_fsum_inside_membership_tolerance() {
+    // CPython math.fsum returns 1.0000000000009999 for the first classification,
+    // which is inside the canonical absolute 1e-12 tolerance. The predecessor
+    // Kahan accumulation rounds one ulp upward to 1.000000000001 and rejects it.
+    // Every individual weight remains in the canonical (0, 1] domain.
+    let first_classification = [
+        1.9080461298558075e-16,
+        9.26012622591619e-16,
+        5.813061702718314e-16,
+        1.6807044696602153e-17,
+        8.606165289348356e-9,
+        3.389135198729678e-11,
+        0.00656530695076703,
+        0.00962474423041273,
+        0.9837618364076457,
+        4.222039461884459e-5,
+        1.077907614020802e-6,
+        1.0119314101587687e-15,
+        1.1534629612038173e-9,
+        8.128695222221698e-9,
+        3.934149096477111e-14,
+        4.795391627014789e-6,
+        7.960559777858064e-10,
+    ];
+    let mut weights = first_classification.to_vec();
+    weights.push(1.0);
+    let context_indices: Vec<usize> = (0..=17).collect();
+
+    let result = estimate_crossed_person_effects(
+        &[1.0],
+        &[0, 18],
+        &context_indices,
+        &weights,
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 17, 19],
+        1,
+        1,
+        19,
+        CrossedPersonEffectConfig {
+            prior_precision: 1.0,
+            max_iter: 5,
+            tol: 1e-8,
+            worker_count: 1,
+            device: Device::Cpu,
+        },
+    );
+
+    result.expect("Rust admission must accept the Python-fsum side of the tolerance boundary");
+}
