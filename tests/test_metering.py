@@ -36,6 +36,7 @@ def test_simulation_export_uses_real_response_shape_without_content() -> None:
         artifact_reference="urn:cwl:artifact:simulation-7",
         configuration_reference="urn:cwl:config:simulation-7",
         seed_reference="urn:cwl:seed:7",
+        project_reference="urn:cwl:project:measurement",
         occurred_at="2026-08-28T00:00:00Z",
     )
 
@@ -43,6 +44,7 @@ def test_simulation_export_uses_real_response_shape_without_content() -> None:
     assert event["response_rows"] == 3
     assert event["response_items"] == 2
     assert event["seed_reference"] == "urn:cwl:seed:7"
+    assert event["project_reference"] == "urn:cwl:project:measurement"
     assert "responses" not in event
 
 

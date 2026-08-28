@@ -59,6 +59,7 @@ class CanonicalComputeUsageSink:
         configuration_reference: str,
         seed_reference: str,
         occurred_at: str,
+        project_reference: str | None = None,
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one simulation's response-cell and artifact counts."""
@@ -68,6 +69,7 @@ class CanonicalComputeUsageSink:
             artifact_reference=artifact_reference,
             configuration_reference=configuration_reference,
             seed_reference=seed_reference,
+            project_reference=project_reference,
             model_code="mls2plm",
             backend_code="numpy",
             occurred_at=occurred_at,
@@ -90,6 +92,7 @@ class CanonicalComputeUsageSink:
         occurred_at: str,
         response_rows: int,
         response_items: int,
+        project_reference: str | None = None,
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one fit's response-cell and artifact counts."""
@@ -99,6 +102,7 @@ class CanonicalComputeUsageSink:
             artifact_reference=artifact_reference,
             configuration_reference=configuration_reference,
             seed_reference=seed_reference,
+            project_reference=project_reference,
             model_code=result.model.lower(),
             backend_code=result.backend.lower(),
             occurred_at=occurred_at,
