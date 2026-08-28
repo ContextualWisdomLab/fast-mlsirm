@@ -41,6 +41,8 @@ pub const MAX_CONTEXT_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
 
 fn preflight_crossed_estimator_controls(
     y: &[f64],
+    row_offsets: &[usize],
+    context_indices: &[usize],
     classification_offsets: &[usize],
     n_persons: usize,
     n_items: usize,
@@ -68,6 +70,16 @@ fn preflight_crossed_estimator_controls(
     if y.len() != expected {
         return Err("y must have length n_persons * n_items".to_string());
     }
+    if row_offsets.len() > MAX_CONTEXT_ROW_OFFSETS {
+        return Err(format!(
+            "row_offsets exceeds the CSR row-pointer cap of {MAX_CONTEXT_ROW_OFFSETS}"
+        ));
+    }
+    if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
+        return Err(format!(
+            "context_indices exceeds the membership-edge cap of {MAX_CONTEXT_MEMBERSHIPS}"
+        ));
+    }
     if !config.prior_precision.is_finite() || config.prior_precision <= 0.0 {
         return Err("prior_precision must be finite and strictly positive".to_string());
     }
@@ -88,10 +100,10 @@ fn preflight_crossed_estimator_controls(
 
 /// Estimate crossed / multiple-membership person effects after bounded control preflight.
 ///
-/// Cheap dimension, response-work, response-length, and execution-control validation
-/// runs before any response-value traversal. The private estimator repeats those
-/// invariants as defense in depth and owns all likelihood, score/information,
-/// Newton, centering, and CPU/GPU numerical work.
+/// Cheap dimension, response-work, response-length, membership-resource, and
+/// execution-control validation runs before any response-value traversal. The
+/// private estimator repeats those invariants as defense in depth and owns all
+/// likelihood, score/information, Newton, centering, and CPU/GPU numerical work.
 #[allow(clippy::too_many_arguments)]
 pub fn estimate_crossed_person_effects(
     y: &[f64],
@@ -109,6 +121,8 @@ pub fn estimate_crossed_person_effects(
 ) -> Result<CrossedPersonEffectEstimate, String> {
     preflight_crossed_estimator_controls(
         y,
+        row_offsets,
+        context_indices,
         classification_offsets,
         n_persons,
         n_items,
