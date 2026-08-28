@@ -34,6 +34,7 @@ _INT64_MAX = (1 << 63) - 1
 _INT64_EXCLUSIVE_UPPER_FLOAT = float(1 << 63)
 _MAX_MOKKEN_RESPONSE_CELLS = 20_000_000
 _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_MOKKEN_RESPONSE_CELLS
+_MAX_MOKKEN_MATRIX_CELLS = 4_000_000
 
 
 @dataclass
@@ -89,6 +90,14 @@ def _raise_response_structural_resource_error() -> None:
     raise ValueError(
         "responses exceed "
         f"{_MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:,} structural nodes"
+    )
+
+
+def _raise_item_matrix_resource_error(n_items: int) -> None:
+    """Reject quadratic Mokken item work outside the Rust matrix budget."""
+    raise ValueError(
+        f"responses imply {n_items * n_items:,} item-matrix cells; "
+        f"the limit is {_MAX_MOKKEN_MATRIX_CELLS:,}"
     )
 
 
@@ -149,6 +158,8 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     if raw.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = raw.shape
+    if n_items * n_items > _MAX_MOKKEN_MATRIX_CELLS:
+        _raise_item_matrix_resource_error(n_items)
     if np.iscomplexobj(raw):
         raise ValueError("responses must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
