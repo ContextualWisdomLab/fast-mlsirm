@@ -265,6 +265,7 @@ def _validated_subscore_result(
     value: object,
     *,
     n_persons: int,
+    expected_k: int,
 ) -> tuple[
     list[float],
     float,
@@ -290,11 +291,11 @@ def _validated_subscore_result(
     keys = list(value.keys())
     if any(type(key) is not str for key in keys) or set(keys) != _SUBSCORE_RESULT_KEYS:
         _invalid_subscore_result()
-
-    alpha = _native_float_vector(value["alpha"])
-    k = len(alpha)
-    if k < 2:
+    if expected_k < 2:
         _invalid_subscore_result()
+
+    alpha = _native_float_vector(value["alpha"], expected_length=expected_k)
+    k = expected_k
     alpha_total = _native_float_scalar(value["alpha_total"])
     corr = _native_float_vector(value["corr"], expected_length=(k + 1) * (k + 1))
 
@@ -383,7 +384,8 @@ def subscore_analysis(
     enforced before NumPy materialization, and callback-bearing or cyclic
     providers fail closed. The Rust result is replayed against the exact
     package-owned field, scalar, finiteness, and cardinality contract before
-    NumPy result marshalling.
+    NumPy result marshalling, including the subscale count implied by the
+    admitted group evidence.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
@@ -429,6 +431,7 @@ def subscore_analysis(
     if np.any(g >= n_items):
         # trust boundary: the subscale count drives Rust-side allocations
         raise ValueError("groups indices must be < n_items")
+    expected_k = int(np.max(g)) + 1
 
     from .fitstats import _core_module
 
@@ -457,8 +460,12 @@ def subscore_analysis(
         subscore_s,
         subscore_x,
         subscore_sx,
-    ) = _validated_subscore_result(raw_result, n_persons=int(n_persons))
-    k = len(alpha)
+    ) = _validated_subscore_result(
+        raw_result,
+        n_persons=int(n_persons),
+        expected_k=expected_k,
+    )
+    k = expected_k
     return SubscoreResult(
         alpha=np.asarray(alpha, dtype=np.float64),
         alpha_total=alpha_total,
