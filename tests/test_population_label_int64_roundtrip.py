@@ -54,6 +54,17 @@ def test_population_labels_preserve_callback_free_scalar_sequence() -> None:
     assert ids.tolist() == [2, 1, 0, 2]
 
 
+def test_population_labels_reject_wrong_length_builtin_before_scalar_validation() -> None:
+    """Known built-in length mismatches fail before scalar traversal/normalization."""
+
+    labels = [object()]
+    with pytest.raises(
+        ValueError,
+        match=r"group_id must be a 1-D array of length n_persons \(2\)",
+    ):
+        _compact_population_labels(labels, 2, "group_id")
+
+
 def test_population_labels_reject_ndarray_subclass_before_array_protocol() -> None:
     """Container subclasses cannot replace the trusted ndarray carrier."""
 
