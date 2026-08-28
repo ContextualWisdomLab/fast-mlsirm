@@ -196,3 +196,31 @@ fn rejects_nonfinite_utility_contrasts() {
     .unwrap_err()
     .contains("utility contrast"));
 }
+
+#[test]
+fn rejects_oversized_evsi_work_before_value_validation() {
+    let action_count = 500;
+    let state_count = 100;
+    let signal_count = 500;
+    let state_probabilities = vec![1.0 / state_count as f64; state_count];
+    let mut action_utilities = vec![0.0; action_count * state_count];
+    action_utilities[0] = f64::NAN;
+    let intervention_costs = vec![0.0; action_count];
+    let signal_joint_probabilities =
+        vec![1.0 / (signal_count * state_count) as f64; signal_count * state_count];
+
+    let error = evaluate(
+        &state_probabilities,
+        &action_utilities,
+        action_count,
+        state_count,
+        &intervention_costs,
+        0,
+        Some(&signal_joint_probabilities),
+        signal_count,
+        0.0,
+    )
+    .unwrap_err();
+
+    assert!(error.contains("EVSI work exceeds"), "{error}");
+}
