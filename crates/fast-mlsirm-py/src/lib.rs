@@ -2870,7 +2870,7 @@ fn evaluate_decision_support(
     let out = pyo3::types::PyDict::new(py);
     out.set_item(
         "action_expected_net_values",
-        numpy::PyArray1::from_slice(py, &result.action_expected_net_values),
+        result.action_expected_net_values,
     )?;
     out.set_item("selected_action", result.selected_action)?;
     out.set_item(
