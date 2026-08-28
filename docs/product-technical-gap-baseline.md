@@ -1,7 +1,7 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-28T04:12:21Z**<br>
+Observed at: **2026-08-28T04:41:11Z**<br>
 Protected-main basis: **`main@45627700…`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
@@ -244,18 +244,18 @@ new canonical capability-maturity state.
 ## 7. Current pull-request evidence
 
 The following table records high-leverage live work observed on
-2026-08-28T04:12:21Z against protected `main@45627700…`. Every row is
+2026-08-28T04:41:11Z against protected `main@45627700…`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
-| [#1525](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1525) | `6491b3e9…` | validates the Rust `subscore_analysis` result envelope before NumPy marshalling (issue [#1524](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1524)) | draft; ordinary required CI, Rust, package, fuzz, coverage, and security checks passed, but required `opencode-review` lacks a current-head verdict and no independent review is present; active-PR evidence is not protected-main capability |
+| [#1525](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1525) | `5558a46a…` | validates the Rust `subscore_analysis` result envelope before NumPy marshalling (issue [#1524](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1524)) | ready; ordinary required CI, Rust, package, fuzz, coverage, and security checks passed, but required `opencode-review` failed and no independent review is present; active-PR evidence is not protected-main capability |
 | [#1523](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1523) | `b76092d4…` | aligns the traceability matrix with the protected-main v1/v2 lineage-anchor status and keeps unavailable v2 producer/estimator work out of implemented claims | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval remains required |
 | [#1522](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1522) | `b73d7686…` | seals multigroup/multilevel population-label admission against caller coercion callbacks (issue [#1521](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1521)) | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval and protected merge are absent |
-| [#1519](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1519) | `c9d39672…` | refreshes this buyer-facing protected-main product/technical gap inventory and corrects the longitudinal citation/status record | ordinary CI, Rust, package, fuzz, coverage, and security checks passed; required `opencode-review` lacks a current-head verdict; independent approval and protected merge are absent |
+| [#1519](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1519) | `c9d39672…` | refreshes this buyer-facing protected-main product/technical gap inventory and corrects the longitudinal citation/status record | ordinary required CI, Rust, package, fuzz, coverage, and security checks passed; required `opencode-review` failed; independent approval and protected merge are absent |
 | [#1518](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1518) | `35ffcdc1…` | Rust ordered posterior-draw summary with weighted uncertainty, credible-level ambiguity, and fail-closed evidence admission (issue [#1484](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1484)) | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval and protected merge are absent |
-| [#1516](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1516) | `303872c8…` | seals Rasch CML structural response traversal and native result replay before public marshalling (issues [#1515](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1515)/[#1517](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1517)) | ready; ordinary CI, Rust, package, fuzz, coverage, and security checks passed; an earlier non-required Strix run reported a report-mapping failure, and independent approval remains required |
+| [#1516](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1516) | `19ecd219…` | seals Rasch CML structural response traversal and native result replay before public marshalling (issues [#1515](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1515)/[#1517](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1517)) | ready; required checks are rerunning on this exact head after a native-count boundary repair; an earlier non-required Strix run reported a report-mapping failure, and independent approval remains required |
 | [#1510](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1510) | `a4e03857…` | bounds KSIRT response evidence and replays native result shape before NumPy marshalling (issues [#1507](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1507)–[#1514](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1514)) | ready; current CI, Rust, package, fuzz, coverage, and security checks passed; independent approval still required |
 | [#1506](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1506) | `21babc2f…` | bounds Mokken zero-cell structural traversal before NumPy materialization (issue [#1505](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1505)) | ready; current CI, Rust, package, fuzz, coverage, and security checks passed; independent approval still required |
 | [#1504](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1504) | `e8de9421…` | applies the cross-engine report accessibility palette changes | ready; current CI, Rust, package, fuzz, coverage, and security checks passed; independent approval still required |
@@ -272,7 +272,7 @@ check on any row is not a protected-main capability until the PR is merged.
 | [#1457](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1457) | `94699c5b…` | exposes the Rust interaction-map explained-share projection | draft child of #1417; currently conflicting and requires parent synchronization before review |
 
 At this observation, GitHub REST enumerated **20 open pull requests** and GitHub
-search enumerated **50 open issues**. The current direct-to-main queue is
+search enumerated **51 open issues**. The current direct-to-main queue is
 dominated by bounded native-boundary and result-replay fixes; the release stack
 is rooted at #1471, and the interaction-map stack is rooted at #1417. The
 long-lived product gaps remain #621 (bounded 1.0 capability/support matrix) and
