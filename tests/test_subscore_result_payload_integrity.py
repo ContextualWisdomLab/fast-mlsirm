@@ -57,7 +57,7 @@ def _valid_native_result() -> dict[str, object]:
         "beta": [0.3, 0.4],
         "gamma": [0.5, 0.6],
         "added_value_s": [True, True],
-        "added_value_sx": [True, True],
+        "added_value_sx": [False, False],
         "observed": [1.0, 1.0, 1.0, 1.0, 2.0, 0.0],
         "total": [2.0, 2.0, 2.0],
         "subscore_s": [0.9, 1.1, 1.0, 1.0, 1.8, 0.2],
@@ -84,7 +84,7 @@ def _self_consistent_k3_native_result() -> dict[str, object]:
         "beta": [0.3, 0.4, 0.35],
         "gamma": [0.5, 0.6, 0.55],
         "added_value_s": [True, True, True],
-        "added_value_sx": [True, True, True],
+        "added_value_sx": [False, False, False],
         "observed": [1.0] * (n_persons * k),
         "total": [3.0] * n_persons,
         "subscore_s": [1.0] * (n_persons * k),
@@ -150,6 +150,31 @@ def test_subscore_analysis_rejects_native_values_outside_rust_domains(
 def test_subscore_analysis_rejects_native_subscale_count_not_in_group_evidence() -> None:
     with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
         _run_with_result(_self_consistent_k3_native_result())
+
+
+def test_subscore_analysis_rejects_prmse_s_not_equal_to_alpha() -> None:
+    result = _valid_native_result()
+    result["prmse_s"] = [0.79, 0.9]
+
+    with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
+        _run_with_result(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("added_value_s", [False, True]),
+        ("added_value_sx", [True, False]),
+    ],
+)
+def test_subscore_analysis_rejects_decisions_inconsistent_with_prmse(
+    field: str, invalid_value: object
+) -> None:
+    result = _valid_native_result()
+    result[field] = invalid_value
+
+    with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
+        _run_with_result(result)
 
 
 def test_subscore_analysis_accepts_current_rust_shaped_payload() -> None:
