@@ -173,3 +173,13 @@ def test_population_labels_preserve_float16_without_boundary_warning() -> None:
 
     assert n_populations == 2
     assert ids.tolist() == [0, 1]
+
+
+def test_population_labels_preserve_mixed_sequence_identity_before_numpy_promotion() -> None:
+    """Heterogeneous exact labels must not collapse through float64 promotion."""
+    labels = [2**53 + 1, float(2**53)]
+
+    ids, n_populations = _compact_population_labels(labels, 2, "group_id")
+
+    assert n_populations == 2
+    assert ids.tolist() == [1, 0]
