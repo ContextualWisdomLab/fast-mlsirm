@@ -20,19 +20,13 @@ class ComputeUsageEventValidator(Protocol):
     def __call__(self, event: Any) -> tuple[str, ...]: ...
 
 
-_RESERVED_EVENT_FIELDS = frozenset(
+_CANONICAL_IDENTITY_FIELDS = frozenset(
     {
-        "run_reference",
-        "artifact_reference",
-        "configuration_reference",
-        "seed_reference",
-        "model_code",
-        "backend_code",
-        "occurred_at",
-        "response_rows",
-        "response_items",
-        "artifact_bytes",
-        "project_reference",
+        "tenant_reference",
+        "billing_account_reference",
+        "billing_principal_reference",
+        "credential_reference",
+        "cost_center_reference",
     }
 )
 
@@ -49,10 +43,10 @@ class CanonicalComputeUsageSink:
         identity: Mapping[str, str | None],
     ) -> None:
         """Store producer-owned build/validation boundaries and durable enqueue."""
-        reserved = _RESERVED_EVENT_FIELDS.intersection(identity)
-        if reserved:
-            names = ", ".join(sorted(reserved))
-            raise ValueError(f"identity contains reserved event fields: {names}")
+        unexpected = set(identity).difference(_CANONICAL_IDENTITY_FIELDS)
+        if unexpected:
+            names = ", ".join(sorted(unexpected))
+            raise ValueError(f"identity contains noncanonical fields: {names}")
         self._event_builder = event_builder
         self._event_validator = event_validator
         self._enqueue = enqueue
