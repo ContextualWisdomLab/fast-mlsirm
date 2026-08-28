@@ -253,8 +253,13 @@ def test_screening_result_construction_uses_verified_check_dimensions(
     assert payload["checks"][0]["dimension"] == original_dimension.value
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    ("candidate_fingerprint", "audit_report_fingerprint"),
+)
 def test_pilot_admission_uses_one_verified_screening_snapshot(
     monkeypatch: pytest.MonkeyPatch,
+    field_name: str,
 ) -> None:
     """Pilot admission never rereads screening provenance after seal verification."""
     item, audit_report = audited_candidate()
@@ -267,12 +272,12 @@ def test_pilot_admission_uses_one_verified_screening_snapshot(
         evaluator_fingerprint=fp("a"),
         checks=all_checks(),
     )
-    original_candidate_fingerprint = result.candidate_fingerprint
+    original_value = getattr(result, field_name)
     verify_seal = screening.CandidateScreeningResult._verify_seal
 
     def verify_then_rebind(target):
         verified = verify_seal(target)
-        object.__setattr__(target, "candidate_fingerprint", fp("0"))
+        object.__setattr__(target, field_name, fp("0"))
         return verified
 
     monkeypatch.setattr(
@@ -292,8 +297,8 @@ def test_pilot_admission_uses_one_verified_screening_snapshot(
         occasion_id="occasion_window_alpha",
     )
 
-    assert result.candidate_fingerprint == fp("0")
-    assert pilot.candidate_fingerprint == original_candidate_fingerprint
+    assert getattr(result, field_name) == fp("0")
+    assert getattr(pilot, field_name) == original_value
 
 
 def test_valid_screening_creation_seals_preserve_public_identity() -> None:
