@@ -163,8 +163,10 @@ def weighted_contextual_effect(
         key ``design`` references. Required values are snapshotted exactly once
         without invoking caller-defined membership callbacks.
     worker_count:
-        Number of deterministic worker threads (``>= 1``); the result does
-        not depend on this value (see the Rust core's determinism proof).
+        Number of deterministic worker threads. It must be an exact built-in
+        ``int`` or concrete NumPy integer scalar in the native non-negative
+        integer range, and at least one; the result does not depend on this
+        value (see the Rust core's determinism proof).
 
     Returns
     -------
@@ -175,9 +177,10 @@ def weighted_contextual_effect(
     Raises
     ------
     ValueError
-        If ``worker_count < 1``, the design fails integrity verification, or a
-        caller effect cannot be read/converted safely. Numerical finiteness is
-        validated by the Rust core after marshalling.
+        If ``worker_count`` is not a supported positive integer, the design
+        fails integrity verification, or a caller effect cannot be
+        read/converted safely. Numerical finiteness is validated by the Rust
+        core after marshalling.
     KeyError
         If ``context_effects`` is missing a key ``design`` references.
     """
