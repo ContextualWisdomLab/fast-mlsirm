@@ -71,7 +71,7 @@ fn chooses_the_lower_interval_when_equal_mass_intervals_tie() {
 }
 
 #[test]
-fn breaks_shortest_interval_ties_by_lower_start_not_probability_mass() {
+fn prefers_more_probability_mass_before_lower_start_tie_break() {
     let samples = [-1.0, 1.0];
     let weights = [2.0, 3.0];
     let cut_scores = [0.0];
@@ -86,7 +86,8 @@ fn breaks_shortest_interval_ties_by_lower_start_not_probability_mass() {
 
     assert_eq!(summary.level_probabilities, vec![0.4, 0.6]);
     assert_eq!(summary.reported_level_index, Some(1));
-    assert_eq!(summary.credible_level_indices, vec![0]);
+    assert_eq!(summary.credible_level_indices, vec![1]);
+    assert!(summary.credible_level_indices.contains(&1));
 }
 
 #[test]
