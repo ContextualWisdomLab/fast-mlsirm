@@ -278,6 +278,32 @@ def _validate_reliability_prmse_domains(
             _invalid_subscore_result()
 
 
+def _validate_rust_cross_field_invariants(
+    *,
+    alpha: list[float],
+    prmse_s: list[float],
+    prmse_x: list[float],
+    prmse_sx: list[float],
+    added_value_s: list[bool],
+    added_value_sx: list[bool],
+) -> None:
+    """Replay deterministic identities already established by the Rust owner."""
+    if prmse_s != alpha:
+        _invalid_subscore_result()
+    if any(
+        decision != (ps > px)
+        for decision, ps, px in zip(added_value_s, prmse_s, prmse_x, strict=True)
+    ):
+        _invalid_subscore_result()
+    if any(
+        decision != (psx > max(ps, px) + 0.01)
+        for decision, psx, ps, px in zip(
+            added_value_sx, prmse_sx, prmse_s, prmse_x, strict=True
+        )
+    ):
+        _invalid_subscore_result()
+
+
 def _validated_subscore_result(
     value: object,
     *,
@@ -340,6 +366,14 @@ def _validated_subscore_result(
     gamma = _native_float_vector(value["gamma"], expected_length=k)
     added_value_s = _native_bool_vector(value["added_value_s"], expected_length=k)
     added_value_sx = _native_bool_vector(value["added_value_sx"], expected_length=k)
+    _validate_rust_cross_field_invariants(
+        alpha=alpha,
+        prmse_s=prmse_s,
+        prmse_x=prmse_x,
+        prmse_sx=prmse_sx,
+        added_value_s=added_value_s,
+        added_value_sx=added_value_sx,
+    )
 
     person_subscore_length = n_persons * k
     observed = _native_float_vector(
