@@ -54,6 +54,55 @@ def test_population_labels_preserve_callback_free_scalar_sequence() -> None:
     assert ids.tolist() == [2, 1, 0, 2]
 
 
+def test_population_labels_reject_ndarray_subclass_before_array_protocol() -> None:
+    """Container subclasses cannot replace the trusted ndarray carrier."""
+
+    class ArraySubclass(np.ndarray):
+        calls = 0
+
+        def __array__(self, dtype=None, copy=None):
+            del dtype, copy
+            type(self).calls += 1
+            return np.array([0, 1], dtype=np.int64)
+
+    labels = np.array([0, 1], dtype=np.int64).view(ArraySubclass)
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(labels, 2, "group_id")
+
+    assert ArraySubclass.calls == 0
+
+
+def test_population_labels_reject_container_and_scalar_subclasses() -> None:
+    """Exact built-in containers and numeric scalars are the only sequences."""
+
+    class ListSubclass(list):
+        pass
+
+    class IntSubclass(int):
+        calls = 0
+
+        def __int__(self):
+            type(self).calls += 1
+            return super().__int__()
+
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(ListSubclass([0, 1]), 2, "group_id")
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels([IntSubclass(0), 1], 2, "group_id")
+
+    assert IntSubclass.calls == 0
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [np.array(["0", "1"]), np.array([object(), object()], dtype=object)],
+)
+def test_population_labels_reject_string_and_object_storage(labels: np.ndarray) -> None:
+    """Non-numeric ndarray storage is rejected without element coercion."""
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(labels, 2, "group_id")
+
+
 def test_population_labels_reject_unsigned_int64_narrowing_overflow() -> None:
     """Unsigned labels above INT64_MAX must not wrap into the reference group."""
     labels = np.array([0, np.iinfo(np.uint64).max], dtype=np.uint64)

@@ -20,6 +20,27 @@ from .types import FitResult, MLSIRMParams
 
 _MARGINAL_CAPABILITY_VERSION = 1
 
+_TRUSTED_POPULATION_LABEL_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+
 
 def _compact_population_labels(raw, n_persons: int, name: str):
     """Validate and compact caller-supplied population labels to contiguous
@@ -30,9 +51,24 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     force unbounded population allocations (memory-exhaustion DoS)."""
     import numpy as _np
 
-    arr = _np.asarray(raw)
+    if type(raw) is _np.ndarray:
+        arr = raw
+    elif type(raw) in (list, tuple):
+        if any(type(value) not in _TRUSTED_POPULATION_LABEL_SCALAR_TYPES for value in raw):
+            raise ValueError(f"{name} must contain exact real numeric scalars")
+        try:
+            arr = _np.asarray(raw)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be a 1-D numeric array") from exc
+    else:
+        raise ValueError(f"{name} must be a 1-D numeric array")
     if arr.ndim != 1 or arr.shape[0] != n_persons:
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
+    if arr.dtype.kind not in {"b", "i", "u", "f"}:
+        if arr.dtype.kind == "O" and type(raw) in (list, tuple):
+            if any(type(value) is int and value > _np.iinfo(_np.int64).max for value in raw):
+                raise ValueError(f"{name} must fit in signed 64-bit integers")
+        raise ValueError(f"{name} must contain only real numeric values")
     validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
     if not _np.all(_np.isfinite(validated)):
         raise ValueError(f"{name} must be finite")
