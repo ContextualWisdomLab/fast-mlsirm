@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from .semantic_screening import CandidateScreeningResult
 
 AUDIT_POLICY_ID = "generated_item_audit"
-AUDIT_POLICY_VERSION = "1.0.0"
+AUDIT_POLICY_VERSION = "2.0.0"
 
 
 def audit_generated_item_candidate(
