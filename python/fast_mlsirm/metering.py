@@ -53,6 +53,16 @@ def _nonnegative_int(
     return value
 
 
+def _exact_2d_shape(value: object) -> tuple[int, int]:
+    """Admit one inert two-dimensional response shape as count metadata."""
+    if type(value) is not tuple or len(value) != 2:
+        raise ValueError("response shape must be an exact 2-D shape")
+    response_rows = _nonnegative_int("response_rows", value[0])
+    response_items = _nonnegative_int("response_items", value[1])
+    assert response_rows is not None and response_items is not None
+    return response_rows, response_items
+
+
 def _snapshot_exact_json(
     value: object,
     *,
@@ -188,8 +198,8 @@ class CanonicalComputeUsageSink:
         admitted_artifact_bytes = _nonnegative_int(
             "artifact_bytes", artifact_bytes, optional=True
         )
-        response_rows = _nonnegative_int("response_rows", data.Y.shape[0])
-        response_items = _nonnegative_int("response_items", data.Y.shape[1])
+        response_shape = data.Y.shape
+        response_rows, response_items = _exact_2d_shape(response_shape)
         payload: dict[str, Any] = {
             **self._identity,
             "run_reference": admitted_run_reference,
@@ -240,9 +250,11 @@ class CanonicalComputeUsageSink:
         admitted_artifact_bytes = _nonnegative_int(
             "artifact_bytes", artifact_bytes, optional=True
         )
-        if type(result.model) is not str:
+        model = result.model
+        backend = result.backend
+        if type(model) is not str:
             raise ValueError("result.model must be an exact string")
-        if type(result.backend) is not str:
+        if type(backend) is not str:
             raise ValueError("result.backend must be an exact string")
         payload: dict[str, Any] = {
             **self._identity,
@@ -250,8 +262,8 @@ class CanonicalComputeUsageSink:
             "artifact_reference": admitted_artifact_reference,
             "configuration_reference": admitted_configuration_reference,
             "seed_reference": admitted_seed_reference,
-            "model_code": result.model.lower(),
-            "backend_code": result.backend.lower(),
+            "model_code": model.lower(),
+            "backend_code": backend.lower(),
             "occurred_at": admitted_occurred_at,
             "response_rows": admitted_response_rows,
             "response_items": admitted_response_items,
