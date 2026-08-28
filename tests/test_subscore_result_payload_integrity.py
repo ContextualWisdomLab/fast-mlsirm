@@ -124,6 +124,26 @@ def test_subscore_analysis_rejects_native_cardinality_mismatch_before_reshape() 
         _run_with_result(result)
 
 
+def test_subscore_analysis_rejects_asymmetric_native_correlation_matrix() -> None:
+    result = _valid_native_result()
+    corr = list(result["corr"])
+    corr[1] = 0.25
+    result["corr"] = corr
+
+    with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
+        _run_with_result(result)
+
+
+def test_subscore_analysis_rejects_asymmetric_disattenuated_correlation() -> None:
+    result = _valid_native_result()
+    disattenuated = list(result["disattenuated_corr"])
+    disattenuated[1] = 0.4
+    result["disattenuated_corr"] = disattenuated
+
+    with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
+        _run_with_result(result)
+
+
 def test_subscore_analysis_rejects_nonfinite_native_values() -> None:
     result = _valid_native_result()
     result["alpha"] = [float("nan"), 0.9]
