@@ -208,7 +208,7 @@ def test_identity_rejects_noncanonical_fields_before_producer_boundary() -> None
 
 
 def test_optional_project_reference_is_omitted_when_unset() -> None:
-    """Older builders do not receive an omitted optional field."""
+    """Older builders do not receive omitted optional fields."""
     captured: dict[str, object] = {}
     sink = CanonicalComputeUsageSink(
         event_builder=_canonical_builder(captured),
@@ -228,6 +228,7 @@ def test_optional_project_reference_is_omitted_when_unset() -> None:
     )
 
     assert "project_reference" not in captured
+    assert "artifact_bytes" not in captured
 
 
 def test_sink_rejects_non_v1_builder_output() -> None:
