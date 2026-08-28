@@ -10,6 +10,50 @@ import pytest
 from fast_mlsirm.fit import _compact_population_labels
 
 
+def test_population_labels_reject_top_level_array_provider_without_callback() -> None:
+    """Population membership must not be synthesized through caller ``__array__``."""
+
+    class ArrayProvider:
+        calls = 0
+
+        def __array__(self, dtype=None):
+            type(self).calls += 1
+            return np.array([0, 1], dtype=np.int64)
+
+    provider = ArrayProvider()
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(provider, 2, "group_id")
+
+    assert ArrayProvider.calls == 0
+
+
+def test_population_labels_reject_object_array_float_provider_without_callback() -> None:
+    """Object-array elements must not gain authority through caller ``__float__``."""
+
+    class FloatProvider:
+        calls = 0
+
+        def __float__(self):
+            type(self).calls += 1
+            return 0.0
+
+    labels = np.array([FloatProvider(), 1], dtype=object)
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(labels, 2, "group_id")
+
+    assert FloatProvider.calls == 0
+
+
+def test_population_labels_preserve_callback_free_scalar_sequence() -> None:
+    """Concrete Python/NumPy scalar sequences keep sorted-unique compaction."""
+
+    labels = [np.int32(4), np.float32(2.0), True, 4]
+    ids, n_populations = _compact_population_labels(labels, 4, "group_id")
+
+    assert n_populations == 3
+    assert ids.tolist() == [2, 1, 0, 2]
+
+
 def test_population_labels_reject_unsigned_int64_narrowing_overflow() -> None:
     """Unsigned labels above INT64_MAX must not wrap into the reference group."""
     labels = np.array([0, np.iinfo(np.uint64).max], dtype=np.uint64)
