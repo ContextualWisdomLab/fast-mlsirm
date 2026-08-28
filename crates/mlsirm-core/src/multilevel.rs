@@ -30,14 +30,106 @@ mod estimator;
 mod kernel;
 
 pub use estimator::{
-    estimate_crossed_person_effects, CrossedPersonEffectConfig, CrossedPersonEffectEstimate,
-    MAX_CROSSED_EFFECTS, MAX_CROSSED_ITER,
+    CrossedPersonEffectConfig, CrossedPersonEffectEstimate, MAX_CROSSED_EFFECTS,
+    MAX_CROSSED_ITER,
 };
 
 /// Maximum contextual-membership edges accepted at the public Rust boundary.
 pub const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
 /// Maximum CSR row-pointer entries accepted at the public Rust boundary.
 pub const MAX_CONTEXT_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
+
+fn preflight_crossed_estimator_controls(
+    y: &[f64],
+    classification_offsets: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_effects: usize,
+    config: &CrossedPersonEffectConfig,
+) -> Result<(), String> {
+    if n_persons < 1 || n_items < 1 || n_effects < 1 {
+        return Err("n_persons, n_items, and n_effects must be at least one".to_string());
+    }
+    if n_effects > MAX_CROSSED_EFFECTS {
+        return Err(format!(
+            "n_effects exceeds the dense Newton cap of {MAX_CROSSED_EFFECTS}"
+        ));
+    }
+    if classification_offsets.len() > n_effects + 1 {
+        return Err("classification_offsets exceeds n_effects + 1".to_string());
+    }
+    let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
+    if expected > estimator::MAX_CROSSED_RESPONSE_CELLS {
+        return Err(format!(
+            "crossed response matrix exceeds the logical-cell cap of {}",
+            estimator::MAX_CROSSED_RESPONSE_CELLS
+        ));
+    }
+    if y.len() != expected {
+        return Err("y must have length n_persons * n_items".to_string());
+    }
+    if !config.prior_precision.is_finite() || config.prior_precision <= 0.0 {
+        return Err("prior_precision must be finite and strictly positive".to_string());
+    }
+    if !(1..=MAX_CROSSED_ITER).contains(&config.max_iter) {
+        return Err(format!("max_iter must be in 1..={MAX_CROSSED_ITER}"));
+    }
+    if !config.tol.is_finite() || config.tol <= 0.0 {
+        return Err("tol must be finite and strictly positive".to_string());
+    }
+    if !(1..=estimator::MAX_CROSSED_WORKERS).contains(&config.worker_count) {
+        return Err(format!(
+            "worker_count must be in 1..={}",
+            estimator::MAX_CROSSED_WORKERS
+        ));
+    }
+    Ok(())
+}
+
+/// Estimate crossed / multiple-membership person effects after bounded control preflight.
+///
+/// Cheap dimension, response-work, response-length, and execution-control validation
+/// runs before any response-value traversal. The private estimator repeats those
+/// invariants as defense in depth and owns all likelihood, score/information,
+/// Newton, centering, and CPU/GPU numerical work.
+#[allow(clippy::too_many_arguments)]
+pub fn estimate_crossed_person_effects(
+    y: &[f64],
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+    item_slopes: &[f64],
+    item_intercepts: &[f64],
+    person_offsets: &[f64],
+    classification_offsets: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_effects: usize,
+    config: CrossedPersonEffectConfig,
+) -> Result<CrossedPersonEffectEstimate, String> {
+    preflight_crossed_estimator_controls(
+        y,
+        classification_offsets,
+        n_persons,
+        n_items,
+        n_effects,
+        &config,
+    )?;
+    estimator::estimate_crossed_person_effects(
+        y,
+        row_offsets,
+        context_indices,
+        weights,
+        item_slopes,
+        item_intercepts,
+        person_offsets,
+        classification_offsets,
+        n_persons,
+        n_items,
+        n_effects,
+        config,
+    )
+}
 
 fn validate_unique_context_indices_per_row(
     row_offsets: &[usize],
