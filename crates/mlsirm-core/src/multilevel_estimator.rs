@@ -358,6 +358,57 @@ fn validate_estimator_inputs(
     Ok(())
 }
 
+fn add_fsum_partial(partials: &mut Vec<f64>, mut value: f64) {
+    let mut kept = 0usize;
+    for index in 0..partials.len() {
+        let mut partial = partials[index];
+        if value.abs() < partial.abs() {
+            std::mem::swap(&mut value, &mut partial);
+        }
+        let high = value + partial;
+        let rounded_partial = high - value;
+        let low = partial - rounded_partial;
+        if low != 0.0 {
+            partials[kept] = low;
+            kept += 1;
+        }
+        value = high;
+    }
+    partials.truncate(kept);
+    partials.push(value);
+}
+
+fn finish_fsum(partials: &[f64]) -> f64 {
+    let Some((&last, rest)) = partials.split_last() else {
+        return 0.0;
+    };
+    let mut high = last;
+    let mut low = 0.0_f64;
+    let mut remaining = rest.len();
+    while remaining > 0 {
+        let value = high;
+        remaining -= 1;
+        let partial = rest[remaining];
+        high = value + partial;
+        let rounded_partial = high - value;
+        low = partial - rounded_partial;
+        if low != 0.0 {
+            break;
+        }
+    }
+    if remaining > 0
+        && ((low < 0.0 && rest[remaining - 1] < 0.0)
+            || (low > 0.0 && rest[remaining - 1] > 0.0))
+    {
+        let doubled_low = low * 2.0;
+        let corrected = high + doubled_low;
+        if corrected - high == doubled_low {
+            high = corrected;
+        }
+    }
+    high
+}
+
 fn validate_membership_weight_totals(
     row_offsets: &[usize],
     context_indices: &[usize],
@@ -373,22 +424,19 @@ fn validate_membership_weight_totals(
         }
     }
 
-    let mut totals = vec![0.0_f64; n_classifications];
-    let mut compensation = vec![0.0_f64; n_classifications];
+    let mut partials = vec![Vec::<f64>::new(); n_classifications];
     for window in row_offsets.windows(2) {
-        totals.fill(0.0);
-        compensation.fill(0.0);
+        for classification_partials in &mut partials {
+            classification_partials.clear();
+        }
         for edge in window[0]..window[1] {
             let classification = effect_classification[context_indices[edge]];
-            let adjusted = weights[edge] - compensation[classification];
-            let next = totals[classification] + adjusted;
-            compensation[classification] = (next - totals[classification]) - adjusted;
-            totals[classification] = next;
+            add_fsum_partial(&mut partials[classification], weights[edge]);
         }
-        if totals
-            .iter()
-            .any(|total| (*total - 1.0).abs() > MEMBERSHIP_WEIGHT_TOLERANCE)
-        {
+        if partials.iter().any(|classification_partials| {
+            let total = finish_fsum(classification_partials);
+            !total.is_finite() || (total - 1.0).abs() > MEMBERSHIP_WEIGHT_TOLERANCE
+        }) {
             return Err(
                 "membership weights must sum to one within every classification".to_string(),
             );
