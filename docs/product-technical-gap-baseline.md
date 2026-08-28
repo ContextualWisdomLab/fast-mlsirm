@@ -1,7 +1,7 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-28T03:05:05Z**<br>
+Observed at: **2026-08-28T03:30:25Z**<br>
 Protected-main basis: **`main@45627700…`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
@@ -244,14 +244,14 @@ new canonical capability-maturity state.
 ## 7. Current pull-request evidence
 
 The following table records high-leverage live work observed on
-2026-08-28T03:05:05Z against protected `main@45627700…`. Every row is
+2026-08-28T03:30:25Z against protected `main@45627700…`. Every row is
 **IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
 check on any row is not a protected-main capability until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
 | [#1523](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1523) | `b76092d4…` | aligns the traceability matrix with the protected-main v1/v2 lineage-anchor status and keeps unavailable v2 producer/estimator work out of implemented claims | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval remains required |
-| [#1522](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1522) | `eaea5239…` | seals multigroup/multilevel population-label admission against caller coercion callbacks (issue [#1521](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1521)) | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval and protected merge are absent |
+| [#1522](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1522) | `b73d7686…` | seals multigroup/multilevel population-label admission against caller coercion callbacks (issue [#1521](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1521)) | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval and protected merge are absent |
 | [#1519](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1519) | `3be24291…` | refreshes this buyer-facing protected-main product/technical gap inventory and corrects the longitudinal citation/status record | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval and protected merge are absent |
 | [#1518](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1518) | `35ffcdc1…` | Rust ordered posterior-draw summary with weighted uncertainty, credible-level ambiguity, and fail-closed evidence admission (issue [#1484](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1484)) | ready; required CI, Rust, package, fuzz, coverage, and security checks passed; independent approval and protected merge are absent |
 | [#1516](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1516) | `303872c8…` | seals Rasch CML structural response traversal and native result replay before public marshalling (issues [#1515](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1515)/[#1517](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1517)) | ready; ordinary CI, Rust, package, fuzz, coverage, and security checks passed; an earlier non-required Strix run reported a report-mapping failure, and independent approval remains required |
