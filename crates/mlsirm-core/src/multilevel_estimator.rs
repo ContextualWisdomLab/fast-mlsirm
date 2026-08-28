@@ -279,6 +279,9 @@ fn validate_estimator_inputs(
             "n_effects exceeds the dense Newton cap of {MAX_CROSSED_EFFECTS}"
         ));
     }
+    if classification_offsets.len() > n_effects + 1 {
+        return Err("classification_offsets exceeds n_effects + 1".to_string());
+    }
     let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
     if expected > MAX_CROSSED_RESPONSE_CELLS {
         return Err(format!(

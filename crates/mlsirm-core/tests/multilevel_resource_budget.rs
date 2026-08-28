@@ -93,3 +93,29 @@ fn rejects_crossed_worker_count_above_public_control_bound() {
 
     assert_eq!(error, "worker_count must be in 1..=10000");
 }
+
+#[test]
+fn rejects_oversized_classification_offset_work_before_shape_validation() {
+    let mut classification_offsets: Vec<usize> = (0..=128).collect();
+    classification_offsets.push(128);
+    let error = estimate_crossed_person_effects(
+        &[1.0],
+        &[0, 1],
+        &[0],
+        &[1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &classification_offsets,
+        1,
+        1,
+        128,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("classification-offset work above the effect envelope must fail closed");
+
+    assert_eq!(error, "classification_offsets exceeds n_effects + 1");
+}

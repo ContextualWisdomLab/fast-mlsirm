@@ -26,3 +26,6 @@
 - The direct Rust crossed estimator now rejects `worker_count` values above
   10,000 at control admission, matching the canonical Python estimator guard
   before any worker partitioning or iterative estimation begins.
+- The direct Rust crossed estimator now rejects more than `n_effects + 1`
+  classification-offset entries before scanning their ordering, keeping
+  classification admission bounded by the existing dense-effect cap.
