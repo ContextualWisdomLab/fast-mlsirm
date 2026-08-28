@@ -274,9 +274,11 @@ fn unique_modal_level(probabilities: &[f64]) -> Option<usize> {
 fn shortest_contiguous_interval(probabilities: &[f64], target_mass: f64) -> Vec<usize> {
     let mut best: Option<(usize, usize, f64)> = None;
     for start in 0..probabilities.len() {
-        let mut mass = 0.0;
+        let mut mass_sum = 0.0;
+        let mut mass_correction = 0.0;
         for (end, probability) in probabilities.iter().enumerate().skip(start) {
-            mass += probability;
+            compensated_add(&mut mass_sum, &mut mass_correction, *probability);
+            let mass = mass_sum + mass_correction;
             if mass < target_mass {
                 continue;
             }
@@ -286,14 +288,14 @@ fn shortest_contiguous_interval(probabilities: &[f64], target_mass: f64) -> Vec<
                 Some((best_start, best_end, best_mass)) => {
                     let best_length = best_end - best_start + 1;
                     candidate_length < best_length
-                        || (candidate_length == best_length
-                            && (mass > best_mass
-                                || (mass == best_mass && start < best_start)))
+                        || (candidate_length == best_length && mass > best_mass)
                 }
             };
             if replace {
                 best = Some((start, end, mass));
             }
+            // Starts are visited in ascending order, so an exact length-and-mass
+            // tie already preserves the required lower-start interval.
             break;
         }
     }
