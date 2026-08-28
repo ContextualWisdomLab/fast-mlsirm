@@ -1,4 +1,6 @@
-## Multilevel recovery evidence
+# Multilevel recovery evidence
+
+## Added
 
 - Added a deterministic Rust-owned known-truth recovery gate for the existing
   crossed, weighted multiple-membership contextual-effect MAP estimator.
