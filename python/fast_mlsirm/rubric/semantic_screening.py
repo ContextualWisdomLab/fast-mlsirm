@@ -12,7 +12,7 @@ from __future__ import annotations
 import weakref
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 from . import audit_policy
 from .audit import CandidateAuditReport
@@ -365,13 +365,25 @@ class CandidateScreeningResult:
                     f"checks[{index}] must be a SemanticScreeningCheck"
                 )
             verified_check = check._verify_seal()
-            dimension = ScreeningDimension(verified_check["dimension"])
+            dimension = ScreeningDimension(
+                cast(str, verified_check["dimension"])
+            )
             if dimension in by_dimension:
                 raise ValueError(
                     "checks must contain exactly one decision for every required "
                     "screening dimension"
                 )
-            by_dimension[dimension] = check
+            by_dimension[dimension] = build_semantic_screening_check(
+                dimension=dimension,
+                status=ScreeningStatus(cast(str, verified_check["status"])),
+                decision_evidence_fingerprint=cast(
+                    str,
+                    verified_check["decision_evidence_fingerprint"],
+                ),
+                limitation_decision_fingerprint=verified_check[
+                    "limitation_decision_fingerprint"
+                ],
+            )
         if set(by_dimension) != set(REQUIRED_SCREENING_DIMENSIONS):
             raise ValueError(
                 "checks must contain exactly one decision for every required "
