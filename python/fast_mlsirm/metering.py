@@ -63,20 +63,22 @@ class CanonicalComputeUsageSink:
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one simulation's response-cell and artifact counts."""
-        event = self._event_builder(
+        payload: dict[str, Any] = {
             **self._identity,
-            run_reference=run_reference,
-            artifact_reference=artifact_reference,
-            configuration_reference=configuration_reference,
-            seed_reference=seed_reference,
-            project_reference=project_reference,
-            model_code="mls2plm",
-            backend_code="numpy",
-            occurred_at=occurred_at,
-            response_rows=int(data.Y.shape[0]),
-            response_items=int(data.Y.shape[1]),
-            artifact_bytes=artifact_bytes,
-        )
+            "run_reference": run_reference,
+            "artifact_reference": artifact_reference,
+            "configuration_reference": configuration_reference,
+            "seed_reference": seed_reference,
+            "model_code": "mls2plm",
+            "backend_code": "numpy",
+            "occurred_at": occurred_at,
+            "response_rows": int(data.Y.shape[0]),
+            "response_items": int(data.Y.shape[1]),
+            "artifact_bytes": artifact_bytes,
+        }
+        if project_reference is not None:
+            payload["project_reference"] = project_reference
+        event = self._event_builder(**payload)
         if event.get("event_contract_version") != 1:
             raise ValueError("event_builder must return event_contract_version=1")
         self._enqueue(event)
@@ -96,20 +98,22 @@ class CanonicalComputeUsageSink:
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one fit's response-cell and artifact counts."""
-        event = self._event_builder(
+        payload: dict[str, Any] = {
             **self._identity,
-            run_reference=run_reference,
-            artifact_reference=artifact_reference,
-            configuration_reference=configuration_reference,
-            seed_reference=seed_reference,
-            project_reference=project_reference,
-            model_code=result.model.lower(),
-            backend_code=result.backend.lower(),
-            occurred_at=occurred_at,
-            response_rows=response_rows,
-            response_items=response_items,
-            artifact_bytes=artifact_bytes,
-        )
+            "run_reference": run_reference,
+            "artifact_reference": artifact_reference,
+            "configuration_reference": configuration_reference,
+            "seed_reference": seed_reference,
+            "model_code": result.model.lower(),
+            "backend_code": result.backend.lower(),
+            "occurred_at": occurred_at,
+            "response_rows": response_rows,
+            "response_items": response_items,
+            "artifact_bytes": artifact_bytes,
+        }
+        if project_reference is not None:
+            payload["project_reference"] = project_reference
+        event = self._event_builder(**payload)
         if event.get("event_contract_version") != 1:
             raise ValueError("event_builder must return event_contract_version=1")
         self._enqueue(event)

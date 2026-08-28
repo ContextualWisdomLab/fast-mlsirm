@@ -83,6 +83,33 @@ def test_identity_cannot_override_versioned_event_fields() -> None:
         raise AssertionError("reserved identity field was accepted")
 
 
+def test_optional_project_reference_is_omitted_when_unset() -> None:
+    """Older builders do not receive an omitted optional field."""
+    captured: dict[str, object] = {}
+
+    def builder(**payload: object) -> dict[str, object]:
+        captured.update(payload)
+        return {"event_contract_version": 1, **payload}
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        enqueue=lambda _: None,
+        identity={},
+    )
+    sink.emit_fit(
+        SimpleNamespace(model="MLS2PLM", backend="rust"),
+        run_reference="run",
+        artifact_reference="artifact",
+        configuration_reference="config",
+        seed_reference="seed",
+        occurred_at="2026-08-28T00:00:00Z",
+        response_rows=1,
+        response_items=1,
+    )
+
+    assert "project_reference" not in captured
+
+
 def test_sink_rejects_non_v1_builder_output() -> None:
     """A producer cannot enqueue an event from a different contract version."""
     queued: list[dict[str, object]] = []
