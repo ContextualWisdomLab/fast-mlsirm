@@ -209,6 +209,50 @@ def test_screening_result_identity_uses_verified_snapshot(
     assert result_id == f"screening_result_{original_fingerprint[:32]}"
 
 
+def test_screening_result_construction_uses_verified_check_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-check dimension rebinding cannot alter result admission structure."""
+    item, audit_report = audited_candidate()
+    checks = all_checks()
+    target = checks[0]
+    original_dimension = target.dimension
+    verify_seal = screening.SemanticScreeningCheck._verify_seal
+    mutated = False
+
+    def verify_then_rebind(check):
+        nonlocal mutated
+        verified = verify_seal(check)
+        if check is target and not mutated:
+            object.__setattr__(
+                check,
+                "dimension",
+                screening.ScreeningDimension.AMBIGUITY_MULTIPLE_ANSWER_RISK,
+            )
+            mutated = True
+        return verified
+
+    monkeypatch.setattr(
+        screening.SemanticScreeningCheck,
+        "_verify_seal",
+        verify_then_rebind,
+    )
+
+    result = screening.build_candidate_screening_result(
+        item,
+        audit_report,
+        screening_policy_id="semantic_screening_policy",
+        screening_policy_version="1.0.0",
+        evaluator_kind="hybrid",
+        evaluator_fingerprint=fp("a"),
+        checks=checks,
+    )
+    payload = result.to_dict()
+
+    assert target.dimension is screening.ScreeningDimension.AMBIGUITY_MULTIPLE_ANSWER_RISK
+    assert payload["checks"][0]["dimension"] == original_dimension.value
+
+
 def test_valid_screening_creation_seals_preserve_public_identity() -> None:
     """Replay hardening leaves valid screening check/result payloads unchanged."""
     result = _result(evaluator_fingerprint=fp("a"))
