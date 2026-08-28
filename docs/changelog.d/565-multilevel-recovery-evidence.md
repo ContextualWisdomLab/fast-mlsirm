@@ -28,6 +28,11 @@
   work/length admission and before estimator-control or response-value traversal.
   The private contextual boundary retains the same checks as defense in depth;
   admitted likelihood, recovery, and CPU/GPU arithmetic are unchanged.
+- The public Rust crossed estimator now also preflights item slope/intercept
+  cardinality, optional person-offset cardinality, and the exact
+  `n_persons + 1` CSR row-pointer count after execution-control admission but
+  before response-value traversal. These checks use slice metadata only and
+  preserve the private estimator's diagnostics as defense in depth.
 - The direct Rust crossed estimator now rejects `worker_count` values above
   10,000 at control admission, matching the canonical Python estimator guard
   before any worker partitioning or iterative estimation begins.
