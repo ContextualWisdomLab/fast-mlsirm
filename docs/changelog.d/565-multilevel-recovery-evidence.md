@@ -20,5 +20,6 @@
   matching the canonical Python public-admission resource ceiling without
   changing response semantics or numerical estimation.
 - The public Rust contextual-membership boundary now rejects more than 100,000
-  membership edges before per-row uniqueness, referenced-effect, or weighted
-  summation work, matching the canonical Python design and PyO3 resource bound.
+  membership edges or 100,001 CSR row-pointer entries before per-row uniqueness,
+  referenced-effect, or output-allocation work, matching the canonical Python
+  design and PyO3 resource bounds.
