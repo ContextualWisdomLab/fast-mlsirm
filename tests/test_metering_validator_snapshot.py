@@ -100,3 +100,54 @@ def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
             ],
         }
     ]
+
+
+def test_nested_callback_carrier_is_rejected_before_validator() -> None:
+    """Protocol-bearing nested carriers cannot cross package admission."""
+    callbacks = 0
+    validator_calls = 0
+    queued: list[dict[str, object]] = []
+
+    class HostileMeasurements(list[object]):
+        def __iter__(self):  # type: ignore[no-untyped-def]
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("nested iteration callback executed")
+
+        def __len__(self) -> int:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("nested length callback executed")
+
+        def __getitem__(self, index):  # type: ignore[no-untyped-def]
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError(f"nested item callback executed for {index}")
+
+    def builder(**_: object) -> dict[str, object]:
+        return {
+            "event_contract_version": 1,
+            "measurements": HostileMeasurements(),
+        }
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+    try:
+        _emit_one_fit(sink)
+    except ValueError as error:
+        assert "exact JSON" in str(error)
+    else:
+        raise AssertionError("callback-bearing nested carrier was accepted")
+
+    assert callbacks == 0
+    assert validator_calls == 0
+    assert queued == []
