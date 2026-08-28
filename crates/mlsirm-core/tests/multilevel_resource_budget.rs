@@ -1,10 +1,10 @@
 //! Direct-Rust resource-admission parity for crossed multilevel estimation.
 //!
 //! The public Python adapter bounds crossed response evidence to 20,000,000
-//! logical cells and canonical contextual membership evidence to 100,000 edges
-//! / 100,001 CSR row-pointer entries before dense/native work. These tests
-//! require the public Rust boundaries to reject the same envelopes before
-//! response or membership traversal/allocation.
+//! logical cells, contextual membership evidence to 100,000 edges / 100,001
+//! CSR row-pointer entries, and crossed-estimator worker control to 10,000.
+//! These tests require the public Rust boundaries to reject the same envelopes
+//! before response/membership traversal, allocation, or estimator iteration.
 
 use mlsirm_core::multilevel::{
     estimate_crossed_person_effects, weighted_contextual_effect, CrossedPersonEffectConfig,
@@ -67,4 +67,29 @@ fn rejects_oversized_row_pointer_work_before_empty_row_allocation() {
         error,
         "row_offsets exceeds the CSR row-pointer cap of 100001"
     );
+}
+
+#[test]
+fn rejects_crossed_worker_count_above_public_control_bound() {
+    let error = estimate_crossed_person_effects(
+        &[1.0, 0.0],
+        &[0, 1, 2],
+        &[0, 1],
+        &[1.0, 1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            worker_count: 10_001,
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("crossed worker control above the public maximum must fail closed");
+
+    assert_eq!(error, "worker_count must be in 1..=10000");
 }
