@@ -13,7 +13,7 @@ def _sink(queued: list[dict[str, object]]) -> CanonicalComputeUsageSink:
     """Build a sink with anonymized identity references for tests."""
 
     def builder(**payload: object) -> dict[str, object]:
-        return dict(payload)
+        return {"event_contract_version": 1, **payload}
 
     return CanonicalComputeUsageSink(
         event_builder=builder,
@@ -62,6 +62,60 @@ def test_fit_export_uses_result_backend_and_explicit_shape() -> None:
         artifact_bytes=128,
     )
 
-    assert queued[0]["model_code"] == "MLS2PLM"
+    assert queued[0]["model_code"] == "mls2plm"
     assert queued[0]["backend_code"] == "rust"
     assert queued[0]["artifact_bytes"] == 128
+
+
+def test_identity_cannot_override_versioned_event_fields() -> None:
+    """Reserved event fields stay under the sink's explicit authority."""
+    try:
+        CanonicalComputeUsageSink(
+            event_builder=lambda **payload: {"event_contract_version": 1, **payload},
+            enqueue=lambda _: None,
+            identity={"run_reference": "must-not-override"},
+        )
+    except ValueError as error:
+        assert "run_reference" in str(error)
+    else:
+        raise AssertionError("reserved identity field was accepted")
+
+
+def test_sink_rejects_non_v1_builder_output() -> None:
+    """A producer cannot enqueue an event from a different contract version."""
+    queued: list[dict[str, object]] = []
+    sink = CanonicalComputeUsageSink(
+        event_builder=lambda **payload: {"event_contract_version": 2, **payload},
+        enqueue=queued.append,
+        identity={},
+    )
+    fake_data = SimpleNamespace(Y=SimpleNamespace(shape=(1, 1)))
+    try:
+        sink.emit_simulation(
+            fake_data,
+            run_reference="run",
+            artifact_reference="artifact",
+            configuration_reference="config",
+            seed_reference="seed",
+            occurred_at="2026-08-28T00:00:00Z",
+        )
+    except ValueError as error:
+        assert "event_contract_version=1" in str(error)
+    else:
+        raise AssertionError("non-v1 event was accepted")
+    try:
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            run_reference="run",
+            artifact_reference="artifact",
+            configuration_reference="config",
+            seed_reference="seed",
+            occurred_at="2026-08-28T00:00:00Z",
+            response_rows=1,
+            response_items=1,
+        )
+    except ValueError as error:
+        assert "event_contract_version=1" in str(error)
+    else:
+        raise AssertionError("non-v1 fit event was accepted")
+    assert queued == []

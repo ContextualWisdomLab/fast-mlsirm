@@ -3,9 +3,32 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, Protocol
 
 from .types import FitResult, SimulationData
+
+
+class ComputeUsageEventBuilder(Protocol):
+    """Version-one builder boundary supplied by the metering SDK."""
+
+    def __call__(self, **payload: Any) -> Mapping[str, Any]: ...
+
+
+_RESERVED_EVENT_FIELDS = frozenset(
+    {
+        "run_reference",
+        "artifact_reference",
+        "configuration_reference",
+        "seed_reference",
+        "model_code",
+        "backend_code",
+        "occurred_at",
+        "response_rows",
+        "response_items",
+        "artifact_bytes",
+        "project_reference",
+    }
+)
 
 
 class CanonicalComputeUsageSink:
@@ -14,10 +37,15 @@ class CanonicalComputeUsageSink:
     def __init__(
         self,
         *,
-        event_builder: Callable[..., Mapping[str, Any]],
+        event_builder: ComputeUsageEventBuilder,
         enqueue: Callable[[Mapping[str, Any]], None],
         identity: Mapping[str, str | None],
     ) -> None:
+        """Store the versioned builder, durable enqueue callback, and identity."""
+        reserved = _RESERVED_EVENT_FIELDS.intersection(identity)
+        if reserved:
+            names = ", ".join(sorted(reserved))
+            raise ValueError(f"identity contains reserved event fields: {names}")
         self._event_builder = event_builder
         self._enqueue = enqueue
         self._identity = dict(identity)
@@ -47,6 +75,8 @@ class CanonicalComputeUsageSink:
             response_items=int(data.Y.shape[1]),
             artifact_bytes=artifact_bytes,
         )
+        if event.get("event_contract_version") != 1:
+            raise ValueError("event_builder must return event_contract_version=1")
         self._enqueue(event)
 
     def emit_fit(
@@ -69,13 +99,15 @@ class CanonicalComputeUsageSink:
             artifact_reference=artifact_reference,
             configuration_reference=configuration_reference,
             seed_reference=seed_reference,
-            model_code=result.model,
-            backend_code=result.backend,
+            model_code=result.model.lower(),
+            backend_code=result.backend.lower(),
             occurred_at=occurred_at,
             response_rows=response_rows,
             response_items=response_items,
             artifact_bytes=artifact_bytes,
         )
+        if event.get("event_contract_version") != 1:
+            raise ValueError("event_builder must return event_contract_version=1")
         self._enqueue(event)
 
 
