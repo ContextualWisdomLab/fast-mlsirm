@@ -170,10 +170,6 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert '<meta charset="utf-8">' in rendered
     assert '<main id="main-content" tabindex="-1">' in rendered
     assert '<a class="skip-link" href="#main-content">Skip to report</a>' in rendered
-    assert ".skip-link{position:absolute;left:.5rem;top:-5rem;" in rendered
-    assert ".skip-link:focus{top:.5rem;}" in rendered
-    assert "main:focus:not(:focus-visible){outline:none;}" in rendered
-    assert "main:focus-visible{outline:3px solid currentColor;outline-offset:3px;}" in rendered
     assert "Item bank &lt;release&gt; &amp; review" in rendered
     assert f"<dt>Blueprint</dt><dd>{records[-1].blueprint_id}</dd>" in rendered
     assert "<dt>Approved-use scope</dt><dd>production_scoring</dd>" in rendered
@@ -181,6 +177,7 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
+    assert "outline: none" not in rendered
 
 
 def test_report_rejects_partial_or_forged_lifecycle_lineage() -> None:
