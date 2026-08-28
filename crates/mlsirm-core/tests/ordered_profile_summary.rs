@@ -91,6 +91,25 @@ fn prefers_more_probability_mass_before_lower_start_tie_break() {
 }
 
 #[test]
+fn does_not_report_a_unique_modal_level_outside_the_credible_set() {
+    let samples = [-1.5, -0.5, 0.5, 1.5];
+    let weights = [40.0, 1.0, 30.0, 29.0];
+    let cut_scores = [-1.0, 0.0, 1.0];
+
+    let summary = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &samples,
+        sample_weights: Some(&weights),
+        cut_scores: &cut_scores,
+        credible_mass: 0.58,
+    })
+    .expect("valid multimodal evidence must preserve decision ambiguity");
+
+    assert_eq!(summary.level_probabilities, vec![0.4, 0.01, 0.3, 0.29]);
+    assert_eq!(summary.credible_level_indices, vec![2, 3]);
+    assert_eq!(summary.reported_level_index, None);
+}
+
+#[test]
 fn is_invariant_to_joint_sample_and_weight_permutation() {
     let cut_scores = [-0.5, 0.5];
     let first = summarize_ordered_profile(OrderedProfileInput {
