@@ -70,6 +70,63 @@ fn rejects_oversized_row_pointer_work_before_empty_row_allocation() {
 }
 
 #[test]
+fn rejects_estimator_oversized_membership_work_before_response_value_traversal() {
+    let context_indices = vec![0usize; 100_001];
+    let weights = vec![0.0; context_indices.len()];
+    let error = estimate_crossed_person_effects(
+        &[2.0, 0.0],
+        &[0, 1, 2],
+        &context_indices,
+        &weights,
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("estimator membership-edge work must fail before response-value traversal");
+
+    assert_eq!(
+        error,
+        "context_indices exceeds the membership-edge cap of 100000"
+    );
+}
+
+#[test]
+fn rejects_estimator_oversized_row_pointer_work_before_response_value_traversal() {
+    let row_offsets = vec![0usize; 100_002];
+    let error = estimate_crossed_person_effects(
+        &[2.0, 0.0],
+        &row_offsets,
+        &[0, 1],
+        &[1.0, 1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("estimator row-pointer work must fail before response-value traversal");
+
+    assert_eq!(
+        error,
+        "row_offsets exceeds the CSR row-pointer cap of 100001"
+    );
+}
+
+#[test]
 fn rejects_crossed_worker_count_above_public_control_bound() {
     let error = estimate_crossed_person_effects(
         &[1.0, 0.0],
@@ -128,10 +185,9 @@ fn rejects_oversized_classification_offset_work_before_shape_validation() {
         &[0, 1],
         &[0],
         &[1.0],
-        &[1.0],
         &[0.0],
         &[],
-        &classification_offsets,
+        &[0, 2],
         1,
         1,
         128,
