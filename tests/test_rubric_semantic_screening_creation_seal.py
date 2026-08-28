@@ -253,6 +253,49 @@ def test_screening_result_construction_uses_verified_check_dimensions(
     assert payload["checks"][0]["dimension"] == original_dimension.value
 
 
+def test_pilot_admission_uses_one_verified_screening_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pilot admission never rereads screening provenance after seal verification."""
+    item, audit_report = audited_candidate()
+    result = screening.build_candidate_screening_result(
+        item,
+        audit_report,
+        screening_policy_id="semantic_screening_policy",
+        screening_policy_version="1.0.0",
+        evaluator_kind="hybrid",
+        evaluator_fingerprint=fp("a"),
+        checks=all_checks(),
+    )
+    original_candidate_fingerprint = result.candidate_fingerprint
+    verify_seal = screening.CandidateScreeningResult._verify_seal
+
+    def verify_then_rebind(target):
+        verified = verify_seal(target)
+        object.__setattr__(target, "candidate_fingerprint", fp("0"))
+        return verified
+
+    monkeypatch.setattr(
+        screening.CandidateScreeningResult,
+        "_verify_seal",
+        verify_then_rebind,
+    )
+
+    pilot = screening.audit_policy.build_pilot_candidate_record(
+        item,
+        audit_report,
+        screening_result=result,
+        pilot_study_id="pilot_study_alpha",
+        query_testlet_id="query_testlet_alpha",
+        generator_family_id="generator_family_alpha",
+        judge_policy_id="judge_policy_alpha",
+        occasion_id="occasion_window_alpha",
+    )
+
+    assert result.candidate_fingerprint == fp("0")
+    assert pilot.candidate_fingerprint == original_candidate_fingerprint
+
+
 def test_valid_screening_creation_seals_preserve_public_identity() -> None:
     """Replay hardening leaves valid screening check/result payloads unchanged."""
     result = _result(evaluator_fingerprint=fp("a"))
