@@ -67,6 +67,23 @@ class FactorRetentionEvidence:
         _require_candidate_count(self.candidate_count)
 
 
+def _validated_evidence_record(
+    record: object,
+    seen_methods: set[FactorRetentionMethod],
+) -> FactorRetentionEvidence:
+    """Replay one record and return a fresh package-owned evidence value."""
+    if type(record) is not FactorRetentionEvidence:
+        raise TypeError("evidence entries must be FactorRetentionEvidence")
+    method = record.method
+    candidate_count = record.candidate_count
+    _require_method(method)
+    _require_candidate_count(candidate_count)
+    if method in seen_methods:
+        raise ValueError("duplicate factor-retention method evidence")
+    seen_methods.add(method)
+    return FactorRetentionEvidence(method, candidate_count)
+
+
 def _canonical_result_state(
     evidence: object,
 ) -> tuple[
@@ -82,16 +99,7 @@ def _canonical_result_state(
     records: list[FactorRetentionEvidence] = []
     seen_methods: set[FactorRetentionMethod] = set()
     for record in evidence:
-        if type(record) is not FactorRetentionEvidence:
-            raise TypeError("evidence entries must be FactorRetentionEvidence")
-        method = record.method
-        candidate_count = record.candidate_count
-        _require_method(method)
-        _require_candidate_count(candidate_count)
-        if method in seen_methods:
-            raise ValueError("duplicate factor-retention method evidence")
-        seen_methods.add(method)
-        records.append(FactorRetentionEvidence(method, candidate_count))
+        records.append(_validated_evidence_record(record, seen_methods))
 
     ordered = tuple(sorted(records, key=lambda record: record.method.value))
     if not ordered:
@@ -206,16 +214,7 @@ def govern_factor_retention(
             raise
         except Exception:
             raise ValueError(iterable_message) from None
-        if type(record) is not FactorRetentionEvidence:
-            raise TypeError("evidence entries must be FactorRetentionEvidence")
-        method = record.method
-        candidate_count = record.candidate_count
-        _require_method(method)
-        _require_candidate_count(candidate_count)
-        if method in seen_methods:
-            raise ValueError("duplicate factor-retention method evidence")
-        seen_methods.add(method)
-        records.append(FactorRetentionEvidence(method, candidate_count))
+        records.append(_validated_evidence_record(record, seen_methods))
 
     decision, retained_count, candidate_range, ordered = _canonical_result_state(
         tuple(records)
