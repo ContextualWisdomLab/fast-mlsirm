@@ -7,3 +7,5 @@
   costs, and coherent joint sample-information tables. Rust computes expected
   net intervention value, EVPI, and EVSI; no utility, probability, causal
   effect, or queue policy is inferred from enterprise issue text.
+- Fail closed on impossible native result-map cardinality before result-key
+  materialization, while preserving Rust ownership of all decision arithmetic.
