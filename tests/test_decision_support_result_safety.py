@@ -76,6 +76,35 @@ def test_native_result_cardinality_and_selected_action_are_replayed(
         decision_support.evaluate_decision_support(probabilities, utilities, costs)
 
 
+def test_native_result_net_evsi_is_bound_to_admitted_information_cost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale extension cannot publish net EVSI for a different information cost."""
+
+    class Core:
+        def evaluate_decision_support(self, *args: object) -> dict[str, object]:
+            return {
+                "action_expected_net_values": [0.0],
+                "selected_action": 0,
+                "expected_net_intervention_value": 0.0,
+                "expected_value_perfect_information": 0.0,
+                "expected_value_sample_information": 1.0,
+                "net_expected_value_sample_information": 0.75,
+            }
+
+    monkeypatch.setattr(decision_support, "_core_module", lambda: Core())
+    probabilities, utilities, costs = _inputs()
+
+    with pytest.raises(RuntimeError, match="invalid decision-support Rust result"):
+        decision_support.evaluate_decision_support(
+            probabilities,
+            utilities,
+            costs,
+            signal_joint_probabilities=np.array([[1.0]], dtype=np.float64),
+            information_cost=0.5,
+        )
+
+
 def _invalid_payloads() -> list[tuple[object, int, bool]]:
     """Build structurally invalid native payloads for branch-complete replay."""
     payloads: list[tuple[object, int, bool]] = [([], 1, False)]
