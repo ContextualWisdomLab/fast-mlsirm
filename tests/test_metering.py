@@ -207,6 +207,46 @@ def test_identity_rejects_noncanonical_fields_before_producer_boundary() -> None
     assert captured == {}
 
 
+def test_identity_rejects_non_string_reference_before_producer_boundary() -> None:
+    """Allowed keys cannot smuggle arbitrary content objects to the producer."""
+    captured: dict[str, object] = {}
+    try:
+        CanonicalComputeUsageSink(
+            event_builder=_canonical_builder(captured),
+            event_validator=_validate_usage_event_v1,
+            enqueue=lambda _: None,
+            identity={"tenant_reference": object()},  # type: ignore[dict-item]
+        )
+    except ValueError as error:
+        assert "tenant_reference" in str(error)
+    else:
+        raise AssertionError("non-string identity reference was accepted")
+    assert captured == {}
+
+
+def test_none_identity_reference_is_omitted_from_producer_payload() -> None:
+    """Unset optional identity references do not cross the producer boundary."""
+    captured: dict[str, object] = {}
+    sink = CanonicalComputeUsageSink(
+        event_builder=_canonical_builder(captured),
+        event_validator=_validate_usage_event_v1,
+        enqueue=lambda _: None,
+        identity={"credential_reference": None},
+    )
+    sink.emit_fit(
+        SimpleNamespace(model="MLS2PLM", backend="rust"),
+        run_reference="run",
+        artifact_reference="artifact",
+        configuration_reference="config",
+        seed_reference="seed",
+        occurred_at="2026-08-28T00:00:00Z",
+        response_rows=1,
+        response_items=1,
+    )
+
+    assert "credential_reference" not in captured
+
+
 def test_optional_project_reference_is_omitted_when_unset() -> None:
     """Older builders do not receive omitted optional fields."""
     captured: dict[str, object] = {}
