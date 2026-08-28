@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import fast_mlsirm.metering as metering
 from fast_mlsirm.metering import CanonicalComputeUsageSink
 
 
@@ -149,5 +150,85 @@ def test_nested_callback_carrier_is_rejected_before_validator() -> None:
         raise AssertionError("callback-bearing nested carrier was accepted")
 
     assert callbacks == 0
+    assert validator_calls == 0
+    assert queued == []
+
+
+def test_oversized_top_level_event_preflights_before_key_scan(monkeypatch) -> None:
+    """Impossible top-level cardinality wins before result-key inspection."""
+    validator_calls = 0
+    queued: list[dict[str, object]] = []
+
+    class NonExactKey(str):
+        pass
+
+    def builder(**_: object) -> dict[str, object]:
+        return {
+            "event_contract_version": 1,
+            "source_event_key": "producer-owned",
+            NonExactKey("third_key"): "unreachable",
+        }
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    monkeypatch.setattr(metering, "_MAX_EVENT_SNAPSHOT_NODES", 3)
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    try:
+        _emit_one_fit(sink)
+    except ValueError as error:
+        assert str(error) == "event_builder result exact JSON tree is too large"
+    else:
+        raise AssertionError("oversized top-level event was accepted")
+
+    assert validator_calls == 0
+    assert queued == []
+
+
+def test_oversized_nested_dict_preflights_before_nested_key_scan(monkeypatch) -> None:
+    """Impossible nested cardinality wins before nested result-key inspection."""
+    validator_calls = 0
+    queued: list[dict[str, object]] = []
+
+    class NonExactKey(str):
+        pass
+
+    def builder(**_: object) -> dict[str, object]:
+        return {
+            "event_contract_version": 1,
+            "metadata": {
+                "first_key": "value",
+                NonExactKey("second_key"): "unreachable",
+            },
+        }
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    monkeypatch.setattr(metering, "_MAX_EVENT_SNAPSHOT_NODES", 4)
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    try:
+        _emit_one_fit(sink)
+    except ValueError as error:
+        assert str(error) == "event_builder result exact JSON tree is too large"
+    else:
+        raise AssertionError("oversized nested event was accepted")
+
     assert validator_calls == 0
     assert queued == []
