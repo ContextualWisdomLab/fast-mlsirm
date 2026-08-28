@@ -56,22 +56,31 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     elif type(raw) in (list, tuple):
         if any(type(value) not in _TRUSTED_POPULATION_LABEL_SCALAR_TYPES for value in raw):
             raise ValueError(f"{name} must contain exact real numeric scalars")
-        try:
-            arr = _np.asarray(raw)
-        except (OverflowError, TypeError, ValueError) as exc:
-            raise ValueError(f"{name} must be a 1-D numeric array") from exc
+        int64_info = _np.iinfo(_np.int64)
+        normalized: list[int] = []
+        for value in raw:
+            value_type = type(value)
+            if value_type in {float, _np.float16, _np.float32, _np.float64, _np.longdouble}:
+                if not bool(_np.isfinite(value)):
+                    raise ValueError(f"{name} must be finite")
+                if value < 0 or value != _np.floor(value):
+                    raise ValueError(f"{name} must be non-negative integers")
+                normalized_value = int(value)
+                if not (int64_info.min <= normalized_value <= int64_info.max):
+                    raise ValueError(f"{name} must fit in signed 64-bit integers")
+            else:
+                normalized_value = int(value)
+                if not (int64_info.min <= normalized_value <= int64_info.max):
+                    raise ValueError(f"{name} must fit in signed 64-bit integers")
+                if normalized_value < 0:
+                    raise ValueError(f"{name} must be non-negative integers")
+            normalized.append(normalized_value)
+        arr = _np.asarray(normalized, dtype=_np.int64)
     else:
         raise ValueError(f"{name} must be a 1-D numeric array")
     if arr.ndim != 1 or arr.shape[0] != n_persons:
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
     if arr.dtype.kind not in {"b", "i", "u", "f"}:
-        if arr.dtype.kind == "O" and type(raw) in (list, tuple):
-            int64_info = _np.iinfo(_np.int64)
-            if any(
-                type(value) is int and not (int64_info.min <= value <= int64_info.max)
-                for value in raw
-            ):
-                raise ValueError(f"{name} must fit in signed 64-bit integers")
         raise ValueError(f"{name} must contain only real numeric values")
     validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
     if not _np.all(_np.isfinite(validated)):
