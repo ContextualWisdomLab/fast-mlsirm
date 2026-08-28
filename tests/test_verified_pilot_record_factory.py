@@ -28,6 +28,7 @@ _PUBLIC_FIELDS = (
     "item_id",
     "candidate_fingerprint",
     "audit_report_fingerprint",
+    "screening_result_fingerprint",
     "audit_policy_id",
     "audit_policy_version",
     "blueprint_id",
@@ -42,7 +43,12 @@ def test_public_pilot_record_requires_replay_verified_factory():
     """Valid-looking public values cannot directly mint an admission record."""
     candidate = _candidate()
     report = audit_generated_item_candidate(candidate)
-    verified = build_pilot_candidate_record(candidate, report, **_pilot_kwargs())
+    verified = build_pilot_candidate_record(
+        candidate,
+        report,
+        screening_result=_FIXTURES["_screening_result"](candidate, report),
+        **_pilot_kwargs(),
+    )
     public_values = {name: getattr(verified, name) for name in _PUBLIC_FIELDS}
 
     assert verified.pilot_record_fingerprint == verified.to_dict()[

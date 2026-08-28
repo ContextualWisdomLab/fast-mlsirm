@@ -18,6 +18,7 @@ _PUBLIC_FIELD_NAMES = (
     "item_id",
     "candidate_fingerprint",
     "audit_report_fingerprint",
+    "screening_result_fingerprint",
     "audit_policy_id",
     "audit_policy_version",
     "blueprint_id",
@@ -30,7 +31,7 @@ _PUBLIC_FIELD_NAMES = (
 
 @dataclass(frozen=True)
 class PilotCandidateRecord:
-    """Public pilot record created only after current-policy replay succeeds.
+    """Public pilot record created only after audit and screening replay succeeds.
 
     Python objects are not cryptographic capabilities. The private admission
     token prevents ordinary direct construction through the supported API;
@@ -45,6 +46,7 @@ class PilotCandidateRecord:
     item_id: str
     candidate_fingerprint: str
     audit_report_fingerprint: str
+    screening_result_fingerprint: str
     audit_policy_id: str
     audit_policy_version: str
     blueprint_id: str
@@ -70,6 +72,7 @@ class PilotCandidateRecord:
             item_id=self.item_id,
             candidate_fingerprint=self.candidate_fingerprint,
             audit_report_fingerprint=self.audit_report_fingerprint,
+            screening_result_fingerprint=self.screening_result_fingerprint,
             audit_policy_id=self.audit_policy_id,
             audit_policy_version=self.audit_policy_version,
             blueprint_id=self.blueprint_id,
@@ -92,6 +95,7 @@ class PilotCandidateRecord:
             item_id=self.item_id,
             candidate_fingerprint=self.candidate_fingerprint,
             audit_report_fingerprint=self.audit_report_fingerprint,
+            screening_result_fingerprint=self.screening_result_fingerprint,
             audit_policy_id=self.audit_policy_id,
             audit_policy_version=self.audit_policy_version,
             blueprint_id=self.blueprint_id,
@@ -131,6 +135,7 @@ def _from_verified_core(
         item_id=record.item_id,
         candidate_fingerprint=record.candidate_fingerprint,
         audit_report_fingerprint=record.audit_report_fingerprint,
+        screening_result_fingerprint=record.screening_result_fingerprint,
         audit_policy_id=record.audit_policy_id,
         audit_policy_version=record.audit_policy_version,
         blueprint_id=record.blueprint_id,

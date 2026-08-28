@@ -274,7 +274,7 @@ class CandidateAuditReport:
 
 @dataclass(frozen=True)
 class PilotCandidateRecord:
-    """Immutable admission record for an audited candidate entering a pilot."""
+    """Immutable admission record for a screened candidate entering a pilot."""
 
     pilot_study_id: str
     query_testlet_id: str
@@ -284,6 +284,7 @@ class PilotCandidateRecord:
     item_id: str
     candidate_fingerprint: str
     audit_report_fingerprint: str
+    screening_result_fingerprint: str
     audit_policy_id: str
     audit_policy_version: str
     blueprint_id: str
@@ -315,6 +316,14 @@ class PilotCandidateRecord:
             self,
             "audit_report_fingerprint",
             _fingerprint(self.audit_report_fingerprint, "audit_report_fingerprint"),
+        )
+        object.__setattr__(
+            self,
+            "screening_result_fingerprint",
+            _fingerprint(
+                self.screening_result_fingerprint,
+                "screening_result_fingerprint",
+            ),
         )
         object.__setattr__(
             self,
@@ -352,6 +361,7 @@ class PilotCandidateRecord:
             "item_id": self.item_id,
             "candidate_fingerprint": self.candidate_fingerprint,
             "audit_report_fingerprint": self.audit_report_fingerprint,
+            "screening_result_fingerprint": self.screening_result_fingerprint,
             "audit_policy_id": self.audit_policy_id,
             "audit_policy_version": self.audit_policy_version,
             "blueprint_id": self.blueprint_id,
@@ -641,13 +651,14 @@ def build_pilot_candidate_record(
     candidate: GeneratedItemCandidate,
     audit_report: CandidateAuditReport,
     *,
+    screening_result_fingerprint: str,
     pilot_study_id: str,
     query_testlet_id: str,
     generator_family_id: str,
     judge_policy_id: str,
     occasion_id: str,
 ) -> PilotCandidateRecord:
-    """Admit an unchanged audited candidate into a deterministic pilot contract."""
+    """Admit an unchanged screened candidate into a deterministic pilot contract."""
     if not isinstance(candidate, GeneratedItemCandidate):
         raise TypeError("candidate must be a GeneratedItemCandidate")
     if not isinstance(audit_report, CandidateAuditReport):
@@ -674,6 +685,7 @@ def build_pilot_candidate_record(
         item_id=candidate.item_id,
         candidate_fingerprint=candidate_fingerprint,
         audit_report_fingerprint=audit_report.audit_report_fingerprint,
+        screening_result_fingerprint=screening_result_fingerprint,
         audit_policy_id=audit_report.audit_policy_id,
         audit_policy_version=audit_report.audit_policy_version,
         blueprint_id=candidate.blueprint_id,

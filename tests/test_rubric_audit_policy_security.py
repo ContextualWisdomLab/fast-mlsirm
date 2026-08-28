@@ -33,6 +33,7 @@ def test_public_policy_identity_is_fixed_and_replay_verified():
     assert build_pilot_candidate_record(
         candidate,
         report,
+        screening_result=_FIXTURES["_screening_result"](candidate, report),
         **_pilot_kwargs(),
     ).audit_report_fingerprint == report.audit_report_fingerprint
 
