@@ -155,6 +155,16 @@ def test_governance_rejects_non_evidence_entries() -> None:
         govern((object(),))
 
 
+def test_governance_replays_mutated_evidence_invariants() -> None:
+    """Governance must replay record fields before accepting evidence authority."""
+    _, _, Evidence, Method, govern = _surface()
+    evidence = Evidence(Method.PARALLEL_ANALYSIS, 2)
+    object.__setattr__(evidence, "candidate_count", 0)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        govern((evidence,))
+
+
 def test_result_constructor_rejects_impossible_consensus_state() -> None:
     """Public result construction cannot assert consensus without supporting evidence."""
     from fast_mlsirm.factor_retention import (
