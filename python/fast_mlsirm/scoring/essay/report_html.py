@@ -248,7 +248,6 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--
   }
 }
 @media print {
-  :root { --muted: #60656f; }
   body { background: white; color: black; }
   .skip-link { display: none !important; }
   section, .table-scroll { break-inside: avoid; }
