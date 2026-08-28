@@ -2,8 +2,9 @@
 //!
 //! The public Python adapter bounds crossed response evidence to 20,000,000
 //! logical cells and canonical contextual membership evidence to 100,000 edges
-//! before dense/native work. These tests require the public Rust boundaries to
-//! reject the same envelopes before response or membership traversal.
+//! / 100,001 CSR row-pointer entries before dense/native work. These tests
+//! require the public Rust boundaries to reject the same envelopes before
+//! response or membership traversal/allocation.
 
 use mlsirm_core::multilevel::{
     estimate_crossed_person_effects, weighted_contextual_effect, CrossedPersonEffectConfig,
@@ -53,5 +54,17 @@ fn rejects_oversized_membership_work_before_edge_traversal() {
     assert_eq!(
         error,
         "context_indices exceeds the membership-edge cap of 100000"
+    );
+}
+
+#[test]
+fn rejects_oversized_row_pointer_work_before_empty_row_allocation() {
+    let row_offsets = vec![0usize; 100_002];
+    let error = weighted_contextual_effect(&row_offsets, &[], &[], &[], 1)
+        .expect_err("row-pointer evidence above the package ceiling must fail closed");
+
+    assert_eq!(
+        error,
+        "row_offsets exceeds the CSR row-pointer cap of 100001"
     );
 }
