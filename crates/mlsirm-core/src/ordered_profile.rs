@@ -271,17 +271,27 @@ fn validate_input(input: OrderedProfileInput<'_>) -> Result<(), OrderedProfileEr
         return Err(OrderedProfileError::CredibleIntervalWorkLimit { levels: level_count });
     }
 
-    for (index, sample) in input.posterior_samples.iter().enumerate() {
-        if !sample.is_finite() {
-            return Err(OrderedProfileError::NonFinitePosterior { index });
-        }
-    }
-
     if let Some(weights) = input.sample_weights {
+        let mut weight_sum = 0.0;
+        let mut weight_correction = 0.0;
         for (index, weight) in weights.iter().enumerate() {
             if !weight.is_finite() || *weight < 0.0 {
                 return Err(OrderedProfileError::InvalidWeight { index });
             }
+            compensated_add(&mut weight_sum, &mut weight_correction, *weight);
+        }
+        let weight_mass = weight_sum + weight_correction;
+        if weight_mass == 0.0 {
+            return Err(OrderedProfileError::ZeroWeightMass);
+        }
+        if !weight_mass.is_finite() {
+            return Err(OrderedProfileError::NonFiniteWeightMass);
+        }
+    }
+
+    for (index, sample) in input.posterior_samples.iter().enumerate() {
+        if !sample.is_finite() {
+            return Err(OrderedProfileError::NonFinitePosterior { index });
         }
     }
 
