@@ -39,10 +39,14 @@ pub const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
 /// Maximum CSR row-pointer entries accepted at the public Rust boundary.
 pub const MAX_CONTEXT_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
 
+#[allow(clippy::too_many_arguments)]
 fn preflight_crossed_estimator_controls(
     y: &[f64],
     row_offsets: &[usize],
     context_indices: &[usize],
+    item_slopes: &[f64],
+    item_intercepts: &[f64],
+    person_offsets: &[f64],
     classification_offsets: &[usize],
     n_persons: usize,
     n_items: usize,
@@ -95,15 +99,25 @@ fn preflight_crossed_estimator_controls(
             estimator::MAX_CROSSED_WORKERS
         ));
     }
+    if item_slopes.len() != n_items || item_intercepts.len() != n_items {
+        return Err("item_slopes and item_intercepts must have length n_items".to_string());
+    }
+    if !person_offsets.is_empty() && person_offsets.len() != n_persons {
+        return Err("person_offsets must be empty or have length n_persons".to_string());
+    }
+    if row_offsets.len() != n_persons + 1 {
+        return Err("row_offsets must have length n_persons + 1".to_string());
+    }
     Ok(())
 }
 
 /// Estimate crossed / multiple-membership person effects after bounded control preflight.
 ///
-/// Cheap dimension, response-work, response-length, membership-resource, and
-/// execution-control validation runs before any response-value traversal. The
-/// private estimator repeats those invariants as defense in depth and owns all
-/// likelihood, score/information, Newton, centering, and CPU/GPU numerical work.
+/// Cheap dimension, response-work, response-length, membership-resource,
+/// execution-control, and structural-cardinality validation runs before any
+/// response-value traversal. The private estimator repeats those invariants as
+/// defense in depth and owns all likelihood, score/information, Newton,
+/// centering, and CPU/GPU numerical work.
 #[allow(clippy::too_many_arguments)]
 pub fn estimate_crossed_person_effects(
     y: &[f64],
@@ -123,6 +137,9 @@ pub fn estimate_crossed_person_effects(
         y,
         row_offsets,
         context_indices,
+        item_slopes,
+        item_intercepts,
+        person_offsets,
         classification_offsets,
         n_persons,
         n_items,
