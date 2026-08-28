@@ -86,6 +86,31 @@ def _trusted_index(value: object, *, name: str) -> int:
     return normalized
 
 
+def _contains_boolean_evidence(value: object) -> bool:
+    """Detect bool leaves in an already-preflighted inert evidence carrier."""
+    value_type = type(value)
+    if value_type is bool or value_type is np.bool_:
+        return True
+    if value_type is np.ndarray:
+        return value.dtype.kind == "b"
+    if value_type is not list and value_type is not tuple:
+        return False
+
+    stack: list[list | tuple] = [value]
+    while stack:
+        current = stack.pop()
+        for child in current:
+            child_type = type(child)
+            if child_type is bool or child_type is np.bool_:
+                return True
+            if child_type is np.ndarray:
+                if child.dtype.kind == "b":
+                    return True
+            elif child_type is list or child_type is tuple:
+                stack.append(child)
+    return False
+
+
 def _real_array(value: object, *, name: str, ndim: int) -> np.ndarray:
     """Return bounded, lossless, contiguous binary64 evidence for Rust."""
     shape, cells = _preflight_real_evidence(value, name)
@@ -95,7 +120,7 @@ def _real_array(value: object, *, name: str, ndim: int) -> np.ndarray:
         raise ValueError(f"{name} must not be empty")
     if cells > MAX_DECISION_CELLS:
         raise ValueError(f"{name} exceeds {MAX_DECISION_CELLS} cells")
-    if type(value) is np.ndarray and value.dtype.kind == "b":
+    if _contains_boolean_evidence(value):
         raise ValueError(f"{name} must contain real numeric values, not booleans")
     array = _trusted_real_array(value, name)
     if array.dtype.kind == "b":
