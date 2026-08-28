@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass
+from typing import Any
 import weakref
 
 from .audit import CandidateLifecycleState
@@ -56,8 +57,8 @@ def _seal_record(record: PilotCandidateRecord) -> None:
     _CREATION_SEALS[record_key] = (reference, snapshot)
 
 
-def _verify_creation_seal(record: PilotCandidateRecord) -> None:
-    """Reject post-construction rebinding before replaying any mutable field."""
+def _verify_creation_seal(record: PilotCandidateRecord) -> dict[str, Any]:
+    """Validate live fields and return the package-owned creation snapshot."""
     sealed = _CREATION_SEALS.get(id(record))
     if sealed is None or sealed[0]() is not record:
         raise ValueError("pilot record no longer matches its factory seal")
@@ -66,6 +67,7 @@ def _verify_creation_seal(record: PilotCandidateRecord) -> None:
         current = state.get(name)
         if type(current) is not type(expected) or current != expected:
             raise ValueError("pilot record no longer matches its factory seal")
+    return dict(zip(_PUBLIC_FIELD_NAMES, sealed[1], strict=True))
 
 
 @dataclass(frozen=True)
@@ -127,26 +129,8 @@ class PilotCandidateRecord:
         _seal_record(self)
 
     def _core_record(self) -> _CorePilotCandidateRecord:
-        """Return the validated internal representation of this public record."""
-        _verify_creation_seal(self)
-        return _CorePilotCandidateRecord(
-            pilot_study_id=self.pilot_study_id,
-            query_testlet_id=self.query_testlet_id,
-            generator_family_id=self.generator_family_id,
-            judge_policy_id=self.judge_policy_id,
-            occasion_id=self.occasion_id,
-            item_id=self.item_id,
-            candidate_fingerprint=self.candidate_fingerprint,
-            audit_report_fingerprint=self.audit_report_fingerprint,
-            screening_result_fingerprint=self.screening_result_fingerprint,
-            audit_policy_id=self.audit_policy_id,
-            audit_policy_version=self.audit_policy_version,
-            blueprint_id=self.blueprint_id,
-            rubric_id=self.rubric_id,
-            rubric_version=self.rubric_version,
-            lifecycle_state=self.lifecycle_state,
-            schema_version=self.schema_version,
-        )
+        """Return the validated creation snapshot as an internal pilot record."""
+        return _CorePilotCandidateRecord(**_verify_creation_seal(self))
 
     @property
     def pilot_record_fingerprint(self) -> str:
