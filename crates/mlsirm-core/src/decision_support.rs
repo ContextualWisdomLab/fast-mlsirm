@@ -23,6 +23,8 @@ pub const MAX_DECISION_STATES: usize = 4096;
 pub const MAX_DECISION_SIGNALS: usize = 1024;
 /// Maximum dense action/state or signal/state cells admitted per evaluation.
 pub const MAX_DECISION_CELLS: usize = 1_000_000;
+/// Maximum action-by-signal-by-state terms admitted for one EVSI evaluation.
+pub const MAX_DECISION_EVSI_WORK: usize = 20_000_000;
 
 const PROBABILITY_TOLERANCE: f64 = 1e-12;
 
@@ -213,6 +215,14 @@ fn validate_dimensions(
                     "signal_joint_probabilities length does not match its declared shape"
                         .to_owned(),
                 );
+            }
+            let evsi_work = action_count
+                .checked_mul(signal_cells)
+                .ok_or_else(|| "EVSI work dimensions overflow".to_owned())?;
+            if evsi_work > MAX_DECISION_EVSI_WORK {
+                return Err(format!(
+                    "EVSI work exceeds {MAX_DECISION_EVSI_WORK} action-signal-state terms"
+                ));
             }
             Ok(())
         }
