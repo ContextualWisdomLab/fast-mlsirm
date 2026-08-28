@@ -316,6 +316,7 @@ def _validated_andersen_result(
     n_groups: int,
     n_items: int,
     n_persons: int,
+    group_sizes: tuple[int, ...],
 ) -> dict[str, object]:
     """Replay the Rust Andersen result contract before public NumPy marshalling."""
     result = _exact_result_mapping(
@@ -336,13 +337,19 @@ def _validated_andersen_result(
     n_used_value = result["n_used"]
     if type(n_used_value) is not list and type(n_used_value) is not tuple:
         raise RuntimeError(_ANDERSEN_RESULT_ERROR)
-    if len(n_used_value) != n_groups:
+    if len(n_used_value) != n_groups or len(group_sizes) != n_groups:
+        raise RuntimeError(_ANDERSEN_RESULT_ERROR)
+    if any(type(size) is not int or size < 0 for size in group_sizes):
+        raise RuntimeError(_ANDERSEN_RESULT_ERROR)
+    if sum(group_sizes) != n_persons:
         raise RuntimeError(_ANDERSEN_RESULT_ERROR)
     n_used = [
         _exact_nonnegative_int(
-            item, error=_ANDERSEN_RESULT_ERROR, upper=n_persons
+            item,
+            error=_ANDERSEN_RESULT_ERROR,
+            upper=group_sizes[index],
         )
-        for item in n_used_value
+        for index, item in enumerate(n_used_value)
     ]
     if sum(n_used) > n_persons:
         raise RuntimeError(_ANDERSEN_RESULT_ERROR)
@@ -430,6 +437,7 @@ def andersen_lr_test(
     tol = _trusted_positive_tolerance(tol)
     yy, n_persons, n_items = _binary_matrix(responses)
     gid, n_groups = _normalized_group_ids(group, n_persons)
+    group_sizes = tuple(int(size) for size in np.bincount(gid, minlength=n_groups))
 
     from .fitstats import _core_module
 
@@ -450,6 +458,7 @@ def andersen_lr_test(
         n_groups=n_groups,
         n_items=n_items,
         n_persons=n_persons,
+        group_sizes=group_sizes,
     )
     return {
         "lr": res["lr"],
