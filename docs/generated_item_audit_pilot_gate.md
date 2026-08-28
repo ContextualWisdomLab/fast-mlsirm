@@ -45,6 +45,18 @@ factory. The pilot record requires descriptive nonnumeric identifiers for the
 pilot study, query/testlet, generator family, judge policy, occasion, item,
 blueprint, and rubric, plus the exact screening-result identity.
 
+The screening-bound pilot record is a distinct serialized contract:
+`schema_version="2.0"` and the public admission/audit policy is
+`AUDIT_POLICY_VERSION="2.0.0"`. The shared rubric/blueprint schema remains at
+its own version; pilot admission does not silently re-version unrelated rubric
+contracts. Legacy pilot-record payloads advertising `schema_version="1.0"`
+lack the mandatory screening-result binding and are rejected explicitly rather
+than being interpreted as current records. This package does not expose a
+pilot-record deserializer/migration API, so callers that retain legacy payloads
+must preserve them as historical evidence and create a new current admission
+through the verified screening-and-audit path when a current pilot record is
+required.
+
 The factory seal is an API-governance boundary, not a cryptographic capability
 inside a hostile Python process. Downstream services must verify the complete
 candidate, audit-report, and pilot-record fingerprints instead of trusting an
