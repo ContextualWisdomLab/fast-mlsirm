@@ -36,6 +36,8 @@ pub use estimator::{
 
 /// Maximum contextual-membership edges accepted at the public Rust boundary.
 pub const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
+/// Maximum CSR row-pointer entries accepted at the public Rust boundary.
+pub const MAX_CONTEXT_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
 
 fn validate_unique_context_indices_per_row(
     row_offsets: &[usize],
@@ -92,6 +94,11 @@ pub fn weighted_contextual_effect(
     effects: &[f64],
     worker_count: usize,
 ) -> Result<Vec<f64>, String> {
+    if row_offsets.len() > MAX_CONTEXT_ROW_OFFSETS {
+        return Err(format!(
+            "row_offsets exceeds the CSR row-pointer cap of {MAX_CONTEXT_ROW_OFFSETS}"
+        ));
+    }
     if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
         return Err(format!(
             "context_indices exceeds the membership-edge cap of {MAX_CONTEXT_MEMBERSHIPS}"
