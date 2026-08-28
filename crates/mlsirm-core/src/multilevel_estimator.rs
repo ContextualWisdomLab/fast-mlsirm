@@ -70,6 +70,8 @@ pub const MAX_CROSSED_EFFECTS: usize = 128;
 /// Upper bound on Newton iterations accepted from a caller.
 pub const MAX_CROSSED_ITER: usize = 10_000;
 
+const MEMBERSHIP_WEIGHT_TOLERANCE: f64 = 1e-12;
+
 type EstimatorResult<T> = Result<T, String>;
 
 /// Configuration for the crossed / multiple-membership MAP estimator.
@@ -346,6 +348,52 @@ fn validate_estimator_inputs(
         &dummy,
         config.worker_count,
     )?;
+    validate_membership_weight_totals(
+        row_offsets,
+        context_indices,
+        weights,
+        classification_offsets,
+        n_effects,
+    )?;
+    Ok(())
+}
+
+fn validate_membership_weight_totals(
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+    classification_offsets: &[usize],
+    n_effects: usize,
+) -> EstimatorResult<()> {
+    let n_classifications = classification_offsets.len() - 1;
+    let mut effect_classification = vec![0usize; n_effects];
+    for (classification, window) in classification_offsets.windows(2).enumerate() {
+        for slot in &mut effect_classification[window[0]..window[1]] {
+            *slot = classification;
+        }
+    }
+
+    let mut totals = vec![0.0_f64; n_classifications];
+    let mut compensation = vec![0.0_f64; n_classifications];
+    for window in row_offsets.windows(2) {
+        totals.fill(0.0);
+        compensation.fill(0.0);
+        for edge in window[0]..window[1] {
+            let classification = effect_classification[context_indices[edge]];
+            let adjusted = weights[edge] - compensation[classification];
+            let next = totals[classification] + adjusted;
+            compensation[classification] = (next - totals[classification]) - adjusted;
+            totals[classification] = next;
+        }
+        if totals
+            .iter()
+            .any(|total| (*total - 1.0).abs() > MEMBERSHIP_WEIGHT_TOLERANCE)
+        {
+            return Err(
+                "membership weights must sum to one within every classification".to_string(),
+            );
+        }
+    }
     Ok(())
 }
 
