@@ -14,6 +14,7 @@ arithmetic is performed in the Rust core.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 import numpy as np
 
@@ -40,6 +41,16 @@ _NUMPY_INTEGER_TYPES = (
     np.uint64,
     np.uintp,
     np.ulonglong,
+)
+_RESULT_KEYS = frozenset(
+    {
+        "action_expected_net_values",
+        "selected_action",
+        "expected_net_intervention_value",
+        "expected_value_perfect_information",
+        "expected_value_sample_information",
+        "net_expected_value_sample_information",
+    }
 )
 
 
@@ -97,6 +108,57 @@ def _core_module():
     from . import _core
 
     return _core
+
+
+def _validated_rust_result(
+    result: object,
+    *,
+    action_count: int,
+    has_sample_information: bool,
+) -> tuple[list[float], int, float, float, float | None, float | None]:
+    """Replay the concrete PyO3 result contract before public marshalling."""
+    invalid = RuntimeError("invalid decision-support Rust result payload")
+    if type(result) is not dict:
+        raise invalid
+    keys = list(dict.keys(result))
+    if any(type(key) is not str for key in keys) or set(keys) != _RESULT_KEYS:
+        raise invalid
+
+    action_values = dict.__getitem__(result, "action_expected_net_values")
+    selected_action = dict.__getitem__(result, "selected_action")
+    expected_net = dict.__getitem__(result, "expected_net_intervention_value")
+    evpi = dict.__getitem__(result, "expected_value_perfect_information")
+    evsi = dict.__getitem__(result, "expected_value_sample_information")
+    net_evsi = dict.__getitem__(result, "net_expected_value_sample_information")
+
+    if type(action_values) is not list or len(action_values) != action_count:
+        raise invalid
+    if any(type(value) is not float or not isfinite(value) for value in action_values):
+        raise invalid
+    if type(selected_action) is not int or not 0 <= selected_action < action_count:
+        raise invalid
+    if type(expected_net) is not float or not isfinite(expected_net):
+        raise invalid
+    if type(evpi) is not float or not isfinite(evpi):
+        raise invalid
+    if expected_net != action_values[selected_action]:
+        raise invalid
+    first_best = 0
+    for index in range(1, action_count):
+        if action_values[index] > action_values[first_best]:
+            first_best = index
+    if selected_action != first_best:
+        raise invalid
+
+    if has_sample_information:
+        if type(evsi) is not float or not isfinite(evsi):
+            raise invalid
+        if type(net_evsi) is not float or not isfinite(net_evsi):
+            raise invalid
+    elif evsi is not None or net_evsi is not None:
+        raise invalid
+
+    return action_values, selected_action, expected_net, evpi, evsi, net_evsi
 
 
 def evaluate_decision_support(
@@ -177,7 +239,7 @@ def evaluate_decision_support(
                 "signal_joint_probabilities columns must match state_probabilities"
             )
 
-    result = _core_module().evaluate_decision_support(
+    native_result = _core_module().evaluate_decision_support(
         probabilities,
         utilities,
         costs,
@@ -185,25 +247,23 @@ def evaluate_decision_support(
         signals,
         info_cost,
     )
+    (
+        action_values,
+        selected_action,
+        expected_net,
+        evpi,
+        evsi,
+        net_evsi,
+    ) = _validated_rust_result(
+        native_result,
+        action_count=action_count,
+        has_sample_information=signals is not None,
+    )
     return DecisionSupportResult(
-        action_expected_net_values=np.asarray(
-            result["action_expected_net_values"], dtype=np.float64
-        ),
-        selected_action=int(result["selected_action"]),
-        expected_net_intervention_value=float(
-            result["expected_net_intervention_value"]
-        ),
-        expected_value_perfect_information=float(
-            result["expected_value_perfect_information"]
-        ),
-        expected_value_sample_information=(
-            None
-            if result["expected_value_sample_information"] is None
-            else float(result["expected_value_sample_information"])
-        ),
-        net_expected_value_sample_information=(
-            None
-            if result["net_expected_value_sample_information"] is None
-            else float(result["net_expected_value_sample_information"])
-        ),
+        action_expected_net_values=np.array(action_values, dtype=np.float64),
+        selected_action=selected_action,
+        expected_net_intervention_value=expected_net,
+        expected_value_perfect_information=evpi,
+        expected_value_sample_information=evsi,
+        net_expected_value_sample_information=net_evsi,
     )
