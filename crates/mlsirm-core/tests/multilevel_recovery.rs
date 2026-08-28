@@ -157,6 +157,20 @@ fn fit_recovery_fixture(
     .expect("known-truth recovery fixture must fit")
 }
 
+fn reverse_edges_within_rows(
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+) -> (Vec<usize>, Vec<f64>) {
+    let mut reversed_indices = context_indices.to_vec();
+    let mut reversed_weights = weights.to_vec();
+    for window in row_offsets.windows(2) {
+        reversed_indices[window[0]..window[1]].reverse();
+        reversed_weights[window[0]..window[1]].reverse();
+    }
+    (reversed_indices, reversed_weights)
+}
+
 #[test]
 fn crossed_multiple_membership_map_recovers_centered_context_effects() {
     let (responses, row_offsets, context_indices, weights, intercepts, truth) = recovery_fixture();
@@ -201,6 +215,31 @@ fn crossed_multiple_membership_map_is_deterministic_across_worker_counts() {
     );
 
     assert_eq!(single_worker, four_workers);
+}
+
+#[test]
+fn crossed_multiple_membership_map_is_invariant_to_membership_edge_order() {
+    let (responses, row_offsets, context_indices, weights, intercepts, _) = recovery_fixture();
+    let baseline = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        4,
+    );
+    let (reversed_indices, reversed_weights) =
+        reverse_edges_within_rows(&row_offsets, &context_indices, &weights);
+    let permuted = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &reversed_indices,
+        &reversed_weights,
+        &intercepts,
+        4,
+    );
+
+    assert_eq!(baseline, permuted);
 }
 
 #[test]
