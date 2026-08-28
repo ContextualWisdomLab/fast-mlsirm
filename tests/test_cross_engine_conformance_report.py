@@ -149,7 +149,7 @@ def test_report_delegates_tamper_detection_to_strict_inventory_replay() -> None:
 
 
 def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() -> None:
-    """Buyer evidence remains text-visible, escaped, and table-accessible."""
+    """Buyer evidence remains text-visible, escaped, and keyboard/table-accessible."""
     html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
 
     assert "<script>unsafe</script>" not in html_text
@@ -158,6 +158,10 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;" in html_text
     assert '<meta http-equiv="Content-Security-Policy"' in html_text
     assert "<script" not in html_text.lower()
+    assert '<a class="skip-link" href="#main-content">Skip to report content</a>' in html_text
+    assert '<main id="main-content" tabindex="-1">' in html_text
+    assert "main:focus-visible" in html_text
+    assert "prefers-reduced-motion: reduce" in html_text
     assert "<caption>Capability × engine conformance evidence</caption>" in html_text
     assert '<th scope="col">Capability</th>' in html_text
     assert '<th scope="col">Execution status</th>' in html_text
