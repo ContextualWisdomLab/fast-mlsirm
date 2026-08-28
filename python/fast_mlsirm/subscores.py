@@ -261,6 +261,23 @@ def _native_float_scalar(value: object) -> float:
     return normalized
 
 
+def _validate_reliability_prmse_domains(
+    alpha: list[float],
+    alpha_total: float,
+    prmse_s: list[float],
+    prmse_x: list[float],
+    prmse_sx: list[float],
+) -> None:
+    """Replay the explicit Rust guards without recomputing any estimator."""
+    if any(value <= 0.0 or value > 1.0 for value in alpha):
+        _invalid_subscore_result()
+    if alpha_total <= 0.0 or alpha_total > 1.0:
+        _invalid_subscore_result()
+    for values in (prmse_s, prmse_x, prmse_sx):
+        if any(value < 0.0 or value > 1.0 + 1e-9 for value in values):
+            _invalid_subscore_result()
+
+
 def _validated_subscore_result(
     value: object,
     *,
@@ -311,6 +328,13 @@ def _validated_subscore_result(
     prmse_s = _native_float_vector(value["prmse_s"], expected_length=k)
     prmse_x = _native_float_vector(value["prmse_x"], expected_length=k)
     prmse_sx = _native_float_vector(value["prmse_sx"], expected_length=k)
+    _validate_reliability_prmse_domains(
+        alpha,
+        alpha_total,
+        prmse_s,
+        prmse_x,
+        prmse_sx,
+    )
     tau = _native_float_vector(value["tau"], expected_length=k)
     beta = _native_float_vector(value["beta"], expected_length=k)
     gamma = _native_float_vector(value["gamma"], expected_length=k)
@@ -383,9 +407,9 @@ def subscore_analysis(
     numeric array leaves. Logical-cell and structural traversal budgets are
     enforced before NumPy materialization, and callback-bearing or cyclic
     providers fail closed. The Rust result is replayed against the exact
-    package-owned field, scalar, finiteness, and cardinality contract before
-    NumPy result marshalling, including the subscale count implied by the
-    admitted group evidence.
+    package-owned field, scalar, finiteness, reliability/PRMSE-domain, and
+    cardinality contract before NumPy result marshalling, including the
+    subscale count implied by the admitted group evidence.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
