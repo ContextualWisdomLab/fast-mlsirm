@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from types import SimpleNamespace
 
 from fast_mlsirm.config import MLS2PLMConfig
@@ -188,6 +189,47 @@ def test_identity_cannot_override_versioned_event_fields() -> None:
         assert "run_reference" in str(error)
     else:
         raise AssertionError("reserved identity field was accepted")
+
+
+def test_identity_rejects_callback_bearing_mapping_without_observation() -> None:
+    """Identity carrier callbacks cannot execute before package admission."""
+    callbacks = 0
+    producer_calls = 0
+
+    class HostileIdentity(Mapping[str, str]):
+        def __getitem__(self, key: str) -> str:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError(f"identity callback executed for {key}")
+
+        def __iter__(self) -> Iterator[str]:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("identity iteration callback executed")
+
+        def __len__(self) -> int:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("identity length callback executed")
+
+    def builder(**payload: object) -> dict[str, object]:
+        nonlocal producer_calls
+        producer_calls += 1
+        return _canonical_builder()(**payload)
+
+    try:
+        CanonicalComputeUsageSink(
+            event_builder=builder,
+            event_validator=_validate_usage_event_v1,
+            enqueue=lambda _: None,
+            identity=HostileIdentity(),
+        )
+    except ValueError as error:
+        assert "identity must be an exact dict" in str(error)
+    else:
+        raise AssertionError("callback-bearing identity mapping was accepted")
+    assert callbacks == 0
+    assert producer_calls == 0
 
 
 def test_identity_rejects_noncanonical_fields_before_producer_boundary() -> None:
