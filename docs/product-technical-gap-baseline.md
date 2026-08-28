@@ -276,8 +276,8 @@ is rooted at #1471, and the interaction-map stack is rooted at #1417. The
 long-lived product gaps remain #621 (bounded 1.0 capability/support matrix) and
 #565 (multilevel/multiple-membership/longitudinal completion). The Rust-owned
 ordinary-production boundary has materially advanced through the integrated
-backend/runtime work; issue #626 is closed, but the remaining public capability
-and release evidence still prevents a universal technical-GA claim.
+backend/runtime work; issues #626 and #627 are closed, but the remaining public
+capability and release evidence still prevents a universal technical-GA claim.
 
 This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,
@@ -319,7 +319,7 @@ enforces exact-type admission and replays `__post_init__` invariants
 | Gap ID | Priority | Required outcome | Existing issue / PR evidence | Completion test |
 | --- | --- | --- | --- | --- |
 | GAP-01 | P0 | Freeze a bounded 1.0 capability, support and maturity matrix; do not equate planned research with GA | [#621](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/621), [#636](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/636), [#648](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/648) | every public capability is classified, supported versions match metadata, and the release gate makes no valuation/certification claim |
-| GAP-02 | P0 | One ordinary Rust/PyO3 numerical owner; NumPy only on explicit reference/parity surfaces | [#626](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/626), [#627](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/627); the automatic-backend and reference-isolation slices landed on protected main via merged [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951)/[#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | production config/API cannot silently select Python numerics; missing/incompatible Rust fails before result-affecting work |
+| GAP-02 | P0 | One ordinary Rust/PyO3 numerical owner; NumPy only on explicit reference/parity surfaces | closed issues [#626](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/626) and [#627](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/627); the automatic-backend and reference-isolation slices landed on protected main via merged [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951)/[#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | production config/API cannot silently select Python numerics; missing/incompatible Rust fails before result-affecting work |
 | GAP-03 | P0 | Complete non-atomistic multilevel, cross-classified, multiple-membership and longitudinal estimation with identification and recovery | [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565); crossed multiple-membership estimator landed via merged [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014), and continuous-time/AR longitudinal Rasch landed via merged [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | realistic aligned bias/MAE/RMSE/coverage/convergence and temporal leakage tests pass; the remaining profile must preserve its declared estimand and recovery evidence |
 | GAP-04 | P0 | Relation-safe factor retention, structural model selection and identified exploratory multidimensional estimation | [#608](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/608), [#633](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/633), [#551](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/551), PR [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | no winner is forced without relation-appropriate tests, held-out evidence, scoreability and true-structure recovery |
 | GAP-05 | P1 | Close rubric, generated-item, scoring, RAG, essay, enterprise-issue and item-bank lifecycles without parallel contracts | [#397](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/397), [#404](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/404), [#607](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/607), [#609](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/609), PR [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | one immutable assessment/rubric/scoring lineage reaches pilot, calibration, validation, lifecycle and report evidence without provider coupling or silent state promotion |
@@ -347,7 +347,8 @@ enforces exact-type admission and replays `__post_init__` invariants
 ### Stage 1 — close the technical-GA numerical boundary
 
 1. Reconcile #951 and #1070 so one public backend/reference contract survives.
-2. Complete #626/#627 Rust ownership and fail-closed evidence.
+2. Retain the protected-main closure evidence for #626/#627 Rust ownership and
+   fail-closed behavior in the support matrix.
 3. Define the first bounded 1.0 capability/support matrix under #621/#648.
 4. Reject advertised-but-unimplemented model×estimator combinations before
    fitting and remove normal-path `NotImplementedError` surfaces from the GA
