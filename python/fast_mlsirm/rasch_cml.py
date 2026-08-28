@@ -344,6 +344,8 @@ def _validated_andersen_result(
         )
         for item in n_used_value
     ]
+    if sum(n_used) > n_persons:
+        raise RuntimeError(_ANDERSEN_RESULT_ERROR)
     converged = result["converged"]
     if type(converged) is not bool:
         raise RuntimeError(_ANDERSEN_RESULT_ERROR)
