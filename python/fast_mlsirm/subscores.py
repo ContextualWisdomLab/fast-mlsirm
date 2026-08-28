@@ -5,6 +5,7 @@ arrays."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -211,10 +212,10 @@ def _native_float_vector(
             normalized = float(scalar)
         else:
             _invalid_subscore_result()
-        if np.isnan(normalized):
+        if math.isnan(normalized):
             if index not in allowed_nan_indices:
                 _invalid_subscore_result()
-        elif not np.isfinite(normalized):
+        elif not math.isfinite(normalized):
             _invalid_subscore_result()
         validated.append(normalized)
     return validated
@@ -256,7 +257,7 @@ def _native_float_scalar(value: object) -> float:
         normalized = float(value)
     else:
         _invalid_subscore_result()
-    if not np.isfinite(normalized):
+    if not math.isfinite(normalized):
         _invalid_subscore_result()
     return normalized
 
@@ -348,7 +349,7 @@ def _validated_subscore_result(
         expected_length=k * k,
         allowed_nan_indices=diagonal,
     )
-    if any(not np.isnan(disattenuated_corr[index]) for index in diagonal):
+    if any(not math.isnan(disattenuated_corr[index]) for index in diagonal):
         _invalid_subscore_result()
 
     prmse_s = _native_float_vector(value["prmse_s"], expected_length=k)
