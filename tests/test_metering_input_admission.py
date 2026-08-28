@@ -160,3 +160,50 @@ def test_builder_result_rejects_callback_bearing_contract_version_without_compar
     assert callbacks == 0
     assert validator_calls == 0
     assert queued == []
+
+
+def test_builder_result_rejects_callback_bearing_key_before_version_lookup() -> None:
+    """Exact-dict event keys are inert before package-owned version lookup."""
+    callbacks = 0
+    validator_calls = 0
+    queued: list[object] = []
+
+    class HostileKey(str):
+        def __hash__(self) -> int:
+            nonlocal callbacks
+            callbacks += 1
+            return str.__hash__(self)
+
+        def __eq__(self, other: object) -> bool:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError(f"event-key comparison executed for {other!r}")
+
+    key = HostileKey("event_contract_version")
+    event = {key: 1}
+    callbacks = 0
+
+    def builder(**_: object) -> dict[str, object]:
+        return event  # type: ignore[return-value]
+
+    def validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(ValueError, match="event_builder result keys must be exact strings"):
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            **_valid_fit_payload(),  # type: ignore[arg-type]
+        )
+
+    assert callbacks == 0
+    assert validator_calls == 0
+    assert queued == []
