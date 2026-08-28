@@ -23,3 +23,6 @@
   membership edges or 100,001 CSR row-pointer entries before per-row uniqueness,
   referenced-effect, or output-allocation work, matching the canonical Python
   design and PyO3 resource bounds.
+- The direct Rust crossed estimator now rejects `worker_count` values above
+  10,000 at control admission, matching the canonical Python estimator guard
+  before any worker partitioning or iterative estimation begins.
