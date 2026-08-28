@@ -207,3 +207,81 @@ def test_builder_result_rejects_callback_bearing_key_before_version_lookup() -> 
     assert callbacks == 0
     assert validator_calls == 0
     assert queued == []
+
+
+def test_validator_result_rejects_callback_bearing_carrier_without_observation() -> None:
+    """Validator result carriers are sealed after the callback returns."""
+    callbacks = 0
+    queued: list[object] = []
+
+    class HostileErrors:
+        def __bool__(self) -> bool:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("validator-result truthiness callback executed")
+
+        def __getitem__(self, key: object) -> object:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError(f"validator-result item callback executed for {key!r}")
+
+        def __iter__(self):
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("validator-result iteration callback executed")
+
+    def builder(**_: object) -> dict[str, object]:
+        return {"event_contract_version": 1}
+
+    def validator(_: object) -> object:
+        return HostileErrors()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,  # type: ignore[arg-type]
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(ValueError, match="event_validator must return an exact tuple"):
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            **_valid_fit_payload(),  # type: ignore[arg-type]
+        )
+
+    assert callbacks == 0
+    assert queued == []
+
+
+def test_validator_result_rejects_callback_bearing_error_without_conversion() -> None:
+    """Validator error entries are exact strings before diagnostic formatting."""
+    callbacks = 0
+    queued: list[object] = []
+
+    class HostileError(str):
+        def __str__(self) -> str:
+            nonlocal callbacks
+            callbacks += 1
+            raise AssertionError("validator-error string callback executed")
+
+    def builder(**_: object) -> dict[str, object]:
+        return {"event_contract_version": 1}
+
+    def validator(_: object) -> tuple[object, ...]:
+        return (HostileError("bad event"),)
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,  # type: ignore[arg-type]
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(ValueError, match="event_validator errors must be exact strings"):
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            **_valid_fit_payload(),  # type: ignore[arg-type]
+        )
+
+    assert callbacks == 0
+    assert queued == []
