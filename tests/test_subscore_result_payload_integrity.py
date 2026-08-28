@@ -127,6 +127,26 @@ def test_subscore_analysis_rejects_nonfinite_native_values() -> None:
         _run_with_result(result)
 
 
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("alpha", [0.0, 0.9]),
+        ("alpha_total", 1.01),
+        ("prmse_s", [-0.01, 0.9]),
+        ("prmse_x", [0.6, 1.000000002]),
+        ("prmse_sx", [0.81, 1.000000002]),
+    ],
+)
+def test_subscore_analysis_rejects_native_values_outside_rust_domains(
+    field: str, invalid_value: object
+) -> None:
+    result = _valid_native_result()
+    result[field] = invalid_value
+
+    with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
+        _run_with_result(result)
+
+
 def test_subscore_analysis_rejects_native_subscale_count_not_in_group_evidence() -> None:
     with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
         _run_with_result(_self_consistent_k3_native_result())
