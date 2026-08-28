@@ -27,7 +27,7 @@ pub struct OrderedProfileInput<'a> {
 pub struct OrderedProfileSummary {
     /// Normalized posterior probability for every ordered level.
     pub level_probabilities: Vec<f64>,
-    /// Unique modal level, or `None` when modal probabilities tie.
+    /// Unique modal level when it lies in the credible set, otherwise `None`.
     pub reported_level_index: Option<usize>,
     /// Shortest contiguous ordered-level interval meeting `credible_mass`.
     pub credible_level_indices: Vec<usize>,
@@ -107,7 +107,7 @@ impl Error for OrderedProfileError {}
 ///
 /// An exact cut score belongs to the level above that boundary. Inputs are
 /// validated in their supplied order; the function never sorts cut scores,
-/// repairs weights, or forces a level when modal probabilities tie. Posterior
+/// repairs weights, or forces a reported level outside the credible set. Posterior
 /// draw/weight pairs are canonically ordered internally so a joint permutation
 /// produces bit-identical output.
 pub fn summarize_ordered_profile(
@@ -193,12 +193,16 @@ pub fn summarize_ordered_profile(
         return Err(OrderedProfileError::NonFinitePosteriorMoment);
     }
 
+    let credible_level_indices = shortest_contiguous_interval(
+        &level_probabilities,
+        input.credible_mass,
+    );
+    let reported_level_index = unique_modal_level(&level_probabilities)
+        .filter(|index| credible_level_indices.contains(index));
+
     Ok(OrderedProfileSummary {
-        reported_level_index: unique_modal_level(&level_probabilities),
-        credible_level_indices: shortest_contiguous_interval(
-            &level_probabilities,
-            input.credible_mass,
-        ),
+        reported_level_index,
+        credible_level_indices,
         level_probabilities,
         posterior_mean,
         posterior_standard_error: posterior_variance.sqrt(),
@@ -268,7 +272,7 @@ fn unique_modal_level(probabilities: &[f64]) -> Option<usize> {
 }
 
 fn shortest_contiguous_interval(probabilities: &[f64], target_mass: f64) -> Vec<usize> {
-    let mut best: Option<(usize, usize)> = None;
+    let mut best: Option<(usize, usize, f64)> = None;
     for start in 0..probabilities.len() {
         let mut mass = 0.0;
         for (end, probability) in probabilities.iter().enumerate().skip(start) {
@@ -279,20 +283,23 @@ fn shortest_contiguous_interval(probabilities: &[f64], target_mass: f64) -> Vec<
             let candidate_length = end - start + 1;
             let replace = match best {
                 None => true,
-                Some((best_start, best_end)) => {
+                Some((best_start, best_end, best_mass)) => {
                     let best_length = best_end - best_start + 1;
                     candidate_length < best_length
-                        || (candidate_length == best_length && start < best_start)
+                        || (candidate_length == best_length
+                            && (mass > best_mass + PROBABILITY_TOLERANCE
+                                || ((mass - best_mass).abs() <= PROBABILITY_TOLERANCE
+                                    && start < best_start)))
                 }
             };
             if replace {
-                best = Some((start, end));
+                best = Some((start, end, mass));
             }
             break;
         }
     }
 
-    let (start, end) = best.unwrap_or((0, probabilities.len() - 1));
+    let (start, end, _) = best.unwrap_or((0, probabilities.len() - 1, 1.0));
     (start..=end).collect()
 }
 
