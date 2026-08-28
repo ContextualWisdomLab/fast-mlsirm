@@ -9,14 +9,116 @@ from fast_mlsirm.metering import CanonicalComputeUsageSink
 from fast_mlsirm.simulation import simulate
 
 
-def _sink(queued: list[dict[str, object]]) -> CanonicalComputeUsageSink:
-    """Build a sink with anonymized identity references for tests."""
+_REQUIRED_USAGE_EVENT_FIELDS = frozenset(
+    {
+        "event_id",
+        "event_contract_version",
+        "source_event_key",
+        "source_payload_hash",
+        "tenant_reference",
+        "billing_account_reference",
+        "billing_principal_reference",
+        "product_code",
+        "occurred_at",
+        "measurements",
+    }
+)
+_OPTIONAL_USAGE_EVENT_FIELDS = frozenset(
+    {
+        "credential_reference",
+        "cost_center_reference",
+        "project_reference",
+        "operation_code",
+        "recorded_at",
+    }
+)
+
+
+def _validate_usage_event_v1(event: object) -> tuple[str, ...]:
+    """Test-only replay of the released closed v1 usage-event envelope."""
+    if type(event) is not dict:
+        return ("$: usage event must be an object",)
+    errors: list[str] = []
+    keys = set(event)
+    missing = _REQUIRED_USAGE_EVENT_FIELDS - keys
+    unexpected = keys - (_REQUIRED_USAGE_EVENT_FIELDS | _OPTIONAL_USAGE_EVENT_FIELDS)
+    if missing:
+        errors.append(f"$: missing required fields: {', '.join(sorted(missing))}")
+    if unexpected:
+        errors.append(f"$: unexpected fields: {', '.join(sorted(unexpected))}")
+    if event.get("event_contract_version") != 1:
+        errors.append("$: event_contract_version must be 1")
+    measurements = event.get("measurements")
+    if not isinstance(measurements, list) or not measurements:
+        errors.append("$: measurements must be a non-empty array")
+    return tuple(errors)
+
+
+def _canonical_builder(
+    captured: dict[str, object] | None = None,
+    *,
+    contract_version: int = 1,
+):
+    """Return a deterministic stand-in for the released producer boundary."""
 
     def builder(**payload: object) -> dict[str, object]:
-        return {"event_contract_version": 1, **payload}
+        if captured is not None:
+            captured.update(payload)
+        measurements = [
+            {
+                "meter_code": "response_rows",
+                "quantity": str(payload["response_rows"]),
+                "unit_code": "count",
+                "quality_code": "deterministically_derived",
+            },
+            {
+                "meter_code": "response_items",
+                "quantity": str(payload["response_items"]),
+                "unit_code": "count",
+                "quality_code": "deterministically_derived",
+            },
+        ]
+        event: dict[str, object] = {
+            "event_id": "00000000-0000-4000-8000-000000000001",
+            "event_contract_version": contract_version,
+            "source_event_key": str(payload["run_reference"]),
+            "source_payload_hash": f"sha256:{'0' * 64}",
+            "tenant_reference": str(
+                payload.get("tenant_reference", "urn:cwl:tenant:test")
+            ),
+            "billing_account_reference": str(
+                payload.get(
+                    "billing_account_reference",
+                    "urn:cwl:tenant:test:account:1",
+                )
+            ),
+            "billing_principal_reference": str(
+                payload.get(
+                    "billing_principal_reference",
+                    "urn:cwl:tenant:test:principal:1",
+                )
+            ),
+            "product_code": "fast_mlsirm",
+            "operation_code": "compute_run",
+            "occurred_at": payload["occurred_at"],
+            "measurements": measurements,
+        }
+        project_reference = payload.get("project_reference")
+        if project_reference is not None:
+            event["project_reference"] = project_reference
+        return event
 
+    return builder
+
+
+def _sink(
+    queued: list[dict[str, object]],
+    captured: dict[str, object] | None = None,
+) -> CanonicalComputeUsageSink:
+    """Build a sink with anonymized identity references for tests."""
     return CanonicalComputeUsageSink(
-        event_builder=builder,
+        event_builder=_canonical_builder(captured),
+        event_validator=_validate_usage_event_v1,
         enqueue=queued.append,
         identity={
             "tenant_reference": "urn:cwl:tenant:test",
@@ -30,7 +132,8 @@ def test_simulation_export_uses_real_response_shape_without_content() -> None:
     """A real simulation emits only bounded shape/provenance metadata."""
     data = simulate(MLS2PLMConfig(n_persons=3, n_dims=1, items_per_dim=2, seed=7))
     queued: list[dict[str, object]] = []
-    _sink(queued).emit_simulation(
+    captured: dict[str, object] = {}
+    _sink(queued, captured).emit_simulation(
         data,
         run_reference="urn:cwl:run:simulation-7",
         artifact_reference="urn:cwl:artifact:simulation-7",
@@ -40,19 +143,21 @@ def test_simulation_export_uses_real_response_shape_without_content() -> None:
         occurred_at="2026-08-28T00:00:00Z",
     )
 
-    event = queued[0]
-    assert event["response_rows"] == 3
-    assert event["response_items"] == 2
-    assert event["seed_reference"] == "urn:cwl:seed:7"
-    assert event["project_reference"] == "urn:cwl:project:measurement"
-    assert "responses" not in event
+    assert captured["response_rows"] == 3
+    assert captured["response_items"] == 2
+    assert captured["seed_reference"] == "urn:cwl:seed:7"
+    assert captured["project_reference"] == "urn:cwl:project:measurement"
+    assert "responses" not in captured
+    assert _validate_usage_event_v1(queued[0]) == ()
+    assert "responses" not in queued[0]
 
 
 def test_fit_export_uses_result_backend_and_explicit_shape() -> None:
     """Fit export keeps backend identity and caller-provided input shape."""
     queued: list[dict[str, object]] = []
+    captured: dict[str, object] = {}
     result = SimpleNamespace(model="MLS2PLM", backend="rust")
-    _sink(queued).emit_fit(
+    _sink(queued, captured).emit_fit(
         result,
         run_reference="urn:cwl:run:fit-7",
         artifact_reference="urn:cwl:artifact:fit-7",
@@ -64,16 +169,18 @@ def test_fit_export_uses_result_backend_and_explicit_shape() -> None:
         artifact_bytes=128,
     )
 
-    assert queued[0]["model_code"] == "mls2plm"
-    assert queued[0]["backend_code"] == "rust"
-    assert queued[0]["artifact_bytes"] == 128
+    assert captured["model_code"] == "mls2plm"
+    assert captured["backend_code"] == "rust"
+    assert captured["artifact_bytes"] == 128
+    assert _validate_usage_event_v1(queued[0]) == ()
 
 
 def test_identity_cannot_override_versioned_event_fields() -> None:
     """Reserved event fields stay under the sink's explicit authority."""
     try:
         CanonicalComputeUsageSink(
-            event_builder=lambda **payload: {"event_contract_version": 1, **payload},
+            event_builder=_canonical_builder(),
+            event_validator=_validate_usage_event_v1,
             enqueue=lambda _: None,
             identity={"run_reference": "must-not-override"},
         )
@@ -86,13 +193,9 @@ def test_identity_cannot_override_versioned_event_fields() -> None:
 def test_optional_project_reference_is_omitted_when_unset() -> None:
     """Older builders do not receive an omitted optional field."""
     captured: dict[str, object] = {}
-
-    def builder(**payload: object) -> dict[str, object]:
-        captured.update(payload)
-        return {"event_contract_version": 1, **payload}
-
     sink = CanonicalComputeUsageSink(
-        event_builder=builder,
+        event_builder=_canonical_builder(captured),
+        event_validator=_validate_usage_event_v1,
         enqueue=lambda _: None,
         identity={},
     )
@@ -114,7 +217,8 @@ def test_sink_rejects_non_v1_builder_output() -> None:
     """A producer cannot enqueue an event from a different contract version."""
     queued: list[dict[str, object]] = []
     sink = CanonicalComputeUsageSink(
-        event_builder=lambda **payload: {"event_contract_version": 2, **payload},
+        event_builder=_canonical_builder(contract_version=2),
+        event_validator=_validate_usage_event_v1,
         enqueue=queued.append,
         identity={},
     )
@@ -147,4 +251,38 @@ def test_sink_rejects_non_v1_builder_output() -> None:
         assert "event_contract_version=1" in str(error)
     else:
         raise AssertionError("non-v1 fit event was accepted")
+    assert queued == []
+
+
+def test_sink_rejects_same_version_event_that_fails_canonical_validation() -> None:
+    """A version marker alone cannot bypass the canonical producer schema."""
+    queued: list[dict[str, object]] = []
+    canonical_builder = _canonical_builder()
+
+    def invalid_builder(**payload: object) -> dict[str, object]:
+        event = canonical_builder(**payload)
+        event["response_rows"] = payload["response_rows"]
+        return event
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=invalid_builder,
+        event_validator=_validate_usage_event_v1,
+        enqueue=queued.append,
+        identity={},
+    )
+    try:
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            run_reference="run",
+            artifact_reference="artifact",
+            configuration_reference="config",
+            seed_reference="seed",
+            occurred_at="2026-08-28T00:00:00Z",
+            response_rows=1,
+            response_items=1,
+        )
+    except ValueError as error:
+        assert "canonical usage-event v1 contract" in str(error)
+    else:
+        raise AssertionError("schema-invalid v1 event was accepted")
     assert queued == []
