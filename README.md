@@ -209,9 +209,9 @@ local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
 generation. It is not a regulated decision product, hosted assessment platform,
 or Bayesian posterior inference engine. See:
 
-- [Commercial readiness gate](docs/commercial_readiness.md)
+- [Acquisition/commercial readiness gate](docs/commercial_readiness.md)
 - [Enterprise sales readiness gate](docs/enterprise_sales_readiness.md)
-- [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
+- [Legacy 20B compatibility evidence (deprecated)](docs/20b_product_readiness.md)
 - [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
 - [Figma product design packet](docs/figma_product_design_packet.md)
 - [IRT stability product design and equation contract](docs/irt_stability_product_design.md)
@@ -243,7 +243,7 @@ python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
   --require-rust \
-  --require-20b-product \
+  --require-acquisition-readiness \
   --benchmark-report acceptance_check/benchmark/benchmark_report.json \
   --require-benchmark-report \
   --check-import \
@@ -265,7 +265,7 @@ python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
   --require-rust \
-  --require-20b-product \
+  --require-acquisition-readiness \
   --benchmark-report acceptance_check/benchmark/benchmark_report.json \
   --require-benchmark-report \
   --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
@@ -286,7 +286,7 @@ python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
   --require-rust \
-  --require-20b-product \
+  --require-acquisition-readiness \
   --benchmark-report acceptance_check/benchmark/benchmark_report.json \
   --require-benchmark-report \
   --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
@@ -303,9 +303,9 @@ python scripts/sales_readiness.py \
   --out acceptance_check/final_procurement_sales_readiness_manifest.json
 ```
 
-Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
-the release acceptance and sales-readiness commands to pass on the exact
-release artifact. The 20B product gate adds
+Acquisition and Enterprise Sales Readiness requires the release acceptance and
+sales-readiness commands to pass on the exact release artifact. The current
+`--require-acquisition-readiness` profile adds
 Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
 synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
 command produces a portable zip, `buyer_evidence_manifest.json`, and
