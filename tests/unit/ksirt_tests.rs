@@ -319,6 +319,17 @@ fn input_rejection() {
     assert!(ksirt(&ok, KsirtKernel::Gaussian, 3, Some(&[f64::NAN])).is_err());
 }
 
+/// Finite response cells whose total is not representable must fail before
+/// ranking can publish non-finite native evidence.
+#[test]
+fn rejects_nonfinite_total_score() {
+    let x = vec![vec![f64::MAX, f64::MAX], vec![0.0, 0.0]];
+    assert_eq!(
+        ksirt(&x, KsirtKernel::Gaussian, 3, None).unwrap_err(),
+        "non-finite total score for subject 0"
+    );
+}
+
 /// Monte Carlo ICC recovery, 500 replications, normal and skewed abilities.
 /// Reads: `items[*].occ` (the score-1 row) against the true 2PL ICC on the
 /// central grid, averaged over items and replications. Because theta is

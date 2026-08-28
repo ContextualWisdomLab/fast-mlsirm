@@ -190,7 +190,18 @@ where
 
     // Step 1: total scores -> ranks (ties by first occurrence, matching
     // R's ties.method="first"; ksIRT.R line 121) -> normal quantiles.
-    let totals: Vec<f64> = x.iter().map(|row| row.as_ref().iter().sum()).collect();
+    let totals: Vec<f64> = x
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let total: f64 = row.as_ref().iter().sum();
+            if total.is_finite() {
+                Ok(total)
+            } else {
+                Err(format!("non-finite total score for subject {i}"))
+            }
+        })
+        .collect::<Result<_, _>>()?;
     let mut order: Vec<usize> = (0..n).collect();
     // stable sort keeps original subject order within ties => "first"
     order.sort_by(|&a, &b| totals[a].partial_cmp(&totals[b]).unwrap());

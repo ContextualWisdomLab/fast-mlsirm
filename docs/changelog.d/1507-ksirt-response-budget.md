@@ -9,4 +9,5 @@
 - Preserve finite response-option and bandwidth identity through the Python-to-Rust `f64` boundary: exact built-in/NumPy integer and wider-floating evidence that cannot round-trip through binary64 now fails before compiled-core discovery rather than being silently rounded.
 - After callback-free response shape/resource admission establishes the item count, validate optional bandwidth length, finite-positive domain, and lossless `f64` identity before value-wise or dense response marshalling; response resource and minimum-shape failures retain precedence.
 - Replay the exact Rust result mapping, vector cardinalities, positive bandwidths, and finite numerical payload before public NumPy marshalling so stale or foreign native results cannot execute array-conversion protocols or expose structurally inconsistent KSIRT output.
+- Reject finite response cells whose Rust total-score accumulation is not representable as finite binary64 evidence before rank-based smoothing.
 - Preserve Rust ownership of rank-based ordinal ability, Nadaraya–Watson option characteristic curves, kernel evaluation, bandwidth application, and expected-score arithmetic.
