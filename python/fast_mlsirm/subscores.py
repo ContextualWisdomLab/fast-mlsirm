@@ -305,6 +305,14 @@ def _validate_rust_cross_field_invariants(
         _invalid_subscore_result()
 
 
+def _validate_symmetric_flat_matrix(values: list[float], *, size: int) -> None:
+    """Replay exact symmetry established by the Rust correlation constructors."""
+    for row in range(size):
+        for column in range(row + 1, size):
+            if values[row * size + column] != values[column * size + row]:
+                _invalid_subscore_result()
+
+
 def _validated_subscore_result(
     value: object,
     *,
@@ -342,6 +350,7 @@ def _validated_subscore_result(
     k = expected_k
     alpha_total = _native_float_scalar(value["alpha_total"])
     corr = _native_float_vector(value["corr"], expected_length=(k + 1) * (k + 1))
+    _validate_symmetric_flat_matrix(corr, size=k + 1)
 
     diagonal = frozenset(index * k + index for index in range(k))
     disattenuated_corr = _native_float_vector(
@@ -351,6 +360,7 @@ def _validated_subscore_result(
     )
     if any(not math.isnan(disattenuated_corr[index]) for index in diagonal):
         _invalid_subscore_result()
+    _validate_symmetric_flat_matrix(disattenuated_corr, size=k)
 
     prmse_s = _native_float_vector(value["prmse_s"], expected_length=k)
     prmse_x = _native_float_vector(value["prmse_x"], expected_length=k)
