@@ -87,6 +87,23 @@ fn requires_the_selected_interval_to_meet_credible_mass_strictly() {
 }
 
 #[test]
+fn prefers_distinct_probability_mass_below_the_tie_tolerance() {
+    let samples = [-1.0, 1.0];
+    let weights = [1.0, 1.0 + 1.0e-13];
+    let cut_scores = [0.0];
+
+    let summary = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &samples,
+        sample_weights: Some(&weights),
+        cut_scores: &cut_scores,
+        credible_mass: 0.5,
+    })
+    .expect("both singleton intervals meet the requested credible mass");
+
+    assert_eq!(summary.credible_level_indices, vec![1]);
+}
+
+#[test]
 fn prefers_more_probability_mass_before_lower_start_tie_break() {
     let samples = [-1.0, 1.0];
     let weights = [2.0, 3.0];

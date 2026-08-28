@@ -287,9 +287,8 @@ fn shortest_contiguous_interval(probabilities: &[f64], target_mass: f64) -> Vec<
                     let best_length = best_end - best_start + 1;
                     candidate_length < best_length
                         || (candidate_length == best_length
-                            && (mass > best_mass + PROBABILITY_TOLERANCE
-                                || ((mass - best_mass).abs() <= PROBABILITY_TOLERANCE
-                                    && start < best_start)))
+                            && (mass > best_mass
+                                || (mass == best_mass && start < best_start)))
                 }
             };
             if replace {
