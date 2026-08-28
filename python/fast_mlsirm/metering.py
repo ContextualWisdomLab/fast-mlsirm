@@ -81,6 +81,8 @@ def _snapshot_exact_json(
             for item in value
         ]
     if value_type is dict:
+        if len(value) > remaining_nodes[0]:
+            raise ValueError("event_builder result exact JSON tree is too large")
         if any(type(key) is not str for key in value):
             raise ValueError("event_builder result exact JSON keys must be exact strings")
         return {
@@ -134,6 +136,8 @@ class CanonicalComputeUsageSink:
         """Fail closed unless the producer output is a valid canonical v1 event."""
         if type(event) is not dict:
             raise ValueError("event_builder must return an exact dict")
+        if len(event) >= _MAX_EVENT_SNAPSHOT_NODES:
+            raise ValueError("event_builder result exact JSON tree is too large")
         if any(type(key) is not str for key in event):
             raise ValueError("event_builder result keys must be exact strings")
         contract_version = event.get("event_contract_version")
