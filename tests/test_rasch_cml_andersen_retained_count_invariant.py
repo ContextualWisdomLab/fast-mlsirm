@@ -41,3 +41,23 @@ def test_andersen_rejects_retained_count_sum_above_admitted_persons(monkeypatch)
 
     with pytest.raises(RuntimeError, match="invalid Andersen Rust result payload"):
         andersen_lr_test(_binary(), [0, 0, 1, 1])
+
+
+def test_andersen_rejects_retained_count_above_group_capacity(monkeypatch):
+    """A group cannot retain more informative persons than that group admitted."""
+
+    class _Core:
+        def andersen_lr_test(self, *args):
+            del args
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": [3, 1],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    with pytest.raises(RuntimeError, match="invalid Andersen Rust result payload"):
+        andersen_lr_test(_binary(), [0, 0, 1, 1])
