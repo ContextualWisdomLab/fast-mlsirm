@@ -146,6 +146,8 @@ def _validated_rust_result(
     invalid = RuntimeError("invalid decision-support Rust result payload")
     if type(result) is not dict:
         raise invalid
+    if len(result) != len(_RESULT_KEYS):
+        raise invalid
     keys = list(dict.keys(result))
     if any(type(key) is not str for key in keys) or set(keys) != _RESULT_KEYS:
         raise invalid
