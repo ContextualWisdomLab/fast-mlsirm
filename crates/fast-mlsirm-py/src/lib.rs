@@ -67,6 +67,7 @@ use mlsirm_core::classification::{
     WoodruffSawyerResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
+use mlsirm_core::decision_support::evaluate_decision_support as core_evaluate_decision_support;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
@@ -2821,6 +2822,73 @@ fn taylor_russell(py: Python<'_>, rxy: f64, sr: f64, br: f64) -> PyResult<Py<pyo
     out.set_item("success_ratio", res.success_ratio)?;
     out.set_item("base_rate", res.base_rate)?;
     out.set_item("q_joint", res.q_joint)?;
+    Ok(out.into())
+}
+
+/// Evaluate explicit expected net intervention value, EVPI, and optional EVSI
+/// using `mlsirm_core::decision_support`. Python performs no decision
+/// arithmetic; it only supplies contiguous validated arrays and marshals the
+/// Rust result.
+#[pyfunction]
+#[pyo3(signature = (
+    state_probabilities,
+    action_utilities,
+    intervention_costs,
+    no_action_index = 0,
+    signal_joint_probabilities = None,
+    information_cost = 0.0
+))]
+fn evaluate_decision_support(
+    py: Python<'_>,
+    state_probabilities: PyReadonlyArray1<'_, f64>,
+    action_utilities: PyReadonlyArray2<'_, f64>,
+    intervention_costs: PyReadonlyArray1<'_, f64>,
+    no_action_index: usize,
+    signal_joint_probabilities: Option<PyReadonlyArray2<'_, f64>>,
+    information_cost: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let state_values = state_probabilities.as_slice()?;
+    let utility_values = action_utilities.as_slice()?;
+    let cost_values = intervention_costs.as_slice()?;
+    let utility_shape = action_utilities.shape();
+    let (signal_values, signal_count) = match signal_joint_probabilities.as_ref() {
+        Some(signals) => (Some(signals.as_slice()?), signals.shape()[0]),
+        None => (None, 0),
+    };
+    let result = core_evaluate_decision_support(
+        state_values,
+        utility_values,
+        utility_shape[0],
+        utility_shape[1],
+        cost_values,
+        no_action_index,
+        signal_values,
+        signal_count,
+        information_cost,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item(
+        "action_expected_net_values",
+        numpy::PyArray1::from_slice(py, &result.action_expected_net_values),
+    )?;
+    out.set_item("selected_action", result.selected_action)?;
+    out.set_item(
+        "expected_net_intervention_value",
+        result.expected_net_intervention_value,
+    )?;
+    out.set_item(
+        "expected_value_perfect_information",
+        result.expected_value_perfect_information,
+    )?;
+    out.set_item(
+        "expected_value_sample_information",
+        result.expected_value_sample_information,
+    )?;
+    out.set_item(
+        "net_expected_value_sample_information",
+        result.net_expected_value_sample_information,
+    )?;
     Ok(out.into())
 }
 
@@ -9632,6 +9700,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(velicer_map_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(selection_utility, m)?)?;
     m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
+    m.add_function(wrap_pyfunction!(evaluate_decision_support, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(py_sympson_hetter, m)?)?;
     m.add_function(wrap_pyfunction!(py_a_stratified, m)?)?;
