@@ -199,7 +199,9 @@ def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
             record.policy_criticality,
         )
         if current_identity != stable_identity:
-            raise ItemBankReportError("lifecycle identity changed across report records")
+            raise ItemBankReportError(
+                "lifecycle identity changed across report records"
+            )
         if record.previous_record_fingerprint != previous.record_fingerprint:
             raise ItemBankReportError("lifecycle lineage is not contiguous")
         previous = record
@@ -210,7 +212,9 @@ def _present_evidence_kinds(
     record: ItemBankLifecycleRecord,
 ) -> frozenset[ItemBankEvidenceKind]:
     """Return the evidence classes accumulated by the current lifecycle record."""
-    return frozenset(reference.evidence_kind for reference in record.evidence_references)
+    return frozenset(
+        reference.evidence_kind for reference in record.evidence_references
+    )
 
 
 def _evidence_status(
@@ -362,12 +366,15 @@ def render_item_bank_report_json(
 ) -> str:
     """Render one deterministic UTF-8 JSON representation of the bank report."""
     report = build_item_bank_report(records, parameter_evidence=parameter_evidence)
-    return json.dumps(
-        report,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ) + "\n"
+    return (
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
 
 
 def _normalize_title(title: object) -> str:
@@ -378,9 +385,7 @@ def _normalize_title(title: object) -> str:
     if not normalized:
         raise ValueError("title must not be empty")
     if len(normalized) > _MAX_TITLE_CHARACTERS:
-        raise ValueError(
-            f"title must be at most {_MAX_TITLE_CHARACTERS} characters"
-        )
+        raise ValueError(f"title must be at most {_MAX_TITLE_CHARACTERS} characters")
     if "\n" in normalized or "\r" in normalized:
         raise ValueError("title must be a single line")
     return normalized
@@ -426,8 +431,7 @@ def render_item_bank_report_html(
             _table_row("Policy criticality", str(report["policy_criticality"])),
             _table_row(
                 "Approved-use scope",
-                ", ".join(str(value) for value in report["approved_use_ids"])
-                or "none",
+                ", ".join(str(value) for value in report["approved_use_ids"]) or "none",
             ),
             _table_row(
                 "Cross-version comparability",
@@ -437,7 +441,7 @@ def render_item_bank_report_html(
     )
 
     evidence_rows = "".join(
-        "<tr><th scope=\"row\">"
+        '<tr><th scope="row">'
         + escape(kind)
         + "</th><td>"
         + escape(status)
@@ -474,26 +478,29 @@ def render_item_bank_report_html(
         "main{max-width:72rem;margin:auto;padding:1.25rem;}"
         ".skip-link{position:absolute;left:.5rem;top:.5rem;padding:.5rem;}"
         ":focus-visible{outline:3px solid currentColor;outline-offset:2px;}"
+        "main:focus:not(:focus-visible){outline:none;}"
+        "main:focus-visible{outline:3px solid currentColor;outline-offset:3px;}"
+        "@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }"
         "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
         "th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
         "dt{font-weight:700;margin-top:.5rem;}dd{margin-left:0;}"
         "code{overflow-wrap:anywhere;}"
         "</style>\n</head>\n<body>\n"
         '<a class="skip-link" href="#main-content">Skip to report</a>\n'
-        '<main id="main-content">\n'
+        '<main id="main-content" tabindex="-1">\n'
         f"<h1>{escaped_title}</h1>\n"
         '<section aria-labelledby="summary-heading"><h2 id="summary-heading">'
         "Summary</h2><dl>"
         f"{summary}</dl></section>\n"
         '<section aria-labelledby="evidence-heading"><h2 id="evidence-heading">'
         "Evidence</h2><table><caption>Evidence inventory</caption>"
-        "<thead><tr><th scope=\"col\">Evidence class</th>"
-        "<th scope=\"col\">Status</th></tr></thead><tbody>"
+        '<thead><tr><th scope="col">Evidence class</th>'
+        '<th scope="col">Status</th></tr></thead><tbody>'
         f"{evidence_rows}</tbody></table></section>\n"
         '<section aria-labelledby="timeline-heading"><h2 id="timeline-heading">'
         "Timeline</h2><table><caption>Lifecycle timeline</caption>"
-        "<thead><tr><th scope=\"col\">State</th>"
-        "<th scope=\"col\">Reason</th><th scope=\"col\">Record fingerprint</th>"
+        '<thead><tr><th scope="col">State</th>'
+        '<th scope="col">Reason</th><th scope="col">Record fingerprint</th>'
         f"</tr></thead><tbody>{timeline_rows}</tbody></table></section>\n"
         '<section aria-labelledby="limitations-heading">'
         '<h2 id="limitations-heading">Limitations</h2>'
