@@ -9,9 +9,15 @@ from .types import FitResult, SimulationData
 
 
 class ComputeUsageEventBuilder(Protocol):
-    """Version-one builder boundary supplied by the metering SDK."""
+    """Version-one builder boundary supplied by the metering producer SDK."""
 
     def __call__(self, **payload: Any) -> Mapping[str, Any]: ...
+
+
+class ComputeUsageEventValidator(Protocol):
+    """Canonical schema validator supplied by the metering producer contract."""
+
+    def __call__(self, event: Any) -> tuple[str, ...]: ...
 
 
 _RESERVED_EVENT_FIELDS = frozenset(
@@ -32,23 +38,38 @@ _RESERVED_EVENT_FIELDS = frozenset(
 
 
 class CanonicalComputeUsageSink:
-    """Build and enqueue count-only events for real compute results."""
+    """Build, validate, and enqueue count-only events for real compute results."""
 
     def __init__(
         self,
         *,
         event_builder: ComputeUsageEventBuilder,
+        event_validator: ComputeUsageEventValidator,
         enqueue: Callable[[Mapping[str, Any]], None],
         identity: Mapping[str, str | None],
     ) -> None:
-        """Store the versioned builder, durable enqueue callback, and identity."""
+        """Store producer-owned build/validation boundaries and durable enqueue."""
         reserved = _RESERVED_EVENT_FIELDS.intersection(identity)
         if reserved:
             names = ", ".join(sorted(reserved))
             raise ValueError(f"identity contains reserved event fields: {names}")
         self._event_builder = event_builder
+        self._event_validator = event_validator
         self._enqueue = enqueue
         self._identity = dict(identity)
+
+    def _validate_and_enqueue(self, event: Mapping[str, Any]) -> None:
+        """Fail closed unless the producer output is a valid canonical v1 event."""
+        if event.get("event_contract_version") != 1:
+            raise ValueError("event_builder must return event_contract_version=1")
+        validation_errors = self._event_validator(event)
+        if validation_errors:
+            detail = "; ".join(str(error) for error in validation_errors[:3])
+            raise ValueError(
+                "event_builder output violates canonical usage-event v1 contract"
+                + (f": {detail}" if detail else "")
+            )
+        self._enqueue(event)
 
     def emit_simulation(
         self,
@@ -78,10 +99,7 @@ class CanonicalComputeUsageSink:
         }
         if project_reference is not None:
             payload["project_reference"] = project_reference
-        event = self._event_builder(**payload)
-        if event.get("event_contract_version") != 1:
-            raise ValueError("event_builder must return event_contract_version=1")
-        self._enqueue(event)
+        self._validate_and_enqueue(self._event_builder(**payload))
 
     def emit_fit(
         self,
@@ -113,10 +131,7 @@ class CanonicalComputeUsageSink:
         }
         if project_reference is not None:
             payload["project_reference"] = project_reference
-        event = self._event_builder(**payload)
-        if event.get("event_contract_version") != 1:
-            raise ValueError("event_builder must return event_contract_version=1")
-        self._enqueue(event)
+        self._validate_and_enqueue(self._event_builder(**payload))
 
 
 __all__ = ["CanonicalComputeUsageSink"]
