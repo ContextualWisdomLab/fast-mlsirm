@@ -56,22 +56,31 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     elif type(raw) in (list, tuple):
         if any(type(value) not in _TRUSTED_POPULATION_LABEL_SCALAR_TYPES for value in raw):
             raise ValueError(f"{name} must contain exact real numeric scalars")
-        try:
-            arr = _np.asarray(raw)
-        except (OverflowError, TypeError, ValueError) as exc:
-            raise ValueError(f"{name} must be a 1-D numeric array") from exc
+        int64_info = _np.iinfo(_np.int64)
+        normalized: list[int] = []
+        for value in raw:
+            value_type = type(value)
+            if value_type in {float, _np.float16, _np.float32, _np.float64, _np.longdouble}:
+                if not bool(_np.isfinite(value)):
+                    raise ValueError(f"{name} must be finite")
+                if value < 0 or value != _np.floor(value):
+                    raise ValueError(f"{name} must be non-negative integers")
+                normalized_value = int(value)
+                if not (int64_info.min <= normalized_value <= int64_info.max):
+                    raise ValueError(f"{name} must fit in signed 64-bit integers")
+            else:
+                normalized_value = int(value)
+                if not (int64_info.min <= normalized_value <= int64_info.max):
+                    raise ValueError(f"{name} must fit in signed 64-bit integers")
+                if normalized_value < 0:
+                    raise ValueError(f"{name} must be non-negative integers")
+            normalized.append(normalized_value)
+        arr = _np.asarray(normalized, dtype=_np.int64)
     else:
         raise ValueError(f"{name} must be a 1-D numeric array")
     if arr.ndim != 1 or arr.shape[0] != n_persons:
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
     if arr.dtype.kind not in {"b", "i", "u", "f"}:
-        if arr.dtype.kind == "O" and type(raw) in (list, tuple):
-            int64_info = _np.iinfo(_np.int64)
-            if any(
-                type(value) is int and not (int64_info.min <= value <= int64_info.max)
-                for value in raw
-            ):
-                raise ValueError(f"{name} must fit in signed 64-bit integers")
         raise ValueError(f"{name} must contain only real numeric values")
     validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
     if not _np.all(_np.isfinite(validated)):
@@ -173,7 +182,6 @@ def fit(
         if _REFERENCE_BACKEND_ACTIVE.get()
         else resolve_backend(config.backend)
     )
-    # The device is a sub-option of the Rust backend; the reference path ignores it.
     device = normalize_device(config.rust_device) if backend == "rust" else "cpu"
     model = config.normalized_model()
 
@@ -191,7 +199,7 @@ def fit(
         raise ValueError("factor_id implies more dimensions than items")
 
     if model in {"ULS2PLM", "ULSRM"}:
-        factors = np.zeros_like(factors)  # pragma: no cover
+        factors = np.zeros_like(factors)
     factors = validate_factor_id(factors, n_items, n_dims)
     if group_id is not None and cluster_id is not None:
         raise ValueError("group_id and cluster_id are mutually exclusive")
@@ -222,10 +230,6 @@ def fit(
             and covariate is None
             and not config.zero_inflation
         ):
-            # Legacy fast path: plain unidimensional 2PL margin (the latent
-            # space is not estimated — unchanged public behavior). Use the
-            # spatial models or a population structure for the full marginal
-            # latent-space fit.
             if backend == "numpy":
                 raise RuntimeError(
                     "NumPy reference is unavailable for plain unidimensional MMLE; "
@@ -251,7 +255,7 @@ def fit(
         if best is None or candidate.objective < best.objective:
             best = candidate
     if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
+        raise RuntimeError("Optimization failed to find a valid fit.")
     return best
 
 
@@ -271,11 +275,11 @@ def _fit_mmle(
     n_persons, n_items = y.shape
 
     rust = None
-    try:  # pragma: no cover - depends on the compiled extension being built
-        from . import _core  # type: ignore
+    try:
+        from . import _core
 
         rust = getattr(_core, "fit_mmle_2pl", None)
-    except Exception:  # pragma: no cover
+    except Exception:
         rust = None
 
     if rust is None:
@@ -297,7 +301,7 @@ def _fit_mmle(
 
     params = MLSIRMParams(
         theta=theta.reshape(n_persons, 1),
-        alpha=np.log(np.clip(a, 1e-6, None)),  # model stores alpha; a = exp(alpha)
+        alpha=np.log(np.clip(a, 1e-6, None)),
         b=b,
         xi=np.zeros((n_persons, config.latent_dim)),
         zeta=np.zeros((n_items, config.latent_dim)),
@@ -360,7 +364,6 @@ def _fit_mmle_marginal(
         ids, n_pop = _compact_population_labels(cluster_id, n_persons, "cluster_id")
         pop_kind = "multilevel"
     elif anchors is not None:
-        # FIPC: anchored items identify a free single population.
         ids, pop_kind, n_pop = None, "singlefree", 1
     else:
         ids, pop_kind, n_pop = None, "single", 0
@@ -412,16 +415,11 @@ def _fit_mmle_marginal(
             anchor_tau=anchor_tau,
         )
     if ids is not None:
-        # ids only ever comes from _compact_population_labels, whose np.unique
-        # return_inverse output is always 1-D of length n_persons with values
-        # in [0, k); these shape/sign guards are unreachable via fit().
         if ids.shape != (n_persons,):
-            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")  # pragma: no cover
+            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")
         if ids.size and ids.min() < 0:
-            raise ValueError(f"{pop_kind} ids must be >= 0")  # pragma: no cover
+            raise ValueError(f"{pop_kind} ids must be >= 0")
 
-    # MAP penalties: the paper priors, unless the caller customized the
-    # penalty config away from its (JML-oriented) defaults.
     pen = dict(LSIRM_PRIOR)
     if config.penalty != PenaltyConfig():
         pen = {
@@ -435,9 +433,9 @@ def _fit_mmle_marginal(
 
     rust = None
     if backend == "rust":
-        try:  # pragma: no cover - depends on the compiled extension
-            from . import _core  # type: ignore
-        except Exception as exc:  # pragma: no cover
+        try:
+            from . import _core
+        except Exception as exc:
             raise RuntimeError(
                 "compiled Rust core marginal estimator is required for marginal MMLE"
             ) from exc
@@ -457,7 +455,7 @@ def _fit_mmle_marginal(
             )
 
     y_filled = np.where(observed, y, 0.0).astype(np.float64)
-    if rust is not None:  # pragma: no cover - exercised only with the extension
+    if rust is not None:
         try:
             res = rust(
                 y_filled.ravel(),
@@ -639,8 +637,6 @@ def _run_single_fit(
     n_iter = 0
 
     if backend == "rust":
-        # Result-affecting Adam / L-BFGS arithmetic is Rust-owned; Python only
-        # supplies the packed objective callback and final reporting.
         x, obj_trace, loglik_trace, status, n_iter = _rust_optimize(
             x, objective, config
         )
@@ -759,7 +755,7 @@ def _make_objective(
         if config.gradient_clip is not None:
             norm = float(np.linalg.norm(grad_vec))
             if norm > config.gradient_clip:
-                grad_vec = grad_vec * (config.gradient_clip / norm)  # pragma: no cover
+                grad_vec = grad_vec * (config.gradient_clip / norm)
         return obj, grad_vec, loglik
 
     return objective
@@ -805,7 +801,7 @@ def _unpack(x: np.ndarray, template: MLSIRMParams, model: str) -> MLSIRMParams:
         alpha = x[cursor : cursor + template.alpha.size]
         cursor += template.alpha.size
     else:
-        alpha = np.zeros_like(template.alpha)  # pragma: no cover
+        alpha = np.zeros_like(template.alpha)
 
     b = x[cursor : cursor + template.b.size]
     cursor += template.b.size
@@ -845,7 +841,7 @@ def _rust_optimize(
     """
     try:
         from . import _core as core
-    except Exception as exc:  # pragma: no cover - import path exercised in CI
+    except Exception as exc:
         raise RuntimeError(
             "Rust backend requested but fast_mlsirm._core is unavailable; "
             "install a wheel or editable build of this package that provides "
@@ -910,12 +906,12 @@ def _adam(
     for t in range(1, max_iter + 1):
         obj, grad, loglik = objective(x)
         if not np.isfinite(obj) or not np.all(np.isfinite(grad)):
-            return x, trace, loglik_trace, "nan_or_inf"  # pragma: no cover
+            return x, trace, loglik_trace, "nan_or_inf"
         trace.append(float(obj))
         loglik_trace.append(float(loglik))
         if abs(prev - obj) / max(1.0, abs(prev)) < config.tolerance:
-            status = "converged"  # pragma: no cover
-            break  # pragma: no cover
+            status = "converged"
+            break
         prev = obj
         m = beta1 * m + (1.0 - beta1) * grad
         v = beta2 * v + (1.0 - beta2) * (grad * grad)
@@ -951,12 +947,12 @@ def _lbfgs(
     for _ in range(max_iter):
         grad_norm = float(np.linalg.norm(grad))
         if grad_norm < config.tolerance:
-            status = "converged"  # pragma: no cover
-            break  # pragma: no cover
+            status = "converged"
+            break
 
         direction = -_lbfgs_direction(grad, s_hist, y_hist, rho_hist)
         if float(np.dot(grad, direction)) >= 0:
-            direction = -grad  # pragma: no cover
+            direction = -grad
 
         step = 1.0
         slope = float(np.dot(grad, direction))
@@ -967,10 +963,10 @@ def _lbfgs(
             if np.isfinite(next_obj) and next_obj <= obj + 1e-4 * step * slope:
                 accepted = True
                 break
-            step *= 0.5  # pragma: no cover
+            step *= 0.5
         if not accepted:
-            status = "line_search_failed"  # pragma: no cover
-            break  # pragma: no cover
+            status = "line_search_failed"
+            break
 
         s = candidate - x
         y_delta = next_grad - grad
@@ -980,9 +976,9 @@ def _lbfgs(
             y_hist.append(y_delta)
             rho_hist.append(1.0 / ys)
             if len(s_hist) > config.lbfgs_history:
-                s_hist.pop(0)  # pragma: no cover
-                y_hist.pop(0)  # pragma: no cover
-                rho_hist.pop(0)  # pragma: no cover
+                s_hist.pop(0)
+                y_hist.pop(0)
+                rho_hist.pop(0)
 
         x, obj, grad, loglik = candidate, next_obj, next_grad, next_loglik
         trace.append(float(obj))
@@ -1004,16 +1000,16 @@ def _lbfgs_direction(
     q = grad.copy()
     alphas: list[float] = []
     for s, y, rho in zip(reversed(s_hist), reversed(y_hist), reversed(rho_hist)):
-        alpha = rho * float(np.dot(s, q))  # pragma: no cover
-        alphas.append(alpha)  # pragma: no cover
-        q -= alpha * y  # pragma: no cover
+        alpha = rho * float(np.dot(s, q))
+        alphas.append(alpha)
+        q -= alpha * y
 
     if s_hist:
-        sy = float(np.dot(s_hist[-1], y_hist[-1]))  # pragma: no cover
-        yy = float(np.dot(y_hist[-1], y_hist[-1]))  # pragma: no cover
-        q *= sy / yy if yy > 1e-12 else 1.0  # pragma: no cover
+        sy = float(np.dot(s_hist[-1], y_hist[-1]))
+        yy = float(np.dot(y_hist[-1], y_hist[-1]))
+        q *= sy / yy if yy > 1e-12 else 1.0
 
     for s, y, rho, alpha in zip(s_hist, y_hist, rho_hist, reversed(alphas)):
-        beta = rho * float(np.dot(y, q))  # pragma: no cover
-        q += s * (alpha - beta)  # pragma: no cover
+        beta = rho * float(np.dot(y, q))
+        q += s * (alpha - beta)
     return q
