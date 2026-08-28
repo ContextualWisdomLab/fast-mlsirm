@@ -19,6 +19,7 @@ from .models import (
 )
 
 MAX_AUDIT_FINDINGS = 64
+PILOT_RECORD_SCHEMA_VERSION = "2.0"
 _MAX_AUDIT_MESSAGE_CHARACTERS = 512
 _AUDIT_PATH_PATTERN = re.compile(r"^\$(?:\.[a-z][a-z0-9_]*|\[[0-9]+\])*$")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -93,6 +94,16 @@ def _fingerprint(value: Any, name: str) -> str:
     normalized = _text(value, name, maximum=64)
     if len(normalized) != 64 or any(ch not in "0123456789abcdef" for ch in normalized):
         raise ValueError(f"{name} must be 64 lower hexadecimal characters")
+    return normalized
+
+
+def _pilot_record_schema_version(value: Any) -> str:
+    """Accept only the current screening-bound pilot-record schema version."""
+    normalized = _text(value, "schema_version", maximum=16)
+    if normalized != PILOT_RECORD_SCHEMA_VERSION:
+        raise ValueError(
+            f"pilot schema_version must be '{PILOT_RECORD_SCHEMA_VERSION}'"
+        )
     return normalized
 
 
@@ -291,7 +302,7 @@ class PilotCandidateRecord:
     rubric_id: str
     rubric_version: str
     lifecycle_state: CandidateLifecycleState = CandidateLifecycleState.PILOT
-    schema_version: str = SCHEMA_VERSION
+    schema_version: str = PILOT_RECORD_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         """Normalize pilot provenance and reject lifecycle bypasses."""
@@ -346,7 +357,7 @@ class PilotCandidateRecord:
         object.__setattr__(
             self,
             "schema_version",
-            _schema_version(self.schema_version),
+            _pilot_record_schema_version(self.schema_version),
         )
 
     def _content_dict(self) -> dict[str, str]:
