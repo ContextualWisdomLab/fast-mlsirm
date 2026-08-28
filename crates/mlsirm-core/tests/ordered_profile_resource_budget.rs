@@ -53,6 +53,21 @@ fn rejects_zero_weight_mass_before_posterior_value_scan() {
 }
 
 #[test]
+fn rejects_nonfinite_weight_mass_before_posterior_value_scan() {
+    let result = summarize_ordered_profile(OrderedProfileInput {
+        posterior_samples: &[f64::NAN, 1.0],
+        sample_weights: Some(&[f64::MAX, f64::MAX]),
+        cut_scores: &[0.0],
+        credible_mass: 0.95,
+    });
+
+    assert!(matches!(
+        result,
+        Err(OrderedProfileError::NonFiniteWeightMass)
+    ));
+}
+
+#[test]
 fn rejects_empty_cut_scores_before_posterior_value_scan() {
     let result = summarize_ordered_profile(OrderedProfileInput {
         posterior_samples: &[f64::NAN],
