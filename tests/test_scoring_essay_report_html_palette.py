@@ -25,10 +25,13 @@ def test_shared_report_css_uses_theme_muted_token_instead_of_system_gray() -> No
     assert ".empty-state { font-style: italic; color: var(--muted); }" in css
 
 
-def test_print_palette_resets_muted_token_for_the_forced_white_canvas() -> None:
-    """Dark-mode preference must not leak a low-contrast muted token into print."""
+def test_print_palette_resets_light_tokens_for_the_forced_white_canvas() -> None:
+    """Dark-mode preference must not leak screen-dark palette tokens into print."""
     css = report_html._css()
     print_css = css.split("@media print", maxsplit=1)[1]
 
-    assert ":root { --muted: #60656f; }" in print_css
+    assert (
+        ":root { --review-required: #9c2f1f; --review-clear: #357a38; "
+        "--muted: #60656f; }"
+    ) in print_css
     assert "body { background: white; color: black; }" in print_css
