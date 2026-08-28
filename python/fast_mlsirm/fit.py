@@ -66,7 +66,11 @@ def _compact_population_labels(raw, n_persons: int, name: str):
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
     if arr.dtype.kind not in {"b", "i", "u", "f"}:
         if arr.dtype.kind == "O" and type(raw) in (list, tuple):
-            if any(type(value) is int and value > _np.iinfo(_np.int64).max for value in raw):
+            int64_info = _np.iinfo(_np.int64)
+            if any(
+                type(value) is int and not (int64_info.min <= value <= int64_info.max)
+                for value in raw
+            ):
                 raise ValueError(f"{name} must fit in signed 64-bit integers")
         raise ValueError(f"{name} must contain only real numeric values")
     validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
