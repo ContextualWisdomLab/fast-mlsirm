@@ -181,8 +181,7 @@ def weighted_contextual_effect(
     KeyError
         If ``context_effects`` is missing a key ``design`` references.
     """
-    if worker_count < 1:
-        raise ValueError("worker_count must be at least one")
+    worker_count = _trusted_positive_integer(worker_count, "worker_count")
     if type(design) is not ContextMembershipDesign:
         raise ValueError("design must be an exact ContextMembershipDesign")
     # Accessing the fingerprint triggers the design's own integrity
