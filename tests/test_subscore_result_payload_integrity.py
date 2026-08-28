@@ -66,6 +66,33 @@ def _valid_native_result() -> dict[str, object]:
     }
 
 
+def _self_consistent_k3_native_result() -> dict[str, object]:
+    k = 3
+    n_persons = 3
+    diagonal = {0, 4, 8}
+    return {
+        "alpha": [0.8, 0.9, 0.85],
+        "alpha_total": 0.86,
+        "corr": [1.0] * ((k + 1) * (k + 1)),
+        "disattenuated_corr": [
+            float("nan") if index in diagonal else 0.2 for index in range(k * k)
+        ],
+        "prmse_s": [0.8, 0.9, 0.85],
+        "prmse_x": [0.6, 0.7, 0.65],
+        "prmse_sx": [0.81, 0.91, 0.86],
+        "tau": [0.1, 0.2, 0.15],
+        "beta": [0.3, 0.4, 0.35],
+        "gamma": [0.5, 0.6, 0.55],
+        "added_value_s": [True, True, True],
+        "added_value_sx": [True, True, True],
+        "observed": [1.0] * (n_persons * k),
+        "total": [3.0] * n_persons,
+        "subscore_s": [1.0] * (n_persons * k),
+        "subscore_x": [1.0] * (n_persons * k),
+        "subscore_sx": [1.0] * (n_persons * k),
+    }
+
+
 def _run_with_result(result: object) -> SubscoreResult:
     responses, groups = _inputs()
     with patch("fast_mlsirm.fitstats._core_module", return_value=_FakeCore(result)):
@@ -98,6 +125,11 @@ def test_subscore_analysis_rejects_nonfinite_native_values() -> None:
 
     with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
         _run_with_result(result)
+
+
+def test_subscore_analysis_rejects_native_subscale_count_not_in_group_evidence() -> None:
+    with pytest.raises(RuntimeError, match="invalid subscore Rust result payload"):
+        _run_with_result(_self_consistent_k3_native_result())
 
 
 def test_subscore_analysis_accepts_current_rust_shaped_payload() -> None:
