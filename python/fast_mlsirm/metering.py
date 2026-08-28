@@ -89,10 +89,11 @@ class CanonicalComputeUsageSink:
             "occurred_at": occurred_at,
             "response_rows": int(data.Y.shape[0]),
             "response_items": int(data.Y.shape[1]),
-            "artifact_bytes": artifact_bytes,
         }
         if project_reference is not None:
             payload["project_reference"] = project_reference
+        if artifact_bytes is not None:
+            payload["artifact_bytes"] = artifact_bytes
         self._validate_and_enqueue(self._event_builder(**payload))
 
     def emit_fit(
@@ -121,10 +122,11 @@ class CanonicalComputeUsageSink:
             "occurred_at": occurred_at,
             "response_rows": response_rows,
             "response_items": response_items,
-            "artifact_bytes": artifact_bytes,
         }
         if project_reference is not None:
             payload["project_reference"] = project_reference
+        if artifact_bytes is not None:
+            payload["artifact_bytes"] = artifact_bytes
         self._validate_and_enqueue(self._event_builder(**payload))
 
 
