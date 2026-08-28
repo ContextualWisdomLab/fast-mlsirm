@@ -130,6 +130,29 @@ def test_negative_information_cost_is_rejected_before_native_dispatch(
     assert calls == 0
 
 
+def test_mixed_boolean_probability_evidence_is_rejected_before_native_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bool leaf cannot be promoted into a numeric decision probability."""
+    calls = 0
+
+    class Core:
+        def evaluate_decision_support(self, *args: object) -> dict[object, object]:
+            nonlocal calls
+            calls += 1
+            return _payload()
+
+    monkeypatch.setattr(decision_support, "_core_module", lambda: Core())
+
+    with pytest.raises(ValueError, match="state_probabilities.*booleans"):
+        decision_support.evaluate_decision_support(
+            [True, 0.0],
+            [[0.0, 0.0]],
+            [0.0],
+        )
+    assert calls == 0
+
+
 def _invalid_payloads() -> list[tuple[object, int, bool]]:
     """Build structurally invalid native payloads for branch-complete replay."""
     payloads: list[tuple[object, int, bool]] = [([], 1, False)]
