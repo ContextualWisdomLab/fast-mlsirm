@@ -268,7 +268,6 @@ def evaluate_decision_support(
 
     if signal_joint_probabilities is None:
         signals = None
-        signal_count = 0
     else:
         signals = _real_array(
             signal_joint_probabilities,
@@ -277,7 +276,6 @@ def evaluate_decision_support(
             max_axis0=MAX_DECISION_SIGNALS,
             axis0_label="signals",
         )
-        signal_count = signals.shape[0]
         if signals.shape[1] != state_count:
             raise ValueError(
                 "signal_joint_probabilities columns must match state_probabilities"
