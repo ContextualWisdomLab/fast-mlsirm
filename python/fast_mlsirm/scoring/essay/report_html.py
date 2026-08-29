@@ -200,7 +200,7 @@ def _canonical_json(report: EssayScoreReport) -> str:
 def _css() -> str:
     """Return compact accessible styling without external resources."""
     return """
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; --muted: #60656f; --line: #d9ded6; }
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
@@ -212,7 +212,7 @@ main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 .hero { padding: 48px 0 24px; }
 h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); }
 .subtitle { margin: 0; max-width: 78ch; }
-section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-radius: 10px; }
+section { margin-top: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
 .review-required { border-inline-start: 8px solid var(--review-required); }
 .review-clear { border-inline-start: 8px solid var(--review-clear); }
 .notice { padding: 14px; border: 2px solid currentColor; font-weight: 650; }
@@ -224,13 +224,13 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+thead th, tbody th, td { padding: 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
-pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
-.empty-state { font-style: italic; color: GrayText; }
+pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty-state { font-style: italic; color: var(--muted); }
 @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } .details-grid dd { margin-bottom: 8px; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -244,6 +244,8 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
   :root {
     --review-required: #e57373;
     --review-clear: #81c784;
+    --muted: #9e9e9e;
+    --line: #333333;
   }
 }
 @media print {
