@@ -81,6 +81,12 @@
       "valid": false,
       "stage": "duplicate-object-member admission before schema validation",
       "json_text": "{\"criterion-a\":{\"status\":\"observed\",\"category_anchor_ref\":\"anchor-1\",\"evidence_reference_ids\":[\"evidence-1\"],\"uncertainty\":\"low\",\"review_signal_refs\":[],\"reason_ref\":null},\"criterion-a\":{\"status\":\"abstained\",\"category_anchor_ref\":null,\"evidence_reference_ids\":[],\"uncertainty\":\"high\",\"review_signal_refs\":[],\"reason_ref\":\"insufficient-evidence\"}}"
+    },
+    {
+      "name": "duplicate nested observation member names",
+      "valid": false,
+      "stage": "recursive duplicate-object-member admission before schema validation",
+      "json_text": "{\"criterion-a\":{\"status\":\"observed\",\"status\":\"abstained\",\"category_anchor_ref\":\"anchor-1\",\"evidence_reference_ids\":[\"evidence-1\"],\"uncertainty\":\"low\",\"review_signal_refs\":[],\"reason_ref\":null}}"
     }
   ]
 }
