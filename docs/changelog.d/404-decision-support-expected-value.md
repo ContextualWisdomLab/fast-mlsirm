@@ -27,3 +27,7 @@
 - Admit independently decidable `no_action_index` and `information_cost`
   controls before traversing scientific evidence, while retaining the
   action-index upper-bound check after the action count is known.
+- Seal validated decision evidence into package-owned contiguous binary64
+  snapshots before native dispatch, reject shape changes during materialization,
+  and replay Boolean rejection so caller mutation cannot silently redefine the
+  admitted scientific table.
