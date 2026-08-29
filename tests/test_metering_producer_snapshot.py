@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 import fast_mlsirm.metering as metering
 from fast_mlsirm.metering import CanonicalComputeUsageSink
 
@@ -71,3 +73,36 @@ def test_version_is_validated_from_package_root_snapshot(monkeypatch) -> None:
     assert producer_event["event_contract_version"] == 2
     assert validator_calls == 1
     assert queued == [{"event_contract_version": 1}]
+
+
+def test_wrong_exact_version_fails_before_recursive_snapshot_values() -> None:
+    """A package-owned wrong v1 marker outranks descendant JSON traversal."""
+    validator_calls = 0
+    queued: list[dict[str, object]] = []
+
+    def builder(**_: object) -> dict[str, object]:
+        return {
+            "event_contract_version": 2,
+            "measurements": [{"quantity": float("nan")}],
+        }
+
+    def permissive_validator(_: object) -> tuple[str, ...]:
+        nonlocal validator_calls
+        validator_calls += 1
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=permissive_validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="^event_builder must return event_contract_version=1$",
+    ):
+        _emit_one_fit(sink)
+
+    assert validator_calls == 0
+    assert queued == []
