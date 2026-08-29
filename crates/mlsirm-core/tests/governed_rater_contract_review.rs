@@ -7,6 +7,8 @@ use serde::{Deserialize, Deserializer};
 use std::collections::HashSet;
 use std::fmt;
 
+const MAX_SCHEMA_COLLECTION_LIMIT_FOR_TEST: usize = 4096;
+
 #[derive(Deserialize)]
 struct ConformanceFixture {
     contract_id: String,
@@ -31,6 +33,13 @@ struct ObservationIdentityCase {
     stage: Option<String>,
     #[serde(default)]
     json_text: Option<String>,
+}
+
+#[derive(Debug)]
+struct PublishedCollectionLimits {
+    evidence_references: usize,
+    review_signals: usize,
+    observations: usize,
 }
 
 struct UniqueJsonValue;
@@ -149,6 +158,42 @@ fn parse_conformance_fixture(raw: &str) -> Result<ConformanceFixture, String> {
     Ok(fixture)
 }
 
+fn positive_bounded_schema_limit(
+    schema: &serde_json::Value,
+    pointer: &str,
+) -> Result<usize, String> {
+    let raw = schema
+        .pointer(pointer)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| format!("missing unsigned schema limit at {pointer}"))?;
+    let limit = usize::try_from(raw)
+        .map_err(|_| format!("schema limit at {pointer} does not fit usize"))?;
+    if limit == 0 || limit > MAX_SCHEMA_COLLECTION_LIMIT_FOR_TEST {
+        return Err(format!(
+            "schema limit at {pointer} must be within 1..={MAX_SCHEMA_COLLECTION_LIMIT_FOR_TEST}"
+        ));
+    }
+    Ok(limit)
+}
+
+fn published_collection_limits(raw: &str) -> Result<PublishedCollectionLimits, String> {
+    let schema: serde_json::Value = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    Ok(PublishedCollectionLimits {
+        evidence_references: positive_bounded_schema_limit(
+            &schema,
+            "/$defs/observed_criterion/properties/evidence_reference_ids/maxItems",
+        )?,
+        review_signals: positive_bounded_schema_limit(
+            &schema,
+            "/$defs/review_signals/maxItems",
+        )?,
+        observations: positive_bounded_schema_limit(
+            &schema,
+            "/properties/observations/maxProperties",
+        )?,
+    })
+}
+
 fn reference(value: &str) -> DomainReference {
     DomainReference::parse("reference", value).expect("valid reference")
 }
@@ -228,7 +273,12 @@ fn duplicate_member_admission_is_gated_by_the_shared_fixture() {
 
 #[test]
 fn rust_collection_limits_match_the_published_schema() {
-    let max_evidence = (0..64)
+    let limits = published_collection_limits(include_str!(
+        "../../../contracts/governed-rater-observation-v1.schema.json"
+    ))
+    .expect("published schema exposes bounded collection limits");
+
+    let max_evidence = (0..limits.evidence_references)
         .map(|index| reference(&format!("evidence-{index}")))
         .collect();
     assert!(CriterionObservation::observed(
@@ -240,7 +290,7 @@ fn rust_collection_limits_match_the_published_schema() {
     )
     .is_ok());
 
-    let too_many_evidence = (0..65)
+    let too_many_evidence = (0..=limits.evidence_references)
         .map(|index| reference(&format!("evidence-{index}")))
         .collect();
     assert_eq!(
@@ -254,7 +304,7 @@ fn rust_collection_limits_match_the_published_schema() {
         Err(ContractError::TooManyEvidenceReferences)
     );
 
-    let max_review_signals = (0..32)
+    let max_review_signals = (0..limits.review_signals)
         .map(|index| reference(&format!("review-{index}")))
         .collect::<Vec<_>>();
     assert!(CriterionObservation::observed(
@@ -273,7 +323,7 @@ fn rust_collection_limits_match_the_published_schema() {
     )
     .is_ok());
 
-    let too_many_review_signals = (0..33)
+    let too_many_review_signals = (0..=limits.review_signals)
         .map(|index| reference(&format!("review-{index}")))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -296,7 +346,7 @@ fn rust_collection_limits_match_the_published_schema() {
         Err(ContractError::TooManyReviewSignals)
     );
 
-    let max_observations = (0..128).map(observation).collect();
+    let max_observations = (0..limits.observations).map(observation).collect();
     assert!(RaterInvocation::new(
         reference("invocation"),
         configuration(),
@@ -307,7 +357,7 @@ fn rust_collection_limits_match_the_published_schema() {
     )
     .is_ok());
 
-    let too_many_observations = (0..129).map(observation).collect();
+    let too_many_observations = (0..=limits.observations).map(observation).collect();
     assert_eq!(
         RaterInvocation::new(
             reference("invocation"),
