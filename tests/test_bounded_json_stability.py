@@ -60,3 +60,13 @@ def test_read_json_object_rejects_rewrite_when_metadata_cannot_observe_it(
         ValueError, match="JSON input path changed during the bounded read"
     ):
         bounded_json.read_json_object(path)
+
+
+def test_parse_json_bounded_rejects_unencodable_utf8_string() -> None:
+    """Literal surrogate code points fail with the package UTF-8 diagnostic."""
+    content = '{"value":"' + chr(0xD800) + '"}'
+
+    with pytest.raises(ValueError, match="JSON input is not valid UTF-8") as excinfo:
+        bounded_json.parse_json_bounded(content)
+
+    assert type(excinfo.value) is ValueError
