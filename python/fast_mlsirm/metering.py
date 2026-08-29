@@ -31,6 +31,7 @@ _CANONICAL_IDENTITY_FIELDS = frozenset(
 )
 _MAX_EVENT_SNAPSHOT_DEPTH = 16
 _MAX_EVENT_SNAPSHOT_NODES = 4096
+_MAX_VALIDATOR_DIAGNOSTICS = 256
 
 
 def _exact_string(name: str, value: object, *, optional: bool = False) -> str | None:
@@ -160,6 +161,8 @@ class CanonicalComputeUsageSink:
         validation_errors = self._event_validator(validation_event)
         if type(validation_errors) is not tuple:
             raise ValueError("event_validator must return an exact tuple")
+        if len(validation_errors) > _MAX_VALIDATOR_DIAGNOSTICS:
+            raise ValueError("event_validator returned too many diagnostics")
         if any(type(error) is not str for error in validation_errors):
             raise ValueError("event_validator errors must be exact strings")
         if validation_errors:
