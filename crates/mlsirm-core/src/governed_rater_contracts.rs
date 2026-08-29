@@ -13,33 +13,37 @@ pub const GOVERNED_RATER_OBSERVATION_CONTRACT_V1: &str =
     "cwl_governed_rater_observation/v1";
 
 const MAX_REFERENCE_LENGTH: usize = 256;
+const MAX_EVIDENCE_REFERENCES: usize = 64;
+const MAX_REVIEW_SIGNALS: usize = 32;
+const MAX_OBSERVATIONS: usize = 128;
 
 /// A bounded, non-empty opaque reference crossing a bounded-context boundary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DomainReference(String);
 
 impl DomainReference {
-    /// Parse an opaque reference while rejecting whitespace-only, oversized, or
-    /// control-character-bearing values.
+    /// Parse an opaque reference that is already in canonical identity form.
     pub fn parse(
         field_name: &'static str,
         value: impl Into<String>,
     ) -> Result<Self, ContractError> {
         let value = value.into();
-        let normalized = value.trim();
-        if normalized.is_empty() {
+        if value.trim().is_empty() {
             return Err(ContractError::EmptyReference(field_name));
         }
-        if normalized.chars().count() > MAX_REFERENCE_LENGTH {
+        if value.chars().count() > MAX_REFERENCE_LENGTH {
             return Err(ContractError::ReferenceTooLong(field_name));
         }
-        if normalized.chars().any(char::is_control) {
+        if value.chars().any(char::is_control) {
             return Err(ContractError::ControlCharacter(field_name));
         }
-        Ok(Self(normalized.to_owned()))
+        if value.trim() != value {
+            return Err(ContractError::NonCanonicalReference(field_name));
+        }
+        Ok(Self(value))
     }
 
-    /// Borrow the exact normalized reference text.
+    /// Borrow the exact canonical reference text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -55,6 +59,14 @@ pub enum ContractError {
     ReferenceTooLong(&'static str),
     /// A reference contained a control character.
     ControlCharacter(&'static str),
+    /// A reference carried leading or trailing whitespace instead of canonical identity text.
+    NonCanonicalReference(&'static str),
+    /// An observed criterion exceeded the published evidence-reference limit.
+    TooManyEvidenceReferences,
+    /// An observation exceeded the published review-signal limit.
+    TooManyReviewSignals,
+    /// An invocation exceeded the published criterion-observation limit.
+    TooManyObservations,
     /// The same evidence reference appeared more than once.
     DuplicateEvidenceReference,
     /// The same review signal appeared more than once.
@@ -76,6 +88,18 @@ impl Display for ContractError {
             }
             Self::ControlCharacter(field) => {
                 write!(formatter, "{field} contains a control character")
+            }
+            Self::NonCanonicalReference(field) => {
+                write!(formatter, "{field} must not contain surrounding whitespace")
+            }
+            Self::TooManyEvidenceReferences => {
+                formatter.write_str("evidence references exceed the published limit")
+            }
+            Self::TooManyReviewSignals => {
+                formatter.write_str("review signals exceed the published limit")
+            }
+            Self::TooManyObservations => {
+                formatter.write_str("criterion observations exceed the published limit")
             }
             Self::DuplicateEvidenceReference => {
                 formatter.write_str("evidence references must be unique")
@@ -161,6 +185,12 @@ impl CriterionObservation {
         if evidence_reference_ids.is_empty() {
             return Err(ContractError::ObservedWithoutEvidence);
         }
+        if evidence_reference_ids.len() > MAX_EVIDENCE_REFERENCES {
+            return Err(ContractError::TooManyEvidenceReferences);
+        }
+        if review_signal_refs.len() > MAX_REVIEW_SIGNALS {
+            return Err(ContractError::TooManyReviewSignals);
+        }
         ensure_unique(
             &evidence_reference_ids,
             ContractError::DuplicateEvidenceReference,
@@ -184,6 +214,9 @@ impl CriterionObservation {
         uncertainty: UncertaintyLevel,
         review_signal_refs: Vec<DomainReference>,
     ) -> Result<Self, ContractError> {
+        if review_signal_refs.len() > MAX_REVIEW_SIGNALS {
+            return Err(ContractError::TooManyReviewSignals);
+        }
         ensure_unique(&review_signal_refs, ContractError::DuplicateReviewSignal)?;
         Ok(Self {
             criterion_ref,
@@ -262,6 +295,9 @@ impl RaterInvocation {
     ) -> Result<Self, ContractError> {
         if observations.is_empty() {
             return Err(ContractError::EmptyObservationSet);
+        }
+        if observations.len() > MAX_OBSERVATIONS {
+            return Err(ContractError::TooManyObservations);
         }
         let mut criteria = HashSet::with_capacity(observations.len());
         for observation in &observations {
@@ -350,7 +386,7 @@ mod tests {
 
     #[test]
     fn reference_validation_covers_every_rejection_branch() {
-        assert_eq!(reference("  value  ").as_str(), "value");
+        assert_eq!(reference("value").as_str(), "value");
         assert_eq!(
             DomainReference::parse("field", "   "),
             Err(ContractError::EmptyReference("field"))
@@ -362,6 +398,18 @@ mod tests {
         assert_eq!(
             DomainReference::parse("field", "bad\nvalue"),
             Err(ContractError::ControlCharacter("field"))
+        );
+        assert_eq!(
+            DomainReference::parse("field", "bad\u{0085}value"),
+            Err(ContractError::ControlCharacter("field"))
+        );
+        assert_eq!(
+            DomainReference::parse("field", " leading"),
+            Err(ContractError::NonCanonicalReference("field"))
+        );
+        assert_eq!(
+            DomainReference::parse("field", "trailing "),
+            Err(ContractError::NonCanonicalReference("field"))
         );
     }
 
@@ -439,6 +487,46 @@ mod tests {
     }
 
     #[test]
+    fn criterion_validation_enforces_published_collection_limits() {
+        let evidence = (0..=MAX_EVIDENCE_REFERENCES)
+            .map(|index| reference(&format!("evidence-{index}")))
+            .collect();
+        assert_eq!(
+            CriterionObservation::observed(
+                reference("criterion"),
+                reference("anchor"),
+                evidence,
+                UncertaintyLevel::Medium,
+                Vec::new(),
+            ),
+            Err(ContractError::TooManyEvidenceReferences)
+        );
+
+        let review_signals = (0..=MAX_REVIEW_SIGNALS)
+            .map(|index| reference(&format!("review-{index}")))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            CriterionObservation::observed(
+                reference("criterion"),
+                reference("anchor"),
+                vec![reference("evidence")],
+                UncertaintyLevel::Medium,
+                review_signals.clone(),
+            ),
+            Err(ContractError::TooManyReviewSignals)
+        );
+        assert_eq!(
+            CriterionObservation::abstained(
+                reference("criterion"),
+                reference("reason"),
+                UncertaintyLevel::Medium,
+                review_signals,
+            ),
+            Err(ContractError::TooManyReviewSignals)
+        );
+    }
+
+    #[test]
     fn invocation_is_the_only_consistency_boundary_for_criterion_uniqueness() {
         let observation = CriterionObservation::observed(
             reference("criterion"),
@@ -469,6 +557,33 @@ mod tests {
                 vec![observation.clone(), observation],
             ),
             Err(ContractError::DuplicateCriterionObservation)
+        );
+    }
+
+    #[test]
+    fn invocation_enforces_published_observation_limit() {
+        let observations = (0..=MAX_OBSERVATIONS)
+            .map(|index| {
+                CriterionObservation::observed(
+                    reference(&format!("criterion-{index}")),
+                    reference("anchor"),
+                    vec![reference(&format!("evidence-{index}"))],
+                    UncertaintyLevel::Medium,
+                    Vec::new(),
+                )
+                .expect("bounded observation")
+            })
+            .collect();
+        assert_eq!(
+            RaterInvocation::new(
+                reference("invocation"),
+                configuration(),
+                reference("task-v1"),
+                reference("rubric-v1"),
+                reference("response-evidence"),
+                observations,
+            ),
+            Err(ContractError::TooManyObservations)
         );
     }
 
