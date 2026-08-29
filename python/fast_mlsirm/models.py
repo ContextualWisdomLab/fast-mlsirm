@@ -270,12 +270,15 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
 
     if type(value) is not list and type(value) is not tuple:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-    if len(value) < 1:
+    rows = len(value)
+    if rows < 1:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
 
     width = _confirmatory_sequence_width(value)
+    if len(value) != rows:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     entries = _confirmatory_sequence_entries(value, width)
-    return _immutable_confirmatory_pattern(entries, (len(value), width))
+    return _immutable_confirmatory_pattern(entries, (rows, width))
 
 
 def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
