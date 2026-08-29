@@ -231,7 +231,7 @@ def test_sequence_scalar_normalization_streams_into_conversion_chunks(
     assert np.array_equal(model.loading_pattern, np.array([[1, 0], [0, 1]], dtype=np.int64))
 
 
-def test_sequence_growth_after_width_preflight_replays_cell_budget(
+def test_sequence_growth_after_width_preflight_is_rejected_within_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = [[1, 0], [0, 1]]
@@ -245,10 +245,10 @@ def test_sequence_growth_after_width_preflight_replays_cell_budget(
         mutated = True
         return width
 
-    monkeypatch.setattr(models, "_MAX_CONFIRMATORY_LOADING_CELLS", 4, raising=False)
+    monkeypatch.setattr(models, "_MAX_CONFIRMATORY_LOADING_CELLS", 6, raising=False)
     monkeypatch.setattr(models, "_confirmatory_sequence_width", mutating_width)
 
-    with pytest.raises(ValueError, match=_RESOURCE_ERROR):
+    with pytest.raises(ValueError, match=_SHAPE_ERROR):
         models.ConfirmatoryModel(source)
 
     assert mutated
