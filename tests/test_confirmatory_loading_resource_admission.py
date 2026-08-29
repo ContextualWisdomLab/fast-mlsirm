@@ -20,6 +20,10 @@ def _unexpected_scalar_normalization(_value: object) -> int:
     raise AssertionError("oversized loading_pattern reached scalar normalization")
 
 
+def _unexpected_sequence_scan(_value: object) -> int:
+    raise AssertionError("oversized loading_pattern reached row traversal")
+
+
 def test_broadcast_ndarray_is_rejected_before_full_value_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31,6 +35,16 @@ def test_broadcast_ndarray_is_rejected_before_full_value_scan(
 
     with pytest.raises(ValueError, match=_RESOURCE_ERROR):
         models.ConfirmatoryModel(huge)
+
+
+def test_exact_sequence_row_fanout_is_rejected_before_row_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(models, "_MAX_CONFIRMATORY_LOADING_CELLS", 4, raising=False)
+    monkeypatch.setattr(models, "_confirmatory_sequence_width", _unexpected_sequence_scan)
+
+    with pytest.raises(ValueError, match=_RESOURCE_ERROR):
+        models.ConfirmatoryModel([[1], [1], [1], [1], [1]])
 
 
 def test_exact_sequence_is_rejected_before_scalar_normalization(
