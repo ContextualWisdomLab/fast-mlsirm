@@ -115,3 +115,41 @@ def test_intervention_cost_length_preflights_before_dense_marshalling(
             [[0.0], [1.0]],
             [0.0, 1.0, 2.0],
         )
+
+
+def test_action_state_mismatch_preflights_before_dense_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A utility/state mismatch fails from shape metadata before utility values."""
+    _guard_dense_marshalling(monkeypatch, forbidden_name="action_utilities")
+
+    with pytest.raises(
+        ValueError,
+        match="action_utilities columns must match state_probabilities",
+    ):
+        decision_support.evaluate_decision_support(
+            [0.5, 0.5],
+            [[0.0, 1.0, 2.0]],
+            [0.0],
+        )
+
+
+def test_signal_state_mismatch_preflights_before_dense_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A signal/state mismatch fails from shape metadata before signal values."""
+    _guard_dense_marshalling(
+        monkeypatch,
+        forbidden_name="signal_joint_probabilities",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="signal_joint_probabilities columns must match state_probabilities",
+    ):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [[0.0]],
+            [0.0],
+            signal_joint_probabilities=[[0.5, 0.5]],
+        )
