@@ -9,6 +9,7 @@ use std::fmt;
 
 #[derive(Deserialize)]
 struct ConformanceFixture {
+    contract_id: String,
     reference_cases: Vec<ReferenceCase>,
     observation_identity_cases: Vec<ObservationIdentityCase>,
 }
@@ -137,6 +138,10 @@ fn has_unique_object_members(raw: &str) -> bool {
     result.is_ok() && deserializer.end().is_ok()
 }
 
+fn parse_conformance_fixture(raw: &str) -> Result<ConformanceFixture, serde_json::Error> {
+    serde_json::from_str(raw)
+}
+
 fn reference(value: &str) -> DomainReference {
     DomainReference::parse("reference", value).expect("valid reference")
 }
@@ -165,8 +170,18 @@ fn observation(index: usize) -> CriterionObservation {
 }
 
 #[test]
+fn shared_conformance_fixture_rejects_wrong_contract_identity() {
+    let wrong_identity = r#"{
+        "contract_id": "cwl_governed_rater_observation/v0",
+        "reference_cases": [],
+        "observation_identity_cases": []
+    }"#;
+    assert!(parse_conformance_fixture(wrong_identity).is_err());
+}
+
+#[test]
 fn references_follow_the_shared_cross_sdk_conformance_fixture() {
-    let fixture: ConformanceFixture = serde_json::from_str(include_str!(
+    let fixture = parse_conformance_fixture(include_str!(
         "../../../contracts/governed-rater-observation-v1.conformance.json"
     ))
     .expect("valid conformance fixture");
@@ -183,7 +198,7 @@ fn references_follow_the_shared_cross_sdk_conformance_fixture() {
 
 #[test]
 fn duplicate_member_admission_is_gated_by_the_shared_fixture() {
-    let fixture: ConformanceFixture = serde_json::from_str(include_str!(
+    let fixture = parse_conformance_fixture(include_str!(
         "../../../contracts/governed-rater-observation-v1.conformance.json"
     ))
     .expect("valid conformance fixture");
