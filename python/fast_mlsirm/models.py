@@ -198,7 +198,8 @@ def _confirmatory_sequence_entries(
     for row in value:
         if type(row) is np.ndarray:
             validated = _confirmatory_ndarray_row(row, width)
-            yield from validated.flat
+            for entry in validated.flat:
+                yield _confirmatory_scalar(entry)
             continue
         if type(row) is not list and type(row) is not tuple:
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
@@ -214,13 +215,27 @@ def _immutable_confirmatory_pattern(
 ) -> np.ndarray:
     """Serialize canonical loading evidence into bounded immutable byte storage."""
 
-    entries = iter(values.flat) if type(values) is np.ndarray else iter(values)
+    is_ndarray = type(values) is np.ndarray
+    entries = iter(values.flat) if is_ndarray else iter(values)
+    source_dtype = values.dtype if is_ndarray else None
     total_cells = shape[0] * shape[1]
     remaining = total_cells
     sink = BytesIO()
     while remaining:
         count = min(_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS, remaining)
-        chunk = np.fromiter(islice(entries, count), dtype=np.int64, count=count)
+        if source_dtype is None:
+            chunk = np.fromiter(islice(entries, count), dtype=np.int64, count=count)
+        else:
+            source_chunk = np.fromiter(
+                islice(entries, count),
+                dtype=source_dtype,
+                count=count,
+            )
+            if not np.all(np.isfinite(source_chunk)) or not np.all(
+                (source_chunk == 0) | (source_chunk == 1)
+            ):
+                raise ValueError(_CONFIRMATORY_BINARY_ERROR)
+            chunk = source_chunk.astype(np.int64, copy=False)
         sink.write(chunk.tobytes(order="C"))
         remaining -= count
     storage = sink.getvalue()
