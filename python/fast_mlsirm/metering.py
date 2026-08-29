@@ -191,12 +191,19 @@ class CanonicalComputeUsageSink:
             raise ValueError("event_builder must return an exact dict")
         if len(event) >= _MAX_EVENT_SNAPSHOT_NODES:
             raise ValueError("event_builder result exact JSON tree is too large")
-        if any(type(key) is not str for key in event):
+        producer_items = _bounded_exact_dict_items(
+            event,
+            max_items=_MAX_EVENT_SNAPSHOT_NODES - 1,
+            too_large_message="event_builder result exact JSON tree is too large",
+            changed_message="event_builder result changed during exact JSON snapshot",
+        )
+        if any(type(key) is not str for key, _ in producer_items):
             raise ValueError("event_builder result keys must be exact strings")
-        producer_contract_version = event.get("event_contract_version")
+        producer_event = {key: value for key, value in producer_items}
+        producer_contract_version = producer_event.get("event_contract_version")
         if type(producer_contract_version) is not int:
             raise ValueError("event_builder must return event_contract_version=1")
-        validation_event = _snapshot_exact_json(event)
+        validation_event = _snapshot_exact_json(producer_event)
         contract_version = validation_event.get("event_contract_version")
         if type(contract_version) is not int or contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
