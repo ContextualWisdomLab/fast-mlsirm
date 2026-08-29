@@ -13,6 +13,11 @@
   from bounded inert shape metadata before boolean scans, dense binary64
   marshalling, or native dispatch; the generic 1,000,000-cell evidence ceiling
   retains precedence when both resource limits are exceeded.
+- Reject exact built-in state/action/signal cardinality and intervention-cost
+  count contradictions from package-owned outer-container metadata before
+  scalar element validation when the generic cell ceiling cannot take
+  precedence; arbitrary protocols remain rejected and Rust retains all
+  expected-value arithmetic.
 - Reject an intervention-cost/action-count mismatch from bounded shape metadata
   after the existing dimensionality, non-empty, and generic cell guards but
   before Boolean/value scans or contiguous binary64 cost marshalling.
