@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 import fast_mlsirm.metering as metering
 from fast_mlsirm.metering import CanonicalComputeUsageSink
 
@@ -24,30 +22,42 @@ def _emit_one_fit(sink: CanonicalComputeUsageSink) -> None:
     )
 
 
-def test_version_is_validated_from_package_snapshot(monkeypatch) -> None:
-    """A producer mutation at snapshot time cannot bypass the explicit v1 guard."""
+def test_version_is_validated_from_package_root_snapshot(monkeypatch) -> None:
+    """Mutation after bounded root capture cannot rewrite admitted v1 evidence."""
     producer_event: dict[str, object] = {"event_contract_version": 1}
     validator_calls = 0
     queued: list[dict[str, object]] = []
-    snapshot_calls = 0
-    original_snapshot = metering._snapshot_exact_json
+    original_items = metering._bounded_exact_dict_items
+    mutated = False
 
     def builder(**_: object) -> dict[str, object]:
         return producer_event
 
-    def mutating_snapshot(value: object, **kwargs: object) -> object:
-        nonlocal snapshot_calls
-        if value is producer_event and snapshot_calls == 0:
+    def mutating_items(
+        value: dict[object, object],
+        *,
+        max_items: int,
+        too_large_message: str,
+        changed_message: str,
+    ) -> tuple[tuple[object, object], ...]:
+        nonlocal mutated
+        items = original_items(
+            value,
+            max_items=max_items,
+            too_large_message=too_large_message,
+            changed_message=changed_message,
+        )
+        if value is producer_event and not mutated:
             producer_event["event_contract_version"] = 2
-        snapshot_calls += 1
-        return original_snapshot(value, **kwargs)
+            mutated = True
+        return items
 
     def permissive_validator(_: object) -> tuple[str, ...]:
         nonlocal validator_calls
         validator_calls += 1
         return ()
 
-    monkeypatch.setattr(metering, "_snapshot_exact_json", mutating_snapshot)
+    monkeypatch.setattr(metering, "_bounded_exact_dict_items", mutating_items)
     sink = CanonicalComputeUsageSink(
         event_builder=builder,
         event_validator=permissive_validator,
@@ -55,12 +65,9 @@ def test_version_is_validated_from_package_snapshot(monkeypatch) -> None:
         identity={},
     )
 
-    with pytest.raises(
-        ValueError,
-        match="event_builder must return event_contract_version=1",
-    ):
-        _emit_one_fit(sink)
+    _emit_one_fit(sink)
 
+    assert mutated
     assert producer_event["event_contract_version"] == 2
-    assert validator_calls == 0
-    assert queued == []
+    assert validator_calls == 1
+    assert queued == [{"event_contract_version": 1}]
