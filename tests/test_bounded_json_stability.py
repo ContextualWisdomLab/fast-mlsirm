@@ -70,3 +70,15 @@ def test_parse_json_bounded_rejects_unencodable_utf8_string() -> None:
         bounded_json.parse_json_bounded(content)
 
     assert type(excinfo.value) is ValueError
+
+
+def test_parse_json_bounded_rejects_character_lower_bound_before_utf8_encoding() -> None:
+    """A character count above the byte ceiling fails before UTF-8 allocation."""
+    content = chr(0xD800) + "x" * 8
+
+    with pytest.raises(
+        ValueError, match="JSON input exceeds maximum allowed size 8 bytes"
+    ) as excinfo:
+        bounded_json.parse_json_bounded(content, max_bytes=8)
+
+    assert type(excinfo.value) is ValueError
