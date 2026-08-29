@@ -25,8 +25,20 @@ def _result() -> dict[str, object]:
         "weight": np.zeros(2),
         "post_mean": np.zeros(2),
         "post_var": np.zeros(2),
-        "cat_probs": np.array([[0.0, 0.0, 1.0, 0.0, 0.0]] * 2),
+        "cat_probs": np.array([[0.0, 0.0, 1.0, 0.0, 0.0]] * 2).reshape(-1),
     }
+
+
+def _core_returning(result: object) -> object:
+    """Return a fake native module exposing one deterministic payload."""
+
+    class Core:
+        @staticmethod
+        def py_eb_mh_dif(mh: np.ndarray, se: np.ndarray) -> object:
+            del mh, se
+            return result
+
+    return Core()
 
 
 def test_oversized_exact_numpy_vector_fails_before_contiguous_copy(
@@ -197,3 +209,100 @@ def test_exact_large_integer_boundary_preserves_rust_marshalling(
 
     np.testing.assert_array_equal(captured["mh"], np.array([float(exact), 0.0]))
     np.testing.assert_array_equal(captured["se"], np.array([float(exact), 1.0]))
+
+
+def test_native_result_mapping_subclass_fails_without_mapping_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreign mapping carrier cannot execute keyed-access callbacks."""
+
+    callbacks = 0
+
+    class HostileDict(dict):
+        def __getitem__(self, key):  # noqa: ANN001, ANN204
+            nonlocal callbacks
+            callbacks += 1
+            return super().__getitem__(key)
+
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: _core_returning(HostileDict(_result())),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid EBDIF Rust result payload"):
+        ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
+
+    assert callbacks == 0
+
+
+def test_native_result_scalar_protocol_fails_without_conversion_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreign scalar cannot execute __float__ during public marshalling."""
+
+    callbacks = 0
+
+    class HostileFloat:
+        def __float__(self) -> float:
+            nonlocal callbacks
+            callbacks += 1
+            return 0.0
+
+    result = _result()
+    result["mu"] = HostileFloat()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _core_returning(result))
+
+    with pytest.raises(RuntimeError, match="invalid EBDIF Rust result payload"):
+        ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
+
+    assert callbacks == 0
+
+
+def test_native_result_array_protocol_fails_without_array_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreign vector cannot execute __array__ during public marshalling."""
+
+    callbacks = 0
+
+    class HostileArray:
+        def __array__(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN204
+            nonlocal callbacks
+            callbacks += 1
+            return np.zeros(2)
+
+    result = _result()
+    result["weight"] = HostileArray()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _core_returning(result))
+
+    with pytest.raises(RuntimeError, match="invalid EBDIF Rust result payload"):
+        ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
+
+    assert callbacks == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("weight", np.zeros(3, dtype=np.float64)),
+        ("post_mean", np.zeros(1, dtype=np.float64)),
+        ("post_var", np.zeros((2, 1), dtype=np.float64)),
+        ("cat_probs", np.zeros(9, dtype=np.float64)),
+        ("mu", float("nan")),
+        ("weight", np.array([0.0, np.inf], dtype=np.float64)),
+    ],
+)
+def test_native_result_structure_and_finiteness_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    replacement: object,
+) -> None:
+    """Malformed or non-finite native evidence never reaches public marshalling."""
+
+    result = _result()
+    result[field] = replacement
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _core_returning(result))
+
+    with pytest.raises(RuntimeError, match="invalid EBDIF Rust result payload"):
+        ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
