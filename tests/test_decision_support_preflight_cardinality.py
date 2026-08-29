@@ -205,3 +205,47 @@ def test_builtin_cost_mismatch_wins_before_element_traversal() -> None:
             [[0.0], [1.0]],
             costs,
         )
+
+
+def test_builtin_generic_cell_limit_keeps_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A decisive built-in cell overflow still precedes the action ceiling."""
+    monkeypatch.setattr(decision_support, "MAX_DECISION_ACTIONS", 2)
+    monkeypatch.setattr(decision_support, "MAX_DECISION_CELLS", 4)
+
+    with pytest.raises(ValueError, match="exceeds 4 cells"):
+        decision_support.evaluate_decision_support(
+            [0.5, 0.5],
+            [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+            [0.0],
+        )
+
+
+def test_builtin_action_limit_preserves_empty_table_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty evidence remains higher precedence than an outer row overflow."""
+    monkeypatch.setattr(decision_support, "MAX_DECISION_ACTIONS", 2)
+
+    with pytest.raises(ValueError, match="action_utilities must not be empty"):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [[], [], []],
+            [0.0],
+        )
+
+
+def test_builtin_state_limit_preserves_dimensionality_precedence() -> None:
+    """Nested state containers still report the dimensionality contradiction."""
+    probabilities = [[]] * (decision_support.MAX_DECISION_STATES + 1)
+
+    with pytest.raises(
+        ValueError,
+        match="state_probabilities must be a 1D real numeric array",
+    ):
+        decision_support.evaluate_decision_support(
+            probabilities,
+            [[0.0]],
+            [0.0],
+        )
