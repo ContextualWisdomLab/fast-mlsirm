@@ -111,6 +111,67 @@ def _contains_boolean_evidence(value: object) -> bool:
     return False
 
 
+def _preflight_builtin_outer_cardinality(
+    value: object,
+    *,
+    name: str,
+    ndim: int,
+    max_axis0: int | None,
+    axis0_label: str | None,
+    expected_axis0: int | None,
+    axis0_mismatch_error: str | None,
+    expected_axis1: int | None,
+) -> None:
+    """Reject decisive exact-container cardinalities before element traversal.
+
+    The shared real-evidence preflight intentionally validates the complete
+    built-in tree.  Decision evidence has tighter public cardinality contracts,
+    so an exact list/tuple can sometimes be rejected from package-owned
+    ``len`` metadata first.  Cases where the generic cell ceiling may retain
+    precedence fall through to the full preflight.
+    """
+    if type(value) is not list and type(value) is not tuple:
+        return
+
+    outer_count = len(value)
+    if outer_count == 0:
+        return
+
+    if ndim == 1:
+        # A valid 1D built-in has one logical cell per outer entry.  When that
+        # count itself exceeds the generic ceiling, preserve the existing
+        # cell-limit precedence by letting the complete preflight decide.
+        if outer_count > MAX_DECISION_CELLS:
+            return
+        if max_axis0 is not None and outer_count > max_axis0:
+            label = axis0_label or "rows"
+            raise ValueError(f"{name} exceeds {max_axis0} {label}")
+        if expected_axis0 is not None and outer_count != expected_axis0:
+            if axis0_mismatch_error is None:
+                raise ValueError(
+                    f"{name} axis 0 must have length {expected_axis0}"
+                )
+            raise ValueError(axis0_mismatch_error)
+        return
+
+    if ndim != 2 or max_axis0 is None or outer_count <= max_axis0:
+        return
+
+    # Action/signal callers have an already-admitted state count.  If the
+    # corresponding valid 2D table could exceed the generic cell envelope,
+    # preserve that higher-precedence guard by deferring to the full tree
+    # preflight.  Otherwise inspect only the bounded row-carrier identities;
+    # no row element is touched before the decisive row ceiling is raised.
+    if expected_axis1 is None or outer_count * expected_axis1 > MAX_DECISION_CELLS:
+        return
+    for row_index in range(max_axis0 + 1):
+        row_type = type(value[row_index])
+        if row_type is not list and row_type is not tuple and row_type is not np.ndarray:
+            return
+    label = axis0_label or "rows"
+    raise ValueError(f"{name} exceeds {max_axis0} {label}")
+
+
 def _real_array(
     value: object,
     *,
@@ -124,6 +185,16 @@ def _real_array(
     axis1_mismatch_error: str | None = None,
 ) -> np.ndarray:
     """Return bounded, lossless, contiguous binary64 evidence for Rust."""
+    _preflight_builtin_outer_cardinality(
+        value,
+        name=name,
+        ndim=ndim,
+        max_axis0=max_axis0,
+        axis0_label=axis0_label,
+        expected_axis0=expected_axis0,
+        axis0_mismatch_error=axis0_mismatch_error,
+        expected_axis1=expected_axis1,
+    )
     shape, cells = _preflight_real_evidence(value, name)
     if len(shape) != ndim:
         raise ValueError(f"{name} must be a {ndim}D real numeric array")
