@@ -200,7 +200,7 @@ def _canonical_json(report: EssayScoreReport) -> str:
 def _css() -> str:
     """Return compact accessible styling without external resources."""
     return """
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; --muted: #60656f; --line: #d9ded6; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; --muted: #60656f; --line: #767676; }
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
@@ -245,11 +245,11 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--
     --review-required: #e57373;
     --review-clear: #81c784;
     --muted: #9e9e9e;
-    --line: #333333;
+    --line: #808080;
   }
 }
 @media print {
-  :root { --review-required: #9c2f1f; --review-clear: #357a38; --muted: #60656f; --line: #d9ded6; }
+  :root { --review-required: #9c2f1f; --review-clear: #357a38; --muted: #60656f; --line: #767676; }
   body { background: white; color: black; }
   .skip-link { display: none !important; }
   section, .table-scroll { break-inside: avoid; }
