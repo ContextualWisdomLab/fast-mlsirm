@@ -2,11 +2,15 @@ use mlsirm_core::governed_rater_contracts::{
     ContractError, CriterionObservation, DomainReference, RaterConfigurationIdentity,
     RaterInvocation, UncertaintyLevel,
 };
-use serde::Deserialize;
+use serde::de::{self, IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use std::collections::HashSet;
+use std::fmt;
 
 #[derive(Deserialize)]
 struct ConformanceFixture {
     reference_cases: Vec<ReferenceCase>,
+    observation_identity_cases: Vec<ObservationIdentityCase>,
 }
 
 #[derive(Deserialize)]
@@ -14,6 +18,48 @@ struct ReferenceCase {
     name: String,
     value: String,
     valid: bool,
+}
+
+#[derive(Deserialize)]
+struct ObservationIdentityCase {
+    name: String,
+    valid: bool,
+    #[serde(default)]
+    value: Option<serde_json::Value>,
+    #[serde(default)]
+    stage: Option<String>,
+    #[serde(default)]
+    json_text: Option<String>,
+}
+
+struct UniqueObjectMembers;
+
+impl<'de> Visitor<'de> for UniqueObjectMembers {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object with unique member names")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut seen = HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !seen.insert(key.clone()) {
+                return Err(de::Error::custom(format!("duplicate object member: {key}")));
+            }
+            map.next_value::<IgnoredAny>()?;
+        }
+        Ok(())
+    }
+}
+
+fn has_unique_top_level_members(raw: &str) -> bool {
+    let mut deserializer = serde_json::Deserializer::from_str(raw);
+    let result = deserializer.deserialize_map(UniqueObjectMembers);
+    result.is_ok() && deserializer.end().is_ok()
 }
 
 fn reference(value: &str) -> DomainReference {
@@ -56,6 +102,29 @@ fn references_follow_the_shared_cross_sdk_conformance_fixture() {
             case.valid,
             "reference conformance case: {}",
             case.name
+        );
+    }
+}
+
+#[test]
+fn duplicate_member_admission_is_gated_by_the_shared_fixture() {
+    let fixture: ConformanceFixture = serde_json::from_str(include_str!(
+        "../../../contracts/governed-rater-observation-v1.conformance.json"
+    ))
+    .expect("valid conformance fixture");
+
+    for case in fixture.observation_identity_cases {
+        let raw = match (case.value, case.json_text) {
+            (Some(value), None) => serde_json::to_string(&value).expect("serializable fixture value"),
+            (None, Some(raw)) => raw,
+            _ => panic!("observation identity case must contain exactly one payload form"),
+        };
+        assert_eq!(
+            has_unique_top_level_members(&raw),
+            case.valid,
+            "observation identity case: {} ({})",
+            case.name,
+            case.stage.as_deref().unwrap_or("unique-member admission")
         );
     }
 }
