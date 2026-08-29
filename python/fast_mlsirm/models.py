@@ -15,9 +15,10 @@ References (APA 7th ed.):
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from io import BytesIO
-from itertools import chain, islice
+from itertools import islice
 
 import numpy as np
 
@@ -170,14 +171,14 @@ def _confirmatory_scalar(value: object) -> int:
 
 def _confirmatory_ndarray_row(
     row: np.ndarray,
-    width: int | None,
-) -> tuple[list[int], int]:
-    """Normalize one exact numeric NumPy row without array-protocol dispatch."""
+    width: int,
+) -> np.ndarray:
+    """Validate one exact numeric NumPy row without materializing a Python list."""
 
     if row.ndim != 1 or row.shape[0] < 1:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     row_width = int(row.shape[0])
-    if width is not None and row_width != width:
+    if row_width != width:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     if row.dtype.kind == "c":
         raise ValueError(_CONFIRMATORY_REAL_ERROR)
@@ -185,19 +186,35 @@ def _confirmatory_ndarray_row(
         raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
     if not np.all(np.isfinite(row)) or not np.all((row == 0) | (row == 1)):
         raise ValueError(_CONFIRMATORY_BINARY_ERROR)
-    return row.astype(np.int64, copy=False).tolist(), row_width
+    return row
+
+
+def _confirmatory_sequence_entries(
+    value: list[object] | tuple[object, ...],
+    width: int,
+) -> Iterator[object]:
+    """Yield normalized sequence cells lazily after the shape/resource preflight."""
+
+    for row in value:
+        if type(row) is np.ndarray:
+            validated = _confirmatory_ndarray_row(row, width)
+            yield from validated.flat
+            continue
+        if type(row) is not list and type(row) is not tuple:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        if len(row) != width:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        for entry in row:
+            yield _confirmatory_scalar(entry)
 
 
 def _immutable_confirmatory_pattern(
-    values: np.ndarray | list[list[int]],
+    values: np.ndarray | Iterable[object],
     shape: tuple[int, int],
 ) -> np.ndarray:
     """Serialize canonical loading evidence into bounded immutable byte storage."""
 
-    if type(values) is np.ndarray:
-        entries = iter(values.flat)
-    else:
-        entries = chain.from_iterable(values)
+    entries = iter(values.flat) if type(values) is np.ndarray else iter(values)
     total_cells = shape[0] * shape[1]
     remaining = total_cells
     sink = BytesIO()
@@ -234,24 +251,8 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
 
     width = _confirmatory_sequence_width(value)
-    normalized_rows: list[list[int]] = []
-    for row in value:
-        if type(row) is np.ndarray:
-            normalized, row_width = _confirmatory_ndarray_row(row, width)
-        elif type(row) is list or type(row) is tuple:
-            if len(row) < 1:
-                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-            row_width = len(row)
-            if row_width != width:
-                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-            normalized = [_confirmatory_scalar(entry) for entry in row]
-        else:
-            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-        if row_width != width:
-            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-        normalized_rows.append(normalized)
-
-    return _immutable_confirmatory_pattern(normalized_rows, (len(value), width))
+    entries = _confirmatory_sequence_entries(value, width)
+    return _immutable_confirmatory_pattern(entries, (len(value), width))
 
 
 def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
