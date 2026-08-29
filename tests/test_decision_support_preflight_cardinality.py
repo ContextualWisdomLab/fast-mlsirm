@@ -222,6 +222,39 @@ def test_builtin_generic_cell_limit_keeps_precedence(
         )
 
 
+def test_builtin_wide_action_rows_keep_cell_limit_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Actual built-in row width, not contract width, preserves the cell cap."""
+    monkeypatch.setattr(decision_support, "MAX_DECISION_ACTIONS", 2)
+    monkeypatch.setattr(decision_support, "MAX_DECISION_CELLS", 4)
+    row = np.array([0.0, 0.0], dtype=np.float64)
+
+    with pytest.raises(ValueError, match="exceeds 4 cells"):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [row, row, row],
+            [0.0],
+        )
+
+
+def test_builtin_wide_signal_rows_keep_cell_limit_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wide signal rows defer to full cell accounting before signal ceiling."""
+    monkeypatch.setattr(decision_support, "MAX_DECISION_SIGNALS", 2)
+    monkeypatch.setattr(decision_support, "MAX_DECISION_CELLS", 4)
+    row = np.array([0.5, 0.5], dtype=np.float64)
+
+    with pytest.raises(ValueError, match="exceeds 4 cells"):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [[0.0]],
+            [0.0],
+            signal_joint_probabilities=[row, row, row],
+        )
+
+
 def test_builtin_action_limit_preserves_empty_table_precedence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
