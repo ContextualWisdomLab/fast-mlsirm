@@ -35,6 +35,7 @@ _MAX_EVENT_SNAPSHOT_DEPTH = 16
 _MAX_EVENT_SNAPSHOT_NODES = 4096
 _MAX_VALIDATOR_DIAGNOSTICS = 256
 _MAX_FORMATTED_VALIDATOR_DIAGNOSTIC_CHARS = 1024
+_MAX_FORMATTED_IDENTITY_FIELD_CHARS = 128
 
 
 def _exact_string(name: str, value: object, *, optional: bool = False) -> str | None:
@@ -169,7 +170,12 @@ class CanonicalComputeUsageSink:
         identity_snapshot = {key: value for key, value in identity_items}
         unexpected = set(identity_snapshot).difference(_CANONICAL_IDENTITY_FIELDS)
         if unexpected:
-            names = ", ".join(sorted(unexpected))
+            names = ", ".join(
+                sorted(
+                    name[:_MAX_FORMATTED_IDENTITY_FIELD_CHARS]
+                    for name in unexpected
+                )
+            )
             raise ValueError(f"identity contains noncanonical fields: {names}")
         invalid_values = sorted(
             key
