@@ -254,6 +254,28 @@ def test_sequence_growth_after_width_preflight_is_rejected_within_budget(
     assert mutated
 
 
+def test_sequence_shrink_after_width_preflight_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = [[1, 0], [0, 1]]
+    original_width = models._confirmatory_sequence_width
+    mutated = False
+
+    def mutating_width(value: list[object] | tuple[object, ...]) -> int:
+        nonlocal mutated
+        width = original_width(value)
+        source.pop()
+        mutated = True
+        return width
+
+    monkeypatch.setattr(models, "_confirmatory_sequence_width", mutating_width)
+
+    with pytest.raises(ValueError, match=_SHAPE_ERROR):
+        models.ConfirmatoryModel(source)
+
+    assert mutated
+
+
 def test_sequence_growth_during_serialization_is_not_silently_truncated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
