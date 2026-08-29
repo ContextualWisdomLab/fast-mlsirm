@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .irt_contract import MAX_IRT_RESPONSE_CELLS
+
 __all__ = [
     "ConfirmatoryModel",
     "ExploratoryModel",
@@ -54,6 +56,7 @@ _NUMPY_COMPLEX_SCALAR_TYPES = (
     np.clongdouble,
 )
 
+_MAX_CONFIRMATORY_LOADING_CELLS = MAX_IRT_RESPONSE_CELLS
 _CONFIRMATORY_SHAPE_ERROR = (
     "confirmatory loading_pattern must be a non-empty 2-D items x dimensions array"
 )
@@ -61,6 +64,9 @@ _CONFIRMATORY_NUMERIC_ERROR = "confirmatory loading_pattern entries must be nume
 _CONFIRMATORY_REAL_ERROR = "confirmatory loading_pattern entries must be real 0 or 1"
 _CONFIRMATORY_BINARY_ERROR = (
     "confirmatory loading_pattern entries must be finite and exactly 0 or 1"
+)
+_CONFIRMATORY_RESOURCE_ERROR = (
+    "confirmatory loading_pattern exceeds the supported cell budget"
 )
 _CONFIRMATORY_REPLAY_ERROR = "confirmatory model loading_pattern is not canonical"
 
@@ -98,6 +104,44 @@ def _require_exploratory_dimensions(value: object) -> int:
     if dimensions < 1:
         raise ValueError("exploratory dimensions must be a positive integer")
     return dimensions
+
+
+def _require_confirmatory_cell_budget(
+    rows: int,
+    columns: int,
+    *,
+    error: str = _CONFIRMATORY_RESOURCE_ERROR,
+) -> None:
+    """Reject loading structures that exceed the package-owned matrix budget."""
+
+    if rows > _MAX_CONFIRMATORY_LOADING_CELLS // columns:
+        raise ValueError(error)
+
+
+def _confirmatory_sequence_width(value: list[object] | tuple[object, ...]) -> int:
+    """Preflight exact sequence row shapes before per-cell normalization."""
+
+    width: int | None = None
+    for row in value:
+        if type(row) is np.ndarray:
+            if row.ndim != 1 or row.shape[0] < 1:
+                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+            row_width = int(row.shape[0])
+        elif type(row) is list or type(row) is tuple:
+            if len(row) < 1:
+                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+            row_width = len(row)
+        else:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        if width is not None and row_width != width:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        if width is None:
+            width = row_width
+
+    if width is None:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+    _require_confirmatory_cell_budget(len(value), width)
+    return width
 
 
 def _confirmatory_scalar(value: object) -> int:
@@ -146,6 +190,7 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
         raw = value
         if raw.ndim != 2 or raw.shape[0] < 1 or raw.shape[1] < 1:
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+        _require_confirmatory_cell_budget(int(raw.shape[0]), int(raw.shape[1]))
         if raw.dtype.kind == "c":
             raise ValueError(_CONFIRMATORY_REAL_ERROR)
         if raw.dtype.kind not in "biuf":
@@ -161,8 +206,8 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
     if len(value) < 1:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
 
+    width = _confirmatory_sequence_width(value)
     normalized_rows: list[list[int]] = []
-    width: int | None = None
     for row in value:
         if type(row) is np.ndarray:
             normalized, row_width = _confirmatory_ndarray_row(row, width)
@@ -170,13 +215,13 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
             if len(row) < 1:
                 raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
             row_width = len(row)
-            if width is not None and row_width != width:
+            if row_width != width:
                 raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
             normalized = [_confirmatory_scalar(entry) for entry in row]
         else:
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-        if width is None:
-            width = row_width
+        if row_width != width:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
         normalized_rows.append(normalized)
 
     pattern = np.asarray(normalized_rows, dtype=np.int64)
@@ -197,8 +242,14 @@ def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
         or pattern.shape[1] < 1
         or pattern.flags.writeable
         or not pattern.flags.c_contiguous
-        or not np.all((pattern == 0) | (pattern == 1))
     ):
+        raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
+    _require_confirmatory_cell_budget(
+        int(pattern.shape[0]),
+        int(pattern.shape[1]),
+        error=_CONFIRMATORY_REPLAY_ERROR,
+    )
+    if not np.all((pattern == 0) | (pattern == 1)):
         raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
     return pattern
 
