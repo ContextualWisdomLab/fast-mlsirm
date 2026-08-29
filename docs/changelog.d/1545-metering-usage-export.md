@@ -7,6 +7,7 @@
 ## Fixed
 
 - Seal metering input, producer-result, validator-result, and validator-to-enqueue trust boundaries with exact built-in carrier/scalar admission. Independent bounded exact-JSON snapshots now prevent successful validator callbacks from rewriting top-level or nested event evidence before durable enqueue; snapshot traversal is limited to 4,096 nodes and depth 16, and callback-bearing nested carriers fail closed before validator or enqueue observation.
+- Reject `NaN` and positive/negative infinity during package-owned exact-JSON snapshot admission before canonical validation or durable enqueue. Finite exact built-in floats remain admissible generic JSON numbers; downstream usage-event schema semantics stay validator-owned.
 - Preflight impossible exact-dict cardinalities with inert `len(...)` before producer-result key scans or nested exact-JSON key inspection, so dictionaries that cannot fit within the 4,096-node snapshot envelope fail closed without unbounded key traversal.
 - Reject persistent identity dictionaries larger than the five-field canonical identity allowlist before copying or scanning them; ordinary exact-string identity admission and `None` omission semantics are unchanged.
 - Snapshot simulation response shape and fit model/backend metadata exactly once before producer observation. Simulation shapes must be exact two-element tuples of exact non-negative integers, preventing mixed row/item counts from mutable shape carriers; admitted fit model/backend strings are normalized from the same values that passed type validation.
