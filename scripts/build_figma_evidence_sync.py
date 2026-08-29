@@ -170,7 +170,7 @@ def _report_css() -> str:
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text); background: var(--bg);
 }
-@media (prefers-color-scheme: dark) {
+@media screen and (prefers-color-scheme: dark) {
   :root {
     --text: #e2e8f0; --bg: #0f172a;
     --hero-bg: #1e293b; --hero-text: #f8fafc;
@@ -216,6 +216,15 @@ code { overflow-wrap: anywhere; }
 }
 
 @media print {
+  :root {
+    --text: #172026; --bg: #f5f7f8;
+    --hero-bg: #12343b; --hero-text: #fff;
+    --hero-accent1: #b7d7d0; --hero-accent2: #dce8e5;
+    --card-bg: #fff; --border: #d8e1e3;
+    --meta-text: #5e6f76;
+    --focus-ring: #0f766e;
+    --table-border: #e8edef; --hover-bg: #fbfcfa;
+  }
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
