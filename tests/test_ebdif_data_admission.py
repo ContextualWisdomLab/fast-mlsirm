@@ -62,7 +62,7 @@ def test_eb_mh_dif_preserves_plain_sequence_numpy_scalar_marshalling(
                 "weight": np.zeros(2),
                 "post_mean": np.zeros(2),
                 "post_var": np.zeros(2),
-                "cat_probs": np.array([[0.0, 0.0, 1.0, 0.0, 0.0]] * 2),
+                "cat_probs": np.array([0.0, 0.0, 1.0, 0.0, 0.0] * 2),
             }
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
