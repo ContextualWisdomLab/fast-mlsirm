@@ -153,3 +153,55 @@ def test_signal_state_mismatch_preflights_before_dense_marshalling(
             [0.0],
             signal_joint_probabilities=[[0.5, 0.5]],
         )
+
+
+def test_builtin_state_limit_wins_before_element_traversal() -> None:
+    """Exact built-in state cardinality is known before scalar inspection."""
+    probabilities = [object()] * (decision_support.MAX_DECISION_STATES + 1)
+
+    with pytest.raises(ValueError, match="exceeds 4096 states"):
+        decision_support.evaluate_decision_support(
+            probabilities,
+            [[0.0]],
+            [0.0],
+        )
+
+
+def test_builtin_action_limit_wins_before_row_element_traversal() -> None:
+    """Exact built-in action-row cardinality is known before row contents."""
+    utilities = [[object()]] * (decision_support.MAX_DECISION_ACTIONS + 1)
+
+    with pytest.raises(ValueError, match="exceeds 1024 actions"):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            utilities,
+            [0.0],
+        )
+
+
+def test_builtin_signal_limit_wins_before_row_element_traversal() -> None:
+    """Exact built-in signal-row cardinality is known before row contents."""
+    signals = [[object()]] * (decision_support.MAX_DECISION_SIGNALS + 1)
+
+    with pytest.raises(ValueError, match="exceeds 1024 signals"):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [[0.0]],
+            [0.0],
+            signal_joint_probabilities=signals,
+        )
+
+
+def test_builtin_cost_mismatch_wins_before_element_traversal() -> None:
+    """Exact built-in cost cardinality is known before scalar inspection."""
+    costs = [object(), 1.0, 2.0]
+
+    with pytest.raises(
+        ValueError,
+        match="intervention_costs length must match action_utilities rows",
+    ):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [[0.0], [1.0]],
+            costs,
+        )
