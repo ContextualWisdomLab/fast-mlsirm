@@ -120,6 +120,8 @@ def _real_array(
     axis0_label: str | None = None,
     expected_axis0: int | None = None,
     axis0_mismatch_error: str | None = None,
+    expected_axis1: int | None = None,
+    axis1_mismatch_error: str | None = None,
 ) -> np.ndarray:
     """Return bounded, lossless, contiguous binary64 evidence for Rust."""
     shape, cells = _preflight_real_evidence(value, name)
@@ -136,6 +138,10 @@ def _real_array(
         if axis0_mismatch_error is None:
             raise ValueError(f"{name} axis 0 must have length {expected_axis0}")
         raise ValueError(axis0_mismatch_error)
+    if expected_axis1 is not None and shape[1] != expected_axis1:
+        if axis1_mismatch_error is None:
+            raise ValueError(f"{name} axis 1 must have length {expected_axis1}")
+        raise ValueError(axis1_mismatch_error)
     if _contains_boolean_evidence(value):
         raise ValueError(f"{name} must contain real numeric values, not booleans")
     array = _trusted_real_array(value, name)
@@ -250,18 +256,24 @@ def evaluate_decision_support(
         max_axis0=MAX_DECISION_STATES,
         axis0_label="states",
     )
+    state_count = probabilities.shape[0]
     utilities = _real_array(
         action_utilities,
         name="action_utilities",
         ndim=2,
         max_axis0=MAX_DECISION_ACTIONS,
         axis0_label="actions",
+        expected_axis1=state_count,
+        axis1_mismatch_error=(
+            "action_utilities columns must match state_probabilities"
+        ),
     )
+    action_count = utilities.shape[0]
     costs = _real_array(
         intervention_costs,
         name="intervention_costs",
         ndim=1,
-        expected_axis0=utilities.shape[0],
+        expected_axis0=action_count,
         axis0_mismatch_error=(
             "intervention_costs length must match action_utilities rows"
         ),
@@ -271,10 +283,6 @@ def evaluate_decision_support(
     if info_cost < 0.0:
         raise ValueError("information_cost must be non-negative")
 
-    state_count = probabilities.shape[0]
-    action_count = utilities.shape[0]
-    if utilities.shape[1] != state_count:
-        raise ValueError("action_utilities columns must match state_probabilities")
     if action_index >= action_count:
         raise ValueError("no_action_index must identify one action")
 
@@ -287,11 +295,11 @@ def evaluate_decision_support(
             ndim=2,
             max_axis0=MAX_DECISION_SIGNALS,
             axis0_label="signals",
-        )
-        if signals.shape[1] != state_count:
-            raise ValueError(
+            expected_axis1=state_count,
+            axis1_mismatch_error=(
                 "signal_joint_probabilities columns must match state_probabilities"
-            )
+            ),
+        )
 
     native_result = _core_module().evaluate_decision_support(
         probabilities,
