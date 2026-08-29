@@ -121,6 +121,7 @@ def _require_confirmatory_cell_budget(
 def _confirmatory_sequence_width(value: list[object] | tuple[object, ...]) -> int:
     """Preflight exact sequence row shapes before per-cell normalization."""
 
+    _require_confirmatory_cell_budget(len(value), 1)
     width: int | None = None
     for row in value:
         if type(row) is np.ndarray:
@@ -205,8 +206,6 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     if len(value) < 1:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-    if len(value) > _MAX_CONFIRMATORY_LOADING_CELLS:
-        raise ValueError(_CONFIRMATORY_RESOURCE_ERROR)
 
     width = _confirmatory_sequence_width(value)
     normalized_rows: list[list[int]] = []
