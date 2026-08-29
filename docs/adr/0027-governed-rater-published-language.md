@@ -83,10 +83,11 @@ entity types.
 
 References are opaque identity text, not display labels. Producers must send the
 canonical reference exactly as intended: empty or whitespace-only references,
-references longer than 256 Unicode scalar values, control characters, and
-leading or trailing whitespace are rejected. Consumers must not silently trim
-or otherwise normalize a reference because that would allow the same serialized
-contract to acquire different identities in different SDKs.
+references longer than 256 Unicode scalar values, control characters, leading
+or trailing whitespace, and a leading or trailing U+FEFF byte-order mark are
+rejected. Consumers must not silently trim or otherwise normalize a reference
+because that would allow the same serialized contract to acquire different
+identities in different SDKs.
 
 The released JSON representation serializes `observations` as an object keyed by
 canonical `criterion_ref`. The observation value therefore contains only the
@@ -115,7 +116,7 @@ claim, or certification authority enters the generic contract.
 ## Aggregate invariants
 
 - references are exact, non-empty, bounded, free of control characters, and
-  contain no leading or trailing whitespace;
+  contain no leading/trailing whitespace or boundary U+FEFF;
 - an observed criterion has between one and 64 unique evidence references;
 - an abstention has no manufactured category and an explicit reason;
 - each observation has at most 32 unique review-signal references;
@@ -197,6 +198,20 @@ the DDD repository topology or JSON encoding.
   observation contract separate from later calibration and rater-effect
   diagnostics instead of embedding a final score or decision in the observation
   envelope.
+
+### Research redistribution disposition
+
+No redistributable license for the two Journal of Applied Measurement articles
+has been established. The journal's current official submission policy requires
+a signed copyright release after acceptance, and its official subscription page
+states that digital copies of individual articles from Volumes 1–21 are sold by
+the publisher. Accordingly, this repository does not copy a third-party PDF
+from an unofficial host. It uses the repository-guidance fallback: persistent
+PubMed links, complete citations, and focused summaries limited to claims the
+papers support.
+
+- Publisher submission/copyright policy: https://jamntnu.net/submit.html
+- Publisher article-access policy: https://www.jamntnu.net/subscription.html
 
 ## Reversal conditions
 
