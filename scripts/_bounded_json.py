@@ -248,6 +248,9 @@ def parse_json_bounded(
     if type(content) is not str:
         raise TypeError("content must be str")
 
+    if len(content) > byte_limit:
+        raise ValueError(f"JSON input exceeds maximum allowed size {byte_limit} bytes")
+
     try:
         encoded = content.encode("utf-8")
     except UnicodeEncodeError:
