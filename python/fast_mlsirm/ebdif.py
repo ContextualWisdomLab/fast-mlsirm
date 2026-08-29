@@ -4,6 +4,7 @@ Rust core; this module only validates and marshals arrays."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 import numpy as np
 
@@ -40,7 +41,11 @@ _TRUSTED_EBDIF_INTEGER_TYPES = frozenset(
         np.uint64,
     }
 )
+_EBDIF_RESULT_KEYS = frozenset(
+    {"mu", "tau2", "tau2_raw", "weight", "post_mean", "post_var", "cat_probs"}
+)
 _MAX_EBDIF_ITEMS = 20_000_000
+_RESULT_FINITE_CHUNK = 65_536
 
 
 @dataclass
@@ -173,6 +178,70 @@ def _validated_1d(x, name: str) -> np.ndarray:
     return _lossless_float64_array(xa, name)
 
 
+def _exact_finite_result_vector(
+    value: object,
+    *,
+    expected_length: int,
+    invalid: RuntimeError,
+) -> np.ndarray:
+    """Validate one concrete PyO3 float64 vector without conversion protocols."""
+
+    if type(value) is not np.ndarray:
+        raise invalid
+    if value.dtype != np.dtype(np.float64) or value.ndim != 1:
+        raise invalid
+    if int(value.shape[0]) != expected_length:
+        raise invalid
+    for start in range(0, expected_length, _RESULT_FINITE_CHUNK):
+        stop = min(start + _RESULT_FINITE_CHUNK, expected_length)
+        if not bool(np.isfinite(value[start:stop]).all()):
+            raise invalid
+    return value
+
+
+def _validated_rust_result(
+    result: object,
+    *,
+    n_items: int,
+) -> tuple[float, float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Replay the concrete PyO3 EBDIF result envelope before public marshalling."""
+
+    invalid = RuntimeError("invalid EBDIF Rust result payload")
+    if type(result) is not dict or len(result) != len(_EBDIF_RESULT_KEYS):
+        raise invalid
+    keys = list(dict.keys(result))
+    if any(type(key) is not str for key in keys) or set(keys) != _EBDIF_RESULT_KEYS:
+        raise invalid
+
+    mu = dict.__getitem__(result, "mu")
+    tau2 = dict.__getitem__(result, "tau2")
+    tau2_raw = dict.__getitem__(result, "tau2_raw")
+    if any(type(value) is not float or not isfinite(value) for value in (mu, tau2, tau2_raw)):
+        raise invalid
+
+    weight = _exact_finite_result_vector(
+        dict.__getitem__(result, "weight"),
+        expected_length=n_items,
+        invalid=invalid,
+    )
+    post_mean = _exact_finite_result_vector(
+        dict.__getitem__(result, "post_mean"),
+        expected_length=n_items,
+        invalid=invalid,
+    )
+    post_var = _exact_finite_result_vector(
+        dict.__getitem__(result, "post_var"),
+        expected_length=n_items,
+        invalid=invalid,
+    )
+    cat_probs = _exact_finite_result_vector(
+        dict.__getitem__(result, "cat_probs"),
+        expected_length=n_items * 5,
+        invalid=invalid,
+    )
+    return mu, tau2, tau2_raw, weight, post_mean, post_var, cat_probs
+
+
 def eb_mh_dif(mh, se) -> EbDifResult:
     """Empirical Bayes Mantel-Haenszel DIF
     (``mlsirm_core::dif::eb_mh_dif``; Zwick & Thayer, 2003, ERIC
@@ -226,13 +295,17 @@ def eb_mh_dif(mh, se) -> EbDifResult:
     if core is None or not hasattr(core, "py_eb_mh_dif"):
         raise RuntimeError("Rust core with py_eb_mh_dif is required")
     res = core.py_eb_mh_dif(mhf, sef)
-    ni = mhf.shape[0]
+    ni = int(mhf.shape[0])
+    mu, tau2, tau2_raw, weight, post_mean, post_var, cat_probs = _validated_rust_result(
+        res,
+        n_items=ni,
+    )
     return EbDifResult(
-        mu=float(res["mu"]),
-        tau2=float(res["tau2"]),
-        tau2_raw=float(res["tau2_raw"]),
-        weight=np.asarray(res["weight"], dtype=np.float64),
-        post_mean=np.asarray(res["post_mean"], dtype=np.float64),
-        post_var=np.asarray(res["post_var"], dtype=np.float64),
-        cat_probs=np.asarray(res["cat_probs"], dtype=np.float64).reshape(ni, 5),
+        mu=mu,
+        tau2=tau2,
+        tau2_raw=tau2_raw,
+        weight=weight,
+        post_mean=post_mean,
+        post_var=post_var,
+        cat_probs=cat_probs.reshape(ni, 5),
     )
