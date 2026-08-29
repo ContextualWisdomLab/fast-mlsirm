@@ -16,3 +16,6 @@
 - Reject an intervention-cost/action-count mismatch from bounded shape metadata
   after the existing dimensionality, non-empty, and generic cell guards but
   before Boolean/value scans or contiguous binary64 cost marshalling.
+- Reject action-utility and sample-information state-axis mismatches from bounded
+  shape metadata after the target carrier's existing resource guards but before
+  Boolean/value scans or contiguous binary64 marshalling.
