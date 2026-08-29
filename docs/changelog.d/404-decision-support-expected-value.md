@@ -13,3 +13,6 @@
   from bounded inert shape metadata before boolean scans, dense binary64
   marshalling, or native dispatch; the generic 1,000,000-cell evidence ceiling
   retains precedence when both resource limits are exceeded.
+- Reject an intervention-cost/action-count mismatch from bounded shape metadata
+  after the existing dimensionality, non-empty, and generic cell guards but
+  before Boolean/value scans or contiguous binary64 cost marshalling.
