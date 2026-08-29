@@ -90,6 +90,15 @@ def test_replay_rejects_foreign_backing_storage() -> None:
         _ = model.n_dims
 
 
+def test_constructor_canonical_storage_cannot_be_made_writeable() -> None:
+    model = models.ConfirmatoryModel([[1, 0], [0, 1]])
+
+    assert not model.loading_pattern.flags.writeable
+    with pytest.raises(ValueError):
+        model.loading_pattern.setflags(write=True)
+    assert np.array_equal(model.loading_pattern, np.array([[1, 0], [0, 1]], dtype=np.int64))
+
+
 def test_confirmatory_loading_cell_budget_boundary_remains_admissible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
