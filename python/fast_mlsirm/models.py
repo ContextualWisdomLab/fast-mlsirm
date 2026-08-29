@@ -138,6 +138,7 @@ def _confirmatory_sequence_width(value: list[object] | tuple[object, ...]) -> in
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
         if width is None:
             width = row_width
+            _require_confirmatory_cell_budget(len(value), width)
 
     if width is None:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
