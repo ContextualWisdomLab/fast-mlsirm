@@ -130,6 +130,61 @@ def test_ndarray_immutable_materialization_uses_bounded_conversion_chunks(
     assert np.array_equal(model.loading_pattern, source.astype(np.int64))
 
 
+def test_ndarray_mutation_after_validation_is_rechecked_during_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = np.array([[1.0, 0.0]], dtype=np.float64)
+    original_fromiter = np.fromiter
+    mutated = False
+
+    def mutating_fromiter(
+        iterable: Iterable[object],
+        dtype: object,
+        count: int = -1,
+    ) -> np.ndarray:
+        nonlocal mutated
+        if not mutated:
+            source[0, 0] = 0.5
+            mutated = True
+        return original_fromiter(iterable, dtype=dtype, count=count)
+
+    monkeypatch.setattr(models.np, "fromiter", mutating_fromiter)
+
+    with pytest.raises(
+        ValueError,
+        match="confirmatory loading_pattern entries must be finite and exactly 0 or 1",
+    ):
+        models.ConfirmatoryModel(source)
+
+    assert mutated
+
+
+def test_ndarray_row_mutation_after_row_validation_is_rechecked_during_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = np.array([1.0, 0.0], dtype=np.float64)
+    original_validate_row = models._confirmatory_ndarray_row
+    mutated = False
+
+    def mutating_validate_row(value: np.ndarray, width: int) -> np.ndarray:
+        nonlocal mutated
+        validated = original_validate_row(value, width)
+        if value is row and not mutated:
+            row[0] = 0.5
+            mutated = True
+        return validated
+
+    monkeypatch.setattr(models, "_confirmatory_ndarray_row", mutating_validate_row)
+
+    with pytest.raises(
+        ValueError,
+        match="confirmatory loading_pattern entries must be finite and exactly 0 or 1",
+    ):
+        models.ConfirmatoryModel([row])
+
+    assert mutated
+
+
 def test_sequence_immutable_materialization_uses_bounded_conversion_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
