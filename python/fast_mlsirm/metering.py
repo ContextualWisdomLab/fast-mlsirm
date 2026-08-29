@@ -88,18 +88,22 @@ def _snapshot_exact_json(
     if value is None or value_type in (str, int, bool):
         return value
     if value_type is list:
+        if len(value) > remaining_nodes[0]:
+            raise ValueError("event_builder result exact JSON tree is too large")
+        value_snapshot = list.copy(value)
         return [
             _snapshot_exact_json(
                 item,
                 depth=depth + 1,
                 remaining_nodes=remaining_nodes,
             )
-            for item in value
+            for item in value_snapshot
         ]
     if value_type is dict:
         if len(value) > remaining_nodes[0]:
             raise ValueError("event_builder result exact JSON tree is too large")
-        if any(type(key) is not str for key in value):
+        value_snapshot = dict.copy(value)
+        if any(type(key) is not str for key in value_snapshot):
             raise ValueError("event_builder result exact JSON keys must be exact strings")
         return {
             key: _snapshot_exact_json(
@@ -107,7 +111,7 @@ def _snapshot_exact_json(
                 depth=depth + 1,
                 remaining_nodes=remaining_nodes,
             )
-            for key, item in value.items()
+            for key, item in value_snapshot.items()
         }
     raise ValueError("event_builder result must use exact JSON carriers and scalars")
 
