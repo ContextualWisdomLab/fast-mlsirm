@@ -2,8 +2,9 @@
 
 The module opens the requested leaf without following symbolic links where the
 platform supports that flag, validates the opened descriptor as a stable regular
-file, performs one bounded read, validates structural depth without recursion,
-then delegates syntax and value construction to :mod:`json`.
+file, performs a bounded read, verifies mutation-sensitive descriptor metadata,
+then re-reads the same descriptor and requires identical bytes before validating
+structural depth and delegating syntax/value construction to :mod:`json`.
 """
 
 from __future__ import annotations
@@ -86,6 +87,14 @@ def _read_bounded_descriptor(file_descriptor: int, *, byte_limit: int) -> bytes:
     return content
 
 
+def _rewind_descriptor(file_descriptor: int) -> None:
+    """Rewind an admitted regular descriptor for content confirmation."""
+    try:
+        os.lseek(file_descriptor, 0, os.SEEK_SET)
+    except OSError:
+        raise ValueError(_UNSTABLE_PATH_ERROR) from None
+
+
 def _read_stable_regular_file(path: Path, *, byte_limit: int) -> bytes:
     """Open, identify, and bounded-read one stable regular file."""
     try:
@@ -98,9 +107,24 @@ def _read_stable_regular_file(path: Path, *, byte_limit: int) -> bytes:
             raise ValueError(_SAFE_OPEN_ERROR)
         _validate_path_identity(path, descriptor_status)
         content = _read_bounded_descriptor(file_descriptor, byte_limit=byte_limit)
-        final_descriptor_status = os.fstat(file_descriptor)
-        if _descriptor_snapshot(final_descriptor_status) != _descriptor_snapshot(
+        post_read_status = os.fstat(file_descriptor)
+        if _descriptor_snapshot(post_read_status) != _descriptor_snapshot(
             descriptor_status
+        ):
+            raise ValueError(_UNSTABLE_PATH_ERROR)
+
+        _rewind_descriptor(file_descriptor)
+        try:
+            confirmed_content = _read_bounded_descriptor(
+                file_descriptor, byte_limit=byte_limit
+            )
+        except ValueError:
+            raise ValueError(_UNSTABLE_PATH_ERROR) from None
+        final_descriptor_status = os.fstat(file_descriptor)
+        if (
+            _descriptor_snapshot(final_descriptor_status)
+            != _descriptor_snapshot(descriptor_status)
+            or confirmed_content != content
         ):
             raise ValueError(_UNSTABLE_PATH_ERROR)
         _validate_path_identity(path, final_descriptor_status)
