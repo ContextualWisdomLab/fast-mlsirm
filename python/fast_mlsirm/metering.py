@@ -208,7 +208,7 @@ class CanonicalComputeUsageSink:
             raise ValueError("event_builder result keys must be exact strings")
         producer_event = {key: value for key, value in producer_items}
         producer_contract_version = producer_event.get("event_contract_version")
-        if type(producer_contract_version) is not int:
+        if type(producer_contract_version) is not int or producer_contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
         validation_event = _snapshot_exact_json(producer_event)
         contract_version = validation_event.get("event_contract_version")
