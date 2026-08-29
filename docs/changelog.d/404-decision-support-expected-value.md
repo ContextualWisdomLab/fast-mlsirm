@@ -24,3 +24,6 @@
 - Reject action-utility and sample-information state-axis mismatches from bounded
   shape metadata after the target carrier's existing resource guards but before
   Boolean/value scans or contiguous binary64 marshalling.
+- Admit independently decidable `no_action_index` and `information_cost`
+  controls before traversing scientific evidence, while retaining the
+  action-index upper-bound check after the action count is known.
