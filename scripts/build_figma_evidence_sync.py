@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import subprocess
@@ -153,7 +154,13 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
 
 def _content_security_policy() -> str:
     """Return the restrictive policy used by the self-contained HTML report."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    digest = hashlib.sha256(_report_css().encode("utf-8")).digest()
+    encoded = base64.b64encode(digest).decode("ascii")
+    return (
+        "default-src 'none'; "
+        f"style-src 'sha256-{encoded}'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    )
 
 
 def _report_css() -> str:
@@ -290,9 +297,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
             "<title>fast-mlsirm Figma Evidence Sync</title>",
-            "<style>",
-            _report_css(),
-            "</style>",
+            f"<style>{_report_css()}</style>",
             "</head>",
             "<body><main>",
             '<section class="hero"><p>fast-mlsirm design evidence</p><h1>Figma Evidence Sync</h1>',
