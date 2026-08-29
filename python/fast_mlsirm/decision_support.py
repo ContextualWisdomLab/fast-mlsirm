@@ -347,6 +347,11 @@ def evaluate_decision_support(
     ``U(a, s) - U(no_action, s) - cost(a)``.  This is decision analysis over
     supplied inputs, not a causal estimate or an automated high-stakes policy.
     """
+    action_index = _trusted_index(no_action_index, name="no_action_index")
+    info_cost = _coerce_finite_real(information_cost, name="information_cost")
+    if info_cost < 0.0:
+        raise ValueError("information_cost must be non-negative")
+
     probabilities = _real_array(
         state_probabilities,
         name="state_probabilities",
@@ -376,10 +381,6 @@ def evaluate_decision_support(
             "intervention_costs length must match action_utilities rows"
         ),
     )
-    action_index = _trusted_index(no_action_index, name="no_action_index")
-    info_cost = _coerce_finite_real(information_cost, name="information_cost")
-    if info_cost < 0.0:
-        raise ValueError("information_cost must be non-negative")
 
     if action_index >= action_count:
         raise ValueError("no_action_index must identify one action")
