@@ -183,6 +183,8 @@ def _exact_finite_result_vector(
     *,
     expected_length: int,
     invalid: RuntimeError,
+    minimum: float | None = None,
+    maximum: float | None = None,
 ) -> np.ndarray:
     """Validate one concrete PyO3 float64 vector without conversion protocols."""
 
@@ -194,7 +196,12 @@ def _exact_finite_result_vector(
         raise invalid
     for start in range(0, expected_length, _RESULT_FINITE_CHUNK):
         stop = min(start + _RESULT_FINITE_CHUNK, expected_length)
-        if not bool(np.isfinite(value[start:stop]).all()):
+        chunk = value[start:stop]
+        if not bool(np.isfinite(chunk).all()):
+            raise invalid
+        if minimum is not None and not bool((chunk >= minimum).all()):
+            raise invalid
+        if maximum is not None and not bool((chunk <= maximum).all()):
             raise invalid
     return value
 
@@ -225,6 +232,8 @@ def _validated_rust_result(
         dict.__getitem__(result, "weight"),
         expected_length=n_items,
         invalid=invalid,
+        minimum=0.0,
+        maximum=1.0,
     )
     post_mean = _exact_finite_result_vector(
         dict.__getitem__(result, "post_mean"),
@@ -235,11 +244,14 @@ def _validated_rust_result(
         dict.__getitem__(result, "post_var"),
         expected_length=n_items,
         invalid=invalid,
+        minimum=0.0,
     )
     cat_probs = _exact_finite_result_vector(
         dict.__getitem__(result, "cat_probs"),
         expected_length=n_items * 5,
         invalid=invalid,
+        minimum=0.0,
+        maximum=1.0,
     )
     return mu, tau2, tau2_raw, weight, post_mean, post_var, cat_probs
 
