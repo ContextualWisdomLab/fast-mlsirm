@@ -240,15 +240,18 @@ def parse_json_bounded(
 
     Raises:
         TypeError: If ``content`` is not an exact built-in string.
-        ValueError: If limits are invalid or exceeded, JSON syntax is invalid,
-            or decoder recursion fails.
+        ValueError: If limits are invalid or exceeded, input is not encodable
+            as UTF-8, JSON syntax is invalid, or decoder recursion fails.
     """
     byte_limit = _positive_limit(max_bytes, "max_bytes")
     depth_limit = _positive_limit(max_depth, "max_depth")
     if type(content) is not str:
         raise TypeError("content must be str")
 
-    encoded = content.encode("utf-8")
+    try:
+        encoded = content.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("JSON input is not valid UTF-8") from None
     if len(encoded) > byte_limit:
         raise ValueError(f"JSON input exceeds maximum allowed size {byte_limit} bytes")
 
