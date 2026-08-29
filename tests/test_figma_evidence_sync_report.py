@@ -1,4 +1,11 @@
-from scripts.build_figma_evidence_sync import _report_css
+import base64
+import hashlib
+
+from scripts.build_figma_evidence_sync import (
+    _content_security_policy,
+    _render_report,
+    _report_css,
+)
 
 
 def _media_slice(css: str, marker: str) -> str:
@@ -30,3 +37,17 @@ def test_print_palette_resets_to_light_tokens() -> None:
         "--hover-bg: #fbfcfa",
     ):
         assert declaration in print_css
+
+
+def test_report_csp_hash_matches_exact_rendered_stylesheet() -> None:
+    """The CSP must authorize only the exact package-owned rendered CSS bytes."""
+    html = _render_report({})
+    style_text = html.split("<style>", 1)[1].split("</style>", 1)[0]
+    expected_hash = base64.b64encode(
+        hashlib.sha256(style_text.encode("utf-8")).digest()
+    ).decode("ascii")
+    policy = _content_security_policy()
+
+    assert style_text == _report_css()
+    assert "'unsafe-inline'" not in policy
+    assert f"style-src 'sha256-{expected_hash}'" in policy
