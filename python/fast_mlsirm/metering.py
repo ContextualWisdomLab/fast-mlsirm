@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from itertools import islice
 from math import isfinite
 from typing import Any, Protocol
 
@@ -65,6 +66,23 @@ def _exact_2d_shape(value: object) -> tuple[int, int]:
     return response_rows, response_items
 
 
+def _bounded_exact_dict_items(
+    value: dict[Any, Any],
+    *,
+    max_items: int,
+    too_large_message: str,
+    changed_message: str,
+) -> tuple[tuple[Any, Any], ...]:
+    """Freeze at most ``max_items + 1`` exact-dict entries without a full copy."""
+    try:
+        items_snapshot = tuple(islice(value.items(), max_items + 1))
+    except RuntimeError as exc:
+        raise ValueError(changed_message) from exc
+    if len(items_snapshot) > max_items:
+        raise ValueError(too_large_message)
+    return items_snapshot
+
+
 def _snapshot_exact_json(
     value: object,
     *,
@@ -90,7 +108,9 @@ def _snapshot_exact_json(
     if value_type is list:
         if len(value) > remaining_nodes[0]:
             raise ValueError("event_builder result exact JSON tree is too large")
-        value_snapshot = list.copy(value)
+        value_snapshot = value[: remaining_nodes[0] + 1]
+        if len(value_snapshot) > remaining_nodes[0]:
+            raise ValueError("event_builder result exact JSON tree is too large")
         return [
             _snapshot_exact_json(
                 item,
@@ -102,8 +122,13 @@ def _snapshot_exact_json(
     if value_type is dict:
         if len(value) > remaining_nodes[0]:
             raise ValueError("event_builder result exact JSON tree is too large")
-        value_snapshot = dict.copy(value)
-        if any(type(key) is not str for key in value_snapshot):
+        item_snapshot = _bounded_exact_dict_items(
+            value,
+            max_items=remaining_nodes[0],
+            too_large_message="event_builder result exact JSON tree is too large",
+            changed_message="event_builder result changed during exact JSON snapshot",
+        )
+        if any(type(key) is not str for key, _ in item_snapshot):
             raise ValueError("event_builder result exact JSON keys must be exact strings")
         return {
             key: _snapshot_exact_json(
@@ -111,7 +136,7 @@ def _snapshot_exact_json(
                 depth=depth + 1,
                 remaining_nodes=remaining_nodes,
             )
-            for key, item in value_snapshot.items()
+            for key, item in item_snapshot
         }
     raise ValueError("event_builder result must use exact JSON carriers and scalars")
 
@@ -132,9 +157,15 @@ class CanonicalComputeUsageSink:
             raise ValueError("identity must be an exact dict")
         if len(identity) > len(_CANONICAL_IDENTITY_FIELDS):
             raise ValueError("identity contains too many fields")
-        identity_snapshot = dict.copy(identity)
-        if any(type(key) is not str for key in identity_snapshot):
+        identity_items = _bounded_exact_dict_items(
+            identity,
+            max_items=len(_CANONICAL_IDENTITY_FIELDS),
+            too_large_message="identity contains too many fields",
+            changed_message="identity changed during snapshot",
+        )
+        if any(type(key) is not str for key, _ in identity_items):
             raise ValueError("identity keys must be exact strings")
+        identity_snapshot = {key: value for key, value in identity_items}
         unexpected = set(identity_snapshot).difference(_CANONICAL_IDENTITY_FIELDS)
         if unexpected:
             names = ", ".join(sorted(unexpected))
