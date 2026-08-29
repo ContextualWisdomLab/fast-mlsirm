@@ -225,7 +225,8 @@ def _validated_rust_result(
     tau2_raw = dict.__getitem__(result, "tau2_raw")
     if any(type(value) is not float or not isfinite(value) for value in (mu, tau2, tau2_raw)):
         raise invalid
-    if tau2 < 0.0:
+    expected_tau2 = tau2_raw if tau2_raw > 0.0 else 0.0
+    if tau2 != expected_tau2:
         raise invalid
 
     weight = _exact_finite_result_vector(
