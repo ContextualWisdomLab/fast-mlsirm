@@ -171,3 +171,36 @@ def test_dict_growth_after_preflight_uses_only_a_bounded_snapshot(monkeypatch) -
     assert raced
     assert real_len(values) == 10
     assert "dict.copy" not in copy_calls
+
+
+def test_root_growth_after_preflight_fails_on_resource_before_key_scan(monkeypatch) -> None:
+    """A stale root length cannot authorize an unbounded live producer-key scan."""
+
+    class ForeignKey(str):
+        pass
+
+    producer_event: dict[str, object] = {"event_contract_version": 1}
+    queued: list[dict[str, object]] = []
+    real_len = builtins.len
+    raced = False
+
+    def racing_len(value: object) -> int:
+        nonlocal raced
+        observed = real_len(value)
+        if value is producer_event and not raced:
+            producer_event.update({f"k{index}": index for index in range(1, 9)})
+            producer_event[ForeignKey("foreign")] = 9
+            raced = True
+        return observed
+
+    monkeypatch.setattr(metering, "_MAX_EVENT_SNAPSHOT_NODES", 8)
+    monkeypatch.setattr(metering, "len", racing_len, raising=False)
+
+    with pytest.raises(
+        ValueError, match="event_builder result exact JSON tree is too large"
+    ):
+        _emit_one_fit(_sink_for_event(producer_event, queued))
+
+    assert raced
+    assert real_len(producer_event) == 10
+    assert queued == []
