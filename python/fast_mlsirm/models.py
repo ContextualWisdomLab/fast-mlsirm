@@ -185,6 +185,14 @@ def _confirmatory_ndarray_row(
     return row.astype(np.int64, copy=False).tolist(), row_width
 
 
+def _immutable_confirmatory_pattern(value: object) -> np.ndarray:
+    """Materialize canonical loading evidence over immutable byte storage."""
+
+    canonical = np.array(value, dtype=np.int64, copy=True, order="C")
+    storage = canonical.tobytes(order="C")
+    return np.ndarray(canonical.shape, dtype=np.int64, buffer=storage, order="C")
+
+
 def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
     """Return canonical binary loading evidence without caller NumPy protocols."""
 
@@ -199,9 +207,7 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
             raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
         if not np.all(np.isfinite(raw)) or not np.all((raw == 0) | (raw == 1)):
             raise ValueError(_CONFIRMATORY_BINARY_ERROR)
-        pattern = np.array(raw, dtype=np.int64, copy=True, order="C")
-        pattern.setflags(write=False)
-        return pattern
+        return _immutable_confirmatory_pattern(raw)
 
     if type(value) is not list and type(value) is not tuple:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
@@ -226,9 +232,7 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
         normalized_rows.append(normalized)
 
-    pattern = np.asarray(normalized_rows, dtype=np.int64)
-    pattern.setflags(write=False)
-    return pattern
+    return _immutable_confirmatory_pattern(normalized_rows)
 
 
 def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
@@ -244,7 +248,8 @@ def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
         or pattern.shape[1] < 1
         or pattern.flags.writeable
         or not pattern.flags.c_contiguous
-        or not pattern.flags.owndata
+        or pattern.flags.owndata
+        or type(pattern.base) is not bytes
     ):
         raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
     _require_confirmatory_cell_budget(
