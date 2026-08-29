@@ -111,6 +111,16 @@ def _contains_boolean_evidence(value: object) -> bool:
     return False
 
 
+def _is_scalar_shaped_builtin_child(value: object) -> bool:
+    """Return whether inert carrier metadata is compatible with one scalar cell."""
+    value_type = type(value)
+    if value_type is list or value_type is tuple:
+        return False
+    if value_type is np.ndarray and value.ndim != 0:
+        return False
+    return True
+
+
 def _preflight_builtin_outer_cardinality(
     value: object,
     *,
@@ -122,13 +132,13 @@ def _preflight_builtin_outer_cardinality(
     axis0_mismatch_error: str | None,
     expected_axis1: int | None,
 ) -> None:
-    """Reject decisive exact-container cardinalities before element traversal.
+    """Reject decisive exact-container cardinalities before scalar validation.
 
     The shared real-evidence preflight intentionally validates the complete
-    built-in tree.  Decision evidence has tighter public cardinality contracts,
-    so an exact list/tuple can sometimes be rejected from package-owned
-    ``len`` metadata first.  Cases where the generic cell ceiling may retain
-    precedence fall through to the full preflight.
+    built-in tree. Decision evidence has tighter public cardinality contracts,
+    so an exact list/tuple can sometimes be rejected from package-owned shape
+    metadata first. Cases where dimensionality, emptiness, or the generic cell
+    ceiling may retain precedence fall through to the complete preflight.
     """
     if type(value) is not list and type(value) is not tuple:
         return
@@ -138,10 +148,13 @@ def _preflight_builtin_outer_cardinality(
         return
 
     if ndim == 1:
-        # A valid 1D built-in has one logical cell per outer entry.  When that
-        # count itself exceeds the generic ceiling, preserve the existing
-        # cell-limit precedence by letting the complete preflight decide.
+        # A structurally 1D built-in has one logical cell per outer entry. If
+        # the count exceeds the generic ceiling, let the complete preflight
+        # retain the existing cell-limit precedence. Inspect only shape class,
+        # not numeric identity or value, before applying the tighter contract.
         if outer_count > MAX_DECISION_CELLS:
+            return
+        if any(not _is_scalar_shaped_builtin_child(child) for child in value):
             return
         if max_axis0 is not None and outer_count > max_axis0:
             label = axis0_label or "rows"
@@ -157,17 +170,31 @@ def _preflight_builtin_outer_cardinality(
     if ndim != 2 or max_axis0 is None or outer_count <= max_axis0:
         return
 
-    # Action/signal callers have an already-admitted state count.  If the
-    # corresponding valid 2D table could exceed the generic cell envelope,
-    # preserve that higher-precedence guard by deferring to the full tree
-    # preflight.  Otherwise inspect only the bounded row-carrier identities;
-    # no row element is touched before the decisive row ceiling is raised.
+    # Action/signal callers already have an admitted state count. If a valid
+    # table at that width could exceed the generic cell envelope, preserve the
+    # higher-precedence cell guard by deferring to the complete tree preflight.
     if expected_axis1 is None or outer_count * expected_axis1 > MAX_DECISION_CELLS:
         return
+
+    # Inspect at most max_axis0 + 1 rows and at most the already-bounded state
+    # width in each row. This proves a non-empty 2D prefix without validating
+    # scalar identities or values; malformed/empty row shapes retain their
+    # existing diagnostics in the complete preflight.
     for row_index in range(max_axis0 + 1):
-        row_type = type(value[row_index])
-        if row_type is not list and row_type is not tuple and row_type is not np.ndarray:
-            return
+        row = value[row_index]
+        row_type = type(row)
+        if row_type is list or row_type is tuple:
+            if len(row) != expected_axis1 or len(row) == 0:
+                return
+            if any(not _is_scalar_shaped_builtin_child(child) for child in row):
+                return
+            continue
+        if row_type is np.ndarray:
+            if row.ndim != 1 or row.shape[0] != expected_axis1 or row.size == 0:
+                return
+            continue
+        return
+
     label = axis0_label or "rows"
     raise ValueError(f"{name} exceeds {max_axis0} {label}")
 
