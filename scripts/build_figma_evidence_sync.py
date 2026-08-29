@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import subprocess
@@ -152,15 +151,14 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+import base64
+import hashlib
+
 def _content_security_policy() -> str:
     """Return the restrictive policy used by the self-contained HTML report."""
-    digest = hashlib.sha256(_report_css().encode("utf-8")).digest()
-    encoded = base64.b64encode(digest).decode("ascii")
-    return (
-        "default-src 'none'; "
-        f"style-src 'sha256-{encoded}'; "
-        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-    )
+    css_bytes = _report_css().encode("utf-8")
+    css_hash = base64.b64encode(hashlib.sha256(css_bytes).digest()).decode("ascii")
+    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _report_css() -> str:
@@ -186,6 +184,18 @@ def _report_css() -> str:
     --meta-text: #94a3b8;
     --focus-ring: #2dd4bf;
     --table-border: #334155; --hover-bg: #334155;
+  }
+}
+
+@media print {
+  :root {
+    --text: #172026; --bg: #f5f7f8;
+    --hero-bg: #12343b; --hero-text: #fff;
+    --hero-accent1: #b7d7d0; --hero-accent2: #dce8e5;
+    --card-bg: #fff; --border: #d8e1e3;
+    --meta-text: #5e6f76;
+    --focus-ring: #0f766e;
+    --table-border: #e8edef; --hover-bg: #fbfcfa;
   }
 }
 * { box-sizing: border-box; }
@@ -223,15 +233,6 @@ code { overflow-wrap: anywhere; }
 }
 
 @media print {
-  :root {
-    --text: #172026; --bg: #f5f7f8;
-    --hero-bg: #12343b; --hero-text: #fff;
-    --hero-accent1: #b7d7d0; --hero-accent2: #dce8e5;
-    --card-bg: #fff; --border: #d8e1e3;
-    --meta-text: #5e6f76;
-    --focus-ring: #0f766e;
-    --table-border: #e8edef; --hover-bg: #fbfcfa;
-  }
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -297,7 +298,9 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
             "<title>fast-mlsirm Figma Evidence Sync</title>",
-            f"<style>{_report_css()}</style>",
+            "<style>",
+            _report_css(),
+            "</style>",
             "</head>",
             "<body><main>",
             '<section class="hero"><p>fast-mlsirm design evidence</p><h1>Figma Evidence Sync</h1>',
