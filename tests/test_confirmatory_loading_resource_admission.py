@@ -160,6 +160,32 @@ def test_ndarray_mutation_after_validation_is_rechecked_during_serialization(
     assert mutated
 
 
+def test_ndarray_growth_after_validation_is_not_silently_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    original_serialize = models._immutable_confirmatory_pattern
+    mutated = False
+
+    def mutating_serialize(
+        values: np.ndarray | Iterable[object],
+        shape: tuple[int, int],
+    ) -> np.ndarray:
+        nonlocal mutated
+        assert values is source
+        source.resize((3, 2), refcheck=False)
+        source[2, :] = (1.0, 1.0)
+        mutated = True
+        return original_serialize(values, shape)
+
+    monkeypatch.setattr(models, "_immutable_confirmatory_pattern", mutating_serialize)
+
+    with pytest.raises(ValueError, match=_SHAPE_ERROR):
+        models.ConfirmatoryModel(source)
+
+    assert mutated
+
+
 def test_ndarray_row_mutation_after_row_validation_is_rechecked_during_serialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
