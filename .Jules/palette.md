@@ -52,6 +52,6 @@
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
 
-## 2025-02-12 - Avoid Hardcoded System Colors for Empty States
-**Learning:** Using `GrayText` to style `.empty-state` elements or placeholder text in HTML reports overrides the project's contrast-managed CSS variables (like `var(--muted)`). This causes readability issues and degrades UX because hardcoded system colors do not adapt consistently with the custom theme.
-**Action:** Always use established design tokens like `var(--muted)` for empty states instead of system colors like `GrayText`.
+## 2026-08-30 - Separate Muted Text and Border Palette Tokens
+**Learning:** Replacing `GrayText` with one `--muted` token fixes hardcoded system-color drift, but using the same token for both secondary text and component borders couples two distinct contrast roles. A dedicated `--line` token keeps borders independently tunable across light, dark, and forced-white print canvases.
+**Action:** Use `var(--muted)` for secondary/empty-state text and `var(--line)` for section, table, and code-block borders. Define both tokens for light and dark screen palettes and reset both to light-canvas values inside `@media print` whenever print forces a white background.
