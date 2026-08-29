@@ -16,6 +16,8 @@ References (APA 7th ed.):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
+from itertools import chain, islice
 
 import numpy as np
 
@@ -57,6 +59,7 @@ _NUMPY_COMPLEX_SCALAR_TYPES = (
 )
 
 _MAX_CONFIRMATORY_LOADING_CELLS = MAX_IRT_RESPONSE_CELLS
+_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS = 65_536
 _CONFIRMATORY_SHAPE_ERROR = (
     "confirmatory loading_pattern must be a non-empty 2-D items x dimensions array"
 )
@@ -185,12 +188,26 @@ def _confirmatory_ndarray_row(
     return row.astype(np.int64, copy=False).tolist(), row_width
 
 
-def _immutable_confirmatory_pattern(value: object) -> np.ndarray:
-    """Materialize canonical loading evidence over immutable byte storage."""
+def _immutable_confirmatory_pattern(
+    values: np.ndarray | list[list[int]],
+    shape: tuple[int, int],
+) -> np.ndarray:
+    """Serialize canonical loading evidence into bounded immutable byte storage."""
 
-    canonical = np.array(value, dtype=np.int64, copy=True, order="C")
-    storage = canonical.tobytes(order="C")
-    return np.ndarray(canonical.shape, dtype=np.int64, buffer=storage, order="C")
+    if type(values) is np.ndarray:
+        entries = iter(values.flat)
+    else:
+        entries = chain.from_iterable(values)
+    total_cells = shape[0] * shape[1]
+    remaining = total_cells
+    sink = BytesIO()
+    while remaining:
+        count = min(_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS, remaining)
+        chunk = np.fromiter(islice(entries, count), dtype=np.int64, count=count)
+        sink.write(chunk.tobytes(order="C"))
+        remaining -= count
+    storage = sink.getvalue()
+    return np.ndarray(shape, dtype=np.int64, buffer=storage, order="C")
 
 
 def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
@@ -200,14 +217,16 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
         raw = value
         if raw.ndim != 2 or raw.shape[0] < 1 or raw.shape[1] < 1:
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
-        _require_confirmatory_cell_budget(int(raw.shape[0]), int(raw.shape[1]))
+        rows = int(raw.shape[0])
+        columns = int(raw.shape[1])
+        _require_confirmatory_cell_budget(rows, columns)
         if raw.dtype.kind == "c":
             raise ValueError(_CONFIRMATORY_REAL_ERROR)
         if raw.dtype.kind not in "biuf":
             raise ValueError(_CONFIRMATORY_NUMERIC_ERROR)
         if not np.all(np.isfinite(raw)) or not np.all((raw == 0) | (raw == 1)):
             raise ValueError(_CONFIRMATORY_BINARY_ERROR)
-        return _immutable_confirmatory_pattern(raw)
+        return _immutable_confirmatory_pattern(raw, (rows, columns))
 
     if type(value) is not list and type(value) is not tuple:
         raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
@@ -232,7 +251,7 @@ def _trusted_confirmatory_pattern(value: object) -> np.ndarray:
             raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
         normalized_rows.append(normalized)
 
-    return _immutable_confirmatory_pattern(normalized_rows)
+    return _immutable_confirmatory_pattern(normalized_rows, (len(value), width))
 
 
 def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
