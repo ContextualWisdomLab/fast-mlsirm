@@ -98,3 +98,20 @@ def test_generic_cell_limit_keeps_precedence_over_action_limit(
             utilities,
             [0.0],
         )
+
+
+def test_intervention_cost_length_preflights_before_dense_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cost/action mismatch fails from shape metadata before cost value work."""
+    _guard_dense_marshalling(monkeypatch, forbidden_name="intervention_costs")
+
+    with pytest.raises(
+        ValueError,
+        match="intervention_costs length must match action_utilities rows",
+    ):
+        decision_support.evaluate_decision_support(
+            [1.0],
+            [[0.0], [1.0]],
+            [0.0, 1.0, 2.0],
+        )
