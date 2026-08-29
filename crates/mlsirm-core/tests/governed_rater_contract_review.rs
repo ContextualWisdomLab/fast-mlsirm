@@ -1,6 +1,6 @@
 use mlsirm_core::governed_rater_contracts::{
     ContractError, CriterionObservation, DomainReference, RaterConfigurationIdentity,
-    RaterInvocation, UncertaintyLevel,
+    RaterInvocation, UncertaintyLevel, GOVERNED_RATER_OBSERVATION_CONTRACT_V1,
 };
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -138,8 +138,15 @@ fn has_unique_object_members(raw: &str) -> bool {
     result.is_ok() && deserializer.end().is_ok()
 }
 
-fn parse_conformance_fixture(raw: &str) -> Result<ConformanceFixture, serde_json::Error> {
-    serde_json::from_str(raw)
+fn parse_conformance_fixture(raw: &str) -> Result<ConformanceFixture, String> {
+    let fixture: ConformanceFixture = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    if fixture.contract_id != GOVERNED_RATER_OBSERVATION_CONTRACT_V1 {
+        return Err(format!(
+            "unexpected conformance contract identity: {}",
+            fixture.contract_id
+        ));
+    }
+    Ok(fixture)
 }
 
 fn reference(value: &str) -> DomainReference {
