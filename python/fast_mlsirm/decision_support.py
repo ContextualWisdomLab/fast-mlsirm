@@ -118,6 +118,8 @@ def _real_array(
     ndim: int,
     max_axis0: int | None = None,
     axis0_label: str | None = None,
+    expected_axis0: int | None = None,
+    axis0_mismatch_error: str | None = None,
 ) -> np.ndarray:
     """Return bounded, lossless, contiguous binary64 evidence for Rust."""
     shape, cells = _preflight_real_evidence(value, name)
@@ -130,6 +132,10 @@ def _real_array(
     if max_axis0 is not None and shape[0] > max_axis0:
         label = axis0_label or "rows"
         raise ValueError(f"{name} exceeds {max_axis0} {label}")
+    if expected_axis0 is not None and shape[0] != expected_axis0:
+        if axis0_mismatch_error is None:
+            raise ValueError(f"{name} axis 0 must have length {expected_axis0}")
+        raise ValueError(axis0_mismatch_error)
     if _contains_boolean_evidence(value):
         raise ValueError(f"{name} must contain real numeric values, not booleans")
     array = _trusted_real_array(value, name)
@@ -251,7 +257,15 @@ def evaluate_decision_support(
         max_axis0=MAX_DECISION_ACTIONS,
         axis0_label="actions",
     )
-    costs = _real_array(intervention_costs, name="intervention_costs", ndim=1)
+    costs = _real_array(
+        intervention_costs,
+        name="intervention_costs",
+        ndim=1,
+        expected_axis0=utilities.shape[0],
+        axis0_mismatch_error=(
+            "intervention_costs length must match action_utilities rows"
+        ),
+    )
     action_index = _trusted_index(no_action_index, name="no_action_index")
     info_cost = _coerce_finite_real(information_cost, name="information_cost")
     if info_cost < 0.0:
@@ -261,8 +275,6 @@ def evaluate_decision_support(
     action_count = utilities.shape[0]
     if utilities.shape[1] != state_count:
         raise ValueError("action_utilities columns must match state_probabilities")
-    if costs.shape[0] != action_count:
-        raise ValueError("intervention_costs length must match action_utilities rows")
     if action_index >= action_count:
         raise ValueError("no_action_index must identify one action")
 
