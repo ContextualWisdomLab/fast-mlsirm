@@ -290,6 +290,7 @@ def test_native_result_array_protocol_fails_without_array_callback(
         ("post_var", np.zeros((2, 1), dtype=np.float64)),
         ("cat_probs", np.zeros(9, dtype=np.float64)),
         ("mu", float("nan")),
+        ("tau2", -0.1),
         ("weight", np.array([0.0, np.inf], dtype=np.float64)),
     ],
 )
