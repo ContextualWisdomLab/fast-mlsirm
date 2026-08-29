@@ -76,6 +76,20 @@ def test_replay_rejects_rebound_oversize_before_binary_scan(
         _ = model.n_dims
 
 
+def test_replay_rejects_foreign_backing_storage() -> None:
+    model = models.ConfirmatoryModel(np.array([[1], [0]], dtype=np.int64))
+    backing = np.array([[1], [0]], dtype=np.int64)
+    rebound = backing.view()
+    rebound.setflags(write=False)
+    assert rebound.flags.c_contiguous
+    assert not rebound.flags.owndata
+    assert backing.flags.writeable
+    object.__setattr__(model, "loading_pattern", rebound)
+
+    with pytest.raises(ValueError, match="confirmatory model loading_pattern is not canonical"):
+        _ = model.n_dims
+
+
 def test_confirmatory_loading_cell_budget_boundary_remains_admissible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
