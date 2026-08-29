@@ -215,6 +215,7 @@ def _immutable_confirmatory_pattern(
 ) -> np.ndarray:
     """Serialize canonical loading evidence into bounded immutable byte storage."""
 
+    _require_confirmatory_cell_budget(shape[0], shape[1])
     is_ndarray = type(values) is np.ndarray
     entries = iter(values.flat) if is_ndarray else iter(values)
     source_dtype = values.dtype if is_ndarray else None
@@ -224,7 +225,10 @@ def _immutable_confirmatory_pattern(
     while remaining:
         count = min(_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS, remaining)
         if source_dtype is None:
-            chunk = np.fromiter(islice(entries, count), dtype=np.int64, count=count)
+            chunk_values = tuple(islice(entries, count))
+            if len(chunk_values) != count:
+                raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+            chunk = np.fromiter(chunk_values, dtype=np.int64, count=count)
         else:
             source_chunk = np.fromiter(
                 islice(entries, count),
@@ -238,6 +242,10 @@ def _immutable_confirmatory_pattern(
             chunk = source_chunk.astype(np.int64, copy=False)
         sink.write(chunk.tobytes(order="C"))
         remaining -= count
+    if source_dtype is None:
+        sentinel = object()
+        if next(entries, sentinel) is not sentinel:
+            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     storage = sink.getvalue()
     return np.ndarray(shape, dtype=np.int64, buffer=storage, order="C")
 
