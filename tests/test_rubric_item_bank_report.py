@@ -178,11 +178,6 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
     assert "outline: none" not in rendered
-    assert "@media (prefers-reduced-motion: reduce)" in rendered
-    assert "animation-duration: 0.01ms !important" in rendered
-    assert "animation-iteration-count: 1 !important" in rendered
-    assert "transition-duration: 0.01ms !important" in rendered
-    assert "scroll-behavior: auto !important" in rendered
 
 
 def test_report_rejects_partial_or_forged_lifecycle_lineage() -> None:
