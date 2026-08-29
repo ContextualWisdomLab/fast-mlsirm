@@ -79,6 +79,29 @@ pinned by version and digest. A consumer translates its own aggregate into the
 published language; it does not import another context's persistence or internal
 entity types.
 
+### Canonical serialized identity
+
+References are opaque identity text, not display labels. Producers must send the
+canonical reference exactly as intended: empty or whitespace-only references,
+references longer than 256 Unicode scalar values, control characters, and
+leading or trailing whitespace are rejected. Consumers must not silently trim
+or otherwise normalize a reference because that would allow the same serialized
+contract to acquire different identities in different SDKs.
+
+The released JSON representation serializes `observations` as an object keyed by
+canonical `criterion_ref`. The observation value therefore contains only the
+status-specific observation fields; criterion identity is the object key. This
+makes criterion uniqueness structural in the JSON data model rather than asking
+independent SDKs to reproduce an array-wide property-uniqueness extension that
+JSON Schema Draft 2020-12 does not provide. Raw JSON parsers must reject
+duplicate object member names before schema validation so duplicate textual
+criterion keys cannot collapse through last-value-wins parsing.
+
+The Rust aggregate may retain observations in producer order for deterministic
+in-process work, but `RaterInvocation::new` independently enforces the same
+criterion uniqueness and the same published cardinality ceilings. Serialization
+order is not criterion identity.
+
 Repeated executions of one model/prompt/rubric configuration are separate
 invocations nested under one configuration identity. They are not independent
 rater identities. Failures and abstentions remain in the denominator through
@@ -91,11 +114,13 @@ claim, or certification authority enters the generic contract.
 
 ## Aggregate invariants
 
-- references are non-empty, bounded, and free of control characters;
-- an observed criterion has at least one unique evidence reference;
+- references are exact, non-empty, bounded, free of control characters, and
+  contain no leading or trailing whitespace;
+- an observed criterion has between one and 64 unique evidence references;
 - an abstention has no manufactured category and an explicit reason;
-- review-signal references are unique;
-- an invocation contains at least one criterion and no duplicate criterion;
+- each observation has at most 32 unique review-signal references;
+- an invocation contains between one and 128 criteria and no duplicate
+  criterion;
 - an invocation cannot represent a final score or product decision;
 - contract evolution is additive only within a major version; incompatible
   changes require a new contract identifier.
@@ -117,6 +142,8 @@ claim, or certification authority enters the generic contract.
 - release ordering and digest pinning must be coordinated across repositories;
 - existing CEFR-specific gateways must be migrated rather than treated as the
   generic core;
+- producer SDKs must emit canonical references and a criterion-keyed observation
+  object, and JSON decoders must reject duplicate member names;
 - the first PR establishes contracts only; rater-calibration estimators and
   simulation evidence follow in separately reviewable slices.
 
@@ -133,19 +160,43 @@ claim, or certification authority enters the generic contract.
 4. **Use provider response schemas directly.** Rejected because infrastructure
    vocabulary and mutable provider behavior cannot define the measurement
    domain.
+5. **Keep observations as an array and document criterion uniqueness.** Rejected
+   because standard JSON Schema cannot enforce uniqueness of one property across
+   otherwise different array items. Criterion-keyed serialization makes the
+   invariant structural for every schema consumer.
 
 ## Verification and release gates
 
-- Rust unit tests cover every aggregate rejection path;
+- Rust unit and integration tests cover aggregate rejection paths and published
+  cardinality boundaries;
 - Draft 2020-12 JSON Schema rejects unknown and decision fields;
-- positive and negative fixtures are added before the first tagged contract
-  release;
+- `contracts/governed-rater-observation-v1.conformance.json` is the shared
+  positive/negative identity fixture for SDK conformance, including canonical
+  references and duplicate textual criterion-member rejection;
 - downstream consumers pin the exact release and digest;
 - true-parameter recovery for severity, thresholds, discrimination,
   interactions, invocation variance, and differential rater functioning is a
   later numerical merge gate;
 - CPU `f64` remains the reference implementation and GPU paths require parity;
 - no CEFR profile is merged as a prerequisite for this generic contract.
+
+## Research basis
+
+Myford and Wolfe's two-part introduction to many-facet Rasch measurement is used
+here only to ground the measurement-domain distinction between observed ratings,
+rater effects, and later psychometric interpretation. It does **not** determine
+the DDD repository topology or JSON encoding.
+
+- **Part I (2003)** catalogs rater effects and provides conceptual and
+  mathematical background for many-facet Rasch measurement. That supports
+  preserving rater/configuration/invocation and criterion evidence as explicit
+  measurement provenance rather than treating a rating as error-free truth.
+- **Part II (2004)** operationally defines and demonstrates leniency/severity,
+  central tendency, randomness, halo, and differential leniency/severity using
+  measurement models and statistical indicators. That supports keeping the raw
+  observation contract separate from later calibration and rater-effect
+  diagnostics instead of embedding a final score or decision in the observation
+  envelope.
 
 ## Reversal conditions
 
@@ -165,10 +216,10 @@ software*. Addison-Wesley.
 
 Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater effects
 using many-facet Rasch measurement: Part I. *Journal of Applied Measurement,
-4*(4), 386–422.
+4*(4), 386–422. PMID 14523257. https://pubmed.ncbi.nlm.nih.gov/14523257/
 
 Myford, C. M., & Wolfe, E. W. (2004). Detecting and measuring rater effects
 using many-facet Rasch measurement: Part II. *Journal of Applied Measurement,
-5*(2), 189–227.
+5*(2), 189–227. PMID 15064538. https://pubmed.ncbi.nlm.nih.gov/15064538/
 
 Vernon, V. (2013). *Implementing domain-driven design*. Addison-Wesley.
