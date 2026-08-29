@@ -211,7 +211,7 @@ def _real_array(
     expected_axis1: int | None = None,
     axis1_mismatch_error: str | None = None,
 ) -> np.ndarray:
-    """Return bounded, lossless, contiguous binary64 evidence for Rust."""
+    """Return bounded, lossless, package-owned binary64 evidence for Rust."""
     _preflight_builtin_outer_cardinality(
         value,
         name=name,
@@ -242,10 +242,16 @@ def _real_array(
         raise ValueError(axis1_mismatch_error)
     if _contains_boolean_evidence(value):
         raise ValueError(f"{name} must contain real numeric values, not booleans")
+
     array = _trusted_real_array(value, name)
     if array.dtype.kind == "b":
         raise ValueError(f"{name} must contain real numeric values, not booleans")
-    return np.ascontiguousarray(array, dtype=np.float64)
+    materialized = np.array(array, dtype=np.float64, order="C", copy=True)
+    if materialized.shape != shape or materialized.size != cells:
+        raise ValueError(f"{name} changed shape during materialization")
+    if _contains_boolean_evidence(value):
+        raise ValueError(f"{name} must contain real numeric values, not booleans")
+    return materialized
 
 
 def _core_module():
