@@ -2,7 +2,7 @@ use mlsirm_core::governed_rater_contracts::{
     ContractError, CriterionObservation, DomainReference, RaterConfigurationIdentity,
     RaterInvocation, UncertaintyLevel,
 };
-use serde::de::{self, IgnoredAny, MapAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashSet;
 use std::fmt;
@@ -32,13 +32,88 @@ struct ObservationIdentityCase {
     json_text: Option<String>,
 }
 
-struct UniqueObjectMembers;
+struct UniqueJsonValue;
 
-impl<'de> Visitor<'de> for UniqueObjectMembers {
-    type Value = ();
+impl<'de> Deserialize<'de> for UniqueJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(UniqueJsonVisitor)
+    }
+}
+
+struct UniqueJsonVisitor;
+
+impl<'de> Visitor<'de> for UniqueJsonVisitor {
+    type Value = UniqueJsonValue;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a JSON object with unique member names")
+        formatter.write_str("JSON with unique object member names at every depth")
+    }
+
+    fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_i64<E>(self, _value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_u64<E>(self, _value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_str<E>(self, _value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_string<E>(self, _value: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        while sequence.next_element::<UniqueJsonValue>()?.is_some() {}
+        Ok(UniqueJsonValue)
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -50,15 +125,15 @@ impl<'de> Visitor<'de> for UniqueObjectMembers {
             if !seen.insert(key.clone()) {
                 return Err(de::Error::custom(format!("duplicate object member: {key}")));
             }
-            map.next_value::<IgnoredAny>()?;
+            map.next_value::<UniqueJsonValue>()?;
         }
-        Ok(())
+        Ok(UniqueJsonValue)
     }
 }
 
-fn has_unique_top_level_members(raw: &str) -> bool {
+fn has_unique_object_members(raw: &str) -> bool {
     let mut deserializer = serde_json::Deserializer::from_str(raw);
-    let result = deserializer.deserialize_map(UniqueObjectMembers);
+    let result = UniqueJsonValue::deserialize(&mut deserializer);
     result.is_ok() && deserializer.end().is_ok()
 }
 
@@ -120,7 +195,7 @@ fn duplicate_member_admission_is_gated_by_the_shared_fixture() {
             _ => panic!("observation identity case must contain exactly one payload form"),
         };
         assert_eq!(
-            has_unique_top_level_members(&raw),
+            has_unique_object_members(&raw),
             case.valid,
             "observation identity case: {} ({})",
             case.name,
