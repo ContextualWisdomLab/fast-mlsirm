@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from math import isfinite
 from typing import Any, Protocol
 
 from .types import FitResult, SimulationData
@@ -80,7 +81,11 @@ def _snapshot_exact_json(
         raise ValueError("event_builder result exact JSON tree is too large")
 
     value_type = type(value)
-    if value is None or value_type in (str, int, float, bool):
+    if value_type is float:
+        if not isfinite(value):
+            raise ValueError("event_builder result exact JSON floats must be finite")
+        return value
+    if value is None or value_type in (str, int, bool):
         return value
     if value_type is list:
         return [
