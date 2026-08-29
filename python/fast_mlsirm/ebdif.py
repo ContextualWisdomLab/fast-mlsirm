@@ -194,7 +194,7 @@ def _exact_finite_result_vector(
         raise invalid
     if int(value.shape[0]) != expected_length:
         raise invalid
-    if not value.flags.c_contiguous:
+    if not value.flags.c_contiguous or not value.flags.owndata:
         raise invalid
     for start in range(0, expected_length, _RESULT_FINITE_CHUNK):
         stop = min(start + _RESULT_FINITE_CHUNK, expected_length)
