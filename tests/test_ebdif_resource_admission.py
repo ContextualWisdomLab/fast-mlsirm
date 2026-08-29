@@ -25,7 +25,7 @@ def _result() -> dict[str, object]:
         "weight": np.zeros(2),
         "post_mean": np.zeros(2),
         "post_var": np.zeros(2),
-        "cat_probs": np.array([[0.0, 0.0, 1.0, 0.0, 0.0]] * 2).reshape(-1),
+        "cat_probs": np.array([0.0, 0.0, 1.0, 0.0, 0.0] * 2, dtype=np.float64),
     }
 
 
