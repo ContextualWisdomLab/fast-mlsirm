@@ -23,6 +23,16 @@
       "valid": false
     },
     {
+      "name": "leading byte order mark",
+      "value": "\ufeffcriterion-a",
+      "valid": false
+    },
+    {
+      "name": "trailing byte order mark",
+      "value": "criterion-a\ufeff",
+      "valid": false
+    },
+    {
       "name": "internal ordinary space remains opaque identity text",
       "value": "criterion a",
       "valid": true
