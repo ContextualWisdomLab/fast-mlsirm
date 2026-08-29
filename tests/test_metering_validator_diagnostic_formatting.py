@@ -43,7 +43,10 @@ def test_validator_diagnostic_rendering_is_bounded_per_entry(monkeypatch) -> Non
             response_items=1,
         )
     except ValueError as error:
-        assert str(error) == "canonical usage event validation failed: abcd; ij; klmn"
+        assert str(error) == (
+            "event_builder output violates canonical usage-event v1 contract: "
+            "abcd; ij; klmn"
+        )
     else:
         raise AssertionError("schema-invalid event was accepted")
 
