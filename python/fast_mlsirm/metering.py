@@ -158,10 +158,10 @@ class CanonicalComputeUsageSink:
             raise ValueError("event_builder result exact JSON tree is too large")
         if any(type(key) is not str for key in event):
             raise ValueError("event_builder result keys must be exact strings")
-        contract_version = event.get("event_contract_version")
+        validation_event = _snapshot_exact_json(event)
+        contract_version = validation_event.get("event_contract_version")
         if type(contract_version) is not int or contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
-        validation_event = _snapshot_exact_json(event)
         enqueue_event = _snapshot_exact_json(validation_event)
         validation_errors = self._event_validator(validation_event)
         if type(validation_errors) is not tuple:
