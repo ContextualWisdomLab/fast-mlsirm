@@ -42,6 +42,15 @@ def test_sequence_preflight_rejects_row_fanout_before_row_validation(
         models._confirmatory_sequence_width([object(), [1], [1], [1], [1]])
 
 
+def test_sequence_preflight_rejects_known_oversize_before_later_row_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(models, "_MAX_CONFIRMATORY_LOADING_CELLS", 4, raising=False)
+
+    with pytest.raises(ValueError, match=_RESOURCE_ERROR):
+        models._confirmatory_sequence_width([[1, 0, 1], object()])
+
+
 def test_exact_sequence_is_rejected_before_scalar_normalization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
