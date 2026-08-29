@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import subprocess
@@ -106,7 +107,13 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 def _content_security_policy() -> str:
     """Return the restrictive policy used by the self-contained release report."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    digest = hashlib.sha256(_report_css().encode("utf-8")).digest()
+    encoded = base64.b64encode(digest).decode("ascii")
+    return (
+        "default-src 'none'; "
+        f"style-src 'sha256-{encoded}'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    )
 
 
 _DEFAULT_STAGE_TIMEOUT_SECONDS = 300.0
