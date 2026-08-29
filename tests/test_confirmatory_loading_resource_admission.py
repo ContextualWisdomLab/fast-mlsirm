@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import numpy as np
 import pytest
 
@@ -18,6 +20,23 @@ def _unexpected_full_scan(*_args: object, **_kwargs: object) -> object:
 
 def _unexpected_scalar_normalization(_value: object) -> int:
     raise AssertionError("oversized loading_pattern reached scalar normalization")
+
+
+def _track_fromiter_chunks(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    counts: list[int] = []
+    original = np.fromiter
+
+    def tracked(
+        iterable: Iterable[object],
+        dtype: object,
+        count: int = -1,
+    ) -> np.ndarray:
+        counts.append(count)
+        return original(iterable, dtype=dtype, count=count)
+
+    monkeypatch.setattr(models, "_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS", 2, raising=False)
+    monkeypatch.setattr(models.np, "fromiter", tracked)
+    return counts
 
 
 def test_broadcast_ndarray_is_rejected_before_full_value_scan(
@@ -97,6 +116,32 @@ def test_constructor_canonical_storage_cannot_be_made_writeable() -> None:
     with pytest.raises(ValueError):
         model.loading_pattern.setflags(write=True)
     assert np.array_equal(model.loading_pattern, np.array([[1, 0], [0, 1]], dtype=np.int64))
+
+
+def test_ndarray_immutable_materialization_uses_bounded_conversion_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]], dtype=np.float64)
+    counts = _track_fromiter_chunks(monkeypatch)
+
+    model = models.ConfirmatoryModel(source)
+
+    assert counts == [2, 2, 2]
+    assert np.array_equal(model.loading_pattern, source.astype(np.int64))
+
+
+def test_sequence_immutable_materialization_uses_bounded_conversion_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = _track_fromiter_chunks(monkeypatch)
+
+    model = models.ConfirmatoryModel([[1, 0, 1], [0, 1, 0]])
+
+    assert counts == [2, 2, 2]
+    assert np.array_equal(
+        model.loading_pattern,
+        np.array([[1, 0, 1], [0, 1, 0]], dtype=np.int64),
+    )
 
 
 def test_confirmatory_loading_cell_budget_boundary_remains_admissible(
