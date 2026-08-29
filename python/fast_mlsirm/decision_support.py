@@ -111,7 +111,14 @@ def _contains_boolean_evidence(value: object) -> bool:
     return False
 
 
-def _real_array(value: object, *, name: str, ndim: int) -> np.ndarray:
+def _real_array(
+    value: object,
+    *,
+    name: str,
+    ndim: int,
+    max_axis0: int | None = None,
+    axis0_label: str | None = None,
+) -> np.ndarray:
     """Return bounded, lossless, contiguous binary64 evidence for Rust."""
     shape, cells = _preflight_real_evidence(value, name)
     if len(shape) != ndim:
@@ -120,6 +127,9 @@ def _real_array(value: object, *, name: str, ndim: int) -> np.ndarray:
         raise ValueError(f"{name} must not be empty")
     if cells > MAX_DECISION_CELLS:
         raise ValueError(f"{name} exceeds {MAX_DECISION_CELLS} cells")
+    if max_axis0 is not None and shape[0] > max_axis0:
+        label = axis0_label or "rows"
+        raise ValueError(f"{name} exceeds {max_axis0} {label}")
     if _contains_boolean_evidence(value):
         raise ValueError(f"{name} must contain real numeric values, not booleans")
     array = _trusted_real_array(value, name)
@@ -231,8 +241,16 @@ def evaluate_decision_support(
         state_probabilities,
         name="state_probabilities",
         ndim=1,
+        max_axis0=MAX_DECISION_STATES,
+        axis0_label="states",
     )
-    utilities = _real_array(action_utilities, name="action_utilities", ndim=2)
+    utilities = _real_array(
+        action_utilities,
+        name="action_utilities",
+        ndim=2,
+        max_axis0=MAX_DECISION_ACTIONS,
+        axis0_label="actions",
+    )
     costs = _real_array(intervention_costs, name="intervention_costs", ndim=1)
     action_index = _trusted_index(no_action_index, name="no_action_index")
     info_cost = _coerce_finite_real(information_cost, name="information_cost")
@@ -241,10 +259,6 @@ def evaluate_decision_support(
 
     state_count = probabilities.shape[0]
     action_count = utilities.shape[0]
-    if state_count > MAX_DECISION_STATES:
-        raise ValueError(f"state_probabilities exceeds {MAX_DECISION_STATES} states")
-    if action_count > MAX_DECISION_ACTIONS:
-        raise ValueError(f"action_utilities exceeds {MAX_DECISION_ACTIONS} actions")
     if utilities.shape[1] != state_count:
         raise ValueError("action_utilities columns must match state_probabilities")
     if costs.shape[0] != action_count:
@@ -260,12 +274,10 @@ def evaluate_decision_support(
             signal_joint_probabilities,
             name="signal_joint_probabilities",
             ndim=2,
+            max_axis0=MAX_DECISION_SIGNALS,
+            axis0_label="signals",
         )
         signal_count = signals.shape[0]
-        if signal_count > MAX_DECISION_SIGNALS:
-            raise ValueError(
-                f"signal_joint_probabilities exceeds {MAX_DECISION_SIGNALS} signals"
-            )
         if signals.shape[1] != state_count:
             raise ValueError(
                 "signal_joint_probabilities columns must match state_probabilities"
