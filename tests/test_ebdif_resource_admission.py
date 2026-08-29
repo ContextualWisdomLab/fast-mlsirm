@@ -292,6 +292,10 @@ def test_native_result_array_protocol_fails_without_array_callback(
         ("mu", float("nan")),
         ("tau2", -0.1),
         ("weight", np.array([0.0, np.inf], dtype=np.float64)),
+        ("weight", np.array([-0.1, 0.0], dtype=np.float64)),
+        ("weight", np.array([1.1, 0.0], dtype=np.float64)),
+        ("post_var", np.array([-0.1, 0.0], dtype=np.float64)),
+        ("cat_probs", np.array([1.1, 0.0, 0.0, 0.0, 0.0] * 2, dtype=np.float64)),
     ],
 )
 def test_native_result_structure_and_finiteness_fail_closed(
@@ -299,7 +303,7 @@ def test_native_result_structure_and_finiteness_fail_closed(
     field: str,
     replacement: object,
 ) -> None:
-    """Malformed or non-finite native evidence never reaches public marshalling."""
+    """Malformed or out-of-domain native evidence never reaches public marshalling."""
 
     result = _result()
     result[field] = replacement
