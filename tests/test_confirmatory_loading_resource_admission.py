@@ -144,6 +144,37 @@ def test_sequence_immutable_materialization_uses_bounded_conversion_chunks(
     )
 
 
+def test_sequence_scalar_normalization_streams_into_conversion_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    original_scalar = models._confirmatory_scalar
+    original_fromiter = np.fromiter
+
+    def tracked_scalar(value: object) -> int:
+        normalized = original_scalar(value)
+        events.append("scalar")
+        return normalized
+
+    def tracked_fromiter(
+        iterable: Iterable[object],
+        dtype: object,
+        count: int = -1,
+    ) -> np.ndarray:
+        chunk = original_fromiter(iterable, dtype=dtype, count=count)
+        events.append("chunk")
+        return chunk
+
+    monkeypatch.setattr(models, "_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS", 2, raising=False)
+    monkeypatch.setattr(models, "_confirmatory_scalar", tracked_scalar)
+    monkeypatch.setattr(models.np, "fromiter", tracked_fromiter)
+
+    model = models.ConfirmatoryModel([[1, 0], [0, 1]])
+
+    assert events == ["scalar", "scalar", "chunk", "scalar", "scalar", "chunk"]
+    assert np.array_equal(model.loading_pattern, np.array([[1, 0], [0, 1]], dtype=np.int64))
+
+
 def test_confirmatory_loading_cell_budget_boundary_remains_admissible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
