@@ -42,6 +42,20 @@ def test_eb_mh_dif_rejects_array_provider_before_callback_or_core(
     assert provider.calls == 0
 
 
+def test_eb_mh_dif_rejects_plain_sequence_length_mismatch_before_scalar_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inert plain-sequence cardinality wins before scalar-content admission."""
+
+    def _unexpected_core():
+        raise AssertionError("compiled core must not be discovered")
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+
+    with pytest.raises(ValueError, match="mh and se must have the same length"):
+        eb_mh_dif([object(), object(), object()], [0.3, 0.4])
+
+
 def test_eb_mh_dif_preserves_plain_sequence_numpy_scalar_marshalling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
