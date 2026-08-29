@@ -217,6 +217,12 @@ def _immutable_confirmatory_pattern(
 
     _require_confirmatory_cell_budget(shape[0], shape[1])
     is_ndarray = type(values) is np.ndarray
+    if is_ndarray and (
+        values.ndim != 2
+        or int(values.shape[0]) != shape[0]
+        or int(values.shape[1]) != shape[1]
+    ):
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     entries = iter(values.flat) if is_ndarray else iter(values)
     source_dtype = values.dtype if is_ndarray else None
     total_cells = shape[0] * shape[1]
@@ -230,11 +236,20 @@ def _immutable_confirmatory_pattern(
                 raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
             chunk = np.fromiter(chunk_values, dtype=np.int64, count=count)
         else:
-            source_chunk = np.fromiter(
-                islice(entries, count),
-                dtype=source_dtype,
-                count=count,
-            )
+            try:
+                source_chunk = np.fromiter(
+                    islice(entries, count),
+                    dtype=source_dtype,
+                    count=count,
+                )
+            except ValueError:
+                if (
+                    values.ndim != 2
+                    or int(values.shape[0]) != shape[0]
+                    or int(values.shape[1]) != shape[1]
+                ):
+                    raise ValueError(_CONFIRMATORY_SHAPE_ERROR) from None
+                raise
             if not np.all(np.isfinite(source_chunk)) or not np.all(
                 (source_chunk == 0) | (source_chunk == 1)
             ):
@@ -242,10 +257,15 @@ def _immutable_confirmatory_pattern(
             chunk = source_chunk.astype(np.int64, copy=False)
         sink.write(chunk.tobytes(order="C"))
         remaining -= count
-    if source_dtype is None:
-        sentinel = object()
-        if next(entries, sentinel) is not sentinel:
-            raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+    sentinel = object()
+    if next(entries, sentinel) is not sentinel:
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
+    if is_ndarray and (
+        values.ndim != 2
+        or int(values.shape[0]) != shape[0]
+        or int(values.shape[1]) != shape[1]
+    ):
+        raise ValueError(_CONFIRMATORY_SHAPE_ERROR)
     storage = sink.getvalue()
     return np.ndarray(shape, dtype=np.int64, buffer=storage, order="C")
 
