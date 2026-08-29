@@ -54,3 +54,34 @@ def test_real_array_rejects_shape_change_during_materialization(
             axis0_label="actions",
             expected_axis1=2,
         )
+
+
+def test_real_array_rejects_boolean_introduced_during_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A late Boolean mutation cannot be normalized into numeric evidence."""
+    source = [0.5, 0.5]
+    original_trusted_real_array = decision_support._trusted_real_array
+
+    def mutate_before_materialization(value: object, name: str) -> np.ndarray:
+        if value is source:
+            source[0] = True
+        return original_trusted_real_array(value, name)
+
+    monkeypatch.setattr(
+        decision_support,
+        "_trusted_real_array",
+        mutate_before_materialization,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="state_probabilities must contain real numeric values, not booleans",
+    ):
+        decision_support._real_array(
+            source,
+            name="state_probabilities",
+            ndim=1,
+            max_axis0=decision_support.MAX_DECISION_STATES,
+            axis0_label="states",
+        )
