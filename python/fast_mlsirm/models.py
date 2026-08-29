@@ -244,6 +244,7 @@ def _current_confirmatory_pattern(model: "ConfirmatoryModel") -> np.ndarray:
         or pattern.shape[1] < 1
         or pattern.flags.writeable
         or not pattern.flags.c_contiguous
+        or not pattern.flags.owndata
     ):
         raise ValueError(_CONFIRMATORY_REPLAY_ERROR)
     _require_confirmatory_cell_budget(
