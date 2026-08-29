@@ -13,7 +13,7 @@ import base64
 
 def _css() -> str:
     return """
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; --line: #767676; }
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { max-width: 72rem; margin: 0 auto; padding: 2rem 1.25rem; }
@@ -25,10 +25,13 @@ main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 section { margin-top: 20px; }
 table { width: 100%; border-collapse: collapse; margin-block: 1rem; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+thead th, tbody th, td { padding: 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
+@media screen and (prefers-color-scheme: dark) {
+  :root { --line: #808080; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -38,6 +41,7 @@ tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
   }
 }
 @media print {
+  :root { --line: #767676; }
   body { background: white; color: black; }
   .skip-link { display: none !important; }
 }
