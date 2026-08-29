@@ -45,6 +45,19 @@ def _descriptor_identity(file_status: os.stat_result) -> tuple[int, int]:
     return file_status.st_dev, file_status.st_ino
 
 
+def _descriptor_snapshot(
+    file_status: os.stat_result,
+) -> tuple[int, int, int, int, int]:
+    """Return identity plus mutation-sensitive metadata for one descriptor."""
+    return (
+        file_status.st_dev,
+        file_status.st_ino,
+        file_status.st_size,
+        file_status.st_mtime_ns,
+        file_status.st_ctime_ns,
+    )
+
+
 def _validate_path_identity(path: Path, descriptor_status: os.stat_result) -> None:
     """Require ``path`` to still name the regular file held by the descriptor."""
     try:
@@ -85,7 +98,12 @@ def _read_stable_regular_file(path: Path, *, byte_limit: int) -> bytes:
             raise ValueError(_SAFE_OPEN_ERROR)
         _validate_path_identity(path, descriptor_status)
         content = _read_bounded_descriptor(file_descriptor, byte_limit=byte_limit)
-        _validate_path_identity(path, descriptor_status)
+        final_descriptor_status = os.fstat(file_descriptor)
+        if _descriptor_snapshot(final_descriptor_status) != _descriptor_snapshot(
+            descriptor_status
+        ):
+            raise ValueError(_UNSTABLE_PATH_ERROR)
+        _validate_path_identity(path, final_descriptor_status)
         return content
     finally:
         os.close(file_descriptor)
