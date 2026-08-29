@@ -12,6 +12,7 @@ from fast_mlsirm.irt_contract import MAX_IRT_RESPONSE_CELLS
 
 
 _RESOURCE_ERROR = "confirmatory loading_pattern exceeds the supported cell budget"
+_SHAPE_ERROR = "confirmatory loading_pattern must be a non-empty 2-D items x dimensions array"
 
 
 def _unexpected_full_scan(*_args: object, **_kwargs: object) -> object:
@@ -228,6 +229,56 @@ def test_sequence_scalar_normalization_streams_into_conversion_chunks(
 
     assert events == ["scalar", "scalar", "chunk", "scalar", "scalar", "chunk"]
     assert np.array_equal(model.loading_pattern, np.array([[1, 0], [0, 1]], dtype=np.int64))
+
+
+def test_sequence_growth_after_width_preflight_replays_cell_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = [[1, 0], [0, 1]]
+    original_width = models._confirmatory_sequence_width
+    mutated = False
+
+    def mutating_width(value: list[object] | tuple[object, ...]) -> int:
+        nonlocal mutated
+        width = original_width(value)
+        source.append([1, 1])
+        mutated = True
+        return width
+
+    monkeypatch.setattr(models, "_MAX_CONFIRMATORY_LOADING_CELLS", 4, raising=False)
+    monkeypatch.setattr(models, "_confirmatory_sequence_width", mutating_width)
+
+    with pytest.raises(ValueError, match=_RESOURCE_ERROR):
+        models.ConfirmatoryModel(source)
+
+    assert mutated
+
+
+def test_sequence_growth_during_serialization_is_not_silently_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = [[1, 0], [0, 1]]
+    original_fromiter = np.fromiter
+    mutated = False
+
+    def mutating_fromiter(
+        iterable: Iterable[object],
+        dtype: object,
+        count: int = -1,
+    ) -> np.ndarray:
+        nonlocal mutated
+        if not mutated:
+            source.append([1, 1])
+            mutated = True
+        return original_fromiter(iterable, dtype=dtype, count=count)
+
+    monkeypatch.setattr(models, "_CONFIRMATORY_SERIALIZATION_CHUNK_CELLS", 2, raising=False)
+    monkeypatch.setattr(models.np, "fromiter", mutating_fromiter)
+
+    with pytest.raises(ValueError, match=_SHAPE_ERROR):
+        models.ConfirmatoryModel(source)
+
+    assert mutated
 
 
 def test_confirmatory_loading_cell_budget_boundary_remains_admissible(
