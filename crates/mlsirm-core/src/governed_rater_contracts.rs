@@ -37,7 +37,7 @@ impl DomainReference {
         if value.chars().any(char::is_control) {
             return Err(ContractError::ControlCharacter(field_name));
         }
-        if value.trim() != value {
+        if value.trim() != value || value.starts_with('\u{feff}') || value.ends_with('\u{feff}') {
             return Err(ContractError::NonCanonicalReference(field_name));
         }
         Ok(Self(value))
@@ -59,7 +59,7 @@ pub enum ContractError {
     ReferenceTooLong(&'static str),
     /// A reference contained a control character.
     ControlCharacter(&'static str),
-    /// A reference carried leading or trailing whitespace instead of canonical identity text.
+    /// A reference carried non-canonical boundary whitespace or a byte-order mark.
     NonCanonicalReference(&'static str),
     /// An observed criterion exceeded the published evidence-reference limit.
     TooManyEvidenceReferences,
@@ -90,7 +90,7 @@ impl Display for ContractError {
                 write!(formatter, "{field} contains a control character")
             }
             Self::NonCanonicalReference(field) => {
-                write!(formatter, "{field} must not contain surrounding whitespace")
+                write!(formatter, "{field} has non-canonical boundary whitespace")
             }
             Self::TooManyEvidenceReferences => {
                 formatter.write_str("evidence references exceed the published limit")
@@ -409,6 +409,14 @@ mod tests {
         );
         assert_eq!(
             DomainReference::parse("field", "trailing "),
+            Err(ContractError::NonCanonicalReference("field"))
+        );
+        assert_eq!(
+            DomainReference::parse("field", "\u{feff}leading"),
+            Err(ContractError::NonCanonicalReference("field"))
+        );
+        assert_eq!(
+            DomainReference::parse("field", "trailing\u{feff}"),
             Err(ContractError::NonCanonicalReference("field"))
         );
     }
