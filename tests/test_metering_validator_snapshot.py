@@ -232,3 +232,34 @@ def test_oversized_nested_dict_preflights_before_nested_key_scan(monkeypatch) ->
 
     assert validator_calls == 0
     assert queued == []
+
+
+def test_oversized_validator_diagnostics_preflight_before_entry_scan(monkeypatch) -> None:
+    """Impossible validator-result cardinality wins before entry inspection."""
+    queued: list[dict[str, object]] = []
+
+    class NonExactDiagnostic(str):
+        pass
+
+    def builder(**_: object) -> dict[str, object]:
+        return {"event_contract_version": 1}
+
+    def validator(_: object) -> tuple[str, ...]:
+        return ("first", "second", NonExactDiagnostic("third"))
+
+    monkeypatch.setattr(metering, "_MAX_VALIDATOR_DIAGNOSTICS", 2, raising=False)
+    sink = CanonicalComputeUsageSink(
+        event_builder=builder,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    try:
+        _emit_one_fit(sink)
+    except ValueError as error:
+        assert str(error) == "event_validator returned too many diagnostics"
+    else:
+        raise AssertionError("oversized validator diagnostics were accepted")
+
+    assert queued == []
