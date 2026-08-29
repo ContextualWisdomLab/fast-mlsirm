@@ -34,6 +34,7 @@ _CANONICAL_IDENTITY_FIELDS = frozenset(
 _MAX_EVENT_SNAPSHOT_DEPTH = 16
 _MAX_EVENT_SNAPSHOT_NODES = 4096
 _MAX_VALIDATOR_DIAGNOSTICS = 256
+_MAX_FORMATTED_VALIDATOR_DIAGNOSTIC_CHARS = 1024
 
 
 def _exact_string(name: str, value: object, *, optional: bool = False) -> str | None:
@@ -216,7 +217,10 @@ class CanonicalComputeUsageSink:
         if any(type(error) is not str for error in validation_errors):
             raise ValueError("event_validator errors must be exact strings")
         if validation_errors:
-            detail = "; ".join(validation_errors[:3])
+            detail = "; ".join(
+                error[:_MAX_FORMATTED_VALIDATOR_DIAGNOSTIC_CHARS]
+                for error in validation_errors[:3]
+            )
             raise ValueError(
                 "event_builder output violates canonical usage-event v1 contract"
                 + (f": {detail}" if detail else "")
