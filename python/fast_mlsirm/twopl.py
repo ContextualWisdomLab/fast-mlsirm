@@ -212,6 +212,18 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
     if expected_width is None:
         raise ValueError("responses must be a 2-D persons x items array")
 
+    # After whole-matrix shape/resource precedence is settled, reject ndarray
+    # storage kinds from inert dtype metadata before allocating the dense target.
+    # The same metadata is replayed during materialization as defense in depth.
+    for row in rows:
+        if type(row) is np.ndarray:
+            if row.ndim != 1 or int(row.size) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            if row.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError("responses must be a real numeric matrix")
+
     source = np.empty((len(rows), expected_width), dtype=np.float64)
     for row_index, row in enumerate(rows):
         if type(row) is np.ndarray:
