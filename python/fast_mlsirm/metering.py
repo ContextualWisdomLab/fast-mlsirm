@@ -7,6 +7,8 @@ from itertools import islice
 from math import isfinite
 from typing import Any, Protocol
 
+from .backend import VALID_KERNEL_BACKENDS
+from .config import VALID_MODELS
 from .types import FitResult, SimulationData
 
 
@@ -31,6 +33,10 @@ _CANONICAL_IDENTITY_FIELDS = frozenset(
         "cost_center_reference",
     }
 )
+_FIT_MODEL_CODES = frozenset(model.lower() for model in VALID_MODELS)
+_FIT_BACKEND_CODES = frozenset(VALID_KERNEL_BACKENDS)
+_MAX_FIT_MODEL_CODE_CHARS = max(map(len, _FIT_MODEL_CODES))
+_MAX_FIT_BACKEND_CODE_CHARS = max(map(len, _FIT_BACKEND_CODES))
 _MAX_EVENT_SNAPSHOT_DEPTH = 16
 _MAX_EVENT_SNAPSHOT_NODES = 4096
 _MAX_VALIDATOR_DIAGNOSTICS = 256
@@ -45,6 +51,24 @@ def _exact_string(name: str, value: object, *, optional: bool = False) -> str | 
     if type(value) is not str:
         raise ValueError(f"{name} must be an exact string")
     return value
+
+
+def _supported_fit_code(
+    name: str,
+    value: object,
+    *,
+    allowed: frozenset[str],
+    max_chars: int,
+) -> str:
+    """Normalize one exact fit identity only after bounded vocabulary admission."""
+    if type(value) is not str:
+        raise ValueError(f"{name} must be an exact string")
+    if len(value) > max_chars:
+        raise ValueError(f"{name} must identify a supported fit code")
+    normalized = value.lower()
+    if normalized not in allowed:
+        raise ValueError(f"{name} must identify a supported fit code")
+    return normalized
 
 
 def _nonnegative_int(
@@ -315,18 +339,26 @@ class CanonicalComputeUsageSink:
         )
         model = result.model
         backend = result.backend
-        if type(model) is not str:
-            raise ValueError("result.model must be an exact string")
-        if type(backend) is not str:
-            raise ValueError("result.backend must be an exact string")
+        admitted_model_code = _supported_fit_code(
+            "result.model",
+            model,
+            allowed=_FIT_MODEL_CODES,
+            max_chars=_MAX_FIT_MODEL_CODE_CHARS,
+        )
+        admitted_backend_code = _supported_fit_code(
+            "result.backend",
+            backend,
+            allowed=_FIT_BACKEND_CODES,
+            max_chars=_MAX_FIT_BACKEND_CODE_CHARS,
+        )
         payload: dict[str, Any] = {
             **self._identity,
             "run_reference": admitted_run_reference,
             "artifact_reference": admitted_artifact_reference,
             "configuration_reference": admitted_configuration_reference,
             "seed_reference": admitted_seed_reference,
-            "model_code": model.lower(),
-            "backend_code": backend.lower(),
+            "model_code": admitted_model_code,
+            "backend_code": admitted_backend_code,
             "occurred_at": admitted_occurred_at,
             "response_rows": admitted_response_rows,
             "response_items": admitted_response_items,
