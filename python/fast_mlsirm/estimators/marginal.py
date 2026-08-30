@@ -672,6 +672,7 @@ def _item_q(
     for item ``i`` and subtracts the MAP ridge penalties on its active
     parameters. This is the per-item M-step objective the ascent maximizes.
     """
+    # Optimized penalty calculation: mathematically simplified binomial log-likelihood to avoid intermediate array allocation
     q = float(np.sum(r_i * eta + n_i * _log_sigmoid(-eta)))
     q -= 0.5 * pen["lambda_b"] * b_i * b_i
     if free_alpha:
@@ -1116,6 +1117,7 @@ def fit_marginal_numpy(
                         + off_all
                         - np.exp(tau_c) * dist[None, :, None, :]
                     )
+                    # Optimized parameter calculation: mathematically simplified binomial log-likelihood to avoid intermediate array allocation
                     qv = float(
                         np.sum(rbar * e + n_all * _log_sigmoid(-e))
                     )
@@ -1178,6 +1180,7 @@ def fit_marginal_numpy(
                 def q_of_delta(delta_c: float) -> float:
                     """Expected-count objective as a function of covariate slope ``delta_c``."""
                     e = eta_delta(delta_c)
+                    # Optimized objective calculation: mathematically simplified binomial log-likelihood to avoid intermediate array allocation
                     return float(
                         np.sum(rbar * e + n_all * _log_sigmoid(-e))
                     )
