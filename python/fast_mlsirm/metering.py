@@ -85,13 +85,19 @@ def _nonnegative_int(
     return value
 
 
+def _require_canonical_quantity_width(name: str, value: int) -> None:
+    """Reject an admitted integer wider than canonical usage-event/v1 quantity."""
+    if value > _MAX_CANONICAL_V1_QUANTITY:
+        raise ValueError(f"{name} exceeds canonical usage-event v1 quantity width")
+
+
 def _canonical_quantity_int(
     name: str, value: object, *, optional: bool = False
 ) -> int | None:
     """Admit one integer that fits the canonical usage-event/v1 quantity width."""
     admitted = _nonnegative_int(name, value, optional=optional)
-    if admitted is not None and admitted > _MAX_CANONICAL_V1_QUANTITY:
-        raise ValueError(f"{name} exceeds canonical usage-event v1 quantity width")
+    if admitted is not None:
+        _require_canonical_quantity_width(name, admitted)
     return admitted
 
 
@@ -109,6 +115,8 @@ def _exact_2d_shape(value: object) -> tuple[int, int]:
     response_items = _nonnegative_int("response_items", value[1])
     assert response_rows is not None and response_items is not None
     _require_response_cell_budget(response_rows, response_items)
+    _require_canonical_quantity_width("response_rows", response_rows)
+    _require_canonical_quantity_width("response_items", response_items)
     return response_rows, response_items
 
 
@@ -356,6 +364,8 @@ class CanonicalComputeUsageSink:
         admitted_response_items = _nonnegative_int("response_items", response_items)
         assert admitted_response_rows is not None and admitted_response_items is not None
         _require_response_cell_budget(admitted_response_rows, admitted_response_items)
+        _require_canonical_quantity_width("response_rows", admitted_response_rows)
+        _require_canonical_quantity_width("response_items", admitted_response_items)
         admitted_artifact_bytes = _canonical_quantity_int(
             "artifact_bytes", artifact_bytes, optional=True
         )
