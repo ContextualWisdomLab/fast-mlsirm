@@ -31,8 +31,8 @@ def test_mokken_rejects_empty_row_fanout_before_numpy_or_core(
 def test_mokken_preserves_valid_matrix_at_structural_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A valid 2x1 matrix at the 2N structural boundary still reaches Rust."""
-    monkeypatch.setattr(mokken, "_MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES", 4, raising=False)
+    """A valid 3x2 matrix at its exact P+N structural boundary reaches Rust."""
+    monkeypatch.setattr(mokken, "_MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES", 9, raising=False)
     captured: dict[str, object] = {}
 
     class _Core:
@@ -48,12 +48,12 @@ def test_mokken_preserves_valid_matrix_at_structural_boundary(
                 n_items=n_items,
             )
             return {
-                "hij": [float("nan")],
-                "hi": [float("nan")],
-                "h": float("nan"),
-                "zij": [float("nan")],
-                "zi": [float("nan")],
-                "z": float("nan"),
+                "hij": [float("nan"), 0.4, 0.4, float("nan")],
+                "hi": [0.4, 0.4],
+                "h": 0.4,
+                "zij": [float("nan"), 1.25, 1.25, float("nan")],
+                "zi": [1.25, 1.25],
+                "z": 1.25,
             }
 
         def mokken_aisp(
@@ -64,14 +64,14 @@ def test_mokken_preserves_valid_matrix_at_structural_boundary(
             lower_bound: float,
             alpha: float,
         ) -> list[int]:
-            return [0]
+            return [1, 1]
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
 
-    result = mokken.mokken_analysis([[0], [1]])
+    result = mokken.mokken_analysis([[0, 0], [0, 1], [1, 1]])
 
-    assert captured["n_persons"] == 2
-    assert captured["n_items"] == 1
+    assert captured["n_persons"] == 3
+    assert captured["n_items"] == 2
     assert isinstance(captured["responses"], np.ndarray)
-    assert captured["responses"].tolist() == [0, 1]
-    assert result.scale.tolist() == [0]
+    assert captured["responses"].tolist() == [0, 0, 0, 1, 1, 1]
+    assert result.scale.tolist() == [1, 1]
