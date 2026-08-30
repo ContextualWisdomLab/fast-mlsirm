@@ -32,10 +32,10 @@ def _valid_payload() -> dict[str, object]:
         "thresholds": np.array([0.0], dtype=np.float64),
         "theta": np.array([-0.5, 0.5], dtype=np.float64),
         "loglik_trace": np.array([-5.0, -4.5], dtype=np.float64),
-        "n_iter": 1,
+        "n_iter": 2,
         "converged": True,
         "connected": True,
-        "n_parameters": 4,
+        "n_parameters": 2,
     }
 
 
@@ -98,6 +98,60 @@ def test_fit_facets_rejects_overlong_loglik_trace_before_entry_scan(
 
     with pytest.raises(
         ValueError, match=r"native fit_facets result loglik_trace exceeds length limit 6"
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+@pytest.mark.parametrize(
+    ("n_iter", "converged", "trace"),
+    [
+        (0, False, [-5.0]),
+        (2, True, [-5.0]),
+        (2, True, [-5.0, -4.5, -4.25]),
+        (2, False, [-5.0]),
+    ],
+)
+def test_fit_facets_rejects_impossible_iteration_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    n_iter: int,
+    converged: bool,
+    trace: list[float],
+) -> None:
+    payload = _valid_payload()
+    payload["n_iter"] = n_iter
+    payload["converged"] = converged
+    payload["loglik_trace"] = trace
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(ValueError, match="native fit_facets result"):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+def test_fit_facets_allows_nonconverged_terminal_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["n_iter"] = 2
+    payload["converged"] = False
+    payload["loglik_trace"] = [-5.0, -4.5, -4.25]
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    result = facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+    assert result.n_iter == 2
+    assert not result.converged
+    assert result.loglik_trace.tolist() == [-5.0, -4.5, -4.25]
+
+
+def test_fit_facets_rejects_wrong_native_parameter_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["n_parameters"] = 3
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError, match=r"native fit_facets result n_parameters must equal 2"
     ):
         facets.fit_facets(_responses(), n_cat=2, max_iter=5)
 
