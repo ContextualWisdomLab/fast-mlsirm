@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 import fast_mlsirm.facets as facets
 
@@ -73,3 +74,30 @@ def test_post_snapshot_hostile_list_rebind_executes_no_numeric_callback(
     assert source[0] is hostile
     assert source[1] is hostile
     assert hostile.calls == 0
+
+
+def test_native_ndarray_cardinality_change_at_copy_seam_fails_closed(
+    monkeypatch,
+) -> None:
+    """The package-owned ndarray snapshot must replay the admitted cardinality."""
+
+    source = np.array([-0.25, 0.25], dtype=np.float64)
+    result = {"item_difficulty": source}
+    real_array = facets.np.array
+
+    def array_after_native_resize(
+        value: object, *args: object, **kwargs: object
+    ) -> np.ndarray:
+        if value is source:
+            source.resize((3,), refcheck=False)
+            source[:] = [-0.25, 0.25, 9.0]
+        return real_array(value, *args, **kwargs)
+
+    monkeypatch.setattr(facets.np, "array", array_after_native_resize)
+
+    with pytest.raises(ValueError, match=r"item_difficulty must have length 2"):
+        facets._native_float_vector(
+            result,
+            "item_difficulty",
+            exact_length=2,
+        )
