@@ -34,6 +34,27 @@ def test_sequence_rectangularity_precedes_scalar_validation() -> None:
         twopl._trusted_response_matrix([[2, 0], [0, 1, 0]])
 
 
+@pytest.mark.parametrize(
+    ("row", "diagnostic"),
+    [
+        (np.array([1 + 0j, 0 + 0j]), r"responses must be real-valued"),
+        (np.array(["0", "1"], dtype=object), r"responses must be a real numeric matrix"),
+    ],
+)
+def test_sequence_ndarray_dtype_rejects_before_dense_allocation(
+    monkeypatch, row: np.ndarray, diagnostic: str
+) -> None:
+    """Inert ndarray dtype rejection must not require the float64 destination."""
+
+    def fail_allocation(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("dense response allocation must not run")
+
+    monkeypatch.setattr(twopl.np, "empty", fail_allocation)
+
+    with pytest.raises(ValueError, match=diagnostic):
+        twopl._trusted_response_matrix([row])
+
+
 def test_sequence_preflight_preserves_exact_cell_budget_boundary(monkeypatch) -> None:
     """The exact logical-cell ceiling remains admissible for ordinary evidence."""
 
