@@ -230,19 +230,26 @@ def _native_float_vector(
 
         for entry in sequence:
             entry_type = type(entry)
-            trusted = (
-                entry_type is int
-                or entry_type is float
-                or any(
-                    entry_type is scalar_type
-                    for scalar_type in (
-                        *_NUMPY_INTEGER_SCALAR_TYPES,
-                        *_NUMPY_FLOAT_SCALAR_TYPES,
-                    )
-                )
+            integer_entry = entry_type is int or any(
+                entry_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+            )
+            trusted = integer_entry or entry_type is float or any(
+                entry_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
             )
             if not trusted:
                 raise _native_result_error(f"{key} must be a real numeric vector")
+            if integer_entry:
+                integer_value = int(entry)
+                try:
+                    float_value = float(integer_value)
+                except OverflowError:
+                    raise _native_result_error(
+                        f"{key} integer values must be exactly representable as float64"
+                    ) from None
+                if not math.isfinite(float_value) or int(float_value) != integer_value:
+                    raise _native_result_error(
+                        f"{key} integer values must be exactly representable as float64"
+                    )
         array = np.asarray(sequence)
     else:
         raise _native_result_error(f"{key} must be a real numeric vector")
