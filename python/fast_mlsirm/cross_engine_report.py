@@ -77,8 +77,14 @@ def _header_row(labels: tuple[str, ...]) -> str:
 
 
 def _data_row(values: tuple[object | None, ...]) -> str:
-    """Render one escaped table row."""
-    return "<tr>" + "".join(f"<td>{_text(value)}</td>" for value in values) + "</tr>"
+    """Render one escaped table row with its first identifying value as a header."""
+    first, *remaining = values
+    return (
+        "<tr>"
+        f'<th scope="row">{_text(first)}</th>'
+        + "".join(f"<td>{_text(value)}</td>" for value in remaining)
+        + "</tr>"
+    )
 
 
 def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) -> str:
