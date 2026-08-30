@@ -26,8 +26,9 @@ def _emit_one_fit(sink: CanonicalComputeUsageSink) -> None:
 
 
 def test_validator_mutation_cannot_change_enqueued_event() -> None:
-    """Validator-local top-level mutation cannot begin before durable enqueue."""
+    """Top-level mutation is detected after callback and before durable enqueue."""
     queued: list[dict[str, object]] = []
+    callback_completed = False
 
     def builder(**_: object) -> dict[str, object]:
         return {
@@ -36,8 +37,10 @@ def test_validator_mutation_cannot_change_enqueued_event() -> None:
         }
 
     def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+        nonlocal callback_completed
         event["event_contract_version"] = 2  # type: ignore[index]
         event["source_event_key"] = "validator-mutated"  # type: ignore[index]
+        callback_completed = True
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -47,15 +50,17 @@ def test_validator_mutation_cannot_change_enqueued_event() -> None:
         identity={},
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
         _emit_one_fit(sink)
 
+    assert callback_completed
     assert queued == []
 
 
 def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
-    """Validator-local nested mutation cannot begin before durable enqueue."""
+    """Nested mutation is detected after callback and before durable enqueue."""
     queued: list[dict[str, object]] = []
+    callback_completed = False
 
     def builder(**_: object) -> dict[str, object]:
         return {
@@ -71,11 +76,13 @@ def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
         }
 
     def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+        nonlocal callback_completed
         measurements = event["measurements"]
         assert isinstance(measurements, Sequence)
         measurement = measurements[0]
         assert isinstance(measurement, Mapping)
         measurement["quantity"] = "999"  # type: ignore[index]
+        callback_completed = True
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -85,9 +92,10 @@ def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
         identity={},
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
         _emit_one_fit(sink)
 
+    assert callback_completed
     assert queued == []
 
 
