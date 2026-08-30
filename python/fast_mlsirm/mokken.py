@@ -365,6 +365,7 @@ def mokken_analysis(
 
     coefficient_result = core.mokken_coef_h(x, n_persons, n_items)
     coefficients = _validated_native_coefficients(coefficient_result, n_items)
+    del coefficient_result
     scale = core.mokken_aisp(
         x,
         n_persons,
