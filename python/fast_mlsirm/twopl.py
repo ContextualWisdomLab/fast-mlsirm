@@ -4,7 +4,8 @@ Reckase (2009) / Bock, Gibbons & Muraki (1988) full-information item factor mode
 which an item may load freely on several latent dimensions that trade off additively in the
 logit. Factors are orthogonal by default (``estimate_corr=False``, ``Sigma = I``) or their
 correlation matrix is estimated (``estimate_corr=True``). Estimated in the Rust core over a
-product Gauss-Hermite grid."""
+product Gauss-Hermite grid.
+"""
 
 from __future__ import annotations
 
@@ -191,6 +192,20 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
             raise ValueError("responses must be real-valued")
         if source.dtype.kind not in {"b", "i", "u", "f"}:
             raise ValueError("responses must be a real numeric matrix")
+
+        admitted_shape = source.shape
+        admitted_size = int(source.size)
+        source = np.array(source, copy=True)
+        if (
+            source.ndim != 2
+            or source.shape != admitted_shape
+            or int(source.size) != admitted_size
+        ):
+            raise ValueError("responses must be a 2-D persons x items array")
+        if source.dtype.kind == "c":
+            raise ValueError("responses must be real-valued")
+        if source.dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError("responses must be a real numeric matrix")
         if source.dtype.kind == "f":
             missing = np.isnan(source)
             if np.any(~missing & ~np.isfinite(source)):
@@ -304,7 +319,8 @@ class TwoPlFit:
     ``theta_j ~ MVN(0, Sigma)``, ``Sigma`` a unit-diagonal correlation matrix.
     ``termination_reason`` is either ``"converged"`` or ``"max_iter_reached"``;
     ``final_loglik_change`` is the absolute difference between the final two evaluated
-    marginal log-likelihoods."""
+    marginal log-likelihoods.
+    """
 
     model: IrtModel
     loading: np.ndarray
