@@ -144,6 +144,10 @@ def _validated_native_coefficients(
     if type(result) is not dict:
         _raise_native_result_error()
     required_fields = ("hij", "hi", "h", "zij", "zi", "z")
+    if len(result) != len(required_fields):
+        _raise_native_result_error()
+    if any(type(key) is not str for key in result):
+        _raise_native_result_error()
     if any(field not in result for field in required_fields):
         _raise_native_result_error()
 
