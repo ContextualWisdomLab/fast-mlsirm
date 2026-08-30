@@ -253,6 +253,12 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
             row_values = [_response_scalar(value) for value in row]
+            if (
+                row.ndim != 1
+                or int(row.size) != expected_width
+                or len(row_values) != expected_width
+            ):
+                raise ValueError("responses must be a 2-D persons x items array")
         elif type(row) is list:
             if len(row) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
