@@ -48,3 +48,10 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-05-19 - Dot product scalar reductions in Marginal M-step
+**Learning:** During the item parameter M-step in marginal estimation, expressions like `float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))` calculate a scalar sum over the element-wise multiplication of two large arrays (shape `(Nx, K)`). `np.sum(A * B)` causes NumPy to allocate a full-sized intermediate array for the product before reduction, which is a significant bottleneck.
+**Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when both operands have identical shapes and the final result is a scalar sum over all elements. This entirely bypasses the intermediate array allocation, leading to measurable memory and speed improvements.
+
+## 2025-05-19 - Fast row-wise squared Euclidean distance
+**Learning:** Calculating pairwise Euclidean distances involves operations like `np.sum(diff * diff, axis=1)`. For an array of shape `(Nx, K)`, this allocates an intermediate `(Nx, K)` array for the squared differences before reducing across the columns, introducing unnecessary memory overhead and performance penalties.
+**Action:** Replace `np.sum(diff * diff, axis=1)` with `np.einsum("ij,ij->i", diff, diff)` to calculate the sum of squares across the rows without allocating the intermediate 2D array, leveraging efficient tensor contraction routines.
