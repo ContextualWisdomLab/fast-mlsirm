@@ -300,32 +300,30 @@ def fit_diagnostics(
                     else bool(population.get("tau_fixed", False))
                 ),
             )
-        model_fit.update(
-            {
-                "m2": limited.m2,
-                "m2_df": limited.df,
-                "m2_p_value": limited.p_value,
-                "rmsea": limited.rmsea2,
-                "rmsea2": limited.rmsea2,
-                "rmsea_ci_lower": limited.rmsea2_ci_lower,
-                "rmsea_ci_upper": limited.rmsea2_ci_upper,
-                "srmr": limited.srmsr,
-                "srmsr": limited.srmsr,
-                "cfi": limited.cfi,
-                "tli": limited.tli,
-                "null_m2": limited.null_m2,
-                "null_m2_df": limited.null_df,
-                "m2_n_complete": float(limited.n_complete),
-                "m2_inference_valid": limited.inference_valid,
-                "m2_inference_note": limited.inference_note,
-                "m2_n_groups": float(limited.n_groups),
-                "m2_n_clusters": (
-                    float(limited.n_clusters)
-                    if limited.n_clusters is not None
-                    else float("nan")
-                ),
-            }
-        )
+        model_fit.update({
+            "m2": limited.m2,
+            "m2_df": limited.df,
+            "m2_p_value": limited.p_value,
+            "rmsea": limited.rmsea2,
+            "rmsea2": limited.rmsea2,
+            "rmsea_ci_lower": limited.rmsea2_ci_lower,
+            "rmsea_ci_upper": limited.rmsea2_ci_upper,
+            "srmr": limited.srmsr,
+            "srmsr": limited.srmsr,
+            "cfi": limited.cfi,
+            "tli": limited.tli,
+            "null_m2": limited.null_m2,
+            "null_m2_df": limited.null_df,
+            "m2_n_complete": float(limited.n_complete),
+            "m2_inference_valid": limited.inference_valid,
+            "m2_inference_note": limited.inference_note,
+            "m2_n_groups": float(limited.n_groups),
+            "m2_n_clusters": (
+                float(limited.n_clusters)
+                if limited.n_clusters is not None
+                else float("nan")
+            ),
+        })
     return FitDiagnostics(
         itemfit=itemfit,
         personfit=personfit,
@@ -419,17 +417,15 @@ def dimensionality_diagnostics(
             )
             _accumulate_heldout(totals, y, validation_mask, prob)
 
-        candidates.append(
-            {
-                "latent_dim": float(latent_dim),
-                "k_folds": float(k_folds),
-                "heldout_loglik": totals["loglik"],
-                "heldout_deviance": -2.0 * totals["loglik"],
-                "heldout_mean_abs_residual": totals["abs_residual"] / totals["n"],
-                "heldout_rmse": float(np.sqrt(totals["sq_residual"] / totals["n"])),
-                "n_heldout": totals["n"],
-            }
-        )
+        candidates.append({
+            "latent_dim": float(latent_dim),
+            "k_folds": float(k_folds),
+            "heldout_loglik": totals["loglik"],
+            "heldout_deviance": -2.0 * totals["loglik"],
+            "heldout_mean_abs_residual": totals["abs_residual"] / totals["n"],
+            "heldout_rmse": float(np.sqrt(totals["sq_residual"] / totals["n"])),
+            "n_heldout": totals["n"],
+        })
 
     best = max(candidates, key=lambda row: row["heldout_loglik"])
     return DimensionalityDiagnostics(candidates=candidates, best=best)
@@ -531,18 +527,16 @@ def response_process_dimensionality_diagnostics(
             y, observed, prob
         )
         n_observed = float(observed.sum())
-        candidates.append(
-            {
-                "candidate_index": float(idx),
-                "candidate_label": str(label),
-                "heldout_loglik": float(entry_loglik.sum()),
-                "heldout_deviance": float(-2.0 * entry_loglik.sum()),
-                "n_observed": n_observed,
-                "n_categories": float(prob.shape[2]),
-                "pearson_chisq": float(entry_chisq.sum()),
-                "mean_abs_category_residual": float(np.abs(residual[observed]).mean()),
-            }
-        )
+        candidates.append({
+            "candidate_index": float(idx),
+            "candidate_label": str(label),
+            "heldout_loglik": float(entry_loglik.sum()),
+            "heldout_deviance": float(-2.0 * entry_loglik.sum()),
+            "n_observed": n_observed,
+            "n_categories": float(prob.shape[2]),
+            "pearson_chisq": float(entry_chisq.sum()),
+            "mean_abs_category_residual": float(np.abs(residual[observed]).mean()),
+        })
 
     best = max(candidates, key=lambda row: float(row["heldout_loglik"]))
     return DimensionalityDiagnostics(candidates=candidates, best=best)
@@ -605,24 +599,22 @@ def fixed_item_calibration_diagnostics(
         kaefa_penalty = float(np.abs(outfit - 1.0).mean())
         loglik = float(diagnostics.model_fit["loglik"])
         calibration_score = loglik - float(itemfit_penalty_weight) * kaefa_penalty
-        candidates.append(
-            {
-                "candidate_index": float(idx),
-                "candidate_label": candidate_label,
-                "fixed_item_count": float(fixed_idx.size),
-                "fixed_item_observed_count": float(diagnostics.model_fit["n_observed"]),
-                "heldout_loglik": loglik,
-                "heldout_deviance": float(diagnostics.model_fit["deviance"]),
-                "pearson_chisq": float(diagnostics.model_fit["pearson_chisq"]),
-                "mean_abs_category_residual": float(
-                    diagnostics.model_fit["mean_abs_category_residual"]
-                ),
-                "kaefa_itemfit_penalty": kaefa_penalty,
-                "max_fixed_item_outfit_mnsq": float(outfit.max()),
-                "itemfit_penalty_weight": float(itemfit_penalty_weight),
-                "calibration_score": calibration_score,
-            }
-        )
+        candidates.append({
+            "candidate_index": float(idx),
+            "candidate_label": candidate_label,
+            "fixed_item_count": float(fixed_idx.size),
+            "fixed_item_observed_count": float(diagnostics.model_fit["n_observed"]),
+            "heldout_loglik": loglik,
+            "heldout_deviance": float(diagnostics.model_fit["deviance"]),
+            "pearson_chisq": float(diagnostics.model_fit["pearson_chisq"]),
+            "mean_abs_category_residual": float(
+                diagnostics.model_fit["mean_abs_category_residual"]
+            ),
+            "kaefa_itemfit_penalty": kaefa_penalty,
+            "max_fixed_item_outfit_mnsq": float(outfit.max()),
+            "itemfit_penalty_weight": float(itemfit_penalty_weight),
+            "calibration_score": calibration_score,
+        })
 
     best = max(candidates, key=lambda row: float(row["calibration_score"]))
     return DimensionalityDiagnostics(candidates=candidates, best=best)
@@ -700,13 +692,11 @@ def recovery_report(
     }
     summary = {
         "parameter_rmse_mean": float(
-            np.nanmean(
-                [
-                    metrics["a_rmse"],
-                    metrics["b_rmse"],
-                    metrics["theta_rmse_standardized"],
-                ]
-            )
+            np.nanmean([
+                metrics["a_rmse"],
+                metrics["b_rmse"],
+                metrics["theta_rmse_standardized"],
+            ])
         ),
         "latent_rmse": metrics["latent_coordinate_rmse"],
         "distance_rmse": metrics["person_item_distance_rmse"],
@@ -795,18 +785,16 @@ def _factor_fit(
     rows = []
     for factor in np.unique(factors):
         cols = factors == factor
-        rows.append(
-            (
-                float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
-            )
-        )
+        rows.append((
+            float(factor),
+            float(observed[:, cols].sum()),
+            float((y[:, cols] * observed[:, cols]).sum()),
+            float((prob[:, cols] * observed[:, cols]).sum()),
+            float(residual[:, cols].sum()),
+            float((variance[:, cols] * observed[:, cols]).sum()),
+            float((residual[:, cols] * residual[:, cols]).sum()),
+            float(pearson_sq[:, cols].sum()),
+        ))
 
     table = np.asarray(rows, dtype=np.float64)
     variance_sum = table[:, 5]
@@ -964,23 +952,21 @@ def _binary_stratum_item_fit(
             scope = np.zeros_like(observed, dtype=bool)
             scope[row_mask, item] = True
             if np.any(observed & scope):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_binary_scope_row(
-                            0.0,
-                            scope,
-                            y,
-                            observed,
-                            prob,
-                            variance,
-                            residual,
-                            pearson_sq,
-                            loglik,
-                        )[1:],
-                    )
-                )
+                rows.append((
+                    float(value),
+                    float(item),
+                    *_binary_scope_row(
+                        0.0,
+                        scope,
+                        y,
+                        observed,
+                        prob,
+                        variance,
+                        residual,
+                        pearson_sq,
+                        loglik,
+                    )[1:],
+                ))
     return _binary_scope_item_table(id_name, rows)
 
 
@@ -1112,15 +1098,11 @@ def _categorical_stratum_item_fit(
             where = np.zeros_like(observed, dtype=bool)
             where[row_mask, item] = observed[row_mask, item]
             if np.any(where):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[
-                            1:
-                        ],
-                    )
-                )
+                rows.append((
+                    float(value),
+                    float(item),
+                    *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[1:],
+                ))
     return _categorical_scope_item_table(id_name, rows)
 
 
