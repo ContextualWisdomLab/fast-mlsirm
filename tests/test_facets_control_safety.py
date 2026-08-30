@@ -346,6 +346,27 @@ def test_fit_facets_rejects_lossy_longdouble_tolerance_before_response_work(
     assert core_calls == []
 
 
+def test_fit_facets_accepts_exact_longdouble_tolerance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exactly representable extended precision remains compatible with Rust f64."""
+
+    core = _FakeCore()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    result = fit_facets(
+        _RESPONSES,
+        n_cat=2,
+        q_theta=41,
+        max_iter=10,
+        tol=np.longdouble(0.5),
+    )
+
+    assert core.calls == [(2, 41, 10, 0.5)]
+    assert result.converged is True
+    assert result.connected is True
+
+
 def test_fit_facets_validates_responses_before_core_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
