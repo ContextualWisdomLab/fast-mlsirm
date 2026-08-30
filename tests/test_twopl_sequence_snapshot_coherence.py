@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 import fast_mlsirm.twopl as twopl
 
@@ -78,3 +79,36 @@ def test_later_list_row_is_snapshotted_before_earlier_scalar_traversal(monkeypat
     assert mutated is True
     assert np.array_equal(result, np.array([[0.0, 1.0], [1.0, 0.0]]))
     assert second == [0, 0]
+
+
+def test_top_level_ndarray_admission_does_not_alias_caller_storage() -> None:
+    """An already contiguous float64 input must still become package-owned evidence."""
+
+    responses = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
+    admitted = twopl._trusted_response_matrix(responses)
+
+    assert admitted is not responses
+    responses[:, :] = 0.0
+    assert np.array_equal(admitted, np.array([[0.0, 1.0], [1.0, 0.0]]))
+
+
+def test_top_level_ndarray_snapshot_replays_value_semantics(monkeypatch) -> None:
+    """A mutation immediately before the package snapshot must be validated."""
+
+    responses = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
+    original_array = twopl.np.array
+    mutated = False
+
+    def mutate_before_copy(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        nonlocal mutated
+        if value is responses and kwargs.get("copy") is True:
+            responses[0, 0] = 2.0
+            mutated = True
+        return original_array(value, *args, **kwargs)
+
+    monkeypatch.setattr(twopl.np, "array", mutate_before_copy)
+
+    with pytest.raises(ValueError, match="dichotomous responses must be 0, 1, or NaN"):
+        twopl._trusted_response_matrix(responses)
+
+    assert mutated is True
