@@ -139,6 +139,17 @@ def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
     max_formation_label = expected_size // 2
     if any(element > max_formation_label for element in value):
         _raise_native_result_error()
+
+    positive_label_counts: dict[int, int] = {}
+    for element in value:
+        if element > 0:
+            positive_label_counts[element] = positive_label_counts.get(element, 0) + 1
+    if positive_label_counts:
+        highest_label = max(positive_label_counts)
+        if len(positive_label_counts) != highest_label:
+            _raise_native_result_error()
+        if any(count < 2 for count in positive_label_counts.values()):
+            _raise_native_result_error()
     return np.asarray(value, dtype=np.int64)
 
 
