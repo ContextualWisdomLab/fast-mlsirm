@@ -27,6 +27,7 @@ class _Core:
     def __init__(self, coefficient_result: object, scale: object) -> None:
         self.coefficient_result = coefficient_result
         self.scale = scale
+        self.aisp_calls = 0
 
     def mokken_coef_h(
         self,
@@ -44,6 +45,7 @@ class _Core:
         lower_bound: float,
         alpha: float,
     ) -> object:
+        self.aisp_calls += 1
         return self.scale
 
 
@@ -83,6 +85,21 @@ def test_mokken_rejects_native_vector_cardinality_before_reshape(
 
     with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
         mokken.mokken_analysis(_RESPONSES)
+
+
+def test_mokken_rejects_invalid_coefficients_before_aisp_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid coefficient envelope fails before the second native routine."""
+    payload = _valid_coefficients()
+    payload["hij"] = [float("nan"), 0.4, 0.4]
+    core = _Core(payload, [1, 1])
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
+        mokken.mokken_analysis(_RESPONSES)
+
+    assert core.aisp_calls == 0
 
 
 def test_mokken_accepts_current_rust_shaped_native_result_with_nan_diagonal(
