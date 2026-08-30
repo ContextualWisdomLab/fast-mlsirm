@@ -62,6 +62,49 @@ def test_metering_rejects_response_cell_overflow_before_producer(kind: str) -> N
     assert calls == {"producer": 0, "validator": 0, "enqueue": 0}
 
 
+@pytest.mark.parametrize(
+    ("kind", "rows", "items"),
+    (
+        ("fit", 0, 10**39),
+        ("fit", 10**39, 0),
+        ("simulation", 0, 10**39),
+        ("simulation", 10**39, 0),
+    ),
+)
+def test_metering_rejects_overwide_zero_cell_dimension_before_producer(
+    kind: str,
+    rows: int,
+    items: int,
+) -> None:
+    """Zero cells must not let an unrepresentable dimension reach the producer."""
+    calls = {"producer": 0, "validator": 0, "enqueue": 0}
+    sink = _sink(calls)
+
+    with pytest.raises(ValueError, match="canonical usage-event v1 quantity width"):
+        if kind == "fit":
+            sink.emit_fit(
+                SimpleNamespace(model="MLS2PLM", backend="rust"),
+                run_reference="run",
+                artifact_reference="artifact",
+                configuration_reference="config",
+                seed_reference="seed",
+                occurred_at="2026-08-30T00:00:00Z",
+                response_rows=rows,
+                response_items=items,
+            )
+        else:
+            sink.emit_simulation(
+                SimpleNamespace(Y=SimpleNamespace(shape=(rows, items))),
+                run_reference="run",
+                artifact_reference="artifact",
+                configuration_reference="config",
+                seed_reference="seed",
+                occurred_at="2026-08-30T00:00:00Z",
+            )
+
+    assert calls == {"producer": 0, "validator": 0, "enqueue": 0}
+
+
 @pytest.mark.parametrize("kind", ("fit", "simulation"))
 def test_metering_admits_exact_response_cell_boundary(kind: str) -> None:
     """The existing package response-cell boundary remains admissible."""
@@ -84,6 +127,48 @@ def test_metering_admits_exact_response_cell_boundary(kind: str) -> None:
             SimpleNamespace(
                 Y=SimpleNamespace(shape=(MAX_IRT_RESPONSE_CELLS, 1))
             ),
+            run_reference="run",
+            artifact_reference="artifact",
+            configuration_reference="config",
+            seed_reference="seed",
+            occurred_at="2026-08-30T00:00:00Z",
+        )
+
+    assert calls == {"producer": 1, "validator": 1, "enqueue": 1}
+
+
+@pytest.mark.parametrize(
+    ("kind", "rows", "items"),
+    (
+        ("fit", 0, 10**39 - 1),
+        ("fit", 10**39 - 1, 0),
+        ("simulation", 0, 10**39 - 1),
+        ("simulation", 10**39 - 1, 0),
+    ),
+)
+def test_metering_admits_exact_zero_cell_quantity_width_boundary(
+    kind: str,
+    rows: int,
+    items: int,
+) -> None:
+    """Zero-size metadata may carry an exactly representable dimension count."""
+    calls = {"producer": 0, "validator": 0, "enqueue": 0}
+    sink = _sink(calls)
+
+    if kind == "fit":
+        sink.emit_fit(
+            SimpleNamespace(model="MLS2PLM", backend="rust"),
+            run_reference="run",
+            artifact_reference="artifact",
+            configuration_reference="config",
+            seed_reference="seed",
+            occurred_at="2026-08-30T00:00:00Z",
+            response_rows=rows,
+            response_items=items,
+        )
+    else:
+        sink.emit_simulation(
+            SimpleNamespace(Y=SimpleNamespace(shape=(rows, items))),
             run_reference="run",
             artifact_reference="artifact",
             configuration_reference="config",
