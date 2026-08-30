@@ -295,7 +295,7 @@ def _long_form_rows(manifest: dict[str, object]) -> list[dict[str, object | None
     rows: list[dict[str, object | None]] = []
     for capability in capabilities:
         if type(capability) is not dict:
-            raise ValueError("capabilities must be a canonical dictionary")
+            raise ValueError("capability must be a canonical dictionary")
         capability_fields = {
             "capability_id": capability["capability_id"],
             "public_entrypoint": capability["public_entrypoint"],
