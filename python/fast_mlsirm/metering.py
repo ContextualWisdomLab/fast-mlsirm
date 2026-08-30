@@ -344,6 +344,34 @@ def _track_validator_json(
     return value
 
 
+def _validator_json_matches_admitted(value: Any, expected: Any) -> bool:
+    """Compare package-owned validator carriers without invoking caller protocols."""
+    expected_type = type(expected)
+    if expected_type is dict:
+        if type(value) is not _ValidatorDict or dict.__len__(value) != len(expected):
+            return False
+        value_items = tuple(dict.items(value))
+        expected_items = tuple(expected.items())
+        for (key, item), (expected_key, expected_item) in zip(
+            value_items, expected_items, strict=True
+        ):
+            if type(key) is not str or key != expected_key:
+                return False
+            if not _validator_json_matches_admitted(item, expected_item):
+                return False
+        return True
+    if expected_type is list:
+        if type(value) is not _ValidatorList or list.__len__(value) != len(expected):
+            return False
+        return all(
+            _validator_json_matches_admitted(
+                list.__getitem__(value, index), expected_item
+            )
+            for index, expected_item in enumerate(expected)
+        )
+    return type(value) is expected_type and value == expected
+
+
 class CanonicalComputeUsageSink:
     """Build, validate, and enqueue count-only events for real compute results."""
 
@@ -419,7 +447,9 @@ class CanonicalComputeUsageSink:
         mutation_tracker = _ValidatorMutationTracker()
         validation_event = _track_validator_json(admitted_event, mutation_tracker)
         validation_errors = self._event_validator(validation_event)
-        if mutation_tracker.mutated:
+        if mutation_tracker.mutated or not _validator_json_matches_admitted(
+            validation_event, admitted_event
+        ):
             raise ValueError("event_validator must not mutate event")
         if type(validation_errors) is not tuple:
             raise ValueError("event_validator must return an exact tuple")
