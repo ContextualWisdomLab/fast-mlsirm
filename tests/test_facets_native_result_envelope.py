@@ -176,6 +176,32 @@ def test_fit_facets_allows_large_exact_native_integer_vector(
     assert result.item_difficulty.tolist() == [float(2**60), 0.0]
 
 
+def test_fit_facets_rejects_lossy_mixed_native_integer_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["item_difficulty"] = [np.uint64(2**53 + 1), np.int64(-1)]
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError,
+        match=r"native fit_facets result item_difficulty integer values must be exactly representable as float64",
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+def test_fit_facets_allows_exact_mixed_native_integer_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["item_difficulty"] = [np.uint64(2**60), np.int64(-1)]
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    result = facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+    assert result.item_difficulty.tolist() == [float(2**60), -1.0]
+
+
 @pytest.mark.parametrize(
     ("n_iter", "converged", "trace"),
     [
