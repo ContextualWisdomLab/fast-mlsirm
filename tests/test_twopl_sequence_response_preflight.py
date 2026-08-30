@@ -9,12 +9,22 @@ import fast_mlsirm.twopl as twopl
 
 
 def test_sequence_response_cell_budget_precedes_scalar_validation(monkeypatch) -> None:
-    """An inert whole-matrix overflow wins before any earlier invalid cell is read."""
+    """An inert whole-matrix overflow wins before any response cell is traversed."""
 
     monkeypatch.setattr(twopl, "MAX_IRT_RESPONSE_CELLS", 4)
+    original_response_scalar = twopl._response_scalar
+    traversed: list[object] = []
+
+    def recording_response_scalar(value: object) -> float:
+        traversed.append(value)
+        return original_response_scalar(value)
+
+    monkeypatch.setattr(twopl, "_response_scalar", recording_response_scalar)
 
     with pytest.raises(ValueError, match=r"responses must contain at most 4 cells"):
-        twopl._trusted_response_matrix([[2, 0], [0, 1], [1, 0]])
+        twopl._trusted_response_matrix([[0, 1], [1, 0], [0, 1]])
+
+    assert traversed == []
 
 
 def test_sequence_rectangularity_precedes_scalar_validation() -> None:
