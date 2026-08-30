@@ -50,11 +50,13 @@ def _real_control(value: object, name: str) -> float:
             return float(value)
         except OverflowError:
             raise ValueError(f"{name} must be finite and > 0") from None
-    if any(
-        value_type is trusted_type
-        for trusted_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
-    ):
+    if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return float(value)
+    if any(value_type is trusted_type for trusted_type in _NUMPY_FLOAT_SCALAR_TYPES):
+        normalized = float(value)
+        if value_type is np.longdouble and np.longdouble(normalized) != value:
+            raise ValueError(f"{name} must be finite and > 0")
+        return normalized
     raise ValueError(f"{name} must be a real number")
 
 
