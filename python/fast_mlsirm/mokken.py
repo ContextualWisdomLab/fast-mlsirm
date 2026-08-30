@@ -58,6 +58,18 @@ class MokkenResult:
     scale: np.ndarray
 
 
+@dataclass(frozen=True)
+class _ValidatedMokkenCoefficients:
+    """Package-owned validated projection of the Rust coefficient payload."""
+
+    hij: np.ndarray
+    hi: np.ndarray
+    h: float
+    zij: np.ndarray
+    zi: np.ndarray
+    z: float
+
+
 def _real_control(name: str, value: object) -> float:
     """Normalize one trusted finite real scalar without caller callbacks."""
     value_type = type(value)
@@ -124,12 +136,11 @@ def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
     return np.asarray(value, dtype=np.int64)
 
 
-def _validated_native_result(
+def _validated_native_coefficients(
     result: object,
-    scale: object,
     n_items: int,
-) -> MokkenResult:
-    """Validate the PyO3 Mokken result envelope before public marshalling."""
+) -> _ValidatedMokkenCoefficients:
+    """Validate the coefficient/statistic envelope before further Rust work."""
     if type(result) is not dict:
         _raise_native_result_error()
     required_fields = ("hij", "hi", "h", "zij", "zi", "z")
@@ -142,19 +153,30 @@ def _validated_native_result(
         _raise_native_result_error()
 
     matrix_cells = n_items * n_items
-    hij = _native_float_vector(result["hij"], matrix_cells)
-    hi = _native_float_vector(result["hi"], n_items)
-    zij = _native_float_vector(result["zij"], matrix_cells)
-    zi = _native_float_vector(result["zi"], n_items)
-    scale_array = _native_scale_vector(scale, n_items)
-
-    return MokkenResult(
-        hij=hij.reshape(n_items, n_items),
-        hi=hi,
+    return _ValidatedMokkenCoefficients(
+        hij=_native_float_vector(result["hij"], matrix_cells),
+        hi=_native_float_vector(result["hi"], n_items),
         h=h,
-        zij=zij.reshape(n_items, n_items),
-        zi=zi,
+        zij=_native_float_vector(result["zij"], matrix_cells),
+        zi=_native_float_vector(result["zi"], n_items),
         z=z,
+    )
+
+
+def _validated_native_result(
+    coefficients: _ValidatedMokkenCoefficients,
+    scale: object,
+    n_items: int,
+) -> MokkenResult:
+    """Validate the AISP carrier and assemble the public Mokken result."""
+    scale_array = _native_scale_vector(scale, n_items)
+    return MokkenResult(
+        hij=coefficients.hij.reshape(n_items, n_items),
+        hi=coefficients.hi,
+        h=coefficients.h,
+        zij=coefficients.zij.reshape(n_items, n_items),
+        zi=coefficients.zi,
+        z=coefficients.z,
         scale=scale_array,
     )
 
@@ -341,7 +363,8 @@ def mokken_analysis(
     ):
         raise RuntimeError("mokken_analysis requires the compiled Rust core")
 
-    result = core.mokken_coef_h(x, n_persons, n_items)
+    coefficient_result = core.mokken_coef_h(x, n_persons, n_items)
+    coefficients = _validated_native_coefficients(coefficient_result, n_items)
     scale = core.mokken_aisp(
         x,
         n_persons,
@@ -349,4 +372,4 @@ def mokken_analysis(
         lower_bound_value,
         alpha_value,
     )
-    return _validated_native_result(result, scale, n_items)
+    return _validated_native_result(coefficients, scale, n_items)
