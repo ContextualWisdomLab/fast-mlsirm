@@ -80,6 +80,31 @@ def test_sequence_ndarray_dtype_rejects_before_dense_allocation(
         twopl._trusted_response_matrix([row])
 
 
+@pytest.mark.parametrize("new_size", [1, 3])
+def test_sequence_ndarray_cardinality_drift_fails_before_destination_assignment(
+    monkeypatch, new_size: int
+) -> None:
+    """An ndarray row resized during scalar traversal retains the package shape error."""
+
+    row = np.array([0, 1], dtype=np.int8)
+    original_response_scalar = twopl._response_scalar
+    mutated = False
+
+    def resizing_response_scalar(value: object) -> float:
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            row.resize((new_size,), refcheck=False)
+            if new_size > 2:
+                row[2] = 1
+        return original_response_scalar(value)
+
+    monkeypatch.setattr(twopl, "_response_scalar", resizing_response_scalar)
+
+    with pytest.raises(ValueError, match=r"responses must be a 2-D persons x items array"):
+        twopl._trusted_response_matrix([row])
+
+
 def test_sequence_preflight_preserves_exact_cell_budget_boundary(monkeypatch) -> None:
     """The exact logical-cell ceiling remains admissible for ordinary evidence."""
 
