@@ -101,6 +101,64 @@ def _raise_item_matrix_resource_error(n_items: int) -> None:
     )
 
 
+def _raise_native_result_error() -> None:
+    """Reject a compiled-core result outside the current binding contract."""
+    raise ValueError("invalid Mokken Rust result payload")
+
+
+def _native_float_vector(value: object, expected_size: int) -> np.ndarray:
+    """Marshal one exact Rust ``Vec<f64>`` carrier after identity replay."""
+    if type(value) is not list or len(value) != expected_size:
+        _raise_native_result_error()
+    if any(type(element) is not float for element in value):
+        _raise_native_result_error()
+    return np.asarray(value, dtype=np.float64)
+
+
+def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
+    """Marshal one exact Rust ``Vec<u32>`` carrier after identity replay."""
+    if type(value) is not list or len(value) != expected_size:
+        _raise_native_result_error()
+    if any(type(element) is not int for element in value):
+        _raise_native_result_error()
+    return np.asarray(value, dtype=np.int64)
+
+
+def _validated_native_result(
+    result: object,
+    scale: object,
+    n_items: int,
+) -> MokkenResult:
+    """Validate the PyO3 Mokken result envelope before public marshalling."""
+    if type(result) is not dict:
+        _raise_native_result_error()
+    required_fields = ("hij", "hi", "h", "zij", "zi", "z")
+    if any(field not in result for field in required_fields):
+        _raise_native_result_error()
+
+    h = result["h"]
+    z = result["z"]
+    if type(h) is not float or type(z) is not float:
+        _raise_native_result_error()
+
+    matrix_cells = n_items * n_items
+    hij = _native_float_vector(result["hij"], matrix_cells)
+    hi = _native_float_vector(result["hi"], n_items)
+    zij = _native_float_vector(result["zij"], matrix_cells)
+    zi = _native_float_vector(result["zi"], n_items)
+    scale_array = _native_scale_vector(scale, n_items)
+
+    return MokkenResult(
+        hij=hij.reshape(n_items, n_items),
+        hi=hi,
+        h=h,
+        zij=zij.reshape(n_items, n_items),
+        zi=zi,
+        z=z,
+        scale=scale_array,
+    )
+
+
 def _trusted_score_source(responses: object) -> object:
     """Admit and bound inert response containers before NumPy protocols run."""
     if type(responses) is np.ndarray:
@@ -237,10 +295,10 @@ def mokken_analysis(
     sample statistics and "search normal" algorithm of the mokken R package
     (van der Ark, 2007): ``Hij = S_ij / Smax_ij`` where ``S`` is the sample
     covariance matrix and ``Smax_ij`` the maximum covariance given the two
-    items' marginal score distributions (sorted-column coupling); ``Hi`` and ``H`` are ratios of
-    the corresponding pairwise sums. A Mokken scale at lower bound ``c``
-    requires nonnegative inter-item covariances and ``Hi >= c`` (rule of
-    thumb ``c = 0.3``; Straat et al., 2013).
+    items' marginal score distributions (sorted-column coupling); ``Hi`` and
+    ``H`` are ratios of the corresponding pairwise sums. A Mokken scale at
+    lower bound ``c`` requires nonnegative inter-item covariances and
+    ``Hi >= c`` (rule of thumb ``c = 0.3``; Straat et al., 2013).
 
     In LLM-as-a-Judge item-quality management, AISP flags evaluation items
     that do not scale with the rest (label 0) and detects multidimensional
@@ -283,7 +341,7 @@ def mokken_analysis(
     ):
         raise RuntimeError("mokken_analysis requires the compiled Rust core")
 
-    res = core.mokken_coef_h(x, n_persons, n_items)
+    result = core.mokken_coef_h(x, n_persons, n_items)
     scale = core.mokken_aisp(
         x,
         n_persons,
@@ -291,12 +349,4 @@ def mokken_analysis(
         lower_bound_value,
         alpha_value,
     )
-    return MokkenResult(
-        hij=np.asarray(res["hij"], dtype=np.float64).reshape(n_items, n_items),
-        hi=np.asarray(res["hi"], dtype=np.float64),
-        h=float(res["h"]),
-        zij=np.asarray(res["zij"], dtype=np.float64).reshape(n_items, n_items),
-        zi=np.asarray(res["zi"], dtype=np.float64),
-        z=float(res["z"]),
-        scale=np.asarray(scale, dtype=np.int64),
-    )
+    return _validated_native_result(result, scale, n_items)
