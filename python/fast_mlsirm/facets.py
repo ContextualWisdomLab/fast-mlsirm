@@ -279,6 +279,20 @@ def _native_float_vector(
         raise _native_result_error(f"{key} must contain only finite values")
 
     owned = snapshot.astype(np.float64, copy=False)
+    if snapshot.dtype.kind in ("i", "u"):
+        # Public result arrays are float64. Preserve the raw integer snapshot as
+        # authority while proving that narrowing is value-preserving. A simple
+        # magnitude cutoff would wrongly reject exactly representable powers of
+        # two above 2**53, so require an exact float64 -> native-integer roundtrip.
+        # Extremal int64/uint64 values can round outside the source dtype range;
+        # NumPy reports that as an invalid cast, which is expected evidence of a
+        # lossy conversion and is handled by the equality check below.
+        with np.errstate(invalid="ignore", over="ignore"):
+            recovered = owned.astype(snapshot.dtype, copy=False)
+        if not np.array_equal(recovered, snapshot):
+            raise _native_result_error(
+                f"{key} integer values must be exactly representable as float64"
+            )
     if not np.all(np.isfinite(owned)):
         raise _native_result_error(f"{key} must contain only finite values")
     return owned
