@@ -7,7 +7,7 @@
 - Keep the self-contained report fail-closed under Content Security Policy by authorizing only the exact inline stylesheet bytes through a SHA-256 `style-src` hash; scripts and unsafe inline styles remain disallowed.
 - Add regression evidence that the rendered stylesheet hash matches the emitted CSP and that the skip-link/focus contracts remain present.
 
-## Source basis
+## Added
 
 - W3C, *Understanding Success Criterion 2.4.1: Bypass Blocks* (WCAG 2.2), https://www.w3.org/WAI/WCAG22/Understanding/bypass-blocks.html — motivates the report's keyboard skip link to the main-content region so sequential navigation can bypass preceding/repeated material.
 - W3C, *Understanding Success Criterion 2.4.7: Focus Visible* (WCAG 2.2), https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html — supports retaining an explicit visible keyboard-focus treatment for the programmatically focusable report target.
