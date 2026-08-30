@@ -31,6 +31,7 @@ _RESULT_KEYS = (
     "loading",
     "intercept",
     "theta",
+    "n_dims",
     "corr",
     "loglik_trace",
     "n_iter",
@@ -68,7 +69,7 @@ def _native_float_vector(
         if max_length is not None and admitted_length > max_length:
             raise _result_error(f"{key} exceeds length limit {max_length}")
 
-        sequence: tuple[object, ...] | tuple[object, ...]
+        sequence: tuple[object, ...]
         if value_type is list:
             snapshot_limit = (
                 exact_length
@@ -198,6 +199,10 @@ def validate_twopl_native_result(
     missing = [key for key in _RESULT_KEYS if key not in result]
     if missing:
         raise _result_error(f"is missing required key {missing[0]!r}")
+
+    result_n_dims = result["n_dims"]
+    if type(result_n_dims) is not int or result_n_dims != n_dims:
+        raise _result_error(f"n_dims must equal {n_dims}")
 
     loading = _native_float_vector(result, "loading", exact_length=n_items * n_dims)
     intercept = _native_float_vector(result, "intercept", exact_length=n_items)
