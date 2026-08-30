@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 
 import pytest
@@ -25,7 +26,7 @@ def _emit_one_fit(sink: CanonicalComputeUsageSink) -> None:
 
 
 def test_validator_mutation_cannot_change_enqueued_event() -> None:
-    """Validator-local top-level mutation fails closed before durable enqueue."""
+    """Validator-local top-level mutation cannot begin before durable enqueue."""
     queued: list[dict[str, object]] = []
 
     def builder(**_: object) -> dict[str, object]:
@@ -34,10 +35,9 @@ def test_validator_mutation_cannot_change_enqueued_event() -> None:
             "source_event_key": "producer-owned",
         }
 
-    def validator(event: object) -> tuple[str, ...]:
-        assert type(event) is dict
-        event["event_contract_version"] = 2
-        event["source_event_key"] = "validator-mutated"
+    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+        event["event_contract_version"] = 2  # type: ignore[index]
+        event["source_event_key"] = "validator-mutated"  # type: ignore[index]
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -47,14 +47,14 @@ def test_validator_mutation_cannot_change_enqueued_event() -> None:
         identity={},
     )
 
-    with pytest.raises(ValueError, match="event_validator mutated canonical event"):
+    with pytest.raises(TypeError):
         _emit_one_fit(sink)
 
     assert queued == []
 
 
 def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
-    """Validator-local nested mutation fails closed before durable enqueue."""
+    """Validator-local nested mutation cannot begin before durable enqueue."""
     queued: list[dict[str, object]] = []
 
     def builder(**_: object) -> dict[str, object]:
@@ -70,13 +70,12 @@ def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
             ],
         }
 
-    def validator(event: object) -> tuple[str, ...]:
-        assert type(event) is dict
+    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
         measurements = event["measurements"]
-        assert type(measurements) is list
+        assert isinstance(measurements, Sequence)
         measurement = measurements[0]
-        assert type(measurement) is dict
-        measurement["quantity"] = "999"
+        assert isinstance(measurement, Mapping)
+        measurement["quantity"] = "999"  # type: ignore[index]
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -86,7 +85,7 @@ def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
         identity={},
     )
 
-    with pytest.raises(ValueError, match="event_validator mutated canonical event"):
+    with pytest.raises(TypeError):
         _emit_one_fit(sink)
 
     assert queued == []
