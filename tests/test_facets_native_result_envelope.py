@@ -150,6 +150,32 @@ def test_fit_facets_rejects_overlong_loglik_trace_before_entry_scan(
         facets.fit_facets(_responses(), n_cat=2, max_iter=5)
 
 
+def test_fit_facets_rejects_lossy_native_integer_vector_narrowing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["item_difficulty"] = np.array([2**53 + 1, 0], dtype=np.int64)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError,
+        match=r"native fit_facets result item_difficulty integer values must be exactly representable as float64",
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+def test_fit_facets_allows_large_exact_native_integer_vector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["item_difficulty"] = np.array([2**60, 0], dtype=np.int64)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    result = facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+    assert result.item_difficulty.tolist() == [float(2**60), 0.0]
+
+
 @pytest.mark.parametrize(
     ("n_iter", "converged", "trace"),
     [
