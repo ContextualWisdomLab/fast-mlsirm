@@ -156,16 +156,17 @@ def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
     """Marshal exact Rust AISP labels after identity/domain replay."""
     if type(value) is not list or len(value) != expected_size:
         _raise_native_result_error()
-    if any(type(element) is not int for element in value):
+    snapshot = value.copy()
+    if any(type(element) is not int for element in snapshot):
         _raise_native_result_error()
-    if any(element < 0 or element > _UINT32_MAX for element in value):
+    if any(element < 0 or element > _UINT32_MAX for element in snapshot):
         _raise_native_result_error()
     max_formation_label = expected_size // 2
-    if any(element > max_formation_label for element in value):
+    if any(element > max_formation_label for element in snapshot):
         _raise_native_result_error()
 
     positive_label_counts: dict[int, int] = {}
-    for element in value:
+    for element in snapshot:
         if element > 0:
             positive_label_counts[element] = positive_label_counts.get(element, 0) + 1
     if positive_label_counts:
@@ -174,7 +175,7 @@ def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
             _raise_native_result_error()
         if any(count < 2 for count in positive_label_counts.values()):
             _raise_native_result_error()
-    return np.asarray(value, dtype=np.int64)
+    return np.asarray(snapshot, dtype=np.int64)
 
 
 def _validated_native_coefficients(
