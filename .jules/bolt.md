@@ -48,6 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-## 2026-08-30 - 이항 로그 우도 계산 단순화 (수학적 항등식 활용)
-**Learning:** `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)`와 같은 이항 로그 우도 계산식에서 `_log_sigmoid`를 두 번 호출하면 `np.logaddexp` 비용이 두 배로 들고, `(n - r)` 등 불필요한 중간 배열 할당이 발생하여 메모리를 낭비합니다.
-**Action:** `_log_sigmoid(x) - _log_sigmoid(-x) = x`라는 수학적 항등식을 이용하여 계산식을 `r * x + n * _log_sigmoid(-x)`로 단순화합니다. 이를 통해 초월 함수 평가를 절반으로 줄이고 불필요한 중간 배열을 피할 수 있습니다.
