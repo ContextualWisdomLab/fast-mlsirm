@@ -112,7 +112,7 @@ def _content_security_policy() -> str:
     return (
         "default-src 'none'; "
         f"style-src 'sha256-{encoded}'; "
-        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "base-uri 'none'; form-action 'none'"
     )
 
 
