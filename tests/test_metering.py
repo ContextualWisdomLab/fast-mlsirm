@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from types import SimpleNamespace
 
 from fast_mlsirm.config import MLS2PLMConfig
@@ -37,7 +37,7 @@ _OPTIONAL_USAGE_EVENT_FIELDS = frozenset(
 
 def _validate_usage_event_v1(event: object) -> tuple[str, ...]:
     """Test-only replay of the released closed v1 usage-event envelope."""
-    if type(event) is not dict:
+    if not isinstance(event, Mapping):
         return ("$: usage event must be an object",)
     errors: list[str] = []
     keys = set(event)
@@ -50,7 +50,11 @@ def _validate_usage_event_v1(event: object) -> tuple[str, ...]:
     if event.get("event_contract_version") != 1:
         errors.append("$: event_contract_version must be 1")
     measurements = event.get("measurements")
-    if not isinstance(measurements, list) or not measurements:
+    if (
+        not isinstance(measurements, Sequence)
+        or isinstance(measurements, (str, bytes))
+        or not measurements
+    ):
         errors.append("$: measurements must be a non-empty array")
     return tuple(errors)
 
