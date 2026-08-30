@@ -20,3 +20,13 @@ def test_commercial_release_csp_binds_exact_rendered_stylesheet() -> None:
     assert "'unsafe-inline'" not in policy
     assert policy.count("style-src ") == 1
     assert f"style-src 'sha256-{encoded}'" in policy
+
+
+def test_commercial_release_meta_csp_does_not_claim_http_only_anti_framing() -> None:
+    """The portable meta policy must contain only browser-enforced directives."""
+    policy = commercial_release._content_security_policy()
+
+    assert "default-src 'none'" in policy
+    assert "base-uri 'none'" in policy
+    assert "form-action 'none'" in policy
+    assert "frame-ancestors" not in policy
