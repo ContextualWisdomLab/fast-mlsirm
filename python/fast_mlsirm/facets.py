@@ -257,7 +257,20 @@ def _native_float_vector(
     if max_length is not None and length > max_length:
         raise _native_result_error(f"{key} exceeds length limit {max_length}")
 
+    # Treat this package-owned copy as the authoritative snapshot.  A retained
+    # native ndarray may change between the inert preflight above and this copy;
+    # replay every representation/cardinality requirement on the copied state
+    # before it can become public fit evidence.
     owned = np.array(array, dtype=np.float64, copy=True)
+    if owned.ndim != 1:
+        raise _native_result_error(f"{key} must be a real numeric 1-D vector")
+    owned_length = int(owned.size)
+    if exact_length is not None and owned_length != exact_length:
+        raise _native_result_error(f"{key} must have length {exact_length}")
+    if min_length is not None and owned_length < min_length:
+        raise _native_result_error(f"{key} must contain at least {min_length} value")
+    if max_length is not None and owned_length > max_length:
+        raise _native_result_error(f"{key} exceeds length limit {max_length}")
     if not np.all(np.isfinite(owned)):
         raise _native_result_error(f"{key} must contain only finite values")
     return owned
