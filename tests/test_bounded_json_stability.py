@@ -82,3 +82,31 @@ def test_parse_json_bounded_rejects_character_lower_bound_before_utf8_encoding()
         bounded_json.parse_json_bounded(content, max_bytes=8)
 
     assert type(excinfo.value) is ValueError
+
+
+def test_parse_json_bounded_rejects_exponent_overflow_number() -> None:
+    """Scientific notation that overflows float64 must remain non-finite-invalid."""
+    with pytest.raises(
+        ValueError, match="JSON input contains a non-finite JSON numeric value"
+    ) as excinfo:
+        bounded_json.parse_json_bounded('{"value":1e999}')
+
+    assert type(excinfo.value) is ValueError
+
+
+def test_read_json_object_rejects_exponent_overflow_number(tmp_path) -> None:
+    """File-backed parsing must reject exponent-overflow numbers identically."""
+    path = tmp_path / "artifact.json"
+    path.write_text('{"value":-1e999}', encoding="utf-8")
+
+    with pytest.raises(
+        ValueError, match="JSON input contains a non-finite JSON numeric value"
+    ) as excinfo:
+        bounded_json.read_json_object(path)
+
+    assert type(excinfo.value) is ValueError
+
+
+def test_parse_json_bounded_preserves_finite_scientific_notation() -> None:
+    """Ordinary finite exponent notation remains interoperable JSON evidence."""
+    assert bounded_json.parse_json_bounded('{"value":1.25e3}') == {"value": 1250.0}
