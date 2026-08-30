@@ -128,6 +128,29 @@ def _native_float_vector(value: object, expected_size: int) -> np.ndarray:
     return np.asarray(value, dtype=np.float64)
 
 
+def _native_finite_float_vector(value: object, expected_size: int) -> np.ndarray:
+    """Marshal a Rust ``Vec<f64>`` whose live result domain is fully finite."""
+    vector = _native_float_vector(value, expected_size)
+    if not np.all(np.isfinite(vector)):
+        _raise_native_result_error()
+    return vector
+
+
+def _native_pairwise_matrix(value: object, n_items: int) -> np.ndarray:
+    """Replay deterministic structure of one symmetric Rust pairwise matrix."""
+    matrix_cells = n_items * n_items
+    vector = _native_float_vector(value, matrix_cells)
+    matrix = vector.reshape(n_items, n_items)
+    diagonal = np.diag(matrix)
+    if not np.all(np.isnan(diagonal)):
+        _raise_native_result_error()
+    if np.count_nonzero(np.isfinite(vector)) != matrix_cells - n_items:
+        _raise_native_result_error()
+    if not np.array_equal(matrix, matrix.T, equal_nan=True):
+        _raise_native_result_error()
+    return vector
+
+
 def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
     """Marshal exact Rust AISP labels after identity/domain replay."""
     if type(value) is not list or len(value) != expected_size:
@@ -172,14 +195,15 @@ def _validated_native_coefficients(
     z = result["z"]
     if type(h) is not float or type(z) is not float:
         _raise_native_result_error()
+    if not np.isfinite(h) or not np.isfinite(z):
+        _raise_native_result_error()
 
-    matrix_cells = n_items * n_items
     return _ValidatedMokkenCoefficients(
-        hij=_native_float_vector(result["hij"], matrix_cells),
-        hi=_native_float_vector(result["hi"], n_items),
+        hij=_native_pairwise_matrix(result["hij"], n_items),
+        hi=_native_finite_float_vector(result["hi"], n_items),
         h=h,
-        zij=_native_float_vector(result["zij"], matrix_cells),
-        zi=_native_float_vector(result["zi"], n_items),
+        zij=_native_pairwise_matrix(result["zij"], n_items),
+        zi=_native_finite_float_vector(result["zi"], n_items),
         z=z,
     )
 
