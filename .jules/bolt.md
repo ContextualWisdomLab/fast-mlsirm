@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-02-28 - Optimize array reductions with np.einsum
+
+**Learning:** When applying element-wise multiplication on large matrices followed by summation along an axis (e.g., `(A * B).sum(axis=axis)`), NumPy allocates a full-sized intermediate array for `A * B`, leading to high memory usage and 'Denial of Service via Excessive Memory Allocation' vulnerabilities in CI pipelines like Strix.
+**Action:** Instead of `(A * B).sum(axis=0)`, explicitly cast any boolean mask to float and compute the reduction directly using `np.einsum('ij,ij->j', A, B)`. For `axis=1`, use `np.einsum('ij,ij->i', A, B)`. This eliminates intermediate array allocation and avoids Out-Of-Memory regressions.

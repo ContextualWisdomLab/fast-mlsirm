@@ -9,7 +9,12 @@ import numpy as np
 from .config import FitConfig, _trusted_integer
 from .irt_contract import fit_irt_experiment, validate_irt_experiment_readiness
 from .math import sigmoid, standardize
-from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
+from .objective import (
+    linear_predictor,
+    model_flags,
+    prepare_response,
+    validate_factor_id,
+)
 from .types import (
     DimensionalityDiagnostics,
     FitDiagnostics,
@@ -46,9 +51,7 @@ def predict_proba(
     Evaluates ``sigmoid`` of the model linear predictor, optionally restricting
     to a subset of ``persons`` and/or ``items``.
     """
-    factors = validate_factor_id(
-        factor_id, len(params.b), params.theta.shape[1]
-    )
+    factors = validate_factor_id(factor_id, len(params.b), params.theta.shape[1])
     sub = _subset_params(params, persons, items)
     if items is not None:
         factors = factors[np.asarray(items, dtype=np.int64)]
@@ -56,7 +59,9 @@ def predict_proba(
     return sigmoid(eta)
 
 
-def _leniency_residuals(y: np.ndarray, observed: np.ndarray, prob: np.ndarray) -> dict[str, np.ndarray | float]:
+def _leniency_residuals(
+    y: np.ndarray, observed: np.ndarray, prob: np.ndarray
+) -> dict[str, np.ndarray | float]:
     """Compute an observed-minus-expected pass-rate proxy for response leniency.
 
     This is an adaptation inspired by the content-independent response-bias
@@ -151,7 +156,9 @@ def fit_diagnostics(
     m2_q_u = _trusted_integer(m2_q_u, "m2_q_u")
     m2_q_xi = _trusted_integer(m2_q_xi, "m2_q_xi")
     if include_m2 and estimator is None:
-        raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
+        raise ValueError(
+            "include_m2 requires the actual estimator: jmle, cmle, or mmle"
+        )
     if include_m2 and convergence_status is not None:
         status = str(convergence_status).strip().lower()
         if status != "converged":
@@ -225,8 +232,14 @@ def fit_diagnostics(
         estimator_name = str(estimator).lower()
         if group_id is not None:
             if estimator_name != "mmle":
-                raise ValueError("multiple-group M2 currently requires estimator='mmle'")
-            if population is None or "mu" not in population or "sigma" not in population:
+                raise ValueError(
+                    "multiple-group M2 currently requires estimator='mmle'"
+                )
+            if (
+                population is None
+                or "mu" not in population
+                or "sigma" not in population
+            ):
                 raise ValueError("multiple-group M2 requires population mu and sigma")
             limited = m2_multigroup(
                 responses=y,
@@ -307,7 +320,9 @@ def fit_diagnostics(
                 "m2_inference_note": limited.inference_note,
                 "m2_n_groups": float(limited.n_groups),
                 "m2_n_clusters": (
-                    float(limited.n_clusters) if limited.n_clusters is not None else float("nan")
+                    float(limited.n_clusters)
+                    if limited.n_clusters is not None
+                    else float("nan")
                 ),
             }
         )
@@ -732,10 +747,20 @@ def _axis_fit(
     item fit, ``axis=1`` for person fit).
     """
     count = observed.sum(axis=axis).astype(np.float64)
-    score = (y * observed).sum(axis=axis)
-    expected = (prob * observed).sum(axis=axis)
+    # Optimized memory/speed: replace (A * B).sum(axis=axis) with np.einsum
+    # to compute the reduction directly without allocating an intermediate array
+    # for A * B.
+    if axis == 0:
+        score = np.einsum("ij,ij->j", y, observed)
+        expected = np.einsum("ij,ij->j", prob, observed)
+        variance_sum = np.einsum("ij,ij->j", variance, observed)
+        infit = np.einsum("ij,ij->j", residual, residual)
+    else:
+        score = np.einsum("ij,ij->i", y, observed)
+        expected = np.einsum("ij,ij->i", prob, observed)
+        variance_sum = np.einsum("ij,ij->i", variance, observed)
+        infit = np.einsum("ij,ij->i", residual, residual)
     raw = residual.sum(axis=axis)
-    variance_sum = (variance * observed).sum(axis=axis)
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
@@ -744,7 +769,7 @@ def _axis_fit(
         "expected_score": expected,
         "raw_residual": raw,
         "standardized_residual": raw / np.sqrt(safe_variance),
-        "infit_mnsq": (residual * residual).sum(axis=axis) / safe_variance,
+        "infit_mnsq": infit / safe_variance,
         "outfit_mnsq": pearson_sq.sum(axis=axis) / safe_count,
     }
 
