@@ -9,6 +9,7 @@ product Gauss-Hermite grid."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 
 import numpy as np
 
@@ -145,6 +146,35 @@ def _require_minimum_item_count(n_items: int) -> None:
         )
 
 
+def _preflight_sequence_response_rows(rows: list[object] | tuple[object, ...]) -> int | None:
+    """Validate callback-free row structure and return the admitted common width."""
+
+    expected_width: int | None = None
+    logical_cells = 0
+    for row in rows:
+        if type(row) is np.ndarray:
+            if row.ndim != 1:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_size = int(row.size)
+        elif type(row) in (list, tuple):
+            row_size = len(row)
+        else:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        _require_minimum_item_count(row_size)
+        if expected_width is None:
+            expected_width = row_size
+        elif row_size != expected_width:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        logical_cells += row_size
+        if logical_cells > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
+    return expected_width
+
+
 def _trusted_response_matrix(responses: object) -> np.ndarray:
     """Admit dichotomous response evidence before any lossy NumPy coercion."""
 
@@ -176,36 +206,25 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
 
     if type(responses) not in (list, tuple):
         raise ValueError("responses must be a real numeric matrix")
-    if len(responses) > 2 * MAX_IRT_RESPONSE_CELLS + 1:
+    row_count = len(responses)
+    if row_count > 2 * MAX_IRT_RESPONSE_CELLS + 1:
         raise ValueError("responses exceed the structural-work limit")
 
-    # Freeze only the exact built-in top-level carrier so later appends/removals
-    # cannot change the request after structural admission. The row objects
-    # themselves are rechecked before scalar traversal below.
-    rows = responses if type(responses) is tuple else tuple(responses)
-    expected_width: int | None = None
-    logical_cells = 0
-    for row in rows:
-        if type(row) is np.ndarray:
-            if row.ndim != 1:
-                raise ValueError("responses must be a 2-D persons x items array")
-            row_size = int(row.size)
-        elif type(row) in (list, tuple):
-            row_size = len(row)
-        else:
+    if type(responses) is tuple:
+        rows = responses
+        expected_width = _preflight_sequence_response_rows(rows)
+    else:
+        # Inspect the live exact built-in list without first duplicating every
+        # row reference. Any already-provable row/shape/cell failure therefore
+        # wins before package-owned snapshot allocation.
+        _preflight_sequence_response_rows(responses)
+        snapshot_limit = MAX_IRT_RESPONSE_CELLS // MIN_IRT_ITEMS + 1
+        rows = tuple(islice(responses, snapshot_limit))
+        if len(rows) != row_count or len(responses) != row_count:
             raise ValueError("responses must be a 2-D persons x items array")
-
-        _require_minimum_item_count(row_size)
-        if expected_width is None:
-            expected_width = row_size
-        elif row_size != expected_width:
-            raise ValueError("responses must be a 2-D persons x items array")
-
-        logical_cells += row_size
-        if logical_cells > MAX_IRT_RESPONSE_CELLS:
-            raise ValueError(
-                f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
-            )
+        # The bounded package-owned snapshot is authoritative. Replay metadata
+        # so same-cardinality row replacement cannot redefine admitted shape.
+        expected_width = _preflight_sequence_response_rows(rows)
 
     if not rows:
         return np.empty((0, 0), dtype=np.float64)
@@ -258,7 +277,7 @@ class TwoPlFit:
     ``loading`` is the items x dimensions matrix of free loadings ``a_id`` (exactly ``0``
     where the confirmatory model loading pattern is ``0``); ``intercept`` the per-item ``b_i``; ``theta``
     the persons x dimensions trait EAP; ``corr`` the ``n_dims x n_dims`` latent correlation
-    matrix (identity when ``estimate_corr=False``, estimated off-diagonals otherwise). The
+    matrix (identity when ``estimate_corr=False``, estimated offdiagonals otherwise). The
     model is ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with
     ``theta_j ~ MVN(0, Sigma)``, ``Sigma`` a unit-diagonal correlation matrix.
     ``termination_reason`` is either ``"converged"`` or ``"max_iter_reached"``;
