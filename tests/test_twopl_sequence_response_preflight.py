@@ -105,6 +105,30 @@ def test_sequence_ndarray_cardinality_drift_fails_before_destination_assignment(
         twopl._trusted_response_matrix([row])
 
 
+def test_sequence_ndarray_values_are_snapshotted_before_scalar_traversal(
+    monkeypatch,
+) -> None:
+    """Same-cardinality live mutation cannot create mixed-time row evidence."""
+
+    row = np.array([0, 1], dtype=np.int8)
+    original_response_scalar = twopl._response_scalar
+    mutated = False
+
+    def mutating_response_scalar(value: object) -> float:
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            row[:] = [1, 0]
+        return original_response_scalar(value)
+
+    monkeypatch.setattr(twopl, "_response_scalar", mutating_response_scalar)
+
+    result = twopl._trusted_response_matrix([row])
+
+    assert np.array_equal(result, np.array([[0.0, 1.0]]))
+    assert np.array_equal(row, np.array([1, 0], dtype=np.int8))
+
+
 def test_sequence_preflight_preserves_exact_cell_budget_boundary(monkeypatch) -> None:
     """The exact logical-cell ceiling remains admissible for ordinary evidence."""
 
