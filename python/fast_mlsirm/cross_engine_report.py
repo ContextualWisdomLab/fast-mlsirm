@@ -52,7 +52,8 @@ def _content_security_policy() -> str:
     encoded = base64.b64encode(digest).decode("ascii")
     return (
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
-        "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
+        "frame-ancestors 'none'; img-src 'none'; media-src 'none'; object-src 'none'; "
+        "script-src 'none'; "
         f"style-src 'sha256-{encoded}'"
     )
 _DISCLAIMER = (
