@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from types import SimpleNamespace
 
 import pytest
@@ -10,16 +9,20 @@ import pytest
 from fast_mlsirm.metering import CanonicalComputeUsageSink
 
 
-def test_validator_cannot_mutate_then_restore_before_enqueue() -> None:
-    """A read-only validator view makes mutate-then-restore impossible to begin."""
+def test_validator_mutate_then_restore_is_rejected_before_enqueue() -> None:
+    """Mutation evidence survives restoration of the validator's JSON tree."""
     queued: list[dict[str, object]] = []
+    callback_completed = False
 
-    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+    def validator(event: dict[str, object]) -> tuple[str, ...]:
+        nonlocal callback_completed
         original = event["source_event_key"]
-        event["source_event_key"] = "temporarily-valid"  # type: ignore[index]
-        # Unreachable by contract: the first mutation must fail before a buggy
-        # validator could validate the temporary state and restore the original.
-        event["source_event_key"] = original  # type: ignore[index]
+        event["source_event_key"] = "temporarily-valid"
+        # A buggy validator could validate the temporary state and then restore
+        # the producer value before returning. The sink must still remember that
+        # mutation occurred during the callback.
+        event["source_event_key"] = original
+        callback_completed = True
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -32,7 +35,7 @@ def test_validator_cannot_mutate_then_restore_before_enqueue() -> None:
         identity={},
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
         sink.emit_fit(
             SimpleNamespace(model="MLS2PLM", backend="rust"),
             run_reference="run",
@@ -44,4 +47,5 @@ def test_validator_cannot_mutate_then_restore_before_enqueue() -> None:
             response_items=1,
         )
 
+    assert callback_completed
     assert queued == []
