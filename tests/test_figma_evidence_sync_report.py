@@ -62,3 +62,13 @@ def test_report_csp_hash_matches_exact_rendered_stylesheet() -> None:
     assert style_text == _report_css()
     assert "'unsafe-inline'" not in policy
     assert f"style-src 'sha256-{expected_hash}'" in policy
+
+
+def test_report_meta_csp_does_not_claim_http_only_anti_framing() -> None:
+    """The portable meta policy must not advertise unsupported frame ancestors."""
+    policy = _content_security_policy()
+
+    assert "default-src 'none'" in policy
+    assert "base-uri 'none'" in policy
+    assert "form-action 'none'" in policy
+    assert "frame-ancestors" not in policy
