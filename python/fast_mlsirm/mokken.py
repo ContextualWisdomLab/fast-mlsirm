@@ -32,6 +32,7 @@ _TRUSTED_NUMPY_REAL_TYPES = (
 _TRUSTED_RESPONSE_SCALAR_TYPES = (bool, int, float) + _TRUSTED_NUMPY_REAL_TYPES
 _INT64_MAX = (1 << 63) - 1
 _INT64_EXCLUSIVE_UPPER_FLOAT = float(1 << 63)
+_UINT32_MAX = (1 << 32) - 1
 _MAX_MOKKEN_RESPONSE_CELLS = 20_000_000
 _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_MOKKEN_RESPONSE_CELLS
 _MAX_MOKKEN_MATRIX_CELLS = 4_000_000
@@ -128,10 +129,12 @@ def _native_float_vector(value: object, expected_size: int) -> np.ndarray:
 
 
 def _native_scale_vector(value: object, expected_size: int) -> np.ndarray:
-    """Marshal one exact Rust ``Vec<u32>`` carrier after identity replay."""
+    """Marshal one exact Rust ``Vec<u32>`` carrier after identity/domain replay."""
     if type(value) is not list or len(value) != expected_size:
         _raise_native_result_error()
     if any(type(element) is not int for element in value):
+        _raise_native_result_error()
+    if any(element < 0 or element > _UINT32_MAX for element in value):
         _raise_native_result_error()
     return np.asarray(value, dtype=np.int64)
 
