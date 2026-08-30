@@ -184,7 +184,7 @@ class _FakeCore:
             "n_iter": 1,
             "converged": True,
             "connected": True,
-            "n_parameters": 1,
+            "n_parameters": n_items + (n_raters - 1) + (n_cat - 2),
         }
 
 
