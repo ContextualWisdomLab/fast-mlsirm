@@ -300,6 +300,15 @@ def _native_float_vector(
             raise _native_result_error(
                 f"{key} integer values must be exactly representable as float64"
             )
+    elif (
+        snapshot.dtype.kind == "f"
+        and snapshot.dtype.itemsize > np.dtype(np.float64).itemsize
+    ):
+        recovered = owned.astype(snapshot.dtype, copy=False)
+        if not np.array_equal(recovered, snapshot):
+            raise _native_result_error(
+                f"{key} floating values must be exactly representable as float64"
+            )
     if not np.all(np.isfinite(owned)):
         raise _native_result_error(f"{key} must contain only finite values")
     return owned
