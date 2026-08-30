@@ -274,6 +274,10 @@ def _validate_native_fit_result(
         "connected",
         "n_parameters",
     )
+    if len(result) != len(required_keys):
+        raise _native_result_error(f"must contain exactly {len(required_keys)} keys")
+    if any(type(key) is not str for key in result):
+        raise _native_result_error("keys must be exact strings")
     missing_keys = [key for key in required_keys if key not in result]
     if missing_keys:
         raise _native_result_error(f"is missing required key {missing_keys[0]!r}")
