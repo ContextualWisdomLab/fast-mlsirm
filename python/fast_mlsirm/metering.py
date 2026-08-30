@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from .backend import VALID_KERNEL_BACKENDS
 from .config import VALID_MODELS
+from .irt_contract import MAX_IRT_RESPONSE_CELLS
 from .types import FitResult, SimulationData
 
 
@@ -82,6 +83,12 @@ def _nonnegative_int(
     return value
 
 
+def _require_response_cell_budget(response_rows: int, response_items: int) -> None:
+    """Replay the package response-cell envelope without large-int multiplication."""
+    if response_rows and response_items > MAX_IRT_RESPONSE_CELLS // response_rows:
+        raise ValueError("response cell count exceeds package limit")
+
+
 def _exact_2d_shape(value: object) -> tuple[int, int]:
     """Admit one inert two-dimensional response shape as count metadata."""
     if type(value) is not tuple or len(value) != 2:
@@ -89,6 +96,7 @@ def _exact_2d_shape(value: object) -> tuple[int, int]:
     response_rows = _nonnegative_int("response_rows", value[0])
     response_items = _nonnegative_int("response_items", value[1])
     assert response_rows is not None and response_items is not None
+    _require_response_cell_budget(response_rows, response_items)
     return response_rows, response_items
 
 
@@ -334,6 +342,8 @@ class CanonicalComputeUsageSink:
         )
         admitted_response_rows = _nonnegative_int("response_rows", response_rows)
         admitted_response_items = _nonnegative_int("response_items", response_items)
+        assert admitted_response_rows is not None and admitted_response_items is not None
+        _require_response_cell_budget(admitted_response_rows, admitted_response_items)
         admitted_artifact_bytes = _nonnegative_int(
             "artifact_bytes", artifact_bytes, optional=True
         )
