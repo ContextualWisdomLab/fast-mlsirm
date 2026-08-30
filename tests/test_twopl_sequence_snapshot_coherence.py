@@ -53,3 +53,28 @@ def test_mutable_list_row_is_snapshotted_before_scalar_traversal(monkeypatch) ->
     assert mutated is True
     assert np.array_equal(result, np.array([[0.0, 1.0]]))
     assert row == [1, 0]
+
+
+def test_later_list_row_is_snapshotted_before_earlier_scalar_traversal(monkeypatch) -> None:
+    """Earlier scalar work cannot splice later live-row mutation into one matrix."""
+
+    first = [0, 1]
+    second = [1, 0]
+    responses = [first, second]
+    original_response_scalar = twopl._response_scalar
+    mutated = False
+
+    def mutating_response_scalar(value: object) -> float:
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            second[:] = [0, 0]
+        return original_response_scalar(value)
+
+    monkeypatch.setattr(twopl, "_response_scalar", mutating_response_scalar)
+
+    result = twopl._trusted_response_matrix(responses)
+
+    assert mutated is True
+    assert np.array_equal(result, np.array([[0.0, 1.0], [1.0, 0.0]]))
+    assert second == [0, 0]
