@@ -15,7 +15,7 @@ from itertools import islice
 import numpy as np
 
 from ._integration_rule import normalize_node_rule
-
+from ._twopl_result_safety import validate_twopl_native_result
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
 from .irt_contract import MAX_IRT_RESPONSE_CELLS, MIN_IRT_ITEMS, validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
@@ -463,16 +463,34 @@ def fit_2pl(
         xi_points_int,
         xi_seed_int,
     )
+    (
+        loading,
+        intercept,
+        theta,
+        corr,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters,
+        termination_reason,
+        final_loglik_change,
+    ) = validate_twopl_native_result(
+        res,
+        n_persons=n_persons,
+        n_items=n_items,
+        n_dims=n_dims,
+        max_iter=max_iter_int,
+    )
     return TwoPlFit(
         model=resolved_model,
-        loading=np.asarray(res["loading"], dtype=np.float64).reshape(n_items, n_dims),
-        intercept=np.asarray(res["intercept"], dtype=np.float64),
-        theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
-        corr=np.asarray(res["corr"], dtype=np.float64).reshape(n_dims, n_dims),
-        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
-        n_iter=int(res["n_iter"]),
-        converged=bool(res["converged"]),
-        n_parameters=int(res["n_parameters"]),
-        termination_reason=str(res["termination_reason"]),
-        final_loglik_change=float(res["final_loglik_change"]),
+        loading=loading.reshape(n_items, n_dims),
+        intercept=intercept,
+        theta=theta.reshape(n_persons, n_dims),
+        corr=corr.reshape(n_dims, n_dims),
+        loglik_trace=loglik_trace,
+        n_iter=n_iter,
+        converged=converged,
+        n_parameters=n_parameters,
+        termination_reason=termination_reason,
+        final_loglik_change=final_loglik_change,
     )
