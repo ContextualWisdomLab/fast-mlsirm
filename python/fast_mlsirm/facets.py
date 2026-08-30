@@ -207,6 +207,13 @@ def _native_float_vector(
     if value_type is np.ndarray:
         array = value
     elif value_type is list or value_type is tuple:
+        length = len(value)
+        if exact_length is not None and length != exact_length:
+            raise _native_result_error(f"{key} must have length {exact_length}")
+        if min_length is not None and length < min_length:
+            raise _native_result_error(f"{key} must contain at least {min_length} value")
+        if max_length is not None and length > max_length:
+            raise _native_result_error(f"{key} exceeds length limit {max_length}")
         for entry in value:
             entry_type = type(entry)
             trusted = (
