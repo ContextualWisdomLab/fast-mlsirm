@@ -200,6 +200,19 @@ def test_mokken_rejects_invalid_coefficients_before_aisp_work(
     assert core.aisp_calls == 0
 
 
+@pytest.mark.parametrize("scale", ([-1, 1], [1 << 32, 1]))
+def test_mokken_rejects_scale_values_outside_native_u32_domain(
+    monkeypatch: pytest.MonkeyPatch,
+    scale: list[int],
+) -> None:
+    """AISP labels replay the concrete Rust ``Vec<u32>`` scalar domain."""
+    payload = _valid_coefficients()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core(payload, scale))
+
+    with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
+        mokken.mokken_analysis(_RESPONSES)
+
+
 def test_mokken_releases_native_coefficient_envelope_before_aisp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
