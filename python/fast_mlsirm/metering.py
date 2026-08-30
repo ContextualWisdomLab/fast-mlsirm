@@ -38,6 +38,7 @@ _FIT_MODEL_CODES = frozenset(model.lower() for model in VALID_MODELS)
 _FIT_BACKEND_CODES = frozenset(VALID_KERNEL_BACKENDS)
 _MAX_FIT_MODEL_CODE_CHARS = max(map(len, _FIT_MODEL_CODES))
 _MAX_FIT_BACKEND_CODE_CHARS = max(map(len, _FIT_BACKEND_CODES))
+_CANONICAL_V1_SOURCE_EVENT_KEY_MAX_CHARS = 256
 _CANONICAL_V1_QUANTITY_MAX_DIGITS = 39
 _MAX_CANONICAL_V1_QUANTITY = 10**_CANONICAL_V1_QUANTITY_MAX_DIGITS - 1
 _MAX_EVENT_SNAPSHOT_DEPTH = 16
@@ -54,6 +55,18 @@ def _exact_string(name: str, value: object, *, optional: bool = False) -> str | 
     if type(value) is not str:
         raise ValueError(f"{name} must be an exact string")
     return value
+
+
+def _canonical_run_reference(value: object) -> str:
+    """Admit a run identity representable as the canonical v1 source event key."""
+    admitted = _exact_string("run_reference", value)
+    if admitted is None:
+        raise ValueError("run_reference must be an exact string")
+    if not admitted or len(admitted) > _CANONICAL_V1_SOURCE_EVENT_KEY_MAX_CHARS:
+        raise ValueError(
+            "run_reference must be 1..256 characters for canonical usage-event v1"
+        )
+    return admitted
 
 
 def _supported_fit_code(
@@ -298,7 +311,7 @@ class CanonicalComputeUsageSink:
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one simulation's response-cell and artifact counts."""
-        admitted_run_reference = _exact_string("run_reference", run_reference)
+        admitted_run_reference = _canonical_run_reference(run_reference)
         admitted_artifact_reference = _exact_string(
             "artifact_reference", artifact_reference
         )
@@ -348,7 +361,7 @@ class CanonicalComputeUsageSink:
         artifact_bytes: int | None = None,
     ) -> None:
         """Export one fit's response-cell and artifact counts."""
-        admitted_run_reference = _exact_string("run_reference", run_reference)
+        admitted_run_reference = _canonical_run_reference(run_reference)
         admitted_artifact_reference = _exact_string(
             "artifact_reference", artifact_reference
         )
