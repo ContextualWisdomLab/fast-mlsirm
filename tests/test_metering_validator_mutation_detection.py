@@ -53,6 +53,36 @@ def test_top_level_validator_mutation_is_rejected_after_callback_before_enqueue(
     assert queued == []
 
 
+def test_base_dict_mutator_cannot_bypass_validator_mutation_detection() -> None:
+    """Calling the built-in dict mutator directly must not bypass the guard."""
+    queued: list[dict[str, object]] = []
+    callback_completed = False
+
+    def validator(event: dict[str, object]) -> tuple[str, ...]:
+        nonlocal callback_completed
+        # ``dict.__setitem__`` bypasses a dict subclass' Python override. The
+        # sink must still reject the resulting validator tree before enqueue.
+        dict.__setitem__(event, "source_event_key", "validator-mutated")
+        callback_completed = True
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=lambda **_: {
+            "event_contract_version": 1,
+            "source_event_key": "producer-owned",
+        },
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
+        _emit_one_fit(sink)
+
+    assert callback_completed
+    assert queued == []
+
+
 def test_nested_validator_mutation_is_rejected_after_callback_before_enqueue() -> None:
     """Mutation tracking covers nested ordinary list/dict JSON carriers."""
     queued: list[dict[str, object]] = []
