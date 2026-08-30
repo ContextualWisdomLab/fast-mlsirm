@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 import fast_mlsirm.metering as metering
 from fast_mlsirm.metering import CanonicalComputeUsageSink
 
@@ -23,7 +25,7 @@ def _emit_one_fit(sink: CanonicalComputeUsageSink) -> None:
 
 
 def test_validator_mutation_cannot_change_enqueued_event() -> None:
-    """Validator-local top-level mutation cannot rewrite durable event evidence."""
+    """Validator-local top-level mutation fails closed before durable enqueue."""
     queued: list[dict[str, object]] = []
 
     def builder(**_: object) -> dict[str, object]:
@@ -44,18 +46,15 @@ def test_validator_mutation_cannot_change_enqueued_event() -> None:
         enqueue=queued.append,
         identity={},
     )
-    _emit_one_fit(sink)
 
-    assert queued == [
-        {
-            "event_contract_version": 1,
-            "source_event_key": "producer-owned",
-        }
-    ]
+    with pytest.raises(ValueError, match="event_validator mutated canonical event"):
+        _emit_one_fit(sink)
+
+    assert queued == []
 
 
 def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
-    """Validator-local nested mutation cannot rewrite durable event evidence."""
+    """Validator-local nested mutation fails closed before durable enqueue."""
     queued: list[dict[str, object]] = []
 
     def builder(**_: object) -> dict[str, object]:
@@ -86,21 +85,11 @@ def test_validator_nested_mutation_cannot_change_enqueued_event() -> None:
         enqueue=queued.append,
         identity={},
     )
-    _emit_one_fit(sink)
 
-    assert queued == [
-        {
-            "event_contract_version": 1,
-            "measurements": [
-                {
-                    "meter_code": "response_rows",
-                    "quantity": "1",
-                    "unit_code": "count",
-                    "quality_code": "deterministically_derived",
-                }
-            ],
-        }
-    ]
+    with pytest.raises(ValueError, match="event_validator mutated canonical event"):
+        _emit_one_fit(sink)
+
+    assert queued == []
 
 
 def test_nested_callback_carrier_is_rejected_before_validator() -> None:
