@@ -123,9 +123,10 @@ def _native_float_vector(value: object, expected_size: int) -> np.ndarray:
     """Marshal one exact Rust ``Vec<f64>`` carrier after identity replay."""
     if type(value) is not list or len(value) != expected_size:
         _raise_native_result_error()
-    if any(type(element) is not float for element in value):
+    snapshot = value.copy()
+    if any(type(element) is not float for element in snapshot):
         _raise_native_result_error()
-    return np.asarray(value, dtype=np.float64)
+    return np.asarray(snapshot, dtype=np.float64)
 
 
 def _native_finite_float_vector(value: object, expected_size: int) -> np.ndarray:
