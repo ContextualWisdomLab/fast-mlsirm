@@ -207,14 +207,28 @@ def _native_float_vector(
     if value_type is np.ndarray:
         array = value
     elif value_type is list or value_type is tuple:
-        length = len(value)
-        if exact_length is not None and length != exact_length:
+        admitted_length = len(value)
+        if exact_length is not None and admitted_length != exact_length:
             raise _native_result_error(f"{key} must have length {exact_length}")
-        if min_length is not None and length < min_length:
+        if min_length is not None and admitted_length < min_length:
             raise _native_result_error(f"{key} must contain at least {min_length} value")
-        if max_length is not None and length > max_length:
+        if max_length is not None and admitted_length > max_length:
             raise _native_result_error(f"{key} exceeds length limit {max_length}")
-        for entry in value:
+
+        sequence = value
+        if value_type is list:
+            snapshot_limit = (
+                exact_length
+                if exact_length is not None
+                else max_length
+                if max_length is not None
+                else admitted_length
+            )
+            sequence = tuple(value[: snapshot_limit + 1])
+            if len(sequence) != admitted_length:
+                raise _native_result_error(f"{key} changed during validation")
+
+        for entry in sequence:
             entry_type = type(entry)
             trusted = (
                 entry_type is int
@@ -229,7 +243,7 @@ def _native_float_vector(
             )
             if not trusted:
                 raise _native_result_error(f"{key} must be a real numeric vector")
-        array = np.asarray(value)
+        array = np.asarray(sequence)
     else:
         raise _native_result_error(f"{key} must be a real numeric vector")
 
