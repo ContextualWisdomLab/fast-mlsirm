@@ -179,48 +179,62 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
     if len(responses) > 2 * MAX_IRT_RESPONSE_CELLS + 1:
         raise ValueError("responses exceed the structural-work limit")
 
-    normalized_rows: list[list[float]] = []
+    # Freeze only the exact built-in top-level carrier so later appends/removals
+    # cannot change the request after structural admission. The row objects
+    # themselves are rechecked before scalar traversal below.
+    rows = responses if type(responses) is tuple else tuple(responses)
     expected_width: int | None = None
     logical_cells = 0
-    for row in responses:
+    for row in rows:
         if type(row) is np.ndarray:
             if row.ndim != 1:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_size = int(row.size)
+        elif type(row) in (list, tuple):
+            row_size = len(row)
+        else:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        _require_minimum_item_count(row_size)
+        if expected_width is None:
+            expected_width = row_size
+        elif row_size != expected_width:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        logical_cells += row_size
+        if logical_cells > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
+
+    if not rows:
+        return np.empty((0, 0), dtype=np.float64)
+
+    assert expected_width is not None
+    source = np.empty((len(rows), expected_width), dtype=np.float64)
+    for row_index, row in enumerate(rows):
+        if type(row) is np.ndarray:
+            if row.ndim != 1 or int(row.size) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
             if row.dtype.kind == "c":
                 raise ValueError("responses must be real-valued")
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
-            row_size = int(row.size)
-            _require_minimum_item_count(row_size)
-            logical_cells += row_size
-            if logical_cells > MAX_IRT_RESPONSE_CELLS:
-                raise ValueError(
-                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
-                )
             row_values = [_response_scalar(value) for value in row]
-        elif type(row) in (list, tuple):
-            row_size = len(row)
-            _require_minimum_item_count(row_size)
-            logical_cells += row_size
-            if logical_cells > MAX_IRT_RESPONSE_CELLS:
-                raise ValueError(
-                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
-                )
+        elif type(row) is list:
+            if len(row) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_snapshot = tuple(row)
+            if len(row_snapshot) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_values = [_response_scalar(value) for value in row_snapshot]
+        elif type(row) is tuple:
+            if len(row) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
             row_values = [_response_scalar(value) for value in row]
         else:
             raise ValueError("responses must be a 2-D persons x items array")
-        if expected_width is None:
-            expected_width = len(row_values)
-        elif len(row_values) != expected_width:
-            raise ValueError("responses must be a 2-D persons x items array")
-        normalized_rows.append(row_values)
-
-    if not normalized_rows:
-        source = np.empty((0, 0), dtype=np.float64)
-    else:
-        source = np.asarray(normalized_rows, dtype=np.float64)
-    if source.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
+        source[row_index, :] = row_values
     return source
 
 
