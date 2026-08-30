@@ -114,12 +114,21 @@ class _LifetimeCore:
 
 
 def _valid_coefficients(n_items: int = 2) -> dict[str, object]:
-    matrix_cells = n_items * n_items
+    hij = [
+        float("nan") if row == column else 0.4
+        for row in range(n_items)
+        for column in range(n_items)
+    ]
+    zij = [
+        float("nan") if row == column else 1.25
+        for row in range(n_items)
+        for column in range(n_items)
+    ]
     return {
-        "hij": [float("nan")] * matrix_cells,
+        "hij": hij,
         "hi": [0.4] * n_items,
         "h": 0.4,
-        "zij": [float("nan")] * matrix_cells,
+        "zij": zij,
         "zi": [1.25] * n_items,
         "z": 1.25,
     }
