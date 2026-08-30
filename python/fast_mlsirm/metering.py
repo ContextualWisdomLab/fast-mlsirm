@@ -38,6 +38,8 @@ _FIT_MODEL_CODES = frozenset(model.lower() for model in VALID_MODELS)
 _FIT_BACKEND_CODES = frozenset(VALID_KERNEL_BACKENDS)
 _MAX_FIT_MODEL_CODE_CHARS = max(map(len, _FIT_MODEL_CODES))
 _MAX_FIT_BACKEND_CODE_CHARS = max(map(len, _FIT_BACKEND_CODES))
+_CANONICAL_V1_QUANTITY_MAX_DIGITS = 39
+_MAX_CANONICAL_V1_QUANTITY = 10**_CANONICAL_V1_QUANTITY_MAX_DIGITS - 1
 _MAX_EVENT_SNAPSHOT_DEPTH = 16
 _MAX_EVENT_SNAPSHOT_NODES = 4096
 _MAX_VALIDATOR_DIAGNOSTICS = 256
@@ -81,6 +83,16 @@ def _nonnegative_int(
     if type(value) is not int or value < 0:
         raise ValueError(f"{name} must be an exact non-negative integer")
     return value
+
+
+def _canonical_quantity_int(
+    name: str, value: object, *, optional: bool = False
+) -> int | None:
+    """Admit one integer that fits the canonical usage-event/v1 quantity width."""
+    admitted = _nonnegative_int(name, value, optional=optional)
+    if admitted is not None and admitted > _MAX_CANONICAL_V1_QUANTITY:
+        raise ValueError(f"{name} exceeds canonical usage-event v1 quantity width")
+    return admitted
 
 
 def _require_response_cell_budget(response_rows: int, response_items: int) -> None:
@@ -290,7 +302,7 @@ class CanonicalComputeUsageSink:
         admitted_project_reference = _exact_string(
             "project_reference", project_reference, optional=True
         )
-        admitted_artifact_bytes = _nonnegative_int(
+        admitted_artifact_bytes = _canonical_quantity_int(
             "artifact_bytes", artifact_bytes, optional=True
         )
         response_shape = data.Y.shape
@@ -344,7 +356,7 @@ class CanonicalComputeUsageSink:
         admitted_response_items = _nonnegative_int("response_items", response_items)
         assert admitted_response_rows is not None and admitted_response_items is not None
         _require_response_cell_budget(admitted_response_rows, admitted_response_items)
-        admitted_artifact_bytes = _nonnegative_int(
+        admitted_artifact_bytes = _canonical_quantity_int(
             "artifact_bytes", artifact_bytes, optional=True
         )
         model = result.model
