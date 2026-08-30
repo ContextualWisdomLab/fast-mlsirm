@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+
 import numpy as np
 import pytest
 
@@ -47,6 +49,48 @@ class _Core:
     ) -> object:
         self.aisp_calls += 1
         return self.scale
+
+
+class _LifetimeCore:
+    """Expose whether the temporary coefficient envelope survives into AISP."""
+
+    def __init__(self) -> None:
+        self._hij = [float("nan"), 0.4, 0.4, float("nan")]
+        self._hi = [0.4, 0.4]
+        self._zij = [float("nan"), 1.25, 1.25, float("nan")]
+        self._zi = [1.25, 1.25]
+
+    def mokken_coef_h(
+        self,
+        responses: np.ndarray,
+        n_persons: int,
+        n_items: int,
+    ) -> object:
+        return {
+            "hij": self._hij,
+            "hi": self._hi,
+            "h": 0.4,
+            "zij": self._zij,
+            "zi": self._zi,
+            "z": 1.25,
+        }
+
+    def mokken_aisp(
+        self,
+        responses: np.ndarray,
+        n_persons: int,
+        n_items: int,
+        lower_bound: float,
+        alpha: float,
+    ) -> object:
+        retained_envelopes = [
+            referrer
+            for referrer in gc.get_referrers(self._hij)
+            if type(referrer) is dict and referrer.get("hij") is self._hij
+        ]
+        if retained_envelopes:
+            raise AssertionError("coefficient result envelope retained into AISP")
+        return [1, 1]
 
 
 def _valid_coefficients() -> dict[str, object]:
@@ -100,6 +144,18 @@ def test_mokken_rejects_invalid_coefficients_before_aisp_work(
         mokken.mokken_analysis(_RESPONSES)
 
     assert core.aisp_calls == 0
+
+
+def test_mokken_releases_native_coefficient_envelope_before_aisp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Package-owned arrays replace the temporary list envelope before AISP."""
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _LifetimeCore())
+
+    result = mokken.mokken_analysis(_RESPONSES)
+
+    assert result.hij.shape == (2, 2)
+    assert result.scale.tolist() == [1, 1]
 
 
 def test_mokken_accepts_current_rust_shaped_native_result_with_nan_diagonal(
