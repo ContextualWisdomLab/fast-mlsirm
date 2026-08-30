@@ -232,8 +232,7 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
         raise ValueError("responses must be a 2-D persons x items array")
 
     # After whole-matrix shape/resource precedence is settled, reject ndarray
-    # storage kinds from inert dtype metadata before allocating the dense target.
-    # The same metadata is replayed during materialization as defense in depth.
+    # storage kinds from inert dtype metadata before allocating any dense target.
     for row in rows:
         if type(row) is np.ndarray:
             if row.ndim != 1 or int(row.size) != expected_width:
@@ -243,8 +242,11 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
 
-    source = np.empty((len(rows), expected_width), dtype=np.float64)
-    for row_index, row in enumerate(rows):
+    # Seal every mutable row before any scalar traversal. Row-local snapshots are
+    # insufficient: an earlier scalar callback could otherwise rewrite a later
+    # live row before that later row was frozen, creating one mixed-time matrix.
+    row_snapshots: list[tuple[object, ...] | np.ndarray] = []
+    for row in rows:
         if type(row) is np.ndarray:
             if row.ndim != 1 or int(row.size) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
@@ -252,11 +254,6 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
                 raise ValueError("responses must be real-valued")
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
-
-            # Freeze one package-owned raw ndarray row before scalar traversal.
-            # This prevents a retained caller row from contributing values from
-            # multiple live states while preserving exact dtype semantics until
-            # the ordinary scalar admission below has run.
             row_snapshot = np.array(row, copy=True)
             if row_snapshot.ndim != 1 or int(row_snapshot.size) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
@@ -264,25 +261,32 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
                 raise ValueError("responses must be real-valued")
             if row_snapshot.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
-            row_values = [_response_scalar(value) for value in row_snapshot]
-            if (
-                row.ndim != 1
-                or int(row.size) != expected_width
-                or len(row_values) != expected_width
-            ):
-                raise ValueError("responses must be a 2-D persons x items array")
+            row_snapshots.append(row_snapshot)
         elif type(row) is list:
             if len(row) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
             row_snapshot = tuple(row)
             if len(row_snapshot) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
-            row_values = [_response_scalar(value) for value in row_snapshot]
+            row_snapshots.append(row_snapshot)
         elif type(row) is tuple:
             if len(row) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
-            row_values = [_response_scalar(value) for value in row]
+            row_snapshots.append(row)
         else:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+    source = np.empty((len(rows), expected_width), dtype=np.float64)
+    for row_index, row_snapshot in enumerate(row_snapshots):
+        row_values = [_response_scalar(value) for value in row_snapshot]
+        live_row = rows[row_index]
+        if type(live_row) is np.ndarray and (
+            live_row.ndim != 1
+            or int(live_row.size) != expected_width
+            or len(row_values) != expected_width
+        ):
+            raise ValueError("responses must be a 2-D persons x items array")
+        if len(row_values) != expected_width:
             raise ValueError("responses must be a 2-D persons x items array")
         source[row_index, :] = row_values
     return source
