@@ -251,7 +251,7 @@ def test_fit_2pl_normalizes_supported_numpy_controls(
                 "intercept": np.zeros(n_items),
                 "theta": np.zeros(n_persons * n_dims),
                 "n_dims": n_dims,
-                "corr": np.eye(n_dims),
+                "corr": np.eye(n_dims).reshape(-1),
                 "loglik_trace": np.array([-2.0, -1.0]),
                 "n_iter": 2,
                 "converged": True,
