@@ -112,6 +112,8 @@ def _trusted_score_source(responses: object) -> object:
 
     logical_cells = 0
     structural_nodes = 0
+    rectangular_width: int | None = None
+    rectangular_rows = True
     for row in responses:
         row_type = type(row)
         if row_type is np.ndarray:
@@ -122,6 +124,14 @@ def _trusted_score_source(responses: object) -> object:
             structural_nodes += 1 + row_cells
             if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
                 _raise_response_structural_resource_error()
+            if row.ndim != 1:
+                rectangular_rows = False
+            else:
+                row_width = int(row.shape[0])
+                if rectangular_width is None:
+                    rectangular_width = row_width
+                elif row_width != rectangular_width:
+                    rectangular_rows = False
             continue
         if row_type is list or row_type is tuple:
             row_cells = len(row)
@@ -131,12 +141,15 @@ def _trusted_score_source(responses: object) -> object:
             structural_nodes += 1 + row_cells
             if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
                 _raise_response_structural_resource_error()
-            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
-                raise ValueError("responses must be a numeric array")
+            if rectangular_width is None:
+                rectangular_width = row_cells
+            elif row_cells != rectangular_width:
+                rectangular_rows = False
             continue
         # Preserve the historical flat built-in-sequence path long enough for
         # the established 2-D dimensionality diagnostic, without accepting
         # caller-defined numeric/container subclasses.
+        rectangular_rows = False
         logical_cells += 1
         if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
             _raise_response_resource_error()
@@ -145,6 +158,19 @@ def _trusted_score_source(responses: object) -> object:
             _raise_response_structural_resource_error()
         if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
             raise ValueError("responses must be a numeric array")
+
+    if (
+        rectangular_rows
+        and rectangular_width is not None
+        and rectangular_width * rectangular_width > _MAX_MOKKEN_MATRIX_CELLS
+    ):
+        _raise_item_matrix_resource_error(rectangular_width)
+
+    for row in responses:
+        row_type = type(row)
+        if row_type is list or row_type is tuple:
+            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
+                raise ValueError("responses must be a numeric array")
     return responses
 
 
@@ -211,7 +237,7 @@ def mokken_analysis(
     sample statistics and "search normal" algorithm of the mokken R package
     (van der Ark, 2007): ``Hij = S_ij / Smax_ij`` where ``S`` is the sample
     covariance matrix and ``Smax_ij`` the maximum covariance given the two
-    items' marginals (sorted-column coupling); ``Hi`` and ``H`` are ratios of
+    items' marginal score distributions (sorted-column coupling); ``Hi`` and ``H`` are ratios of
     the corresponding pairwise sums. A Mokken scale at lower bound ``c``
     requires nonnegative inter-item covariances and ``Hi >= c`` (rule of
     thumb ``c = 0.3``; Straat et al., 2013).
