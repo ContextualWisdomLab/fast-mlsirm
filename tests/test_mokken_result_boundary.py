@@ -213,6 +213,17 @@ def test_mokken_rejects_scale_values_outside_native_u32_domain(
         mokken.mokken_analysis(_RESPONSES)
 
 
+def test_mokken_rejects_scale_label_above_possible_formation_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A positive AISP label cannot exceed the number of disjoint start pairs."""
+    payload = _valid_coefficients()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core(payload, [2, 2]))
+
+    with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
+        mokken.mokken_analysis(_RESPONSES)
+
+
 def test_mokken_releases_native_coefficient_envelope_before_aisp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
