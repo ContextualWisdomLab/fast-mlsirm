@@ -56,10 +56,6 @@
 **Learning:** The cross-engine conformance report (`fast_mlsirm/cross_engine_report.py`) lacked the standard skip-to-content accessibility features present in other HTML reports, forcing keyboard and screen reader users to tab through headers before reaching the main content.
 **Action:** Always ensure new HTML report generation scripts include the standard `_css()` pattern (with `:focus-visible` styling), dynamically hash the CSS for `style-src` CSP compliance without `unsafe-inline`, add an explicit skip link (`<a class="skip-link" href="#main-content">`), and configure the main content container appropriately (`<main id="main-content" tabindex="-1">`).
 
-## 2024-03-24 - Cross-Engine Report Accessibility Parity
-**Learning:** The cross-engine conformance report (`fast_mlsirm/cross_engine_report.py`) lacked the standard skip-to-content accessibility features present in other HTML reports, forcing keyboard and screen reader users to tab through headers before reaching the main content.
-**Action:** Always ensure new HTML report generation scripts include the standard `_css()` pattern (with `:focus-visible` styling), dynamically hash the CSS for `style-src` CSP compliance without `unsafe-inline`, add an explicit skip link (`<a class="skip-link" href="#main-content">`), and configure the main content container appropriately (`<main id="main-content" tabindex="-1">`).
-
 ## 2024-03-24 - Changelog Fragment Section Parsing
 **Learning:** The `render_changelog_fragments.py` script strictly enforces allowed headers (`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`). Using unsupported section names in `.md` fragments (e.g., `## Source basis`) causes `pytest` and `fast_mlsirm`'s CI check to fail completely, which was seen during testing on the `1504-cross-engine-report-accessibility.md` PR.
 **Action:** When working with or fixing changelog fragment failures, ensure all custom sections are replaced with one of the standard supported headers like `Added` or `Changed`.
