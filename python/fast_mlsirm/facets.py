@@ -186,6 +186,134 @@ def _response_array(value: object) -> np.ndarray:
     return response_array
 
 
+def _native_result_error(detail: str) -> ValueError:
+    """Build one stable package-owned error for an invalid Rust result envelope."""
+
+    return ValueError(f"native fit_facets result {detail}")
+
+
+def _native_float_vector(
+    result: dict[str, object],
+    key: str,
+    *,
+    exact_length: int | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+) -> np.ndarray:
+    """Validate one inert native real vector and return an owned float64 copy."""
+
+    value = result[key]
+    value_type = type(value)
+    if value_type is np.ndarray:
+        array = value
+    elif value_type is list or value_type is tuple:
+        for entry in value:
+            entry_type = type(entry)
+            trusted = (
+                entry_type is int
+                or entry_type is float
+                or any(
+                    entry_type is scalar_type
+                    for scalar_type in (
+                        *_NUMPY_INTEGER_SCALAR_TYPES,
+                        *_NUMPY_FLOAT_SCALAR_TYPES,
+                    )
+                )
+            )
+            if not trusted:
+                raise _native_result_error(f"{key} must be a real numeric vector")
+        array = np.asarray(value)
+    else:
+        raise _native_result_error(f"{key} must be a real numeric vector")
+
+    if array.ndim != 1 or np.iscomplexobj(array) or array.dtype.kind not in ("i", "u", "f"):
+        raise _native_result_error(f"{key} must be a real numeric 1-D vector")
+    length = int(array.size)
+    if exact_length is not None and length != exact_length:
+        raise _native_result_error(f"{key} must have length {exact_length}")
+    if min_length is not None and length < min_length:
+        raise _native_result_error(f"{key} must contain at least {min_length} value")
+    if max_length is not None and length > max_length:
+        raise _native_result_error(f"{key} exceeds length limit {max_length}")
+
+    owned = np.array(array, dtype=np.float64, copy=True)
+    if not np.all(np.isfinite(owned)):
+        raise _native_result_error(f"{key} must contain only finite values")
+    return owned
+
+
+def _validate_native_fit_result(
+    value: object,
+    *,
+    n_persons: int,
+    n_items: int,
+    n_raters: int,
+    n_cat: int,
+    max_iter: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool, bool, int]:
+    """Validate the package-owned PyO3 result envelope without numerical work."""
+
+    if type(value) is not dict:
+        raise _native_result_error("must be a built-in dict")
+    result = value
+    required_keys = (
+        "item_difficulty",
+        "rater_severity",
+        "thresholds",
+        "theta",
+        "loglik_trace",
+        "n_iter",
+        "converged",
+        "connected",
+        "n_parameters",
+    )
+    missing_keys = [key for key in required_keys if key not in result]
+    if missing_keys:
+        raise _native_result_error(f"is missing required key {missing_keys[0]!r}")
+
+    item_difficulty = _native_float_vector(
+        result, "item_difficulty", exact_length=n_items
+    )
+    rater_severity = _native_float_vector(
+        result, "rater_severity", exact_length=n_raters
+    )
+    thresholds = _native_float_vector(
+        result, "thresholds", exact_length=n_cat - 1
+    )
+    theta = _native_float_vector(result, "theta", exact_length=n_persons)
+    loglik_trace = _native_float_vector(
+        result,
+        "loglik_trace",
+        min_length=1,
+        max_length=max_iter + 1,
+    )
+
+    n_iter = result["n_iter"]
+    if type(n_iter) is not int or not (0 <= n_iter <= max_iter):
+        raise _native_result_error(f"n_iter must be an integer in 0..{max_iter}")
+    converged = result["converged"]
+    if type(converged) is not bool:
+        raise _native_result_error("converged must be a boolean")
+    connected = result["connected"]
+    if type(connected) is not bool:
+        raise _native_result_error("connected must be a boolean")
+    n_parameters = result["n_parameters"]
+    if type(n_parameters) is not int or n_parameters < 0:
+        raise _native_result_error("n_parameters must be a non-negative integer")
+
+    return (
+        item_difficulty,
+        rater_severity,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        connected,
+        n_parameters,
+    )
+
+
 @dataclass
 class FacetsFit:
     """Fitted many-facet Rasch model (Linacre, 1989).
@@ -226,7 +354,7 @@ def fit_facets(
     ``ln[P(Y=k)/P(Y=k-1)] = theta_p - d_i - c_j - f_k``, where ``d_i`` is item
     difficulty, ``c_j`` rater severity, and ``f_k`` the category thresholds
     shared across items and raters. ``theta ~ N(0,1)`` fixes the scale;
-    severities and thresholds are centered to sum to zero. Estimation is
+    severities and thresholds are centered to sum zero. Estimation is
     marginal-ML EM (Bock & Aitkin, 1981) on a Gauss-Hermite trait grid — not
     Linacre's JMLE, so estimates match Facets output only up to the JMLE-vs-MMLE
     difference.
@@ -310,7 +438,7 @@ def fit_facets(
     core = _core_module()
     if core is None or not hasattr(core, "fit_facets"):
         raise RuntimeError("fit_facets requires the compiled Rust core")
-    res = core.fit_facets(
+    raw_result = core.fit_facets(
         yy,
         observed.reshape(-1),
         int(n_persons),
@@ -321,14 +449,32 @@ def fit_facets(
         int(max_iter),
         float(tol),
     )
+    (
+        item_difficulty,
+        rater_severity,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        connected,
+        n_parameters,
+    ) = _validate_native_fit_result(
+        raw_result,
+        n_persons=n_persons,
+        n_items=n_items,
+        n_raters=n_raters,
+        n_cat=n_cat,
+        max_iter=max_iter,
+    )
     return FacetsFit(
-        item_difficulty=np.asarray(res["item_difficulty"], dtype=np.float64),
-        rater_severity=np.asarray(res["rater_severity"], dtype=np.float64),
-        thresholds=np.asarray(res["thresholds"], dtype=np.float64),
-        theta=np.asarray(res["theta"], dtype=np.float64),
-        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
-        n_iter=int(res["n_iter"]),
-        converged=bool(res["converged"]),
-        connected=bool(res["connected"]),
-        n_parameters=int(res["n_parameters"]),
+        item_difficulty=item_difficulty,
+        rater_severity=rater_severity,
+        thresholds=thresholds,
+        theta=theta,
+        loglik_trace=loglik_trace,
+        n_iter=n_iter,
+        converged=converged,
+        connected=connected,
+        n_parameters=n_parameters,
     )
