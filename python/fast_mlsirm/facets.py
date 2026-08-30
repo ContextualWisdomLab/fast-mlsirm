@@ -262,7 +262,6 @@ def _validate_native_fit_result(
 
     if type(value) is not dict:
         raise _native_result_error("must be a built-in dict")
-    result = value
     required_keys = (
         "item_difficulty",
         "rater_severity",
@@ -274,6 +273,15 @@ def _validate_native_fit_result(
         "connected",
         "n_parameters",
     )
+    if len(value) != len(required_keys):
+        raise _native_result_error(f"must contain exactly {len(required_keys)} keys")
+    if any(type(key) is not str for key in value):
+        raise _native_result_error("keys must be exact strings")
+
+    # Freeze the exact built-in root before any value traversal.  The PyO3/native
+    # provider may still retain its returned dict; later root rebinding must not
+    # mix evidence observed at different times into one public fit record.
+    result = value.copy()
     if len(result) != len(required_keys):
         raise _native_result_error(f"must contain exactly {len(required_keys)} keys")
     if any(type(key) is not str for key in result):
