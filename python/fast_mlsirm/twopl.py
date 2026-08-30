@@ -252,7 +252,19 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
                 raise ValueError("responses must be real-valued")
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
-            row_values = [_response_scalar(value) for value in row]
+
+            # Freeze one package-owned raw ndarray row before scalar traversal.
+            # This prevents a retained caller row from contributing values from
+            # multiple live states while preserving exact dtype semantics until
+            # the ordinary scalar admission below has run.
+            row_snapshot = np.array(row, copy=True)
+            if row_snapshot.ndim != 1 or int(row_snapshot.size) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            if row_snapshot.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row_snapshot.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError("responses must be a real numeric matrix")
+            row_values = [_response_scalar(value) for value in row_snapshot]
             if (
                 row.ndim != 1
                 or int(row.size) != expected_width
