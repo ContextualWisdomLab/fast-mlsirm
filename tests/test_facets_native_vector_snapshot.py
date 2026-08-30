@@ -101,3 +101,31 @@ def test_native_ndarray_cardinality_change_at_copy_seam_fails_closed(
             "item_difficulty",
             exact_length=2,
         )
+
+
+def test_native_ndarray_complex_change_at_copy_seam_fails_closed(
+    monkeypatch,
+) -> None:
+    """The authoritative snapshot must reject complex evidence before coercion."""
+
+    source = np.array([-0.25, 0.25], dtype=np.float64)
+    result = {"item_difficulty": source}
+    real_array = facets.np.array
+
+    def array_after_native_complex_rebind(
+        value: object, *args: object, **kwargs: object
+    ) -> np.ndarray:
+        if value is source:
+            source.resize((4,), refcheck=False)
+            source.dtype = np.complex128
+            source[:] = [-0.25 + 2.0j, 0.25 - 3.0j]
+        return real_array(value, *args, **kwargs)
+
+    monkeypatch.setattr(facets.np, "array", array_after_native_complex_rebind)
+
+    with pytest.raises(ValueError, match=r"item_difficulty must be a real numeric 1-D vector"):
+        facets._native_float_vector(
+            result,
+            "item_difficulty",
+            exact_length=2,
+        )
