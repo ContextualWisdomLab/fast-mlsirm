@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from itertools import islice
 from math import isfinite
-from types import MappingProxyType
 from typing import Any, Protocol
 
 from .backend import VALID_KERNEL_BACKENDS
@@ -21,7 +20,7 @@ class ComputeUsageEventBuilder(Protocol):
 
 
 class ComputeUsageEventValidator(Protocol):
-    """Canonical schema validator over a recursively read-only JSON view."""
+    """Canonical schema validator over a package-owned JSON-compatible view."""
 
     def __call__(self, event: Mapping[str, Any]) -> tuple[str, ...]: ...
 
@@ -209,15 +208,139 @@ def _snapshot_exact_json(
     raise ValueError("event_builder result must use exact JSON carriers and scalars")
 
 
-def _freeze_validator_json(value: Any) -> Any:
-    """Project an admitted JSON tree into recursively read-only validator carriers."""
+class _ValidatorMutationTracker:
+    """Remember any mutation requested through package-owned validator carriers."""
+
+    __slots__ = ("mutated",)
+
+    def __init__(self) -> None:
+        self.mutated = False
+
+    def mark(self) -> None:
+        """Record one attempted validator-side mutation."""
+        self.mutated = True
+
+
+class _ValidatorDict(dict[str, Any]):
+    """JSON-compatible dict subclass that records validator mutation attempts."""
+
+    __slots__ = ("_tracker",)
+
+    def __init__(
+        self, values: dict[str, Any], tracker: _ValidatorMutationTracker
+    ) -> None:
+        super().__init__(values)
+        self._tracker = tracker
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._tracker.mark()
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        self._tracker.mark()
+        super().__delitem__(key)
+
+    def clear(self) -> None:
+        self._tracker.mark()
+        super().clear()
+
+    def pop(self, key: str, *args: Any) -> Any:
+        self._tracker.mark()
+        return super().pop(key, *args)
+
+    def popitem(self) -> tuple[str, Any]:
+        self._tracker.mark()
+        return super().popitem()
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        self._tracker.mark()
+        return super().setdefault(key, default)
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        self._tracker.mark()
+        super().update(*args, **kwargs)
+
+    def __ior__(self, other: Any) -> _ValidatorDict:
+        self._tracker.mark()
+        super().__ior__(other)
+        return self
+
+
+class _ValidatorList(list[Any]):
+    """JSON-compatible list subclass that records validator mutation attempts."""
+
+    __slots__ = ("_tracker",)
+
+    def __init__(self, values: list[Any], tracker: _ValidatorMutationTracker) -> None:
+        super().__init__(values)
+        self._tracker = tracker
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        self._tracker.mark()
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key: Any) -> None:
+        self._tracker.mark()
+        super().__delitem__(key)
+
+    def append(self, value: Any) -> None:
+        self._tracker.mark()
+        super().append(value)
+
+    def clear(self) -> None:
+        self._tracker.mark()
+        super().clear()
+
+    def extend(self, values: Any) -> None:
+        self._tracker.mark()
+        super().extend(values)
+
+    def insert(self, index: int, value: Any) -> None:
+        self._tracker.mark()
+        super().insert(index, value)
+
+    def pop(self, index: int = -1) -> Any:
+        self._tracker.mark()
+        return super().pop(index)
+
+    def remove(self, value: Any) -> None:
+        self._tracker.mark()
+        super().remove(value)
+
+    def reverse(self) -> None:
+        self._tracker.mark()
+        super().reverse()
+
+    def sort(self, *args: Any, **kwargs: Any) -> None:
+        self._tracker.mark()
+        super().sort(*args, **kwargs)
+
+    def __iadd__(self, values: Any) -> _ValidatorList:
+        self._tracker.mark()
+        super().__iadd__(values)
+        return self
+
+    def __imul__(self, count: int) -> _ValidatorList:
+        self._tracker.mark()
+        super().__imul__(count)
+        return self
+
+
+def _track_validator_json(
+    value: Any, tracker: _ValidatorMutationTracker
+) -> Any:
+    """Wrap an admitted bounded JSON tree without changing JSON container semantics."""
     value_type = type(value)
     if value_type is dict:
-        return MappingProxyType(
-            {key: _freeze_validator_json(item) for key, item in value.items()}
+        return _ValidatorDict(
+            {key: _track_validator_json(item, tracker) for key, item in value.items()},
+            tracker,
         )
     if value_type is list:
-        return tuple(_freeze_validator_json(item) for item in value)
+        return _ValidatorList(
+            [_track_validator_json(item, tracker) for item in value],
+            tracker,
+        )
     return value
 
 
@@ -293,8 +416,11 @@ class CanonicalComputeUsageSink:
         if type(contract_version) is not int or contract_version != 1:
             raise ValueError("event_builder must return event_contract_version=1")
         enqueue_event = _snapshot_exact_json(admitted_event)
-        validation_event = _freeze_validator_json(admitted_event)
+        mutation_tracker = _ValidatorMutationTracker()
+        validation_event = _track_validator_json(admitted_event, mutation_tracker)
         validation_errors = self._event_validator(validation_event)
+        if mutation_tracker.mutated:
+            raise ValueError("event_validator must not mutate event")
         if type(validation_errors) is not tuple:
             raise ValueError("event_validator must return an exact tuple")
         if len(validation_errors) > _MAX_VALIDATOR_DIAGNOSTICS:
