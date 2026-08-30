@@ -1,8 +1,8 @@
-"""Validator immutability regressions for canonical metering export."""
+"""Validator mutation regressions for canonical metering export."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -24,12 +24,16 @@ def _emit_one_fit(sink: CanonicalComputeUsageSink) -> None:
     )
 
 
-def test_top_level_validator_mutation_is_rejected_before_enqueue() -> None:
-    """The validator cannot mutate the read-only root selected for validation."""
+def test_top_level_validator_mutation_is_rejected_after_callback_before_enqueue() -> None:
+    """A validator may inspect ordinary JSON but any top-level write fails closed."""
     queued: list[dict[str, object]] = []
+    callback_completed = False
 
-    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
-        event["source_event_key"] = "validator-mutated"  # type: ignore[index]
+    def validator(event: dict[str, object]) -> tuple[str, ...]:
+        nonlocal callback_completed
+        assert isinstance(event, dict)
+        event["source_event_key"] = "validator-mutated"
+        callback_completed = True
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -42,22 +46,26 @@ def test_top_level_validator_mutation_is_rejected_before_enqueue() -> None:
         identity={},
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
         _emit_one_fit(sink)
 
+    assert callback_completed
     assert queued == []
 
 
-def test_nested_validator_mutation_is_rejected_before_enqueue() -> None:
-    """Nested mapping evidence is recursively read-only during validation."""
+def test_nested_validator_mutation_is_rejected_after_callback_before_enqueue() -> None:
+    """Mutation tracking covers nested ordinary list/dict JSON carriers."""
     queued: list[dict[str, object]] = []
+    callback_completed = False
 
-    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+    def validator(event: dict[str, object]) -> tuple[str, ...]:
+        nonlocal callback_completed
         measurements = event["measurements"]
-        assert isinstance(measurements, Sequence)
+        assert isinstance(measurements, list)
         measurement = measurements[0]
-        assert isinstance(measurement, Mapping)
-        measurement["quantity"] = "999"  # type: ignore[index]
+        assert isinstance(measurement, dict)
+        measurement["quantity"] = "999"
+        callback_completed = True
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -77,18 +85,19 @@ def test_nested_validator_mutation_is_rejected_before_enqueue() -> None:
         identity={},
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
         _emit_one_fit(sink)
 
+    assert callback_completed
     assert queued == []
 
 
-def test_validator_json_type_mutation_is_rejected_before_equality_can_hide_it() -> None:
-    """Integer-to-Boolean mutation cannot begin on the immutable validator view."""
+def test_validator_json_type_mutation_is_rejected_even_when_values_compare_equal() -> None:
+    """Integer-to-Boolean writes are mutation even though ``1 == True``."""
     queued: list[dict[str, object]] = []
 
-    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
-        event["event_contract_version"] = True  # type: ignore[index]
+    def validator(event: dict[str, object]) -> tuple[str, ...]:
+        event["event_contract_version"] = True
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -98,7 +107,45 @@ def test_validator_json_type_mutation_is_rejected_before_equality_can_hide_it() 
         identity={},
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="event_validator must not mutate event"):
         _emit_one_fit(sink)
 
     assert queued == []
+
+
+def test_non_mutating_validator_receives_json_compatible_dicts_and_lists() -> None:
+    """Mutation protection must not replace ordinary JSON carriers with proxies/tuples."""
+    queued: list[dict[str, object]] = []
+    serialized: list[str] = []
+    event = {
+        "event_contract_version": 1,
+        "source_event_key": "producer-owned",
+        "measurements": [
+            {
+                "meter_code": "response_rows",
+                "quantity": "1",
+                "unit_code": "count",
+                "quality_code": "deterministically_derived",
+            }
+        ],
+    }
+
+    def validator(candidate: dict[str, object]) -> tuple[str, ...]:
+        assert isinstance(candidate, dict)
+        measurements = candidate["measurements"]
+        assert isinstance(measurements, list)
+        assert isinstance(measurements[0], dict)
+        serialized.append(json.dumps(candidate, sort_keys=True))
+        return ()
+
+    sink = CanonicalComputeUsageSink(
+        event_builder=lambda **_: event,
+        event_validator=validator,
+        enqueue=queued.append,
+        identity={},
+    )
+
+    _emit_one_fit(sink)
+
+    assert serialized == [json.dumps(event, sort_keys=True)]
+    assert queued == [event]
