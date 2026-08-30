@@ -32,30 +32,38 @@ def _contrast(foreground: str, background: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
-def _line_token(scope: str) -> str:
-    match = re.search(r"--line:\s*(#[0-9a-fA-F]{6})", scope)
+def _token(scope: str, name: str) -> str:
+    match = re.search(rf"--{re.escape(name)}:\s*(#[0-9a-fA-F]{{6}})", scope)
     assert match is not None
     return match.group(1)
 
 
 def test_cross_engine_report_uses_theme_owned_three_to_one_boundary_contrast() -> None:
-    """Table boundaries stay visible on light, dark-screen, and print canvases."""
+    """Table boundaries stay visible on the exact light, dark, and print canvases."""
     css = _css()
     assert "GrayText" not in css
     assert "border: 1px solid var(--line)" in css
+    assert "background: var(--canvas)" in css
 
     root_end = css.index("}", css.index(":root")) + 1
-    light_line = _line_token(css[:root_end])
+    light_scope = css[:root_end]
+    light_line = _token(light_scope, "line")
+    light_canvas = _token(light_scope, "canvas")
 
     dark_marker = "@media screen and (prefers-color-scheme: dark)"
     dark_start = css.index(dark_marker)
     dark_end = css.index("}", css.index(":root", dark_start)) + 1
-    dark_line = _line_token(css[dark_start:dark_end])
+    dark_scope = css[dark_start:dark_end]
+    dark_line = _token(dark_scope, "line")
+    dark_canvas = _token(dark_scope, "canvas")
 
     print_start = css.index("@media print")
-    print_line = _line_token(css[print_start:])
+    print_scope = css[print_start:]
+    print_line = _token(print_scope, "line")
+    print_canvas = _token(print_scope, "canvas")
 
     assert print_line == light_line
-    assert _contrast(light_line, "#ffffff") >= 3.0
-    assert _contrast(dark_line, "#000000") >= 3.0
-    assert _contrast(print_line, "#ffffff") >= 3.0
+    assert print_canvas == light_canvas
+    assert _contrast(light_line, light_canvas) >= 3.0
+    assert _contrast(dark_line, dark_canvas) >= 3.0
+    assert _contrast(print_line, print_canvas) >= 3.0
