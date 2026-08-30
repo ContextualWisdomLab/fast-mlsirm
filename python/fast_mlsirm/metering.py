@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from itertools import islice
 from math import isfinite
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from .backend import VALID_KERNEL_BACKENDS
 from .config import VALID_MODELS
@@ -208,6 +208,34 @@ def _snapshot_exact_json(
     raise ValueError("event_builder result must use exact JSON carriers and scalars")
 
 
+def _same_exact_json(left: object, right: object) -> bool:
+    """Compare package-owned exact-JSON trees while preserving JSON type identity."""
+    if type(left) is not type(right):
+        return False
+    value_type = type(left)
+    if value_type is dict:
+        left_dict = cast(dict[str, Any], left)
+        right_dict = cast(dict[str, Any], right)
+        if len(left_dict) != len(right_dict):
+            return False
+        return all(
+            key in right_dict and _same_exact_json(value, right_dict[key])
+            for key, value in left_dict.items()
+        )
+    if value_type is list:
+        left_list = cast(list[Any], left)
+        right_list = cast(list[Any], right)
+        if len(left_list) != len(right_list):
+            return False
+        return all(
+            _same_exact_json(left_item, right_item)
+            for left_item, right_item in zip(left_list, right_list, strict=True)
+        )
+    if value_type is float:
+        return cast(float, left).hex() == cast(float, right).hex()
+    return left == right
+
+
 class CanonicalComputeUsageSink:
     """Build, validate, and enqueue count-only events for real compute results."""
 
@@ -281,6 +309,12 @@ class CanonicalComputeUsageSink:
             raise ValueError("event_builder must return event_contract_version=1")
         enqueue_event = _snapshot_exact_json(validation_event)
         validation_errors = self._event_validator(validation_event)
+        try:
+            post_validation_event = _snapshot_exact_json(validation_event)
+        except ValueError as exc:
+            raise ValueError("event_validator mutated canonical event") from exc
+        if not _same_exact_json(post_validation_event, enqueue_event):
+            raise ValueError("event_validator mutated canonical event")
         if type(validation_errors) is not tuple:
             raise ValueError("event_validator must return an exact tuple")
         if len(validation_errors) > _MAX_VALIDATOR_DIAGNOSTICS:
