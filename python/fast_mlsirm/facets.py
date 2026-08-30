@@ -296,17 +296,26 @@ def _validate_native_fit_result(
     )
 
     n_iter = result["n_iter"]
-    if type(n_iter) is not int or not (0 <= n_iter <= max_iter):
-        raise _native_result_error(f"n_iter must be an integer in 0..{max_iter}")
+    if type(n_iter) is not int or not (1 <= n_iter <= max_iter):
+        raise _native_result_error(f"n_iter must be an integer in 1..{max_iter}")
     converged = result["converged"]
     if type(converged) is not bool:
         raise _native_result_error("converged must be a boolean")
+    valid_trace_lengths = {n_iter}
+    if not converged:
+        valid_trace_lengths.add(n_iter + 1)
+    if int(loglik_trace.size) not in valid_trace_lengths:
+        raise _native_result_error(
+            "loglik_trace length must equal n_iter, or n_iter + 1 for a "
+            "nonconverged terminal evaluation"
+        )
     connected = result["connected"]
     if type(connected) is not bool:
         raise _native_result_error("connected must be a boolean")
+    expected_parameters = n_items + (n_raters - 1) + (n_cat - 2)
     n_parameters = result["n_parameters"]
-    if type(n_parameters) is not int or n_parameters < 0:
-        raise _native_result_error("n_parameters must be a non-negative integer")
+    if type(n_parameters) is not int or n_parameters != expected_parameters:
+        raise _native_result_error(f"n_parameters must equal {expected_parameters}")
 
     return (
         item_difficulty,
