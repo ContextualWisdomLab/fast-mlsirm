@@ -1,7 +1,8 @@
-"""Fail-first validator mutation detection for canonical metering export."""
+"""Validator immutability regressions for canonical metering export."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 
 import pytest
@@ -24,12 +25,11 @@ def _emit_one_fit(sink: CanonicalComputeUsageSink) -> None:
 
 
 def test_top_level_validator_mutation_is_rejected_before_enqueue() -> None:
-    """A successful validator cannot validate one tree while another is queued."""
+    """The validator cannot mutate the read-only root selected for validation."""
     queued: list[dict[str, object]] = []
 
-    def validator(event: object) -> tuple[str, ...]:
-        assert type(event) is dict
-        event["source_event_key"] = "validator-mutated"
+    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+        event["source_event_key"] = "validator-mutated"  # type: ignore[index]
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -42,23 +42,22 @@ def test_top_level_validator_mutation_is_rejected_before_enqueue() -> None:
         identity={},
     )
 
-    with pytest.raises(ValueError, match="validator mutated"):
+    with pytest.raises(TypeError):
         _emit_one_fit(sink)
 
     assert queued == []
 
 
 def test_nested_validator_mutation_is_rejected_before_enqueue() -> None:
-    """Nested measurement mutation invalidates the validator's success evidence."""
+    """Nested mapping evidence is recursively read-only during validation."""
     queued: list[dict[str, object]] = []
 
-    def validator(event: object) -> tuple[str, ...]:
-        assert type(event) is dict
+    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
         measurements = event["measurements"]
-        assert type(measurements) is list
+        assert isinstance(measurements, Sequence)
         measurement = measurements[0]
-        assert type(measurement) is dict
-        measurement["quantity"] = "999"
+        assert isinstance(measurement, Mapping)
+        measurement["quantity"] = "999"  # type: ignore[index]
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -78,19 +77,18 @@ def test_nested_validator_mutation_is_rejected_before_enqueue() -> None:
         identity={},
     )
 
-    with pytest.raises(ValueError, match="validator mutated"):
+    with pytest.raises(TypeError):
         _emit_one_fit(sink)
 
     assert queued == []
 
 
-def test_validator_json_type_mutation_is_not_hidden_by_python_equality() -> None:
-    """Exact JSON type identity distinguishes integer 1 from Boolean true."""
+def test_validator_json_type_mutation_is_rejected_before_equality_can_hide_it() -> None:
+    """Integer-to-Boolean mutation cannot begin on the immutable validator view."""
     queued: list[dict[str, object]] = []
 
-    def validator(event: object) -> tuple[str, ...]:
-        assert type(event) is dict
-        event["event_contract_version"] = True
+    def validator(event: Mapping[str, object]) -> tuple[str, ...]:
+        event["event_contract_version"] = True  # type: ignore[index]
         return ()
 
     sink = CanonicalComputeUsageSink(
@@ -100,7 +98,7 @@ def test_validator_json_type_mutation_is_not_hidden_by_python_equality() -> None
         identity={},
     )
 
-    with pytest.raises(ValueError, match="validator mutated"):
+    with pytest.raises(TypeError):
         _emit_one_fit(sink)
 
     assert queued == []
