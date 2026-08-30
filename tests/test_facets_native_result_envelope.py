@@ -21,6 +21,20 @@ class _FakeCore:
         return self.payload
 
 
+class _CallbackKey(str):
+    """Expose accidental result-key protocol execution after native return."""
+
+    callbacks = 0
+
+    def __hash__(self) -> int:
+        type(self).callbacks += 1
+        return super().__hash__()
+
+    def __eq__(self, other: object) -> bool:
+        type(self).callbacks += 1
+        return super().__eq__(other)
+
+
 def _responses() -> np.ndarray:
     return np.array([[[0], [1]], [[1], [0]]], dtype=np.float64)
 
@@ -74,6 +88,40 @@ def test_fit_facets_rejects_missing_native_result_key(
 
     with pytest.raises(ValueError, match="native fit_facets result"):
         facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+def test_fit_facets_rejects_extra_native_result_key_before_value_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["unexpected"] = None
+    payload["item_difficulty"] = [object(), 0.0, 0.0]
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError, match=r"native fit_facets result must contain exactly 9 keys"
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+def test_fit_facets_rejects_callback_bearing_native_key_without_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid = _valid_payload()
+    hostile_key = _CallbackKey("item_difficulty")
+    payload: dict[str, object] = {hostile_key: valid["item_difficulty"]}
+    for key, value in valid.items():
+        if key != "item_difficulty":
+            payload[key] = value
+    _CallbackKey.callbacks = 0
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError, match=r"native fit_facets result keys must be exact strings"
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+    assert _CallbackKey.callbacks == 0
 
 
 def test_fit_facets_rejects_wrong_fixed_vector_length_before_entry_scan(
