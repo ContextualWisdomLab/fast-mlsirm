@@ -257,20 +257,28 @@ def _native_float_vector(
     if max_length is not None and length > max_length:
         raise _native_result_error(f"{key} exceeds length limit {max_length}")
 
-    # Treat this package-owned copy as the authoritative snapshot.  A retained
-    # native ndarray may change between the inert preflight above and this copy;
-    # replay every representation/cardinality requirement on the copied state
-    # before it can become public fit evidence.
-    owned = np.array(array, dtype=np.float64, copy=True)
-    if owned.ndim != 1:
+    # Copy without coercion first. A retained native ndarray may change after
+    # the inert preflight above; only the package-owned raw snapshot can become
+    # authoritative evidence, and its representation/cardinality must be
+    # replayed before any float64 narrowing can erase an invalid source state.
+    snapshot = np.array(array, copy=True)
+    if (
+        snapshot.ndim != 1
+        or np.iscomplexobj(snapshot)
+        or snapshot.dtype.kind not in ("i", "u", "f")
+    ):
         raise _native_result_error(f"{key} must be a real numeric 1-D vector")
-    owned_length = int(owned.size)
-    if exact_length is not None and owned_length != exact_length:
+    snapshot_length = int(snapshot.size)
+    if exact_length is not None and snapshot_length != exact_length:
         raise _native_result_error(f"{key} must have length {exact_length}")
-    if min_length is not None and owned_length < min_length:
+    if min_length is not None and snapshot_length < min_length:
         raise _native_result_error(f"{key} must contain at least {min_length} value")
-    if max_length is not None and owned_length > max_length:
+    if max_length is not None and snapshot_length > max_length:
         raise _native_result_error(f"{key} exceeds length limit {max_length}")
+    if not np.all(np.isfinite(snapshot)):
+        raise _native_result_error(f"{key} must contain only finite values")
+
+    owned = snapshot.astype(np.float64, copy=False)
     if not np.all(np.isfinite(owned)):
         raise _native_result_error(f"{key} must contain only finite values")
     return owned
