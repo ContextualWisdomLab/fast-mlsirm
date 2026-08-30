@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pytest
 
@@ -25,6 +27,29 @@ def test_sequence_response_cell_budget_precedes_scalar_validation(monkeypatch) -
         twopl._trusted_response_matrix([[0, 1], [1, 0], [0, 1]])
 
     assert traversed == []
+
+
+def test_overbudget_list_does_not_snapshot_all_row_references(monkeypatch) -> None:
+    """A proven overflow must not first duplicate the whole top-level list."""
+
+    monkeypatch.setattr(twopl, "MAX_IRT_RESPONSE_CELLS", 4)
+    row = [0, 1]
+    responses = [row, row, row]
+    baseline_references = sys.getrefcount(row)
+    observed_references: list[int] = []
+    original_minimum = twopl._require_minimum_item_count
+
+    def recording_minimum(n_items: int) -> None:
+        observed_references.append(sys.getrefcount(row))
+        original_minimum(n_items)
+
+    monkeypatch.setattr(twopl, "_require_minimum_item_count", recording_minimum)
+
+    with pytest.raises(ValueError, match=r"responses must contain at most 4 cells"):
+        twopl._trusted_response_matrix(responses)
+
+    assert observed_references
+    assert observed_references[0] < baseline_references + len(responses)
 
 
 def test_sequence_rectangularity_precedes_scalar_validation() -> None:
