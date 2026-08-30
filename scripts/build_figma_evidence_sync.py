@@ -158,7 +158,7 @@ def _content_security_policy() -> str:
     """Return the restrictive policy used by the self-contained HTML report."""
     css_bytes = _report_css().encode("utf-8")
     css_hash = base64.b64encode(hashlib.sha256(css_bytes).digest()).decode("ascii")
-    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'"
 
 
 def _report_css() -> str:
