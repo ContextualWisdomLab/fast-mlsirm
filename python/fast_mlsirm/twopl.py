@@ -209,8 +209,9 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
 
     if not rows:
         return np.empty((0, 0), dtype=np.float64)
+    if expected_width is None:
+        raise ValueError("responses must be a 2-D persons x items array")
 
-    assert expected_width is not None
     source = np.empty((len(rows), expected_width), dtype=np.float64)
     for row_index, row in enumerate(rows):
         if type(row) is np.ndarray:
