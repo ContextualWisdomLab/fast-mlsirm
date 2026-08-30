@@ -13,13 +13,13 @@ import base64
 
 def _css() -> str:
     return """
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; --line: #767676; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; --canvas: #ffffff; --text: #111111; --line: #767676; }
 * { box-sizing: border-box; }
-body { margin: 0; background: Canvas; color: CanvasText; }
+body { margin: 0; background: var(--canvas); color: var(--text); }
 main { max-width: 72rem; margin: 0 auto; padding: 2rem 1.25rem; }
 main:focus:not(:focus-visible) { outline: none; }
 main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
-.skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
+.skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: var(--canvas); color: var(--text); z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
 .skip-link:focus { top: 8px; }
 .skip-link:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
 section { margin-top: 20px; }
@@ -30,7 +30,7 @@ tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 @media screen and (prefers-color-scheme: dark) {
-  :root { --line: #808080; }
+  :root { --canvas: #000000; --text: #ffffff; --line: #808080; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -41,8 +41,8 @@ tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
   }
 }
 @media print {
-  :root { --line: #767676; }
-  body { background: white; color: black; }
+  :root { --canvas: #ffffff; --text: #000000; --line: #767676; }
+  body { background: var(--canvas); color: var(--text); }
   .skip-link { display: none !important; }
 }
 """.strip()
@@ -295,7 +295,7 @@ def _long_form_rows(manifest: dict[str, object]) -> list[dict[str, object | None
     rows: list[dict[str, object | None]] = []
     for capability in capabilities:
         if type(capability) is not dict:
-            raise ValueError("capability must be a canonical dictionary")
+            raise ValueError("capabilities must be a canonical dictionary")
         capability_fields = {
             "capability_id": capability["capability_id"],
             "public_entrypoint": capability["public_entrypoint"],
