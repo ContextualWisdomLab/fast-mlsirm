@@ -12,6 +12,11 @@ from fast_mlsirm import mokken
 
 
 _RESPONSES = [[0, 1], [1, 0], [0, 1]]
+_RESPONSES_FOUR_ITEMS = [
+    [0, 1, 0, 1],
+    [1, 0, 1, 0],
+    [0, 1, 1, 0],
+]
 
 
 class _ArrayTrap:
@@ -108,13 +113,14 @@ class _LifetimeCore:
         return [1, 1]
 
 
-def _valid_coefficients() -> dict[str, object]:
+def _valid_coefficients(n_items: int = 2) -> dict[str, object]:
+    matrix_cells = n_items * n_items
     return {
-        "hij": [float("nan"), 0.4, 0.4, float("nan")],
-        "hi": [0.4, 0.4],
+        "hij": [float("nan")] * matrix_cells,
+        "hi": [0.4] * n_items,
         "h": 0.4,
-        "zij": [float("nan"), 1.25, 1.25, float("nan")],
-        "zi": [1.25, 1.25],
+        "zij": [float("nan")] * matrix_cells,
+        "zi": [1.25] * n_items,
         "z": 1.25,
     }
 
@@ -222,6 +228,33 @@ def test_mokken_rejects_scale_label_above_possible_formation_order(
 
     with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
         mokken.mokken_analysis(_RESPONSES)
+
+
+@pytest.mark.parametrize("scale", ([2, 2, 0, 0], [1, 0, 0, 0]))
+def test_mokken_rejects_impossible_scale_formation_structure(
+    monkeypatch: pytest.MonkeyPatch,
+    scale: list[int],
+) -> None:
+    """Live AISP labels are contiguous from one and every scale starts as a pair."""
+    payload = _valid_coefficients(n_items=4)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core(payload, scale))
+
+    with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
+        mokken.mokken_analysis(_RESPONSES_FOUR_ITEMS)
+
+
+@pytest.mark.parametrize("scale", ([0, 0, 0, 0], [1, 1, 0, 0], [1, 1, 2, 2]))
+def test_mokken_accepts_representable_scale_formation_structure(
+    monkeypatch: pytest.MonkeyPatch,
+    scale: list[int],
+) -> None:
+    """Formation replay preserves unscaled items and consecutive paired scales."""
+    payload = _valid_coefficients(n_items=4)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core(payload, scale))
+
+    result = mokken.mokken_analysis(_RESPONSES_FOUR_ITEMS)
+
+    assert result.scale.tolist() == scale
 
 
 def test_mokken_releases_native_coefficient_envelope_before_aisp(
