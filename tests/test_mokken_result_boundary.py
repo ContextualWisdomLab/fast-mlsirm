@@ -215,6 +215,51 @@ def test_mokken_rejects_invalid_coefficients_before_aisp_work(
     assert core.aisp_calls == 0
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("h", float("nan")),
+        ("z", float("inf")),
+        ("hi", [float("inf"), 0.4]),
+        ("zi", [1.25, float("nan")]),
+        ("hij", [0.0, 0.4, 0.4, float("nan")]),
+        ("zij", [float("nan"), float("inf"), float("inf"), float("nan")]),
+    ),
+)
+def test_mokken_rejects_impossible_native_coefficient_finiteness_before_aisp(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    """Only the Rust-defined pairwise diagonal may be non-finite."""
+    payload = _valid_coefficients()
+    payload[field] = value
+    core = _Core(payload, [1, 1])
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
+        mokken.mokken_analysis(_RESPONSES)
+
+    assert core.aisp_calls == 0
+
+
+@pytest.mark.parametrize("field", ("hij", "zij"))
+def test_mokken_rejects_asymmetric_native_pairwise_result_before_aisp(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+) -> None:
+    """The live Rust pairwise matrices are exactly symmetric off diagonal."""
+    payload = _valid_coefficients()
+    payload[field] = [float("nan"), 0.4, 0.5, float("nan")]
+    core = _Core(payload, [1, 1])
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    with pytest.raises(ValueError, match="invalid Mokken Rust result payload"):
+        mokken.mokken_analysis(_RESPONSES)
+
+    assert core.aisp_calls == 0
+
+
 @pytest.mark.parametrize("scale", ([-1, 1], [1 << 32, 1]))
 def test_mokken_rejects_scale_values_outside_native_u32_domain(
     monkeypatch: pytest.MonkeyPatch,
