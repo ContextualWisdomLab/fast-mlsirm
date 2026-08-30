@@ -55,6 +55,7 @@ def _valid_native_result() -> dict[str, object]:
         "loading": np.array([1.0, 1.25], dtype=np.float64),
         "intercept": np.array([-0.25, 0.25], dtype=np.float64),
         "theta": np.array([-0.5, 0.5], dtype=np.float64),
+        "n_dims": 1,
         "corr": np.array([1.0], dtype=np.float64),
         "loglik_trace": np.array([-2.0, -1.5], dtype=np.float64),
         "n_iter": 1,
@@ -91,6 +92,18 @@ def test_fit_2pl_rejects_non_builtin_native_result_without_callbacks(
         fit_2pl(np.array([[0.0, 1.0], [1.0, 0.0]]), max_iter=1)
 
     assert result.calls == []
+
+
+def test_native_result_matches_real_binding_dimension_field() -> None:
+    """The PyO3 result's required n_dims field is admitted and identity checked."""
+
+    admitted = _validate(_valid_native_result())
+    assert admitted[0].tolist() == [1.0, 1.25]
+
+    result = _valid_native_result()
+    result["n_dims"] = 2
+    with pytest.raises(ValueError, match="native fit_2pl result n_dims must equal 1"):
+        _validate(result)
 
 
 def test_native_result_arrays_are_cardinality_bound_and_package_owned() -> None:
