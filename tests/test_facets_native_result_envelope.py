@@ -76,6 +76,32 @@ def test_fit_facets_rejects_missing_native_result_key(
         facets.fit_facets(_responses(), n_cat=2, max_iter=5)
 
 
+def test_fit_facets_rejects_wrong_fixed_vector_length_before_entry_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["item_difficulty"] = [object(), 0.0, 0.0]
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError, match=r"native fit_facets result item_difficulty must have length 2"
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
+def test_fit_facets_rejects_overlong_loglik_trace_before_entry_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _valid_payload()
+    payload["loglik_trace"] = [object()] * 7
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _FakeCore(payload))
+
+    with pytest.raises(
+        ValueError, match=r"native fit_facets result loglik_trace exceeds length limit 6"
+    ):
+        facets.fit_facets(_responses(), n_cat=2, max_iter=5)
+
+
 def test_fit_facets_returns_owned_arrays_from_valid_native_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
