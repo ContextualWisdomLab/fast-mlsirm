@@ -55,7 +55,3 @@
 ## 2024-03-24 - Cross-Engine Report Accessibility Parity
 **Learning:** The cross-engine conformance report (`fast_mlsirm/cross_engine_report.py`) lacked the standard skip-to-content accessibility features present in other HTML reports, forcing keyboard and screen reader users to tab through headers before reaching the main content.
 **Action:** Always ensure new HTML report generation scripts include the standard `_css()` pattern (with `:focus-visible` styling), dynamically hash the CSS for `style-src` CSP compliance without `unsafe-inline`, add an explicit skip link (`<a class="skip-link" href="#main-content">`), and configure the main content container appropriately (`<main id="main-content" tabindex="-1">`).
-
-## 2024-03-24 - Cross-Engine Report Accessibility Parity
-**Learning:** The cross-engine conformance report (`fast_mlsirm/cross_engine_report.py`) lacked the standard skip-to-content accessibility features present in other HTML reports, forcing keyboard and screen reader users to tab through headers before reaching the main content.
-**Action:** Always ensure new HTML report generation scripts include the standard `_css()` pattern (with `:focus-visible` styling), dynamically hash the CSS for `style-src` CSP compliance without `unsafe-inline`, add an explicit skip link (`<a class="skip-link" href="#main-content">`), and configure the main content container appropriately (`<main id="main-content" tabindex="-1">`).
