@@ -382,9 +382,10 @@ def _validated_native_result(
     theta = _sealed_native_vector(
         dict.__getitem__(snapshot, "theta"), expected_len=n_persons
     )
-    loglik_trace = _sealed_native_vector(
-        dict.__getitem__(snapshot, "loglik_trace"), require_nonempty=True
-    )
+    trace_source = dict.__getitem__(snapshot, "loglik_trace")
+    if type(trace_source) is not list or not 1 <= len(trace_source) <= max_iter + 1:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    loglik_trace = _sealed_native_vector(trace_source, require_nonempty=True)
 
     n_iter = dict.__getitem__(snapshot, "n_iter")
     converged = dict.__getitem__(snapshot, "converged")
