@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -297,8 +298,15 @@ def capture_pr_queue_snapshot(
     """
     if _REPOSITORY_RE.fullmatch(repo) is None:
         raise ValueError("repository must use canonical owner/name syntax")
-    if isinstance(capture_budget_seconds, bool) or capture_budget_seconds <= 0:
-        raise ValueError("capture_budget_seconds must be positive")
+    error_message = "capture_budget_seconds must be a finite positive number"
+    if type(capture_budget_seconds) not in (int, float):
+        raise ValueError(error_message)
+    try:
+        capture_budget_seconds = float(capture_budget_seconds)
+    except OverflowError:
+        raise ValueError(error_message) from None
+    if not math.isfinite(capture_budget_seconds) or capture_budget_seconds <= 0:
+        raise ValueError(error_message)
     deadline = monotonic() + capture_budget_seconds
     if run_json is _run_gh_json:
         def live_run_json(command: Sequence[str]) -> tuple[Any, dict[str, Any] | None]:
