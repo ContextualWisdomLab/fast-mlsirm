@@ -216,6 +216,21 @@ def _capture_budget_error(
     )
 
 
+def _run_budgeted_json(
+    command: Sequence[str],
+    *,
+    run_json: JsonRunner,
+    monotonic: Clock,
+    deadline: float,
+    capture_budget_seconds: float,
+) -> tuple[Any, dict[str, Any] | None, bool]:
+    """Start one live query only while the cumulative capture budget remains."""
+    if monotonic() >= deadline:
+        return None, _capture_budget_error(command, capture_budget_seconds), True
+    payload, error = run_json(command)
+    return payload, error, False
+
+
 def _incomplete_detail_error(
     command: Sequence[str],
     detail: dict[str, Any],
@@ -283,9 +298,35 @@ def capture_pr_queue_snapshot(
         fields=HISTORY_PR_FIELDS,
     )
 
-    repo_payload, repo_error = run_json(repo_command)
-    identity_payload, identity_error = run_json(identity_command)
-    history_payload, history_error = run_json(history_command)
+    repo_payload, repo_error, budget_exhausted = _run_budgeted_json(
+        repo_command,
+        run_json=run_json,
+        monotonic=monotonic,
+        deadline=deadline,
+        capture_budget_seconds=capture_budget_seconds,
+    )
+    if budget_exhausted:
+        identity_payload, identity_error = [], None
+        history_payload, history_error = [], None
+    else:
+        identity_payload, identity_error, budget_exhausted = _run_budgeted_json(
+            identity_command,
+            run_json=run_json,
+            monotonic=monotonic,
+            deadline=deadline,
+            capture_budget_seconds=capture_budget_seconds,
+        )
+        if budget_exhausted:
+            history_payload, history_error = [], None
+        else:
+            history_payload, history_error, budget_exhausted = _run_budgeted_json(
+                history_command,
+                run_json=run_json,
+                monotonic=monotonic,
+                deadline=deadline,
+                capture_budget_seconds=capture_budget_seconds,
+            )
+
     errors = [
         error
         for error in (repo_error, identity_error, history_error)
@@ -326,10 +367,11 @@ def capture_pr_queue_snapshot(
             )
         )
         identities = []
+    if budget_exhausted:
+        identities = []
 
     open_prs: list[dict[str, Any]] = []
     seen_numbers: set[int] = set()
-    budget_exhausted = False
     for identity in identities:
         number = _positive_pr_number(identity.get("number"))
         if number is None or number in seen_numbers:
