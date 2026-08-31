@@ -49,3 +49,54 @@ fn rejects_singleton_classification_before_response_value_traversal() {
         "each classification must contain at least two context levels"
     );
 }
+
+#[test]
+fn response_work_cap_precedes_classification_structure() {
+    let error = estimate_crossed_person_effects(
+        &[],
+        &[],
+        &[],
+        &[],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[1, 2],
+        20_000_001,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("oversized response work must win before classification structure");
+
+    assert_eq!(
+        error,
+        "crossed response matrix exceeds the logical-cell cap of 20000000"
+    );
+}
+
+#[test]
+fn response_length_precedes_classification_structure() {
+    let error = estimate_crossed_person_effects(
+        &[2.0],
+        &[],
+        &[],
+        &[],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[1, 2],
+        2,
+        1,
+        2,
+        CrossedPersonEffectConfig {
+            device: Device::Cpu,
+            ..CrossedPersonEffectConfig::default()
+        },
+    )
+    .expect_err("mismatched response length must win before classification structure");
+
+    assert_eq!(error, "y must have length n_persons * n_items");
+}
