@@ -1,0 +1,98 @@
+"""Ownership regressions for many-facet response admission."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fast_mlsirm import fitstats
+import fast_mlsirm.facets as facets
+
+
+class _RecordingCore:
+    """Record the exact package-owned evidence dispatched to the Rust boundary."""
+
+    def __init__(self) -> None:
+        self.yy: np.ndarray | None = None
+        self.observed: np.ndarray | None = None
+
+    def fit_facets(
+        self,
+        yy: np.ndarray,
+        observed: np.ndarray,
+        n_persons: int,
+        n_items: int,
+        n_raters: int,
+        n_cat: int,
+        q_theta: int,
+        max_iter: int,
+        tol: float,
+    ) -> dict[str, object]:
+        self.yy = yy.copy()
+        self.observed = observed.copy()
+        return {
+            "item_difficulty": np.zeros(n_items),
+            "rater_severity": np.zeros(n_raters),
+            "thresholds": np.zeros(n_cat - 1),
+            "theta": np.zeros(n_persons),
+            "loglik_trace": np.array([0.0]),
+            "n_iter": 1,
+            "converged": True,
+            "connected": True,
+            "n_parameters": n_items + (n_raters - 1) + (n_cat - 2),
+        }
+
+
+def test_response_array_seals_exact_float64_ndarray() -> None:
+    """Caller mutation after admission cannot redefine the admitted ndarray."""
+
+    source = np.array(
+        [
+            [[0.0], [1.0]],
+            [[1.0], [0.0]],
+        ],
+        dtype=np.float64,
+    )
+    expected = source.copy()
+
+    admitted = facets._response_array(source)
+    source[...] = 7.0
+
+    assert admitted is not source
+    np.testing.assert_array_equal(admitted, expected)
+
+
+def test_fit_facets_dispatches_pre_mutation_ndarray_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation after response admission cannot change evidence sent to Rust."""
+
+    source = np.array(
+        [
+            [[0.0], [1.0]],
+            [[1.0], [0.0]],
+        ],
+        dtype=np.float64,
+    )
+    expected = source.copy()
+    original_response_array = facets._response_array
+
+    def mutate_source_after_admission(value: object) -> np.ndarray:
+        admitted = original_response_array(value)
+        source[...] = 7.0
+        return admitted
+
+    core = _RecordingCore()
+    monkeypatch.setattr(facets, "_response_array", mutate_source_after_admission)
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    result = facets.fit_facets(source, n_cat=2, q_theta=41, max_iter=10, tol=1e-6)
+
+    assert result.converged is True
+    assert core.yy is not None
+    assert core.observed is not None
+    np.testing.assert_array_equal(core.yy, expected.astype(np.int64).reshape(-1))
+    np.testing.assert_array_equal(
+        core.observed,
+        np.ones(expected.size, dtype=np.bool_),
+    )
