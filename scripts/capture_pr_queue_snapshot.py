@@ -24,11 +24,13 @@ from typing import Any, Callable, Final, Sequence
 
 try:
     from scripts._bounded_json import parse_json_bounded
+    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 except ModuleNotFoundError as exc:
-    if exc.name not in {"scripts", "scripts._bounded_json"}:
+    if exc.name not in {"scripts", "scripts._bounded_json", "scripts._bounded_subprocess"}:
         raise
     try:
         from _bounded_json import parse_json_bounded
+        from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
     except ModuleNotFoundError as sibling_exc:
         if sibling_exc.name != "_bounded_json":
             raise
@@ -95,18 +97,23 @@ def _run_gh_json(
     attempt = 1
     while True:
         try:
-            completed = subprocess.run(
+            completed = run_bounded_capture(
                 list(command),
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                check=False,
+                timeout_seconds=timeout_seconds,
+                max_stdout_bytes=10 * 1024 * 1024,
+                max_stderr_bytes=1024 * 1024,
             )
         except subprocess.TimeoutExpired:
             return None, _command_error(
                 command,
                 stderr=f"GitHub command timed out after {timeout_seconds} seconds",
                 returncode=124,
+            )
+        except BoundedSubprocessOutputError as exc:
+            return None, _command_error(
+                command,
+                stderr=f"GitHub command output exceeded bounds: {exc}",
+                returncode=125,
             )
         except OSError as exc:
             return None, _command_error(
