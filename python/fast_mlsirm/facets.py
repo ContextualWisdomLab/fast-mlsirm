@@ -76,6 +76,10 @@ def _response_array(value: object) -> np.ndarray:
         admitted_size = int(value.size)
         if admitted_size > _MAX_FACETS_RESPONSE_CELLS:
             raise ValueError(resource_error)
+        if np.iscomplexobj(value):
+            raise ValueError("responses must be real-valued")
+        if value.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError("responses must be a numeric array")
         response_array = np.array(value, copy=True)
         snapshot_size = int(response_array.size)
         if snapshot_size > _MAX_FACETS_RESPONSE_CELLS:
