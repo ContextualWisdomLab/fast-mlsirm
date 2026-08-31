@@ -26,6 +26,10 @@ updates:
     groups:
       cargo-lock-roots:
         group-by: dependency-name
+      cargo-security-lock-roots:
+        applies-to: security-updates
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
   - package-ecosystem: "github-actions"
     directory: "/"
