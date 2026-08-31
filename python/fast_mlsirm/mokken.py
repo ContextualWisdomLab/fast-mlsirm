@@ -288,7 +288,7 @@ def _trusted_score_source(responses: object) -> object:
                 _raise_response_structural_resource_error()
             if rectangular_width is None:
                 rectangular_width = row_cells
-            elif row_width != rectangular_width:
+            elif row_cells != rectangular_width:
                 rectangular_rows = False
             continue
         # Preserve the historical flat built-in-sequence path long enough for
