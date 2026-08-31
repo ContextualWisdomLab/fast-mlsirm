@@ -221,6 +221,27 @@ def _trusted_response_source(value: object) -> object:
 def _real_numeric_response_matrix(value: object) -> np.ndarray:
     """Admit bounded real numeric response storage before ``float64`` marshalling."""
     source = _trusted_response_source(value)
+    if type(source) is np.ndarray:
+        admitted_shape = tuple(int(axis) for axis in source.shape)
+        admitted_size = int(source.size)
+        admitted_dtype = source.dtype
+        if admitted_dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError("responses must be a real numeric array")
+
+        snapshot = np.array(source, copy=True, order="K", subok=False)
+        if (
+            type(snapshot) is not np.ndarray
+            or snapshot.ndim != 2
+            or tuple(int(axis) for axis in snapshot.shape) != admitted_shape
+            or int(snapshot.size) != admitted_size
+            or snapshot.dtype != admitted_dtype
+            or snapshot.dtype.kind not in {"b", "i", "u", "f"}
+            or not snapshot.flags.owndata
+            or np.shares_memory(snapshot, source)
+        ):
+            raise ValueError("responses must be a real numeric array")
+        return np.ascontiguousarray(snapshot, dtype=np.float64)
+
     array = np.asarray(source)
     if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
         raise ValueError("responses must be a real numeric array")
