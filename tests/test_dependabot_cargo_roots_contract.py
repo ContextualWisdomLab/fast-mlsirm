@@ -80,3 +80,18 @@ def test_cargo_dependency_updates_are_grouped_across_lock_roots() -> None:
         r"        group-by: dependency-name$",
         block,
     )
+
+
+def test_cargo_security_updates_are_grouped_across_lock_roots() -> None:
+    """Require repository-owned Cargo security updates to share one root lane."""
+    blocks = _cargo_dependabot_blocks()
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert _cargo_directories(block) == _required_cargo_roots()
+    assert re.search(
+        r"(?ms)^      cargo-security-lock-roots:\n"
+        r"        applies-to: security-updates\n"
+        r"        patterns:\n"
+        r'          - "\*"$',
+        block,
+    )
