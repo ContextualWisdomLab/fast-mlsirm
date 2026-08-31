@@ -323,7 +323,12 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     """Validate score storage losslessly before signed-int64 marshalling."""
     source = _trusted_score_source(responses)
     try:
-        raw = np.asarray(source)
+        if type(source) is np.ndarray:
+            raw = np.array(source, copy=True)
+            if raw.size > _MAX_MOKKEN_RESPONSE_CELLS:
+                _raise_response_resource_error()
+        else:
+            raw = np.asarray(source)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("responses must be a numeric array") from None
     if raw.ndim != 2:
