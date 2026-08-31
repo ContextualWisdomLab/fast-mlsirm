@@ -233,37 +233,38 @@ def _sealed_native_vector(
     expected_len: int | None = None,
     require_nonempty: bool = False,
 ) -> np.ndarray:
-    """Copy an admitted Rust ``float64`` vector before it becomes public evidence."""
+    """Seal the exact built-in list emitted by the PyO3 ``Vec<f64>`` binding."""
 
-    if (
-        type(value) is not np.ndarray
-        or value.dtype != np.dtype(np.float64)
-        or value.ndim != 1
-        or not value.flags.c_contiguous
-        or not value.flags.owndata
-    ):
+    if type(value) is not list:
         raise RuntimeError(_RSM_RESULT_ERROR)
-    if expected_len is not None and int(value.shape[0]) != expected_len:
+    source_len = len(value)
+    if expected_len is not None and source_len != expected_len:
         raise RuntimeError(_RSM_RESULT_ERROR)
-    if require_nonempty and int(value.shape[0]) == 0:
+    if require_nonempty and source_len == 0:
         raise RuntimeError(_RSM_RESULT_ERROR)
 
-    snapshot = value.copy(order="C")
+    snapshot = value.copy()
+    if type(snapshot) is not list or len(snapshot) != source_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if expected_len is not None and len(snapshot) != expected_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if require_nonempty and len(snapshot) == 0:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if any(type(item) is not float or not np.isfinite(item) for item in snapshot):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    array = np.array(snapshot, dtype=np.float64, copy=True, order="C")
     if (
-        type(snapshot) is not np.ndarray
-        or snapshot.dtype != np.dtype(np.float64)
-        or snapshot.ndim != 1
-        or not snapshot.flags.c_contiguous
-        or not snapshot.flags.owndata
+        type(array) is not np.ndarray
+        or array.dtype != np.dtype(np.float64)
+        or array.ndim != 1
+        or int(array.shape[0]) != len(snapshot)
+        or not array.flags.c_contiguous
+        or not array.flags.owndata
+        or not np.all(np.isfinite(array))
     ):
         raise RuntimeError(_RSM_RESULT_ERROR)
-    if expected_len is not None and int(snapshot.shape[0]) != expected_len:
-        raise RuntimeError(_RSM_RESULT_ERROR)
-    if require_nonempty and int(snapshot.shape[0]) == 0:
-        raise RuntimeError(_RSM_RESULT_ERROR)
-    if not np.all(np.isfinite(snapshot)):
-        raise RuntimeError(_RSM_RESULT_ERROR)
-    return snapshot
+    return array
 
 
 def _validated_native_result(
@@ -305,11 +306,13 @@ def _validated_native_result(
     if (
         type(n_iter) is not int
         or not 1 <= n_iter <= max_iter
-        or n_iter != int(loglik_trace.shape[0])
         or type(converged) is not bool
         or type(n_parameters) is not int
         or n_parameters != n_items + n_cat - 2
     ):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    expected_trace_len = n_iter if converged else n_iter + 1
+    if int(loglik_trace.shape[0]) != expected_trace_len:
         raise RuntimeError(_RSM_RESULT_ERROR)
 
     return (
