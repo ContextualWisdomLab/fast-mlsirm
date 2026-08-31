@@ -45,6 +45,18 @@ _RSM_MATRIX_SHAPE_ERROR = "responses must be a 2-D persons x items array"
 _RSM_MINIMUM_SHAPE_ERROR = (
     "responses must contain at least one person and at least two item columns"
 )
+_RSM_RESULT_ERROR = "invalid RSM Rust result payload"
+_RSM_RESULT_KEYS = frozenset(
+    {
+        "item_location",
+        "thresholds",
+        "theta",
+        "loglik_trace",
+        "n_iter",
+        "converged",
+        "n_parameters",
+    }
+)
 
 
 def _rsm_structural_resource_error() -> str:
@@ -215,6 +227,102 @@ def _real_numeric_response_matrix(value: object) -> np.ndarray:
     return np.ascontiguousarray(array, dtype=np.float64)
 
 
+def _sealed_native_vector(
+    value: object,
+    *,
+    expected_len: int | None = None,
+    require_nonempty: bool = False,
+) -> np.ndarray:
+    """Copy an admitted Rust ``float64`` vector before it becomes public evidence."""
+
+    if (
+        type(value) is not np.ndarray
+        or value.dtype != np.dtype(np.float64)
+        or value.ndim != 1
+        or not value.flags.c_contiguous
+        or not value.flags.owndata
+    ):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if expected_len is not None and int(value.shape[0]) != expected_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if require_nonempty and int(value.shape[0]) == 0:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    snapshot = value.copy(order="C")
+    if (
+        type(snapshot) is not np.ndarray
+        or snapshot.dtype != np.dtype(np.float64)
+        or snapshot.ndim != 1
+        or not snapshot.flags.c_contiguous
+        or not snapshot.flags.owndata
+    ):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if expected_len is not None and int(snapshot.shape[0]) != expected_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if require_nonempty and int(snapshot.shape[0]) == 0:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if not np.all(np.isfinite(snapshot)):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    return snapshot
+
+
+def _validated_native_result(
+    value: object,
+    *,
+    n_persons: int,
+    n_items: int,
+    n_cat: int,
+    max_iter: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool, int]:
+    """Seal and validate the deterministic Rust RSM result envelope."""
+
+    if type(value) is not dict or len(value) != len(_RSM_RESULT_KEYS):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    snapshot = dict.copy(value)
+    if len(snapshot) != len(_RSM_RESULT_KEYS):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if any(type(key) is not str for key in snapshot):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if frozenset(snapshot) != _RSM_RESULT_KEYS:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    item_location = _sealed_native_vector(
+        dict.__getitem__(snapshot, "item_location"), expected_len=n_items
+    )
+    thresholds = _sealed_native_vector(
+        dict.__getitem__(snapshot, "thresholds"), expected_len=n_cat - 1
+    )
+    theta = _sealed_native_vector(
+        dict.__getitem__(snapshot, "theta"), expected_len=n_persons
+    )
+    loglik_trace = _sealed_native_vector(
+        dict.__getitem__(snapshot, "loglik_trace"), require_nonempty=True
+    )
+
+    n_iter = dict.__getitem__(snapshot, "n_iter")
+    converged = dict.__getitem__(snapshot, "converged")
+    n_parameters = dict.__getitem__(snapshot, "n_parameters")
+    if (
+        type(n_iter) is not int
+        or not 1 <= n_iter <= max_iter
+        or n_iter != int(loglik_trace.shape[0])
+        or type(converged) is not bool
+        or type(n_parameters) is not int
+        or n_parameters != n_items + n_cat - 2
+    ):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    return (
+        item_location,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters,
+    )
+
+
 def fit_rsm(
     responses: np.ndarray,
     n_cat: int | None = None,
@@ -298,12 +406,27 @@ def fit_rsm(
         max_iter,
         tol,
     )
+    (
+        item_location,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters,
+    ) = _validated_native_result(
+        res,
+        n_persons=int(n_persons),
+        n_items=int(n_items),
+        n_cat=n_cat,
+        max_iter=max_iter,
+    )
     return RsmFit(
-        item_location=np.asarray(res["item_location"], dtype=np.float64),
-        thresholds=np.asarray(res["thresholds"], dtype=np.float64),
-        theta=np.asarray(res["theta"], dtype=np.float64),
-        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
-        n_iter=int(res["n_iter"]),
-        converged=bool(res["converged"]),
-        n_parameters=int(res["n_parameters"]),
+        item_location=item_location,
+        thresholds=thresholds,
+        theta=theta,
+        loglik_trace=loglik_trace,
+        n_iter=n_iter,
+        converged=converged,
+        n_parameters=n_parameters,
     )
