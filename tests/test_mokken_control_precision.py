@@ -55,3 +55,18 @@ def test_mokken_keeps_exact_extended_precision_control_admissible(carrier: str) 
         control = np.array(exact, dtype=np.longdouble)
 
     assert mokken._real_control("lower_bound", control) == 0.5
+
+
+@pytest.mark.parametrize("control_name", ["lower_bound", "alpha"])
+def test_mokken_normalizes_overflowing_integer_control_before_scores(
+    monkeypatch: pytest.MonkeyPatch,
+    control_name: str,
+) -> None:
+    """Exact integers beyond f64 range fail through package-owned validation."""
+    def _unexpected_scores(responses: object) -> tuple[np.ndarray, int, int]:
+        raise AssertionError("response traversal executed before control rejection")
+
+    monkeypatch.setattr(mokken, "_validated_scores", _unexpected_scores)
+
+    with pytest.raises(ValueError, match=rf"{control_name} must be finite"):
+        mokken.mokken_analysis(object(), **{control_name: 10**400})
