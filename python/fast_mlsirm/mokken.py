@@ -317,12 +317,6 @@ def _trusted_score_source(responses: object) -> object:
         and rectangular_width * rectangular_width > _MAX_MOKKEN_MATRIX_CELLS
     ):
         _raise_item_matrix_resource_error(rectangular_width)
-
-    for row in responses:
-        row_type = type(row)
-        if row_type is list or row_type is tuple:
-            if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row):
-                raise ValueError("responses must be a numeric array")
     return responses
 
 
@@ -403,6 +397,11 @@ def _snapshot_builtin_score_source(
 
     snapshot = tuple(snapshots)
     _trusted_score_source(snapshot)
+    for row in snapshot:
+        if type(row) is tuple and any(
+            type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row
+        ):
+            raise ValueError("responses must be a numeric array")
     return snapshot
 
 
