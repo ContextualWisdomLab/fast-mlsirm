@@ -162,3 +162,28 @@ def test_builtin_row_growth_resource_error_precedes_live_scalar_scan(
         mokken._validated_scores(responses)
 
     assert mutated
+
+
+def test_nested_ndarray_snapshot_replays_storage_kind_before_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The package-owned row copy must re-prove numeric storage before densifying."""
+    first_row = np.array([0, 1], dtype=np.int64)
+    responses = [first_row, np.array([1, 0], dtype=np.int64)]
+    original_array = np.array
+
+    def _replace_first_row_copy(
+        value: object, *args: object, **kwargs: object
+    ) -> np.ndarray:
+        if value is first_row:
+            return original_array([object(), object()], dtype=object)
+        return original_array(value, *args, **kwargs)
+
+    def _unexpected_materialization(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("unsupported package snapshot reached dense materialization")
+
+    monkeypatch.setattr(mokken.np, "array", _replace_first_row_copy)
+    monkeypatch.setattr(mokken.np, "asarray", _unexpected_materialization)
+
+    with pytest.raises(ValueError, match=r"responses must be a numeric array"):
+        mokken._validated_scores(responses)
