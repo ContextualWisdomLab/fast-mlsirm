@@ -64,6 +64,25 @@ fn preflight_crossed_estimator_controls(
     if classification_offsets.len() > n_effects + 1 {
         return Err("classification_offsets exceeds n_effects + 1".to_string());
     }
+    if classification_offsets.len() < 2 {
+        return Err("classification_offsets must contain at least one classification".to_string());
+    }
+    if classification_offsets[0] != 0
+        || *classification_offsets.last().expect("non-empty") != n_effects
+        || classification_offsets
+            .windows(2)
+            .any(|window| window[1] <= window[0])
+    {
+        return Err(
+            "classification_offsets must start at zero, increase strictly, and end at n_effects"
+                .to_string(),
+        );
+    }
+    for window in classification_offsets.windows(2) {
+        if window[1] - window[0] < 2 {
+            return Err("each classification must contain at least two context levels".to_string());
+        }
+    }
     let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
     if expected > estimator::MAX_CROSSED_RESPONSE_CELLS {
         return Err(format!(
