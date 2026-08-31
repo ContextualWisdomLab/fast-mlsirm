@@ -4,6 +4,7 @@
 
 - Bound each public Empirical Bayes Mantel-Haenszel `mh` and `se` vector to 20,000,000 item entries before package-owned contiguous `float64` allocation.
 - Use exact NumPy shape metadata or exact built-in list/tuple length before scalar materialization, preserving callback-free carrier admission and existing complex/numeric diagnostics.
+- Preflight both exact built-in vector cardinality/resource envelopes before traversing scalar leaves, so an independently impossible second vector cannot be hidden by first-vector scalar evidence; trusted scalar type and lossless-`float64` checks still run on the bounded package-owned snapshot before Rust discovery.
 - Reject unequal `mh`/`se` lengths and the fewer-than-two-item domain from callback-free carrier metadata before value-wise validation or dense `float64` conversion, while preserving resource and malformed-carrier error precedence.
 - Seal each admitted exact NumPy/list/tuple input into package-owned evidence before Rust discovery and dispatch, replaying the admitted cardinality and storage/value contract on the snapshot so caller mutation cannot redefine a preflighted vector or leak a caller-owned C-contiguous `float64` alias into the compiled core.
 - Require admitted integer and wider NumPy floating item evidence to preserve its exact finite value across Rust `f64` normalization; lossy or overflowed evidence now fails before compiled-core discovery rather than silently changing the MH statistic or standard error.
