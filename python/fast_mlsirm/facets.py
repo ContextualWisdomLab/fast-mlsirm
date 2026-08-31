@@ -80,6 +80,10 @@ def _response_array(value: object) -> np.ndarray:
             raise ValueError("responses must be real-valued")
         if value.dtype.kind not in ("b", "i", "u", "f"):
             raise ValueError("responses must be a numeric array")
+        if len(admitted_shape) != 3:
+            raise ValueError(dimension_error)
+        if any(axis < 1 for axis in admitted_shape):
+            raise ValueError(nonempty_error)
         response_array = np.array(value, copy=True)
         snapshot_size = int(response_array.size)
         if snapshot_size > _MAX_FACETS_RESPONSE_CELLS:
