@@ -5,6 +5,7 @@ this module only validates and marshals arrays."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 
 import numpy as np
 
@@ -325,6 +326,86 @@ def _trusted_score_source(responses: object) -> object:
     return responses
 
 
+def _snapshot_builtin_score_source(
+    source: list[object] | tuple[object, ...],
+) -> tuple[object, ...]:
+    """Seal exact built-in response evidence before dense NumPy materialization."""
+    row_count = len(source)
+    if row_count > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+        _raise_response_structural_resource_error()
+
+    if type(source) is list:
+        rows = tuple(islice(source, row_count + 1))
+        if len(rows) != row_count or len(source) != row_count:
+            raise ValueError("responses must be a 2-D persons x items array")
+    else:
+        rows = source
+
+    logical_cells = 0
+    structural_nodes = 0
+    snapshots: list[object] = []
+    for row in rows:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            row_cells = int(row.size)
+            logical_cells += row_cells
+            if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
+                _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
+            if row.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row.dtype.kind not in ("b", "i", "u", "f"):
+                raise ValueError("responses must be a numeric array")
+            if int(row.nbytes) > _MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES:
+                _raise_response_resource_error()
+            admitted_shape = row.shape
+            admitted_size = row_cells
+            row_snapshot = np.array(row, copy=True)
+            if row_snapshot.shape != admitted_shape or int(row_snapshot.size) != admitted_size:
+                raise ValueError("responses must be a 2-D persons x items array")
+            snapshots.append(row_snapshot)
+            continue
+
+        if row_type is list:
+            row_cells = len(row)
+            logical_cells += row_cells
+            if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
+                _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
+            row_snapshot = tuple(islice(row, row_cells + 1))
+            if len(row_snapshot) != row_cells or len(row) != row_cells:
+                raise ValueError("responses must be a 2-D persons x items array")
+            snapshots.append(row_snapshot)
+            continue
+
+        if row_type is tuple:
+            row_cells = len(row)
+            logical_cells += row_cells
+            if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
+                _raise_response_resource_error()
+            structural_nodes += 1 + row_cells
+            if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+                _raise_response_structural_resource_error()
+            snapshots.append(row)
+            continue
+
+        logical_cells += 1
+        if logical_cells > _MAX_MOKKEN_RESPONSE_CELLS:
+            _raise_response_resource_error()
+        structural_nodes += 1
+        if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
+            _raise_response_structural_resource_error()
+        snapshots.append(row)
+
+    snapshot = tuple(snapshots)
+    _trusted_score_source(snapshot)
+    return snapshot
+
+
 def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     """Validate score storage losslessly before signed-int64 marshalling."""
     source = _trusted_score_source(responses)
@@ -340,6 +421,8 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
             raise ValueError("responses must be a numeric array")
         if int(source.nbytes) > _MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES:
             _raise_response_resource_error()
+    else:
+        source = _snapshot_builtin_score_source(source)
     try:
         if type(source) is np.ndarray:
             raw = np.array(source, copy=True)
@@ -347,7 +430,7 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
             raw = np.asarray(source)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("responses must be a numeric array") from None
-    if type(source) is np.ndarray and raw.size > _MAX_MOKKEN_RESPONSE_CELLS:
+    if raw.size > _MAX_MOKKEN_RESPONSE_CELLS:
         _raise_response_resource_error()
     if raw.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
