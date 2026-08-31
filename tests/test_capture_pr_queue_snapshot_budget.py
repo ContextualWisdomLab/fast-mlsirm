@@ -70,7 +70,7 @@ def _runner(*, identities: list[dict[str, int]], detail_factory=_detail):
 def test_capture_fails_closed_when_cumulative_enrichment_budget_expires() -> None:
     """Sequential enrichment stops while a bounded snapshot and error remain publishable."""
     module = _module()
-    clock = iter((0.0, 1.0, 421.0))
+    clock = iter((0.0, 0.0, 0.0, 0.0, 1.0, 421.0))
 
     snapshot = module.capture_pr_queue_snapshot(
         "owner/repo",
@@ -89,7 +89,7 @@ def test_capture_fails_closed_when_cumulative_enrichment_budget_expires() -> Non
 def test_capture_fails_closed_if_budget_expires_before_base_identity() -> None:
     """Exact default-branch identity is never fetched after the live budget expires."""
     module = _module()
-    clock = iter((0.0, 421.0))
+    clock = iter((0.0, 0.0, 0.0, 0.0, 421.0))
 
     snapshot = module.capture_pr_queue_snapshot(
         "owner/repo",
