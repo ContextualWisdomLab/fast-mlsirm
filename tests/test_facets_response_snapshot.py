@@ -126,3 +126,35 @@ def test_response_array_rejects_invalid_ndarray_storage_before_copy(
         facets._response_array(source)
 
     assert copy_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("shape", "message"),
+    [
+        ((20_000_000,), "responses must be a 3-D persons x items x raters array"),
+        ((0, 1, 1), "responses must contain at least one person, one item and one rater"),
+        ((1, 0, 1), "responses must contain at least one person, one item and one rater"),
+        ((1, 1, 0), "responses must contain at least one person, one item and one rater"),
+    ],
+)
+def test_response_array_rejects_impossible_ndarray_shape_before_copy(
+    monkeypatch: pytest.MonkeyPatch,
+    shape: tuple[int, ...],
+    message: str,
+) -> None:
+    """Inert invalid shape metadata fails before package copy allocation."""
+
+    source = np.broadcast_to(np.float64(0.0), shape)
+    copy_calls = 0
+
+    def unexpected_copy(*args: object, **kwargs: object) -> np.ndarray:
+        nonlocal copy_calls
+        copy_calls += 1
+        raise AssertionError("invalid ndarray shape reached ownership copy")
+
+    monkeypatch.setattr(facets.np, "array", unexpected_copy)
+
+    with pytest.raises(ValueError, match=message):
+        facets._response_array(source)
+
+    assert copy_calls == 0
