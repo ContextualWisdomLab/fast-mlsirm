@@ -96,3 +96,33 @@ def test_fit_facets_dispatches_pre_mutation_ndarray_snapshot(
         core.observed,
         np.ones(expected.size, dtype=np.bool_),
     )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "message"),
+    [
+        (np.dtype(np.complex128), "responses must be real-valued"),
+        (np.dtype("V4096"), "responses must be a numeric array"),
+    ],
+)
+def test_response_array_rejects_invalid_ndarray_storage_before_copy(
+    monkeypatch: pytest.MonkeyPatch,
+    dtype: np.dtype,
+    message: str,
+) -> None:
+    """Invalid exact ndarray storage fails before package copy allocation."""
+
+    source = np.empty((1, 1, 1), dtype=dtype)
+    copy_calls = 0
+
+    def unexpected_copy(*args: object, **kwargs: object) -> np.ndarray:
+        nonlocal copy_calls
+        copy_calls += 1
+        raise AssertionError("invalid ndarray storage reached ownership copy")
+
+    monkeypatch.setattr(facets.np, "array", unexpected_copy)
+
+    with pytest.raises(ValueError, match=message):
+        facets._response_array(source)
+
+    assert copy_calls == 0
