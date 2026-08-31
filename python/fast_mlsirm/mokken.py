@@ -215,22 +215,28 @@ def _validated_native_coefficients(
         _raise_native_result_error()
     if any(type(key) is not str for key in result):
         _raise_native_result_error()
-    if any(field not in result for field in required_fields):
+
+    snapshot = result.copy()
+    if len(snapshot) != len(required_fields):
+        _raise_native_result_error()
+    if any(type(key) is not str for key in snapshot):
+        _raise_native_result_error()
+    if any(field not in snapshot for field in required_fields):
         _raise_native_result_error()
 
-    h = result["h"]
-    z = result["z"]
+    h = snapshot["h"]
+    z = snapshot["z"]
     if type(h) is not float or type(z) is not float:
         _raise_native_result_error()
     if not np.isfinite(h) or not np.isfinite(z):
         _raise_native_result_error()
 
     return _ValidatedMokkenCoefficients(
-        hij=_native_pairwise_matrix(result["hij"], n_items),
-        hi=_native_finite_float_vector(result["hi"], n_items),
+        hij=_native_pairwise_matrix(snapshot["hij"], n_items),
+        hi=_native_finite_float_vector(snapshot["hi"], n_items),
         h=h,
-        zij=_native_pairwise_matrix(result["zij"], n_items),
-        zi=_native_finite_float_vector(result["zi"], n_items),
+        zij=_native_pairwise_matrix(snapshot["zij"], n_items),
+        zi=_native_finite_float_vector(snapshot["zi"], n_items),
         z=z,
     )
 
