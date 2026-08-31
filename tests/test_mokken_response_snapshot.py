@@ -132,3 +132,33 @@ def test_builtin_sequence_replays_cell_budget_after_preflight_mutation(
 
     with pytest.raises(ValueError, match=r"responses exceed 4 logical cells"):
         mokken._validated_scores(responses)
+
+
+def test_builtin_row_growth_resource_error_precedes_live_scalar_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Post-preflight growth must be re-bounded before mutable-row value scans."""
+    responses: list[list[object]] = [[0, 1], [1, 0]]
+    target_row = responses[0]
+    original_len = len
+    mutated = False
+
+    def _grow_after_first_row_length(value: object) -> int:
+        nonlocal mutated
+        observed = original_len(value)  # type: ignore[arg-type]
+        if value is target_row and not mutated:
+            target_row.extend([0, object()])
+            mutated = True
+        return observed
+
+    def _unexpected_materialization(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("over-budget mutated row reached NumPy materialization")
+
+    monkeypatch.setattr(mokken, "_MAX_MOKKEN_RESPONSE_CELLS", 4)
+    monkeypatch.setattr(mokken, "len", _grow_after_first_row_length, raising=False)
+    monkeypatch.setattr(mokken.np, "asarray", _unexpected_materialization)
+
+    with pytest.raises(ValueError, match=r"responses exceed 4 logical cells"):
+        mokken._validated_scores(responses)
+
+    assert mutated
