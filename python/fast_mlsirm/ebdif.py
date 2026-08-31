@@ -205,7 +205,7 @@ def _exact_finite_result_vector(
     minimum: float | None = None,
     maximum: float | None = None,
 ) -> np.ndarray:
-    """Validate one concrete PyO3 float64 vector without conversion protocols."""
+    """Seal one concrete PyO3 float64 vector without conversion protocols."""
 
     if type(value) is not np.ndarray:
         raise invalid
@@ -215,16 +215,27 @@ def _exact_finite_result_vector(
         raise invalid
     if not value.flags.c_contiguous or not value.flags.owndata:
         raise invalid
+
+    snapshot = value.copy(order="C")
+    if type(snapshot) is not np.ndarray:
+        raise invalid
+    if snapshot.dtype != np.dtype(np.float64) or snapshot.ndim != 1:
+        raise invalid
+    if int(snapshot.shape[0]) != expected_length:
+        raise invalid
+    if not snapshot.flags.c_contiguous or not snapshot.flags.owndata:
+        raise invalid
+
     for start in range(0, expected_length, _RESULT_FINITE_CHUNK):
         stop = min(start + _RESULT_FINITE_CHUNK, expected_length)
-        chunk = value[start:stop]
+        chunk = snapshot[start:stop]
         if not bool(np.isfinite(chunk).all()):
             raise invalid
         if minimum is not None and not bool((chunk >= minimum).all()):
             raise invalid
         if maximum is not None and not bool((chunk <= maximum).all()):
             raise invalid
-    return value
+    return snapshot
 
 
 def _validated_rust_result(
