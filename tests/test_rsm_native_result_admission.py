@@ -9,14 +9,15 @@ import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import fit_rsm
 
 
-def _native_result() -> dict[str, object]:
+def _native_result(*, converged: bool = True) -> dict[str, object]:
+    trace = [-10.0, -9.0] if converged else [-10.0, -9.0, -8.5]
     return {
-        "item_location": np.array([0.1, -0.1], dtype=np.float64),
-        "thresholds": np.array([0.0], dtype=np.float64),
-        "theta": np.array([-0.2, 0.2], dtype=np.float64),
-        "loglik_trace": np.array([-10.0, -9.0], dtype=np.float64),
+        "item_location": [0.1, -0.1],
+        "thresholds": [0.0],
+        "theta": [-0.2, 0.2],
+        "loglik_trace": trace,
         "n_iter": 2,
-        "converged": True,
+        "converged": converged,
         "n_parameters": 2,
     }
 
@@ -33,7 +34,7 @@ def _fit_with_result(monkeypatch, result: object):
 
 
 def test_fit_rsm_seals_native_vector_storage(monkeypatch):
-    """Returned evidence must not alias provider-owned native arrays."""
+    """Returned evidence must not alias provider-owned PyO3 list vectors."""
 
     result = _native_result()
     fitted = _fit_with_result(monkeypatch, result)
@@ -43,10 +44,10 @@ def test_fit_rsm_seals_native_vector_storage(monkeypatch):
     expected_theta = fitted.theta.copy()
     expected_loglik = fitted.loglik_trace.copy()
 
-    result["item_location"][:] = 99.0
-    result["thresholds"][:] = 99.0
-    result["theta"][:] = 99.0
-    result["loglik_trace"][:] = 99.0
+    result["item_location"][0] = 99.0
+    result["thresholds"][0] = 99.0
+    result["theta"][0] = 99.0
+    result["loglik_trace"][0] = 99.0
 
     np.testing.assert_array_equal(fitted.item_location, expected_item_location)
     np.testing.assert_array_equal(fitted.thresholds, expected_thresholds)
@@ -68,14 +69,14 @@ def test_fit_rsm_rejects_wrong_native_vector_cardinality(monkeypatch):
     """Native vectors must match the deterministic public result dimensions."""
 
     result = _native_result()
-    result["item_location"] = np.array([0.1], dtype=np.float64)
+    result["item_location"] = [0.1]
 
     with pytest.raises(RuntimeError, match="invalid RSM Rust result payload"):
         _fit_with_result(monkeypatch, result)
 
 
 def test_fit_rsm_rejects_callback_bearing_native_scalar(monkeypatch):
-    """Native scalar coercion must not execute provider conversion callbacks."""
+    """Native scalar admission must not execute provider conversion callbacks."""
 
     called = False
 
@@ -91,3 +92,35 @@ def test_fit_rsm_rejects_callback_bearing_native_scalar(monkeypatch):
     with pytest.raises(RuntimeError, match="invalid RSM Rust result payload"):
         _fit_with_result(monkeypatch, result)
     assert called is False
+
+
+def test_fit_rsm_accepts_native_max_iteration_trace_contract(monkeypatch):
+    """An unconverged native fit carries one final returned-parameter likelihood."""
+
+    fitted = _fit_with_result(monkeypatch, _native_result(converged=False))
+
+    assert fitted.converged is False
+    assert fitted.n_iter == 2
+    assert fitted.loglik_trace.shape == (3,)
+
+
+def test_fit_rsm_compiled_core_converged_trace_contract():
+    """The real PyO3 producer is accepted on a deterministic converged path."""
+
+    responses = np.array([[0, 1], [1, 0]], dtype=np.float64)
+    fitted = fit_rsm(responses, n_cat=2, max_iter=2, tol=1e9)
+
+    assert fitted.converged is True
+    assert fitted.n_iter == 2
+    assert fitted.loglik_trace.shape == (2,)
+
+
+def test_fit_rsm_compiled_core_max_iteration_trace_contract():
+    """The real PyO3 producer is accepted when the iteration cap is reached."""
+
+    responses = np.array([[0, 1], [1, 0]], dtype=np.float64)
+    fitted = fit_rsm(responses, n_cat=2, max_iter=1, tol=1e-14)
+
+    assert fitted.converged is False
+    assert fitted.n_iter == 1
+    assert fitted.loglik_trace.shape == (2,)
