@@ -298,7 +298,7 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI
-    needs: [sdist, wheels]
+    needs: [sdist, wheels, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: pypi
