@@ -77,7 +77,7 @@ def test_sbom_is_exact_release_source_bound_spdx_and_attested():
 
 
 def test_release_assets_attach_sbom_without_leaking_it_into_pypi_upload():
-    """The SBOM is a GitHub release asset, never an input to PyPI publication."""
+    """SBOM success gates PyPI, but its JSON never enters the upload directory."""
     text = _workflow_text()
     release_assets = _job_block(text, "release-assets", "publish-pypi")
     publish = _job_block(text, "publish-pypi")
@@ -88,7 +88,7 @@ def test_release_assets_attach_sbom_without_leaking_it_into_pypi_upload():
     assert "path: dist" in release_assets
     assert 'gh release upload "$RELEASE_TAG" dist/*' in release_assets
 
-    assert "needs: [sdist, wheels]" in publish
+    assert "needs: [sdist, wheels, sbom]" in publish
     assert "pattern: dist-*" in publish
     assert "release-sbom" not in publish
     assert "attestations: false" in publish
