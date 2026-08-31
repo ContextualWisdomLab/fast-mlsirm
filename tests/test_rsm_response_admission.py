@@ -110,6 +110,50 @@ def test_top_level_float64_response_array_is_package_owned_after_admission() -> 
     np.testing.assert_array_equal(admitted, expected)
 
 
+def test_sequence_outer_rebind_at_numpy_seam_cannot_redefine_admitted_evidence() -> None:
+    responses = [[0.0, 1.0], [2.0, 0.0]]
+    expected = np.array(responses, dtype=np.float64)
+    real_asarray = np.asarray
+
+    def mutate_then_materialize(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        responses[1] = [0.0, 0.0]
+        return real_asarray(value, *args, **kwargs)
+
+    with patch("fast_mlsirm.rsm.np.asarray", side_effect=mutate_then_materialize):
+        admitted = _real_numeric_response_matrix(responses)
+
+    np.testing.assert_array_equal(admitted, expected)
+
+
+def test_sequence_row_mutation_at_numpy_seam_cannot_redefine_admitted_evidence() -> None:
+    mutable_row = [2.0, 0.0]
+    responses = [[0.0, 1.0], mutable_row]
+    expected = np.array(responses, dtype=np.float64)
+    real_asarray = np.asarray
+
+    def mutate_then_materialize(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        mutable_row[0] = 0.0
+        return real_asarray(value, *args, **kwargs)
+
+    with patch("fast_mlsirm.rsm.np.asarray", side_effect=mutate_then_materialize):
+        admitted = _real_numeric_response_matrix(responses)
+
+    np.testing.assert_array_equal(admitted, expected)
+
+
+def test_sequence_invalid_ndarray_row_storage_fails_before_numpy_materialization() -> None:
+    responses = [
+        np.array([0.0 + 1.0j, 1.0], dtype=np.complex128),
+        np.array([1.0, 0.0], dtype=np.float64),
+    ]
+    with patch(
+        "fast_mlsirm.rsm.np.asarray",
+        side_effect=_numpy_materialization_must_not_run,
+    ):
+        with pytest.raises(ValueError, match="responses must be a real numeric array"):
+            _real_numeric_response_matrix(responses)
+
+
 def test_object_response_cells_fail_without_numeric_callbacks_or_native_discovery() -> None:
     _FloatTrap.callbacks = 0
     responses = np.array([[0, 1], [2, _FloatTrap()]], dtype=object)
