@@ -46,6 +46,7 @@ _EBDIF_RESULT_KEYS = frozenset(
 )
 _MAX_EBDIF_ITEMS = 20_000_000
 _EBDIF_RESULT_VALUES_PER_ITEM = 8
+_EBDIF_RESULT_STORAGE_COPIES = 2
 _MAX_EBDIF_RESULT_VALUES = 20_000_000
 _RESULT_FINITE_CHUNK = 65_536
 
@@ -80,9 +81,10 @@ def _enforce_item_budget(name: str, length: int) -> None:
 
 
 def _enforce_result_budget(n_items: int) -> None:
-    """Bound deterministic native-plus-snapshot output from inert cardinality."""
+    """Bound concurrent native-plus-snapshot output from inert cardinality."""
 
-    if n_items > _MAX_EBDIF_RESULT_VALUES // _EBDIF_RESULT_VALUES_PER_ITEM:
+    values_per_item = _EBDIF_RESULT_VALUES_PER_ITEM * _EBDIF_RESULT_STORAGE_COPIES
+    if n_items > _MAX_EBDIF_RESULT_VALUES // values_per_item:
         raise ValueError(
             f"EBDIF result exceeds the {_MAX_EBDIF_RESULT_VALUES}-value resource limit"
         )
