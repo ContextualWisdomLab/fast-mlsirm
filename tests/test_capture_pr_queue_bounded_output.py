@@ -42,6 +42,28 @@ def test_run_gh_json_uses_exact_capture_bounds(monkeypatch):
     }
 
 
+def test_run_gh_json_caps_attempt_to_remaining_capture_deadline(monkeypatch):
+    """A command admitted near the cumulative deadline cannot consume 30 seconds."""
+    module = _module()
+    observed: dict[str, object] = {}
+
+    def bounded(command, **kwargs):
+        observed.update(kwargs)
+        return subprocess.CompletedProcess(list(command), 0, '{"ok": true}', "")
+
+    monkeypatch.setattr(module, "run_bounded_capture", bounded)
+
+    payload, error = module._run_gh_json(
+        ["gh", "api", "x"],
+        deadline=100.25,
+        monotonic=lambda: 100.0,
+    )
+
+    assert payload == {"ok": True}
+    assert error is None
+    assert observed["timeout_seconds"] == 0.25
+
+
 def test_run_gh_json_fails_closed_without_retry_on_capture_overflow(monkeypatch):
     """Oversized command output is an audit failure, not a transient gateway retry."""
     module = _module()
