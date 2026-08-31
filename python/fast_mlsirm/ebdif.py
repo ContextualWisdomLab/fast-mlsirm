@@ -45,6 +45,8 @@ _EBDIF_RESULT_KEYS = frozenset(
     {"mu", "tau2", "tau2_raw", "weight", "post_mean", "post_var", "cat_probs"}
 )
 _MAX_EBDIF_ITEMS = 20_000_000
+_EBDIF_RESULT_VALUES_PER_ITEM = 8
+_MAX_EBDIF_RESULT_VALUES = 20_000_000
 _RESULT_FINITE_CHUNK = 65_536
 
 
@@ -75,6 +77,15 @@ def _enforce_item_budget(name: str, length: int) -> None:
 
     if length > _MAX_EBDIF_ITEMS:
         raise ValueError(f"{name} exceeds the {_MAX_EBDIF_ITEMS}-item resource limit")
+
+
+def _enforce_result_budget(n_items: int) -> None:
+    """Bound deterministic native-plus-snapshot output from inert cardinality."""
+
+    if n_items > _MAX_EBDIF_RESULT_VALUES // _EBDIF_RESULT_VALUES_PER_ITEM:
+        raise ValueError(
+            f"EBDIF result exceeds the {_MAX_EBDIF_RESULT_VALUES}-value resource limit"
+        )
 
 
 def _trusted_1d_length(x, name: str) -> int:
@@ -330,6 +341,7 @@ def eb_mh_dif(mh, se) -> EbDifResult:
         raise ValueError("mh and se must have the same length")
     if mh_length < 2:
         raise ValueError("need at least 2 items")
+    _enforce_result_budget(mh_length)
 
     mhf = _validated_1d(mh, "mh", expected_length=mh_length)
     sef = _validated_1d(se, "se", expected_length=se_length)
