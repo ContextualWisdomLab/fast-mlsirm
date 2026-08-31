@@ -288,7 +288,7 @@ def _trusted_score_source(responses: object) -> object:
                 _raise_response_structural_resource_error()
             if rectangular_width is None:
                 rectangular_width = row_cells
-            elif row_cells != rectangular_width:
+            elif row_width != rectangular_width:
                 rectangular_rows = False
             continue
         # Preserve the historical flat built-in-sequence path long enough for
@@ -325,12 +325,12 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     try:
         if type(source) is np.ndarray:
             raw = np.array(source, copy=True)
-            if raw.size > _MAX_MOKKEN_RESPONSE_CELLS:
-                _raise_response_resource_error()
         else:
             raw = np.asarray(source)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("responses must be a numeric array") from None
+    if type(source) is np.ndarray and raw.size > _MAX_MOKKEN_RESPONSE_CELLS:
+        _raise_response_resource_error()
     if raw.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = raw.shape
