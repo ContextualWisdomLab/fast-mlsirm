@@ -27,6 +27,7 @@ def test_standalone_cargo_lock_roots_are_dependabot_managed() -> None:
         fuzz_manifest = tomllib.load(fh)
 
     maturin_manifest = Path(pyproject["tool"]["maturin"]["manifest-path"])
+    assert (ROOT / maturin_manifest).is_file()
     maturin_root = maturin_manifest.parent
     excluded_roots = {Path(path) for path in workspace.get("exclude", [])}
     assert maturin_root in excluded_roots
