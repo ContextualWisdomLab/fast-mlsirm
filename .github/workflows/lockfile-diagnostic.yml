@@ -29,11 +29,12 @@ jobs:
           cargo generate-lockfile --manifest-path fuzz/Cargo.toml
           cargo metadata --locked --format-version 1 --manifest-path crates/fast-mlsirm-py/Cargo.toml >/dev/null
           cargo metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
-          echo 'PY_LOCK_BASE64_BEGIN'
-          base64 -w0 crates/fast-mlsirm-py/Cargo.lock
-          echo
-          echo 'PY_LOCK_BASE64_END'
-          echo 'FUZZ_LOCK_BASE64_BEGIN'
-          base64 -w0 fuzz/Cargo.lock
-          echo
-          echo 'FUZZ_LOCK_BASE64_END'
+      - name: Export exact generated locks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sha2-standalone-locks
+          path: |
+            crates/fast-mlsirm-py/Cargo.lock
+            fuzz/Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
