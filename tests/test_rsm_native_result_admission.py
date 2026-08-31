@@ -17,7 +17,7 @@ def _native_result() -> dict[str, object]:
         "loglik_trace": np.array([-10.0, -9.0], dtype=np.float64),
         "n_iter": 2,
         "converged": True,
-        "n_parameters": 3,
+        "n_parameters": 2,
     }
 
 
