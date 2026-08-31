@@ -147,21 +147,38 @@ def _lossless_float64_array(xa: np.ndarray, name: str) -> np.ndarray:
     return narrowed
 
 
-def _validated_1d(x, name: str) -> np.ndarray:
-    """Validate trusted, resource-bounded real 1-D evidence without caller hooks."""
+def _validated_1d(x, name: str, *, expected_length: int) -> np.ndarray:
+    """Seal and validate bounded real 1-D evidence without caller-owned aliases."""
+
     if type(x) is np.ndarray:
         if x.ndim != 1:
             raise ValueError(f"{name} must be a 1-D array")
-        _enforce_item_budget(name, int(x.shape[0]))
-        xa = x
-    elif type(x) in (list, tuple):
-        _enforce_item_budget(name, len(x))
-        if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in x):
+        current_length = int(x.shape[0])
+        _enforce_item_budget(name, current_length)
+        if current_length != expected_length:
+            raise ValueError("mh and se must have the same length")
+        if x.dtype.kind == "c":
+            raise ValueError(f"{name} must be real-valued")
+        if x.dtype.kind not in ("b", "i", "u", "f"):
             raise ValueError(f"{name} must be a numeric array")
-        if any(not _scalar_preserves_float64_identity(value) for value in x):
+        try:
+            xa = np.array(x, copy=True)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name} must be a numeric array") from exc
+    elif type(x) in (list, tuple):
+        current_length = len(x)
+        _enforce_item_budget(name, current_length)
+        if current_length != expected_length:
+            raise ValueError("mh and se must have the same length")
+        snapshot = list.copy(x) if type(x) is list else x
+        if len(snapshot) != expected_length:
+            raise ValueError("mh and se must have the same length")
+        if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in snapshot):
+            raise ValueError(f"{name} must be a numeric array")
+        if any(not _scalar_preserves_float64_identity(value) for value in snapshot):
             raise ValueError(f"{name} entries must be exactly representable as float64")
         try:
-            xa = np.asarray(x)
+            xa = np.asarray(snapshot)
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError(f"{name} must be a numeric array") from exc
     else:
@@ -169,6 +186,8 @@ def _validated_1d(x, name: str) -> np.ndarray:
 
     if xa.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
+    if int(xa.shape[0]) != expected_length:
+        raise ValueError("mh and se must have the same length")
     if np.iscomplexobj(xa):
         raise ValueError(f"{name} must be real-valued")
     if xa.dtype.kind == "b":
@@ -299,8 +318,8 @@ def eb_mh_dif(mh, se) -> EbDifResult:
     if mh_length < 2:
         raise ValueError("need at least 2 items")
 
-    mhf = _validated_1d(mh, "mh")
-    sef = _validated_1d(se, "se")
+    mhf = _validated_1d(mh, "mh", expected_length=mh_length)
+    sef = _validated_1d(se, "se", expected_length=se_length)
     if not np.all(np.isfinite(mhf)):
         raise ValueError("mh entries must be finite (filter NaN MH rows first)")
     if not np.all(np.isfinite(sef) & (sef > 0.0)):
