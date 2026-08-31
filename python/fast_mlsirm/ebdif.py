@@ -248,13 +248,17 @@ def _validated_rust_result(
     invalid = RuntimeError("invalid EBDIF Rust result payload")
     if type(result) is not dict or len(result) != len(_EBDIF_RESULT_KEYS):
         raise invalid
-    keys = list(dict.keys(result))
+
+    root = dict.copy(result)
+    if type(root) is not dict or len(root) != len(_EBDIF_RESULT_KEYS):
+        raise invalid
+    keys = list(dict.keys(root))
     if any(type(key) is not str for key in keys) or set(keys) != _EBDIF_RESULT_KEYS:
         raise invalid
 
-    mu = dict.__getitem__(result, "mu")
-    tau2 = dict.__getitem__(result, "tau2")
-    tau2_raw = dict.__getitem__(result, "tau2_raw")
+    mu = dict.__getitem__(root, "mu")
+    tau2 = dict.__getitem__(root, "tau2")
+    tau2_raw = dict.__getitem__(root, "tau2_raw")
     if any(type(value) is not float or not isfinite(value) for value in (mu, tau2, tau2_raw)):
         raise invalid
     expected_tau2 = tau2_raw if tau2_raw > 0.0 else 0.0
@@ -262,25 +266,25 @@ def _validated_rust_result(
         raise invalid
 
     weight = _exact_finite_result_vector(
-        dict.__getitem__(result, "weight"),
+        dict.__getitem__(root, "weight"),
         expected_length=n_items,
         invalid=invalid,
         minimum=0.0,
         maximum=1.0,
     )
     post_mean = _exact_finite_result_vector(
-        dict.__getitem__(result, "post_mean"),
+        dict.__getitem__(root, "post_mean"),
         expected_length=n_items,
         invalid=invalid,
     )
     post_var = _exact_finite_result_vector(
-        dict.__getitem__(result, "post_var"),
+        dict.__getitem__(root, "post_var"),
         expected_length=n_items,
         invalid=invalid,
         minimum=0.0,
     )
     cat_probs = _exact_finite_result_vector(
-        dict.__getitem__(result, "cat_probs"),
+        dict.__getitem__(root, "cat_probs"),
         expected_length=n_items * 5,
         invalid=invalid,
         minimum=0.0,
