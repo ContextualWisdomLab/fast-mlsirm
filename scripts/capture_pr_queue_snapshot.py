@@ -420,6 +420,9 @@ def capture_pr_queue_snapshot(
         detail, detail_error = live_run_json(detail_command)
         if detail_error is not None:
             errors.append(detail_error)
+            if monotonic() >= deadline:
+                budget_exhausted = True
+                break
             continue
         if not isinstance(detail, dict):
             errors.append(
