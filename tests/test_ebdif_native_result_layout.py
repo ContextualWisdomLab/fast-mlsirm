@@ -73,3 +73,27 @@ def test_native_result_vector_must_own_pyo3_backing_storage(
 
     with pytest.raises(RuntimeError, match="invalid EBDIF Rust result payload"):
         ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
+
+
+def test_native_result_vector_is_sealed_before_public_marshalling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider-owned result storage cannot mutate the published evidence."""
+
+    native = _result()
+    retained_weight = native["weight"]
+    assert type(retained_weight) is np.ndarray
+    assert retained_weight.flags.owndata
+
+    class Core:
+        @staticmethod
+        def py_eb_mh_dif(mh: np.ndarray, se: np.ndarray) -> dict[str, object]:
+            del mh, se
+            return native
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
+
+    result = ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
+    assert result.weight is not retained_weight
+    retained_weight[0] = 0.75
+    np.testing.assert_array_equal(result.weight, np.zeros(2, dtype=np.float64))
