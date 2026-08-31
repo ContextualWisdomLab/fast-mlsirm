@@ -23,6 +23,7 @@ _SAFE_OPEN_ERROR = "JSON input could not be opened as a stable regular file"
 _UNSTABLE_PATH_ERROR = "JSON input path changed during the bounded read"
 _DUPLICATE_MEMBER_ERROR = "JSON input contains a duplicate JSON object member"
 _NONFINITE_NUMBER_ERROR = "JSON input contains a non-finite JSON numeric value"
+_INTEGER_CONVERSION_ERROR = "JSON input exceeds decoder integer conversion capacity"
 
 
 def _positive_limit(value: object, field_name: str) -> int:
@@ -173,6 +174,14 @@ def _parse_finite_float(value: str) -> float:
     return parsed
 
 
+def _parse_bounded_integer(value: str) -> int:
+    """Parse one JSON integer while preserving CPython's conversion safety limit."""
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(_INTEGER_CONVERSION_ERROR) from None
+
+
 def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     """Build one JSON object while rejecting repeated member names."""
     result: dict[str, Any] = {}
@@ -190,6 +199,7 @@ def _loads_interoperable_json(content: str) -> Any:
         object_pairs_hook=_reject_duplicate_members,
         parse_constant=_reject_nonfinite_constant,
         parse_float=_parse_finite_float,
+        parse_int=_parse_bounded_integer,
     )
 
 
