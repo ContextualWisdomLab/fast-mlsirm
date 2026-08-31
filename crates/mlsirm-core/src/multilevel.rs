@@ -64,6 +64,16 @@ fn preflight_crossed_estimator_controls(
     if classification_offsets.len() > n_effects + 1 {
         return Err("classification_offsets exceeds n_effects + 1".to_string());
     }
+    let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
+    if expected > estimator::MAX_CROSSED_RESPONSE_CELLS {
+        return Err(format!(
+            "crossed response matrix exceeds the logical-cell cap of {}",
+            estimator::MAX_CROSSED_RESPONSE_CELLS
+        ));
+    }
+    if y.len() != expected {
+        return Err("y must have length n_persons * n_items".to_string());
+    }
     if classification_offsets.len() < 2 {
         return Err("classification_offsets must contain at least one classification".to_string());
     }
@@ -82,16 +92,6 @@ fn preflight_crossed_estimator_controls(
         if window[1] - window[0] < 2 {
             return Err("each classification must contain at least two context levels".to_string());
         }
-    }
-    let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
-    if expected > estimator::MAX_CROSSED_RESPONSE_CELLS {
-        return Err(format!(
-            "crossed response matrix exceeds the logical-cell cap of {}",
-            estimator::MAX_CROSSED_RESPONSE_CELLS
-        ));
-    }
-    if y.len() != expected {
-        return Err("y must have length n_persons * n_items".to_string());
     }
     if row_offsets.len() > MAX_CONTEXT_ROW_OFFSETS {
         return Err(format!(
