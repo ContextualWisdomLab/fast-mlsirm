@@ -242,7 +242,72 @@ def _real_numeric_response_matrix(value: object) -> np.ndarray:
             raise ValueError("responses must be a real numeric array")
         return np.ascontiguousarray(snapshot, dtype=np.float64)
 
-    array = np.asarray(source)
+    source_len = len(source)
+    if type(source) is list:
+        rows = source.copy()
+        if len(rows) != source_len or len(source) != source_len:
+            raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+    else:
+        rows = source
+    if len(rows) != source_len or not rows:
+        raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+
+    first_row = rows[0]
+    if type(first_row) is np.ndarray:
+        expected_width = int(first_row.size)
+    else:
+        expected_width = len(first_row)
+
+    row_snapshots: list[tuple[object, ...] | np.ndarray] = []
+    for row in rows:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            admitted_size = int(row.size)
+            admitted_dtype = row.dtype
+            if (
+                row.ndim != 1
+                or admitted_size != expected_width
+                or admitted_dtype.kind not in {"b", "i", "u", "f"}
+            ):
+                if row.ndim != 1 or admitted_size != expected_width:
+                    raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+                raise ValueError("responses must be a real numeric array")
+            row_snapshot = np.array(row, copy=True, order="K", subok=False)
+            if (
+                type(row_snapshot) is not np.ndarray
+                or row_snapshot.ndim != 1
+                or int(row_snapshot.size) != admitted_size
+                or int(row_snapshot.size) != expected_width
+                or row_snapshot.dtype != admitted_dtype
+                or row_snapshot.dtype.kind not in {"b", "i", "u", "f"}
+                or not row_snapshot.flags.owndata
+                or np.shares_memory(row_snapshot, row)
+            ):
+                raise ValueError("responses must be a real numeric array")
+            row_snapshots.append(row_snapshot)
+            continue
+
+        if row_type is list:
+            admitted_size = len(row)
+            if admitted_size != expected_width:
+                raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+            row_snapshot = tuple(row)
+            if len(row_snapshot) != admitted_size or len(row) != admitted_size:
+                raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        elif row_type is tuple:
+            row_snapshot = row
+            if len(row_snapshot) != expected_width:
+                raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        else:
+            raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row_snapshot):
+            raise ValueError("responses must be a real numeric array")
+        row_snapshots.append(row_snapshot)
+
+    if type(source) is list and len(source) != source_len:
+        raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+
+    array = np.asarray(row_snapshots)
     if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
         raise ValueError("responses must be a real numeric array")
     return np.ascontiguousarray(array, dtype=np.float64)
