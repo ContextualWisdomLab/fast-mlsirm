@@ -74,20 +74,31 @@ class _ValidatedMokkenCoefficients:
 def _real_control(name: str, value: object) -> float:
     """Normalize one trusted finite real scalar without caller callbacks."""
     value_type = type(value)
+    extended_source: np.longdouble | None = None
     if value_type is int or value_type is float:
         parsed = float(value)
     elif any(value_type is trusted for trusted in _TRUSTED_NUMPY_REAL_TYPES):
+        if value_type is np.longdouble:
+            extended_source = value
         parsed = float(value)
     elif (
         value_type is np.ndarray
         and value.ndim == 0
         and value.dtype.kind in ("i", "u", "f")
     ):
-        parsed = float(value.item())
+        scalar = value.item()
+        if (
+            value.dtype.kind == "f"
+            and value.dtype.itemsize > np.dtype(np.float64).itemsize
+        ):
+            extended_source = np.longdouble(scalar)
+        parsed = float(scalar)
     else:
         raise ValueError(f"{name} must be a real number")
     if not np.isfinite(parsed):
         raise ValueError(f"{name} must be finite")
+    if extended_source is not None and np.longdouble(parsed) != extended_source:
+        raise ValueError(f"{name} must be exactly representable as float64")
     return parsed
 
 
@@ -117,7 +128,6 @@ def _raise_item_matrix_resource_error(n_items: int) -> None:
 def _raise_native_result_error() -> None:
     """Reject a compiled-core result outside the current binding contract."""
     raise ValueError("invalid Mokken Rust result payload")
-
 
 def _native_float_vector(value: object, expected_size: int) -> np.ndarray:
     """Marshal one exact Rust ``Vec<f64>`` carrier after identity replay."""
