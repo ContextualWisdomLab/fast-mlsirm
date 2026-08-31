@@ -26,13 +26,13 @@ def test_second_vector_resource_overflow_wins_before_first_builtin_scalar_scan(
         ebdif.eb_mh_dif([object(), 0.0], [0.3, 0.4, 0.5])
 
 
-def test_aggregate_result_budget_wins_before_input_leaf_traversal(
+def test_aggregate_result_budget_counts_native_and_snapshot_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Deterministic output footprint must be bounded from carrier metadata."""
+    """Native output plus sealed snapshots must fit the metadata-only budget."""
 
     monkeypatch.setattr(ebdif, "_MAX_EBDIF_RESULT_VALUES", 16, raising=False)
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     with pytest.raises(ValueError, match="EBDIF result exceeds the 16-value resource limit"):
-        ebdif.eb_mh_dif([object(), 0.0, 0.0], [0.3, 0.4, 0.5])
+        ebdif.eb_mh_dif([object(), 0.0], [0.3, 0.4])
