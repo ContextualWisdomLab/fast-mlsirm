@@ -36,6 +36,12 @@ _UINT32_MAX = (1 << 32) - 1
 _MAX_MOKKEN_RESPONSE_CELLS = 20_000_000
 _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_MOKKEN_RESPONSE_CELLS
 _MAX_MOKKEN_MATRIX_CELLS = 4_000_000
+_MAX_MOKKEN_NUMERIC_ITEM_BYTES = max(
+    np.dtype(dtype).itemsize for dtype in _TRUSTED_NUMPY_REAL_TYPES
+)
+_MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES = (
+    _MAX_MOKKEN_RESPONSE_CELLS * _MAX_MOKKEN_NUMERIC_ITEM_BYTES
+)
 
 
 @dataclass
@@ -322,6 +328,18 @@ def _trusted_score_source(responses: object) -> object:
 def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     """Validate score storage losslessly before signed-int64 marshalling."""
     source = _trusted_score_source(responses)
+    if type(source) is np.ndarray:
+        if source.ndim != 2:
+            raise ValueError("responses must be a 2-D persons x items array")
+        source_n_items = int(source.shape[1])
+        if source_n_items * source_n_items > _MAX_MOKKEN_MATRIX_CELLS:
+            _raise_item_matrix_resource_error(source_n_items)
+        if source.dtype.kind == "c":
+            raise ValueError("responses must be real-valued")
+        if source.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError("responses must be a numeric array")
+        if int(source.nbytes) > _MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES:
+            _raise_response_resource_error()
     try:
         if type(source) is np.ndarray:
             raw = np.array(source, copy=True)
