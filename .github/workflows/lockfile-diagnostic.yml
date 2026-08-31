@@ -1,0 +1,39 @@
+name: Lockfile diagnostic
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/lockfile-diagnostic.yml"
+      - "Cargo.lock"
+      - "crates/mlsirm-core/Cargo.toml"
+      - "crates/fast-mlsirm-py/Cargo.lock"
+      - "fuzz/Cargo.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  lockfiles:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+      - name: Resolve independent lockfiles
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile --manifest-path crates/fast-mlsirm-py/Cargo.toml
+          cargo generate-lockfile --manifest-path fuzz/Cargo.toml
+          cargo metadata --locked --format-version 1 --manifest-path crates/fast-mlsirm-py/Cargo.toml >/dev/null
+          cargo metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
+          echo 'PY_LOCK_BASE64_BEGIN'
+          base64 -w0 crates/fast-mlsirm-py/Cargo.lock
+          echo
+          echo 'PY_LOCK_BASE64_END'
+          echo 'FUZZ_LOCK_BASE64_BEGIN'
+          base64 -w0 fuzz/Cargo.lock
+          echo
+          echo 'FUZZ_LOCK_BASE64_END'
