@@ -86,27 +86,41 @@ def _run_gh_json(
     *,
     max_attempts: int = MAX_ATTEMPTS,
     retry_sleep_seconds: float = RETRY_SLEEP_SECONDS,
-    timeout_seconds: int = COMMAND_TIMEOUT_SECONDS,
+    timeout_seconds: float = COMMAND_TIMEOUT_SECONDS,
+    deadline: float | None = None,
+    monotonic: Clock = time.monotonic,
 ) -> tuple[Any, dict[str, Any] | None]:
     """Run one GitHub CLI JSON command with bounded, status-specific retries.
 
     Only explicit HTTP 502, 503, and 504 responses are retried. Authentication,
-    schema, rate-limit, parsing, and timeout failures remain fail-closed.
+    schema, rate-limit, parsing, and timeout failures remain fail-closed. When a
+    cumulative deadline is supplied, every attempt uses only the smaller of the
+    per-command timeout and the remaining capture budget.
     """
     attempts = max(1, int(max_attempts))
     attempt = 1
     while True:
+        attempt_timeout = float(timeout_seconds)
+        if deadline is not None:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                return None, _command_error(
+                    command,
+                    stderr="GitHub command exceeded the cumulative capture deadline",
+                    returncode=124,
+                )
+            attempt_timeout = min(attempt_timeout, remaining)
         try:
             completed = run_bounded_capture(
                 list(command),
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=attempt_timeout,
                 max_stdout_bytes=10 * 1024 * 1024,
                 max_stderr_bytes=1024 * 1024,
             )
         except subprocess.TimeoutExpired:
             return None, _command_error(
                 command,
-                stderr=f"GitHub command timed out after {timeout_seconds} seconds",
+                stderr=f"GitHub command timed out after {attempt_timeout:g} seconds",
                 returncode=124,
             )
         except BoundedSubprocessOutputError as exc:
@@ -140,7 +154,17 @@ def _run_gh_json(
         )
         if attempt >= attempts or _TRANSIENT_STATUS_RE.search(stderr) is None:
             return None, error
-        if retry_sleep_seconds > 0:
+        if deadline is not None:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                return None, _command_error(
+                    command,
+                    stderr="GitHub command exceeded the cumulative capture deadline",
+                    returncode=124,
+                )
+            if retry_sleep_seconds > 0:
+                time.sleep(min(retry_sleep_seconds, remaining))
+        elif retry_sleep_seconds > 0:
             time.sleep(retry_sleep_seconds)
         attempt += 1
 
@@ -276,6 +300,11 @@ def capture_pr_queue_snapshot(
     if isinstance(capture_budget_seconds, bool) or capture_budget_seconds <= 0:
         raise ValueError("capture_budget_seconds must be positive")
     deadline = monotonic() + capture_budget_seconds
+    if run_json is _run_gh_json:
+        def live_run_json(command: Sequence[str]) -> tuple[Any, dict[str, Any] | None]:
+            return _run_gh_json(command, deadline=deadline, monotonic=monotonic)
+    else:
+        live_run_json = run_json
 
     repo_command = [
         "gh",
@@ -300,7 +329,7 @@ def capture_pr_queue_snapshot(
 
     repo_payload, repo_error, budget_exhausted = _run_budgeted_json(
         repo_command,
-        run_json=run_json,
+        run_json=live_run_json,
         monotonic=monotonic,
         deadline=deadline,
         capture_budget_seconds=capture_budget_seconds,
@@ -311,7 +340,7 @@ def capture_pr_queue_snapshot(
     else:
         identity_payload, identity_error, budget_exhausted = _run_budgeted_json(
             identity_command,
-            run_json=run_json,
+            run_json=live_run_json,
             monotonic=monotonic,
             deadline=deadline,
             capture_budget_seconds=capture_budget_seconds,
@@ -321,7 +350,7 @@ def capture_pr_queue_snapshot(
         else:
             history_payload, history_error, budget_exhausted = _run_budgeted_json(
                 history_command,
-                run_json=run_json,
+                run_json=live_run_json,
                 monotonic=monotonic,
                 deadline=deadline,
                 capture_budget_seconds=capture_budget_seconds,
@@ -388,7 +417,7 @@ def capture_pr_queue_snapshot(
             errors.append(_capture_budget_error(detail_command, capture_budget_seconds))
             budget_exhausted = True
             break
-        detail, detail_error = run_json(detail_command)
+        detail, detail_error = live_run_json(detail_command)
         if detail_error is not None:
             errors.append(detail_error)
             continue
@@ -441,7 +470,7 @@ def capture_pr_queue_snapshot(
         elif monotonic() >= deadline:
             errors.append(_capture_budget_error(base_command, capture_budget_seconds))
         else:
-            base_payload, base_error = run_json(base_command)
+            base_payload, base_error = live_run_json(base_command)
             if base_error is not None:
                 errors.append(base_error)
             elif isinstance(base_payload, dict):
