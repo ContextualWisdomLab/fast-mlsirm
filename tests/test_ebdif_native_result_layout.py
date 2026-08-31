@@ -97,3 +97,40 @@ def test_native_result_vector_is_sealed_before_public_marshalling(
     assert result.weight is not retained_weight
     retained_weight[0] = 0.75
     np.testing.assert_array_equal(result.weight, np.zeros(2, dtype=np.float64))
+
+
+def test_native_result_root_is_sealed_before_field_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider root rebinding cannot splice newer fields into one result."""
+
+    native = _result()
+    admitted_post_mean = native["post_mean"]
+    replacement_post_mean = np.ones(2, dtype=np.float64)
+    assert type(admitted_post_mean) is np.ndarray
+
+    class Core:
+        @staticmethod
+        def py_eb_mh_dif(mh: np.ndarray, se: np.ndarray) -> dict[str, object]:
+            del mh, se
+            return native
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
+    original_validator = ebdif._exact_finite_result_vector
+    calls = 0
+
+    def mutating_validator(*args, **kwargs):
+        nonlocal calls
+        snapshot = original_validator(*args, **kwargs)
+        calls += 1
+        if calls == 1:
+            native["post_mean"] = replacement_post_mean
+        return snapshot
+
+    monkeypatch.setattr(ebdif, "_exact_finite_result_vector", mutating_validator)
+
+    result = ebdif.eb_mh_dif([0.1, -0.2], [0.3, 0.4])
+    assert calls == 4
+    np.testing.assert_array_equal(result.post_mean, admitted_post_mean)
+    assert result.post_mean is not admitted_post_mean
+    assert result.post_mean is not replacement_post_mean
