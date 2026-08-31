@@ -50,3 +50,33 @@ def test_top_level_ndarray_snapshot_replays_cell_budget_after_copy(
 
     with pytest.raises(ValueError, match=r"responses exceed 4 logical cells"):
         mokken._validated_scores(responses)
+
+
+def test_top_level_ndarray_rejects_unsupported_dtype_before_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inert unsupported dtype metadata must reject before duplicating storage."""
+    responses = np.empty((3, 2), dtype="S32")
+
+    def _unexpected_copy(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("unsupported response storage was copied")
+
+    monkeypatch.setattr(mokken.np, "array", _unexpected_copy)
+
+    with pytest.raises(ValueError, match=r"responses must be a numeric array"):
+        mokken._validated_scores(responses)
+
+
+def test_top_level_ndarray_rejects_invalid_rank_before_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inert rank metadata must reject before allocating package-owned storage."""
+    responses = np.zeros(4, dtype=np.int64)
+
+    def _unexpected_copy(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("invalid-rank response storage was copied")
+
+    monkeypatch.setattr(mokken.np, "array", _unexpected_copy)
+
+    with pytest.raises(ValueError, match=r"responses must be a 2-D persons x items array"):
+        mokken._validated_scores(responses)
