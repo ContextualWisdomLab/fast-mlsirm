@@ -8,6 +8,7 @@ from pathlib import Path
 _WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "publish-pypi.yml"
 _ATTEST_BUILD_PROVENANCE_SHA = "977bb373ede98d70efdf65b84cb5f73e068dcc2a"
 _SBOM_ACTION_SHA = "e22c389904149dbc22b58101806040fa8d37a610"
+_SYFT_VERSION = "v1.51.1"
 
 
 def _workflow_text() -> str:
@@ -29,6 +30,7 @@ def _assert_builder_local_attestation(block: str, build_step: str) -> None:
     """Require build provenance to be emitted before the artifact leaves its builder."""
     attest = f"uses: actions/attest-build-provenance@{_ATTEST_BUILD_PROVENANCE_SHA}"
     upload = "uses: actions/upload-artifact@"
+    assert "contents: read" in block
     assert "attestations: write" in block
     assert "id-token: write" in block
     assert attest in block
@@ -63,6 +65,7 @@ def test_sbom_is_exact_release_source_bound_spdx_and_attested():
     assert sbom in block
     assert "path: ." in block
     assert "format: spdx-json" in block
+    assert f"syft-version: {_SYFT_VERSION}" in block
     assert "output-file: dist/fast-mlsirm.spdx.json" in block
     assert 'upload-artifact: "false"' in block
     assert 'upload-release-assets: "false"' in block
