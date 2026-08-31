@@ -1,3 +1,5 @@
+"""Contracts for Dependabot coverage of standalone Cargo lock roots."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _cargo_dependabot_directories() -> set[str]:
+    """Return Cargo directories explicitly managed by Dependabot."""
     text = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
     return set(
         re.findall(
@@ -19,6 +22,7 @@ def _cargo_dependabot_directories() -> set[str]:
 
 
 def test_standalone_cargo_lock_roots_are_dependabot_managed() -> None:
+    """Require every independently locked Cargo root used by CI/package builds."""
     with (ROOT / "Cargo.toml").open("rb") as fh:
         workspace = tomllib.load(fh)["workspace"]
     with (ROOT / "pyproject.toml").open("rb") as fh:
