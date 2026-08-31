@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.fitstats as fitstats
+import fast_mlsirm.rsm as rsm
 from fast_mlsirm import fit_rsm
 
 
@@ -22,7 +23,7 @@ def _native_result(*, converged: bool = True) -> dict[str, object]:
     }
 
 
-def _fit_with_result(monkeypatch, result: object):
+def _fit_with_result(monkeypatch, result: object, **fit_kwargs):
     class Core:
         @staticmethod
         def fit_rsm(*args, **kwargs):
@@ -30,7 +31,7 @@ def _fit_with_result(monkeypatch, result: object):
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: Core())
     responses = np.array([[0, 1], [1, 0]], dtype=np.float64)
-    return fit_rsm(responses, n_cat=2)
+    return fit_rsm(responses, n_cat=2, **fit_kwargs)
 
 
 def test_fit_rsm_seals_native_vector_storage(monkeypatch):
@@ -92,6 +93,25 @@ def test_fit_rsm_rejects_callback_bearing_native_scalar(monkeypatch):
     with pytest.raises(RuntimeError, match="invalid RSM Rust result payload"):
         _fit_with_result(monkeypatch, result)
     assert called is False
+
+
+def test_fit_rsm_rejects_trace_above_iteration_envelope_before_snapshot(monkeypatch):
+    """An impossible trace cardinality must fail before package-owned list copying."""
+
+    result = _native_result()
+    oversized_trace = [-10.0, -9.0, -8.5, -8.0]
+    result["loglik_trace"] = oversized_trace
+    original_seal = rsm._sealed_native_vector
+
+    def guarded_seal(value, **kwargs):
+        if value is oversized_trace:
+            raise AssertionError("oversized trace reached snapshot copy")
+        return original_seal(value, **kwargs)
+
+    monkeypatch.setattr(rsm, "_sealed_native_vector", guarded_seal)
+
+    with pytest.raises(RuntimeError, match="invalid RSM Rust result payload"):
+        _fit_with_result(monkeypatch, result, max_iter=2)
 
 
 def test_fit_rsm_accepts_native_max_iteration_trace_contract(monkeypatch):
