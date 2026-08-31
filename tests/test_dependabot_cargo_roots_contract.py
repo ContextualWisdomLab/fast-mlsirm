@@ -23,7 +23,7 @@ def _cargo_directories(block: str) -> set[str]:
     """Return single- or multi-directory Cargo roots from one update block."""
     single = re.findall(r'(?m)^    directory: "([^"]+)"$', block)
     directories = re.search(
-        r'(?ms)^    directories:\n(?P<body>(?:      - "/[^"]+"\n?)+)',
+        r'(?ms)^    directories:\n(?P<body>(?:      - "/[^"]*"\n?)+)',
         block,
     )
     multiple = (
