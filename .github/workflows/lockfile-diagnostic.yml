@@ -25,7 +25,7 @@ jobs:
       - name: Resolve independent lockfiles
         run: |
           set -euo pipefail
-          cargo generate-lockfile --manifest-path crates/fast-mlsirm-py/Cargo.toml
+          cargo update --manifest-path crates/fast-mlsirm-py/Cargo.toml -p sha2 --precise 0.11.0
           cargo generate-lockfile --manifest-path fuzz/Cargo.toml
           cargo metadata --locked --format-version 1 --manifest-path crates/fast-mlsirm-py/Cargo.toml >/dev/null
           cargo metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
