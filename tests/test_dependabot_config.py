@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_every_dependabot_ecosystem_has_explicit_cooldown() -> None:
+    """Require every configured Dependabot update lane to cool down for seven days."""
     text = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
     update_blocks = re.findall(
         r"(?ms)^  - package-ecosystem:.*?(?=^  - package-ecosystem:|\Z)", text
