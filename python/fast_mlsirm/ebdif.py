@@ -93,8 +93,6 @@ def _trusted_1d_length(x, name: str) -> int:
     if type(x) in (list, tuple):
         length = len(x)
         _enforce_item_budget(name, length)
-        if any(type(value) not in _TRUSTED_EBDIF_SCALAR_TYPES for value in x):
-            raise ValueError(f"{name} must be a numeric array")
         return length
     raise ValueError(f"{name} must be a numeric 1-D array")
 
