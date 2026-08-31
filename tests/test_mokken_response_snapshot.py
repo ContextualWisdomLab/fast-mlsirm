@@ -80,3 +80,55 @@ def test_top_level_ndarray_rejects_invalid_rank_before_snapshot(
 
     with pytest.raises(ValueError, match=r"responses must be a 2-D persons x items array"):
         mokken._validated_scores(responses)
+
+
+def test_builtin_sequence_is_sealed_before_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Caller mutation at the dense-conversion seam must not redefine evidence."""
+    responses = [[0, 1], [1, 0], [1, 1]]
+    original_asarray = np.asarray
+    mutated = False
+
+    def _mutate_caller_then_convert(
+        value: object, *args: object, **kwargs: object
+    ) -> np.ndarray:
+        nonlocal mutated
+        if not mutated:
+            responses[1][0] = 0
+            mutated = True
+        return original_asarray(value, *args, **kwargs)
+
+    monkeypatch.setattr(mokken.np, "asarray", _mutate_caller_then_convert)
+
+    scores, n_persons, n_items = mokken._validated_scores(responses)
+
+    assert mutated
+    assert (n_persons, n_items) == (3, 2)
+    assert scores.tolist() == [0, 1, 1, 0, 1, 1]
+
+
+def test_builtin_sequence_replays_cell_budget_after_preflight_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Row growth after its first length observation must not bypass the cell cap."""
+    responses = [[0, 1], [1, 0]]
+    original_len = len
+    grown_rows: set[int] = set()
+
+    def _grow_row_after_observation(value: object) -> int:
+        observed = original_len(value)  # type: ignore[arg-type]
+        if any(value is row for row in responses) and id(value) not in grown_rows:
+            grown_rows.add(id(value))
+            value.append(0)  # type: ignore[union-attr]
+        return observed
+
+    def _unexpected_materialization(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("over-budget mutated sequence reached NumPy materialization")
+
+    monkeypatch.setattr(mokken, "_MAX_MOKKEN_RESPONSE_CELLS", 4)
+    monkeypatch.setattr(mokken, "len", _grow_row_after_observation, raising=False)
+    monkeypatch.setattr(mokken.np, "asarray", _unexpected_materialization)
+
+    with pytest.raises(ValueError, match=r"responses exceed 4 logical cells"):
+        mokken._validated_scores(responses)
