@@ -72,9 +72,16 @@ def _response_array(value: object) -> np.ndarray:
     )
     value_type = type(value)
     if value_type is np.ndarray:
-        if value.size > _MAX_FACETS_RESPONSE_CELLS:
+        admitted_shape = value.shape
+        admitted_size = int(value.size)
+        if admitted_size > _MAX_FACETS_RESPONSE_CELLS:
             raise ValueError(resource_error)
-        response_array = value
+        response_array = np.array(value, copy=True)
+        snapshot_size = int(response_array.size)
+        if snapshot_size > _MAX_FACETS_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        if response_array.shape != admitted_shape or snapshot_size != admitted_size:
+            raise ValueError(dimension_error)
     elif value_type is list or value_type is tuple:
         if len(value) == 0:
             raise ValueError(nonempty_error)
