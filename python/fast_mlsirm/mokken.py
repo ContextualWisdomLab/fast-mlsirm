@@ -359,6 +359,12 @@ def _snapshot_builtin_score_source(
             row_snapshot = np.array(row, copy=True)
             if row_snapshot.shape != admitted_shape or int(row_snapshot.size) != admitted_size:
                 raise ValueError("responses must be a 2-D persons x items array")
+            if row_snapshot.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row_snapshot.dtype.kind not in ("b", "i", "u", "f"):
+                raise ValueError("responses must be a numeric array")
+            if int(row_snapshot.nbytes) > _MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES:
+                _raise_response_resource_error()
             snapshots.append(row_snapshot)
             continue
 
