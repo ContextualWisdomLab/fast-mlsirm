@@ -114,6 +114,22 @@ fn valid_boundary_covariance_survives_one_ulp_standardization_roundoff() {
 }
 
 #[test]
+fn extreme_variance_ordering_preserves_nonzero_correlation() {
+    let covariance = 1.0e-200;
+    let large_first = [f64::MAX, covariance, covariance, f64::from_bits(1)];
+    let small_first = [f64::from_bits(1), covariance, covariance, f64::MAX];
+
+    let large_first_result =
+        standardize_covariance_matrix(&large_first, 2).expect("valid covariance");
+    let small_first_result =
+        standardize_covariance_matrix(&small_first, 2).expect("permuted valid covariance");
+
+    assert!(large_first_result[1] > 0.0);
+    assert_eq!(large_first_result[1], small_first_result[1]);
+    assert_eq!(large_first_result[2], small_first_result[2]);
+}
+
+#[test]
 fn covariance_matrix_requires_exact_symmetry() {
     let epsilon_offset = 8.0 * f64::EPSILON;
     let covariance = [1.0, 0.25, 0.25 + epsilon_offset, 1.0];
