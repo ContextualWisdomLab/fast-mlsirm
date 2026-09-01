@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2026-08-05 - Avoid optimize=True for two-operand einsum contractions
+**Learning:** When using `np.einsum` to prevent intermediate array allocations in a two-operand contraction (e.g., replacing `np.sum(A * B, axis=1)` with `np.einsum('ij,ij->i', A, B)`), adding `optimize=True` causes a performance regression. For two operands, there is only one possible contraction path, so the optimizer provides zero algorithmic benefit but incurs a fixed Python-level overhead (roughly 30-40 µs) to compute that non-existent optimal path. For small-to-medium arrays, this overhead dwarfs the actual execution time, making the "optimized" function up to 10-20x slower.
+**Action:** Never use `optimize=True` when invoking `np.einsum` with only two arrays. Reserve `optimize=True` strictly for complex tensor contractions involving three or more operands where finding the optimal pairwise evaluation order actually saves operations.
