@@ -26,6 +26,7 @@
 //! use case; the matrix identity implemented here is the ordinary definition
 //! converting a covariance matrix to its correlation matrix.
 
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -44,7 +45,7 @@ pub enum CovarianceStandardizationError {
     NonPositiveVariance,
     /// Mirrored covariance cells are not exactly equal in binary64.
     NonSymmetricCovariance,
-    /// A pairwise covariance implies an absolute correlation above one.
+    /// A represented covariance pair violates `c² <= v_i * v_j` exactly.
     InvalidPairwiseCovariance,
     /// A finite input produced a non-finite standardized result.
     NonFiniteResult,
@@ -67,6 +68,78 @@ impl Display for CovarianceStandardizationError {
 }
 
 impl Error for CovarianceStandardizationError {}
+
+/// Return an exact integer-significand representation of one finite binary64 value.
+///
+/// The returned pair `(significand, exponent)` satisfies
+/// `abs(value) = significand * 2^exponent` without floating-point rounding.
+fn binary64_components(value: f64) -> (u64, i32) {
+    let bits = value.abs().to_bits();
+    let exponent_bits = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & ((1_u64 << 52) - 1);
+    if exponent_bits == 0 {
+        (fraction, -1074)
+    } else {
+        ((1_u64 << 52) | fraction, exponent_bits - 1023 - 52)
+    }
+}
+
+/// Compare two non-negative exact integers multiplied by powers of two.
+fn scaled_integer_le(
+    left_significand: u128,
+    left_exponent: i32,
+    right_significand: u128,
+    right_exponent: i32,
+) -> bool {
+    if left_significand == 0 {
+        return true;
+    }
+    if right_significand == 0 {
+        return false;
+    }
+
+    let left_bits = 128_i32 - left_significand.leading_zeros() as i32;
+    let right_bits = 128_i32 - right_significand.leading_zeros() as i32;
+    let left_top_bit = left_exponent + left_bits - 1;
+    let right_top_bit = right_exponent + right_bits - 1;
+
+    match left_top_bit.cmp(&right_top_bit) {
+        Ordering::Less => true,
+        Ordering::Greater => false,
+        Ordering::Equal => {
+            if left_exponent >= right_exponent {
+                let shift = (left_exponent - right_exponent) as u32;
+                left_significand
+                    .checked_shl(shift)
+                    .is_some_and(|aligned| aligned <= right_significand)
+            } else {
+                let shift = (right_exponent - left_exponent) as u32;
+                right_significand
+                    .checked_shl(shift)
+                    .is_some_and(|aligned| left_significand <= aligned)
+            }
+        }
+    }
+}
+
+/// Check the covariance Cauchy-Schwarz bound exactly for represented binary64 inputs.
+fn pairwise_covariance_is_admissible(covariance: f64, variance_one: f64, variance_two: f64) -> bool {
+    let (covariance_significand, covariance_exponent) = binary64_components(covariance);
+    let (variance_one_significand, variance_one_exponent) = binary64_components(variance_one);
+    let (variance_two_significand, variance_two_exponent) = binary64_components(variance_two);
+
+    let covariance_square =
+        u128::from(covariance_significand) * u128::from(covariance_significand);
+    let variance_product =
+        u128::from(variance_one_significand) * u128::from(variance_two_significand);
+
+    scaled_integer_le(
+        covariance_square,
+        covariance_exponent * 2,
+        variance_product,
+        variance_one_exponent + variance_two_exponent,
+    )
+}
 
 /// Standardize one finite, strictly positive variance against itself.
 ///
@@ -102,10 +175,17 @@ pub fn standardize_variance(
 ///
 /// `covariance` is row-major with shape `dimension × dimension`. Every
 /// diagonal variance must be strictly positive. Mirrored off-diagonal cells
-/// must be exactly equal in binary64. This contract does not invent a
-/// floating-point tolerance or clamp an out-of-range correlation into the
-/// admissible interval; callers that need approximate-symmetry preprocessing
-/// must perform and document that operation before calling this kernel.
+/// must be exactly equal in binary64. Pairwise admissibility is decided from
+/// the exact represented binary64 integers using `c² <= v_i * v_j`, so an
+/// invalid covariance is never accepted merely because floating-point division
+/// rounded its correlation back into range.
+///
+/// After exact admission, sequential division can round a mathematically valid
+/// boundary correlation just outside `[-1, 1]`. Only then is the numerical
+/// result projected back to that mathematically certified interval. This is a
+/// consequence of the exact bound, not an empirical epsilon or tolerance.
+/// Callers that need approximate-symmetry preprocessing must define and validate
+/// that policy explicitly before calling this kernel.
 ///
 /// This routine validates the pairwise covariance bounds but does not claim a
 /// full positive-semidefinite proof. A caller that requires PSD admission must
@@ -141,9 +221,8 @@ pub fn standardize_covariance_matrix(
 
     let mut correlation = vec![0.0; expected_len];
     for index in 0..dimension {
-        correlation[index * dimension + index] = standardize_variance(
-            covariance[index * dimension + index],
-        )?;
+        correlation[index * dimension + index] =
+            standardize_variance(covariance[index * dimension + index])?;
     }
 
     for row in 0..dimension {
@@ -154,16 +233,20 @@ pub fn standardize_covariance_matrix(
                 return Err(CovarianceStandardizationError::NonSymmetricCovariance);
             }
 
+            let variance_row = covariance[row * dimension + row];
+            let variance_column = covariance[column * dimension + column];
+            if !pairwise_covariance_is_admissible(upper, variance_row, variance_column) {
+                return Err(CovarianceStandardizationError::InvalidPairwiseCovariance);
+            }
+
             let standardized =
                 (upper / standard_deviations[row]) / standard_deviations[column];
             if !standardized.is_finite() {
                 return Err(CovarianceStandardizationError::NonFiniteResult);
             }
-            if standardized.abs() > 1.0 {
-                return Err(CovarianceStandardizationError::InvalidPairwiseCovariance);
-            }
-            correlation[row * dimension + column] = standardized;
-            correlation[column * dimension + row] = standardized;
+            let bounded = standardized.clamp(-1.0, 1.0);
+            correlation[row * dimension + column] = bounded;
+            correlation[column * dimension + row] = bounded;
         }
     }
 
@@ -173,7 +256,8 @@ pub fn standardize_covariance_matrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        CovarianceStandardizationError, standardize_covariance_matrix, standardize_variance,
+        scaled_integer_le, CovarianceStandardizationError, standardize_covariance_matrix,
+        standardize_variance,
     };
 
     fn assert_close(actual: f64, expected: f64, tolerance: f64) {
@@ -181,6 +265,16 @@ mod tests {
             (actual - expected).abs() <= tolerance,
             "actual={actual:?} expected={expected:?} tolerance={tolerance:?}"
         );
+    }
+
+    #[test]
+    fn exact_scaled_integer_comparison_handles_zero_magnitude_and_alignment() {
+        assert!(scaled_integer_le(0, -100, 1, -1000));
+        assert!(!scaled_integer_le(1, 0, 0, 0));
+        assert!(scaled_integer_le(1, 0, 1, 1));
+        assert!(!scaled_integer_le(1, 1, 1, 0));
+        assert!(scaled_integer_le(1, 1, 2, 0));
+        assert!(scaled_integer_le(2, 0, 1, 1));
     }
 
     #[test]
@@ -194,7 +288,11 @@ mod tests {
             1.0e200,
             f64::MAX,
         ] {
-            assert_close(standardize_variance(variance).expect("positive variance"), 1.0, 8.0e-15);
+            assert_close(
+                standardize_variance(variance).expect("positive variance"),
+                1.0,
+                8.0e-15,
+            );
         }
     }
 
@@ -228,6 +326,15 @@ mod tests {
         for (left, right) in base_result.iter().zip(scaled_result.iter()) {
             assert_close(*left, *right, 8.0e-15);
         }
+    }
+
+    #[test]
+    fn matrix_standardization_accepts_zero_covariance_with_subnormal_variance() {
+        let smallest_subnormal = f64::from_bits(1);
+        let covariance = [smallest_subnormal, 0.0, 0.0, 1.0];
+        let correlation = standardize_covariance_matrix(&covariance, 2).expect("valid covariance");
+        assert_eq!(correlation[1], 0.0);
+        assert_eq!(correlation[2], 0.0);
     }
 
     #[test]
