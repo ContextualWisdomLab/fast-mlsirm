@@ -37,6 +37,18 @@ fn invalid_scalar_variance_fails_closed() {
 }
 
 #[test]
+fn public_error_messages_are_stable() {
+    assert_eq!(
+        ScalarVarianceStandardisationError::NonFinite.to_string(),
+        "scalar variance must be finite"
+    );
+    assert_eq!(
+        ScalarVarianceStandardisationError::NonPositive.to_string(),
+        "scalar variance must be strictly positive"
+    );
+}
+
+#[test]
 fn published_contract_identity_is_versioned() {
     assert_eq!(
         SCALAR_VARIANCE_STANDARDISATION_CONTRACT_V1,
