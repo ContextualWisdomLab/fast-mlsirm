@@ -39,6 +39,32 @@ def test_oversized_person_ids_fail_before_copy_or_matrix_work(
         )
 
 
+def test_identifier_utf8_bytes_fail_before_matrix_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aggregate UTF-8 identifier bytes are bounded before copying matrix evidence."""
+    monkeypatch.setattr(
+        envelope_module,
+        "_MAX_INTERACTION_MAP_IDENTIFIER_BYTES",
+        8,
+        raising=False,
+    )
+
+    def fail_matrix(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("matrix admission must not run for oversized identifiers")
+
+    monkeypatch.setattr(envelope_module, "_trusted_matrix", fail_matrix)
+
+    with pytest.raises(ValueError, match="person_ids identifier bytes exceed 8"):
+        residual_interaction_map_envelope(
+            np.ones((2, 1), dtype=np.float64),
+            np.ones((2, 1), dtype=np.float64),
+            person_ids=["abcd", "ééé"],
+            item_ids=["item-a"],
+            axis_count=1,
+        )
+
+
 def test_identifier_budget_preserves_valid_small_envelope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -47,6 +73,12 @@ def test_identifier_budget_preserves_valid_small_envelope(
         envelope_module,
         "_MAX_INTERACTION_MAP_IDENTIFIER_COUNT",
         2,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        envelope_module,
+        "_MAX_INTERACTION_MAP_IDENTIFIER_BYTES",
+        32,
         raising=False,
     )
 
