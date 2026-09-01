@@ -18,19 +18,19 @@ fn public_covariance_standardization_contract_is_versioned_and_scale_invariant()
     );
 
     for variance in [
+        f64::from_bits(1),
         f64::MIN_POSITIVE,
         1.0e-200,
         0.25,
         1.0,
+        3.0,
         6.4,
         1.0e200,
         f64::MAX,
     ] {
-        assert_close(
-            standardize_variance(variance).expect("strictly positive finite variance"),
-            1.0,
-            8.0e-15,
-        );
+        let standardized =
+            standardize_variance(variance).expect("strictly positive finite variance");
+        assert_eq!(standardized.to_bits(), 1.0_f64.to_bits());
     }
 }
 
