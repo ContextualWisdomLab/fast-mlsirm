@@ -8,6 +8,8 @@ backend and this module performs no psychometric arithmetic.
 
 from __future__ import annotations
 
+import argparse
+import json
 from dataclasses import dataclass
 
 from .config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
@@ -60,3 +62,18 @@ def fit_capability_manifest() -> dict[str, object]:
             for capability in _FIT_CAPABILITIES
         ],
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the production capability manifest as JSON for operator tooling."""
+    parser = argparse.ArgumentParser(
+        prog="python -m fast_mlsirm.capabilities",
+        description="Print the bounded fast-mlsirm production fitting capability manifest.",
+    )
+    parser.parse_args(argv)
+    print(json.dumps(fit_capability_manifest(), sort_keys=True, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised through module execution
+    raise SystemExit(main())
