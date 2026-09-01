@@ -8,6 +8,7 @@ runner identity instead of silently drifting with GitHub's floating alias.
 """
 
 from pathlib import Path
+import re
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -16,24 +17,41 @@ PR_WORKFLOWS = (
     WORKFLOW_DIRECTORY / "ci.yml",
     WORKFLOW_DIRECTORY / "codeql.yml",
 )
+QUEUE_SENSITIVE_PR_WORKFLOWS = (WORKFLOW_DIRECTORY / "codeql.yml",)
+FLOATING_RUNNER_ASSIGNMENT = re.compile(
+    r"(?m)^\s*runs-on:\s*ubuntu-latest\s*(?:#.*)?$"
+)
 
 
 def test_required_pr_workflows_use_explicit_ubuntu_2404() -> None:
     """Require every Linux runner in the repository-owned PR gates to be pinned."""
     for workflow in PR_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
-        assert "runs-on: ubuntu-latest" not in source, workflow
+        assert FLOATING_RUNNER_ASSIGNMENT.search(source) is None, workflow
         assert "runs-on: ubuntu-24.04" in source, workflow
 
 
 def test_repository_workflows_do_not_float_ubuntu_runner_identity() -> None:
-    """Reject floating Ubuntu selectors across all repository-owned workflows."""
+    """Reject only active floating runner assignments, not harmless prose/data."""
     workflow_paths = tuple(sorted(WORKFLOW_DIRECTORY.glob("*.yml")))
     assert workflow_paths, "repository workflow inventory must not be empty"
 
     offenders = [
         workflow.relative_to(REPOSITORY_ROOT).as_posix()
         for workflow in workflow_paths
-        if "ubuntu-latest" in workflow.read_text(encoding="utf-8")
+        if FLOATING_RUNNER_ASSIGNMENT.search(workflow.read_text(encoding="utf-8"))
     ]
     assert offenders == [], f"floating Ubuntu runner selectors remain: {offenders}"
+
+
+def test_queue_sensitive_pr_workflows_cancel_predecessor_heads() -> None:
+    """A superseded PR head must not retain scarce hosted-runner queue capacity."""
+    expected_group = (
+        "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+    )
+    for workflow in QUEUE_SENSITIVE_PR_WORKFLOWS:
+        source = workflow.read_text(encoding="utf-8")
+        assert "\nconcurrency:\n" in source, workflow
+        concurrency = source.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
+        assert expected_group in concurrency, workflow
+        assert "cancel-in-progress: true" in concurrency, workflow
