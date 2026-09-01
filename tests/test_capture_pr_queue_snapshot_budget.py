@@ -108,7 +108,10 @@ def test_capture_fails_closed_if_budget_expires_before_base_identity() -> None:
 def test_capture_rejects_nonpositive_or_boolean_budget(budget: object) -> None:
     """Invalid internal budgets fail before any GitHub request can start."""
     module = _module()
-    with pytest.raises(ValueError, match="capture_budget_seconds must be positive"):
+    with pytest.raises(
+        ValueError,
+        match="capture_budget_seconds must be a finite positive number",
+    ):
         module.capture_pr_queue_snapshot(
             "owner/repo",
             run_json=lambda _: pytest.fail("GitHub runner must not execute"),
