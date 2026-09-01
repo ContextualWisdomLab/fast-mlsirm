@@ -1,4 +1,4 @@
-trigger=2026-09-02T08:25:00+09:00
+trigger=2026-09-02T08:52:00+09:00
 reason=update repository-owned calls after explicit AISP controls became mandatory
-runner=ubuntu-24.04
+runner=ubuntu-slim
 requirements=ci+editable-rust
