@@ -8,9 +8,10 @@
 //! For a covariance matrix `Σ` with strictly positive diagonal `D`, the
 //! standardized matrix is `R = D^{-1/2} Σ D^{-1/2}`. The scalar specialization
 //! is therefore `(1 / sqrt(v)) * v * (1 / sqrt(v)) = 1` for finite `v > 0`.
-//! Matrix entries are divided by each marginal standard deviation sequentially,
-//! so the implementation does not form `sqrt(v_i) * sqrt(v_j)`, whose product
-//! could overflow even when the standardized correlation is representable.
+//! Matrix entries are divided first by the smaller marginal standard deviation
+//! and then by the larger one. This avoids forming `sqrt(v_i) * sqrt(v_j)`,
+//! whose product can overflow, while also avoiding avoidable intermediate
+//! underflow when the two marginal scales differ by many orders of magnitude.
 //!
 //! The TEPP migration that motivated this owner contract concerns ctsem's
 //! `TIPREDVARstd`, but ctsem names, clocks, state equations, and event semantics
@@ -123,7 +124,11 @@ fn scaled_integer_le(
 }
 
 /// Check the covariance Cauchy-Schwarz bound exactly for represented binary64 inputs.
-fn pairwise_covariance_is_admissible(covariance: f64, variance_one: f64, variance_two: f64) -> bool {
+fn pairwise_covariance_is_admissible(
+    covariance: f64,
+    variance_one: f64,
+    variance_two: f64,
+) -> bool {
     let (covariance_significand, covariance_exponent) = binary64_components(covariance);
     let (variance_one_significand, variance_one_exponent) = binary64_components(variance_one);
     let (variance_two_significand, variance_two_exponent) = binary64_components(variance_two);
@@ -180,16 +185,19 @@ pub fn standardize_variance(
 /// invalid covariance is never accepted merely because floating-point division
 /// rounded its correlation back into range.
 ///
-/// After exact admission, sequential division can round a mathematically valid
-/// boundary correlation just outside `[-1, 1]`. Only then is the numerical
-/// result projected back to that mathematically certified interval. This is a
-/// consequence of the exact bound, not an empirical epsilon or tolerance.
-/// Callers that need approximate-symmetry preprocessing must define and validate
-/// that policy explicitly before calling this kernel.
+/// After exact admission, the covariance is divided by the smaller marginal
+/// standard deviation before the larger one. For an admissible pair the first
+/// quotient is bounded in magnitude by the larger standard deviation, avoiding
+/// overflow while minimizing avoidable intermediate underflow. The final
+/// division can still round a mathematically valid boundary correlation just
+/// outside `[-1, 1]`; only after the exact admission proof is that numerical
+/// result projected back to the certified interval. This is not an empirical
+/// epsilon or tolerance.
 ///
-/// This routine validates the pairwise covariance bounds but does not claim a
-/// full positive-semidefinite proof. A caller that requires PSD admission must
-/// apply that model-specific invariant separately.
+/// Callers that need approximate-symmetry preprocessing must define and validate
+/// that policy explicitly before calling this kernel. This routine validates
+/// pairwise covariance bounds but does not claim a full positive-semidefinite
+/// proof; consumers requiring PSD admission retain that model-specific invariant.
 ///
 /// # Errors
 ///
@@ -239,8 +247,13 @@ pub fn standardize_covariance_matrix(
                 return Err(CovarianceStandardizationError::InvalidPairwiseCovariance);
             }
 
-            let standardized =
-                (upper / standard_deviations[row]) / standard_deviations[column];
+            let (first_sd, second_sd) = if standard_deviations[row] <= standard_deviations[column]
+            {
+                (standard_deviations[row], standard_deviations[column])
+            } else {
+                (standard_deviations[column], standard_deviations[row])
+            };
+            let standardized = (upper / first_sd) / second_sd;
             if !standardized.is_finite() {
                 return Err(CovarianceStandardizationError::NonFiniteResult);
             }
