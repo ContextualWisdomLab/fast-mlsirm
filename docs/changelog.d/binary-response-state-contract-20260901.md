@@ -1,0 +1,1 @@
+- Add the versioned `fast_mlsirm_binary_response/v1` Measurement contract so dichotomous 0/1 values remain separate from missing, not-observed, abstained, invalid, omitted, not-applicable, insufficient-evidence, and adjudicated states; keep polytomous rubric/facet contracts separate and fail closed instead of thresholding.
