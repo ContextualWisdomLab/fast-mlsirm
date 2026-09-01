@@ -179,22 +179,24 @@ The PyO3 crate is intentionally excluded from the root Cargo workspace, so its b
 
 The protected CI surface adds package, Rust/PyO3, coverage, fuzz/security/static-analysis, artifact, and release-contract checks. Exact current workflow evidence is authoritative; results from a predecessor source head do not transfer after a change.
 
-For a release-oriented local evidence build, the repository provides:
+For a release-oriented local buyer-evidence build, use the price-neutral acquisition orchestrator:
 
 ```bash
-python scripts/build_commercial_release.py \
-  --out commercial-release \
+python scripts/build_acquisition_release.py \
+  --out acquisition-release \
   --require-rust \
   --check-import
 ```
 
-That command produces review evidence; it does not by itself prove deployment, customer adoption, regulatory approval, commercial transfer, or suitability for a specific high-stakes use.
+The generic builder leaves transaction value unset unless `--contract-value-krw` is supplied explicitly and finishes by requiring the complete `--require-acquisition-readiness` evidence profile. Its output is review evidence; it does not by itself prove deployment, customer adoption, regulatory approval, commercial transfer, valuation, or suitability for a specific high-stakes use.
 
 ## Acquisition/commercial readiness
 
-**Enterprise Sales Readiness** is an evidence gate, not a sales, valuation, certification, or customer claim. The canonical gate is [`scripts/sales_readiness.py`](scripts/sales_readiness.py), driven by release evidence from [`scripts/release_acceptance.py`](scripts/release_acceptance.py). Higher-level procurement packets are assembled by [`scripts/build_release_evidence_index.py`](scripts/build_release_evidence_index.py), [`scripts/build_commercial_release.py`](scripts/build_commercial_release.py), [`scripts/build_procurement_due_diligence.py`](scripts/build_procurement_due_diligence.py), [`scripts/build_pr_queue_governance.py`](scripts/build_pr_queue_governance.py), and [`scripts/build_figma_evidence_sync.py`](scripts/build_figma_evidence_sync.py).
+**Enterprise Sales Readiness** is an evidence gate, not a sales, valuation, certification, or customer claim. The canonical gate is [`scripts/sales_readiness.py`](scripts/sales_readiness.py), driven by release evidence from [`scripts/release_acceptance.py`](scripts/release_acceptance.py). [`scripts/build_acquisition_release.py`](scripts/build_acquisition_release.py) assembles the price-neutral buyer-review bundle and keeps any explicitly supplied transaction scenario separate from generic product-quality evidence.
 
-These tools keep technical evidence distinct from actual customer acceptance, deployment, transfer, revenue, or legal authority. See [`docs/commercial_readiness.md`](docs/commercial_readiness.md) and [`docs/enterprise_sales_readiness.md`](docs/enterprise_sales_readiness.md) for the bounded evidence contract.
+The historical [`scripts/build_commercial_release.py`](scripts/build_commercial_release.py) remains a legacy 20B compatibility orchestrator on this revision and is not the generic acquisition gate. Lower-level evidence builders remain available for benchmark, buyer packet, release-index, procurement, PR-queue, and Figma evidence when maintainers need to inspect or reproduce an individual stage.
+
+These tools keep technical evidence distinct from actual customer acceptance, deployment, transfer, revenue, or legal authority. See [`docs/release_acceptance.md`](docs/release_acceptance.md), [`docs/commercial_readiness.md`](docs/commercial_readiness.md), and [`docs/enterprise_sales_readiness.md`](docs/enterprise_sales_readiness.md) for the bounded evidence contract.
 
 ## Documentation map
 
