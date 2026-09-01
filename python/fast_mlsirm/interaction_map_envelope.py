@@ -21,6 +21,7 @@ _RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE = (
 )
 _RESIDUAL_INTERACTION_MAP_TIE_POLICY = "lexicographic-first-original-index"
 _MAX_INTERACTION_MAP_IDENTIFIER_COUNT = 20_000_000
+_MAX_INTERACTION_MAP_IDENTIFIER_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -85,9 +86,15 @@ def _opaque_ids(name: str, value: object) -> list[str]:
             f"{name} identifier count exceeds {_MAX_INTERACTION_MAP_IDENTIFIER_COUNT}"
         )
     normalized: list[str] = []
+    identifier_bytes = 0
     for identifier in value:
         if type(identifier) is not str:
             raise ValueError(f"{name} must contain only exact strings")
+        identifier_bytes += len(identifier.encode("utf-8"))
+        if identifier_bytes > _MAX_INTERACTION_MAP_IDENTIFIER_BYTES:
+            raise ValueError(
+                f"{name} identifier bytes exceed {_MAX_INTERACTION_MAP_IDENTIFIER_BYTES}"
+            )
         normalized.append(identifier)
     return normalized
 
