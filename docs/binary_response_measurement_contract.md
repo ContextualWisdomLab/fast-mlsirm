@@ -18,8 +18,16 @@ rewritten as zero, an incorrect response, or another response state.
 and therefore requires a separate opaque adjudication reference. An ordinary
 `observed` cell cannot claim adjudication provenance.
 
+Opaque observation and adjudication references are exact built-in strings of
+1..256 Unicode scalar values. Boundary whitespace, C0/C1 controls, and lone
+UTF-16 surrogate code points are rejected instead of normalized. This keeps the
+published JSON-compatible evidence serializable and prevents caller-defined
+string protocols from redefining identity during admission.
+
 A `BinaryResponseMatrix` is the Aggregate that seals a non-empty rectangular
 collection of those cells. Matrix construction is bounded at 1,000,000 cells.
+Only exact package-created `BinaryResponseCell` values enter the aggregate, so a
+subclass cannot bypass cell admission and later inject a nonbinary value.
 `responses_array()` is a marshalling boundary only: it returns a fresh float64
 array where cells without a binary value are `NaN`, while zero and one remain
 unchanged. The state and provenance matrices remain available separately.
@@ -68,3 +76,41 @@ and meet the repository's Rust-first recovery, uncertainty, convergence,
 invariance, boundary, and backend-parity gates. A model that cannot represent a
 downstream request without violating its assumptions must fail closed rather
 than coercing the data.
+
+## Research basis
+
+The *Standards for Educational and Psychological Testing* require score
+interpretations and testing procedures to be supported by evidence appropriate
+to their intended use. This contract therefore preserves response-state and
+provenance evidence before any estimator chooses a missingness or scoring
+assumption; the wire contract itself does not turn nonresponse into evidence of
+incorrectness.
+
+Rose, von Davier, and Nagengast (2017) show that omitted and not-reached item
+responses can have different statistical properties and develop an IRT model
+that represents their response indicators explicitly. Pohl, Gräfe, and Rose
+(2014) likewise evaluate omitted and not-reached responses as distinguishable
+missing-response processes. Those results support retaining the observed
+response and the reason it is absent as separate evidence so later model choice
+can be explicit and testable. They do not imply that every missingness process
+must use one particular nonignorable model.
+
+No article text is redistributed here; the repository uses citation, DOI link,
+and a narrow contract-relevant summary.
+
+### References
+
+American Educational Research Association, American Psychological Association,
+& National Council on Measurement in Education. (2014). *Standards for
+educational and psychological testing*. American Educational Research
+Association.
+https://www.aera.net/publications/books/standards-for-educational-psychological-testing-2014-edition
+
+Pohl, S., Gräfe, L., & Rose, N. (2014). Dealing with omitted and not-reached
+items in competence tests: Evaluating approaches accounting for missing
+responses in item response theory models. *Educational and Psychological
+Measurement, 74*(3), 423–452. https://doi.org/10.1177/0013164413504926
+
+Rose, N., von Davier, M., & Nagengast, B. (2017). Modeling omitted and
+not-reached items in IRT models. *Psychometrika, 82*(3), 795–819.
+https://doi.org/10.1007/s11336-016-9544-7
