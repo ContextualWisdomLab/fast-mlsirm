@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -79,6 +80,40 @@ def test_delivery_packet_and_detached_digest_are_required(tmp_path: Path) -> Non
     assert "buyer_packet:packet_sha256_file" in _failed_names(manifest_path)
 
 
+def _initialize_source_repo(repo_root: Path) -> None:
+    """Commit the fixture source so release provenance has an exact Git identity."""
+    subprocess.run(
+        ["git", "init", "--quiet", str(repo_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "add", "pyproject.toml"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "-c",
+            "user.name=fast-mlsirm-test",
+            "-c",
+            "user.email=fast-mlsirm-test@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "release index provenance fixture",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _write_release_inputs(tmp_path: Path) -> tuple[argparse.Namespace, Path]:
     """Create the minimal valid release-index inputs around one buyer packet."""
     repo_root = tmp_path / "repo"
@@ -87,6 +122,8 @@ def _write_release_inputs(tmp_path: Path) -> tuple[argparse.Namespace, Path]:
         '[project]\nname = "fast-mlsirm"\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
+    _initialize_source_repo(repo_root)
+
     acceptance = tmp_path / "acceptance_summary.json"
     acceptance.write_text(json.dumps({"status": "ok", "steps": []}), encoding="utf-8")
     sales = tmp_path / "sales_readiness_manifest.json"
