@@ -8,7 +8,7 @@
 R = D^{-1/2}\Sigma D^{-1/2},
 \]
 
-where `D` is the diagonal of strictly positive marginal variances. The scalar self-standardization is `(1 / sqrt(v)) * v * (1 / sqrt(v)) = 1` for finite `v > 0`.
+where `D` is the diagonal of strictly positive marginal variances. The scalar self-standardization is `(1 / sqrt(v)) * v * (1 / sqrt(v)) = 1` for finite `v > 0`. After validating the scalar variance, the implementation evaluates the algebraically equivalent ratio `v / v`, so every admitted finite positive binary64 value—including the smallest positive subnormal and `f64::MAX`—returns the exact binary64 representation of `1.0` rather than accumulating avoidable square-root rounding.
 
 This contract is intentionally domain-neutral. It does not decide event time, valid time, knowledge cutoff, state evolution, temporal identification, or product-specific model activation. Those policies belong to consuming bounded contexts such as TEPP Longitudinal Modeling.
 
@@ -38,7 +38,7 @@ The contract does not claim to prove full positive semidefiniteness. Model-speci
 
 ## Recovery and parity
 
-Unit and public-contract fixtures cover positive scalar magnitudes from `f64::MIN_POSITIVE` through `f64::MAX`, malformed scalar inputs, a known 2x2 covariance/correlation pair, multiplicative scale invariance, shape errors, non-finite cells, non-positive diagonals, exact-symmetry rejection, pairwise covariance beyond the exact correlation bound, zero covariance with a subnormal variance, a finite exact-valid boundary case whose sequential binary64 divisions round to `next_up(1.0)` before the bound-certified projection, and permutation invariance for an extreme-scale covariance whose correlation would underflow to zero if the larger marginal standard deviation were divided first.
+Unit and public-contract fixtures cover the smallest positive subnormal scalar variance, `f64::MIN_POSITIVE`, ordinary values including `3.0`, very large finite values through `f64::MAX`, exact binary64 unit recovery, malformed scalar inputs, a known 2x2 covariance/correlation pair, multiplicative scale invariance, shape errors, non-finite cells, non-positive diagonals, exact-symmetry rejection, pairwise covariance beyond the exact correlation bound, zero covariance with a subnormal variance, a finite exact-valid boundary case whose sequential binary64 divisions round to `next_up(1.0)` before the bound-certified projection, and permutation invariance for an extreme-scale covariance whose correlation would underflow to zero if the larger marginal standard deviation were divided first.
 
 Before TEPP removes its local duplicate, the TEPP adapter must prove parity with its preserved `TIPREDVARstd` fixtures while continuing to enforce EventTime semantics outside this kernel.
 
