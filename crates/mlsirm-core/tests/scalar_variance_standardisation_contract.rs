@@ -5,7 +5,14 @@ use mlsirm_core::standardisation::{
 
 #[test]
 fn positive_scalar_variance_standardises_to_exact_unit_correlation() {
-    for variance in [f64::MIN_POSITIVE, 3.0, 6.4, 1.0e300] {
+    for variance in [
+        f64::from_bits(1),
+        f64::MIN_POSITIVE,
+        3.0,
+        6.4,
+        1.0e300,
+        f64::MAX,
+    ] {
         let recovered = standardise_positive_scalar_variance(variance)
             .expect("strictly positive finite scalar variance must standardise");
         assert_eq!(recovered.to_bits(), 1.0_f64.to_bits());
@@ -16,6 +23,10 @@ fn positive_scalar_variance_standardises_to_exact_unit_correlation() {
 fn invalid_scalar_variance_fails_closed() {
     assert_eq!(
         standardise_positive_scalar_variance(0.0),
+        Err(ScalarVarianceStandardisationError::NonPositive)
+    );
+    assert_eq!(
+        standardise_positive_scalar_variance(-0.0),
         Err(ScalarVarianceStandardisationError::NonPositive)
     );
     assert_eq!(

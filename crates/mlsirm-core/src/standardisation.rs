@@ -33,11 +33,10 @@ impl std::error::Error for ScalarVarianceStandardisationError {}
 /// Standardise a strictly positive finite scalar variance to its unit correlation.
 ///
 /// For a one-dimensional covariance `v > 0`, covariance standardisation is
-/// `(1 / sqrt(v)) * v * (1 / sqrt(v)) = 1`. The mathematical result is exactly
-/// one, so this reference implementation validates the input and returns the
-/// exact binary64 representation of `1.0` rather than re-evaluating the
-/// algebraic identity and exposing avoidable rounding such as
-/// `1.0000000000000002` for `v = 3`.
+/// `(1 / sqrt(v)) * v * (1 / sqrt(v)) = 1`. After validating the covariance,
+/// this implementation uses the algebraically equivalent ratio `v / v`. That
+/// preserves an actual arithmetic path while avoiding the avoidable rounding
+/// introduced by separately evaluating the two square-root factors.
 ///
 /// This is intentionally domain-neutral static arithmetic. It does not attach an
 /// event clock, infer temporal stationarity, define a ctsem parameter, or promote
@@ -64,5 +63,5 @@ pub fn standardise_positive_scalar_variance(
     if variance <= 0.0 {
         return Err(ScalarVarianceStandardisationError::NonPositive);
     }
-    Ok(1.0)
+    Ok(variance / variance)
 }
