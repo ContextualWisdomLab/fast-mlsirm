@@ -10,11 +10,24 @@ from fast_mlsirm.model_specification import (
     EstimationPlan,
     GeneralizedMixedStructure,
     IdentificationContract,
+    MembershipClassification,
+    MembershipMultiplicity,
+    MembershipStructure,
+    MembershipWeightAuthority,
     ModelSpecification,
     RecoveryContract,
     ResponseKernel,
     compile_dependence_candidates,
 )
+
+
+def _membership() -> MembershipStructure:
+    return MembershipStructure(
+        classification=MembershipClassification.HIERARCHICAL,
+        multiplicity=MembershipMultiplicity.MULTIPLE,
+        weight_authority=MembershipWeightAuthority.EXPLICIT_NORMALIZED,
+        classification_axes=("group",),
+    )
 
 
 def _mutable_base() -> tuple[
@@ -52,7 +65,7 @@ def _mutable_base() -> tuple[
             formulation_id="explanatory_multiple_membership",
             fixed_effects=fixed_effects,  # type: ignore[arg-type]
             random_effects=random_effects,  # type: ignore[arg-type]
-            membership="multiple_membership",
+            membership=_membership(),
         ),
         estimation_plan=EstimationPlan(
             estimator_id="research_mmle",
@@ -118,6 +131,9 @@ def test_structural_collections_are_sealed_before_candidate_identity_is_created(
         "item_covariates",
     )
     assert base.mixed_structure.random_effects == ("group_intercept",)
+    assert base.mixed_structure.membership.classification is MembershipClassification.HIERARCHICAL
+    assert base.mixed_structure.membership.multiplicity is MembershipMultiplicity.MULTIPLE
+    assert base.mixed_structure.membership.weight_authority is MembershipWeightAuthority.EXPLICIT_NORMALIZED
     assert base.identification_contract.rules == (
         "trait_location_scale",
         "dependence_geometry_alignment",
