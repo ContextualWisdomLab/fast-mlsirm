@@ -38,7 +38,7 @@ def test_gtheory_pio_rejects_non_3d():
 def test_mokken_requires_core(monkeypatch):
     _patch_core_none(monkeypatch)
     with pytest.raises(RuntimeError, match="mokken_analysis requires the compiled Rust core"):
-        mokken.mokken_analysis(np.zeros((5, 3)))
+        mokken.mokken_analysis(np.zeros((5, 3)), lower_bound=0.3, alpha=0.05)
 
 
 def test_mokken_rejects_too_many_categories():
