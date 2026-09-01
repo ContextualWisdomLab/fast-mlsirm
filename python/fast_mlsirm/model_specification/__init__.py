@@ -32,6 +32,32 @@ class CapabilityStatus(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+class MembershipClassification(str, Enum):
+    """Higher-level classification topology of a generalized mixed model."""
+
+    HIERARCHICAL = "hierarchical"
+    CROSS_CLASSIFIED = "cross_classified"
+
+
+class MembershipMultiplicity(str, Enum):
+    """Whether one observation belongs to one or several units per structure."""
+
+    SINGLE = "single"
+    MULTIPLE = "multiple"
+
+
+class MembershipWeightAuthority(str, Enum):
+    """Authority for weights used by a multiple-membership formulation."""
+
+    NOT_APPLICABLE = "not_applicable"
+    EXPLICIT_NORMALIZED = "explicit_normalized"
+    MODEL_ESTIMATED = "model_estimated"
+
+
+_MANIFEST_SCHEMA_ID = "fast_mlsirm.model_specification.candidate_manifest"
+_MANIFEST_SCHEMA_VERSION = "1.0.0"
+
+
 def _exact_nonblank_string(value: object) -> bool:
     """Return whether ``value`` is an exact, non-blank built-in string."""
     return type(value) is str and bool(value.strip())
@@ -98,6 +124,16 @@ def _scope_matches(value: object, candidate_id: str) -> bool:
     return type(value) is str and value == candidate_id
 
 
+def _canonical_json_bytes(value: Mapping[str, object]) -> bytes:
+    """Serialize a JSON-shaped mapping deterministically for digesting."""
+    return json.dumps(
+        value,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
 @dataclass(frozen=True)
 class ResponseKernel:
     """Base conditional response-kernel identity and parameter ownership.
@@ -146,20 +182,89 @@ class DimensionalStructure:
 
 
 @dataclass(frozen=True)
+class MembershipStructure:
+    """Typed generalized-mixed membership and weight authority.
+
+    Cross-classification describes non-nested classification axes; multiple
+    membership describes belonging to more than one unit. They are orthogonal
+    operators. Weight authority is explicit so a caller cannot hide an
+    unspecified weighting rule behind a free-form label.
+    """
+
+    classification: MembershipClassification
+    multiplicity: MembershipMultiplicity
+    weight_authority: MembershipWeightAuthority
+    classification_axes: tuple[str, ...]
+    weight_recovery_metric: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate topology, multiplicity, and weight-source invariants."""
+        if type(self.classification) is not MembershipClassification:
+            raise TypeError("classification must be a MembershipClassification")
+        if type(self.multiplicity) is not MembershipMultiplicity:
+            raise TypeError("multiplicity must be a MembershipMultiplicity")
+        if type(self.weight_authority) is not MembershipWeightAuthority:
+            raise TypeError("weight_authority must be a MembershipWeightAuthority")
+        axes = _immutable_string_tuple(
+            self.classification_axes,
+            "classification_axes",
+            require_nonempty=True,
+        )
+        object.__setattr__(self, "classification_axes", axes)
+        if (
+            self.classification is MembershipClassification.CROSS_CLASSIFIED
+            and len(axes) < 2
+        ):
+            raise ValueError("cross-classified membership requires at least two axes")
+        if self.multiplicity is MembershipMultiplicity.SINGLE:
+            if self.weight_authority is not MembershipWeightAuthority.NOT_APPLICABLE:
+                raise ValueError("single membership cannot have membership weights")
+            if self.weight_recovery_metric is not None:
+                raise ValueError("single membership cannot have a weight recovery metric")
+            return
+        if self.weight_authority is MembershipWeightAuthority.NOT_APPLICABLE:
+            raise ValueError("multiple membership requires weight authority")
+        if self.weight_authority is MembershipWeightAuthority.MODEL_ESTIMATED:
+            if not _exact_nonblank_string(self.weight_recovery_metric):
+                raise ValueError(
+                    "model-estimated membership weights require a recovery metric"
+                )
+        elif self.weight_recovery_metric is not None:
+            raise ValueError(
+                "explicit normalized membership weights cannot declare an estimator recovery metric"
+            )
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return the JSON-shaped membership contract."""
+        return {
+            "classification": self.classification.value,
+            "multiplicity": self.multiplicity.value,
+            "weight_authority": self.weight_authority.value,
+            "classification_axes": list(self.classification_axes),
+            "weight_recovery_metric": self.weight_recovery_metric,
+        }
+
+
+@dataclass(frozen=True)
 class GeneralizedMixedStructure:
     """Declarative generalized mixed-model structure attached to a kernel."""
 
     formulation_id: str
     fixed_effects: tuple[str, ...] = ()
     random_effects: tuple[str, ...] = ()
-    membership: str = "single"
+    membership: MembershipStructure = MembershipStructure(
+        classification=MembershipClassification.HIERARCHICAL,
+        multiplicity=MembershipMultiplicity.SINGLE,
+        weight_authority=MembershipWeightAuthority.NOT_APPLICABLE,
+        classification_axes=("group",),
+    )
 
     def __post_init__(self) -> None:
         """Seal generalized-mixed identity before it can enter candidate IDs."""
         if not _exact_nonblank_string(self.formulation_id):
             raise ValueError("formulation_id must be a non-blank string")
-        if not _exact_nonblank_string(self.membership):
-            raise ValueError("membership must be a non-blank string")
+        if type(self.membership) is not MembershipStructure:
+            raise TypeError("membership must be a MembershipStructure")
         object.__setattr__(
             self,
             "fixed_effects",
@@ -297,7 +402,11 @@ class CandidateIdentity:
     mixed_formulation_id: str
     fixed_effects: tuple[str, ...]
     random_effects: tuple[str, ...]
-    membership: str
+    membership_classification: MembershipClassification
+    membership_multiplicity: MembershipMultiplicity
+    membership_weight_authority: MembershipWeightAuthority
+    membership_classification_axes: tuple[str, ...]
+    membership_weight_recovery_metric: str | None
     dependence_kind: DependenceKind
     dependence_formulation_id: str
     dependence_parameter_blocks: tuple[str, ...]
@@ -310,7 +419,6 @@ class CandidateIdentity:
             "response_scale",
             "dimensional_formulation_id",
             "mixed_formulation_id",
-            "membership",
             "dependence_formulation_id",
         ):
             if not _exact_nonblank_string(getattr(self, field_name)):
@@ -319,6 +427,18 @@ class CandidateIdentity:
             raise ValueError("dimensions must be >= 1")
         if type(self.dependence_kind) is not DependenceKind:
             raise TypeError("dependence_kind must be a DependenceKind")
+        membership = MembershipStructure(
+            classification=self.membership_classification,
+            multiplicity=self.membership_multiplicity,
+            weight_authority=self.membership_weight_authority,
+            classification_axes=self.membership_classification_axes,
+            weight_recovery_metric=self.membership_weight_recovery_metric,
+        )
+        object.__setattr__(
+            self,
+            "membership_classification_axes",
+            membership.classification_axes,
+        )
         for field_name in (
             "response_parameter_blocks",
             "fixed_effects",
@@ -330,6 +450,16 @@ class CandidateIdentity:
                 field_name,
                 _immutable_string_tuple(getattr(self, field_name), field_name),
             )
+
+    def membership_manifest(self) -> dict[str, object]:
+        """Return membership identity in the shared manifest shape."""
+        return MembershipStructure(
+            classification=self.membership_classification,
+            multiplicity=self.membership_multiplicity,
+            weight_authority=self.membership_weight_authority,
+            classification_axes=self.membership_classification_axes,
+            weight_recovery_metric=self.membership_weight_recovery_metric,
+        ).to_manifest()
 
     def to_manifest(self) -> dict[str, object]:
         """Return the complete JSON-shaped structural identity."""
@@ -348,7 +478,7 @@ class CandidateIdentity:
                 "formulation_id": self.mixed_formulation_id,
                 "fixed_effects": list(self.fixed_effects),
                 "random_effects": list(self.random_effects),
-                "membership": self.membership,
+                "membership": self.membership_manifest(),
             },
             "dependence": {
                 "kind": self.dependence_kind.value,
@@ -359,12 +489,7 @@ class CandidateIdentity:
 
     def canonical_json(self) -> str:
         """Serialize identity with fixed JSON ordering and separators."""
-        return json.dumps(
-            self.to_manifest(),
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+        return _canonical_json_bytes(self.to_manifest()).decode("utf-8")
 
     def canonical_id(self) -> str:
         """Return a readable formulation prefix plus full SHA-256 identity."""
@@ -380,6 +505,7 @@ _MISSING_SUPPORT_REQUIREMENTS = (
     "rust_estimator_required",
     "identification_evidence_required",
     "primary_citation_required",
+    "membership_weight_recovery_required",
     "passing_recovery_evidence_required",
 )
 
@@ -430,9 +556,11 @@ class CompiledModelCandidate:
         """Expose the canonical ID derived from the single identity owner."""
         return self.identity.canonical_id()
 
-    def to_manifest(self) -> dict[str, object]:
-        """Serialize the candidate deterministically using JSON-shaped values."""
+    def _manifest_payload(self) -> dict[str, object]:
+        """Build the versioned manifest payload before self-digesting."""
         return {
+            "manifest_schema_id": _MANIFEST_SCHEMA_ID,
+            "manifest_schema_version": _MANIFEST_SCHEMA_VERSION,
             "canonical_id": self.canonical_id,
             "identity": self.identity.to_manifest(),
             "status": self.status.value,
@@ -450,7 +578,7 @@ class CompiledModelCandidate:
                 "formulation_id": self.mixed_structure.formulation_id,
                 "fixed_effects": list(self.mixed_structure.fixed_effects),
                 "random_effects": list(self.mixed_structure.random_effects),
-                "membership": self.mixed_structure.membership,
+                "membership": self.mixed_structure.membership.to_manifest(),
             },
             "dependence": {
                 "kind": self.dependence.kind.value,
@@ -481,6 +609,12 @@ class CompiledModelCandidate:
             "missing_requirements": list(self.missing_requirements),
             "temporal_boundary": self.temporal_boundary,
         }
+
+    def to_manifest(self) -> dict[str, object]:
+        """Serialize the candidate with schema version and deterministic digest."""
+        payload = self._manifest_payload()
+        digest = hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
+        return {**payload, "manifest_sha256": digest}
 
 
 _DEPENDENCE_TEMPLATES = MappingProxyType(
@@ -528,6 +662,7 @@ def _candidate_identity(
     dependence: DependenceStructure,
 ) -> CandidateIdentity:
     """Build the one structural identity used by IDs and evidence lookup."""
+    membership = base.mixed_structure.membership
     return CandidateIdentity(
         response_family_id=base.response_kernel.family_id,
         response_formulation_id=base.response_kernel.formulation_id,
@@ -538,7 +673,11 @@ def _candidate_identity(
         mixed_formulation_id=base.mixed_structure.formulation_id,
         fixed_effects=base.mixed_structure.fixed_effects,
         random_effects=base.mixed_structure.random_effects,
-        membership=base.mixed_structure.membership,
+        membership_classification=membership.classification,
+        membership_multiplicity=membership.multiplicity,
+        membership_weight_authority=membership.weight_authority,
+        membership_classification_axes=membership.classification_axes,
+        membership_weight_recovery_metric=membership.weight_recovery_metric,
         dependence_kind=dependence.kind,
         dependence_formulation_id=dependence.formulation_id,
         dependence_parameter_blocks=dependence.parameter_blocks,
@@ -574,6 +713,15 @@ def _missing_support_requirements(
         evidence is not None
         and _primary_citations_are_complete(evidence.primary_citations)
     )
+    membership = base.mixed_structure.membership
+    membership_recovery_metric = membership.weight_recovery_metric
+    has_membership_weight_recovery = (
+        membership.weight_authority is not MembershipWeightAuthority.MODEL_ESTIMATED
+        or (
+            _exact_nonblank_string(membership_recovery_metric)
+            and membership_recovery_metric in base.recovery_contract.required_metrics
+        )
+    )
     has_recovery = (
         base.recovery_contract.passing is True
         and _nonempty_exact_string_tuple(base.recovery_contract.required_metrics)
@@ -584,7 +732,8 @@ def _missing_support_requirements(
         (has_rust_estimator, _MISSING_SUPPORT_REQUIREMENTS[1]),
         (has_identification, _MISSING_SUPPORT_REQUIREMENTS[2]),
         (has_citations, _MISSING_SUPPORT_REQUIREMENTS[3]),
-        (has_recovery, _MISSING_SUPPORT_REQUIREMENTS[4]),
+        (has_membership_weight_recovery, _MISSING_SUPPORT_REQUIREMENTS[4]),
+        (has_recovery, _MISSING_SUPPORT_REQUIREMENTS[5]),
     )
     return tuple(requirement for satisfied, requirement in checks if not satisfied)
 
@@ -673,6 +822,10 @@ __all__ = [
     "EstimationPlan",
     "GeneralizedMixedStructure",
     "IdentificationContract",
+    "MembershipClassification",
+    "MembershipMultiplicity",
+    "MembershipStructure",
+    "MembershipWeightAuthority",
     "ModelSpecification",
     "RecoveryContract",
     "ResponseKernel",
