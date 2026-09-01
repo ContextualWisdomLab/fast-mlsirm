@@ -44,6 +44,14 @@ def _snapshot_builtin_sequence(value: object, field_name: str) -> tuple[object, 
     return tuple(value)
 
 
+def _immutable_exact_string_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    """Copy a built-in list/tuple into an immutable tuple of exact strings."""
+    snapshot = _snapshot_builtin_sequence(value, field_name)
+    if any(type(item) is not str for item in snapshot):
+        raise TypeError(f"{field_name} must contain only built-in strings")
+    return snapshot  # type: ignore[return-value]
+
+
 def _immutable_string_tuple(
     value: object,
     field_name: str,
@@ -173,6 +181,18 @@ class EstimationPlan:
     implemented: bool
     applies_to_candidate_id: str
 
+    def __post_init__(self) -> None:
+        """Keep estimator evidence JSON-safe while permitting incomplete records."""
+        for field_name in (
+            "estimator_id",
+            "computational_backend",
+            "applies_to_candidate_id",
+        ):
+            if type(getattr(self, field_name)) is not str:
+                raise TypeError(f"{field_name} must be a built-in string")
+        if type(self.implemented) is not bool:
+            raise TypeError("implemented must be a bool")
+
 
 @dataclass(frozen=True)
 class IdentificationContract:
@@ -187,8 +207,12 @@ class IdentificationContract:
         object.__setattr__(
             self,
             "rules",
-            _snapshot_builtin_sequence(self.rules, "rules"),
+            _immutable_exact_string_tuple(self.rules, "rules"),
         )
+        if type(self.verified) is not bool:
+            raise TypeError("verified must be a bool")
+        if type(self.applies_to_candidate_id) is not str:
+            raise TypeError("applies_to_candidate_id must be a built-in string")
 
 
 @dataclass(frozen=True)
@@ -204,8 +228,12 @@ class RecoveryContract:
         object.__setattr__(
             self,
             "required_metrics",
-            _snapshot_builtin_sequence(self.required_metrics, "required_metrics"),
+            _immutable_exact_string_tuple(self.required_metrics, "required_metrics"),
         )
+        if type(self.passing) is not bool:
+            raise TypeError("passing must be a bool")
+        if type(self.applies_to_candidate_id) is not str:
+            raise TypeError("applies_to_candidate_id must be a built-in string")
 
 
 @dataclass(frozen=True)
@@ -370,10 +398,12 @@ class CapabilityEvidence:
 
     def __post_init__(self) -> None:
         """Seal documentary collections without treating incompleteness as support."""
+        if self.generative_equation_id is not None and type(self.generative_equation_id) is not str:
+            raise TypeError("generative_equation_id must be a built-in string or None")
         object.__setattr__(
             self,
             "primary_citations",
-            _snapshot_builtin_sequence(self.primary_citations, "primary_citations"),
+            _immutable_exact_string_tuple(self.primary_citations, "primary_citations"),
         )
 
 
