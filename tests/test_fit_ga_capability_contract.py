@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from fast_mlsirm.capabilities import (
@@ -9,6 +11,7 @@ from fast_mlsirm.capabilities import (
     PRODUCTION_NUMERIC_OWNER,
     fit_capabilities,
     fit_capability_manifest,
+    main as capability_main,
 )
 from fast_mlsirm.config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
 
@@ -65,3 +68,10 @@ def test_fit_capability_manifest_is_json_shaped_and_fresh() -> None:
     }
     first["models"][0]["estimators"].append("caller-mutation")
     assert "caller-mutation" not in fit_capability_manifest()["models"][0]["estimators"]
+
+
+def test_fit_capability_manifest_has_a_machine_readable_module_cli(capsys) -> None:
+    assert capability_main([]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out) == fit_capability_manifest()
