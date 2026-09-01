@@ -1,3 +1,5 @@
+# Rust registry distribution boundary
+
 ## Changed
 
 - Classify `crates/mlsirm-core` and `crates/fast-mlsirm-py` as internal Rust implementation owners inside the released `fast-mlsirm` product rather than separately published crates.io products. Both crates now declare `publish = false`; Maturin/PyPI remains the governed public registry distribution boundary. A repository contract and doctoring entry prevent organization-level `CARGO_REGISTRY_TOKEN` availability from being mistaken for publication authority. A future standalone Rust registry product requires a successor ADR and its own compatibility, release, security, SBOM/provenance and downstream-install evidence.
