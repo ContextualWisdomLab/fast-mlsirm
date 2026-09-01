@@ -11,6 +11,7 @@ ADR_INDEX_PATH = "docs/adr/README.md"
 ARCHITECTURE_PATH = "ARCHITECTURE.md"
 PRD_PATH = "docs/PRD.md"
 TRD_PATH = "docs/TRD.md"
+REQUIREMENTS_MATRIX_PATH = "docs/traceability/requirements-matrix.md"
 RUST_MANIFEST_PATHS = (
     "Cargo.toml",
     "crates/mlsirm-core/Cargo.toml",
@@ -131,6 +132,19 @@ def test_prd_and_trd_preserve_tepp_ownership_boundary() -> None:
         "immutable ACL contract with compatibility identity and provenance; adapters shall not bypass "
         "that contract or introduce cross-service SQL, direct TEPP database access, or a hidden TEPP runtime dependency."
         in trd
+    )
+
+
+def test_requirements_matrix_traces_temporal_owner_boundary() -> None:
+    """Map the accepted temporal owner decision to its exact product and technical requirements."""
+    matrix = _read(REQUIREMENTS_MATRIX_PATH)
+
+    assert (
+        "| Temporal event ownership boundary | PRD-FR-064/065, TRD-MLT-007/008 | ADR-0028 | "
+        "`docs/adr/0028-tepp-temporal-event-composition-boundary.md`, `tests/test_tepp_temporal_context_boundary.py`; "
+        "existing Rust CT-AR Rasch kernel remains fast-mlsirm-owned while TEPP owns event semantics/composition | "
+        "Accepted ownership boundary / active PR |"
+        in matrix
     )
 
 
