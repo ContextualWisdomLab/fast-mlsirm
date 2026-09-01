@@ -22,6 +22,7 @@ from fast_mlsirm.model_specification import (
 _ALL_DEPENDENCE = frozenset(
     {DependenceKind.LSIRM, DependenceKind.MLSIRM, DependenceKind.DLSJM}
 )
+_LSIRM_ID = "2plm_logistic__lsirm_jeon_et_al_2021_extension"
 
 
 def _base_spec(
@@ -29,11 +30,18 @@ def _base_spec(
     family: str = "2plm",
     dimensions: int = 2,
     support_ready: bool = False,
+    support_formulation_id: str | None = None,
 ) -> ModelSpecification:
+    base_formulation_id = f"{family}_logistic"
+    evidence_scope = (
+        base_formulation_id
+        if support_formulation_id is None
+        else support_formulation_id
+    )
     return ModelSpecification(
         response_kernel=ResponseKernel(
             family_id=family,
-            formulation_id=f"{family}_logistic",
+            formulation_id=base_formulation_id,
             response_scale="dichotomous",
             parameter_blocks=("discrimination", "difficulty"),
             compatible_dependence=_ALL_DEPENDENCE,
@@ -52,10 +60,12 @@ def _base_spec(
             estimator_id="research_mmle",
             computational_backend="rust",
             implemented=support_ready,
+            applies_to_formulation_id=evidence_scope,
         ),
         identification_contract=IdentificationContract(
             rules=("trait_location_scale", "dependence_geometry_alignment"),
             verified=support_ready,
+            applies_to_formulation_id=evidence_scope,
         ),
         recovery_contract=RecoveryContract(
             required_metrics=(
@@ -66,6 +76,7 @@ def _base_spec(
                 "convergence",
             ),
             passing=support_ready,
+            applies_to_formulation_id=evidence_scope,
         ),
     )
 
@@ -191,14 +202,37 @@ def test_capability_evidence_has_no_duplicate_estimator_or_recovery_truth() -> N
     )
 
 
-def test_supported_requires_equation_rust_plan_identification_citation_and_recovery() -> None:
+def test_generic_base_evidence_cannot_promote_a_dependence_extension() -> None:
     evidence = CapabilityEvidence(
         generative_equation_id="2plm_lsirm_eq_v1",
         primary_citations=("10.1007/s11336-021-09762-5",),
     )
 
-    supported = compile_dependence_candidates(
+    candidate = compile_dependence_candidates(
         _base_spec(support_ready=True),
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0]
+
+    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
+    assert candidate.missing_requirements == (
+        "rust_estimator_required",
+        "identification_evidence_required",
+        "passing_recovery_evidence_required",
+    )
+
+
+def test_supported_requires_formulation_scoped_rust_identification_and_recovery() -> None:
+    evidence = CapabilityEvidence(
+        generative_equation_id="2plm_lsirm_eq_v1",
+        primary_citations=("10.1007/s11336-021-09762-5",),
+    )
+    base = _base_spec(
+        support_ready=True,
+        support_formulation_id=_LSIRM_ID,
+    )
+
+    supported = compile_dependence_candidates(
+        base,
         evidence_by_kind={DependenceKind.LSIRM: evidence},
     )[0]
 
@@ -206,8 +240,10 @@ def test_supported_requires_equation_rust_plan_identification_citation_and_recov
     assert supported.missing_requirements == ()
     assert supported.generative_equation_id == "2plm_lsirm_eq_v1"
     assert supported.primary_citations == ("10.1007/s11336-021-09762-5",)
+    assert supported.estimation_plan.applies_to_formulation_id == _LSIRM_ID
+    assert supported.identification_contract.applies_to_formulation_id == _LSIRM_ID
+    assert supported.recovery_contract.applies_to_formulation_id == _LSIRM_ID
 
-    base = _base_spec(support_ready=True)
     not_implemented = replace(
         base,
         estimation_plan=replace(base.estimation_plan, implemented=False),
@@ -251,8 +287,58 @@ def test_supported_requires_equation_rust_plan_identification_citation_and_recov
     assert candidate.missing_requirements == ("passing_recovery_evidence_required",)
 
 
+def test_scope_mismatch_fails_each_support_gate_independently() -> None:
+    evidence = CapabilityEvidence(
+        generative_equation_id="2plm_lsirm_eq_v1",
+        primary_citations=("10.1007/s11336-021-09762-5",),
+    )
+    base = _base_spec(
+        support_ready=True,
+        support_formulation_id=_LSIRM_ID,
+    )
+
+    wrong_estimator_scope = replace(
+        base,
+        estimation_plan=replace(
+            base.estimation_plan,
+            applies_to_formulation_id="2plm_logistic",
+        ),
+    )
+    assert compile_dependence_candidates(
+        wrong_estimator_scope,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0].missing_requirements == ("rust_estimator_required",)
+
+    wrong_identification_scope = replace(
+        base,
+        identification_contract=replace(
+            base.identification_contract,
+            applies_to_formulation_id="2plm_logistic",
+        ),
+    )
+    assert compile_dependence_candidates(
+        wrong_identification_scope,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0].missing_requirements == ("identification_evidence_required",)
+
+    wrong_recovery_scope = replace(
+        base,
+        recovery_contract=replace(
+            base.recovery_contract,
+            applies_to_formulation_id="2plm_logistic",
+        ),
+    )
+    assert compile_dependence_candidates(
+        wrong_recovery_scope,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0].missing_requirements == ("passing_recovery_evidence_required",)
+
+
 def test_blank_equation_or_citation_cannot_promote_candidate() -> None:
-    base = _base_spec(support_ready=True)
+    base = _base_spec(
+        support_ready=True,
+        support_formulation_id=_LSIRM_ID,
+    )
     blank = CapabilityEvidence(generative_equation_id="", primary_citations=("",))
 
     candidate = compile_dependence_candidates(
