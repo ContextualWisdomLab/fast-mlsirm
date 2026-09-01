@@ -261,11 +261,12 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
         contract_value_display = ""
     else:
         contract_value_display = f"KRW {contract_value}"
+    payload_digest = manifest.get("payload_zip_sha256", manifest.get("zip_sha256", ""))
     cards = [
         ("Contract Value", contract_value_display),
         ("Artifact Count", manifest.get("artifact_count", "")),
         ("Source Commit", manifest.get("source_commit", "")),
-        ("Packet ZIP SHA256", manifest.get("zip_sha256", "")),
+        ("Payload ZIP SHA256", payload_digest),
     ]
     card_markup = [
         "\n".join(
@@ -327,7 +328,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
             "</tbody>",
             "</table>",
             "</div>",
-            '<p class="note">Packet ZIP SHA256 above binds the immutable payload archive. The delivery-envelope digest is detached in the packet SHA256 sidecar to avoid a self-referential archive hash.</p>',
+            '<p class="note">Payload ZIP SHA256 binds the immutable inner payload archive. The delivered packet is validated separately by its detached packet SHA256 sidecar to avoid a self-referential archive hash.</p>',
             '<p class="note">This report summarizes procurement evidence only. It is not a valuation guarantee or regulated-use approval.</p>',
             "</section>",
             "</main>",
@@ -538,6 +539,7 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
     # self-reference. The delivered packet is finalized afterward and receives a
     # detached digest sidecar.
     _write_archive(payload_zip_path, source_files)
+    payload_zip_sha256 = _sha256(payload_zip_path)
 
     coverage_files = dict(source_files)
     coverage_files["buyer_evidence_report.html"] = report_path
@@ -561,8 +563,13 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         "artifact_count": len(source_entries),
         "coverage": coverage,
         "files": source_entries,
+        "payload_zip_file": str(payload_zip_path),
+        "payload_zip_sha256": payload_zip_sha256,
+        # Compatibility aliases retained for existing evidence consumers. New
+        # consumers must use the explicit payload_* names and validate the
+        # delivered packet through packet_file + packet_sha256_file.
         "zip_file": str(payload_zip_path),
-        "zip_sha256": _sha256(payload_zip_path),
+        "zip_sha256": payload_zip_sha256,
         "packet_file": str(packet_path),
         "packet_sha256_file": str(packet_digest_path),
         "report_file": str(report_path),
@@ -644,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "report": str(Path(args.out).resolve() / "buyer_evidence_report.html"),
                 "packet": manifest["packet_file"],
-                "payload_zip": manifest["zip_file"],
+                "payload_zip": manifest["payload_zip_file"],
                 "packet_sha256_file": manifest["packet_sha256_file"],
             },
             indent=2,
