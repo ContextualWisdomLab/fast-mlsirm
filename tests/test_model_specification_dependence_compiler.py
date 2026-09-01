@@ -414,3 +414,83 @@ def test_blank_equation_or_citation_cannot_promote_candidate() -> None:
         "generative_equation_required",
         "primary_citation_required",
     )
+
+
+def test_structural_collections_are_snapshotted_before_candidate_identity() -> None:
+    parameter_blocks = ["discrimination", "difficulty"]
+    compatible_dependence = [DependenceKind.LSIRM]
+    fixed_effects = ["person_covariates"]
+    random_effects = ["group_intercept"]
+
+    base = ModelSpecification(
+        response_kernel=ResponseKernel(
+            family_id="2plm",
+            formulation_id="2plm_logistic",
+            response_scale="dichotomous",
+            parameter_blocks=parameter_blocks,
+            compatible_dependence=compatible_dependence,
+        ),
+        dimensional_structure=DimensionalStructure("confirmatory", 2),
+        mixed_structure=GeneralizedMixedStructure(
+            "explanatory",
+            fixed_effects=fixed_effects,
+            random_effects=random_effects,
+            membership="single",
+        ),
+        estimation_plan=EstimationPlan("research_mmle", "rust", False, "base"),
+        identification_contract=IdentificationContract(("trait_scale",), False, "base"),
+        recovery_contract=RecoveryContract(("rmse",), False, "base"),
+    )
+    candidate = compile_dependence_candidates(base)[0]
+    candidate_id = candidate.canonical_id
+
+    parameter_blocks.append("caller_mutation")
+    compatible_dependence.append(DependenceKind.DLSJM)
+    fixed_effects.append("caller_mutation")
+    random_effects.clear()
+
+    assert base.response_kernel.parameter_blocks == ("discrimination", "difficulty")
+    assert base.response_kernel.compatible_dependence == frozenset({DependenceKind.LSIRM})
+    assert base.mixed_structure.fixed_effects == ("person_covariates",)
+    assert base.mixed_structure.random_effects == ("group_intercept",)
+    assert candidate.canonical_id == candidate_id
+    assert candidate.identity.canonical_id() == candidate_id
+
+
+def test_supported_status_requires_substantive_support_owner_records() -> None:
+    base = _base_spec()
+    candidate_id = _lsirm_id(base)
+    ready = _ready_for_candidate(base, candidate_id)
+    evidence = _complete_lsirm_evidence()
+
+    missing_estimator_identity = replace(
+        ready,
+        estimation_plan=replace(ready.estimation_plan, estimator_id=""),
+    )
+    assert compile_dependence_candidates(
+        missing_estimator_identity,
+        evidence_by_candidate_id={candidate_id: evidence},
+    )[0].missing_requirements == ("rust_estimator_required",)
+
+    for rules in ((), ("",)):
+        missing_identification = replace(
+            ready,
+            identification_contract=replace(ready.identification_contract, rules=rules),
+        )
+        assert compile_dependence_candidates(
+            missing_identification,
+            evidence_by_candidate_id={candidate_id: evidence},
+        )[0].missing_requirements == ("identification_evidence_required",)
+
+    for metrics in ((), ("",)):
+        missing_recovery = replace(
+            ready,
+            recovery_contract=replace(
+                ready.recovery_contract,
+                required_metrics=metrics,
+            ),
+        )
+        assert compile_dependence_candidates(
+            missing_recovery,
+            evidence_by_candidate_id={candidate_id: evidence},
+        )[0].missing_requirements == ("passing_recovery_evidence_required",)
