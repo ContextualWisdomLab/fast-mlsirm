@@ -11,16 +11,25 @@ jobs:
   repair:
     permissions:
       contents: write
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7
         with:
           ref: fix/mokken-explicit-decision-controls
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          version: "0.12.5"
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: Install test and editable package requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
       - name: Patch repository-owned callers only
         shell: bash
         run: |
@@ -49,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run pytest -q \
+          pytest -q \
             tests/test_mokken_no_heuristic_defaults.py \
             tests/test_mokken_input_admission.py \
             tests/test_mokken_array_provider_boundary.py \
@@ -75,7 +84,7 @@ jobs:
           remote_head="$(git rev-parse FETCH_HEAD)"
           if ! git merge-base --is-ancestor "$remote_head" HEAD; then
             git merge --no-edit "$remote_head"
-            uv run pytest -q \
+            pytest -q \
               tests/test_mokken_no_heuristic_defaults.py \
               tests/test_mokken_input_admission.py \
               tests/test_mokken_array_provider_boundary.py \
