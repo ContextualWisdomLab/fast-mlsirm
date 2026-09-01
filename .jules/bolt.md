@@ -52,3 +52,7 @@
 ## 2025-05-19 - Replace list comprehension and boolean indexing with matrix multiplication in loops
 **Learning:** Calculating categorical expected counts by repeatedly allocating boolean arrays and evaluating list comprehensions in hot loops (e.g., `np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)`) is extremely slow due to Python iteration overhead and intermediate NumPy array allocations.
 **Action:** Precompute a full-dimensional boolean mask outside the loop (e.g., `y_mask = (y[:, :, None] == scores).astype(np.float64)`), and replace the inner loop reductions with BLAS-optimized matrix multiplication (e.g., `post.T @ y_mask[:, i, :]`) to avoid intermediate allocations and achieve significant speedups.
+
+## 2025-05-19 - Do not optimize Python reference implementations
+**Learning:** The Python paths (e.g. `fast_mlsirm/estimators/marginal.py`) act as reference/parity implementations, not the primary production numerical paths. The production boundary is owned by Rust (e.g. `crates/mlsirm-core/src/poly*.rs`). Optimizing the Python path risks making the reference path more production-like, which is an architectural anti-pattern and will be rejected.
+**Action:** Do not invest performance optimization efforts into the Python NumPy reference implementations. Any performance follow-up should benchmark/profile the Rust production path, then optimize the measured Rust bottleneck with parity/recovery evidence.
