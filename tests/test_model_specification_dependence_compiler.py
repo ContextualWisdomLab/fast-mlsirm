@@ -13,6 +13,10 @@ from fast_mlsirm.model_specification import (
     EstimationPlan,
     GeneralizedMixedStructure,
     IdentificationContract,
+    MembershipClassification,
+    MembershipMultiplicity,
+    MembershipStructure,
+    MembershipWeightAuthority,
     ModelSpecification,
     RecoveryContract,
     ResponseKernel,
@@ -25,13 +29,31 @@ _ALL_DEPENDENCE = frozenset(
 )
 
 
+def _multiple_membership() -> MembershipStructure:
+    return MembershipStructure(
+        classification=MembershipClassification.HIERARCHICAL,
+        multiplicity=MembershipMultiplicity.MULTIPLE,
+        weight_authority=MembershipWeightAuthority.EXPLICIT_NORMALIZED,
+        classification_axes=("group",),
+    )
+
+
+def _single_membership() -> MembershipStructure:
+    return MembershipStructure(
+        classification=MembershipClassification.HIERARCHICAL,
+        multiplicity=MembershipMultiplicity.SINGLE,
+        weight_authority=MembershipWeightAuthority.NOT_APPLICABLE,
+        classification_axes=("group",),
+    )
+
+
 def _base_spec(
     *,
     family: str = "2plm",
     dimensions: int = 2,
     fixed_effects: tuple[str, ...] = ("person_covariates", "item_covariates"),
     random_effects: tuple[str, ...] = ("group_intercept",),
-    membership: str = "multiple_membership",
+    membership: MembershipStructure | None = None,
 ) -> ModelSpecification:
     base_formulation_id = f"{family}_logistic"
     return ModelSpecification(
@@ -50,7 +72,7 @@ def _base_spec(
             formulation_id="explanatory_multiple_membership",
             fixed_effects=fixed_effects,
             random_effects=random_effects,
-            membership=membership,
+            membership=_multiple_membership() if membership is None else membership,
         ),
         estimation_plan=EstimationPlan(
             estimator_id="research_mmle",
@@ -178,7 +200,7 @@ def test_candidate_identity_covers_dimensional_and_mixed_structure() -> None:
     baseline = _base_spec()
     more_dimensions = _base_spec(dimensions=3)
     different_fixed_effects = _base_spec(fixed_effects=("person_covariates",))
-    different_membership = _base_spec(membership="single")
+    different_membership = _base_spec(membership=_single_membership())
 
     identities = {
         _lsirm_id(baseline),
@@ -435,7 +457,7 @@ def test_structural_collections_are_snapshotted_before_candidate_identity() -> N
             "explanatory",
             fixed_effects=fixed_effects,
             random_effects=random_effects,
-            membership="single",
+            membership=_single_membership(),
         ),
         estimation_plan=EstimationPlan("research_mmle", "rust", False, "base"),
         identification_contract=IdentificationContract(("trait_scale",), False, "base"),
