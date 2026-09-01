@@ -27,6 +27,7 @@ pub const RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE: &str =
 
 const MAX_INTERACTION_MAP_INPUT_CELLS: usize = 20_000_000;
 const MAX_INTERACTION_MAP_AXIS_COUNT: usize = 20_000_000;
+const MAX_INTERACTION_MAP_IDENTIFIER_BYTES: usize = 16 * 1024 * 1024;
 
 /// Versioned product-neutral result envelope for downstream persistence.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,7 +75,16 @@ fn validate_identifiers(ids: &[String], expected: usize, axis: &str) -> Result<(
         ));
     }
     let mut seen = BTreeSet::new();
+    let mut identifier_bytes = 0_usize;
     for id in ids {
+        identifier_bytes = identifier_bytes
+            .checked_add(id.len())
+            .ok_or_else(|| format!("{axis} identifier bytes overflow"))?;
+        if identifier_bytes > MAX_INTERACTION_MAP_IDENTIFIER_BYTES {
+            return Err(format!(
+                "{axis} identifier bytes exceed {MAX_INTERACTION_MAP_IDENTIFIER_BYTES}"
+            ));
+        }
         if !seen.insert(id.as_str()) {
             return Err(format!("duplicate {axis} identifier"));
         }
