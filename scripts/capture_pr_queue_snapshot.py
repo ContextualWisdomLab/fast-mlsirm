@@ -33,9 +33,11 @@ except ModuleNotFoundError as exc:
         from _bounded_json import parse_json_bounded
         from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
     except ModuleNotFoundError as sibling_exc:
-        if sibling_exc.name != "_bounded_json":
-            raise
-        raise RuntimeError("bounded JSON parser is unavailable") from sibling_exc
+        if sibling_exc.name == "_bounded_json":
+            raise RuntimeError("bounded JSON parser is unavailable") from sibling_exc
+        if sibling_exc.name == "_bounded_subprocess":
+            raise RuntimeError("bounded subprocess runner is unavailable") from sibling_exc
+        raise
 
 
 OPEN_PR_DETAIL_FIELDS: Final = (
