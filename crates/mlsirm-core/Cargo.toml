@@ -1,6 +1,7 @@
 [package]
 name = "mlsirm-core"
 version = "0.9.1"
+publish = false
 edition = "2021"
 license = "MIT"
 description = "Core likelihood and gradient routines for fast-mlsirm."
