@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import zipfile
 from pathlib import Path
 
-from scripts import sales_readiness
+from scripts import build_release_evidence_index, sales_readiness
 
 
 def _write_manifest(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -42,6 +43,8 @@ def _write_manifest(tmp_path: Path) -> tuple[Path, Path, Path]:
             "acceptance_artifacts": True,
             "html_report": True,
         },
+        "payload_zip_file": str(payload),
+        "payload_zip_sha256": payload_sha,
         "zip_file": str(payload),
         "zip_sha256": payload_sha,
         "packet_file": str(packet),
@@ -65,7 +68,7 @@ def _failed_names(manifest_path: Path) -> set[str]:
 
 def test_delivery_packet_and_detached_digest_are_required(tmp_path: Path) -> None:
     """The gate must validate the artifact delivered to a buyer, not only its payload ZIP."""
-    manifest_path, packet, digest = _write_manifest(tmp_path)
+    manifest_path, packet, _digest = _write_manifest(tmp_path)
     assert _failed_names(manifest_path) == set()
 
     packet.write_bytes(packet.read_bytes() + b"tamper")
@@ -74,3 +77,60 @@ def test_delivery_packet_and_detached_digest_are_required(tmp_path: Path) -> Non
     manifest_path, _packet, digest = _write_manifest(tmp_path)
     digest.unlink()
     assert "buyer_packet:packet_sha256_file" in _failed_names(manifest_path)
+
+
+def _write_release_inputs(tmp_path: Path) -> tuple[argparse.Namespace, Path]:
+    """Create the minimal valid release-index inputs around one buyer packet."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "pyproject.toml").write_text(
+        '[project]\nname = "fast-mlsirm"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    acceptance = tmp_path / "acceptance_summary.json"
+    acceptance.write_text(json.dumps({"status": "ok", "steps": []}), encoding="utf-8")
+    sales = tmp_path / "sales_readiness_manifest.json"
+    sales.write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+
+    benchmark_html = tmp_path / "benchmark_report.html"
+    benchmark_html.write_text("<!doctype html><title>Benchmark</title>", encoding="utf-8")
+    benchmark = tmp_path / "benchmark_report.json"
+    benchmark.write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "budget_ok": True,
+                "html_report_file": str(benchmark_html),
+                "html_report_sha256": hashlib.sha256(benchmark_html.read_bytes()).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    packet_manifest, packet, _digest = _write_manifest(tmp_path)
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "fast_mlsirm-0.1.0-py3-none-any.whl").write_bytes(b"wheel")
+    (dist / "fast_mlsirm-0.1.0.tar.gz").write_bytes(b"sdist")
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        sales_readiness=str(sales),
+        benchmark_report=str(benchmark),
+        buyer_packet_manifest=str(packet_manifest),
+        dist=str(dist),
+        out=str(tmp_path / "release-index"),
+        contract_value_krw=None,
+    )
+    return args, packet
+
+
+def test_release_index_rejects_tampered_delivery_packet(tmp_path: Path) -> None:
+    """Release evidence must cover the final delivery envelope, not only its inner payload."""
+    args, packet = _write_release_inputs(tmp_path)
+    assert build_release_evidence_index.build_index(args)["status"] == "ok"
+
+    packet.write_bytes(packet.read_bytes() + b"tamper")
+    result = build_release_evidence_index.build_index(args)
+    assert result["status"] == "failed"
+    assert any("delivery packet" in failure.lower() for failure in result["failures"])
