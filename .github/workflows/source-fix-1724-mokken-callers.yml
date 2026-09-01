@@ -1,0 +1,89 @@
+name: Source fix PR1724 Mokken callers
+
+on:
+  push:
+    branches:
+      - fix/mokken-explicit-decision-controls
+    paths:
+      - .github/source-fix-1724-mokken-callers.trigger
+
+jobs:
+  repair:
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7
+        with:
+          ref: fix/mokken-explicit-decision-controls
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.5"
+      - name: Patch repository-owned callers only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_paper_features.py")
+          text = path.read_text()
+          replacements = {
+              "g = mokken_analysis(guttman)": "g = mokken_analysis(guttman, lower_bound=0.3, alpha=0.05)",
+              "res = mokken_analysis(np.hstack([xa, xb]), lower_bound=0.3)": "res = mokken_analysis(np.hstack([xa, xb]), lower_bound=0.3, alpha=0.05)",
+              "mokken_analysis(ok, lower_bound=1.0)": "mokken_analysis(ok, lower_bound=1.0, alpha=0.05)",
+              "mokken_analysis(ok, alpha=0.0)": "mokken_analysis(ok, lower_bound=0.3, alpha=0.0)",
+              "mokken_analysis(cst)": "mokken_analysis(cst, lower_bound=0.3, alpha=0.05)",
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one {old!r}, found {count}")
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+          git diff --check
+      - name: Verify Mokken focused contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pytest -q \
+            tests/test_mokken_no_heuristic_defaults.py \
+            tests/test_mokken_input_admission.py \
+            tests/test_mokken_array_provider_boundary.py \
+            tests/test_mokken_zero_dim_control_compat.py \
+            tests/test_mokken_resource_boundary.py \
+            tests/test_cov_b_gtheory_mokken_ss.py \
+            tests/test_paper_features.py -k 'mokken'
+      - name: Self-remove and publish non-force repair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/source-fix-1724-mokken-callers.yml \
+            .github/source-fix-1724-mokken-callers.trigger
+          git add -A
+          git diff --cached --check
+          git config user.name 'opencode-agent[bot]'
+          git config user.email '219766164+opencode-agent[bot]@users.noreply.github.com'
+          git commit -m 'fix(mokken): update explicit-control callers'
+          git fetch --no-tags origin fix/mokken-explicit-decision-controls
+          remote_head="$(git rev-parse FETCH_HEAD)"
+          if ! git merge-base --is-ancestor "$remote_head" HEAD; then
+            git merge --no-edit "$remote_head"
+            uv run pytest -q \
+              tests/test_mokken_no_heuristic_defaults.py \
+              tests/test_mokken_input_admission.py \
+              tests/test_mokken_array_provider_boundary.py \
+              tests/test_mokken_zero_dim_control_compat.py \
+              tests/test_mokken_resource_boundary.py \
+              tests/test_cov_b_gtheory_mokken_ss.py \
+              tests/test_paper_features.py -k 'mokken'
+            git diff --check
+          fi
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin HEAD:fix/mokken-explicit-decision-controls
