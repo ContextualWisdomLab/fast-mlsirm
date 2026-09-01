@@ -167,33 +167,37 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
 
 def mokken_analysis(
     responses: np.ndarray,
-    lower_bound: float = 0.3,
-    alpha: float = 0.05,
+    lower_bound: float | None = None,
+    alpha: float | None = None,
 ) -> MokkenResult:
-    """Mokken scale analysis (compute in Rust; Mokken, 1971, as cited in
-    van der Ark, 2007).
+    """Run Mokken scale analysis with explicitly governed AISP controls.
 
     Computes the Loevinger scalability coefficients ``Hij``, ``Hi``, ``H``
-    with their Mokken Z statistics, and partitions the items into Mokken
-    scales with the automated item selection procedure (AISP), following the
-    sample statistics and "search normal" algorithm of the mokken R package
-    (van der Ark, 2007): ``Hij = S_ij / Smax_ij`` where ``S`` is the sample
-    covariance matrix and ``Smax_ij`` the maximum covariance given the two
-    items' marginals (sorted-column coupling); ``Hi`` and ``H`` are ratios of
-    the corresponding pairwise sums. A Mokken scale at lower bound ``c``
-    requires nonnegative inter-item covariances and ``Hi >= c`` (rule of
-    thumb ``c = 0.3``; Straat et al., 2013).
+    with their Mokken Z statistics, and partitions items with the automated
+    item selection procedure (AISP), following the sample statistics and
+    ``search normal`` algorithm of the mokken R package (van der Ark, 2007).
+    ``Hij = S_ij / Smax_ij`` where ``S`` is the sample covariance matrix and
+    ``Smax_ij`` is the maximum covariance given the two items' marginals.
 
-    In LLM-as-a-Judge item-quality management, AISP flags evaluation items
-    that do not scale with the rest (label 0) and detects multidimensional
-    item pools before parametric IRT calibration.
+    ``lower_bound`` (the AISP scalability lower bound ``c``) and ``alpha``
+    (the nominal significance level used by the algorithm) are substantive
+    measurement-policy inputs. The package intentionally supplies no default
+    values for either control. Conventional values reported in the literature
+    do not identify a universal threshold that is valid for every estimand,
+    instrument, population, or deployment, so a caller must provide values
+    justified by its governed analysis plan rather than receive a rule-of-thumb
+    decision from this API.
+
+    In LLM-as-a-Judge item-quality management, AISP can flag evaluation items
+    that do not scale with the rest and can expose multidimensional item pools
+    before parametric IRT calibration, but the scientific control values remain
+    the responsibility of the measurement design.
 
     ``responses`` is a complete ``persons x items`` array of integer scores
-    (dichotomous 0/1 or polytomous); missing values are not supported —
-    Mokken sample statistics assume complete data (van der Ark, 2007).
-    Semantic controls and score storage are validated before compiled-core
-    discovery. Complex/object response storage and values outside signed
-    ``int64`` are rejected before Rust marshalling.
+    (dichotomous 0/1 or polytomous); missing values are not supported because
+    these Mokken sample statistics assume complete data (van der Ark, 2007).
+    Response evidence is validated before decision-control admission so malformed
+    or hostile response containers retain their existing fail-closed boundary.
 
     References (APA 7th ed.):
         van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
@@ -206,14 +210,25 @@ def mokken_analysis(
         Mokken, R. J. (1971). *A theory and procedure of scale analysis*.
             De Gruyter. (as cited in van der Ark, 2007)
     """
+    x, n_persons, n_items = _validated_scores(responses)
+
+    if lower_bound is None:
+        raise ValueError(
+            "lower_bound must be explicitly provided; no rule-of-thumb AISP "
+            "threshold is authoritative"
+        )
+    if alpha is None:
+        raise ValueError(
+            "alpha must be explicitly provided; no nominal significance "
+            "default is authoritative"
+        )
+
     lower_bound_value = _real_control("lower_bound", lower_bound)
     if not (0.0 <= lower_bound_value < 1.0):
         raise ValueError("lower_bound must be in [0, 1)")
     alpha_value = _real_control("alpha", alpha)
     if not (0.0 < alpha_value < 1.0):
         raise ValueError("alpha must be in (0, 1)")
-
-    x, n_persons, n_items = _validated_scores(responses)
 
     from .fitstats import _core_module
 
