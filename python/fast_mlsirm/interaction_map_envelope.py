@@ -298,11 +298,12 @@ def _readonly_array(
     dtype: np.dtype | type[np.generic],
     shape: tuple[int, ...] | None = None,
 ) -> np.ndarray:
-    """Materialize package-owned numerical evidence and seal it against mutation."""
-    array = np.asarray(values, dtype=dtype)
+    """Materialize numerical evidence on an immutable byte buffer."""
+    materialized = np.asarray(values, dtype=dtype)
+    immutable_bytes = materialized.tobytes(order="C")
+    array = np.frombuffer(immutable_bytes, dtype=materialized.dtype)
     if shape is not None:
         array = array.reshape(shape)
-    array.setflags(write=False)
     return array
 
 
