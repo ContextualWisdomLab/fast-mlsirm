@@ -54,11 +54,20 @@ def test_nonresponse_states_are_distinct_from_binary_values() -> None:
             _cell(state=state, value=0)
         assert caught.value.code == "nonresponse_has_value"
 
+    with pytest.raises(BinaryResponseContractError) as caught:
+        _cell(
+            state=BinaryResponseState.OMITTED,
+            value=None,
+            adjudication_ref="adjudication_alpha",
+        )
+    assert caught.value.code == "unexpected_adjudication_ref"
+
 
 def test_observed_cells_admit_only_exact_zero_or_one() -> None:
     """The observed channel is dichotomous and never thresholds other carriers."""
     assert _cell(value=0).value == 0
     assert _cell(value=1).value == 1
+    assert _cell(state="observed", value=1).state is BinaryResponseState.OBSERVED
 
     for invalid in (None, True, False, 0.0, 1.0, 2, -1):
         with pytest.raises(BinaryResponseContractError) as caught:
@@ -96,10 +105,19 @@ def test_adjudicated_cells_keep_binary_value_and_provenance_separate() -> None:
 
 def test_cell_references_fail_closed_without_silent_normalization() -> None:
     """Opaque evidence references reject ambiguous boundary text instead of stripping it."""
-    for invalid in ("", " observation_alpha", "observation_alpha ", "line\nbreak", "x" * 257):
+    for invalid in (
+        "",
+        " observation_alpha",
+        "observation_alpha ",
+        "line\nbreak",
+        "x" * 257,
+    ):
         with pytest.raises(BinaryResponseContractError) as caught:
             _cell(observation_ref=invalid)
         assert caught.value.code == "invalid_reference"
+
+    with pytest.raises(TypeError, match="observation_ref must be a string"):
+        _cell(observation_ref=object())  # type: ignore[arg-type]
 
     with pytest.raises(BinaryResponseContractError) as caught:
         build_binary_response_cell(
@@ -113,6 +131,13 @@ def test_cell_references_fail_closed_without_silent_normalization() -> None:
         build_binary_response_cell(
             state=object(),  # type: ignore[arg-type]
             value=None,
+            observation_ref="observation_alpha",
+        )
+
+    with pytest.raises(ValueError, match="build_binary_response_cell"):
+        BinaryResponseCell(
+            state=BinaryResponseState.OBSERVED,
+            value=1,
             observation_ref="observation_alpha",
         )
 
@@ -147,7 +172,10 @@ def test_matrix_preserves_values_states_and_provenance_without_dichotomizing() -
         (BinaryResponseState.OBSERVED, BinaryResponseState.ADJUDICATED),
         (BinaryResponseState.OBSERVED, BinaryResponseState.ABSTAINED),
     )
-    assert matrix.adjudication_refs == ((None, "adjudication_beta"), (None, None))
+    assert matrix.adjudication_refs == (
+        (None, "adjudication_beta"),
+        (None, None),
+    )
     assert matrix.observation_refs[1][1] == "observation_delta"
 
     numeric = matrix.responses_array()
@@ -176,7 +204,7 @@ def test_matrix_rejects_shape_type_and_resource_violations() -> None:
         build_binary_response_matrix(())
     assert caught.value.code == "empty_response_matrix"
     with pytest.raises(TypeError, match="rows must be a tuple"):
-        build_binary_response_matrix([ (valid,) ])  # type: ignore[arg-type]
+        build_binary_response_matrix([(valid,)])  # type: ignore[arg-type]
     with pytest.raises(TypeError, match=r"rows\[0\] must be a tuple"):
         build_binary_response_matrix(([valid],))  # type: ignore[list-item]
     with pytest.raises(BinaryResponseContractError) as caught:
