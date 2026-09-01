@@ -17,7 +17,7 @@ That wording conflicts with the ContextualWisdomLab bounded-context map. TEPP is
 
 Those checks do not authorize `fast-mlsirm` to infer event meaning, reconstruct a TEPP event graph, decide temporal validity, derive changing-membership semantics, or define leakage-safe temporal partitions.
 
-Cross-context integration uses an Anti-Corruption Layer. A TEPP-originated occasion/temporal design is admitted only through an explicit versioned contract or adapter. No cross-service SQL, TEPP database access, or hidden runtime dependency is permitted.
+Cross-context integration uses an Anti-Corruption Layer. A TEPP-originated occasion/temporal design is admitted only through an explicit versioned, immutable contract. An adapter is permitted only when it implements that contract and exposes a compatibility identity that binds the contract family, contract version, and immutable provenance/content identity; an adapter is not an unversioned escape hatch. No cross-service SQL, direct TEPP database access, or hidden TEPP runtime dependency is permitted.
 
 The existing protected-main CT-AR Rasch estimator remains a `fast-mlsirm` numerical psychometric kernel. Its equations and recovery evidence are not deprecated by this decision. Proposed ADR-0007, ADR-0019, and ADR-0020 remain useful numerical/model-design records but are interpreted through this ownership boundary wherever their wording is broader.
 
@@ -26,6 +26,7 @@ The existing protected-main CT-AR Rasch estimator remains a `fast-mlsirm` numeri
 - `crates/mlsirm-core` remains the production owner of psychometric arithmetic; Python remains validation, marshalling, orchestration, reporting, and explicit reference testing.
 - Time-indexed numerical kernels must publish exact equations, identification conditions, estimator identity, numerical bounds, and true-parameter recovery evidence appropriate to the claim.
 - Temporal/event semantics must enter through a typed foreign-context contract; a raw timestamp or display label is not sufficient authority to reconstruct TEPP semantics.
+- Every TEPP Anti-Corruption Layer adapter must expose the admitted contract's compatibility identity and preserve its immutable provenance/content identity; adapter-local coercion must not create a second temporal truth.
 - Measurement occasion is allowed as an explicit facet/value without transferring temporal-event ownership.
 - Dynamic or longitudinal validation must distinguish numerical model recovery from TEPP-owned temporal split/leakage and event-validity evidence.
 - Existing CT-AR identities such as `joint_map_hierarchical_ctar_rasch` and `continuous_time_ar1_ou` remain formulation identifiers, not event-ontology identifiers.
