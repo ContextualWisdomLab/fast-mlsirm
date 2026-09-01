@@ -271,25 +271,26 @@ def _select_candidate_artifacts(dist_dir: Path) -> tuple[Path, Path]:
     return wheels[0], sdists[0]
 
 
-def _verify_candidate_import(
-    *,
-    wheel: Path,
-    out_dir: Path,
-    source_commit: str,
-    require_rust: bool,
-    python: str,
-) -> dict[str, Any]:
-    """Install the exact candidate wheel in isolation and persist bounded import evidence."""
+def _prepare_candidate_environment(*, wheel: Path, out_dir: Path, python: str) -> Path:
+    """Install the selected wheel into the interpreter used by release acceptance.
+
+    The venv inherits only the caller interpreter's dependency environment; the
+    fast-mlsirm distribution itself is forcibly replaced by the exact selected
+    wheel. This keeps acceptance offline-capable while preventing repository
+    source or another installed fast-mlsirm build from becoming the candidate.
+    """
     wheel = wheel.resolve()
     if wheel.is_symlink() or not wheel.is_file():
         raise RuntimeError("candidate wheel must be a regular file")
-    environment = out_dir / "candidate-import-env"
+    environment = out_dir / "candidate-runtime-env"
     if environment.exists():
         if environment.is_symlink() or not environment.is_dir():
-            raise RuntimeError("candidate import environment must be a real directory")
+            raise RuntimeError("candidate runtime environment must be a real directory")
         shutil.rmtree(environment)
-
-    _run([python, "-m", "venv", str(environment)], cwd=out_dir)
+    _run(
+        [python, "-m", "venv", "--system-site-packages", str(environment)],
+        cwd=out_dir,
+    )
     environment_python = environment / (
         "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
     )
@@ -299,12 +300,33 @@ def _verify_candidate_import(
             "-m",
             "pip",
             "install",
+            "--no-index",
             "--no-deps",
             "--force-reinstall",
             str(wheel),
         ],
         cwd=out_dir,
     )
+    return environment_python
+
+
+def _verify_candidate_import(
+    *,
+    wheel: Path,
+    out_dir: Path,
+    source_commit: str,
+    require_rust: bool,
+    python: str,
+    environment_python: Path | None = None,
+) -> dict[str, Any]:
+    """Probe the exact candidate runtime and persist wheel-bound import evidence."""
+    wheel = wheel.resolve()
+    if environment_python is None:
+        environment_python = _prepare_candidate_environment(
+            wheel=wheel, out_dir=out_dir, python=python
+        )
+    environment_python = environment_python.resolve()
+    environment = environment_python.parent.parent
     probe = (
         "import importlib, importlib.metadata, json\n"
         "package = importlib.import_module('fast_mlsirm')\n"
@@ -360,7 +382,7 @@ def _verify_candidate_import(
     package_file = Path(package_file_raw).resolve()
     environment_root = environment.resolve()
     if environment_root != package_file and environment_root not in package_file.parents:
-        raise RuntimeError("candidate package import did not come from the isolated environment")
+        raise RuntimeError("candidate package import did not come from the candidate environment")
     if require_rust and not rust_core:
         raise RuntimeError("candidate wheel is missing the required Rust core")
 
@@ -371,6 +393,7 @@ def _verify_candidate_import(
         "source_commit": source_commit,
         "wheel": str(wheel),
         "wheel_sha256": _sha256(wheel),
+        "runtime_python": str(environment_python),
         "package_version": package_version,
         "distribution_version": distribution_version,
         "package_file": str(package_file),
@@ -482,9 +505,6 @@ def _verify_generated_stage(
 ) -> None:
     """Validate a generated stage payload, persisted manifest, and live source."""
     _require_ok(name, payload)
-    # sales_readiness predates source_commit in its schema. Do not synthesize it;
-    # inspect it when present while binding the stage by immutable inputs and
-    # live source checks. All other generated acquisition manifests carry source_commit.
     require_source = "sales_readiness" not in name
     _require_source_identity(name, payload, source_commit, required=require_source)
     _require_manifest_source_identity(
@@ -497,11 +517,22 @@ def _verify_generated_stage(
     )
 
 
+def _required_packet_artifact(payload: dict[str, Any], field: str) -> Path:
+    """Resolve one delivery artifact from the generated buyer-packet contract."""
+    value = payload.get(field)
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(f"buyer packet missing {field}")
+    path = Path(value).resolve()
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError(f"buyer packet {field} must be a regular file")
+    return path
+
+
 def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     """Build one exact-source, price-neutral acquisition-readiness evidence bundle."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = Path(args.out).resolve()
-    _require_clean_source(repo_root)
+    _require_clean_source(repo_root, allowed_untracked_root=out_dir)
     source_commit = _source_commit(repo_root)
     out_dir.mkdir(parents=True, exist_ok=True)
     dist_dir = _select_distribution_directory(args, out_dir)
@@ -516,6 +547,13 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     )
     wheel, sdist = _select_candidate_artifacts(dist_dir)
 
+    candidate_python = _prepare_candidate_environment(
+        wheel=wheel, out_dir=out_dir, python=args.python
+    )
+    _assert_source_unchanged(
+        repo_root, source_commit, allowed_untracked_root=out_dir
+    )
+
     candidate_import_path = out_dir / "candidate_import_evidence.json"
     candidate_import: dict[str, Any] | None = None
     if args.check_import:
@@ -525,6 +563,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             source_commit=source_commit,
             require_rust=args.require_rust,
             python=args.python,
+            environment_python=candidate_python,
         )
         _require_ok("candidate_import", candidate_import)
         _require_source_identity("candidate_import", candidate_import, source_commit)
@@ -537,7 +576,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
 
     acceptance_dir = out_dir / "release-acceptance"
     acceptance_command = [
-        args.python,
+        str(candidate_python),
         str(repo_root / "scripts" / "release_acceptance.py"),
         "--out",
         str(acceptance_dir),
@@ -626,6 +665,8 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         repo_root,
         allowed_untracked_root=out_dir,
     )
+    buyer_delivery = _required_packet_artifact(packet, "packet_file")
+    buyer_delivery_digest = _required_packet_artifact(packet, "packet_sha256_file")
 
     index_dir = out_dir / "release-evidence-index"
     index_args = build_release_evidence_index.build_parser().parse_args(
@@ -688,6 +729,8 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "wheel": _artifact(wheel),
         "sdist": _artifact(sdist),
         "final_sales_readiness": _artifact(preproc_sales_path),
+        "buyer_packet_delivery": _artifact(buyer_delivery),
+        "buyer_packet_delivery_digest": _artifact(buyer_delivery_digest),
     }
     if args.check_import:
         candidate_artifacts["candidate_import_evidence"] = _artifact(candidate_import_path)
@@ -697,6 +740,11 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "contract_value_krw": args.contract_value_krw,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "source_commit": source_commit,
+        "acceptance_runtime": {
+            "python": str(candidate_python),
+            "wheel": str(wheel),
+            "wheel_sha256": _sha256(wheel),
+        },
         "artifacts": candidate_artifacts,
     }
     if not all(item["exists"] for item in candidate_artifacts.values()):
@@ -829,6 +877,8 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "acceptance_summary": _artifact(acceptance_path),
         "benchmark_report": _artifact(benchmark_path),
         "buyer_packet": _artifact(packet_path),
+        "buyer_packet_delivery": _artifact(buyer_delivery),
+        "buyer_packet_delivery_digest": _artifact(buyer_delivery_digest),
         "release_evidence_index": _artifact(index_path),
         "procurement_due_diligence": _artifact(procurement_path),
         "pr_queue_governance": _artifact(pr_queue_path),
@@ -852,6 +902,11 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "source_commit": source_commit,
         "repo_root": str(repo_root),
         "out": str(out_dir),
+        "acceptance_runtime": {
+            "python": str(candidate_python),
+            "wheel": str(wheel),
+            "wheel_sha256": _sha256(wheel),
+        },
         "artifacts": artifacts,
     }
     if not all(item["exists"] for item in artifacts.values()):
@@ -883,7 +938,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--check-import",
         action="store_true",
-        help="Install the selected wheel in an isolated environment and verify package/Rust imports.",
+        help="Probe imports from the same exact-wheel runtime used by release acceptance.",
     )
     parser.add_argument("--skip-build", action="store_true", help="Use existing distribution artifacts.")
     parser.add_argument("--offline-github", action="store_true", help="Use the procurement tool's offline GitHub mode.")
