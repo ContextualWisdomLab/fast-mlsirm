@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ADR_PATH = "docs/adr/0028-tepp-temporal-event-composition-boundary.md"
 ADR_INDEX_PATH = "docs/adr/README.md"
+ARCHITECTURE_PATH = "ARCHITECTURE.md"
 RUST_MANIFEST_PATHS = (
     "Cargo.toml",
     "crates/mlsirm-core/Cargo.toml",
@@ -76,6 +77,27 @@ def test_boundary_qualifies_prior_longitudinal_model_proposals() -> None:
         "| [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time "
         "AR(1) Rasch numerical kernel; temporal/event composition remains TEPP-owned under ADR-0028. |"
         in index
+    )
+
+
+def test_root_architecture_preserves_tepp_temporal_semantics_boundary() -> None:
+    """Keep the authoritative population view from absorbing TEPP event semantics."""
+    architecture = _read(ARCHITECTURE_PATH)
+
+    assert (
+        "Time-indexed psychometric kernels consume explicit person, occasion, and elapsed-time carriers; "
+        "they do not define event ontology, temporal validity, event ordering, changing-membership history, "
+        "or longitudinal leakage policy."
+        in architecture
+    )
+    assert (
+        "TEPP owns those temporal/event semantics and supplies them only through the versioned, immutable "
+        "Anti-Corruption Layer governed by ADR-0028."
+        in architecture
+    )
+    assert (
+        "A measurement-occasion facet used by a psychometric model is not a TEPP temporal event model."
+        in architecture
     )
 
 
