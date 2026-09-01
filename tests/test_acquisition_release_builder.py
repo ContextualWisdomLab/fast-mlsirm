@@ -1,6 +1,7 @@
 """Regression tests for the price-neutral acquisition release orchestrator."""
 
 from pathlib import Path
+import hashlib
 import json
 import subprocess
 import sys
@@ -11,6 +12,31 @@ from scripts import build_acquisition_release
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _init_git_repo(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    tracked = root / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=fast-mlsirm-test",
+            "-c",
+            "user.email=fast-mlsirm-test@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+    )
+    return tracked
 
 
 def test_builder_defaults_to_no_transaction_value() -> None:
@@ -122,6 +148,42 @@ def test_skip_build_preserves_explicit_caller_distribution_directory(tmp_path: P
     assert artifact.read_bytes() == b"candidate"
 
 
+def test_candidate_selection_rejects_ambiguous_reuse_directory(tmp_path: Path) -> None:
+    """One acquisition bundle must bind to exactly one wheel and one sdist."""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "candidate-a.whl").write_bytes(b"a")
+    (dist / "candidate-b.whl").write_bytes(b"b")
+    (dist / "candidate.tar.gz").write_bytes(b"sdist")
+
+    with pytest.raises(RuntimeError, match="exactly one wheel and one source distribution"):
+        build_acquisition_release._select_candidate_artifacts(dist)
+
+
+def test_repository_cleanliness_rejects_tracked_and_untracked_inputs(tmp_path: Path) -> None:
+    """Exact-source provenance must fail closed on source outside the sealed commit."""
+    repo = tmp_path / "repo"
+    tracked = _init_git_repo(repo)
+    build_acquisition_release._require_clean_source(repo)
+
+    tracked.write_text("dirty\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="working tree is not clean"):
+        build_acquisition_release._require_clean_source(repo)
+    subprocess.run(["git", "-C", str(repo), "checkout", "--", "tracked.txt"], check=True)
+
+    (repo / "untracked.py").write_text("print('untracked')\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="working tree is not clean"):
+        build_acquisition_release._require_clean_source(repo)
+    (repo / "untracked.py").unlink()
+
+    output = repo / "acquisition-release"
+    output.mkdir()
+    (output / "generated.json").write_text("{}", encoding="utf-8")
+    build_acquisition_release._require_clean_source(
+        repo, allowed_untracked_root=output
+    )
+
+
 def test_stage_source_identity_is_required_and_exact() -> None:
     """Every generated stage manifest must bind to the sealed source commit."""
     expected = "a" * 40
@@ -148,6 +210,57 @@ def test_source_movement_is_rejected_before_success(monkeypatch, tmp_path: Path)
         build_acquisition_release._assert_source_unchanged(tmp_path, expected)
 
 
+def test_candidate_import_probe_is_bound_to_selected_wheel(monkeypatch, tmp_path: Path) -> None:
+    """Import evidence must come from an isolated install of the selected wheel."""
+    wheel = tmp_path / "fast_mlsirm-0.9.1-py3-none-any.whl"
+    wheel.write_bytes(b"candidate-wheel")
+    out_dir = tmp_path / "evidence"
+    out_dir.mkdir()
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], *, cwd: Path) -> None:
+        commands.append(command)
+
+    def fake_capture(command, *, cwd, timeout_seconds, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {
+                    "package_version": "0.9.1",
+                    "distribution_version": "0.9.1",
+                    "package_file": str(
+                        out_dir / "candidate-import-env" / "site-packages" / "fast_mlsirm" / "__init__.py"
+                    ),
+                    "rust_core": True,
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(build_acquisition_release, "_run", fake_run)
+    monkeypatch.setattr(build_acquisition_release, "run_bounded_capture", fake_capture)
+    evidence = build_acquisition_release._verify_candidate_import(
+        wheel=wheel,
+        out_dir=out_dir,
+        source_commit="a" * 40,
+        require_rust=True,
+        python=sys.executable,
+    )
+
+    assert evidence["status"] == "ok"
+    assert evidence["source_commit"] == "a" * 40
+    assert evidence["wheel_sha256"] == hashlib.sha256(b"candidate-wheel").hexdigest()
+    assert any(command[1:3] == ["-m", "venv"] for command in commands)
+    assert any("--force-reinstall" in command and str(wheel) in command for command in commands)
+    assert evidence["rust_core"] is True
+    persisted = json.loads(
+        (out_dir / "candidate_import_evidence.json").read_text(encoding="utf-8")
+    )
+    assert persisted["wheel_sha256"] == evidence["wheel_sha256"]
+
+
 def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -161,6 +274,9 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
 
     monkeypatch.setattr(
         build_acquisition_release, "_source_commit", lambda _root: source_commit
+    )
+    monkeypatch.setattr(
+        build_acquisition_release, "_require_clean_source", lambda *args, **kwargs: None
     )
 
     def write_manifest(path: Path) -> dict[str, object]:
@@ -186,6 +302,22 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
         raise AssertionError(f"unexpected subprocess stage: {command}")
 
     monkeypatch.setattr(build_acquisition_release, "_run", fake_run)
+
+    def fake_candidate_import(*, wheel, out_dir, source_commit, require_rust, python):
+        payload = {
+            "status": "ok",
+            "source_commit": source_commit,
+            "wheel_sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+            "rust_core": require_rust,
+        }
+        build_acquisition_release._write_json(
+            out_dir / "candidate_import_evidence.json", payload
+        )
+        return payload
+
+    monkeypatch.setattr(
+        build_acquisition_release, "_verify_candidate_import", fake_candidate_import
+    )
 
     def fake_benchmark(args):
         return write_manifest(Path(args.out) / "benchmark_report.json")
@@ -245,12 +377,14 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
             str(out_dir),
             "--dist",
             str(shared_dist),
+            "--check-import",
         ]
     )
     manifest = build_acquisition_release.build_acquisition_release(args)
 
     isolated_dist = out_dir / "distribution"
     assert all(Path(stage.dist) == isolated_dist for stage in observed_sales)
+    assert all(stage.check_import is False for stage in observed_sales)
     assert len(observed_sales) == 3
     final_sales = observed_sales[-1]
     assert final_sales.require_acquisition_readiness is True
@@ -263,5 +397,6 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
     assert manifest["status"] == "ok"
     assert manifest["artifacts"]["wheel"]["name"].endswith(".whl")
     assert manifest["artifacts"]["sdist"]["name"].endswith(".tar.gz")
+    assert manifest["artifacts"]["candidate_import_evidence"]["exists"] is True
     assert (out_dir / "acquisition_release_manifest.json").is_file()
     assert (shared_dist / "stale.whl").read_bytes() == b"stale"
