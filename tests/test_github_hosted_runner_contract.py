@@ -23,6 +23,17 @@ FLOATING_RUNNER_ASSIGNMENT = re.compile(
 )
 
 
+def _workflow_paths(directory: Path) -> tuple[Path, ...]:
+    """Return every GitHub workflow regardless of the accepted YAML extension."""
+    return tuple(
+        sorted(
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix in {".yml", ".yaml"}
+        )
+    )
+
+
 def test_required_pr_workflows_use_explicit_ubuntu_2404() -> None:
     """Require every Linux runner in the repository-owned PR gates to be pinned."""
     for workflow in PR_WORKFLOWS:
@@ -31,9 +42,20 @@ def test_required_pr_workflows_use_explicit_ubuntu_2404() -> None:
         assert "runs-on: ubuntu-24.04" in source, workflow
 
 
+def test_workflow_inventory_includes_yml_and_yaml(tmp_path: Path) -> None:
+    """A workflow cannot evade runner policy by choosing the other YAML suffix."""
+    yml = tmp_path / "first.yml"
+    yaml = tmp_path / "second.yaml"
+    ignored = tmp_path / "README.md"
+    for path in (yml, yaml, ignored):
+        path.write_text("name: fixture\n", encoding="utf-8")
+
+    assert _workflow_paths(tmp_path) == (yml, yaml)
+
+
 def test_repository_workflows_do_not_float_ubuntu_runner_identity() -> None:
     """Reject only active floating runner assignments, not harmless prose/data."""
-    workflow_paths = tuple(sorted(WORKFLOW_DIRECTORY.glob("*.yml")))
+    workflow_paths = _workflow_paths(WORKFLOW_DIRECTORY)
     assert workflow_paths, "repository workflow inventory must not be empty"
 
     offenders = [
