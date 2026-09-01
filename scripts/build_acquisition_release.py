@@ -310,8 +310,14 @@ def _verify_generated_stage(
 ) -> None:
     """Validate a generated stage payload, persisted manifest, and live source."""
     _require_ok(name, payload)
-    _require_source_identity(name, payload, source_commit)
-    _require_manifest_source_identity(name, path, source_commit)
+    # sales_readiness predates source_commit in its schema. Do not synthesize it;
+    # inspect it when present while binding the stage by immutable inputs and
+    # live HEAD checks. All other generated acquisition manifests carry source_commit.
+    require_source = "sales_readiness" not in name
+    _require_source_identity(name, payload, source_commit, required=require_source)
+    _require_manifest_source_identity(
+        name, path, source_commit, required=require_source
+    )
     _assert_source_unchanged(repo_root, source_commit)
 
 
