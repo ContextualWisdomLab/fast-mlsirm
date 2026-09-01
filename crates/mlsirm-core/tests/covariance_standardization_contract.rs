@@ -99,6 +99,21 @@ fn public_matrix_contract_fails_closed_for_invalid_covariance() {
 }
 
 #[test]
+fn valid_boundary_covariance_survives_one_ulp_standardization_roundoff() {
+    // These finite binary64 values satisfy c² <= v1*v2 exactly as represented,
+    // while sequential f64 division rounds the raw ratio to next_up(1.0).
+    let variance_one = 2.0533691813403163e-253;
+    let variance_two = 3.3250793271932294e47;
+    let covariance = 2.612970611386659e-103;
+    let matrix = [variance_one, covariance, covariance, variance_two];
+
+    let correlation = standardize_covariance_matrix(&matrix, 2)
+        .expect("an exactly admissible binary64 covariance must not be rejected");
+    assert_eq!(correlation[1], 1.0);
+    assert_eq!(correlation[2], 1.0);
+}
+
+#[test]
 fn covariance_matrix_requires_exact_symmetry() {
     let epsilon_offset = 8.0 * f64::EPSILON;
     let covariance = [1.0, 0.25, 0.25 + epsilon_offset, 1.0];
