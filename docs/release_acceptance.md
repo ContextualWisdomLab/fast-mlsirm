@@ -66,29 +66,13 @@ The command writes `sales_readiness_manifest.json`. A candidate is ready for
 buyer review only when every manifest check is `ok`. The configured evidence profile is complete and internally consistent; it does not prove a valuation,
 transaction price, regulated-use suitability, or customer outcome.
 
-For a full buyer-review evidence bundle, prefer the single commercial release
-builder:
-
-```bash
-python scripts/build_commercial_release.py \
-  --out commercial-release \
-  --require-rust \
-  --check-import
-```
-
-The builder writes `commercial_release_manifest.json` and
-`commercial_release_report.html`, then runs procurement due diligence by
-default to write `procurement_due_diligence_manifest.json` and
-`procurement_due_diligence_report.html`, and runs PR queue governance by
-default to write `pr_queue_governance_manifest.json` and
-`pr_queue_governance_report.html` under the same output directory. It then
-runs Figma evidence sync by default to write
-`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html` after
-PR queue governance so the static Figma buyer-review packet is checked against
-the repo-local evidence bundle. It also
-records each stage command, duration, status, failed stage, source commit,
-contract value, artifact paths, and SHA256 digests for the same release
-candidate.
+The price-neutral acquisition gate above is the current generic path. Do not use
+`scripts/build_commercial_release.py` as a shorthand for that gate on this
+revision: the historical single-command builder still retains the deprecated
+20B compatibility profile and a legacy deal-value default. Those compatibility
+semantics are not current product-quality criteria. If a transaction scenario is
+being evaluated, supply its value explicitly to the relevant evidence tools and
+keep it separate from the generic readiness decision.
 
 For a full buyer-review evidence bundle, build the benchmark report,
 buyer packet, and release evidence index from the same acceptance output:
