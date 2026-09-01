@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import fields, replace
+
+import pytest
+
 from fast_mlsirm.model_specification import (
     CapabilityEvidence,
     CapabilityStatus,
@@ -20,7 +24,12 @@ _ALL_DEPENDENCE = frozenset(
 )
 
 
-def _base_spec(*, family: str = "2plm", dimensions: int = 2) -> ModelSpecification:
+def _base_spec(
+    *,
+    family: str = "2plm",
+    dimensions: int = 2,
+    support_ready: bool = False,
+) -> ModelSpecification:
     return ModelSpecification(
         response_kernel=ResponseKernel(
             family_id=family,
@@ -42,11 +51,11 @@ def _base_spec(*, family: str = "2plm", dimensions: int = 2) -> ModelSpecificati
         estimation_plan=EstimationPlan(
             estimator_id="research_mmle",
             computational_backend="rust",
-            implemented=False,
+            implemented=support_ready,
         ),
         identification_contract=IdentificationContract(
             rules=("trait_location_scale", "dependence_geometry_alignment"),
-            verified=False,
+            verified=support_ready,
         ),
         recovery_contract=RecoveryContract(
             required_metrics=(
@@ -56,7 +65,7 @@ def _base_spec(*, family: str = "2plm", dimensions: int = 2) -> ModelSpecificati
                 "coverage",
                 "convergence",
             ),
-            passing=False,
+            passing=support_ready,
         ),
     )
 
@@ -82,20 +91,31 @@ def test_new_compatible_kernel_auto_expands_all_dependence_families() -> None:
 def test_unidimensional_kernel_keeps_mlsirm_as_typed_unsupported_candidate() -> None:
     candidates = compile_dependence_candidates(_base_spec(dimensions=1))
     mlsirm = next(
-        candidate for candidate in candidates if candidate.dependence.kind is DependenceKind.MLSIRM
+        candidate
+        for candidate in candidates
+        if candidate.dependence.kind is DependenceKind.MLSIRM
     )
 
     assert mlsirm.status is CapabilityStatus.UNSUPPORTED
     assert mlsirm.missing_requirements == ("multidimensional_main_effects_required",)
 
 
+def test_nonpositive_dimensionality_fails_closed() -> None:
+    with pytest.raises(ValueError, match="dimensions must be >= 1"):
+        DimensionalStructure(formulation_id="confirmatory", dimensions=0)
+
+
 def test_dlsjm_is_not_an_lsirm_alias() -> None:
     candidates = compile_dependence_candidates(_base_spec())
     lsirm = next(
-        candidate for candidate in candidates if candidate.dependence.kind is DependenceKind.LSIRM
+        candidate
+        for candidate in candidates
+        if candidate.dependence.kind is DependenceKind.LSIRM
     )
     dlsjm = next(
-        candidate for candidate in candidates if candidate.dependence.kind is DependenceKind.DLSJM
+        candidate
+        for candidate in candidates
+        if candidate.dependence.kind is DependenceKind.DLSJM
     )
 
     assert dlsjm.dependence.formulation_id == "dlsjm_jin_jeon_2019_extension"
@@ -152,45 +172,96 @@ def test_incompatible_dependence_is_classified_not_dropped_or_fallback() -> None
 
     assert len(candidates) == 3
     assert next(
-        candidate for candidate in candidates if candidate.dependence.kind is DependenceKind.LSIRM
+        candidate
+        for candidate in candidates
+        if candidate.dependence.kind is DependenceKind.LSIRM
     ).status is CapabilityStatus.RESEARCH_CANDIDATE
     for kind in (DependenceKind.MLSIRM, DependenceKind.DLSJM):
         candidate = next(item for item in candidates if item.dependence.kind is kind)
         assert candidate.status is CapabilityStatus.UNSUPPORTED
-        assert candidate.missing_requirements == ("base_kernel_declares_dependence_incompatible",)
+        assert candidate.missing_requirements == (
+            "base_kernel_declares_dependence_incompatible",
+        )
 
 
-def test_supported_requires_complete_equation_estimator_identification_citation_and_recovery() -> None:
-    base = _base_spec()
-    incomplete = CapabilityEvidence(
-        generative_equation_id="2plm_lsirm_eq_v1",
-        primary_citations=("10.1007/s11336-021-09762-5",),
-        rust_estimator_implemented=True,
-        identification_verified=True,
-        recovery_passed=False,
+def test_capability_evidence_has_no_duplicate_estimator_or_recovery_truth() -> None:
+    assert tuple(field.name for field in fields(CapabilityEvidence)) == (
+        "generative_equation_id",
+        "primary_citations",
     )
 
-    candidate = compile_dependence_candidates(
-        base,
-        evidence_by_kind={DependenceKind.LSIRM: incomplete},
-    )[0]
 
-    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
-    assert candidate.missing_requirements == ("passing_recovery_evidence_required",)
-
-    complete = CapabilityEvidence(
+def test_supported_requires_equation_rust_plan_identification_citation_and_recovery() -> None:
+    evidence = CapabilityEvidence(
         generative_equation_id="2plm_lsirm_eq_v1",
         primary_citations=("10.1007/s11336-021-09762-5",),
-        rust_estimator_implemented=True,
-        identification_verified=True,
-        recovery_passed=True,
     )
+
     supported = compile_dependence_candidates(
-        base,
-        evidence_by_kind={DependenceKind.LSIRM: complete},
+        _base_spec(support_ready=True),
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
     )[0]
 
     assert supported.status is CapabilityStatus.SUPPORTED
     assert supported.missing_requirements == ()
     assert supported.generative_equation_id == "2plm_lsirm_eq_v1"
     assert supported.primary_citations == ("10.1007/s11336-021-09762-5",)
+
+    base = _base_spec(support_ready=True)
+    not_implemented = replace(
+        base,
+        estimation_plan=replace(base.estimation_plan, implemented=False),
+    )
+    candidate = compile_dependence_candidates(
+        not_implemented,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0]
+    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
+    assert candidate.missing_requirements == ("rust_estimator_required",)
+
+    wrong_backend = replace(
+        base,
+        estimation_plan=replace(base.estimation_plan, computational_backend="numpy"),
+    )
+    candidate = compile_dependence_candidates(
+        wrong_backend,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0]
+    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
+    assert candidate.missing_requirements == ("rust_estimator_required",)
+
+    unidentified = replace(
+        base,
+        identification_contract=replace(base.identification_contract, verified=False),
+    )
+    candidate = compile_dependence_candidates(
+        unidentified,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0]
+    assert candidate.missing_requirements == ("identification_evidence_required",)
+
+    unrecovered = replace(
+        base,
+        recovery_contract=replace(base.recovery_contract, passing=False),
+    )
+    candidate = compile_dependence_candidates(
+        unrecovered,
+        evidence_by_kind={DependenceKind.LSIRM: evidence},
+    )[0]
+    assert candidate.missing_requirements == ("passing_recovery_evidence_required",)
+
+
+def test_blank_equation_or_citation_cannot_promote_candidate() -> None:
+    base = _base_spec(support_ready=True)
+    blank = CapabilityEvidence(generative_equation_id="", primary_citations=("",))
+
+    candidate = compile_dependence_candidates(
+        base,
+        evidence_by_kind={DependenceKind.LSIRM: blank},
+    )[0]
+
+    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
+    assert candidate.missing_requirements == (
+        "generative_equation_required",
+        "primary_citation_required",
+    )
