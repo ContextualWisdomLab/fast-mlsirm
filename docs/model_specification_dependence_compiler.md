@@ -20,10 +20,12 @@ A base `ModelSpecification` composes these Value Objects:
   blocks and declarative dependence compatibility;
 - `DimensionalStructure`: main-effect dimensional formulation;
 - `GeneralizedMixedStructure`: fixed/random-effect and membership structure;
-- `EstimationPlan`: estimator identity, backend ownership, and implementation
-  state;
-- `IdentificationContract`: required identification rules and evidence state;
-- `RecoveryContract`: required known-truth recovery evidence.
+- `EstimationPlan`: estimator identity, backend ownership, implementation state,
+  and the exact formulation to which that evidence applies;
+- `IdentificationContract`: required identification rules, verification state,
+  and exact formulation scope;
+- `RecoveryContract`: required known-truth recovery evidence and exact
+  formulation scope.
 
 `compile_dependence_candidates()` then attaches a separate
 `DependenceStructure`. It never changes the base parameter blocks and never
@@ -69,9 +71,9 @@ identification, Rust estimator, and true-parameter recovery evidence exist.
 
 Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
 
-- `supported`: explicit generative-equation identity, Rust estimator,
-  identification evidence, primary citation, and passing recovery evidence are
-  all present;
+- `supported`: explicit generative-equation identity, formulation-scoped Rust
+  estimator, formulation-scoped identification evidence, primary citation, and
+  formulation-scoped passing recovery evidence are all present;
 - `research_candidate`: the coupling is representable but one or more support
   gates are missing;
 - `unsupported`: the base kernel declares the dependence incoherent, or a
@@ -79,8 +81,11 @@ Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
   unidimensional main-effect specification).
 
 A candidate cannot become `supported` merely because its name is in the
-registry. This compiler does not claim that an implemented base estimator also
-implements the dependence extension.
+registry. A base-kernel estimator, base identification proof, or base recovery
+study does not transfer to an LSIRM/MLSIRM/DLSJM extension: each of those three
+contracts must name the exact compiled candidate ID through
+`applies_to_formulation_id`. This prevents evidence for one extension from
+promoting another extension with a different likelihood or dependence geometry.
 
 ## Generalized mixed-model boundary
 
