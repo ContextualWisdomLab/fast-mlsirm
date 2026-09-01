@@ -1,112 +1,195 @@
-"""Binary pilot response-state contracts preserve measurement evidence semantics."""
+"""Contracts for the binary-response measurement bounded context."""
 
 from __future__ import annotations
-
-from pathlib import Path
-import runpy
 
 import numpy as np
 import pytest
 
-from fast_mlsirm.rubric import PilotObservationError, PilotResponseState, build_mirt_pilot_design
-
-_FIXTURES = runpy.run_path(
-    str(Path(__file__).with_name("test_rubric_pilot_observations.py"))
+from fast_mlsirm.measurement.binary_response import (
+    BINARY_RESPONSE_CONTRACT_ID,
+    BinaryResponseCell,
+    BinaryResponseContractError,
+    BinaryResponseMatrix,
+    BinaryResponseState,
+    build_binary_response_cell,
+    build_binary_response_matrix,
 )
-_observation = _FIXTURES["_observation"]
-_pilot = _FIXTURES["_pilot"]
 
 
-def test_binary_nonresponse_states_remain_distinct_from_zero_and_one() -> None:
-    """Nonresponses retain their exact state and never acquire a numeric category."""
+def _cell(
+    state: BinaryResponseState | str = BinaryResponseState.OBSERVED,
+    value: int | None = 1,
+    *,
+    observation_ref: str = "observation_alpha",
+    adjudication_ref: str | None = None,
+) -> BinaryResponseCell:
+    """Build one value object through the public admission boundary."""
+    return build_binary_response_cell(
+        state=state,
+        value=value,
+        observation_ref=observation_ref,
+        adjudication_ref=adjudication_ref,
+    )
+
+
+def test_nonresponse_states_are_distinct_from_binary_values() -> None:
+    """Every nonresponse state remains explicit and cannot acquire category zero."""
     states = (
-        PilotResponseState.MISSING,
-        PilotResponseState.NOT_OBSERVED,
-        PilotResponseState.ABSTAINED,
-        PilotResponseState.INVALID,
-        PilotResponseState.OMITTED,
-        PilotResponseState.NOT_APPLICABLE,
-        PilotResponseState.INSUFFICIENT_EVIDENCE,
+        BinaryResponseState.MISSING,
+        BinaryResponseState.NOT_OBSERVED,
+        BinaryResponseState.ABSTAINED,
+        BinaryResponseState.INVALID,
+        BinaryResponseState.OMITTED,
+        BinaryResponseState.NOT_APPLICABLE,
+        BinaryResponseState.INSUFFICIENT_EVIDENCE,
     )
 
     assert len({state.value for state in states}) == len(states)
     for state in states:
-        record = _observation(response_state=state, category=None)
-        assert record.response_state is state
-        assert record.category is None
-        assert record.to_dict()["response_state"] == state.value
+        cell = _cell(state=state, value=None)
+        assert cell.state is state
+        assert cell.value is None
+        assert cell.to_dict()["state"] == state.value
+        with pytest.raises(BinaryResponseContractError) as caught:
+            _cell(state=state, value=0)
+        assert caught.value.code == "nonresponse_has_value"
 
 
-def test_adjudicated_binary_response_keeps_value_and_state_as_separate_evidence() -> None:
-    """An adjudicated 0/1 remains scoreable while its provenance state stays explicit."""
-    record = _observation(response_state=PilotResponseState.ADJUDICATED, category=1)
+def test_observed_cells_admit_only_exact_zero_or_one() -> None:
+    """The observed channel is dichotomous and never thresholds other carriers."""
+    assert _cell(value=0).value == 0
+    assert _cell(value=1).value == 1
 
-    assert record.category == 1
-    assert record.response_state is PilotResponseState.ADJUDICATED
-    assert record.to_dict()["response_state"] == "adjudicated"
-
-    with pytest.raises(ValueError, match="category must be an integer"):
-        _observation(response_state=PilotResponseState.ADJUDICATED, category=None)
-    with pytest.raises(ValueError, match="category must be None"):
-        _observation(response_state=PilotResponseState.ABSTAINED, category=0)
+    for invalid in (None, True, False, 0.0, 1.0, 2, -1):
+        with pytest.raises(BinaryResponseContractError) as caught:
+            _cell(value=invalid)  # type: ignore[arg-type]
+        assert caught.value.code == "invalid_binary_value"
 
 
-def test_mirt_handoff_preserves_adjudicated_and_abstained_cells_without_dichotomizing() -> None:
-    """The binary handoff scores only 0/1 values and retains nonresponse state evidence."""
-    item_alpha = _pilot("generated_item_alpha")
-    item_beta = _pilot("generated_item_beta", query_testlet_id="query_testlet_beta")
-    records = (
-        _observation(
-            item_alpha,
-            respondent_id="respondent_alpha",
-            response_state=PilotResponseState.ADJUDICATED,
-            category=1,
-        ),
-        _observation(
-            item_beta,
-            respondent_id="respondent_alpha",
-            category=0,
-        ),
-        _observation(
-            item_alpha,
-            respondent_id="respondent_beta",
-            category=0,
-        ),
-        _observation(
-            item_beta,
-            respondent_id="respondent_beta",
-            response_state=PilotResponseState.ABSTAINED,
-            category=None,
-        ),
+def test_adjudicated_cells_keep_binary_value_and_provenance_separate() -> None:
+    """An adjudicated value is scoreable only when its adjudication provenance exists."""
+    cell = _cell(
+        state=BinaryResponseState.ADJUDICATED,
+        value=1,
+        adjudication_ref="adjudication_alpha",
+    )
+    assert cell.value == 1
+    assert cell.state is BinaryResponseState.ADJUDICATED
+    assert cell.adjudication_ref == "adjudication_alpha"
+
+    with pytest.raises(BinaryResponseContractError) as caught:
+        _cell(state=BinaryResponseState.ADJUDICATED, value=1)
+    assert caught.value.code == "missing_adjudication_ref"
+
+    with pytest.raises(BinaryResponseContractError) as caught:
+        _cell(value=1, adjudication_ref="adjudication_alpha")
+    assert caught.value.code == "unexpected_adjudication_ref"
+
+    with pytest.raises(BinaryResponseContractError) as caught:
+        _cell(
+            state=BinaryResponseState.ADJUDICATED,
+            value=2,
+            adjudication_ref="adjudication_alpha",
+        )
+    assert caught.value.code == "invalid_binary_value"
+
+
+def test_cell_references_fail_closed_without_silent_normalization() -> None:
+    """Opaque evidence references reject ambiguous boundary text instead of stripping it."""
+    for invalid in ("", " observation_alpha", "observation_alpha ", "line\nbreak", "x" * 257):
+        with pytest.raises(BinaryResponseContractError) as caught:
+            _cell(observation_ref=invalid)
+        assert caught.value.code == "invalid_reference"
+
+    with pytest.raises(BinaryResponseContractError) as caught:
+        build_binary_response_cell(
+            state="unknown",
+            value=None,
+            observation_ref="observation_alpha",
+        )
+    assert caught.value.code == "invalid_response_state"
+
+    with pytest.raises(TypeError, match="state must be"):
+        build_binary_response_cell(
+            state=object(),  # type: ignore[arg-type]
+            value=None,
+            observation_ref="observation_alpha",
+        )
+
+
+def test_matrix_preserves_values_states_and_provenance_without_dichotomizing() -> None:
+    """Marshalling maps only absent values to NaN while retaining state evidence."""
+    matrix = build_binary_response_matrix(
+        (
+            (
+                _cell(value=1, observation_ref="observation_alpha"),
+                _cell(
+                    state=BinaryResponseState.ADJUDICATED,
+                    value=0,
+                    observation_ref="observation_beta",
+                    adjudication_ref="adjudication_beta",
+                ),
+            ),
+            (
+                _cell(value=0, observation_ref="observation_gamma"),
+                _cell(
+                    state=BinaryResponseState.ABSTAINED,
+                    value=None,
+                    observation_ref="observation_delta",
+                ),
+            ),
+        )
     )
 
-    design = build_mirt_pilot_design(records)
-
-    assert design.responses == ((1, 0), (0, None))
-    assert design.response_states == (
-        (PilotResponseState.ADJUDICATED, PilotResponseState.OBSERVED),
-        (PilotResponseState.OBSERVED, PilotResponseState.ABSTAINED),
+    assert matrix.contract_id == BINARY_RESPONSE_CONTRACT_ID
+    assert matrix.values == ((1, 0), (0, None))
+    assert matrix.states == (
+        (BinaryResponseState.OBSERVED, BinaryResponseState.ADJUDICATED),
+        (BinaryResponseState.OBSERVED, BinaryResponseState.ABSTAINED),
     )
-    numeric = design.responses_array()
+    assert matrix.adjudication_refs == ((None, "adjudication_beta"), (None, None))
+    assert matrix.observation_refs[1][1] == "observation_delta"
+
+    numeric = matrix.responses_array()
+    assert numeric.dtype == np.float64
+    assert numeric.shape == (2, 2)
     assert numeric[0, 0] == 1.0
     assert numeric[0, 1] == 0.0
+    assert numeric[1, 0] == 0.0
     assert np.isnan(numeric[1, 1])
+    numeric[0, 0] = 0.0
+    assert matrix.responses_array()[0, 0] == 1.0
+
+    payload = matrix.to_dict()
+    assert payload["contract_id"] == BINARY_RESPONSE_CONTRACT_ID
+    assert payload["rows"][0][1]["state"] == "adjudicated"
+    assert payload["rows"][1][1]["value"] is None
 
 
-def test_mirt_rejects_polytomous_adjudicated_values_instead_of_thresholding() -> None:
-    """Adjudication cannot make an ordinal category admissible to the binary MIRT path."""
-    item_alpha = _pilot("generated_item_alpha")
-    item_beta = _pilot("generated_item_beta", query_testlet_id="query_testlet_beta")
-    records = (
-        _observation(
-            item_alpha,
-            response_state=PilotResponseState.ADJUDICATED,
-            category=2,
-        ),
-        _observation(item_beta, category=0),
-    )
+def test_matrix_rejects_shape_type_and_resource_violations() -> None:
+    """The aggregate is sealed, rectangular, non-empty, typed, and allocation-bounded."""
+    valid = _cell()
 
-    with pytest.raises(PilotObservationError) as caught:
-        build_mirt_pilot_design(records)
+    with pytest.raises(ValueError, match="build_binary_response_matrix"):
+        BinaryResponseMatrix(rows=((valid,),))
+    with pytest.raises(BinaryResponseContractError) as caught:
+        build_binary_response_matrix(())
+    assert caught.value.code == "empty_response_matrix"
+    with pytest.raises(TypeError, match="rows must be a tuple"):
+        build_binary_response_matrix([ (valid,) ])  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match=r"rows\[0\] must be a tuple"):
+        build_binary_response_matrix(([valid],))  # type: ignore[list-item]
+    with pytest.raises(BinaryResponseContractError) as caught:
+        build_binary_response_matrix(((),))
+    assert caught.value.code == "empty_response_row"
+    with pytest.raises(TypeError, match=r"rows\[0\]\[0\]"):
+        build_binary_response_matrix(((object(),),))  # type: ignore[arg-type]
+    with pytest.raises(BinaryResponseContractError) as caught:
+        build_binary_response_matrix(((valid,), (valid, valid)))
+    assert caught.value.code == "nonrectangular_response_matrix"
 
-    assert caught.value.code == "non_binary_observed_category"
+    oversized_row = tuple(valid for _ in range(1_001))
+    oversized_rows = tuple(oversized_row for _ in range(1_000))
+    with pytest.raises(BinaryResponseContractError) as caught:
+        build_binary_response_matrix(oversized_rows)
+    assert caught.value.code == "response_cell_budget_exceeded"
