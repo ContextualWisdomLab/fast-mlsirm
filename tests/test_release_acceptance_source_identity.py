@@ -13,7 +13,7 @@ def test_release_acceptance_manifest_records_sealed_source_commit(
     """Bind the standalone acceptance manifest to the exact source revision.
 
     The acquisition orchestrator may archive this manifest independently of its
-    parent bundle.  A consumer must therefore be able to reject evidence from a
+    parent bundle. A consumer must therefore be able to reject evidence from a
     different checkout without relying on an outer manifest.
     """
     expected_commit = "a" * 40
@@ -48,7 +48,7 @@ def test_release_acceptance_manifest_records_sealed_source_commit(
         elif out_label in {"render-report-fit", "render-report-dimensions"}:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("<html></html>", encoding="utf-8")
-        else:  # pragma: no cover - the test enumerates the public acceptance stages
+        else:
             raise AssertionError(f"unexpected acceptance stage: {out_label}")
         payload: dict[str, object] = {"status": "ok"}
         if out_label == "fit_auto":
