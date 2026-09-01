@@ -1,0 +1,82 @@
+name: One-shot membership axis repair
+
+on:
+  push:
+    branches:
+      - feat/dependence-spec-compiler-1713
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Apply the distinct-axis invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("python/fast_mlsirm/model_specification/__init__.py")
+          text = path.read_text(encoding="utf-8")
+          old = """        if (\n            self.classification is MembershipClassification.CROSS_CLASSIFIED\n            and len(axes) < 2\n        ):\n            raise ValueError(\"cross-classified membership requires at least two axes\")\n"""
+          new = """        if (\n            self.classification is MembershipClassification.CROSS_CLASSIFIED\n            and len(set(axes)) < 2\n        ):\n            raise ValueError(\n                \"cross-classified membership requires at least two distinct axes\"\n            )\n"""
+          if text.count(old) != 1:
+              raise SystemExit("expected membership-axis target exactly once")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+      - name: Verify the regression without external dependencies
+        shell: bash
+        env:
+          PYTHONPATH: python
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from fast_mlsirm.model_specification import (
+              MembershipClassification,
+              MembershipMultiplicity,
+              MembershipStructure,
+              MembershipWeightAuthority,
+          )
+
+          try:
+              MembershipStructure(
+                  classification=MembershipClassification.CROSS_CLASSIFIED,
+                  multiplicity=MembershipMultiplicity.SINGLE,
+                  weight_authority=MembershipWeightAuthority.NOT_APPLICABLE,
+                  classification_axes=("organization", "organization"),
+              )
+          except ValueError as exc:
+              assert "at least two distinct axes" in str(exc)
+          else:
+              raise AssertionError("duplicate cross-classification axes were accepted")
+
+          admitted = MembershipStructure(
+              classification=MembershipClassification.CROSS_CLASSIFIED,
+              multiplicity=MembershipMultiplicity.SINGLE,
+              weight_authority=MembershipWeightAuthority.NOT_APPLICABLE,
+              classification_axes=("organization", "project"),
+          )
+          assert admitted.classification_axes == ("organization", "project")
+          PY
+      - name: Commit the causal repair and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/repair-membership-axes-once.yml
+          git add python/fast_mlsirm/model_specification/__init__.py tests/test_model_specification_membership_axes.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo "No repair delta to commit" >&2
+            exit 1
+          fi
+          git commit -m "fix(model-specification): require distinct cross-classification axes"
+          git push origin HEAD:feat/dependence-spec-compiler-1713
