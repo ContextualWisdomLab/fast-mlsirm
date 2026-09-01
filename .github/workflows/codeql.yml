@@ -7,6 +7,12 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Keep one authoritative run per PR/ref so predecessor heads do not retain
+  # scarce hosted-runner queue capacity after the reviewed source changes.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze-actions:
     # Branch protection requires a deterministic Actions-language CodeQL check
