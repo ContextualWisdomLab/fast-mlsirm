@@ -33,9 +33,11 @@ except ModuleNotFoundError as exc:
         from _bounded_json import parse_json_bounded
         from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
     except ModuleNotFoundError as sibling_exc:
-        if sibling_exc.name != "_bounded_json":
-            raise
-        raise RuntimeError("bounded JSON parser is unavailable") from sibling_exc
+        if sibling_exc.name == "_bounded_json":
+            raise RuntimeError("bounded JSON parser is unavailable") from sibling_exc
+        if sibling_exc.name == "_bounded_subprocess":
+            raise RuntimeError("bounded subprocess runner is unavailable") from sibling_exc
+        raise
 
 
 OPEN_PR_DETAIL_FIELDS: Final = (
@@ -467,93 +469,79 @@ def capture_pr_queue_snapshot(
             )
         )
 
-    base_sha = ""
-    if default_branch:
+    base_command: list[str] | None = None
+    base_payload: Any = None
+    base_error: dict[str, Any] | None = None
+    if default_branch and not budget_exhausted:
         base_command = [
             "gh",
             "api",
             f"repos/{repo}/commits/{default_branch}",
             "--jq",
-            '{"sha": .sha}',
+            "{sha:.sha,pushed_at:.commit.committer.date,committed_at:.commit.committer.date,url:.html_url}",
         ]
-        if budget_exhausted:
-            pass
-        elif monotonic() >= deadline:
-            errors.append(_capture_budget_error(base_command, capture_budget_seconds))
+        if monotonic() >= deadline:
+            base_error = _capture_budget_error(base_command, capture_budget_seconds)
+            budget_exhausted = True
         else:
             base_payload, base_error = live_run_json(base_command)
-            if base_error is not None:
-                errors.append(base_error)
-            elif isinstance(base_payload, dict):
-                candidate = str(base_payload.get("sha") or "")
-                if re.fullmatch(r"[0-9a-fA-F]{40}", candidate):
-                    base_sha = candidate.lower()
-                else:
-                    errors.append(
-                        _malformed_payload_error(base_command, "default-branch SHA was invalid")
-                    )
-            else:
-                errors.append(
-                    _malformed_payload_error(base_command, "default-branch payload was not an object")
-                )
+        if base_error is not None:
+            errors.append(base_error)
+        elif not isinstance(base_payload, dict):
+            errors.append(_malformed_payload_error(base_command, "base payload was not an object"))
 
     return {
-        "mode": "live-split-enrichment",
-        "capture_version": 1,
-        "repo": repo,
-        "default_branch": default_branch,
-        "base_sha": base_sha,
-        "repo_snapshot": repo_payload,
-        "open_pr_identity_count": identity_count,
+        "repository": repo_payload if isinstance(repo_payload, dict) else {},
         "open_prs": open_prs,
         "pr_history": pr_history,
-        "errors": errors,
+        "base": base_payload if isinstance(base_payload, dict) else {},
+        "capture": {
+            "open_pr_cap": OPEN_PR_CAP,
+            "identity_query_limit": OPEN_PR_IDENTITY_LIMIT,
+            "history_query_limit": HISTORY_PR_LIMIT,
+            "capture_budget_seconds": capture_budget_seconds,
+            "budget_exhausted": budget_exhausted,
+            "split_enrichment": True,
+            "errors": errors,
+        },
     }
 
 
-def _write_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
-    """Atomically publish one UTF-8 JSON snapshot in its destination directory."""
-    destination = path.resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() and destination.is_dir():
-        raise ValueError("snapshot output must be a file path")
-    descriptor, temp_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.",
-        suffix=".tmp",
-        dir=destination.parent,
-        text=True,
-    )
-    temp_path = Path(temp_name)
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write JSON atomically via a sibling temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(snapshot, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp_path, destination)
-    finally:
-        temp_path.unlink(missing_ok=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Capture and publish a snapshot, returning failure when evidence is incomplete."""
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", required=True, help="GitHub repository in owner/name form")
-    parser.add_argument("--out", required=True, help="Destination JSON path")
-    args = parser.parse_args(argv)
+    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
+    parser.add_argument("--output", type=Path, required=True)
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
     try:
         snapshot = capture_pr_queue_snapshot(args.repo)
-        _write_snapshot(Path(args.out), snapshot)
+        _atomic_write_json(args.output, snapshot)
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"capture_pr_queue_snapshot: {exc}", file=sys.stderr)
-        return 2
-    summary = {
-        "errors": len(snapshot["errors"]),
-        "open_pr_count": len(snapshot["open_prs"]),
-        "out": str(Path(args.out).resolve()),
-    }
-    print(json.dumps(summary, indent=2, sort_keys=True))
-    return 0 if not snapshot["errors"] else 1
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
