@@ -7,12 +7,13 @@ understand MLSIRM/IRT workflows and can evaluate model suitability for
 their own domain. It is not positioned as a finished regulated decision product
 or as a fully managed assessment platform.
 
-For KRW 2,000,000,000 enterprise sales review, use this document together with
-`docs/enterprise_sales_readiness.md` and `docs/20b_product_readiness.md`. That
-higher gate requires procurement evidence, release artifacts, support/security
-scope, Product Design and Figma packet evidence, Data Analytics ROI/benchmark
-evidence, a machine-readable `sales_readiness_manifest.json`, and a release
-evidence index over the exact artifacts being offered.
+For acquisition or commercial readiness review, use this document together
+with `docs/enterprise_sales_readiness.md`. The gate requires procurement
+evidence, release artifacts, support/security scope, Product Design and Figma
+packet evidence, Data Analytics ROI/benchmark evidence, a machine-readable
+`sales_readiness_manifest.json`, and a release evidence index over the exact
+artifacts being offered. It is an evidence-completeness gate, not a monetary
+target or valuation claim.
 
 ## Supported Product Surface
 
@@ -68,8 +69,8 @@ release commit:
   writes `acceptance_summary.json`.
 - `python scripts/build_commercial_release.py --out commercial-release --require-rust --check-import`
   passes and writes `commercial_release_manifest.json` plus
-  `commercial_release_report.html` when verifying the full KRW 2,000,000,000
-  buyer-review packet in one command.
+  `commercial_release_report.html` when verifying the full buyer-review
+  evidence bundle in one command.
 - `python scripts/build_benchmark_report.py --acceptance acceptance_check/acceptance_summary.json --out acceptance_check/benchmark`
   writes `benchmark_report.json` and `benchmark_report.html`.
 - `fit_auto`/`fit_rust` fit summaries are complete and match resolved backend
@@ -78,11 +79,11 @@ release commit:
   `docs/release_acceptance.md` are present and match shipped behavior.
 - GitHub CI includes Python tests, Rust core tests, PyO3 crate tests, package
   build validation, wheel metadata checks, and release-acceptance execution.
-- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --check-import`
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --check-import`
   passes and writes `sales_readiness_manifest.json` when verifying a built
   artifact.
-- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --check-import`
-  passes when positioning the release for KRW 2,000,000,000 procurement review.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --check-import`
+  passes when positioning the release for acquisition/commercial review.
 - `python scripts/build_buyer_packet.py --acceptance acceptance_check/acceptance_summary.json --sales-readiness acceptance_check/sales_readiness_manifest.json --dist dist --benchmark-report acceptance_check/benchmark/benchmark_report.json --out buyer-evidence-packet`
   creates `buyer_evidence_manifest.json` and
   `fast_mlsirm_buyer_evidence_packet.zip`, plus
@@ -90,8 +91,8 @@ release commit:
   the offer.
 - `python scripts/build_release_evidence_index.py --acceptance acceptance_check/acceptance_summary.json --sales-readiness acceptance_check/sales_readiness_manifest.json --dist dist --benchmark-report acceptance_check/benchmark/benchmark_report.json --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --out release-evidence-index`
   creates `release_evidence_index.json` and `release_evidence_index.html`.
-- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
-  passes as the final 20B evidence-integrity gate.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
+  passes as the final acquisition/commercial evidence-integrity gate.
 - `python scripts/build_procurement_due_diligence.py --dist dist --commercial-release-manifest commercial-release/commercial_release_manifest.json --out procurement-due-diligence`
   creates `procurement_due_diligence_manifest.json` and
   `procurement_due_diligence_report.html` when procurement asks for
@@ -105,13 +106,13 @@ release commit:
   creates `figma_evidence_sync_manifest.json` and
   `figma_evidence_sync_report.html` when procurement asks whether the Figma
   buyer-review packet still matches the release evidence set.
-- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync --check-import`
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync --check-import`
   passes as the final procurement evidence-integrity gate.
 
 ## Enterprise Sales Gate
 
-The KRW 2,000,000,000 sales-readiness standard is not just a smoke test. A candidate
-must be able to show:
+The acquisition/commercial sales-readiness standard is not just a smoke test.
+A candidate must be able to show:
 
 - release acceptance evidence generated from the exact artifact;
 - built wheel and source distribution files;
@@ -138,6 +139,12 @@ must be able to show:
   record Code Connect disabled status, required frame coverage, procurement
   evidence token coverage, optional metadata-snapshot status, and report
   SHA256.
+
+The optional `--require-20b-product` profile and `docs/20b_product_readiness.md`
+are retained only as deprecated compatibility evidence for older automation.
+New release and buyer workflows must use `--require-acquisition-readiness` and
+must supply any transaction scenario explicitly; no amount is inferred from
+readiness evidence.
 
 ## Security and Support Boundaries
 

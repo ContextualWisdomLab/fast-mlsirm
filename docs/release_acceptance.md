@@ -13,7 +13,7 @@ The script verifies:
 - explicit Rust fit backend when requested
 - fit and dimensionality diagnostics output
 - diagnostics report HTML rendering
-- per-step and total runtime evidence for sales-readiness review
+- per-step and total runtime evidence for acquisition/commercial readiness review
 
 ## How to Run
 
@@ -47,23 +47,24 @@ python scripts/release_acceptance.py \
   - `fit_report.html`
   - `dimension_report.html`
 
-## Enterprise Sales Gate
+## Acquisition / Commercial Readiness Gate
 
-After building and installing the candidate package, run the enterprise sales
-readiness verifier against the release-acceptance output:
+After building and installing the candidate package, run the acquisition /
+commercial readiness verifier against the release-acceptance output:
 
 ```bash
 python scripts/sales_readiness.py \
   --acceptance release_acceptance/acceptance_summary.json \
   --dist dist \
   --require-rust \
+  --require-acquisition-readiness \
   --check-import \
   --out release_acceptance/sales_readiness_manifest.json
 ```
 
 The command writes `sales_readiness_manifest.json`. A candidate is ready for
-KRW 2,000,000,000 enterprise sales review only when every manifest check is
-`ok`.
+buyer review only when every manifest check is `ok`. The configured evidence profile is complete and internally consistent; it does not prove a valuation,
+transaction price, regulated-use suitability, or customer outcome.
 
 For a full buyer-review evidence bundle, prefer the single commercial release
 builder:
@@ -89,7 +90,7 @@ records each stage command, duration, status, failed stage, source commit,
 contract value, artifact paths, and SHA256 digests for the same release
 candidate.
 
-For the KRW 2,000,000,000 buyer packet flow, build the benchmark report,
+For a full buyer-review evidence bundle, build the benchmark report,
 buyer packet, and release evidence index from the same acceptance output:
 
 ```bash

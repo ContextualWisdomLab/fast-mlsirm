@@ -1,18 +1,19 @@
-# Enterprise Sales Readiness
+# Acquisition and Enterprise Sales Readiness
 
 ## Position
 
-This gate defines the evidence required before presenting `fast-mlsirm` as a
-KRW 2,000,000,000 enterprise sale candidate. It is a product and procurement
-readiness standard, not a valuation guarantee and not a regulated-use approval.
+This gate defines the evidence required before presenting `fast-mlsirm` for
+acquisition or enterprise procurement review. It is a product and procurement
+readiness standard, not a monetary target, valuation guarantee, or regulated-use
+approval. Use `--require-acquisition-readiness` for the current profile.
 
 The current product is a local Python/Rust computation package for technical
 MLSIRM/IRT teams. A high-value enterprise sale should package the software with
 clear scope, acceptance evidence, support terms, privacy boundaries, and a
 customer validation plan.
 
-For the KRW 2,000,000,000 product-readiness standard, this document is used with
-`docs/20b_product_readiness.md`, `docs/buyer_demo_storyboard.md`,
+For the current acquisition-readiness profile, this document is used with
+`docs/buyer_demo_storyboard.md`,
 `docs/figma_product_design_packet.md`, `docs/roi_evidence_model.md`, and
 `examples/enterprise_demo/`.
 
@@ -35,7 +36,7 @@ artifact being offered:
   checklist, and release acceptance guide are present.
 - Product Design storyboard, Figma design packet with Code Connect disabled,
   ROI model, benchmark manifest, and synthetic enterprise demo evidence are
-  present when `--require-20b-product` is used.
+  present when `--require-acquisition-readiness` is used.
 - `scripts/build_benchmark_report.py` produces `benchmark_report.json` and
   `benchmark_report.html` from the exact release acceptance run.
 - `scripts/build_release_evidence_index.py` produces
@@ -103,8 +104,8 @@ true:
   passes.
 - `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --check-import`
   passes.
-- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --check-import`
-  passes for KRW 2,000,000,000 product-readiness review.
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --check-import`
+  passes for acquisition/commercial readiness review.
 - `python scripts/build_buyer_packet.py --acceptance release-acceptance/acceptance_summary.json --sales-readiness release-acceptance/sales_readiness_manifest.json --dist dist --benchmark-report release-acceptance/benchmark/benchmark_report.json --out buyer-evidence-packet`
   passes when a portable procurement packet is part of the offer.
 - `python scripts/build_release_evidence_index.py --acceptance release-acceptance/acceptance_summary.json --sales-readiness release-acceptance/sales_readiness_manifest.json --dist dist --benchmark-report release-acceptance/benchmark/benchmark_report.json --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --out release-evidence-index`
@@ -113,7 +114,7 @@ true:
 - `python scripts/build_commercial_release.py --out commercial-release --require-rust --check-import`
   passes and emits `commercial_release_manifest.json` plus
   `commercial_release_report.html`.
-- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
   passes as the final evidence-integrity gate.
 - `python scripts/build_procurement_due_diligence.py --dist dist --commercial-release-manifest commercial-release/commercial_release_manifest.json --out procurement-due-diligence`
   passes and emits `procurement_due_diligence_manifest.json` plus
@@ -124,14 +125,14 @@ true:
 - `python scripts/build_figma_evidence_sync.py --out figma-evidence-sync`
   passes and emits `figma_evidence_sync_manifest.json` plus
   `figma_evidence_sync_report.html`.
-- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync --check-import`
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-acquisition-readiness --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync --check-import`
   passes as the final procurement evidence-integrity gate.
 - No release candidate changes the formula contract, diagnostics semantics, or
   estimator scope outside a model-design PR.
 
 ## Out of Scope
 
-The KRW 2,000,000,000 sales-readiness gate does not claim:
+The acquisition/commercial sales-readiness gate does not claim:
 
 - clinical, educational-placement, hiring, or other regulated decision
   suitability;
@@ -144,11 +145,18 @@ The KRW 2,000,000,000 sales-readiness gate does not claim:
 - performance guarantees beyond the release evidence generated for the
   specific candidate artifact.
 
+## Legacy 20B compatibility
+
+The deprecated compatibility profile retains the historical KRW 2,000,000,000
+procurement scenario and the `--require-20b-product` flag for older automation.
+It is not the current readiness gate and must not be used as evidence of value,
+quality, or regulated-use suitability. New automation must use
+`--require-acquisition-readiness` and provide any transaction scenario
+explicitly.
+
 ## Operating Rule
 
-Reviewer delay is not a code blocker. A release can proceed only when source,
-tests, package artifacts, acceptance evidence, and repository policy are in a
-known state. If an approval rule blocks an otherwise proven release and no
-eligible reviewer exists, the merge operator may use a narrow, temporary policy
-adjustment, merge the exact checked head, and restore the original rule
-immediately.
+Reviewer delay is not a code defect. A protected release can proceed only when
+source, tests, package artifacts, acceptance evidence, repository policy, and
+the required independent approval are in a known state. No temporary policy
+adjustment, self-approval, force-push, or administrative bypass is permitted.
