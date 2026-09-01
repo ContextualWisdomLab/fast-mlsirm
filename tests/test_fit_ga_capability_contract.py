@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,11 @@ from fast_mlsirm.capabilities import (
     main as capability_main,
 )
 from fast_mlsirm.config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
+
+
+_CAPABILITY_SCHEMA = (
+    Path(__file__).parents[1] / "contracts" / "fit-capabilities-v1.schema.json"
+)
 
 
 def test_fit_capabilities_cover_the_public_model_vocabulary_once() -> None:
@@ -75,3 +81,29 @@ def test_fit_capability_manifest_has_a_machine_readable_module_cli(capsys) -> No
     captured = capsys.readouterr()
     assert captured.err == ""
     assert json.loads(captured.out) == fit_capability_manifest()
+
+
+def test_fit_capability_schema_is_an_exact_versioned_wire_contract() -> None:
+    schema = json.loads(_CAPABILITY_SCHEMA.read_text(encoding="utf-8"))
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["$id"].endswith("/contracts/fit-capabilities-v1.schema.json")
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {
+        "schema_version",
+        "production_numeric_owner",
+        "models",
+    }
+    properties = schema["properties"]
+    assert properties["schema_version"] == {"type": "string", "const": "1.0"}
+    assert properties["production_numeric_owner"] == {
+        "type": "string",
+        "const": "rust",
+    }
+    models = properties["models"]
+    assert models["type"] == "array"
+    assert models["items"] is False
+    assert models["minItems"] == models["maxItems"] == len(VALID_MODELS)
+    assert [entry["const"] for entry in models["prefixItems"]] == (
+        fit_capability_manifest()["models"]
+    )
