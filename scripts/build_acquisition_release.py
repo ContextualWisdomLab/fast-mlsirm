@@ -1,0 +1,512 @@
+#!/usr/bin/env python
+"""Build a price-neutral acquisition-readiness evidence bundle for fast-mlsirm."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+try:
+    from scripts import (
+        build_benchmark_report,
+        build_buyer_packet,
+        build_figma_evidence_sync,
+        build_pr_queue_governance,
+        build_procurement_due_diligence,
+        build_release_evidence_index,
+        sales_readiness,
+    )
+    from scripts._bounded_subprocess import run_bounded_capture
+except ModuleNotFoundError as exc:
+    if exc.name not in {
+        "scripts",
+        "scripts._bounded_subprocess",
+        "scripts.build_benchmark_report",
+        "scripts.build_buyer_packet",
+        "scripts.build_figma_evidence_sync",
+        "scripts.build_pr_queue_governance",
+        "scripts.build_procurement_due_diligence",
+        "scripts.build_release_evidence_index",
+        "scripts.sales_readiness",
+    }:
+        raise
+    import build_benchmark_report
+    import build_buyer_packet
+    import build_figma_evidence_sync
+    import build_pr_queue_governance
+    import build_procurement_due_diligence
+    import build_release_evidence_index
+    import sales_readiness
+    from _bounded_subprocess import run_bounded_capture
+
+
+_STAGE_TIMEOUT_SECONDS = 900.0
+
+
+def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest for one evidence artifact."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _artifact(path: Path) -> dict[str, Any]:
+    """Describe one required acquisition artifact without inventing evidence."""
+    exists = path.exists() and path.is_file()
+    return {
+        "path": str(path),
+        "name": path.name,
+        "exists": exists,
+        "size_bytes": path.stat().st_size if exists else None,
+        "sha256": _sha256(path) if exists else None,
+    }
+
+
+def _source_commit(repo_root: Path) -> str:
+    """Return the exact checked-out Git commit or fail closed."""
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+    commit = completed.stdout.strip()
+    if len(commit) not in {40, 64} or any(ch not in "0123456789abcdef" for ch in commit):
+        raise RuntimeError("source commit lookup returned an invalid object id")
+    return commit
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write a deterministic human-readable JSON evidence document."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _run(command: list[str], *, cwd: Path) -> None:
+    """Run one bounded subprocess stage and surface a stable failure."""
+    completed = run_bounded_capture(
+        command,
+        cwd=cwd,
+        timeout_seconds=_STAGE_TIMEOUT_SECONDS,
+        max_stdout_bytes=10 * 1024 * 1024,
+        max_stderr_bytes=10 * 1024 * 1024,
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        raise RuntimeError(
+            f"stage failed ({completed.returncode}): {' '.join(command)}"
+            + (f"\n{stderr[-2000:]}" if stderr else "")
+        )
+
+
+def _set_contract_value(namespace: argparse.Namespace, value: int | None) -> argparse.Namespace:
+    """Override legacy helper CLI defaults with the explicit transaction scenario."""
+    if hasattr(namespace, "contract_value_krw"):
+        namespace.contract_value_krw = value
+    return namespace
+
+
+def _sales_args(
+    *,
+    repo_root: Path,
+    acceptance: Path,
+    dist: Path,
+    out: Path,
+    benchmark: Path | None = None,
+    buyer_packet: Path | None = None,
+    release_index: Path | None = None,
+    procurement: Path | None = None,
+    pr_queue: Path | None = None,
+    figma: Path | None = None,
+    require_rust: bool,
+    check_import: bool,
+    contract_value_krw: int | None,
+    acquisition: bool,
+) -> argparse.Namespace:
+    """Build one sales-readiness namespace without the deprecated 20B profile."""
+    argv = [
+        "--repo-root",
+        str(repo_root),
+        "--acceptance",
+        str(acceptance),
+        "--dist",
+        str(dist),
+        "--out",
+        str(out),
+    ]
+    if benchmark is not None:
+        argv.extend(["--benchmark-report", str(benchmark), "--require-benchmark-report"])
+    if buyer_packet is not None:
+        argv.extend(["--buyer-packet-manifest", str(buyer_packet), "--require-buyer-packet"])
+    if release_index is not None:
+        argv.extend(
+            [
+                "--release-evidence-index",
+                str(release_index),
+                "--require-release-evidence-index",
+            ]
+        )
+    if procurement is not None:
+        argv.extend(
+            [
+                "--procurement-due-diligence",
+                str(procurement),
+                "--require-procurement-due-diligence",
+            ]
+        )
+    if pr_queue is not None:
+        argv.extend(
+            [
+                "--pr-queue-governance",
+                str(pr_queue),
+                "--require-pr-queue-governance",
+            ]
+        )
+    if figma is not None:
+        argv.extend(
+            [
+                "--figma-evidence-sync",
+                str(figma),
+                "--require-figma-evidence-sync",
+            ]
+        )
+    if require_rust:
+        argv.append("--require-rust")
+    if check_import:
+        argv.append("--check-import")
+    if acquisition:
+        argv.append("--require-acquisition-readiness")
+    if contract_value_krw is not None:
+        argv.extend(["--contract-value-krw", str(contract_value_krw)])
+    namespace = sales_readiness.build_parser().parse_args(argv)
+    if namespace.require_20b_product:
+        raise RuntimeError("generic acquisition builder must not enable legacy 20B compatibility")
+    return namespace
+
+
+def _require_ok(name: str, payload: dict[str, Any]) -> None:
+    """Fail closed when a direct evidence builder reports a failed status."""
+    if payload.get("status") != "ok":
+        raise RuntimeError(f"{name} reported status={payload.get('status')!r}")
+
+
+def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
+    """Build one exact-source, price-neutral acquisition-readiness evidence bundle."""
+    repo_root = Path(args.repo_root).resolve()
+    out_dir = Path(args.out).resolve()
+    dist_dir = Path(args.dist).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    source_commit = _source_commit(repo_root)
+
+    if not args.skip_build:
+        _run(
+            [args.python, "-m", "build", "--outdir", str(dist_dir)],
+            cwd=repo_root,
+        )
+
+    acceptance_dir = out_dir / "release-acceptance"
+    acceptance_command = [
+        args.python,
+        str(repo_root / "scripts" / "release_acceptance.py"),
+        "--out",
+        str(acceptance_dir),
+    ]
+    if args.require_rust:
+        acceptance_command.append("--require-rust")
+    _run(acceptance_command, cwd=repo_root)
+    acceptance_path = acceptance_dir / "acceptance_summary.json"
+
+    benchmark_dir = acceptance_dir / "benchmark"
+    benchmark_args = build_benchmark_report.build_parser().parse_args(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--acceptance",
+            str(acceptance_path),
+            "--out",
+            str(benchmark_dir),
+        ]
+    )
+    benchmark = build_benchmark_report.build_report(benchmark_args)
+    _require_ok("benchmark_report", benchmark)
+    benchmark_path = benchmark_dir / "benchmark_report.json"
+
+    initial_sales_path = acceptance_dir / "sales_readiness_manifest.json"
+    initial_sales = sales_readiness.run_sales_readiness(
+        _sales_args(
+            repo_root=repo_root,
+            acceptance=acceptance_path,
+            dist=dist_dir,
+            out=initial_sales_path,
+            benchmark=benchmark_path,
+            require_rust=args.require_rust,
+            check_import=args.check_import,
+            contract_value_krw=args.contract_value_krw,
+            acquisition=False,
+        )
+    )
+    _require_ok("initial_sales_readiness", initial_sales)
+
+    packet_dir = out_dir / "buyer-evidence-packet"
+    packet_args = build_buyer_packet.build_parser().parse_args(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--acceptance",
+            str(acceptance_path),
+            "--sales-readiness",
+            str(initial_sales_path),
+            "--dist",
+            str(dist_dir),
+            "--benchmark-report",
+            str(benchmark_path),
+            "--out",
+            str(packet_dir),
+        ]
+    )
+    packet_args = _set_contract_value(packet_args, args.contract_value_krw)
+    packet = build_buyer_packet.build_packet(packet_args)
+    _require_ok("buyer_packet", packet)
+    packet_path = packet_dir / "buyer_evidence_manifest.json"
+
+    index_dir = out_dir / "release-evidence-index"
+    index_args = build_release_evidence_index.build_parser().parse_args(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--acceptance",
+            str(acceptance_path),
+            "--sales-readiness",
+            str(initial_sales_path),
+            "--dist",
+            str(dist_dir),
+            "--benchmark-report",
+            str(benchmark_path),
+            "--buyer-packet-manifest",
+            str(packet_path),
+            "--out",
+            str(index_dir),
+        ]
+    )
+    index_args = _set_contract_value(index_args, args.contract_value_krw)
+    release_index = build_release_evidence_index.build_index(index_args)
+    _require_ok("release_evidence_index", release_index)
+    index_path = index_dir / "release_evidence_index.json"
+
+    preproc_sales_path = acceptance_dir / "preproc_sales_readiness_manifest.json"
+    preproc_sales = sales_readiness.run_sales_readiness(
+        _sales_args(
+            repo_root=repo_root,
+            acceptance=acceptance_path,
+            dist=dist_dir,
+            out=preproc_sales_path,
+            benchmark=benchmark_path,
+            buyer_packet=packet_path,
+            release_index=index_path,
+            require_rust=args.require_rust,
+            check_import=args.check_import,
+            contract_value_krw=args.contract_value_krw,
+            acquisition=False,
+        )
+    )
+    _require_ok("preproc_sales_readiness", preproc_sales)
+
+    wheel = next(iter(sorted(dist_dir.glob("*.whl"))), dist_dir / "missing.whl")
+    sdist = next(iter(sorted(dist_dir.glob("*.tar.gz"))), dist_dir / "missing.tar.gz")
+    candidate_manifest_path = out_dir / "acquisition_candidate_manifest.json"
+    candidate_manifest = {
+        "command": "build_acquisition_release_candidate",
+        "status": "ok",
+        "contract_value_krw": args.contract_value_krw,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "source_commit": source_commit,
+        "artifacts": {
+            "wheel": _artifact(wheel),
+            "sdist": _artifact(sdist),
+            "final_sales_readiness": _artifact(preproc_sales_path),
+        },
+    }
+    if not all(item["exists"] for item in candidate_manifest["artifacts"].values()):
+        raise RuntimeError("candidate release is missing a required distribution/readiness artifact")
+    _write_json(candidate_manifest_path, candidate_manifest)
+
+    procurement_dir = out_dir / "procurement-due-diligence"
+    procurement_argv = [
+        "--repo-root",
+        str(repo_root),
+        "--dist",
+        str(dist_dir),
+        "--commercial-release-manifest",
+        str(candidate_manifest_path),
+        "--out",
+        str(procurement_dir),
+        "--repo",
+        args.repo,
+    ]
+    if args.offline_github:
+        procurement_argv.append("--offline-github")
+    procurement_args = build_procurement_due_diligence.build_parser().parse_args(procurement_argv)
+    procurement_args = _set_contract_value(procurement_args, args.contract_value_krw)
+    procurement = build_procurement_due_diligence.build_procurement_due_diligence(procurement_args)
+    _require_ok("procurement_due_diligence", procurement)
+    procurement_path = procurement_dir / "procurement_due_diligence_manifest.json"
+
+    pr_queue_dir = out_dir / "pr-queue-governance"
+    pr_queue_argv = [
+        "--repo-root",
+        str(repo_root),
+        "--out",
+        str(pr_queue_dir),
+        "--repo",
+        args.repo,
+        "--max-stale-days",
+        str(args.pr_queue_max_stale_days),
+    ]
+    if args.pr_queue_offline_snapshot:
+        pr_queue_argv.extend(["--offline-snapshot", args.pr_queue_offline_snapshot])
+    pr_queue_args = build_pr_queue_governance.build_parser().parse_args(pr_queue_argv)
+    pr_queue_args = _set_contract_value(pr_queue_args, args.contract_value_krw)
+    pr_queue = build_pr_queue_governance.build_pr_queue_governance(pr_queue_args)
+    _require_ok("pr_queue_governance", pr_queue)
+    pr_queue_path = pr_queue_dir / "pr_queue_governance_manifest.json"
+
+    figma_dir = out_dir / "figma-evidence-sync"
+    figma_argv = [
+        "--repo-root",
+        str(repo_root),
+        "--packet",
+        str(repo_root / "examples" / "enterprise_demo" / "figma_design_packet.json"),
+        "--out",
+        str(figma_dir),
+        "--figma-url",
+        args.figma_url,
+    ]
+    if args.figma_metadata_snapshot:
+        figma_argv.extend(["--metadata-snapshot", args.figma_metadata_snapshot])
+    figma_args = build_figma_evidence_sync.build_parser().parse_args(figma_argv)
+    figma_args = _set_contract_value(figma_args, args.contract_value_krw)
+    figma = build_figma_evidence_sync.build_figma_evidence_sync(figma_args)
+    _require_ok("figma_evidence_sync", figma)
+    figma_path = figma_dir / "figma_evidence_sync_manifest.json"
+
+    final_sales_path = acceptance_dir / "final_acquisition_readiness_manifest.json"
+    final_sales = sales_readiness.run_sales_readiness(
+        _sales_args(
+            repo_root=repo_root,
+            acceptance=acceptance_path,
+            dist=dist_dir,
+            out=final_sales_path,
+            benchmark=benchmark_path,
+            buyer_packet=packet_path,
+            release_index=index_path,
+            procurement=procurement_path,
+            pr_queue=pr_queue_path,
+            figma=figma_path,
+            require_rust=args.require_rust,
+            check_import=args.check_import,
+            contract_value_krw=args.contract_value_krw,
+            acquisition=True,
+        )
+    )
+    _require_ok("final_acquisition_readiness", final_sales)
+
+    manifest_path = out_dir / "acquisition_release_manifest.json"
+    manifest: dict[str, Any] = {
+        "command": "build_acquisition_release",
+        "status": "ok",
+        "contract_value_krw": args.contract_value_krw,
+        "transaction_scenario": (
+            {"contract_value_krw": args.contract_value_krw}
+            if args.contract_value_krw is not None
+            else None
+        ),
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "source_commit": source_commit,
+        "repo_root": str(repo_root),
+        "out": str(out_dir),
+        "artifacts": {
+            "acceptance_summary": _artifact(acceptance_path),
+            "benchmark_report": _artifact(benchmark_path),
+            "buyer_packet": _artifact(packet_path),
+            "release_evidence_index": _artifact(index_path),
+            "procurement_due_diligence": _artifact(procurement_path),
+            "pr_queue_governance": _artifact(pr_queue_path),
+            "figma_evidence_sync": _artifact(figma_path),
+            "final_acquisition_readiness": _artifact(final_sales_path),
+            "wheel": _artifact(wheel),
+            "sdist": _artifact(sdist),
+        },
+    }
+    _write_json(manifest_path, manifest)
+    return manifest
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Create the price-neutral acquisition-release CLI."""
+    parser = argparse.ArgumentParser(
+        description="Build the complete fast-mlsirm acquisition-readiness evidence bundle."
+    )
+    parser.add_argument("--repo-root", default=".", help="Repository root.")
+    parser.add_argument("--out", default="acquisition-release", help="Evidence output directory.")
+    parser.add_argument("--dist", default="dist", help="Distribution artifact directory.")
+    parser.add_argument("--python", default=sys.executable, help="Python executable for subprocess stages.")
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=None,
+        help="Optional transaction-scenario value in KRW; omitted for the generic readiness gate.",
+    )
+    parser.add_argument("--require-rust", action="store_true", help="Require explicit Rust backend evidence.")
+    parser.add_argument("--check-import", action="store_true", help="Validate installed-package imports.")
+    parser.add_argument("--skip-build", action="store_true", help="Use existing distribution artifacts.")
+    parser.add_argument("--offline-github", action="store_true", help="Use the procurement tool's offline GitHub mode.")
+    parser.add_argument("--pr-queue-offline-snapshot", help="Optional PR queue snapshot JSON.")
+    parser.add_argument("--pr-queue-max-stale-days", type=int, default=14, help="Open-PR staleness threshold.")
+    parser.add_argument("--figma-metadata-snapshot", help="Optional exported live Figma metadata snapshot JSON.")
+    parser.add_argument(
+        "--figma-url",
+        default="https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem",
+        help="Fallback Figma design URL.",
+    )
+    parser.add_argument(
+        "--repo",
+        default="ContextualWisdomLab/fast-mlsirm",
+        help="GitHub repository used by due-diligence evidence stages.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run acquisition evidence generation and emit a compact JSON summary."""
+    args = build_parser().parse_args(argv)
+    try:
+        manifest = build_acquisition_release(args)
+    except Exception as exc:
+        print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False))
+        return 1
+    print(
+        json.dumps(
+            {
+                "status": manifest["status"],
+                "manifest": str(Path(args.out).resolve() / "acquisition_release_manifest.json"),
+                "out": str(Path(args.out).resolve()),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
