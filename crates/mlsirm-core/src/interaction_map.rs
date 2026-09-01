@@ -198,9 +198,23 @@ pub fn residual_interaction_map(
         }
     }
     let (eigenvalues, eigenvectors) = symmetric_eigen_desc(&gram, columns)?;
+    let maximum_rank = rows.min(columns);
+    let leading_singular = eigenvalues
+        .first()
+        .copied()
+        .unwrap_or(0.0)
+        .max(0.0)
+        .sqrt();
+    // Numerical rank is scale-dependent. Use the conventional matrix-rank
+    // tolerance `sigma_max * max(m, n) * eps`, while preserving the existing
+    // absolute singular floor, and never report more than the algebraic rank.
+    let numerical_singular_floor = SINGULAR_FLOOR.max(
+        leading_singular * f64::EPSILON * rows.max(columns) as f64,
+    );
     let singular_values: Vec<f64> = eigenvalues
         .iter()
-        .take_while(|value| **value > SINGULAR_FLOOR * SINGULAR_FLOOR)
+        .take(maximum_rank)
+        .take_while(|value| **value > 0.0 && (**value).sqrt() > numerical_singular_floor)
         .map(|value| value.sqrt())
         .collect();
     let retained = singular_values.len();
