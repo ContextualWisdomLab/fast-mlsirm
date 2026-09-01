@@ -17,8 +17,8 @@ from fast_mlsirm.capabilities import (
 from fast_mlsirm.config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
 
 
-_CAPABILITY_SCHEMA = (
-    Path(__file__).parents[1] / "contracts" / "fit-capabilities-v1.schema.json"
+_CAPABILITY_CONTRACT = (
+    Path(__file__).parents[1] / "contracts" / "fit-capabilities-v1.json"
 )
 
 
@@ -83,27 +83,13 @@ def test_fit_capability_manifest_has_a_machine_readable_module_cli(capsys) -> No
     assert json.loads(captured.out) == fit_capability_manifest()
 
 
-def test_fit_capability_schema_is_an_exact_versioned_wire_contract() -> None:
-    schema = json.loads(_CAPABILITY_SCHEMA.read_text(encoding="utf-8"))
-    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert schema["$id"].endswith("/contracts/fit-capabilities-v1.schema.json")
-    assert schema["type"] == "object"
-    assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == {
-        "schema_version",
-        "production_numeric_owner",
-        "models",
-    }
-    properties = schema["properties"]
-    assert properties["schema_version"] == {"type": "string", "const": "1.0"}
-    assert properties["production_numeric_owner"] == {
-        "type": "string",
-        "const": "rust",
-    }
-    models = properties["models"]
-    assert models["type"] == "array"
-    assert models["items"] is False
-    assert models["minItems"] == models["maxItems"] == len(VALID_MODELS)
-    assert [entry["const"] for entry in models["prefixItems"]] == (
-        fit_capability_manifest()["models"]
+def test_fit_capability_contract_artifact_is_exact_cli_wire_payload(capsys) -> None:
+    expected = json.dumps(
+        fit_capability_manifest(), sort_keys=True, separators=(",", ":")
     )
+    assert _CAPABILITY_CONTRACT.read_text(encoding="utf-8") == expected + "\n"
+
+    assert capability_main([]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == expected + "\n"
