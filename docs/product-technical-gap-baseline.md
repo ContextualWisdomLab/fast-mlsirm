@@ -1,8 +1,8 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-28T13:32:53Z**<br>
-Protected-main basis: **`main@45627700…`**<br>
+Observed at: **2026-09-01T12:34:21Z**<br>
+Protected-main basis: **`main@45627700c26c29bca150896a9519a9b7426acb56`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
 ## 1. Purpose and authority
@@ -243,10 +243,58 @@ new canonical capability-maturity state.
 
 ## 7. Current pull-request evidence
 
-The following table records high-leverage live work observed on
-2026-08-28T13:32:53Z against protected `main@45627700…`. Every row is
-**IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
-check on any row is not a protected-main capability until the PR is merged.
+### 7.0 Live commercialization/control-plane delta — 2026-09-01
+
+The protected product branch remains `main@45627700c26c29bca150896a9519a9b7426acb56`.
+GitHub search at this refresh reports **46 open pull requests** and **195 open
+issues**. These counts supersede the older 23/69 snapshot below; the older table
+is retained only as dated historical context until a generated live inventory
+replaces it.
+
+Central review/control-plane state materially changed during this refresh:
+
+- `ContextualWisdomLab/.github#1564` is merged; the canonical Noema deleted-file
+  path now reads removed-file evidence from immutable base-side provenance while
+  preserving current transport/retry/security behavior. Its reconciliation also
+  absorbed the still-valid hollow CodeGraph-context cleanup previously carried
+  by #1567. #1567 is therefore closed unmerged and must not be resurrected as a
+  competing writer.
+- `ContextualWisdomLab/.github#1601` merged by the ordinary expected-head path at
+  central protected main `5f81d8e665b7d3f51f379a090e077486dbf548c5`.
+  Strix 1.5.3 passes `LLM_TIMEOUT` to `asyncio.wait_for`; the predecessor central
+  `LLM_TIMEOUT=0` cancelled model preflight immediately. Protected central main
+  now carries the focused regression and positive `LLM_TIMEOUT=300` contract.
+- duplicate central #1600 was closed only after both intended file blobs were
+  proven byte-identical to the files shipped by #1601.
+- Actions capacity remains an operability constraint: a cancelled pre-#1601
+  Strix job for #1714 is attached to a workflow run whose stale-run cleanup job
+  is still queued, and GitHub currently rejects a direct job rerun because it
+  considers that run active. Cancelled/pending/queued evidence remains
+  non-passing; it is not reclassified as a product defect or success.
+
+Current high-leverage product heads refetched in this refresh are:
+
+| PR | Exact head | Current role | Live disposition |
+| --- | --- | --- | --- |
+| [#1714](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1714) | `753bcd7575611d60b618777261a0880ad7f44bbc` | typed non-numerical model-specification/dependence candidate compiler | mechanically mergeable; visible substantive review threads resolved; no current qualifying approval; pre-#1601 Strix evidence cancelled and other required evidence queued/pending |
+| [#1716](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1716) | `43ba529c3b2dfa65e430735e5dce8ca9ee4fbe65` | TEPP temporal/event semantics versus Rust time-indexed psychometric-kernel bounded-context decision | mechanically mergeable; visible substantive threads resolved; auto-merge enabled; required evidence remains queued/non-terminal |
+| [#1717](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1717) | `161b513d77df69151de05a2b7cb0a6cf632afac7` | product-first README and public documentation landing | mechanically mergeable; review findings resolved; auto-merge enabled; documentation-only and no Pages publication is claimed before protected integration/live settings |
+| [#1519](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1519) | this writer branch | single writer for this baseline | refreshed from its current blob; no competing baseline writer should be opened |
+
+The implementation-direction audit for these active heads does not move
+production numerical ownership into Python. `fast-mlsirm` continues to own
+result-affecting mathematical, psychometric, optimization, information/scoring,
+vector/matrix and model-estimation computation in Rust/PyO3. Python remains a
+validation, provenance-sealing, marshalling, orchestration, reporting and
+explicit reference/parity boundary. A future PR that adds ordinary production
+Python arithmetic for those responsibilities is a product-boundary defect and
+must be redirected to the Rust owner.
+
+The following table is the earlier high-leverage snapshot observed on
+2026-08-28T13:32:53Z against protected `main@45627700…`. Every row is historical
+**IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED** evidence only; re-fetch the live
+head before acting. A green check on any row is not a protected-main capability
+until the PR is merged.
 
 | PR | Observed head | Observed role | Completion dependency / caution |
 | --- | --- | --- | --- |
@@ -274,13 +322,11 @@ check on any row is not a protected-main capability until the PR is merged.
 | [#1436](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1436) | `a90db19f…` | documents the Rust polytomous period artifact | draft child of #1417; clean/mergeable only describes the stack candidate, not protected main |
 | [#1457](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1457) | `94699c5b…` | exposes the Rust interaction-map explained-share projection | draft child of #1417; currently conflicting and requires parent synchronization before review |
 
-At this observation, GitHub REST enumerated **23 open pull requests** and GitHub
-issue listing enumerated **69 open issues**. The current direct-to-main queue is
-dominated by bounded native-boundary and result-replay fixes; the release stack
-is rooted at #1471, and the interaction-map stack is rooted at #1417. The
-long-lived product gaps remain #621 (bounded 1.0 capability/support matrix) and
-#565 (multilevel/multiple-membership/longitudinal completion). The Rust-owned
-ordinary-production boundary has materially advanced through the integrated
+The older snapshot enumerated 23 open pull requests and 69 open issues. It is
+retained only to preserve dated lineage; the current live counts are 46 and 195.
+The long-lived product gaps remain #621 (bounded 1.0 capability/support matrix)
+and #565 (multilevel/multiple-membership/longitudinal completion). The Rust-owned
+ordinary-production boundary has materially advanced through integrated
 backend/runtime work; issues #626 and #627 are closed, but the remaining public
 capability and release evidence still prevents a universal technical-GA claim.
 
@@ -288,12 +334,6 @@ This list is a reproducible snapshot, not a merge instruction. A completion or
 merge decision must begin with a fresh repository-wide PR and writer sweep,
 including exact head/base, dependency stack, reviews, unresolved threads,
 required Checks, and active path ownership.
-
-The previous six-row snapshot is obsolete: those listed PRs are no longer open,
-and the current queue above was re-fetched from the live repository. Their
-integrated capability evidence remains part of protected main where the merge
-was completed; the active rows above remain candidates until their exact heads
-pass current reviews and protected merge gates.
 
 ### 7.1 Superseded lineage record
 
