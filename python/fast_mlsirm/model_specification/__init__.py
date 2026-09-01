@@ -53,6 +53,11 @@ class DimensionalStructure:
     formulation_id: str
     dimensions: int
 
+    def __post_init__(self) -> None:
+        """Reject an impossible dimension count before candidate compilation."""
+        if type(self.dimensions) is not int or self.dimensions < 1:
+            raise ValueError("dimensions must be >= 1")
+
 
 @dataclass(frozen=True)
 class GeneralizedMixedStructure:
@@ -122,24 +127,15 @@ _MISSING_SUPPORT_REQUIREMENTS = (
 
 @dataclass(frozen=True)
 class CapabilityEvidence:
-    """Exact evidence needed to promote a research candidate to supported."""
+    """Documentary evidence specific to one dependence formulation.
+
+    Implementation state, identification verification, and recovery status live
+    on their owning value objects in :class:`ModelSpecification`; duplicating
+    those booleans here would create competing sources of model truth.
+    """
 
     generative_equation_id: str | None = None
     primary_citations: tuple[str, ...] = ()
-    rust_estimator_implemented: bool = False
-    identification_verified: bool = False
-    recovery_passed: bool = False
-
-    def missing_requirements(self) -> tuple[str, ...]:
-        """Return every absent support gate in deterministic contract order."""
-        checks = (
-            (self.generative_equation_id is not None, _MISSING_SUPPORT_REQUIREMENTS[0]),
-            (self.rust_estimator_implemented, _MISSING_SUPPORT_REQUIREMENTS[1]),
-            (self.identification_verified, _MISSING_SUPPORT_REQUIREMENTS[2]),
-            (bool(self.primary_citations), _MISSING_SUPPORT_REQUIREMENTS[3]),
-            (self.recovery_passed, _MISSING_SUPPORT_REQUIREMENTS[4]),
-        )
-        return tuple(requirement for satisfied, requirement in checks if not satisfied)
 
 
 @dataclass(frozen=True)
@@ -185,6 +181,7 @@ class CompiledModelCandidate:
                 "kind": self.dependence.kind.value,
                 "formulation_id": self.dependence.formulation_id,
                 "parameter_blocks": list(self.dependence.parameter_blocks),
+                "baseline_citations": list(self.dependence.baseline_citations),
             },
             "estimation_plan": {
                 "estimator_id": self.estimation_plan.estimator_id,
@@ -246,6 +243,66 @@ _DEPENDENCE_ORDER = (
 )
 
 
+def _exact_nonblank_string(value: object) -> bool:
+    """Return whether ``value`` is an exact, non-blank built-in string."""
+    return type(value) is str and bool(value.strip())
+
+
+def _primary_citations_are_complete(citations: object) -> bool:
+    """Require a non-empty exact tuple of exact, non-blank citation identities."""
+    return (
+        type(citations) is tuple
+        and bool(citations)
+        and all(_exact_nonblank_string(citation) for citation in citations)
+    )
+
+
+def _missing_support_requirements(
+    base: ModelSpecification,
+    evidence: CapabilityEvidence | None,
+) -> tuple[str, ...]:
+    """Derive promotion gates from their canonical owning domain values."""
+    has_equation = (
+        evidence is not None
+        and _exact_nonblank_string(evidence.generative_equation_id)
+    )
+    has_rust_estimator = (
+        base.estimation_plan.implemented is True
+        and type(base.estimation_plan.computational_backend) is str
+        and base.estimation_plan.computational_backend == "rust"
+    )
+    has_identification = base.identification_contract.verified is True
+    has_citations = (
+        evidence is not None
+        and _primary_citations_are_complete(evidence.primary_citations)
+    )
+    has_recovery = base.recovery_contract.passing is True
+    checks = (
+        (has_equation, _MISSING_SUPPORT_REQUIREMENTS[0]),
+        (has_rust_estimator, _MISSING_SUPPORT_REQUIREMENTS[1]),
+        (has_identification, _MISSING_SUPPORT_REQUIREMENTS[2]),
+        (has_citations, _MISSING_SUPPORT_REQUIREMENTS[3]),
+        (has_recovery, _MISSING_SUPPORT_REQUIREMENTS[4]),
+    )
+    return tuple(requirement for satisfied, requirement in checks if not satisfied)
+
+
+def _published_equation_id(evidence: CapabilityEvidence | None) -> str | None:
+    """Publish only an admitted exact equation identity."""
+    if evidence is None or not _exact_nonblank_string(evidence.generative_equation_id):
+        return None
+    return evidence.generative_equation_id
+
+
+def _published_primary_citations(
+    evidence: CapabilityEvidence | None,
+) -> tuple[str, ...]:
+    """Publish only a complete citation-evidence tuple used by promotion."""
+    if evidence is None or not _primary_citations_are_complete(evidence.primary_citations):
+        return ()
+    return evidence.primary_citations
+
+
 def _compile_one(
     base: ModelSpecification,
     kind: DependenceKind,
@@ -261,23 +318,12 @@ def _compile_one(
         status = CapabilityStatus.UNSUPPORTED
         missing = ("multidimensional_main_effects_required",)
     else:
-        missing = (
-            _MISSING_SUPPORT_REQUIREMENTS
-            if evidence is None
-            else evidence.missing_requirements()
-        )
+        missing = _missing_support_requirements(base, evidence)
         status = (
             CapabilityStatus.RESEARCH_CANDIDATE
             if missing
             else CapabilityStatus.SUPPORTED
         )
-
-    citations = dependence.baseline_citations
-    equation_id = None
-    if evidence is not None:
-        equation_id = evidence.generative_equation_id
-        if evidence.primary_citations:
-            citations = evidence.primary_citations
 
     return CompiledModelCandidate(
         canonical_id=canonical_id,
@@ -290,8 +336,8 @@ def _compile_one(
         recovery_contract=base.recovery_contract,
         status=status,
         missing_requirements=missing,
-        generative_equation_id=equation_id,
-        primary_citations=citations,
+        generative_equation_id=_published_equation_id(evidence),
+        primary_citations=_published_primary_citations(evidence),
     )
 
 
