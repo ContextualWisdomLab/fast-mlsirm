@@ -52,6 +52,24 @@ def test_top_level_ndarray_snapshot_replays_cell_budget_after_copy(
         mokken._validated_scores(responses)
 
 
+def test_top_level_ndarray_snapshot_replays_admitted_shape_after_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same-cardinality reshape at the copy seam must not redefine matrix identity."""
+    responses = np.array([[0, 1], [1, 0], [1, 1]], dtype=np.int64)
+    original_array = np.array
+
+    def _reshape_then_copy(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        if value is responses:
+            responses.shape = (2, 3)
+        return original_array(value, *args, **kwargs)
+
+    monkeypatch.setattr(mokken.np, "array", _reshape_then_copy)
+
+    with pytest.raises(ValueError, match=r"responses must be a 2-D persons x items array"):
+        mokken._validated_scores(responses)
+
+
 def test_top_level_ndarray_rejects_unsupported_dtype_before_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
