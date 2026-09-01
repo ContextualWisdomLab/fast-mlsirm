@@ -8,6 +8,8 @@ owned by the Rust core.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -71,34 +73,30 @@ class GeneralizedMixedStructure:
 
 @dataclass(frozen=True)
 class EstimationPlan:
-    """Estimator/backend evidence scoped to exactly one model formulation.
-
-    ``applies_to_formulation_id`` prevents a fitted base-kernel estimator from
-    being mistaken for an implemented LSIRM, MLSIRM, or DLSJM extension.
-    """
+    """Estimator/backend evidence scoped to exactly one compiled candidate."""
 
     estimator_id: str
     computational_backend: str
     implemented: bool
-    applies_to_formulation_id: str
+    applies_to_candidate_id: str
 
 
 @dataclass(frozen=True)
 class IdentificationContract:
-    """Identification evidence scoped to exactly one model formulation."""
+    """Identification evidence scoped to exactly one compiled candidate."""
 
     rules: tuple[str, ...]
     verified: bool
-    applies_to_formulation_id: str
+    applies_to_candidate_id: str
 
 
 @dataclass(frozen=True)
 class RecoveryContract:
-    """Known-truth recovery evidence scoped to exactly one formulation."""
+    """Known-truth recovery evidence scoped to exactly one compiled candidate."""
 
     required_metrics: tuple[str, ...]
     passing: bool
-    applies_to_formulation_id: str
+    applies_to_candidate_id: str
 
 
 @dataclass(frozen=True)
@@ -123,6 +121,73 @@ class DependenceStructure:
     baseline_citations: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CandidateIdentity:
+    """Full immutable scientific identity of one compiled model candidate.
+
+    Evidence and implementation state are intentionally excluded: the same
+    scientific specification keeps its identity while its maturity advances.
+    Every structural axis that can change the represented model is included.
+    """
+
+    response_family_id: str
+    response_formulation_id: str
+    response_scale: str
+    response_parameter_blocks: tuple[str, ...]
+    dimensional_formulation_id: str
+    dimensions: int
+    mixed_formulation_id: str
+    fixed_effects: tuple[str, ...]
+    random_effects: tuple[str, ...]
+    membership: str
+    dependence_kind: DependenceKind
+    dependence_formulation_id: str
+    dependence_parameter_blocks: tuple[str, ...]
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return the complete JSON-shaped structural identity."""
+        return {
+            "response_kernel": {
+                "family_id": self.response_family_id,
+                "formulation_id": self.response_formulation_id,
+                "response_scale": self.response_scale,
+                "parameter_blocks": list(self.response_parameter_blocks),
+            },
+            "dimensional_structure": {
+                "formulation_id": self.dimensional_formulation_id,
+                "dimensions": self.dimensions,
+            },
+            "mixed_structure": {
+                "formulation_id": self.mixed_formulation_id,
+                "fixed_effects": list(self.fixed_effects),
+                "random_effects": list(self.random_effects),
+                "membership": self.membership,
+            },
+            "dependence": {
+                "kind": self.dependence_kind.value,
+                "formulation_id": self.dependence_formulation_id,
+                "parameter_blocks": list(self.dependence_parameter_blocks),
+            },
+        }
+
+    def canonical_json(self) -> str:
+        """Serialize identity with fixed JSON ordering and separators."""
+        return json.dumps(
+            self.to_manifest(),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    def canonical_id(self) -> str:
+        """Return a readable formulation prefix plus full SHA-256 identity."""
+        digest = hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
+        return (
+            f"{self.response_formulation_id}__{self.dependence_formulation_id}"
+            f"__spec_sha256_{digest}"
+        )
+
+
 _MISSING_SUPPORT_REQUIREMENTS = (
     "generative_equation_required",
     "rust_estimator_required",
@@ -134,12 +199,11 @@ _MISSING_SUPPORT_REQUIREMENTS = (
 
 @dataclass(frozen=True)
 class CapabilityEvidence:
-    """Documentary evidence specific to one dependence formulation.
+    """Documentary evidence specific to one full candidate identity.
 
-    Implementation state, identification verification, and recovery status live
-    on their owning formulation-scoped value objects in
-    :class:`ModelSpecification`; duplicating those booleans here would create
-    competing sources of model truth.
+    Estimator implementation, identification verification, and recovery status
+    remain on their owning candidate-scoped value objects; duplicating those
+    booleans here would create competing sources of model truth.
     """
 
     generative_equation_id: str | None = None
@@ -150,7 +214,7 @@ class CapabilityEvidence:
 class CompiledModelCandidate:
     """Immutable result of base + mixed + dependence composition."""
 
-    canonical_id: str
+    identity: CandidateIdentity
     response_kernel: ResponseKernel
     dimensional_structure: DimensionalStructure
     mixed_structure: GeneralizedMixedStructure
@@ -164,10 +228,16 @@ class CompiledModelCandidate:
     primary_citations: tuple[str, ...]
     temporal_boundary: str = "tepp_owned"
 
+    @property
+    def canonical_id(self) -> str:
+        """Expose the canonical ID derived from the single identity owner."""
+        return self.identity.canonical_id()
+
     def to_manifest(self) -> dict[str, object]:
         """Serialize the candidate deterministically using JSON-shaped values."""
         return {
             "canonical_id": self.canonical_id,
+            "identity": self.identity.to_manifest(),
             "status": self.status.value,
             "response_kernel": {
                 "family_id": self.response_kernel.family_id,
@@ -195,23 +265,19 @@ class CompiledModelCandidate:
                 "estimator_id": self.estimation_plan.estimator_id,
                 "computational_backend": self.estimation_plan.computational_backend,
                 "implemented": self.estimation_plan.implemented,
-                "applies_to_formulation_id": (
-                    self.estimation_plan.applies_to_formulation_id
-                ),
+                "applies_to_candidate_id": self.estimation_plan.applies_to_candidate_id,
             },
             "identification": {
                 "rules": list(self.identification_contract.rules),
                 "verified": self.identification_contract.verified,
-                "applies_to_formulation_id": (
-                    self.identification_contract.applies_to_formulation_id
+                "applies_to_candidate_id": (
+                    self.identification_contract.applies_to_candidate_id
                 ),
             },
             "recovery": {
                 "required_metrics": list(self.recovery_contract.required_metrics),
                 "passing": self.recovery_contract.passing,
-                "applies_to_formulation_id": (
-                    self.recovery_contract.applies_to_formulation_id
-                ),
+                "applies_to_candidate_id": self.recovery_contract.applies_to_candidate_id,
             },
             "generative_equation_id": self.generative_equation_id,
             "primary_citations": list(self.primary_citations),
@@ -260,6 +326,28 @@ _DEPENDENCE_ORDER = (
 )
 
 
+def _candidate_identity(
+    base: ModelSpecification,
+    dependence: DependenceStructure,
+) -> CandidateIdentity:
+    """Build the one structural identity used by IDs and evidence lookup."""
+    return CandidateIdentity(
+        response_family_id=base.response_kernel.family_id,
+        response_formulation_id=base.response_kernel.formulation_id,
+        response_scale=base.response_kernel.response_scale,
+        response_parameter_blocks=base.response_kernel.parameter_blocks,
+        dimensional_formulation_id=base.dimensional_structure.formulation_id,
+        dimensions=base.dimensional_structure.dimensions,
+        mixed_formulation_id=base.mixed_structure.formulation_id,
+        fixed_effects=base.mixed_structure.fixed_effects,
+        random_effects=base.mixed_structure.random_effects,
+        membership=base.mixed_structure.membership,
+        dependence_kind=dependence.kind,
+        dependence_formulation_id=dependence.formulation_id,
+        dependence_parameter_blocks=dependence.parameter_blocks,
+    )
+
+
 def _exact_nonblank_string(value: object) -> bool:
     """Return whether ``value`` is an exact, non-blank built-in string."""
     return type(value) is str and bool(value.strip())
@@ -275,7 +363,7 @@ def _primary_citations_are_complete(citations: object) -> bool:
 
 
 def _scope_matches(value: object, candidate_id: str) -> bool:
-    """Require support evidence to name the exact compiled formulation."""
+    """Require support evidence to name the exact full candidate identity."""
     return type(value) is str and value == candidate_id
 
 
@@ -284,7 +372,7 @@ def _missing_support_requirements(
     candidate_id: str,
     evidence: CapabilityEvidence | None,
 ) -> tuple[str, ...]:
-    """Derive promotion gates from formulation-scoped canonical owners."""
+    """Derive promotion gates from candidate-scoped canonical owners."""
     has_equation = (
         evidence is not None
         and _exact_nonblank_string(evidence.generative_equation_id)
@@ -293,15 +381,12 @@ def _missing_support_requirements(
         base.estimation_plan.implemented is True
         and type(base.estimation_plan.computational_backend) is str
         and base.estimation_plan.computational_backend == "rust"
-        and _scope_matches(
-            base.estimation_plan.applies_to_formulation_id,
-            candidate_id,
-        )
+        and _scope_matches(base.estimation_plan.applies_to_candidate_id, candidate_id)
     )
     has_identification = (
         base.identification_contract.verified is True
         and _scope_matches(
-            base.identification_contract.applies_to_formulation_id,
+            base.identification_contract.applies_to_candidate_id,
             candidate_id,
         )
     )
@@ -311,10 +396,7 @@ def _missing_support_requirements(
     )
     has_recovery = (
         base.recovery_contract.passing is True
-        and _scope_matches(
-            base.recovery_contract.applies_to_formulation_id,
-            candidate_id,
-        )
+        and _scope_matches(base.recovery_contract.applies_to_candidate_id, candidate_id)
     )
     checks = (
         (has_equation, _MISSING_SUPPORT_REQUIREMENTS[0]),
@@ -345,10 +427,12 @@ def _published_primary_citations(
 def _compile_one(
     base: ModelSpecification,
     kind: DependenceKind,
-    evidence: CapabilityEvidence | None,
+    evidence_by_candidate_id: Mapping[str, CapabilityEvidence],
 ) -> CompiledModelCandidate:
     dependence = _DEPENDENCE_TEMPLATES[kind]
-    canonical_id = f"{base.response_kernel.formulation_id}__{dependence.formulation_id}"
+    identity = _candidate_identity(base, dependence)
+    candidate_id = identity.canonical_id()
+    evidence = evidence_by_candidate_id.get(candidate_id)
 
     if kind not in base.response_kernel.compatible_dependence:
         status = CapabilityStatus.UNSUPPORTED
@@ -357,7 +441,7 @@ def _compile_one(
         status = CapabilityStatus.UNSUPPORTED
         missing = ("multidimensional_main_effects_required",)
     else:
-        missing = _missing_support_requirements(base, canonical_id, evidence)
+        missing = _missing_support_requirements(base, candidate_id, evidence)
         status = (
             CapabilityStatus.RESEARCH_CANDIDATE
             if missing
@@ -365,7 +449,7 @@ def _compile_one(
         )
 
     return CompiledModelCandidate(
-        canonical_id=canonical_id,
+        identity=identity,
         response_kernel=base.response_kernel,
         dimensional_structure=base.dimensional_structure,
         mixed_structure=base.mixed_structure,
@@ -383,21 +467,22 @@ def _compile_one(
 def compile_dependence_candidates(
     base: ModelSpecification,
     *,
-    evidence_by_kind: Mapping[DependenceKind, CapabilityEvidence] | None = None,
+    evidence_by_candidate_id: Mapping[str, CapabilityEvidence] | None = None,
 ) -> tuple[CompiledModelCandidate, ...]:
     """Compile LSIRM, MLSIRM, and DLSJM variants without family-specific branching.
 
     Every dependence family is materialized. Scientific incompatibility becomes
-    an explicit ``unsupported`` candidate; absent formulation-qualified
-    implementation, identification, or recovery evidence becomes
-    ``research_candidate``. The compiler never substitutes the local-independent
-    base model for a requested dependence structure.
+    an explicit ``unsupported`` candidate; absent full-candidate-specific
+    equation, implementation, identification, citation, or recovery evidence
+    becomes ``research_candidate``. The compiler never substitutes the
+    local-independent base model for a requested dependence structure.
     """
-    evidence = {} if evidence_by_kind is None else evidence_by_kind
-    return tuple(_compile_one(base, kind, evidence.get(kind)) for kind in _DEPENDENCE_ORDER)
+    evidence = {} if evidence_by_candidate_id is None else evidence_by_candidate_id
+    return tuple(_compile_one(base, kind, evidence) for kind in _DEPENDENCE_ORDER)
 
 
 __all__ = [
+    "CandidateIdentity",
     "CapabilityEvidence",
     "CapabilityStatus",
     "CompiledModelCandidate",
