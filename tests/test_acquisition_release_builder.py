@@ -211,7 +211,7 @@ def test_source_movement_is_rejected_before_success(monkeypatch, tmp_path: Path)
 
 
 def test_candidate_import_probe_is_bound_to_selected_wheel(monkeypatch, tmp_path: Path) -> None:
-    """Import evidence must come from an isolated install of the selected wheel."""
+    """Import evidence must come from an exact-wheel runtime used for acceptance."""
     wheel = tmp_path / "fast_mlsirm-0.9.1-py3-none-any.whl"
     wheel.write_bytes(b"candidate-wheel")
     out_dir = tmp_path / "evidence"
@@ -231,7 +231,11 @@ def test_candidate_import_probe_is_bound_to_selected_wheel(monkeypatch, tmp_path
                     "package_version": "0.9.1",
                     "distribution_version": "0.9.1",
                     "package_file": str(
-                        out_dir / "candidate-import-env" / "site-packages" / "fast_mlsirm" / "__init__.py"
+                        out_dir
+                        / "candidate-runtime-env"
+                        / "site-packages"
+                        / "fast_mlsirm"
+                        / "__init__.py"
                     ),
                     "rust_core": True,
                 }
@@ -252,7 +256,9 @@ def test_candidate_import_probe_is_bound_to_selected_wheel(monkeypatch, tmp_path
     assert evidence["status"] == "ok"
     assert evidence["source_commit"] == "a" * 40
     assert evidence["wheel_sha256"] == hashlib.sha256(b"candidate-wheel").hexdigest()
-    assert any(command[1:3] == ["-m", "venv"] for command in commands)
+    venv_commands = [command for command in commands if command[1:3] == ["-m", "venv"]]
+    assert len(venv_commands) == 1
+    assert "--system-site-packages" in venv_commands[0]
     assert any("--force-reinstall" in command and str(wheel) in command for command in commands)
     assert evidence["rust_core"] is True
     persisted = json.loads(
@@ -264,19 +270,26 @@ def test_candidate_import_probe_is_bound_to_selected_wheel(monkeypatch, tmp_path
 def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Exercise the orchestration contract without invoking external tools or networks."""
+    """Exercise candidate-runtime, provenance, repeatability, and evidence handoffs."""
     source_commit = "a" * 40
     out_dir = tmp_path / "evidence"
     shared_dist = tmp_path / "shared-dist"
     shared_dist.mkdir()
     (shared_dist / "stale.whl").write_bytes(b"stale")
     observed_sales: list[object] = []
+    clean_source_roots: list[Path | None] = []
+    candidate_python = out_dir / "candidate-runtime-env" / "bin" / "python"
+    acceptance_commands: list[list[str]] = []
 
     monkeypatch.setattr(
         build_acquisition_release, "_source_commit", lambda _root: source_commit
     )
+
+    def fake_clean_source(_repo_root, *, allowed_untracked_root=None):
+        clean_source_roots.append(allowed_untracked_root)
+
     monkeypatch.setattr(
-        build_acquisition_release, "_require_clean_source", lambda *args, **kwargs: None
+        build_acquisition_release, "_require_clean_source", fake_clean_source
     )
 
     def write_manifest(path: Path) -> dict[str, object]:
@@ -295,15 +308,24 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
             (dist / "fast_mlsirm-0.0.0-py3-none-any.whl").write_bytes(b"wheel")
             (dist / "fast_mlsirm-0.0.0.tar.gz").write_bytes(b"sdist")
             return
-        if Path(command[1]).name == "release_acceptance.py":
+        if len(command) >= 2 and Path(command[1]).name == "release_acceptance.py":
+            acceptance_commands.append(command)
             acceptance = Path(command[command.index("--out") + 1])
             write_manifest(acceptance / "acceptance_summary.json")
             return
         raise AssertionError(f"unexpected subprocess stage: {command}")
 
     monkeypatch.setattr(build_acquisition_release, "_run", fake_run)
+    monkeypatch.setattr(
+        build_acquisition_release,
+        "_prepare_candidate_environment",
+        lambda **_kwargs: candidate_python,
+    )
 
-    def fake_candidate_import(*, wheel, out_dir, source_commit, require_rust, python):
+    def fake_candidate_import(
+        *, wheel, out_dir, source_commit, require_rust, python, environment_python=None
+    ):
+        assert environment_python == candidate_python
         payload = {
             "status": "ok",
             "source_commit": source_commit,
@@ -327,7 +349,19 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
         return write_manifest(Path(args.out))
 
     def fake_packet(args):
-        return write_manifest(Path(args.out) / "buyer_evidence_manifest.json")
+        packet_dir = Path(args.out)
+        packet_dir.mkdir(parents=True, exist_ok=True)
+        delivery = packet_dir / "fast_mlsirm_buyer_evidence_packet.zip"
+        delivery.write_bytes(b"packet")
+        digest = packet_dir / "fast_mlsirm_buyer_evidence_packet.sha256"
+        digest.write_text(hashlib.sha256(delivery.read_bytes()).hexdigest() + "\n", encoding="ascii")
+        payload = write_manifest(packet_dir / "buyer_evidence_manifest.json")
+        payload["packet_file"] = str(delivery)
+        payload["packet_sha256_file"] = str(digest)
+        (packet_dir / "buyer_evidence_manifest.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
+        return payload
 
     def fake_index(args):
         return write_manifest(Path(args.out) / "release_evidence_index.json")
@@ -393,10 +427,15 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
     assert Path(final_sales.procurement_due_diligence).name == "procurement_due_diligence_manifest.json"
     assert Path(final_sales.pr_queue_governance).name == "pr_queue_governance_manifest.json"
     assert Path(final_sales.figma_evidence_sync).name == "figma_evidence_sync_manifest.json"
+    assert acceptance_commands and acceptance_commands[0][0] == str(candidate_python)
+    assert clean_source_roots and clean_source_roots[0] == out_dir
     assert manifest["source_commit"] == source_commit
     assert manifest["status"] == "ok"
+    assert manifest["acceptance_runtime"]["python"] == str(candidate_python)
     assert manifest["artifacts"]["wheel"]["name"].endswith(".whl")
     assert manifest["artifacts"]["sdist"]["name"].endswith(".tar.gz")
     assert manifest["artifacts"]["candidate_import_evidence"]["exists"] is True
+    assert manifest["artifacts"]["buyer_packet_delivery"]["exists"] is True
+    assert manifest["artifacts"]["buyer_packet_delivery_digest"]["exists"] is True
     assert (out_dir / "acquisition_release_manifest.json").is_file()
     assert (shared_dist / "stale.whl").read_bytes() == b"stale"
