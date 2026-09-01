@@ -32,6 +32,64 @@ class CapabilityStatus(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+def _exact_nonblank_string(value: object) -> bool:
+    """Return whether ``value`` is an exact, non-blank built-in string."""
+    return type(value) is str and bool(value.strip())
+
+
+def _snapshot_builtin_sequence(value: object, field_name: str) -> tuple[object, ...]:
+    """Copy an exact built-in list/tuple without invoking caller protocols."""
+    if type(value) not in (list, tuple):
+        raise TypeError(f"{field_name} must be a built-in list or tuple")
+    return tuple(value)
+
+
+def _immutable_string_tuple(
+    value: object,
+    field_name: str,
+    *,
+    require_nonempty: bool = False,
+) -> tuple[str, ...]:
+    """Copy an exact built-in list/tuple into an immutable exact-string tuple."""
+    snapshot = _snapshot_builtin_sequence(value, field_name)
+    if require_nonempty and not snapshot:
+        raise ValueError(f"{field_name} must not be empty")
+    if any(not _exact_nonblank_string(item) for item in snapshot):
+        raise ValueError(f"{field_name} must contain only non-blank strings")
+    return snapshot  # type: ignore[return-value]
+
+
+def _immutable_dependence_set(value: object) -> frozenset[DependenceKind]:
+    """Copy a built-in dependence collection without caller-owned mutability."""
+    if type(value) not in (list, tuple, set, frozenset):
+        raise TypeError(
+            "compatible_dependence must be a built-in list, tuple, set, or frozenset"
+        )
+    snapshot = tuple(value)
+    if any(type(item) is not DependenceKind for item in snapshot):
+        raise ValueError("compatible_dependence must contain only DependenceKind values")
+    return frozenset(snapshot)
+
+
+def _nonempty_exact_string_tuple(values: object) -> bool:
+    """Return whether evidence is a non-empty tuple of exact non-blank strings."""
+    return (
+        type(values) is tuple
+        and bool(values)
+        and all(_exact_nonblank_string(value) for value in values)
+    )
+
+
+def _primary_citations_are_complete(citations: object) -> bool:
+    """Require a non-empty exact tuple of exact, non-blank citation identities."""
+    return _nonempty_exact_string_tuple(citations)
+
+
+def _scope_matches(value: object, candidate_id: str) -> bool:
+    """Require support evidence to name the exact full candidate identity."""
+    return type(value) is str and value == candidate_id
+
+
 @dataclass(frozen=True)
 class ResponseKernel:
     """Base conditional response-kernel identity and parameter ownership.
@@ -47,6 +105,22 @@ class ResponseKernel:
     parameter_blocks: tuple[str, ...]
     compatible_dependence: frozenset[DependenceKind]
 
+    def __post_init__(self) -> None:
+        """Seal caller-owned structural collections into immutable built-ins."""
+        for field_name in ("family_id", "formulation_id", "response_scale"):
+            if not _exact_nonblank_string(getattr(self, field_name)):
+                raise ValueError(f"{field_name} must be a non-blank string")
+        object.__setattr__(
+            self,
+            "parameter_blocks",
+            _immutable_string_tuple(self.parameter_blocks, "parameter_blocks"),
+        )
+        object.__setattr__(
+            self,
+            "compatible_dependence",
+            _immutable_dependence_set(self.compatible_dependence),
+        )
+
 
 @dataclass(frozen=True)
 class DimensionalStructure:
@@ -56,7 +130,9 @@ class DimensionalStructure:
     dimensions: int
 
     def __post_init__(self) -> None:
-        """Reject an impossible dimension count before candidate compilation."""
+        """Reject malformed dimensional metadata before candidate compilation."""
+        if not _exact_nonblank_string(self.formulation_id):
+            raise ValueError("formulation_id must be a non-blank string")
         if type(self.dimensions) is not int or self.dimensions < 1:
             raise ValueError("dimensions must be >= 1")
 
@@ -69,6 +145,23 @@ class GeneralizedMixedStructure:
     fixed_effects: tuple[str, ...] = ()
     random_effects: tuple[str, ...] = ()
     membership: str = "single"
+
+    def __post_init__(self) -> None:
+        """Seal generalized-mixed identity before it can enter candidate IDs."""
+        if not _exact_nonblank_string(self.formulation_id):
+            raise ValueError("formulation_id must be a non-blank string")
+        if not _exact_nonblank_string(self.membership):
+            raise ValueError("membership must be a non-blank string")
+        object.__setattr__(
+            self,
+            "fixed_effects",
+            _immutable_string_tuple(self.fixed_effects, "fixed_effects"),
+        )
+        object.__setattr__(
+            self,
+            "random_effects",
+            _immutable_string_tuple(self.random_effects, "random_effects"),
+        )
 
 
 @dataclass(frozen=True)
@@ -89,6 +182,14 @@ class IdentificationContract:
     verified: bool
     applies_to_candidate_id: str
 
+    def __post_init__(self) -> None:
+        """Seal rule evidence while allowing an explicitly incomplete research record."""
+        object.__setattr__(
+            self,
+            "rules",
+            _snapshot_builtin_sequence(self.rules, "rules"),
+        )
+
 
 @dataclass(frozen=True)
 class RecoveryContract:
@@ -97,6 +198,14 @@ class RecoveryContract:
     required_metrics: tuple[str, ...]
     passing: bool
     applies_to_candidate_id: str
+
+    def __post_init__(self) -> None:
+        """Seal recovery-metric evidence while preserving research-candidate states."""
+        object.__setattr__(
+            self,
+            "required_metrics",
+            _snapshot_builtin_sequence(self.required_metrics, "required_metrics"),
+        )
 
 
 @dataclass(frozen=True)
@@ -119,6 +228,27 @@ class DependenceStructure:
     formulation_id: str
     parameter_blocks: tuple[str, ...]
     baseline_citations: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Seal dependence identity and documentary baseline references."""
+        if type(self.kind) is not DependenceKind:
+            raise TypeError("kind must be a DependenceKind")
+        if not _exact_nonblank_string(self.formulation_id):
+            raise ValueError("formulation_id must be a non-blank string")
+        object.__setattr__(
+            self,
+            "parameter_blocks",
+            _immutable_string_tuple(self.parameter_blocks, "parameter_blocks"),
+        )
+        object.__setattr__(
+            self,
+            "baseline_citations",
+            _immutable_string_tuple(
+                self.baseline_citations,
+                "baseline_citations",
+                require_nonempty=True,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -143,6 +273,35 @@ class CandidateIdentity:
     dependence_kind: DependenceKind
     dependence_formulation_id: str
     dependence_parameter_blocks: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Guarantee identity fields cannot retain externally mutable sequences."""
+        for field_name in (
+            "response_family_id",
+            "response_formulation_id",
+            "response_scale",
+            "dimensional_formulation_id",
+            "mixed_formulation_id",
+            "membership",
+            "dependence_formulation_id",
+        ):
+            if not _exact_nonblank_string(getattr(self, field_name)):
+                raise ValueError(f"{field_name} must be a non-blank string")
+        if type(self.dimensions) is not int or self.dimensions < 1:
+            raise ValueError("dimensions must be >= 1")
+        if type(self.dependence_kind) is not DependenceKind:
+            raise TypeError("dependence_kind must be a DependenceKind")
+        for field_name in (
+            "response_parameter_blocks",
+            "fixed_effects",
+            "random_effects",
+            "dependence_parameter_blocks",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _immutable_string_tuple(getattr(self, field_name), field_name),
+            )
 
     def to_manifest(self) -> dict[str, object]:
         """Return the complete JSON-shaped structural identity."""
@@ -208,6 +367,14 @@ class CapabilityEvidence:
 
     generative_equation_id: str | None = None
     primary_citations: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Seal documentary collections without treating incompleteness as support."""
+        object.__setattr__(
+            self,
+            "primary_citations",
+            _snapshot_builtin_sequence(self.primary_citations, "primary_citations"),
+        )
 
 
 @dataclass(frozen=True)
@@ -348,25 +515,6 @@ def _candidate_identity(
     )
 
 
-def _exact_nonblank_string(value: object) -> bool:
-    """Return whether ``value`` is an exact, non-blank built-in string."""
-    return type(value) is str and bool(value.strip())
-
-
-def _primary_citations_are_complete(citations: object) -> bool:
-    """Require a non-empty exact tuple of exact, non-blank citation identities."""
-    return (
-        type(citations) is tuple
-        and bool(citations)
-        and all(_exact_nonblank_string(citation) for citation in citations)
-    )
-
-
-def _scope_matches(value: object, candidate_id: str) -> bool:
-    """Require support evidence to name the exact full candidate identity."""
-    return type(value) is str and value == candidate_id
-
-
 def _missing_support_requirements(
     base: ModelSpecification,
     candidate_id: str,
@@ -379,12 +527,14 @@ def _missing_support_requirements(
     )
     has_rust_estimator = (
         base.estimation_plan.implemented is True
+        and _exact_nonblank_string(base.estimation_plan.estimator_id)
         and type(base.estimation_plan.computational_backend) is str
         and base.estimation_plan.computational_backend == "rust"
         and _scope_matches(base.estimation_plan.applies_to_candidate_id, candidate_id)
     )
     has_identification = (
         base.identification_contract.verified is True
+        and _nonempty_exact_string_tuple(base.identification_contract.rules)
         and _scope_matches(
             base.identification_contract.applies_to_candidate_id,
             candidate_id,
@@ -396,6 +546,7 @@ def _missing_support_requirements(
     )
     has_recovery = (
         base.recovery_contract.passing is True
+        and _nonempty_exact_string_tuple(base.recovery_contract.required_metrics)
         and _scope_matches(base.recovery_contract.applies_to_candidate_id, candidate_id)
     )
     checks = (
