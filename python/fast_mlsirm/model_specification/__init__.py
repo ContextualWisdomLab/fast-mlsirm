@@ -71,27 +71,34 @@ class GeneralizedMixedStructure:
 
 @dataclass(frozen=True)
 class EstimationPlan:
-    """Estimator/backend declaration without numerical implementation logic."""
+    """Estimator/backend evidence scoped to exactly one model formulation.
+
+    ``applies_to_formulation_id`` prevents a fitted base-kernel estimator from
+    being mistaken for an implemented LSIRM, MLSIRM, or DLSJM extension.
+    """
 
     estimator_id: str
     computational_backend: str
     implemented: bool
+    applies_to_formulation_id: str
 
 
 @dataclass(frozen=True)
 class IdentificationContract:
-    """Identification rules required before a model can support inference."""
+    """Identification evidence scoped to exactly one model formulation."""
 
     rules: tuple[str, ...]
     verified: bool
+    applies_to_formulation_id: str
 
 
 @dataclass(frozen=True)
 class RecoveryContract:
-    """Known-truth recovery metrics required before production support."""
+    """Known-truth recovery evidence scoped to exactly one formulation."""
 
     required_metrics: tuple[str, ...]
     passing: bool
+    applies_to_formulation_id: str
 
 
 @dataclass(frozen=True)
@@ -130,8 +137,9 @@ class CapabilityEvidence:
     """Documentary evidence specific to one dependence formulation.
 
     Implementation state, identification verification, and recovery status live
-    on their owning value objects in :class:`ModelSpecification`; duplicating
-    those booleans here would create competing sources of model truth.
+    on their owning formulation-scoped value objects in
+    :class:`ModelSpecification`; duplicating those booleans here would create
+    competing sources of model truth.
     """
 
     generative_equation_id: str | None = None
@@ -187,14 +195,23 @@ class CompiledModelCandidate:
                 "estimator_id": self.estimation_plan.estimator_id,
                 "computational_backend": self.estimation_plan.computational_backend,
                 "implemented": self.estimation_plan.implemented,
+                "applies_to_formulation_id": (
+                    self.estimation_plan.applies_to_formulation_id
+                ),
             },
             "identification": {
                 "rules": list(self.identification_contract.rules),
                 "verified": self.identification_contract.verified,
+                "applies_to_formulation_id": (
+                    self.identification_contract.applies_to_formulation_id
+                ),
             },
             "recovery": {
                 "required_metrics": list(self.recovery_contract.required_metrics),
                 "passing": self.recovery_contract.passing,
+                "applies_to_formulation_id": (
+                    self.recovery_contract.applies_to_formulation_id
+                ),
             },
             "generative_equation_id": self.generative_equation_id,
             "primary_citations": list(self.primary_citations),
@@ -257,11 +274,17 @@ def _primary_citations_are_complete(citations: object) -> bool:
     )
 
 
+def _scope_matches(value: object, candidate_id: str) -> bool:
+    """Require support evidence to name the exact compiled formulation."""
+    return type(value) is str and value == candidate_id
+
+
 def _missing_support_requirements(
     base: ModelSpecification,
+    candidate_id: str,
     evidence: CapabilityEvidence | None,
 ) -> tuple[str, ...]:
-    """Derive promotion gates from their canonical owning domain values."""
+    """Derive promotion gates from formulation-scoped canonical owners."""
     has_equation = (
         evidence is not None
         and _exact_nonblank_string(evidence.generative_equation_id)
@@ -270,13 +293,29 @@ def _missing_support_requirements(
         base.estimation_plan.implemented is True
         and type(base.estimation_plan.computational_backend) is str
         and base.estimation_plan.computational_backend == "rust"
+        and _scope_matches(
+            base.estimation_plan.applies_to_formulation_id,
+            candidate_id,
+        )
     )
-    has_identification = base.identification_contract.verified is True
+    has_identification = (
+        base.identification_contract.verified is True
+        and _scope_matches(
+            base.identification_contract.applies_to_formulation_id,
+            candidate_id,
+        )
+    )
     has_citations = (
         evidence is not None
         and _primary_citations_are_complete(evidence.primary_citations)
     )
-    has_recovery = base.recovery_contract.passing is True
+    has_recovery = (
+        base.recovery_contract.passing is True
+        and _scope_matches(
+            base.recovery_contract.applies_to_formulation_id,
+            candidate_id,
+        )
+    )
     checks = (
         (has_equation, _MISSING_SUPPORT_REQUIREMENTS[0]),
         (has_rust_estimator, _MISSING_SUPPORT_REQUIREMENTS[1]),
@@ -318,7 +357,7 @@ def _compile_one(
         status = CapabilityStatus.UNSUPPORTED
         missing = ("multidimensional_main_effects_required",)
     else:
-        missing = _missing_support_requirements(base, evidence)
+        missing = _missing_support_requirements(base, canonical_id, evidence)
         status = (
             CapabilityStatus.RESEARCH_CANDIDATE
             if missing
@@ -349,10 +388,10 @@ def compile_dependence_candidates(
     """Compile LSIRM, MLSIRM, and DLSJM variants without family-specific branching.
 
     Every dependence family is materialized. Scientific incompatibility becomes
-    an explicit ``unsupported`` candidate; absent implementation/identification/
-    recovery evidence becomes ``research_candidate``. The compiler never
-    substitutes the local-independent base model for a requested dependence
-    structure.
+    an explicit ``unsupported`` candidate; absent formulation-qualified
+    implementation, identification, or recovery evidence becomes
+    ``research_candidate``. The compiler never substitutes the local-independent
+    base model for a requested dependence structure.
     """
     evidence = {} if evidence_by_kind is None else evidence_by_kind
     return tuple(_compile_one(base, kind, evidence.get(kind)) for kind in _DEPENDENCE_ORDER)
