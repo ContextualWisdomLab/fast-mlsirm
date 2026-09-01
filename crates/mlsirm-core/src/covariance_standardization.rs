@@ -237,7 +237,7 @@ pub fn standardize_covariance_matrix(
         for column in (row + 1)..dimension {
             let upper = covariance[row * dimension + column];
             let lower = covariance[column * dimension + row];
-            if upper != lower {
+            if upper.to_bits() != lower.to_bits() {
                 return Err(CovarianceStandardizationError::NonSymmetricCovariance);
             }
 
