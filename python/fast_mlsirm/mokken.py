@@ -420,9 +420,11 @@ def _snapshot_builtin_score_source(
 def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
     """Validate score storage losslessly before signed-int64 marshalling."""
     source = _trusted_score_source(responses)
+    admitted_ndarray_shape: tuple[int, ...] | None = None
     if type(source) is np.ndarray:
         if source.ndim != 2:
             raise ValueError("responses must be a 2-D persons x items array")
+        admitted_ndarray_shape = tuple(int(axis) for axis in source.shape)
         source_n_items = int(source.shape[1])
         if source_n_items * source_n_items > _MAX_MOKKEN_MATRIX_CELLS:
             _raise_item_matrix_resource_error(source_n_items)
@@ -443,6 +445,11 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
         raise ValueError("responses must be a numeric array") from None
     if raw.size > _MAX_MOKKEN_RESPONSE_CELLS:
         _raise_response_resource_error()
+    if (
+        admitted_ndarray_shape is not None
+        and tuple(int(axis) for axis in raw.shape) != admitted_ndarray_shape
+    ):
+        raise ValueError("responses must be a 2-D persons x items array")
     if raw.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = raw.shape
@@ -452,6 +459,8 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
         raise ValueError("responses must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("responses must be a numeric array")
+    if int(raw.nbytes) > _MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES:
+        _raise_response_resource_error()
     if not np.all(np.isfinite(raw)):
         raise ValueError("responses must be complete (no missing values)")
 
