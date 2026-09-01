@@ -1,0 +1,3 @@
+## Changed
+
+- Classify `crates/mlsirm-core` as the internal Rust numerical owner inside the released `fast-mlsirm` product rather than a separately published crates.io product. The crate now declares `publish = false`; Maturin/PyPI remains the governed public registry distribution boundary. A repository contract and doctoring entry prevent organization-level `CARGO_REGISTRY_TOKEN` availability from being mistaken for publication authority. A future standalone Rust registry product requires a successor ADR and its own compatibility, release, security, SBOM/provenance and downstream-install evidence.
