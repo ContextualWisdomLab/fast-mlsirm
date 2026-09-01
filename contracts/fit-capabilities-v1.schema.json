@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contextualwisdomlab.github.io/fast-mlsirm/contracts/fit-capabilities-v1.schema.json",
+  "title": "fast-mlsirm production fitting capabilities v1",
+  "description": "Exact bounded model-by-estimator production support manifest for the fast-mlsirm 1.0 capability contract. Numerical ownership remains Rust.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "production_numeric_owner",
+    "models"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "production_numeric_owner": {
+      "type": "string",
+      "const": "rust"
+    },
+    "models": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        {
+          "const": {
+            "model": "BIFAC2PLM",
+            "estimators": [
+              "mmle"
+            ]
+          }
+        },
+        {
+          "const": {
+            "model": "MIRT",
+            "estimators": [
+              "jmle",
+              "mmle"
+            ]
+          }
+        },
+        {
+          "const": {
+            "model": "MLS2PLM",
+            "estimators": [
+              "jmle",
+              "mmle"
+            ]
+          }
+        },
+        {
+          "const": {
+            "model": "MLSRM",
+            "estimators": [
+              "jmle",
+              "mmle"
+            ]
+          }
+        },
+        {
+          "const": {
+            "model": "ULS2PLM",
+            "estimators": [
+              "jmle",
+              "mmle"
+            ]
+          }
+        },
+        {
+          "const": {
+            "model": "ULSRM",
+            "estimators": [
+              "jmle",
+              "mmle"
+            ]
+          }
+        }
+      ],
+      "items": false
+    }
+  }
+}
