@@ -1,48 +1,67 @@
-"""GA capability-contract regressions for the public fit entry point."""
+"""Machine-readable GA fit capability-contract regressions."""
 
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
 import pytest
 
-from fast_mlsirm import FitConfig
+from fast_mlsirm.capabilities import (
+    FIT_CAPABILITY_SCHEMA_VERSION,
+    PRODUCTION_NUMERIC_OWNER,
+    fit_capabilities,
+    fit_capability_manifest,
+)
+from fast_mlsirm.config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
 
 
-_FIT_PATH = Path(__file__).parents[1] / "python" / "fast_mlsirm" / "fit.py"
-
-
-def _public_fit_node() -> ast.FunctionDef:
-    module = ast.parse(_FIT_PATH.read_text(encoding="utf-8"))
-    node = next(
-        candidate
-        for candidate in module.body
-        if isinstance(candidate, ast.FunctionDef) and candidate.name == "fit"
+def test_fit_capabilities_cover_the_public_model_vocabulary_once() -> None:
+    capabilities = fit_capabilities()
+    assert FIT_CAPABILITY_SCHEMA_VERSION == "1.0"
+    assert PRODUCTION_NUMERIC_OWNER == "rust"
+    assert tuple(capability.model for capability in capabilities) == tuple(
+        sorted(VALID_MODELS)
     )
-    return node
+    assert len({capability.model for capability in capabilities}) == len(capabilities)
 
 
-def test_public_fit_has_no_not_implemented_error_surface() -> None:
-    """GA fit capability rejection must stay in validated public configuration."""
-    fit_node = _public_fit_node()
-    raises_not_implemented = [
-        node
-        for node in ast.walk(fit_node)
-        if isinstance(node, ast.Raise)
-        and isinstance(node.exc, ast.Call)
-        and isinstance(node.exc.func, ast.Name)
-        and node.exc.func.id == "NotImplementedError"
-    ]
-    assert not raises_not_implemented
+def test_fit_capabilities_match_public_config_validation() -> None:
+    by_model = {capability.model: capability.estimators for capability in fit_capabilities()}
+    for model in sorted(VALID_MODELS):
+        for estimator in sorted(VALID_ESTIMATORS):
+            try:
+                FitConfig(model=model, estimator=estimator)
+            except ValueError:
+                accepted = False
+            else:
+                accepted = True
+            assert (estimator in by_model[model]) is accepted
+
+
+def test_bifactor_capability_is_marginal_only() -> None:
+    by_model = {capability.model: capability.estimators for capability in fit_capabilities()}
+    assert by_model["BIFAC2PLM"] == ("mmle",)
 
 
 @pytest.mark.parametrize("estimator", ["em", "bayes"])
-def test_reserved_estimators_fail_as_configuration_errors(estimator: str) -> None:
+def test_reserved_estimators_are_not_advertised(estimator: str) -> None:
+    advertised = {
+        accepted
+        for capability in fit_capabilities()
+        for accepted in capability.estimators
+    }
+    assert estimator not in advertised
     with pytest.raises(ValueError, match="estimator must be one of"):
         FitConfig(estimator=estimator)
 
 
-def test_bifactor_jmle_fails_as_configuration_error() -> None:
-    with pytest.raises(ValueError, match="BIFAC2PLM requires estimator 'mmle'"):
-        FitConfig(model="BIFAC2PLM", estimator="jmle")
+def test_fit_capability_manifest_is_json_shaped_and_fresh() -> None:
+    first = fit_capability_manifest()
+    assert first == {
+        "schema_version": "1.0",
+        "production_numeric_owner": "rust",
+        "models": [
+            {"model": capability.model, "estimators": list(capability.estimators)}
+            for capability in fit_capabilities()
+        ],
+    }
+    first["models"][0]["estimators"].append("caller-mutation")
+    assert "caller-mutation" not in fit_capability_manifest()["models"][0]["estimators"]
