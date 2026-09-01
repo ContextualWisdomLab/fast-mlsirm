@@ -8,8 +8,9 @@
 //! For a covariance matrix `Σ` with strictly positive diagonal `D`, the
 //! standardized matrix is `R = D^{-1/2} Σ D^{-1/2}`. The scalar specialization
 //! is therefore `(1 / sqrt(v)) * v * (1 / sqrt(v)) = 1` for finite `v > 0`.
-//! The implementation evaluates divisions sequentially to avoid overflowing a
-//! representable correlation by first forming `sqrt(v_i) * sqrt(v_j)`.
+//! Matrix entries are divided by each marginal standard deviation sequentially,
+//! so the implementation does not form `sqrt(v_i) * sqrt(v_j)`, whose product
+//! could overflow even when the standardized correlation is representable.
 //!
 //! The TEPP migration that motivated this owner contract concerns ctsem's
 //! `TIPREDVARstd`, but ctsem names, clocks, state equations, and event semantics
@@ -41,9 +42,9 @@ pub enum CovarianceStandardizationError {
     NonFiniteInput,
     /// A variance on the diagonal is zero or negative and cannot be standardized.
     NonPositiveVariance,
-    /// Mirrored covariance cells disagree beyond floating-point tolerance.
+    /// Mirrored covariance cells are not exactly equal in binary64.
     NonSymmetricCovariance,
-    /// A pairwise covariance implies an absolute correlation materially above one.
+    /// A pairwise covariance implies an absolute correlation above one.
     InvalidPairwiseCovariance,
     /// A finite input produced a non-finite standardized result.
     NonFiniteResult,
@@ -100,11 +101,11 @@ pub fn standardize_variance(
 /// Convert a finite symmetric covariance matrix to a correlation matrix.
 ///
 /// `covariance` is row-major with shape `dimension × dimension`. Every
-/// diagonal variance must be strictly positive. Symmetry is checked with a
-/// scale-aware binary64 tolerance; off-diagonal pairs that only differ by
-/// rounding are averaged safely (`a/2 + b/2`) before standardization so the
-/// returned matrix is exactly symmetric. Pairwise correlations whose absolute
-/// value exceeds one by more than floating-point tolerance fail closed.
+/// diagonal variance must be strictly positive. Mirrored off-diagonal cells
+/// must be exactly equal in binary64. This contract does not invent a
+/// floating-point tolerance or clamp an out-of-range correlation into the
+/// admissible interval; callers that need approximate-symmetry preprocessing
+/// must perform and document that operation before calling this kernel.
 ///
 /// This routine validates the pairwise covariance bounds but does not claim a
 /// full positive-semidefinite proof. A caller that requires PSD admission must
@@ -113,8 +114,8 @@ pub fn standardize_variance(
 /// # Errors
 ///
 /// Returns a typed error for invalid shape, non-finite input, non-positive
-/// diagonal variance, material asymmetry, an impossible pairwise covariance,
-/// or non-finite output arithmetic.
+/// diagonal variance, asymmetric mirrored cells, an impossible pairwise
+/// covariance, or non-finite output arithmetic.
 pub fn standardize_covariance_matrix(
     covariance: &[f64],
     dimension: usize,
@@ -149,25 +150,20 @@ pub fn standardize_covariance_matrix(
         for column in (row + 1)..dimension {
             let upper = covariance[row * dimension + column];
             let lower = covariance[column * dimension + row];
-            let symmetry_scale = upper.abs().max(lower.abs()).max(1.0);
-            let symmetry_tolerance = 64.0 * f64::EPSILON * symmetry_scale;
-            if (upper - lower).abs() > symmetry_tolerance {
+            if upper != lower {
                 return Err(CovarianceStandardizationError::NonSymmetricCovariance);
             }
 
-            let symmetric_covariance = upper * 0.5 + lower * 0.5;
             let standardized =
-                (symmetric_covariance / standard_deviations[row]) / standard_deviations[column];
+                (upper / standard_deviations[row]) / standard_deviations[column];
             if !standardized.is_finite() {
                 return Err(CovarianceStandardizationError::NonFiniteResult);
             }
-            let bound_tolerance = 128.0 * f64::EPSILON;
-            if standardized.abs() > 1.0 + bound_tolerance {
+            if standardized.abs() > 1.0 {
                 return Err(CovarianceStandardizationError::InvalidPairwiseCovariance);
             }
-            let bounded = standardized.clamp(-1.0, 1.0);
-            correlation[row * dimension + column] = bounded;
-            correlation[column * dimension + row] = bounded;
+            correlation[row * dimension + column] = standardized;
+            correlation[column * dimension + row] = standardized;
         }
     }
 
