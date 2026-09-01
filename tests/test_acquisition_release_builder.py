@@ -1,6 +1,10 @@
 """Regression tests for the price-neutral acquisition release orchestrator."""
 
 from pathlib import Path
+import subprocess
+import sys
+
+import pytest
 
 from scripts import build_acquisition_release
 
@@ -51,3 +55,93 @@ def test_generic_builder_never_spells_legacy_gate_cli_flag() -> None:
     )
 
     assert "--require-20b-product" not in source
+
+
+def test_release_acceptance_uses_operation_specific_bounded_timeout(monkeypatch) -> None:
+    """The outer orchestrator must not kill a valid bounded acceptance run early."""
+    observed: dict[str, float] = {}
+
+    def fake_run_bounded_capture(command, *, cwd, timeout_seconds, **kwargs):
+        observed["timeout_seconds"] = timeout_seconds
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(
+        build_acquisition_release,
+        "run_bounded_capture",
+        fake_run_bounded_capture,
+    )
+    build_acquisition_release._run(
+        [sys.executable, str(ROOT / "scripts" / "release_acceptance.py")],
+        cwd=ROOT,
+    )
+
+    assert observed["timeout_seconds"] == pytest.approx(
+        build_acquisition_release._RELEASE_ACCEPTANCE_TIMEOUT_SECONDS
+    )
+    assert observed["timeout_seconds"] > build_acquisition_release._STAGE_TIMEOUT_SECONDS
+
+
+def test_non_skip_build_uses_clean_run_specific_distribution_directory(tmp_path: Path) -> None:
+    """A new build must not admit stale artifacts from a shared dist directory."""
+    shared_dist = tmp_path / "dist"
+    shared_dist.mkdir()
+    stale_wheel = shared_dist / "stale.whl"
+    stale_wheel.write_bytes(b"old")
+    out_dir = tmp_path / "evidence"
+    prior_run_dist = out_dir / "distribution"
+    prior_run_dist.mkdir(parents=True)
+    (prior_run_dist / "prior.tar.gz").write_bytes(b"old")
+    args = build_acquisition_release.build_parser().parse_args(
+        ["--dist", str(shared_dist), "--out", str(out_dir)]
+    )
+
+    selected = build_acquisition_release._select_distribution_directory(args, out_dir)
+
+    assert selected == out_dir / "distribution"
+    assert selected.is_dir()
+    assert list(selected.iterdir()) == []
+    assert stale_wheel.read_bytes() == b"old"
+
+
+def test_skip_build_preserves_explicit_caller_distribution_directory(tmp_path: Path) -> None:
+    """Caller-supplied artifacts remain the only allowed reuse path."""
+    shared_dist = tmp_path / "dist"
+    shared_dist.mkdir()
+    artifact = shared_dist / "candidate.whl"
+    artifact.write_bytes(b"candidate")
+    args = build_acquisition_release.build_parser().parse_args(
+        ["--dist", str(shared_dist), "--skip-build"]
+    )
+
+    selected = build_acquisition_release._select_distribution_directory(
+        args, tmp_path / "evidence"
+    )
+
+    assert selected == shared_dist.resolve()
+    assert artifact.read_bytes() == b"candidate"
+
+
+def test_stage_source_identity_is_required_and_exact() -> None:
+    """Every generated stage manifest must bind to the sealed source commit."""
+    expected = "a" * 40
+    build_acquisition_release._require_source_identity(
+        "buyer_packet", {"status": "ok", "source_commit": expected}, expected
+    )
+
+    with pytest.raises(RuntimeError, match="missing source_commit"):
+        build_acquisition_release._require_source_identity(
+            "buyer_packet", {"status": "ok"}, expected
+        )
+    with pytest.raises(RuntimeError, match="source_commit mismatch"):
+        build_acquisition_release._require_source_identity(
+            "buyer_packet", {"status": "ok", "source_commit": "b" * 40}, expected
+        )
+
+
+def test_source_movement_is_rejected_before_success(monkeypatch, tmp_path: Path) -> None:
+    """A run cannot report success after repository HEAD changes mid-orchestration."""
+    expected = "a" * 40
+    monkeypatch.setattr(build_acquisition_release, "_source_commit", lambda _root: "b" * 40)
+
+    with pytest.raises(RuntimeError, match="source HEAD changed"):
+        build_acquisition_release._assert_source_unchanged(tmp_path, expected)
