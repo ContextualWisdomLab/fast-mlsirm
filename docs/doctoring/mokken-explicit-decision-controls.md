@@ -16,14 +16,18 @@ The Rust numerical algorithm is unchanged. `fast-mlsirm` continues to own determ
 
 ## Executable provenance
 
-The branch adds a regression that requires omitted AISP controls to fail closed and verifies that explicit controls still reach the Rust boundary. Existing successful fixtures that previously depended on implicit defaults now state their test controls explicitly. Malformed/hostile response evidence retains precedence, so removing the scientific defaults does not weaken the response trust boundary.
+The branch adds a regression that verifies calls with omitted AISP controls fail closed and that explicit controls still reach the Rust boundary. Existing successful fixtures that previously depended on implicit defaults now state their test controls explicitly. Malformed/hostile response evidence retains precedence, so removing the scientific defaults does not weaken the response trust boundary.
 
 ## Product-gap disposition
 
 This closes one concrete no-heuristics gap at the Python-to-Rust Mokken AISP boundary. It does not assert that every Mokken threshold used by downstream products is validated; each downstream product still owns the evidence for its chosen controls. The corresponding entry should be incorporated into `docs/product-technical-gap-baseline.md` when its active single-writer lane is reconciled, without replacing concurrent baseline work.
 
-## References
+## References and relevance
 
 van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of Statistical Software, 20*(11), 1–19. https://doi.org/10.18637/jss.v020.i11
 
+Relevant finding: van der Ark documents the Mokken scalability coefficients, sample statistics, and AISP implementation exposed by the `mokken` R package. The paper establishes that the lower-bound and significance controls are inputs to the selection procedure; it does not identify one universal pair of values as valid for every instrument, population, estimand, or deployment. This repository therefore uses it to ground the algorithm, not to manufacture an application-wide default.
+
 Straat, J. H., van der Ark, L. A., & Sijtsma, K. (2013). Comparing optimization algorithms for item selection in Mokken scale analysis. *Journal of Classification, 30*(1), 75–99. https://doi.org/10.1007/s00357-013-9122-y
+
+Relevant finding: Straat et al. compare AISP search behavior across lower-bound choices and optimization procedures, showing that the control participates in the item-selection estimand rather than being a transport or formatting constant. Their study supplies methodological context for choosing and evaluating a lower bound; it is not evidence that this library can silently impose one value on every downstream analysis. Accordingly, the wrapper requires the owning analysis plan to state its controls explicitly.
