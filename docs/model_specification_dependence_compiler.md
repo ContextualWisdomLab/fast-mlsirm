@@ -19,7 +19,8 @@ A base `ModelSpecification` composes these Value Objects:
 - `ResponseKernel`: response-family/formulation identity plus base parameter
   blocks and declarative dependence compatibility;
 - `DimensionalStructure`: main-effect dimensional formulation;
-- `GeneralizedMixedStructure`: fixed/random-effect and membership structure;
+- `GeneralizedMixedStructure`: fixed/random-effect structure plus a typed
+  `MembershipStructure`;
 - `EstimationPlan`: estimator identity, backend ownership, implementation state,
   and the exact compiled candidate to which that evidence applies;
 - `IdentificationContract`: required identification rules, verification state,
@@ -36,10 +37,11 @@ unsupported.
 
 `CandidateIdentity` is the single owner of structural model identity. It covers
 response-family/formulation/scale/base parameter blocks, dimensional formulation
-and dimension count, generalized-mixed formulation/fixed effects/random effects/
-membership, and dependence kind/formulation/parameter blocks. Evidence and
-maturity flags are intentionally excluded so a scientific specification keeps
-one identity while implementation and validation advance.
+and dimension count, generalized-mixed formulation/fixed effects/random effects,
+typed membership topology and weight authority, and dependence
+kind/formulation/parameter blocks. Evidence and maturity flags are intentionally
+excluded so a scientific specification keeps one identity while implementation
+and validation advance.
 
 Canonical JSON uses deterministic key ordering and separators. The stable ID is
 therefore formulation-readable while remaining collision-resistant across the
@@ -49,10 +51,27 @@ full structural contract:
 <base_formulation>__<dependence_formulation>__spec_sha256_<full_identity_digest>
 ```
 
-Changing dimensions, fixed/random effects, membership structure, or dependence
-structure changes the candidate identity. Capability evidence is keyed by this
-same exact ID; evidence attached to one structural specification cannot promote
-another.
+Changing dimensions, fixed/random effects, classification topology, membership
+multiplicity, weight authority, classification axes, or dependence structure
+changes the candidate identity. Capability evidence is keyed by this same exact
+ID; evidence attached to one structural specification cannot promote another.
+
+## Published candidate manifest
+
+Every compiled candidate emits a versioned, self-digesting JSON-shaped
+manifest. The current contract is:
+
+```text
+manifest_schema_id      fast_mlsirm.model_specification.candidate_manifest
+manifest_schema_version 1.0.0
+manifest_sha256          SHA-256(canonical manifest payload excluding this field)
+```
+
+The digest binds model identity, capability status, equation/citation evidence,
+estimator/identification/recovery scope, typed membership semantics, and the
+foreign temporal boundary marker. Consumers such as TEPP must bind to an
+explicit released package/version plus this manifest contract; an open PR head
+is not a published production dependency.
 
 ## Dependence Ubiquitous Language
 
@@ -95,7 +114,9 @@ Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
 
 - `supported`: explicit generative-equation identity, exact-candidate-scoped Rust
   estimator, exact-candidate-scoped identification evidence, primary citation,
-  and exact-candidate-scoped passing recovery evidence are all present;
+  and exact-candidate-scoped passing recovery evidence are all present; when
+  membership weights are model-estimated, their declared recovery metric is
+  also present in that recovery contract;
 - `research_candidate`: the coupling is representable but one or more support
   gates are missing;
 - `unsupported`: the base kernel declares the dependence incoherent, or a
@@ -108,16 +129,26 @@ study does not transfer to an LSIRM/MLSIRM/DLSJM extension. `EstimationPlan`,
 `IdentificationContract`, and `RecoveryContract` must each name the exact full
 candidate through `applies_to_candidate_id`, and documentary equation/citation
 evidence is looked up through `evidence_by_candidate_id`. This prevents evidence
-for one dimensional or generalized-mixed specification from promoting another
-with a different represented model.
+for one dimensional, mixed-membership, or dependence specification from
+promoting another represented model.
 
 ## Generalized mixed-model boundary
 
-`GeneralizedMixedStructure` is declarative. It preserves fixed effects, random
-effects, and membership semantics as an orthogonal axis so future compilers can
-compose nested, crossed, cross-classified, multiple-membership, and other
-scientifically identified structures without copying the response kernel or the
-dependence implementation into family-specific branches.
+`GeneralizedMixedStructure` is declarative and does not use a free-form
+membership label. `MembershipStructure` separates three different questions:
+
+- `MembershipClassification`: `hierarchical` versus `cross_classified`;
+- `MembershipMultiplicity`: `single` versus `multiple` membership;
+- `MembershipWeightAuthority`: `not_applicable`, `explicit_normalized`, or
+  `model_estimated`.
+
+Cross-classification and multiple membership are orthogonal. A
+cross-classified structure names at least two classification axes; it may still
+be single membership within each axis. Multiple membership must state who owns
+the weights. Explicit normalized weights are observed/model-input quantities;
+model-estimated weights require a named recovery metric before the candidate can
+be promoted to `supported`. The compiler does not invent or normalize weights
+and does not force an observation into a single parent.
 
 This first slice does not implement generalized-mixed likelihood arithmetic.
 All future production vector, matrix, likelihood, gradient, integration,
@@ -135,9 +166,9 @@ uncertainty, simulation, and recovery arithmetic remains Rust-owned.
   and buyer-facing interpretation. It may translate through a versioned ACL;
   fast-mlsirm does not import its product types.
 - `TEPP` owns temporal-event semantics, changing temporal state, event graphs,
-  longitudinal leakage controls, and dynamic evolution. Compiled candidates
-  carry only the boundary marker `tepp_owned`; no TEPP temporal ontology or
-  transition equation is duplicated here.
+  longitudinal leakage controls, time-varying memberships, and dynamic
+  evolution. Compiled candidates carry only the boundary marker `tepp_owned`;
+  no TEPP temporal ontology or transition equation is duplicated here.
 - `psychometrics-commons` remains the downstream hosted product owner for
   persistence, participant/session lifecycle, authorization, and publication.
 
@@ -152,7 +183,9 @@ alternatives. For DLSJM it additionally requires separate item-space and
 person-space distance/position recovery, false-dependence rates under independent
 data, alignment invariance, and checks that the geometry is not absorbing
 omitted multidimensionality, common stimuli, rater effects, group structure,
-multiple membership, or covariates.
+multiple membership, or covariates. Model-estimated membership weights require
+the formulation's own named weight-recovery metric; a generic RMSE on another
+parameter block does not satisfy that contract.
 
 Correlation by itself is not recovery evidence.
 
