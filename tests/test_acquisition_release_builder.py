@@ -1,6 +1,7 @@
 """Regression tests for the price-neutral acquisition release orchestrator."""
 
 from pathlib import Path
+import json
 import subprocess
 import sys
 
@@ -145,3 +146,122 @@ def test_source_movement_is_rejected_before_success(monkeypatch, tmp_path: Path)
 
     with pytest.raises(RuntimeError, match="source HEAD changed"):
         build_acquisition_release._assert_source_unchanged(tmp_path, expected)
+
+
+def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Exercise the orchestration contract without invoking external tools or networks."""
+    source_commit = "a" * 40
+    out_dir = tmp_path / "evidence"
+    shared_dist = tmp_path / "shared-dist"
+    shared_dist.mkdir()
+    (shared_dist / "stale.whl").write_bytes(b"stale")
+    observed_sales: list[object] = []
+
+    monkeypatch.setattr(
+        build_acquisition_release, "_source_commit", lambda _root: source_commit
+    )
+
+    def write_manifest(path: Path) -> dict[str, object]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload: dict[str, object] = {
+            "status": "ok",
+            "source_commit": source_commit,
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return payload
+
+    def fake_run(command: list[str], *, cwd: Path) -> None:
+        if len(command) >= 3 and command[1:3] == ["-m", "build"]:
+            dist = Path(command[command.index("--outdir") + 1])
+            dist.mkdir(parents=True, exist_ok=True)
+            (dist / "fast_mlsirm-0.0.0-py3-none-any.whl").write_bytes(b"wheel")
+            (dist / "fast_mlsirm-0.0.0.tar.gz").write_bytes(b"sdist")
+            return
+        if Path(command[1]).name == "release_acceptance.py":
+            acceptance = Path(command[command.index("--out") + 1])
+            write_manifest(acceptance / "acceptance_summary.json")
+            return
+        raise AssertionError(f"unexpected subprocess stage: {command}")
+
+    monkeypatch.setattr(build_acquisition_release, "_run", fake_run)
+
+    def fake_benchmark(args):
+        return write_manifest(Path(args.out) / "benchmark_report.json")
+
+    def fake_sales(args):
+        observed_sales.append(args)
+        return write_manifest(Path(args.out))
+
+    def fake_packet(args):
+        return write_manifest(Path(args.out) / "buyer_evidence_manifest.json")
+
+    def fake_index(args):
+        return write_manifest(Path(args.out) / "release_evidence_index.json")
+
+    def fake_procurement(args):
+        return write_manifest(Path(args.out) / "procurement_due_diligence_manifest.json")
+
+    def fake_pr_queue(args):
+        return write_manifest(Path(args.out) / "pr_queue_governance_manifest.json")
+
+    def fake_figma(args):
+        return write_manifest(Path(args.out) / "figma_evidence_sync_manifest.json")
+
+    monkeypatch.setattr(
+        build_acquisition_release.build_benchmark_report, "build_report", fake_benchmark
+    )
+    monkeypatch.setattr(
+        build_acquisition_release.sales_readiness, "run_sales_readiness", fake_sales
+    )
+    monkeypatch.setattr(
+        build_acquisition_release.build_buyer_packet, "build_packet", fake_packet
+    )
+    monkeypatch.setattr(
+        build_acquisition_release.build_release_evidence_index, "build_index", fake_index
+    )
+    monkeypatch.setattr(
+        build_acquisition_release.build_procurement_due_diligence,
+        "build_procurement_due_diligence",
+        fake_procurement,
+    )
+    monkeypatch.setattr(
+        build_acquisition_release.build_pr_queue_governance,
+        "build_pr_queue_governance",
+        fake_pr_queue,
+    )
+    monkeypatch.setattr(
+        build_acquisition_release.build_figma_evidence_sync,
+        "build_figma_evidence_sync",
+        fake_figma,
+    )
+
+    args = build_acquisition_release.build_parser().parse_args(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--out",
+            str(out_dir),
+            "--dist",
+            str(shared_dist),
+        ]
+    )
+    manifest = build_acquisition_release.build_acquisition_release(args)
+
+    isolated_dist = out_dir / "distribution"
+    assert all(Path(stage.dist) == isolated_dist for stage in observed_sales)
+    assert len(observed_sales) == 3
+    final_sales = observed_sales[-1]
+    assert final_sales.require_acquisition_readiness is True
+    assert Path(final_sales.buyer_packet_manifest).name == "buyer_evidence_manifest.json"
+    assert Path(final_sales.release_evidence_index).name == "release_evidence_index.json"
+    assert Path(final_sales.procurement_due_diligence).name == "procurement_due_diligence_manifest.json"
+    assert Path(final_sales.pr_queue_governance).name == "pr_queue_governance_manifest.json"
+    assert Path(final_sales.figma_evidence_sync).name == "figma_evidence_sync_manifest.json"
+    assert manifest["source_commit"] == source_commit
+    assert manifest["status"] == "ok"
+    assert manifest["artifacts"]["wheel"]["name"].endswith(".whl")
+    assert manifest["artifacts"]["sdist"]["name"].endswith(".tar.gz")
+    assert (out_dir / "acquisition_release_manifest.json").is_file()
+    assert (shared_dist / "stale.whl").read_bytes() == b"stale"
