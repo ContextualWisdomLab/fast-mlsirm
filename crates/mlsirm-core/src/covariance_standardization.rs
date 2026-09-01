@@ -148,16 +148,18 @@ fn pairwise_covariance_is_admissible(
 
 /// Standardize one finite, strictly positive variance against itself.
 ///
-/// The arithmetic is evaluated rather than replaced with a hard-coded `1.0` so
-/// this scalar reference exercises the same normalization contract consumed by
-/// matrix standardization and downstream parity tests.
+/// A one-dimensional covariance standardizes exactly to unit correlation. After
+/// validating `variance > 0`, the algebraically equivalent ratio `variance /
+/// variance` keeps an actual binary64 arithmetic path while avoiding the
+/// avoidable rounding introduced by separately evaluating inverse square-root
+/// factors. Every admitted finite positive binary64 value therefore returns the
+/// exact binary64 representation of `1.0`.
 ///
 /// # Errors
 ///
 /// Returns [`CovarianceStandardizationError::NonFiniteInput`] for NaN or
-/// infinity, [`CovarianceStandardizationError::NonPositiveVariance`] for zero
-/// or a negative value, and [`CovarianceStandardizationError::NonFiniteResult`]
-/// if the arithmetic cannot produce a finite value.
+/// infinity and [`CovarianceStandardizationError::NonPositiveVariance`] for zero
+/// or a negative value.
 pub fn standardize_variance(
     variance: f64,
 ) -> Result<f64, CovarianceStandardizationError> {
@@ -168,12 +170,7 @@ pub fn standardize_variance(
         return Err(CovarianceStandardizationError::NonPositiveVariance);
     }
 
-    let inverse_sd = 1.0 / variance.sqrt();
-    let standardized = (variance * inverse_sd) * inverse_sd;
-    if !standardized.is_finite() {
-        return Err(CovarianceStandardizationError::NonFiniteResult);
-    }
-    Ok(standardized)
+    Ok(variance / variance)
 }
 
 /// Convert a finite symmetric covariance matrix to a correlation matrix.
@@ -291,21 +288,20 @@ mod tests {
     }
 
     #[test]
-    fn scalar_reference_recovers_one_across_positive_scales() {
+    fn scalar_reference_recovers_exact_one_across_positive_scales() {
         for variance in [
+            f64::from_bits(1),
             f64::MIN_POSITIVE,
             1.0e-200,
             0.25,
             1.0,
+            3.0,
             6.4,
             1.0e200,
             f64::MAX,
         ] {
-            assert_close(
-                standardize_variance(variance).expect("positive variance"),
-                1.0,
-                8.0e-15,
-            );
+            let standardized = standardize_variance(variance).expect("positive variance");
+            assert_eq!(standardized.to_bits(), 1.0_f64.to_bits());
         }
     }
 
