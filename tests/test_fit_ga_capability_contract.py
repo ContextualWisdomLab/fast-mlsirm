@@ -17,9 +17,9 @@ from fast_mlsirm.capabilities import (
 from fast_mlsirm.config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
 
 
-_CAPABILITY_CONTRACT = (
-    Path(__file__).parents[1] / "contracts" / "fit-capabilities-v1.json"
-)
+_REPOSITORY_ROOT = Path(__file__).parents[1]
+_CAPABILITY_CONTRACT = _REPOSITORY_ROOT / "contracts" / "fit-capabilities-v1.json"
+_GIT_ATTRIBUTES = _REPOSITORY_ROOT / ".gitattributes"
 
 
 def test_fit_capabilities_cover_the_public_model_vocabulary_once() -> None:
@@ -87,9 +87,15 @@ def test_fit_capability_contract_artifact_is_exact_cli_wire_payload(capsys) -> N
     expected = json.dumps(
         fit_capability_manifest(), sort_keys=True, separators=(",", ":")
     )
-    assert _CAPABILITY_CONTRACT.read_text(encoding="utf-8") == expected + "\n"
+    expected_bytes = (expected + "\n").encode("utf-8")
+    assert _CAPABILITY_CONTRACT.read_bytes() == expected_bytes
 
     assert capability_main([]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out == expected + "\n"
+    assert captured.out.encode("utf-8") == expected_bytes
+
+
+def test_fit_capability_contract_forces_lf_checkout_bytes() -> None:
+    attributes = _GIT_ATTRIBUTES.read_text(encoding="utf-8").splitlines()
+    assert "contracts/fit-capabilities-v1.json text eol=lf" in attributes
