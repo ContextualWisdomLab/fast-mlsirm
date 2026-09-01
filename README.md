@@ -172,7 +172,10 @@ For source development, install the development dependencies and run the reposit
 python -m pip install -e '.[dev]'
 python -m pytest
 cargo test --workspace
+cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
 ```
+
+The PyO3 crate is intentionally excluded from the root Cargo workspace, so its binding tests must be run through its manifest in addition to `cargo test --workspace`.
 
 The protected CI surface adds package, Rust/PyO3, coverage, fuzz/security/static-analysis, artifact, and release-contract checks. Exact current workflow evidence is authoritative; results from a predecessor source head do not transfer after a change.
 
