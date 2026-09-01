@@ -21,16 +21,38 @@ A base `ModelSpecification` composes these Value Objects:
 - `DimensionalStructure`: main-effect dimensional formulation;
 - `GeneralizedMixedStructure`: fixed/random-effect and membership structure;
 - `EstimationPlan`: estimator identity, backend ownership, implementation state,
-  and the exact formulation to which that evidence applies;
+  and the exact compiled candidate to which that evidence applies;
 - `IdentificationContract`: required identification rules, verification state,
-  and exact formulation scope;
-- `RecoveryContract`: required known-truth recovery evidence and exact
-  formulation scope.
+  and exact candidate scope;
+- `RecoveryContract`: required known-truth recovery evidence and exact candidate
+  scope.
 
 `compile_dependence_candidates()` then attaches a separate
 `DependenceStructure`. It never changes the base parameter blocks and never
 falls back to the local-independent model when a dependence-aware candidate is
 unsupported.
+
+## Full candidate identity
+
+`CandidateIdentity` is the single owner of structural model identity. It covers
+response-family/formulation/scale/base parameter blocks, dimensional formulation
+and dimension count, generalized-mixed formulation/fixed effects/random effects/
+membership, and dependence kind/formulation/parameter blocks. Evidence and
+maturity flags are intentionally excluded so a scientific specification keeps
+one identity while implementation and validation advance.
+
+Canonical JSON uses deterministic key ordering and separators. The stable ID is
+therefore formulation-readable while remaining collision-resistant across the
+full structural contract:
+
+```text
+<base_formulation>__<dependence_formulation>__spec_sha256_<full_identity_digest>
+```
+
+Changing dimensions, fixed/random effects, membership structure, or dependence
+structure changes the candidate identity. Capability evidence is keyed by this
+same exact ID; evidence attached to one structural specification cannot promote
+another.
 
 ## Dependence Ubiquitous Language
 
@@ -53,12 +75,12 @@ relational structures with separate item- and person-space parameter blocks.
 DLSJM is not an alias for LSIRM, MLSIRM, multilevel IRT, or a generic network
 random effect.
 
-The stable candidate identifiers are formulation-qualified:
+The dependence formulation portions of the IDs remain explicit:
 
 ```text
-<base_formulation>__lsirm_jeon_et_al_2021_extension
-<base_formulation>__mlsirm_kang_jeon_2025_extension
-<base_formulation>__dlsjm_jin_jeon_2019_extension
+lsirm_jeon_et_al_2021_extension
+mlsirm_kang_jeon_2025_extension
+dlsjm_jin_jeon_2019_extension
 ```
 
 The word `extension` is intentional. The cited papers ground the named
@@ -71,9 +93,9 @@ identification, Rust estimator, and true-parameter recovery evidence exist.
 
 Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
 
-- `supported`: explicit generative-equation identity, formulation-scoped Rust
-  estimator, formulation-scoped identification evidence, primary citation, and
-  formulation-scoped passing recovery evidence are all present;
+- `supported`: explicit generative-equation identity, exact-candidate-scoped Rust
+  estimator, exact-candidate-scoped identification evidence, primary citation,
+  and exact-candidate-scoped passing recovery evidence are all present;
 - `research_candidate`: the coupling is representable but one or more support
   gates are missing;
 - `unsupported`: the base kernel declares the dependence incoherent, or a
@@ -82,10 +104,12 @@ Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
 
 A candidate cannot become `supported` merely because its name is in the
 registry. A base-kernel estimator, base identification proof, or base recovery
-study does not transfer to an LSIRM/MLSIRM/DLSJM extension: each of those three
-contracts must name the exact compiled candidate ID through
-`applies_to_formulation_id`. This prevents evidence for one extension from
-promoting another extension with a different likelihood or dependence geometry.
+study does not transfer to an LSIRM/MLSIRM/DLSJM extension. `EstimationPlan`,
+`IdentificationContract`, and `RecoveryContract` must each name the exact full
+candidate through `applies_to_candidate_id`, and documentary equation/citation
+evidence is looked up through `evidence_by_candidate_id`. This prevents evidence
+for one dimensional or generalized-mixed specification from promoting another
+with a different represented model.
 
 ## Generalized mixed-model boundary
 
