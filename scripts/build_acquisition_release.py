@@ -100,13 +100,55 @@ def _source_commit(repo_root: Path) -> str:
     return commit
 
 
-def _assert_source_unchanged(repo_root: Path, expected: str) -> None:
-    """Fail closed if repository HEAD moved after the acquisition run was sealed."""
+def _require_clean_source(
+    repo_root: Path,
+    *,
+    allowed_untracked_root: Path | None = None,
+) -> None:
+    """Require a clean Git source tree, except generated files under one output root."""
+    completed = subprocess.run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    allowed = allowed_untracked_root.resolve() if allowed_untracked_root is not None else None
+    violations: list[str] = []
+    for record in completed.stdout.split("\0"):
+        if not record:
+            continue
+        if len(record) < 4:
+            violations.append(record)
+            continue
+        status = record[:2]
+        relative_path = record[3:]
+        if status != "??":
+            violations.append(record)
+            continue
+        candidate = (repo_root / relative_path).resolve()
+        if allowed is not None and (candidate == allowed or allowed in candidate.parents):
+            continue
+        violations.append(record)
+    if violations:
+        preview = ", ".join(violations[:5])
+        raise RuntimeError(f"source working tree is not clean: {preview}")
+
+
+def _assert_source_unchanged(
+    repo_root: Path,
+    expected: str,
+    *,
+    allowed_untracked_root: Path | None = None,
+) -> None:
+    """Fail closed if source HEAD or working-tree identity changed after sealing."""
     actual = _source_commit(repo_root)
     if actual != expected:
         raise RuntimeError(
             f"source HEAD changed during acquisition run: expected {expected}, observed {actual}"
         )
+    _require_clean_source(repo_root, allowed_untracked_root=allowed_untracked_root)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -210,6 +252,134 @@ def _select_distribution_directory(args: argparse.Namespace, out_dir: Path) -> P
     return distribution
 
 
+def _select_candidate_artifacts(dist_dir: Path) -> tuple[Path, Path]:
+    """Select exactly one real wheel and one real source distribution."""
+    wheels = tuple(
+        path
+        for path in sorted(dist_dir.glob("*.whl"))
+        if path.is_file() and not path.is_symlink()
+    )
+    sdists = tuple(
+        path
+        for path in sorted(dist_dir.glob("*.tar.gz"))
+        if path.is_file() and not path.is_symlink()
+    )
+    if len(wheels) != 1 or len(sdists) != 1:
+        raise RuntimeError(
+            "candidate release must contain exactly one wheel and one source distribution"
+        )
+    return wheels[0], sdists[0]
+
+
+def _verify_candidate_import(
+    *,
+    wheel: Path,
+    out_dir: Path,
+    source_commit: str,
+    require_rust: bool,
+    python: str,
+) -> dict[str, Any]:
+    """Install the exact candidate wheel in isolation and persist bounded import evidence."""
+    wheel = wheel.resolve()
+    if wheel.is_symlink() or not wheel.is_file():
+        raise RuntimeError("candidate wheel must be a regular file")
+    environment = out_dir / "candidate-import-env"
+    if environment.exists():
+        if environment.is_symlink() or not environment.is_dir():
+            raise RuntimeError("candidate import environment must be a real directory")
+        shutil.rmtree(environment)
+
+    _run([python, "-m", "venv", str(environment)], cwd=out_dir)
+    environment_python = environment / (
+        "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    )
+    _run(
+        [
+            str(environment_python),
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--force-reinstall",
+            str(wheel),
+        ],
+        cwd=out_dir,
+    )
+    probe = (
+        "import importlib, importlib.metadata, json\n"
+        "package = importlib.import_module('fast_mlsirm')\n"
+        "package_version = str(getattr(package, '__version__', ''))\n"
+        "distribution_version = importlib.metadata.version('fast-mlsirm')\n"
+        "try:\n"
+        "    core = importlib.import_module('fast_mlsirm._core')\n"
+        "    rust_core = bool(hasattr(core, 'neg_loglik_and_grad'))\n"
+        "except (ImportError, OSError):\n"
+        "    rust_core = False\n"
+        "print(json.dumps({\n"
+        "    'package_version': package_version,\n"
+        "    'distribution_version': distribution_version,\n"
+        "    'package_file': str(package.__file__ or ''),\n"
+        "    'rust_core': rust_core,\n"
+        "}))\n"
+    )
+    completed = run_bounded_capture(
+        [str(environment_python), "-c", probe],
+        cwd=out_dir,
+        timeout_seconds=60.0,
+        max_stdout_bytes=1024 * 1024,
+        max_stderr_bytes=1024 * 1024,
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        raise RuntimeError(
+            "candidate wheel import probe failed"
+            + (f": {stderr[-2000:]}" if stderr else "")
+        )
+    try:
+        observed = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("candidate wheel import probe returned malformed JSON") from exc
+    if not isinstance(observed, dict):
+        raise RuntimeError("candidate wheel import probe must return a JSON object")
+
+    package_version = observed.get("package_version")
+    distribution_version = observed.get("distribution_version")
+    package_file_raw = observed.get("package_file")
+    rust_core = observed.get("rust_core") is True
+    if not isinstance(package_version, str) or not package_version:
+        raise RuntimeError("candidate wheel import probe returned no package version")
+    if not isinstance(distribution_version, str) or not distribution_version:
+        raise RuntimeError("candidate wheel import probe returned no distribution version")
+    if package_version != distribution_version:
+        raise RuntimeError(
+            "candidate package/distribution version mismatch: "
+            f"{package_version!r} != {distribution_version!r}"
+        )
+    if not isinstance(package_file_raw, str) or not package_file_raw:
+        raise RuntimeError("candidate wheel import probe returned no package file")
+    package_file = Path(package_file_raw).resolve()
+    environment_root = environment.resolve()
+    if environment_root != package_file and environment_root not in package_file.parents:
+        raise RuntimeError("candidate package import did not come from the isolated environment")
+    if require_rust and not rust_core:
+        raise RuntimeError("candidate wheel is missing the required Rust core")
+
+    evidence: dict[str, Any] = {
+        "command": "verify_candidate_import",
+        "status": "ok",
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "source_commit": source_commit,
+        "wheel": str(wheel),
+        "wheel_sha256": _sha256(wheel),
+        "package_version": package_version,
+        "distribution_version": distribution_version,
+        "package_file": str(package_file),
+        "rust_core": rust_core,
+    }
+    _write_json(out_dir / "candidate_import_evidence.json", evidence)
+    return evidence
+
+
 def _set_contract_value(namespace: argparse.Namespace, value: int | None) -> argparse.Namespace:
     """Override legacy helper CLI defaults with the explicit transaction scenario."""
     if hasattr(namespace, "contract_value_krw"):
@@ -307,26 +477,33 @@ def _verify_generated_stage(
     path: Path,
     source_commit: str,
     repo_root: Path,
+    *,
+    allowed_untracked_root: Path | None = None,
 ) -> None:
     """Validate a generated stage payload, persisted manifest, and live source."""
     _require_ok(name, payload)
     # sales_readiness predates source_commit in its schema. Do not synthesize it;
     # inspect it when present while binding the stage by immutable inputs and
-    # live HEAD checks. All other generated acquisition manifests carry source_commit.
+    # live source checks. All other generated acquisition manifests carry source_commit.
     require_source = "sales_readiness" not in name
     _require_source_identity(name, payload, source_commit, required=require_source)
     _require_manifest_source_identity(
         name, path, source_commit, required=require_source
     )
-    _assert_source_unchanged(repo_root, source_commit)
+    _assert_source_unchanged(
+        repo_root,
+        source_commit,
+        allowed_untracked_root=allowed_untracked_root,
+    )
 
 
 def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     """Build one exact-source, price-neutral acquisition-readiness evidence bundle."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = Path(args.out).resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    _require_clean_source(repo_root)
     source_commit = _source_commit(repo_root)
+    out_dir.mkdir(parents=True, exist_ok=True)
     dist_dir = _select_distribution_directory(args, out_dir)
 
     if not args.skip_build:
@@ -334,7 +511,29 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             [args.python, "-m", "build", "--outdir", str(dist_dir)],
             cwd=repo_root,
         )
-    _assert_source_unchanged(repo_root, source_commit)
+    _assert_source_unchanged(
+        repo_root, source_commit, allowed_untracked_root=out_dir
+    )
+    wheel, sdist = _select_candidate_artifacts(dist_dir)
+
+    candidate_import_path = out_dir / "candidate_import_evidence.json"
+    candidate_import: dict[str, Any] | None = None
+    if args.check_import:
+        candidate_import = _verify_candidate_import(
+            wheel=wheel,
+            out_dir=out_dir,
+            source_commit=source_commit,
+            require_rust=args.require_rust,
+            python=args.python,
+        )
+        _require_ok("candidate_import", candidate_import)
+        _require_source_identity("candidate_import", candidate_import, source_commit)
+        _require_manifest_source_identity(
+            "candidate_import", candidate_import_path, source_commit
+        )
+        _assert_source_unchanged(
+            repo_root, source_commit, allowed_untracked_root=out_dir
+        )
 
     acceptance_dir = out_dir / "release-acceptance"
     acceptance_command = [
@@ -350,7 +549,9 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     _require_manifest_source_identity(
         "release_acceptance", acceptance_path, source_commit, required=False
     )
-    _assert_source_unchanged(repo_root, source_commit)
+    _assert_source_unchanged(
+        repo_root, source_commit, allowed_untracked_root=out_dir
+    )
 
     benchmark_dir = acceptance_dir / "benchmark"
     benchmark_args = build_benchmark_report.build_parser().parse_args(
@@ -366,7 +567,12 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     benchmark = build_benchmark_report.build_report(benchmark_args)
     benchmark_path = benchmark_dir / "benchmark_report.json"
     _verify_generated_stage(
-        "benchmark_report", benchmark, benchmark_path, source_commit, repo_root
+        "benchmark_report",
+        benchmark,
+        benchmark_path,
+        source_commit,
+        repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     initial_sales_path = acceptance_dir / "sales_readiness_manifest.json"
@@ -378,7 +584,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             out=initial_sales_path,
             benchmark=benchmark_path,
             require_rust=args.require_rust,
-            check_import=args.check_import,
+            check_import=False,
             contract_value_krw=args.contract_value_krw,
             acquisition=False,
         )
@@ -389,6 +595,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         initial_sales_path,
         source_commit,
         repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     packet_dir = out_dir / "buyer-evidence-packet"
@@ -412,7 +619,12 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     packet = build_buyer_packet.build_packet(packet_args)
     packet_path = packet_dir / "buyer_evidence_manifest.json"
     _verify_generated_stage(
-        "buyer_packet", packet, packet_path, source_commit, repo_root
+        "buyer_packet",
+        packet,
+        packet_path,
+        source_commit,
+        repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     index_dir = out_dir / "release-evidence-index"
@@ -438,7 +650,12 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     release_index = build_release_evidence_index.build_index(index_args)
     index_path = index_dir / "release_evidence_index.json"
     _verify_generated_stage(
-        "release_evidence_index", release_index, index_path, source_commit, repo_root
+        "release_evidence_index",
+        release_index,
+        index_path,
+        source_commit,
+        repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     preproc_sales_path = acceptance_dir / "preproc_sales_readiness_manifest.json"
@@ -452,7 +669,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             buyer_packet=packet_path,
             release_index=index_path,
             require_rust=args.require_rust,
-            check_import=args.check_import,
+            check_import=False,
             contract_value_krw=args.contract_value_krw,
             acquisition=False,
         )
@@ -463,37 +680,34 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         preproc_sales_path,
         source_commit,
         repo_root,
+        allowed_untracked_root=out_dir,
     )
 
-    wheels = tuple(sorted(dist_dir.glob("*.whl")))
-    sdists = tuple(sorted(dist_dir.glob("*.tar.gz")))
-    if not wheels or not sdists:
-        raise RuntimeError("candidate release is missing a wheel or source distribution")
-    if not args.skip_build and (len(wheels) != 1 or len(sdists) != 1):
-        raise RuntimeError("isolated build must produce exactly one wheel and one source distribution")
-    wheel = wheels[0]
-    sdist = sdists[0]
-
     candidate_manifest_path = out_dir / "acquisition_candidate_manifest.json"
+    candidate_artifacts: dict[str, dict[str, Any]] = {
+        "wheel": _artifact(wheel),
+        "sdist": _artifact(sdist),
+        "final_sales_readiness": _artifact(preproc_sales_path),
+    }
+    if args.check_import:
+        candidate_artifacts["candidate_import_evidence"] = _artifact(candidate_import_path)
     candidate_manifest = {
         "command": "build_acquisition_release_candidate",
         "status": "ok",
         "contract_value_krw": args.contract_value_krw,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "source_commit": source_commit,
-        "artifacts": {
-            "wheel": _artifact(wheel),
-            "sdist": _artifact(sdist),
-            "final_sales_readiness": _artifact(preproc_sales_path),
-        },
+        "artifacts": candidate_artifacts,
     }
-    if not all(item["exists"] for item in candidate_manifest["artifacts"].values()):
+    if not all(item["exists"] for item in candidate_artifacts.values()):
         raise RuntimeError("candidate release is missing a required distribution/readiness artifact")
     _write_json(candidate_manifest_path, candidate_manifest)
     _require_manifest_source_identity(
         "acquisition_candidate", candidate_manifest_path, source_commit
     )
-    _assert_source_unchanged(repo_root, source_commit)
+    _assert_source_unchanged(
+        repo_root, source_commit, allowed_untracked_root=out_dir
+    )
 
     procurement_dir = out_dir / "procurement-due-diligence"
     procurement_argv = [
@@ -524,6 +738,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         procurement_path,
         source_commit,
         repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     pr_queue_dir = out_dir / "pr-queue-governance"
@@ -544,7 +759,12 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     pr_queue = build_pr_queue_governance.build_pr_queue_governance(pr_queue_args)
     pr_queue_path = pr_queue_dir / "pr_queue_governance_manifest.json"
     _verify_generated_stage(
-        "pr_queue_governance", pr_queue, pr_queue_path, source_commit, repo_root
+        "pr_queue_governance",
+        pr_queue,
+        pr_queue_path,
+        source_commit,
+        repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     figma_dir = out_dir / "figma-evidence-sync"
@@ -565,7 +785,12 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     figma = build_figma_evidence_sync.build_figma_evidence_sync(figma_args)
     figma_path = figma_dir / "figma_evidence_sync_manifest.json"
     _verify_generated_stage(
-        "figma_evidence_sync", figma, figma_path, source_commit, repo_root
+        "figma_evidence_sync",
+        figma,
+        figma_path,
+        source_commit,
+        repo_root,
+        allowed_untracked_root=out_dir,
     )
 
     final_sales_path = acceptance_dir / "final_acquisition_readiness_manifest.json"
@@ -582,7 +807,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             pr_queue=pr_queue_path,
             figma=figma_path,
             require_rust=args.require_rust,
-            check_import=args.check_import,
+            check_import=False,
             contract_value_krw=args.contract_value_krw,
             acquisition=True,
         )
@@ -593,10 +818,27 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         final_sales_path,
         source_commit,
         repo_root,
+        allowed_untracked_root=out_dir,
     )
 
-    _assert_source_unchanged(repo_root, source_commit)
+    _assert_source_unchanged(
+        repo_root, source_commit, allowed_untracked_root=out_dir
+    )
     manifest_path = out_dir / "acquisition_release_manifest.json"
+    artifacts: dict[str, dict[str, Any]] = {
+        "acceptance_summary": _artifact(acceptance_path),
+        "benchmark_report": _artifact(benchmark_path),
+        "buyer_packet": _artifact(packet_path),
+        "release_evidence_index": _artifact(index_path),
+        "procurement_due_diligence": _artifact(procurement_path),
+        "pr_queue_governance": _artifact(pr_queue_path),
+        "figma_evidence_sync": _artifact(figma_path),
+        "final_acquisition_readiness": _artifact(final_sales_path),
+        "wheel": _artifact(wheel),
+        "sdist": _artifact(sdist),
+    }
+    if args.check_import:
+        artifacts["candidate_import_evidence"] = _artifact(candidate_import_path)
     manifest: dict[str, Any] = {
         "command": "build_acquisition_release",
         "status": "ok",
@@ -610,24 +852,15 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "source_commit": source_commit,
         "repo_root": str(repo_root),
         "out": str(out_dir),
-        "artifacts": {
-            "acceptance_summary": _artifact(acceptance_path),
-            "benchmark_report": _artifact(benchmark_path),
-            "buyer_packet": _artifact(packet_path),
-            "release_evidence_index": _artifact(index_path),
-            "procurement_due_diligence": _artifact(procurement_path),
-            "pr_queue_governance": _artifact(pr_queue_path),
-            "figma_evidence_sync": _artifact(figma_path),
-            "final_acquisition_readiness": _artifact(final_sales_path),
-            "wheel": _artifact(wheel),
-            "sdist": _artifact(sdist),
-        },
+        "artifacts": artifacts,
     }
-    if not all(item["exists"] for item in manifest["artifacts"].values()):
+    if not all(item["exists"] for item in artifacts.values()):
         raise RuntimeError("final acquisition bundle is missing required evidence")
     _write_json(manifest_path, manifest)
     _require_manifest_source_identity("acquisition_release", manifest_path, source_commit)
-    _assert_source_unchanged(repo_root, source_commit)
+    _assert_source_unchanged(
+        repo_root, source_commit, allowed_untracked_root=out_dir
+    )
     return manifest
 
 
@@ -647,7 +880,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional transaction-scenario value in KRW; omitted for the generic readiness gate.",
     )
     parser.add_argument("--require-rust", action="store_true", help="Require explicit Rust backend evidence.")
-    parser.add_argument("--check-import", action="store_true", help="Validate installed-package imports.")
+    parser.add_argument(
+        "--check-import",
+        action="store_true",
+        help="Install the selected wheel in an isolated environment and verify package/Rust imports.",
+    )
     parser.add_argument("--skip-build", action="store_true", help="Use existing distribution artifacts.")
     parser.add_argument("--offline-github", action="store_true", help="Use the procurement tool's offline GitHub mode.")
     parser.add_argument("--pr-queue-offline-snapshot", help="Optional PR queue snapshot JSON.")
