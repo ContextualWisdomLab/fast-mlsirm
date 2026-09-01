@@ -97,7 +97,7 @@ recovery = recovery_report(sample.truth, result.params)
 print(recovery.summary)
 ```
 
-The default extension is the **PyO3 binding for the compiled Rust backend**. `backend="auto"` uses that compiled Rust core and **fails closed when that extension is unavailable**. The NumPy backend is an explicit reference/parity path; it is not silently selected as a substitute for the Rust production owner.
+The default extension is the **PyO3 binding for the compiled Rust backend**. `backend="auto"` uses that compiled Rust core and **fails closed when that extension is unavailable**. Automatic resolution never silently selects NumPy; it **fails closed otherwise**. The NumPy backend is an explicit reference/parity path and must be requested explicitly.
 
 ## Common workflows
 
