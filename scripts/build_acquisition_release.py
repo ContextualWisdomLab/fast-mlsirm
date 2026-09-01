@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -23,6 +24,9 @@ try:
         sales_readiness,
     )
     from scripts._bounded_subprocess import run_bounded_capture
+    from scripts.release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
 except ModuleNotFoundError as exc:
     if exc.name not in {
         "scripts",
@@ -33,6 +37,7 @@ except ModuleNotFoundError as exc:
         "scripts.build_pr_queue_governance",
         "scripts.build_procurement_due_diligence",
         "scripts.build_release_evidence_index",
+        "scripts.release_acceptance",
         "scripts.sales_readiness",
     }:
         raise
@@ -44,9 +49,18 @@ except ModuleNotFoundError as exc:
     import build_release_evidence_index
     import sales_readiness
     from _bounded_subprocess import run_bounded_capture
+    from release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
 
 
 _STAGE_TIMEOUT_SECONDS = 900.0
+_RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS = 60.0
+_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = (
+    sum(_INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values())
+    + _RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS
+)
+_MAX_MANIFEST_BYTES = 10 * 1024 * 1024
 
 
 def _sha256(path: Path) -> str:
@@ -86,18 +100,88 @@ def _source_commit(repo_root: Path) -> str:
     return commit
 
 
+def _assert_source_unchanged(repo_root: Path, expected: str) -> None:
+    """Fail closed if repository HEAD moved after the acquisition run was sealed."""
+    actual = _source_commit(repo_root)
+    if actual != expected:
+        raise RuntimeError(
+            f"source HEAD changed during acquisition run: expected {expected}, observed {actual}"
+        )
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     """Write a deterministic human-readable JSON evidence document."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _read_manifest(path: Path) -> dict[str, Any]:
+    """Read one bounded JSON manifest object for provenance validation."""
+    if not path.is_file():
+        raise RuntimeError(f"required stage manifest is missing: {path}")
+    if path.stat().st_size > _MAX_MANIFEST_BYTES:
+        raise RuntimeError(f"stage manifest exceeds {_MAX_MANIFEST_BYTES} bytes: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"stage manifest is unreadable or malformed: {path}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"stage manifest must be a JSON object: {path}")
+    return payload
+
+
+def _require_source_identity(
+    name: str,
+    payload: dict[str, Any],
+    expected: str,
+    *,
+    required: bool = True,
+) -> None:
+    """Require a stage's available source identity to match the sealed commit."""
+    actual = payload.get("source_commit")
+    if actual is None:
+        if required:
+            raise RuntimeError(f"{name} missing source_commit")
+        return
+    if not isinstance(actual, str) or len(actual) not in {40, 64} or any(
+        ch not in "0123456789abcdef" for ch in actual
+    ):
+        raise RuntimeError(f"{name} has malformed source_commit")
+    if actual != expected:
+        raise RuntimeError(
+            f"{name} source_commit mismatch: expected {expected}, observed {actual}"
+        )
+
+
+def _require_manifest_source_identity(
+    name: str,
+    path: Path,
+    expected: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    """Read a generated manifest and verify its source identity when required."""
+    payload = _read_manifest(path)
+    _require_source_identity(name, payload, expected, required=required)
+    return payload
+
+
+def _is_release_acceptance_command(command: list[str]) -> bool:
+    """Return whether a stage command invokes the bounded release acceptance suite."""
+    return len(command) >= 2 and Path(command[1]).name == "release_acceptance.py"
+
+
 def _run(command: list[str], *, cwd: Path) -> None:
     """Run one bounded subprocess stage and surface a stable failure."""
+    timeout_seconds = (
+        _RELEASE_ACCEPTANCE_TIMEOUT_SECONDS
+        if _is_release_acceptance_command(command)
+        else _STAGE_TIMEOUT_SECONDS
+    )
     completed = run_bounded_capture(
         command,
         cwd=cwd,
-        timeout_seconds=_STAGE_TIMEOUT_SECONDS,
+        timeout_seconds=timeout_seconds,
         max_stdout_bytes=10 * 1024 * 1024,
         max_stderr_bytes=10 * 1024 * 1024,
     )
@@ -107,6 +191,23 @@ def _run(command: list[str], *, cwd: Path) -> None:
             f"stage failed ({completed.returncode}): {' '.join(command)}"
             + (f"\n{stderr[-2000:]}" if stderr else "")
         )
+
+
+def _select_distribution_directory(args: argparse.Namespace, out_dir: Path) -> Path:
+    """Return isolated build output or the explicit caller-supplied reuse directory."""
+    configured = Path(args.dist).resolve()
+    if args.skip_build:
+        return configured
+
+    distribution = out_dir / "distribution"
+    if distribution.exists():
+        if distribution.is_symlink() or not distribution.is_dir():
+            raise RuntimeError(
+                "run-specific distribution path must be a real directory when it exists"
+            )
+        shutil.rmtree(distribution)
+    distribution.mkdir(parents=True, exist_ok=False)
+    return distribution
 
 
 def _set_contract_value(namespace: argparse.Namespace, value: int | None) -> argparse.Namespace:
@@ -200,19 +301,34 @@ def _require_ok(name: str, payload: dict[str, Any]) -> None:
         raise RuntimeError(f"{name} reported status={payload.get('status')!r}")
 
 
+def _verify_generated_stage(
+    name: str,
+    payload: dict[str, Any],
+    path: Path,
+    source_commit: str,
+    repo_root: Path,
+) -> None:
+    """Validate a generated stage payload, persisted manifest, and live source."""
+    _require_ok(name, payload)
+    _require_source_identity(name, payload, source_commit)
+    _require_manifest_source_identity(name, path, source_commit)
+    _assert_source_unchanged(repo_root, source_commit)
+
+
 def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     """Build one exact-source, price-neutral acquisition-readiness evidence bundle."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = Path(args.out).resolve()
-    dist_dir = Path(args.dist).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     source_commit = _source_commit(repo_root)
+    dist_dir = _select_distribution_directory(args, out_dir)
 
     if not args.skip_build:
         _run(
             [args.python, "-m", "build", "--outdir", str(dist_dir)],
             cwd=repo_root,
         )
+    _assert_source_unchanged(repo_root, source_commit)
 
     acceptance_dir = out_dir / "release-acceptance"
     acceptance_command = [
@@ -225,6 +341,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         acceptance_command.append("--require-rust")
     _run(acceptance_command, cwd=repo_root)
     acceptance_path = acceptance_dir / "acceptance_summary.json"
+    _require_manifest_source_identity(
+        "release_acceptance", acceptance_path, source_commit, required=False
+    )
+    _assert_source_unchanged(repo_root, source_commit)
 
     benchmark_dir = acceptance_dir / "benchmark"
     benchmark_args = build_benchmark_report.build_parser().parse_args(
@@ -238,8 +358,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         ]
     )
     benchmark = build_benchmark_report.build_report(benchmark_args)
-    _require_ok("benchmark_report", benchmark)
     benchmark_path = benchmark_dir / "benchmark_report.json"
+    _verify_generated_stage(
+        "benchmark_report", benchmark, benchmark_path, source_commit, repo_root
+    )
 
     initial_sales_path = acceptance_dir / "sales_readiness_manifest.json"
     initial_sales = sales_readiness.run_sales_readiness(
@@ -255,7 +377,13 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             acquisition=False,
         )
     )
-    _require_ok("initial_sales_readiness", initial_sales)
+    _verify_generated_stage(
+        "initial_sales_readiness",
+        initial_sales,
+        initial_sales_path,
+        source_commit,
+        repo_root,
+    )
 
     packet_dir = out_dir / "buyer-evidence-packet"
     packet_args = build_buyer_packet.build_parser().parse_args(
@@ -276,8 +404,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     )
     packet_args = _set_contract_value(packet_args, args.contract_value_krw)
     packet = build_buyer_packet.build_packet(packet_args)
-    _require_ok("buyer_packet", packet)
     packet_path = packet_dir / "buyer_evidence_manifest.json"
+    _verify_generated_stage(
+        "buyer_packet", packet, packet_path, source_commit, repo_root
+    )
 
     index_dir = out_dir / "release-evidence-index"
     index_args = build_release_evidence_index.build_parser().parse_args(
@@ -300,8 +430,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     )
     index_args = _set_contract_value(index_args, args.contract_value_krw)
     release_index = build_release_evidence_index.build_index(index_args)
-    _require_ok("release_evidence_index", release_index)
     index_path = index_dir / "release_evidence_index.json"
+    _verify_generated_stage(
+        "release_evidence_index", release_index, index_path, source_commit, repo_root
+    )
 
     preproc_sales_path = acceptance_dir / "preproc_sales_readiness_manifest.json"
     preproc_sales = sales_readiness.run_sales_readiness(
@@ -319,10 +451,23 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             acquisition=False,
         )
     )
-    _require_ok("preproc_sales_readiness", preproc_sales)
+    _verify_generated_stage(
+        "preproc_sales_readiness",
+        preproc_sales,
+        preproc_sales_path,
+        source_commit,
+        repo_root,
+    )
 
-    wheel = next(iter(sorted(dist_dir.glob("*.whl"))), dist_dir / "missing.whl")
-    sdist = next(iter(sorted(dist_dir.glob("*.tar.gz"))), dist_dir / "missing.tar.gz")
+    wheels = tuple(sorted(dist_dir.glob("*.whl")))
+    sdists = tuple(sorted(dist_dir.glob("*.tar.gz")))
+    if not wheels or not sdists:
+        raise RuntimeError("candidate release is missing a wheel or source distribution")
+    if not args.skip_build and (len(wheels) != 1 or len(sdists) != 1):
+        raise RuntimeError("isolated build must produce exactly one wheel and one source distribution")
+    wheel = wheels[0]
+    sdist = sdists[0]
+
     candidate_manifest_path = out_dir / "acquisition_candidate_manifest.json"
     candidate_manifest = {
         "command": "build_acquisition_release_candidate",
@@ -339,6 +484,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     if not all(item["exists"] for item in candidate_manifest["artifacts"].values()):
         raise RuntimeError("candidate release is missing a required distribution/readiness artifact")
     _write_json(candidate_manifest_path, candidate_manifest)
+    _require_manifest_source_identity(
+        "acquisition_candidate", candidate_manifest_path, source_commit
+    )
+    _assert_source_unchanged(repo_root, source_commit)
 
     procurement_dir = out_dir / "procurement-due-diligence"
     procurement_argv = [
@@ -355,11 +504,21 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     ]
     if args.offline_github:
         procurement_argv.append("--offline-github")
-    procurement_args = build_procurement_due_diligence.build_parser().parse_args(procurement_argv)
+    procurement_args = build_procurement_due_diligence.build_parser().parse_args(
+        procurement_argv
+    )
     procurement_args = _set_contract_value(procurement_args, args.contract_value_krw)
-    procurement = build_procurement_due_diligence.build_procurement_due_diligence(procurement_args)
-    _require_ok("procurement_due_diligence", procurement)
+    procurement = build_procurement_due_diligence.build_procurement_due_diligence(
+        procurement_args
+    )
     procurement_path = procurement_dir / "procurement_due_diligence_manifest.json"
+    _verify_generated_stage(
+        "procurement_due_diligence",
+        procurement,
+        procurement_path,
+        source_commit,
+        repo_root,
+    )
 
     pr_queue_dir = out_dir / "pr-queue-governance"
     pr_queue_argv = [
@@ -377,8 +536,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     pr_queue_args = build_pr_queue_governance.build_parser().parse_args(pr_queue_argv)
     pr_queue_args = _set_contract_value(pr_queue_args, args.contract_value_krw)
     pr_queue = build_pr_queue_governance.build_pr_queue_governance(pr_queue_args)
-    _require_ok("pr_queue_governance", pr_queue)
     pr_queue_path = pr_queue_dir / "pr_queue_governance_manifest.json"
+    _verify_generated_stage(
+        "pr_queue_governance", pr_queue, pr_queue_path, source_commit, repo_root
+    )
 
     figma_dir = out_dir / "figma-evidence-sync"
     figma_argv = [
@@ -396,8 +557,10 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     figma_args = build_figma_evidence_sync.build_parser().parse_args(figma_argv)
     figma_args = _set_contract_value(figma_args, args.contract_value_krw)
     figma = build_figma_evidence_sync.build_figma_evidence_sync(figma_args)
-    _require_ok("figma_evidence_sync", figma)
     figma_path = figma_dir / "figma_evidence_sync_manifest.json"
+    _verify_generated_stage(
+        "figma_evidence_sync", figma, figma_path, source_commit, repo_root
+    )
 
     final_sales_path = acceptance_dir / "final_acquisition_readiness_manifest.json"
     final_sales = sales_readiness.run_sales_readiness(
@@ -418,8 +581,15 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             acquisition=True,
         )
     )
-    _require_ok("final_acquisition_readiness", final_sales)
+    _verify_generated_stage(
+        "final_acquisition_readiness",
+        final_sales,
+        final_sales_path,
+        source_commit,
+        repo_root,
+    )
 
+    _assert_source_unchanged(repo_root, source_commit)
     manifest_path = out_dir / "acquisition_release_manifest.json"
     manifest: dict[str, Any] = {
         "command": "build_acquisition_release",
@@ -447,7 +617,11 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             "sdist": _artifact(sdist),
         },
     }
+    if not all(item["exists"] for item in manifest["artifacts"].values()):
+        raise RuntimeError("final acquisition bundle is missing required evidence")
     _write_json(manifest_path, manifest)
+    _require_manifest_source_identity("acquisition_release", manifest_path, source_commit)
+    _assert_source_unchanged(repo_root, source_commit)
     return manifest
 
 
