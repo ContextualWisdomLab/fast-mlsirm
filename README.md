@@ -190,7 +190,7 @@ python scripts/build_commercial_release.py \
 
 That command produces review evidence; it does not by itself prove deployment, customer adoption, regulatory approval, commercial transfer, or suitability for a specific high-stakes use.
 
-## Commercial Readiness
+## Acquisition/commercial readiness
 
 **Enterprise Sales Readiness** is an evidence gate, not a sales, valuation, certification, or customer claim. The canonical gate is [`scripts/sales_readiness.py`](scripts/sales_readiness.py), driven by release evidence from [`scripts/release_acceptance.py`](scripts/release_acceptance.py). Higher-level procurement packets are assembled by [`scripts/build_release_evidence_index.py`](scripts/build_release_evidence_index.py), [`scripts/build_commercial_release.py`](scripts/build_commercial_release.py), [`scripts/build_procurement_due_diligence.py`](scripts/build_procurement_due_diligence.py), [`scripts/build_pr_queue_governance.py`](scripts/build_pr_queue_governance.py), and [`scripts/build_figma_evidence_sync.py`](scripts/build_figma_evidence_sync.py).
 
