@@ -1,6 +1,15 @@
 use mlsirm_core::covariance_standardization::{
     standardize_covariance_matrix, CovarianceStandardizationError,
+    COVARIANCE_STANDARDIZATION_CONTRACT_VERSION,
 };
+
+#[test]
+fn covariance_standardization_contract_version_is_stable() {
+    assert_eq!(
+        COVARIANCE_STANDARDIZATION_CONTRACT_VERSION,
+        "fast_mlsirm.covariance_standardization@1.0.0",
+    );
+}
 
 #[test]
 fn covariance_matrix_requires_exact_symmetry() {
