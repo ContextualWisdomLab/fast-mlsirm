@@ -130,7 +130,10 @@ def test_multiple_membership_requires_explicit_weight_authority() -> None:
 
 
 def test_cross_classification_requires_two_named_axes() -> None:
-    with pytest.raises(ValueError, match="cross-classified membership requires at least two axes"):
+    with pytest.raises(
+        ValueError,
+        match="cross-classified membership requires at least two distinct axes",
+    ):
         MembershipStructure(
             classification=MembershipClassification.CROSS_CLASSIFIED,
             multiplicity=MembershipMultiplicity.SINGLE,
