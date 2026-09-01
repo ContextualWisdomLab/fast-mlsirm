@@ -16,8 +16,9 @@ its own release cadence and consumers.
 
 For the current release architecture, Maturin/PyO3 builds the public
 `fast-mlsirm` distribution and the governed registry publisher targets PyPI.
-`crates/mlsirm-core` remains the internal Rust numerical owner behind that
-product and is not a separate crates.io product. Organization-level Cargo
+`crates/mlsirm-core` remains the internal Rust numerical owner and
+`crates/fast-mlsirm-py` remains the internal PyO3 binding crate behind that
+product; neither is a separate crates.io product. Organization-level Cargo
 registry credentials do not widen this boundary; a standalone Rust registry
 product requires a successor to ADR-0027 with its own compatibility, release,
 security, provenance and downstream-install evidence.
@@ -148,8 +149,8 @@ This product-readiness standard does not add:
 
 - hosted SaaS tenancy, authentication, billing, or audit logs;
 - a separate library or submodule;
-- a separately published crates.io product or Cargo registry release path for
-  `mlsirm-core` under the current architecture;
+- separately published crates.io products or Cargo registry release paths for
+  `mlsirm-core` or `fast-mlsirm-py` under the current architecture;
 - a package registry, signing service, or external artifact repository beyond
   the existing governed package-release surfaces;
 - Figma Code Connect;
