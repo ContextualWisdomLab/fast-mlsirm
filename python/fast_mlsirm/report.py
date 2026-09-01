@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import math
 from html import escape
@@ -568,9 +567,7 @@ def _title_attr(value: Any) -> str:
 
 def _content_security_policy() -> str:
     """Return the strict CSP string embedded in every generated report."""
-    css_digest = hashlib.sha256(_css().encode("utf-8")).digest()
-    css_hash = base64.b64encode(css_digest).decode("utf-8")
-    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:

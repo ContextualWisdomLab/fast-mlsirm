@@ -50,7 +50,3 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
-## 2026-09-01 - [CSP unsafe-inline Vulnerability in HTML Reports]
-**Vulnerability:** The Content Security Policy (CSP) used for the HTML reports contained `style-src 'unsafe-inline'`, which allows the execution of arbitrary inline CSS, thereby exposing the reports to style injection attacks if any HTML content is unescaped or improperly handled.
-**Learning:** Relying on `unsafe-inline` bypasses the primary defensive benefits of CSP. For dynamically generated but static CSS content, a content hash is a much stronger alternative.
-**Prevention:** Always dynamically hash the CSS (using SHA-256 and base64) and inject the hash directly into the `style-src` directive (e.g., `style-src 'sha256-<hash>'`).
