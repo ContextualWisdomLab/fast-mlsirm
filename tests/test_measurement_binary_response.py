@@ -16,6 +16,20 @@ from fast_mlsirm.measurement.binary_response import (
 )
 
 
+class _ForgedBinaryResponseCell(BinaryResponseCell):
+    """Bypass the base post-init seal to exercise exact aggregate admission."""
+
+    def __post_init__(self, _admission_token: object | None) -> None:
+        pass
+
+
+class _ForgedBoundaryString(str):
+    """Lie about trimming so subtype callbacks cannot redefine wire identity."""
+
+    def strip(self, chars: str | None = None) -> str:
+        return self
+
+
 def _cell(
     state: BinaryResponseState | str = BinaryResponseState.OBSERVED,
     value: int | None = 1,
@@ -110,6 +124,7 @@ def test_cell_references_fail_closed_without_silent_normalization() -> None:
         " observation_alpha",
         "observation_alpha ",
         "line\nbreak",
+        "\ud800",
         "x" * 257,
     ):
         with pytest.raises(BinaryResponseContractError) as caught:
@@ -118,6 +133,9 @@ def test_cell_references_fail_closed_without_silent_normalization() -> None:
 
     with pytest.raises(TypeError, match="observation_ref must be a string"):
         _cell(observation_ref=object())  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="observation_ref must be a string"):
+        _cell(observation_ref=_ForgedBoundaryString(" observation_alpha"))
 
     with pytest.raises(BinaryResponseContractError) as caught:
         build_binary_response_cell(
@@ -215,6 +233,14 @@ def test_matrix_rejects_shape_type_and_resource_violations() -> None:
     with pytest.raises(BinaryResponseContractError) as caught:
         build_binary_response_matrix(((valid,), (valid, valid)))
     assert caught.value.code == "nonrectangular_response_matrix"
+
+    forged = _ForgedBinaryResponseCell(
+        state=BinaryResponseState.OBSERVED,
+        value=2,
+        observation_ref="observation_forged",
+    )
+    with pytest.raises(TypeError, match=r"rows\[0\]\[0\]"):
+        build_binary_response_matrix(((forged,),))
 
     oversized_row = tuple(valid for _ in range(1_001))
     oversized_rows = tuple(oversized_row for _ in range(1_000))
