@@ -5,6 +5,7 @@ from dataclasses import fields, replace
 import pytest
 
 from fast_mlsirm.model_specification import (
+    CandidateIdentity,
     CapabilityEvidence,
     CapabilityStatus,
     DependenceKind,
@@ -22,22 +23,17 @@ from fast_mlsirm.model_specification import (
 _ALL_DEPENDENCE = frozenset(
     {DependenceKind.LSIRM, DependenceKind.MLSIRM, DependenceKind.DLSJM}
 )
-_LSIRM_ID = "2plm_logistic__lsirm_jeon_et_al_2021_extension"
 
 
 def _base_spec(
     *,
     family: str = "2plm",
     dimensions: int = 2,
-    support_ready: bool = False,
-    support_formulation_id: str | None = None,
+    fixed_effects: tuple[str, ...] = ("person_covariates", "item_covariates"),
+    random_effects: tuple[str, ...] = ("group_intercept",),
+    membership: str = "multiple_membership",
 ) -> ModelSpecification:
     base_formulation_id = f"{family}_logistic"
-    evidence_scope = (
-        base_formulation_id
-        if support_formulation_id is None
-        else support_formulation_id
-    )
     return ModelSpecification(
         response_kernel=ResponseKernel(
             family_id=family,
@@ -52,20 +48,20 @@ def _base_spec(
         ),
         mixed_structure=GeneralizedMixedStructure(
             formulation_id="explanatory_multiple_membership",
-            fixed_effects=("person_covariates", "item_covariates"),
-            random_effects=("group_intercept",),
-            membership="multiple_membership",
+            fixed_effects=fixed_effects,
+            random_effects=random_effects,
+            membership=membership,
         ),
         estimation_plan=EstimationPlan(
             estimator_id="research_mmle",
             computational_backend="rust",
-            implemented=support_ready,
-            applies_to_formulation_id=evidence_scope,
+            implemented=False,
+            applies_to_candidate_id=base_formulation_id,
         ),
         identification_contract=IdentificationContract(
             rules=("trait_location_scale", "dependence_geometry_alignment"),
-            verified=support_ready,
-            applies_to_formulation_id=evidence_scope,
+            verified=False,
+            applies_to_candidate_id=base_formulation_id,
         ),
         recovery_contract=RecoveryContract(
             required_metrics=(
@@ -75,9 +71,41 @@ def _base_spec(
                 "coverage",
                 "convergence",
             ),
-            passing=support_ready,
-            applies_to_formulation_id=evidence_scope,
+            passing=False,
+            applies_to_candidate_id=base_formulation_id,
         ),
+    )
+
+
+def _ready_for_candidate(base: ModelSpecification, candidate_id: str) -> ModelSpecification:
+    return replace(
+        base,
+        estimation_plan=replace(
+            base.estimation_plan,
+            implemented=True,
+            applies_to_candidate_id=candidate_id,
+        ),
+        identification_contract=replace(
+            base.identification_contract,
+            verified=True,
+            applies_to_candidate_id=candidate_id,
+        ),
+        recovery_contract=replace(
+            base.recovery_contract,
+            passing=True,
+            applies_to_candidate_id=candidate_id,
+        ),
+    )
+
+
+def _lsirm_id(base: ModelSpecification) -> str:
+    return compile_dependence_candidates(base)[0].canonical_id
+
+
+def _complete_lsirm_evidence() -> CapabilityEvidence:
+    return CapabilityEvidence(
+        generative_equation_id="2plm_lsirm_eq_v1",
+        primary_citations=("10.1007/s11336-021-09762-5",),
     )
 
 
@@ -92,10 +120,14 @@ def test_new_compatible_kernel_auto_expands_all_dependence_families() -> None:
     assert {candidate.status for candidate in candidates} == {
         CapabilityStatus.RESEARCH_CANDIDATE
     }
-    assert tuple(candidate.canonical_id for candidate in candidates) == (
-        "new_binary_kernel_logistic__lsirm_jeon_et_al_2021_extension",
-        "new_binary_kernel_logistic__mlsirm_kang_jeon_2025_extension",
-        "new_binary_kernel_logistic__dlsjm_jin_jeon_2019_extension",
+    assert candidates[0].canonical_id.startswith(
+        "new_binary_kernel_logistic__lsirm_jeon_et_al_2021_extension__spec_sha256_"
+    )
+    assert candidates[1].canonical_id.startswith(
+        "new_binary_kernel_logistic__mlsirm_kang_jeon_2025_extension__spec_sha256_"
+    )
+    assert candidates[2].canonical_id.startswith(
+        "new_binary_kernel_logistic__dlsjm_jin_jeon_2019_extension__spec_sha256_"
     )
 
 
@@ -142,6 +174,35 @@ def test_dlsjm_is_not_an_lsirm_alias() -> None:
     assert dlsjm.dependence.parameter_blocks != lsirm.dependence.parameter_blocks
 
 
+def test_candidate_identity_covers_dimensional_and_mixed_structure() -> None:
+    baseline = _base_spec()
+    more_dimensions = _base_spec(dimensions=3)
+    different_fixed_effects = _base_spec(fixed_effects=("person_covariates",))
+    different_membership = _base_spec(membership="single")
+
+    identities = {
+        _lsirm_id(baseline),
+        _lsirm_id(more_dimensions),
+        _lsirm_id(different_fixed_effects),
+        _lsirm_id(different_membership),
+    }
+
+    assert len(identities) == 4
+
+
+def test_candidate_identity_is_typed_and_serializes_stably() -> None:
+    base = _base_spec()
+    first = compile_dependence_candidates(base)[0]
+    second = compile_dependence_candidates(base)[0]
+
+    assert isinstance(first.identity, CandidateIdentity)
+    assert first.identity == second.identity
+    assert first.identity.to_manifest() == second.identity.to_manifest()
+    assert first.identity.canonical_json() == second.identity.canonical_json()
+    assert first.canonical_id == second.canonical_id
+    assert first.to_manifest()["identity"] == first.identity.to_manifest()
+
+
 def test_expansion_preserves_base_parameters_and_serializes_stably() -> None:
     base = _base_spec()
     first = compile_dependence_candidates(base)
@@ -164,19 +225,12 @@ def test_expansion_preserves_base_parameters_and_serializes_stably() -> None:
 
 def test_incompatible_dependence_is_classified_not_dropped_or_fallback() -> None:
     base = _base_spec()
-    restricted = ModelSpecification(
-        response_kernel=ResponseKernel(
-            family_id=base.response_kernel.family_id,
-            formulation_id=base.response_kernel.formulation_id,
-            response_scale=base.response_kernel.response_scale,
-            parameter_blocks=base.response_kernel.parameter_blocks,
+    restricted = replace(
+        base,
+        response_kernel=replace(
+            base.response_kernel,
             compatible_dependence=frozenset({DependenceKind.LSIRM}),
         ),
-        dimensional_structure=base.dimensional_structure,
-        mixed_structure=base.mixed_structure,
-        estimation_plan=base.estimation_plan,
-        identification_contract=base.identification_contract,
-        recovery_contract=base.recovery_contract,
     )
 
     candidates = compile_dependence_candidates(restricted)
@@ -203,14 +257,18 @@ def test_capability_evidence_has_no_duplicate_estimator_or_recovery_truth() -> N
 
 
 def test_generic_base_evidence_cannot_promote_a_dependence_extension() -> None:
-    evidence = CapabilityEvidence(
-        generative_equation_id="2plm_lsirm_eq_v1",
-        primary_citations=("10.1007/s11336-021-09762-5",),
+    base = _base_spec()
+    candidate_id = _lsirm_id(base)
+    base_ready_only = replace(
+        base,
+        estimation_plan=replace(base.estimation_plan, implemented=True),
+        identification_contract=replace(base.identification_contract, verified=True),
+        recovery_contract=replace(base.recovery_contract, passing=True),
     )
 
     candidate = compile_dependence_candidates(
-        _base_spec(support_ready=True),
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
+        base_ready_only,
+        evidence_by_candidate_id={candidate_id: _complete_lsirm_evidence()},
     )[0]
 
     assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
@@ -221,129 +279,134 @@ def test_generic_base_evidence_cannot_promote_a_dependence_extension() -> None:
     )
 
 
-def test_supported_requires_formulation_scoped_rust_identification_and_recovery() -> None:
-    evidence = CapabilityEvidence(
-        generative_equation_id="2plm_lsirm_eq_v1",
-        primary_citations=("10.1007/s11336-021-09762-5",),
-    )
-    base = _base_spec(
-        support_ready=True,
-        support_formulation_id=_LSIRM_ID,
-    )
+def test_supported_requires_exact_candidate_scoped_evidence() -> None:
+    base = _base_spec()
+    candidate_id = _lsirm_id(base)
+    ready = _ready_for_candidate(base, candidate_id)
+    evidence = _complete_lsirm_evidence()
 
     supported = compile_dependence_candidates(
-        base,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
+        ready,
+        evidence_by_candidate_id={candidate_id: evidence},
     )[0]
 
     assert supported.status is CapabilityStatus.SUPPORTED
     assert supported.missing_requirements == ()
     assert supported.generative_equation_id == "2plm_lsirm_eq_v1"
     assert supported.primary_citations == ("10.1007/s11336-021-09762-5",)
-    assert supported.estimation_plan.applies_to_formulation_id == _LSIRM_ID
-    assert supported.identification_contract.applies_to_formulation_id == _LSIRM_ID
-    assert supported.recovery_contract.applies_to_formulation_id == _LSIRM_ID
+    assert supported.estimation_plan.applies_to_candidate_id == candidate_id
+    assert supported.identification_contract.applies_to_candidate_id == candidate_id
+    assert supported.recovery_contract.applies_to_candidate_id == candidate_id
 
     not_implemented = replace(
-        base,
-        estimation_plan=replace(base.estimation_plan, implemented=False),
+        ready,
+        estimation_plan=replace(ready.estimation_plan, implemented=False),
     )
-    candidate = compile_dependence_candidates(
+    assert compile_dependence_candidates(
         not_implemented,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
-    )[0]
-    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
-    assert candidate.missing_requirements == ("rust_estimator_required",)
+        evidence_by_candidate_id={candidate_id: evidence},
+    )[0].missing_requirements == ("rust_estimator_required",)
 
     wrong_backend = replace(
-        base,
-        estimation_plan=replace(base.estimation_plan, computational_backend="numpy"),
+        ready,
+        estimation_plan=replace(ready.estimation_plan, computational_backend="numpy"),
     )
-    candidate = compile_dependence_candidates(
+    assert compile_dependence_candidates(
         wrong_backend,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
-    )[0]
-    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
-    assert candidate.missing_requirements == ("rust_estimator_required",)
+        evidence_by_candidate_id={candidate_id: evidence},
+    )[0].missing_requirements == ("rust_estimator_required",)
 
     unidentified = replace(
-        base,
-        identification_contract=replace(base.identification_contract, verified=False),
+        ready,
+        identification_contract=replace(ready.identification_contract, verified=False),
     )
-    candidate = compile_dependence_candidates(
+    assert compile_dependence_candidates(
         unidentified,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
-    )[0]
-    assert candidate.missing_requirements == ("identification_evidence_required",)
+        evidence_by_candidate_id={candidate_id: evidence},
+    )[0].missing_requirements == ("identification_evidence_required",)
 
     unrecovered = replace(
-        base,
-        recovery_contract=replace(base.recovery_contract, passing=False),
+        ready,
+        recovery_contract=replace(ready.recovery_contract, passing=False),
     )
-    candidate = compile_dependence_candidates(
+    assert compile_dependence_candidates(
         unrecovered,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
+        evidence_by_candidate_id={candidate_id: evidence},
+    )[0].missing_requirements == ("passing_recovery_evidence_required",)
+
+
+def test_evidence_for_one_full_candidate_cannot_promote_another() -> None:
+    baseline = _base_spec()
+    baseline_id = _lsirm_id(baseline)
+    changed = _base_spec(dimensions=3)
+    changed_id = _lsirm_id(changed)
+    changed_ready = _ready_for_candidate(changed, changed_id)
+
+    candidate = compile_dependence_candidates(
+        changed_ready,
+        evidence_by_candidate_id={baseline_id: _complete_lsirm_evidence()},
     )[0]
-    assert candidate.missing_requirements == ("passing_recovery_evidence_required",)
+
+    assert baseline_id != changed_id
+    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
+    assert candidate.missing_requirements == (
+        "generative_equation_required",
+        "primary_citation_required",
+    )
 
 
 def test_scope_mismatch_fails_each_support_gate_independently() -> None:
-    evidence = CapabilityEvidence(
-        generative_equation_id="2plm_lsirm_eq_v1",
-        primary_citations=("10.1007/s11336-021-09762-5",),
-    )
-    base = _base_spec(
-        support_ready=True,
-        support_formulation_id=_LSIRM_ID,
-    )
+    base = _base_spec()
+    candidate_id = _lsirm_id(base)
+    ready = _ready_for_candidate(base, candidate_id)
+    evidence = _complete_lsirm_evidence()
 
     wrong_estimator_scope = replace(
-        base,
+        ready,
         estimation_plan=replace(
-            base.estimation_plan,
-            applies_to_formulation_id="2plm_logistic",
+            ready.estimation_plan,
+            applies_to_candidate_id="2plm_logistic",
         ),
     )
     assert compile_dependence_candidates(
         wrong_estimator_scope,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
+        evidence_by_candidate_id={candidate_id: evidence},
     )[0].missing_requirements == ("rust_estimator_required",)
 
     wrong_identification_scope = replace(
-        base,
+        ready,
         identification_contract=replace(
-            base.identification_contract,
-            applies_to_formulation_id="2plm_logistic",
+            ready.identification_contract,
+            applies_to_candidate_id="2plm_logistic",
         ),
     )
     assert compile_dependence_candidates(
         wrong_identification_scope,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
+        evidence_by_candidate_id={candidate_id: evidence},
     )[0].missing_requirements == ("identification_evidence_required",)
 
     wrong_recovery_scope = replace(
-        base,
+        ready,
         recovery_contract=replace(
-            base.recovery_contract,
-            applies_to_formulation_id="2plm_logistic",
+            ready.recovery_contract,
+            applies_to_candidate_id="2plm_logistic",
         ),
     )
     assert compile_dependence_candidates(
         wrong_recovery_scope,
-        evidence_by_kind={DependenceKind.LSIRM: evidence},
+        evidence_by_candidate_id={candidate_id: evidence},
     )[0].missing_requirements == ("passing_recovery_evidence_required",)
 
 
 def test_blank_equation_or_citation_cannot_promote_candidate() -> None:
-    base = _base_spec(
-        support_ready=True,
-        support_formulation_id=_LSIRM_ID,
-    )
+    base = _base_spec()
+    candidate_id = _lsirm_id(base)
+    ready = _ready_for_candidate(base, candidate_id)
     blank = CapabilityEvidence(generative_equation_id="", primary_citations=("",))
 
     candidate = compile_dependence_candidates(
-        base,
-        evidence_by_kind={DependenceKind.LSIRM: blank},
+        ready,
+        evidence_by_candidate_id={candidate_id: blank},
     )[0]
 
     assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
