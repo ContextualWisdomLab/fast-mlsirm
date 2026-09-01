@@ -51,10 +51,10 @@ def _error(code: str, path: str, message: str) -> BinaryResponseContractError:
 
 def _state(value: BinaryResponseState | str) -> BinaryResponseState:
     """Normalize a public response-state value without accepting arbitrary objects."""
-    if isinstance(value, BinaryResponseState):
+    if type(value) is BinaryResponseState:
         return value
-    if not isinstance(value, str):
-        raise TypeError("state must be a BinaryResponseState or string")
+    if type(value) is not str:
+        raise TypeError("state must be a BinaryResponseState or exact string")
     try:
         return BinaryResponseState(value)
     except ValueError as exc:
@@ -66,19 +66,25 @@ def _state(value: BinaryResponseState | str) -> BinaryResponseState:
 
 
 def _reference(value: str, path: str) -> str:
-    """Validate one opaque reference without stripping or rewriting caller text."""
-    if not isinstance(value, str):
+    """Validate one opaque reference without invoking caller string protocols."""
+    if type(value) is not str:
         raise TypeError(f"{path} must be a string")
     if (
         not value
         or len(value) > MAX_BINARY_RESPONSE_REFERENCE_CHARS
         or value != value.strip()
-        or any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in value)
+        or any(
+            ord(character) < 32
+            or 127 <= ord(character) <= 159
+            or 0xD800 <= ord(character) <= 0xDFFF
+            for character in value
+        )
     ):
         raise _error(
             "invalid_reference",
             path,
-            "reference must be 1..256 characters without boundary whitespace or controls",
+            "reference must be 1..256 Unicode scalar values without boundary "
+            "whitespace or control characters",
         )
     return value
 
@@ -273,7 +279,7 @@ def build_binary_response_matrix(
 
     for row_index, row in enumerate(rows):
         for column_index, cell in enumerate(row):
-            if not isinstance(cell, BinaryResponseCell):
+            if type(cell) is not BinaryResponseCell:
                 raise TypeError(
                     f"rows[{row_index}][{column_index}] must be a BinaryResponseCell"
                 )
