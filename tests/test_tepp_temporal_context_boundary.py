@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ADR_PATH = "docs/adr/0028-tepp-temporal-event-composition-boundary.md"
 ADR_INDEX_PATH = "docs/adr/README.md"
 ARCHITECTURE_PATH = "ARCHITECTURE.md"
+PRD_PATH = "docs/PRD.md"
+TRD_PATH = "docs/TRD.md"
 RUST_MANIFEST_PATHS = (
     "Cargo.toml",
     "crates/mlsirm-core/Cargo.toml",
@@ -98,6 +100,37 @@ def test_root_architecture_preserves_tepp_temporal_semantics_boundary() -> None:
     assert (
         "A measurement-occasion facet used by a psychometric model is not a TEPP temporal event model."
         in architecture
+    )
+
+
+def test_prd_and_trd_preserve_tepp_ownership_boundary() -> None:
+    """Keep requirements and technical design aligned with the accepted temporal owner decision."""
+    prd = _read(PRD_PATH)
+    trd = _read(TRD_PATH)
+
+    assert (
+        "**PRD-FR-064** TEPP owns temporal/event semantics, event ordering, temporal validity, "
+        "changing-membership history, and longitudinal leakage policy; fast-mlsirm owns reusable "
+        "time-indexed psychometric numerical kernels over explicit supplied carriers."
+        in prd
+    )
+    assert (
+        "**PRD-FR-065** TEPP-originated temporal designs shall enter fast-mlsirm only through the "
+        "versioned, immutable Anti-Corruption Layer governed by ADR-0028; direct TEPP database access, "
+        "cross-service SQL, and hidden TEPP runtime dependencies are prohibited."
+        in prd
+    )
+    assert (
+        "**TRD-MLT-007** Measurement-occasion carriers and elapsed-time inputs are numerical model inputs, "
+        "not a local event ontology. TEPP retains event semantics, temporal validity, event ordering, "
+        "changing-membership history, and longitudinal leakage policy."
+        in trd
+    )
+    assert (
+        "**TRD-MLT-008** A TEPP-originated temporal design shall be admitted only through a versioned, "
+        "immutable ACL contract with compatibility identity and provenance; adapters shall not bypass "
+        "that contract or introduce cross-service SQL, direct TEPP database access, or a hidden TEPP runtime dependency."
+        in trd
     )
 
 
