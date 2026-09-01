@@ -12,7 +12,7 @@ jobs:
     # Branch protection requires a deterministic Actions-language CodeQL check
     # on PRs. Default setup remains the repository's code-scanning upload owner.
     name: Analyze (actions)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -30,7 +30,7 @@ jobs:
     # Retain a no-upload advanced diagnostic only for explicit operator runs.
     if: github.event_name == 'workflow_dispatch'
     name: Analyze (python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
