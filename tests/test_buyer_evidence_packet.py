@@ -164,8 +164,27 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     assert 'role="region" aria-label="Required evidence coverage table" tabindex="0"' in html
     assert "Packet ZIP SHA256" in html
     assert manifest["zip_sha256"] in html
-    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+
+    payload_zip = Path(manifest["zip_file"])
+    assert payload_zip.name == "buyer_evidence_payload.zip"
+    with zipfile.ZipFile(payload_zip) as payload:
+        payload_names = set(payload.namelist())
+    assert "buyer_evidence_manifest.json" not in payload_names
+    assert "buyer_evidence_report.html" not in payload_names
+    assert "acceptance/acceptance_summary.json" in payload_names
+    assert "sales/sales_readiness_manifest.json" in payload_names
+    assert any(name.endswith(".whl") for name in payload_names)
+    assert any(name.endswith(".tar.gz") for name in payload_names)
+
+    packet_file = Path(manifest["packet_file"])
+    digest_file = Path(manifest["packet_sha256_file"])
+    with zipfile.ZipFile(packet_file) as packet:
         names = set(packet.namelist())
+        embedded_manifest = packet.read("buyer_evidence_manifest.json")
+        embedded_report = packet.read("buyer_evidence_report.html")
+    assert embedded_manifest == (out / "buyer_evidence_manifest.json").read_bytes()
+    assert embedded_report == report.read_bytes()
+    assert digest_file.read_text(encoding="ascii").strip() == module._sha256(packet_file)
     assert "buyer_evidence_manifest.json" in names
     assert "buyer_evidence_report.html" in names
     assert "acceptance/acceptance_summary.json" in names
@@ -200,7 +219,7 @@ def test_build_buyer_packet_can_include_benchmark_report(tmp_path):
     manifest = module.build_packet(args)
 
     assert manifest["coverage"]["benchmark_report"] is True
-    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+    with zipfile.ZipFile(manifest["packet_file"]) as packet:
         names = set(packet.namelist())
     assert "benchmark/benchmark_report.json" in names
     assert "benchmark/benchmark_report.html" in names
@@ -230,7 +249,7 @@ def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
     manifest = module.build_packet(args)
 
     assert manifest["coverage"]["release_evidence_index"] is True
-    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+    with zipfile.ZipFile(manifest["packet_file"]) as packet:
         names = set(packet.namelist())
     assert "release/release_evidence_index.json" in names
     assert "release/release_evidence_index.html" in names
