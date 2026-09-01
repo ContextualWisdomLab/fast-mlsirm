@@ -45,6 +45,27 @@ def _cli_timeout_seconds(out_label: str) -> float:
         raise RuntimeError("unsupported release acceptance operation") from None
 
 
+def _source_commit(repo_root: Path) -> str:
+    """Return the exact source revision recorded by standalone acceptance.
+
+    The acceptance summary is a portable evidence artifact. It therefore owns
+    its source identity instead of relying on a later buyer or acquisition
+    manifest to supply provenance for it.
+    """
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+    commit = completed.stdout.strip()
+    if len(commit) not in {40, 64} or any(ch not in "0123456789abcdef" for ch in commit):
+        raise RuntimeError("source commit lookup returned an invalid object id")
+    return commit
+
+
 def _require_auto_fit_resolved_to_rust(
     summary: dict[str, object], fit_payload: dict[str, object]
 ) -> None:
@@ -122,6 +143,8 @@ def _run_cli(
 
 def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     acceptance_started = time.perf_counter()
+    repo_root = Path(__file__).resolve().parents[1]
+    source_commit = _source_commit(repo_root)
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, object] = {
@@ -309,6 +332,7 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     summary_payload = {
         "status": "ok",
         "out": str(out_dir),
+        "source_commit": source_commit,
         "steps": report["steps"],
         "total_duration_seconds": round(time.perf_counter() - acceptance_started, 6),
     }
