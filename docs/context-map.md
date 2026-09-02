@@ -49,6 +49,8 @@ TEPP owns temporal/event composition and semantics: event ontology and graph con
 
 `fast-mlsirm` may own reusable time-indexed psychometric numerical kernels when the occasion/time carriers and exact model equations are already supplied. A TEPP-originated temporal design crosses an explicit versioned immutable Anti-Corruption Layer with compatibility identity and provenance. Direct TEPP database access, hidden TEPP runtime dependencies, and cross-service SQL is prohibited.
 
+The research interpretation of this split is maintained in [`docs/traceability/temporal-research-ownership.md`](traceability/temporal-research-ownership.md). The cited longitudinal and multilevel papers ground numerical/model questions; they do not transfer TEPP's temporal/event semantic authority.
+
 Relationship: **TEPP upstream semantic owner → Anti-Corruption Layer → fast-mlsirm numerical consumer**.
 
 ### psychometrics-commons — hosted product
