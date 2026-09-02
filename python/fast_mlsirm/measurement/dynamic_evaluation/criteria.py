@@ -216,7 +216,9 @@ def build_evaluation_criterion_definition(
     ),
 ) -> EvaluationCriterionDefinition:
     """Admit one criterion only when meaning and evidence rules are explicit."""
-    if not isinstance(category_definitions, (tuple, list)) or not category_definitions:
+    if type(category_definitions) not in (tuple, list):
+        raise TypeError("$.category_definitions must be a tuple or list")
+    if not category_definitions:
         raise _error(
             "invalid_category_set",
             "$.category_definitions",
@@ -420,7 +422,9 @@ def build_evaluation_criterion_set_snapshot(
     ),
 ) -> EvaluationCriterionSetSnapshot:
     """Freeze a non-empty criterion set before any item response is evaluated."""
-    if not isinstance(criteria, (tuple, list)) or not criteria:
+    if type(criteria) not in (tuple, list):
+        raise TypeError("$.criteria must be a tuple or list")
+    if not criteria:
         raise _error(
             "invalid_criterion_set",
             "$.criteria",
