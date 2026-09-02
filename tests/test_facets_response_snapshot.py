@@ -155,6 +155,13 @@ def test_builtin_response_copy_avoids_full_tree_numpy_materialization(
             1,
             "responses must be a numeric array",
         ),
+        (
+            [[[10**1000]]],
+            1,
+            1,
+            1,
+            "responses must be a numeric array",
+        ),
     ],
 )
 def test_builtin_response_snapshot_replays_admitted_structure(
@@ -164,7 +171,7 @@ def test_builtin_response_snapshot_replays_admitted_structure(
     n_raters: int,
     message: str,
 ) -> None:
-    """The owned tree rejects structural or scalar drift before NumPy use."""
+    """The dense owner rejects structural, scalar, or coercion drift."""
 
     with pytest.raises(ValueError, match=message):
         facets._snapshot_builtin_response_tree(
@@ -185,7 +192,7 @@ def test_builtin_response_snapshot_replays_admitted_structure(
 def test_builtin_response_snapshot_is_independent_of_mutable_rows(
     source: list[object] | tuple[object, ...],
 ) -> None:
-    """A valid exact-container tree is frozen into package-owned tuples."""
+    """A valid exact-container tree is copied into one independent dense owner."""
 
     snapshot = facets._snapshot_builtin_response_tree(
         source,
@@ -194,10 +201,38 @@ def test_builtin_response_snapshot_is_independent_of_mutable_rows(
         n_raters=1,
     )
 
-    assert snapshot == (((0.0,), (1.0,)),)
+    assert snapshot.shape == (1, 2, 1)
+    assert snapshot.dtype == np.float64
+    np.testing.assert_array_equal(snapshot, np.array([[[0.0], [1.0]]]))
     if type(source) is list:
         source[0][0][0] = 7.0
-        assert snapshot == (((0.0,), (1.0,)),)
+        np.testing.assert_array_equal(snapshot, np.array([[[0.0], [1.0]]]))
+
+
+def test_builtin_response_snapshot_fails_closed_if_outer_list_shrinks_during_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cardinality drift after allocation cannot escape the package error contract."""
+
+    source = [[[0.0]]]
+    original_empty = facets.np.empty
+
+    def empty_after_shrink(*args: object, **kwargs: object) -> np.ndarray:
+        source.clear()
+        return original_empty(*args, **kwargs)
+
+    monkeypatch.setattr(facets.np, "empty", empty_after_shrink)
+
+    with pytest.raises(
+        ValueError,
+        match="responses must be a 3-D persons x items x raters array",
+    ):
+        facets._snapshot_builtin_response_tree(
+            source,
+            n_persons=1,
+            n_items=1,
+            n_raters=1,
+        )
 
 
 def test_fit_facets_dispatches_pre_mutation_ndarray_snapshot(
