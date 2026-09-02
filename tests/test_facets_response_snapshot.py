@@ -62,6 +62,32 @@ def test_response_array_seals_exact_float64_ndarray() -> None:
     np.testing.assert_array_equal(admitted, expected)
 
 
+def test_response_array_seals_builtin_sequence_before_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NumPy materialization cannot reread a retained mutable response tree."""
+
+    source = [
+        [[0.0], [1.0]],
+        [[1.0], [0.0]],
+    ]
+    expected = np.asarray(source).copy()
+    original_asarray = facets.np.asarray
+
+    def mutate_source_at_materialization(
+        value: object, *args: object, **kwargs: object
+    ) -> np.ndarray:
+        if value is source:
+            source[0][0][0] = 1.0
+        return original_asarray(value, *args, **kwargs)
+
+    monkeypatch.setattr(facets.np, "asarray", mutate_source_at_materialization)
+
+    admitted = facets._response_array(source)
+
+    np.testing.assert_array_equal(admitted, expected)
+
+
 def test_fit_facets_dispatches_pre_mutation_ndarray_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
