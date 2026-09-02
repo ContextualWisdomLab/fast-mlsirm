@@ -464,7 +464,9 @@ def build_evaluation_item_set_snapshot(
         )
     criterion_set_snapshot._assert_integrity()
 
-    if not isinstance(items, (tuple, list)) or not items:
+    if type(items) not in (tuple, list):
+        raise TypeError("$.items must be a tuple or list")
+    if not items:
         raise _error(
             "invalid_item_set",
             "$.items",
