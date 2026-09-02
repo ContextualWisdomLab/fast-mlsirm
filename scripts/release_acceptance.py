@@ -75,12 +75,26 @@ def _admit_output_root(repo_root: Path, output_root: Path) -> Path:
     return output_root
 
 
+def _is_inert_distribution_artifact(path: Path) -> bool:
+    """Return whether an untracked path is a concrete wheel/sdist output only."""
+    if path.is_symlink() or not path.is_file():
+        return False
+    return path.name.endswith(".whl") or path.name.endswith(".tar.gz")
+
+
 def _require_clean_source(
     repo_root: Path,
     *,
     allowed_untracked_root: Path | None = None,
 ) -> None:
-    """Require a clean Git tree except generated files under one admitted output root."""
+    """Require clean source while admitting only known generated artifacts.
+
+    The acceptance output root may contain arbitrary generated acceptance files.
+    Independently, concrete untracked wheel/sdist files are inert build outputs,
+    not checkout source, so a caller's non-ignored custom distribution directory
+    does not invalidate source identity. Tracked/staged changes and every other
+    untracked file remain fatal.
+    """
     completed = subprocess.run(
         ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
         cwd=repo_root,
@@ -102,8 +116,11 @@ def _require_clean_source(
         if status != "??":
             violations.append(record)
             continue
-        candidate = (repo_root / relative_path).resolve()
+        raw_candidate = repo_root / relative_path
+        candidate = raw_candidate.resolve()
         if allowed is not None and (candidate == allowed or allowed in candidate.parents):
+            continue
+        if _is_inert_distribution_artifact(raw_candidate):
             continue
         violations.append(record)
     if violations:
