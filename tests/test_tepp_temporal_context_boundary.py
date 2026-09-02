@@ -85,6 +85,27 @@ def test_boundary_qualifies_prior_longitudinal_model_proposals() -> None:
     )
 
 
+def test_adr_0007_delegates_temporal_event_semantics_to_tepp() -> None:
+    """Prevent the historical umbrella ADR from becoming a second temporal owner."""
+    adr = _read("docs/adr/0007-multilevel-multiple-membership-temporal.md")
+
+    assert (
+        "ADR-0028 governs bounded-context ownership for every temporal statement in this Proposed record."
+        in adr
+    )
+    assert "TEPP owns temporal/event composition and semantics" in adr
+    assert (
+        "fast-mlsirm owns only reusable psychometric numerical kernels over explicit supplied "
+        "occasion/time carriers"
+        in adr
+    )
+    assert (
+        "event ontology, temporal validity, event ordering, changing-membership history, and "
+        "longitudinal leakage policy remain outside this ADR"
+        in adr
+    )
+
+
 def test_root_architecture_preserves_tepp_temporal_semantics_boundary() -> None:
     """Keep the authoritative population view from absorbing TEPP event semantics."""
     architecture = _read(ARCHITECTURE_PATH)
