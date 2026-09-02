@@ -148,8 +148,8 @@ def _reference_tuple(
     maximum: int,
     allow_empty: bool,
 ) -> tuple[str, ...]:
-    """Copy and validate a bounded unique reference collection."""
-    if isinstance(value, (str, bytes)) or not isinstance(value, (tuple, list)):
+    """Copy and validate an exact bounded reference collection."""
+    if type(value) not in (tuple, list):
         raise TypeError(f"{path} must be a tuple or list")
     if (not allow_empty and not value) or len(value) > maximum:
         lower = 0 if allow_empty else 1
