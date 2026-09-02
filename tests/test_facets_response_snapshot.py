@@ -88,6 +88,28 @@ def test_response_array_seals_builtin_sequence_before_numpy_materialization(
     np.testing.assert_array_equal(admitted, expected)
 
 
+def test_builtin_response_copy_avoids_full_tree_numpy_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shared subtrees require one bounded dense copy, not a second full tree."""
+
+    shared_person = [[0.0], [1.0]]
+    source = [shared_person] * 256
+
+    def unexpected_asarray(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("built-in responses reached full-tree np.asarray")
+
+    monkeypatch.setattr(facets.np, "asarray", unexpected_asarray)
+
+    admitted = facets._response_array(source)
+
+    assert admitted.shape == (256, 2, 1)
+    assert admitted.dtype == np.float64
+    assert admitted.nbytes == 256 * 2 * 8
+    np.testing.assert_array_equal(admitted[0], np.array([[0.0], [1.0]]))
+    np.testing.assert_array_equal(admitted[-1], np.array([[0.0], [1.0]]))
+
+
 @pytest.mark.parametrize(
     ("source", "n_persons", "n_items", "n_raters", "message"),
     [
