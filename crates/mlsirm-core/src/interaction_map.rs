@@ -218,7 +218,26 @@ pub fn residual_interaction_map(
             gram[right * columns + left] = value;
         }
     }
-    let (eigenvalues, eigenvectors) = symmetric_eigen_desc(&gram, columns)?;
+    // The shared Jacobi kernel has an absolute convergence tolerance.  A
+    // positive scalar multiple has exactly the same eigenvectors, so put the
+    // Gram matrix on an O(1) scale before decomposition and restore only the
+    // eigenvalues afterward.  This keeps the solver scale-invariant without
+    // relaxing numerical-rank admission or allocating another dense matrix.
+    let gram_scale = gram
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0_f64, f64::max);
+    if gram_scale > 0.0 {
+        for value in &mut gram {
+            *value /= gram_scale;
+        }
+    }
+    let (mut eigenvalues, eigenvectors) = symmetric_eigen_desc(&gram, columns)?;
+    if gram_scale > 0.0 {
+        for value in &mut eigenvalues {
+            *value *= gram_scale;
+        }
+    }
     if eigenvalues.iter().any(|value| !value.is_finite())
         || eigenvectors.iter().any(|value| !value.is_finite())
     {
