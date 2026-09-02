@@ -16,6 +16,7 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     ReferenceStatus,
     RegenerationStatus,
     build_dynamic_evaluation_item,
+    build_evaluation_category_definition,
     build_evaluation_criterion_definition,
     build_evaluation_criterion_set_snapshot,
     build_evaluation_item_set_snapshot,
@@ -24,16 +25,36 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
 
 def _criterion_set():  # type: ignore[no-untyped-def]
     """Freeze the single explicit criterion used by boundary fixtures."""
+    categories = (
+        build_evaluation_category_definition(
+            category_ref="category_not_satisfied",
+            definition_ref="definition_category_not_satisfied_1",
+            definition_sha256="6" * 64,
+            order_index=0,
+        ),
+        build_evaluation_category_definition(
+            category_ref="category_satisfied",
+            definition_ref="definition_category_satisfied_1",
+            definition_sha256="7" * 64,
+            order_index=1,
+        ),
+    )
     criterion = build_evaluation_criterion_definition(
         criterion_ref="criterion_accuracy",
         criterion_revision_ref="criterion_accuracy_revision_1",
         definition_ref="definition_criterion_accuracy_1",
         definition_sha256="c" * 64,
         admissible_evidence_rule_ref="admissible_evidence_accuracy_1",
+        admissible_evidence_rule_sha256="1" * 64,
         exclusion_rule_ref="exclusion_accuracy_1",
+        exclusion_rule_sha256="2" * 64,
         response_semantics_ref="response_semantics_accuracy_1",
+        response_semantics_sha256="3" * 64,
         abstention_rule_ref="abstention_accuracy_1",
+        abstention_rule_sha256="4" * 64,
         not_observable_rule_ref="not_observable_accuracy_1",
+        not_observable_rule_sha256="5" * 64,
+        category_definitions=categories,
     )
     return build_evaluation_criterion_set_snapshot(
         criterion_set_snapshot_ref="criterion_set_snapshot_1",
@@ -61,6 +82,7 @@ def _build(**overrides: Any) -> DynamicEvaluationItemSnapshot:
         "reference_semantics": ReferenceSemantics.RUBRIC,
         "reference_status": ReferenceStatus.PROVISIONAL,
         "rubric_revision_ref": "rubric_revision_1",
+        "criterion_set_snapshot": _criterion_set(),
         "criterion_refs": ("criterion_accuracy",),
         "provenance_refs": ("source_snapshot_1",),
         "generation_invocation_ref": "generation_invocation_1",
@@ -147,7 +169,7 @@ def test_reference_collections_are_typed_bounded_and_unique(
 
 
 def test_generation_identity_matches_the_item_origin() -> None:
-    """Generated origins require invocation provenance and authored origins reject it."""
+    """Generated origins require provenance and authored origins reject it."""
     with pytest.raises(DynamicEvaluationContractError) as caught:
         _build(generation_invocation_ref=None)
     assert caught.value.code == "generated_item_requires_invocation"
@@ -159,7 +181,7 @@ def test_generation_identity_matches_the_item_origin() -> None:
 
 
 def test_reference_decision_evidence_is_state_specific() -> None:
-    """Adjudication, validation, and invalidation stay separate evidence states."""
+    """Adjudication, validation, and invalidation remain separate evidence states."""
     with pytest.raises(DynamicEvaluationContractError) as caught:
         _build(validation_evidence_refs=("validation_evidence_1",))
     assert caught.value.code == "unexpected_validation_evidence"
@@ -209,7 +231,7 @@ def test_digest_carrier_and_item_set_resource_limits_fail_closed() -> None:
 
 
 def test_linked_status_requires_validated_anchor_and_linking_evidence() -> None:
-    """Cross-version comparability needs an anchor and independent evidence."""
+    """Cross-version comparability needs both an anchor and independent evidence."""
     anchor = _build(
         role=EvaluationItemRole.ANCHOR,
         reference_status=ReferenceStatus.VALIDATED,
