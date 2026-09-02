@@ -7,6 +7,8 @@ Date: 2026-08-09
 
 Psychometric and AI-evaluation observations commonly sit inside schools, teams, organizations, prompts, testlets, documents, clients, time periods or other overlapping contexts. Repeated observations also evolve over time. Flattening those structures into independent rows can produce atomistic fallacy, understate uncertainty, confound stable traits with context effects and drift, and misinterpret temporal dependence.
 
+ADR-0028 governs bounded-context ownership for every temporal statement in this Proposed record. TEPP owns temporal/event composition and semantics; fast-mlsirm owns only reusable psychometric numerical kernels over explicit supplied occasion/time carriers. Event ontology, temporal validity, event ordering, changing-membership history, and longitudinal leakage policy remain outside this ADR and must enter through the versioned, immutable Anti-Corruption Layer defined by ADR-0028.
+
 Reusable contracts plus a Rust-owned respondent state layer define a supported
 longitudinal handoff. ADR-0020 adds a separate joint MAP hierarchical
 continuous-time AR(1) Rasch slice on that handoff. This ADR remains Proposed
