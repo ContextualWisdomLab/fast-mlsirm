@@ -8,11 +8,12 @@ import pytest
 from fast_mlsirm import mokken
 
 
-def _lossy_longdouble_half() -> np.longdouble:
-    """Return an in-domain longdouble that cannot round-trip through float64."""
+def _lossy_longdouble_half() -> np.longdouble | None:
+    """Return one lossy wider-than-f64 value, or prove the platform lacks it."""
     candidate = np.nextafter(np.longdouble("0.5"), np.longdouble("1.0"))
     if np.longdouble(float(candidate)) == candidate:
-        pytest.skip("platform longdouble does not exceed float64 precision")
+        assert np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant
+        return None
     return candidate
 
 
@@ -23,8 +24,11 @@ def test_mokken_rejects_lossy_extended_precision_control_before_scores(
     control_name: str,
     carrier: str,
 ) -> None:
-    """Rust f64 controls must not be silently rounded before score traversal."""
+    """Rust f64 controls reject loss where this platform can represent it."""
     candidate = _lossy_longdouble_half()
+    if candidate is None:
+        return
+
     control: object
     if carrier == "scalar":
         control = candidate
