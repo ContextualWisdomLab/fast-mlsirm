@@ -1,22 +1,36 @@
 """Essay-specific adapters for the shared provider-neutral scoring contracts."""
 
 from functools import wraps
+from inspect import signature
 from typing import Any, Callable
 
 from . import contracts as _contracts
 from ._integer_safety import install as _install_integer_safety
+from ._integer_safety import _nonnegative_integer as _safe_nonnegative_integer
 
 _install_integer_safety(_contracts)
 
 
-def _integer_safe_factory(factory: Callable[..., Any]) -> Callable[..., Any]:
-    """Keep public essay integer admission sealed after implementation-module reloads."""
+def _integer_safe_factory(
+    factory: Callable[..., Any],
+    integer_limits: tuple[tuple[str, int], ...],
+) -> Callable[..., Any]:
+    """Seal public integer inputs before implementation code can observe them."""
+    factory_signature = signature(factory)
 
     @wraps(factory)
     def guarded(*args: Any, **kwargs: Any) -> Any:
-        """Re-seal integer admission before invoking one supported essay factory."""
+        """Normalize trusted integers before invoking one supported essay factory."""
+        bound = factory_signature.bind(*args, **kwargs)
+        for name, maximum in integer_limits:
+            if name in bound.arguments:
+                bound.arguments[name] = _safe_nonnegative_integer(
+                    bound.arguments[name],
+                    name,
+                    maximum,
+                )
         _install_integer_safety(_contracts)
-        return factory(*args, **kwargs)
+        return factory(*bound.args, **bound.kwargs)
 
     return guarded
 
@@ -77,9 +91,27 @@ from .validation_reporting import (
     build_essay_validation_evidence_report as build_essay_validation_evidence_report,
 )
 
-build_essay_prompt = _integer_safe_factory(_build_essay_prompt)
-build_essay_response_evidence = _integer_safe_factory(_build_essay_response_evidence)
-build_essay_submission = _integer_safe_factory(_build_essay_submission)
+build_essay_prompt = _integer_safe_factory(
+    _build_essay_prompt,
+    (
+        ("maximum_response_characters", MAX_ESSAY_RESPONSE_CHARACTERS),
+        ("maximum_response_units", MAX_ESSAY_RESPONSE_UNITS),
+    ),
+)
+build_essay_response_evidence = _integer_safe_factory(
+    _build_essay_response_evidence,
+    (
+        ("start_offset", MAX_ESSAY_RESPONSE_CHARACTERS),
+        ("end_offset", MAX_ESSAY_RESPONSE_CHARACTERS),
+    ),
+)
+build_essay_submission = _integer_safe_factory(
+    _build_essay_submission,
+    (
+        ("response_character_count", MAX_ESSAY_RESPONSE_CHARACTERS),
+        ("response_unit_count", MAX_ESSAY_RESPONSE_UNITS),
+    ),
+)
 
 __all__ = [
     "MAX_ESSAY_EVIDENCE_REFERENCES",
