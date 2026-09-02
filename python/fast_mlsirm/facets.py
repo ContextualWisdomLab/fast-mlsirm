@@ -66,33 +66,42 @@ def _snapshot_builtin_response_tree(
     n_persons: int,
     n_items: int,
     n_raters: int,
-) -> tuple[tuple[tuple[object, ...], ...], ...]:
-    """Freeze one admitted built-in response tree without caller callbacks."""
+) -> np.ndarray:
+    """Copy an admitted built-in response tree into one bounded dense array."""
 
     dimension_error = "responses must be a 3-D persons x items x raters array"
-    outer = tuple(value[: n_persons + 1])
-    if len(outer) != n_persons:
+    numeric_error = "responses must be a numeric array"
+    if len(value) != n_persons:
         raise ValueError(dimension_error)
 
-    snapshot_people: list[tuple[tuple[object, ...], ...]] = []
-    for person in outer:
+    snapshot = np.empty((n_persons, n_items, n_raters), dtype=np.float64)
+    for person_index in range(n_persons):
+        try:
+            person = value[person_index]
+        except IndexError:
+            raise ValueError(dimension_error) from None
         person_type = type(person)
         if person_type is not list and person_type is not tuple:
             raise ValueError(dimension_error)
-        person_snapshot = tuple(person[: n_items + 1])
-        if len(person_snapshot) != n_items:
+        if len(person) != n_items:
             raise ValueError(dimension_error)
 
-        snapshot_items: list[tuple[object, ...]] = []
-        for item in person_snapshot:
+        for item_index in range(n_items):
+            try:
+                item = person[item_index]
+            except IndexError:
+                raise ValueError(dimension_error) from None
             item_type = type(item)
             if item_type is not list and item_type is not tuple:
                 raise ValueError(dimension_error)
-            item_snapshot = tuple(item[: n_raters + 1])
-            if len(item_snapshot) != n_raters:
+            if len(item) != n_raters:
                 raise ValueError(dimension_error)
 
-            for entry in item_snapshot:
+            for rater_index in range(n_raters):
+                try:
+                    entry = item[rater_index]
+                except IndexError:
+                    raise ValueError(dimension_error) from None
                 entry_type = type(entry)
                 trusted_entry = (
                     entry_type is bool
@@ -108,10 +117,19 @@ def _snapshot_builtin_response_tree(
                     )
                 )
                 if not trusted_entry:
-                    raise ValueError("responses must be a numeric array")
-            snapshot_items.append(item_snapshot)
-        snapshot_people.append(tuple(snapshot_items))
-    return tuple(snapshot_people)
+                    raise ValueError(numeric_error)
+                try:
+                    snapshot[person_index, item_index, rater_index] = entry
+                except (TypeError, ValueError, OverflowError):
+                    raise ValueError(numeric_error) from None
+
+            if len(item) != n_raters:
+                raise ValueError(dimension_error)
+        if len(person) != n_items:
+            raise ValueError(dimension_error)
+    if len(value) != n_persons:
+        raise ValueError(dimension_error)
+    return snapshot
 
 
 def _response_array(value: object) -> np.ndarray:
@@ -244,19 +262,16 @@ def _response_array(value: object) -> np.ndarray:
         ):
             raise ValueError(nonempty_error)
 
-        # The live tree was bounded above; establish the authoritative response
-        # evidence from a package-owned exact-container snapshot before NumPy
-        # can traverse or coerce any retained caller container again.
-        response_snapshot = _snapshot_builtin_response_tree(
+        # The preflight bounds both dimensions and logical work. Build exactly
+        # one dense float64 owner and replay each exact built-in container while
+        # copying trusted scalar leaves. This avoids a second O(cells) graph of
+        # Python tuple/list objects for large or heavily shared response trees.
+        response_array = _snapshot_builtin_response_tree(
             value,
             n_persons=admitted_persons,
             n_items=expected_items,
             n_raters=expected_raters,
         )
-        try:
-            response_array = np.asarray(response_snapshot)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError("responses must be a numeric array") from exc
     else:
         raise ValueError("responses must be a numeric array")
 
