@@ -93,6 +93,12 @@ def test_item_snapshot_rejects_post_construction_mutation() -> None:
         )
     assert caught.value.code == "item_snapshot_integrity_mismatch"
 
+    malformed = _item()
+    object.__setattr__(malformed, "role", object())
+    with pytest.raises(DynamicEvaluationContractError) as caught:
+        malformed.to_dict()
+    assert caught.value.code == "item_snapshot_integrity_mismatch"
+
 
 def test_run_snapshot_rejects_post_construction_mutation() -> None:
     """A frozen run cannot acquire a later linking claim through object mutation."""
@@ -112,11 +118,23 @@ def test_run_snapshot_rejects_post_construction_mutation() -> None:
         _ = run.anchor_item_refs
     assert caught.value.code == "run_snapshot_integrity_mismatch"
 
+    malformed = build_evaluation_item_set_snapshot(
+        run_snapshot_ref="evaluation_run_snapshot_2",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        items=(_item(),),
+        linking_status=LinkingStatus.UNAVAILABLE,
+    )
+    object.__setattr__(malformed, "linking_status", object())
+    with pytest.raises(DynamicEvaluationContractError) as caught:
+        malformed.to_dict()
+    assert caught.value.code == "run_snapshot_integrity_mismatch"
+
 
 def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
     """Equivalent admitted snapshots publish the same deterministic identities."""
     first = _item()
     second = _item()
+    assert first.contract_id == "fast_mlsirm_dynamic_evaluation_item/v1"
     assert first.snapshot_sha256 == second.snapshot_sha256
     assert first.to_dict()["snapshot_sha256"] == first.snapshot_sha256
 
