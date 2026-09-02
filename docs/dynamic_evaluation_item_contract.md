@@ -77,6 +77,14 @@ that binding, and every criterion declared by the criterion set must be
 administered by at least one item. A run therefore cannot silently omit a
 criterion or substitute a different rubric after item generation.
 
+`EvaluationItemSetSnapshot.items` is mathematical membership, not administration
+sequence. Exact admitted items are canonicalized by immutable
+`item_instance_ref` before the run fingerprint is calculated, so two callers
+cannot create different snapshot identities by supplying the same set in a
+different container order. Administration sequence and event time are separate
+evidence and remain outside this set contract; TEPP owns temporal/event
+composition.
+
 The canonical contract stores no source, prompt, response, provider output, or
 customer content. A content digest is provenance, not authorization, anonymity,
 a signature, semantic equivalence, or permission to disclose source material.
@@ -176,7 +184,8 @@ The focused suites use synthetic, content-addressed criterion artifacts and
 opaque item references. No production item bank or fixed anchor example is
 invented. The tests cover criterion/category integrity, zero-anchor cold start,
 adjudication/validation separation, seed honesty, exact content identity,
-criterion coverage, immutable item/run resolution, and bounded hostile inputs.
+criterion coverage, canonical item-set identity, immutable item/run resolution,
+and bounded hostile inputs.
 
 Repository-hosted exact-head CI, security, package, coverage, and independent
 review remain authoritative before integration.
