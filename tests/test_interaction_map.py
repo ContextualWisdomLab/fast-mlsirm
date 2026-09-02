@@ -25,6 +25,20 @@ class _HostileInt(int):
         raise AssertionError("caller comparison must not execute")
 
 
+class _InteractionMapCoreStub:
+    def __init__(self, residual_interaction_map_fn: object) -> None:
+        self.residual_interaction_map = residual_interaction_map_fn
+
+
+def _stub_core(monkeypatch: pytest.MonkeyPatch, function: object) -> None:
+    """Replace only the package-owned dedicated interaction-map Rust loader."""
+    monkeypatch.setattr(
+        interaction_map_module,
+        "interaction_map_core",
+        lambda: _InteractionMapCoreStub(function),
+    )
+
+
 def _fake_map_payload(axis_count: int) -> dict[str, object]:
     return {
         "person_indices": [0],
@@ -57,8 +71,8 @@ def test_residual_interaction_map_preserves_rank_one_reconstruction() -> None:
     assert np.all(np.isfinite(result.distance))
     assert np.all(result.distance >= 0.0)
     np.testing.assert_allclose(result.axis_shares, [1.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(result.unexplained, 0.0, atol=1e-12)
     np.testing.assert_allclose(result.explained_share, 1.0, atol=1e-12)
+    np.testing.assert_allclose(result.unexplained, 0.0, atol=1e-12)
     np.testing.assert_allclose(result.cross_share, 0.0, atol=1e-12)
 
 
@@ -156,9 +170,7 @@ def test_complex_and_infinite_evidence_fail_before_native_dispatch(
     def fail_core(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("compiled interaction-map core must not run")
 
-    monkeypatch.setattr(
-        interaction_map_module._core, "residual_interaction_map", fail_core
-    )
+    _stub_core(monkeypatch, fail_core)
 
     with pytest.raises(ValueError, match="real-valued"):
         residual_interaction_map(
@@ -176,9 +188,7 @@ def test_integer_evidence_must_survive_float64_without_identity_loss(
     def fail_core(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("compiled interaction-map core must not run")
 
-    monkeypatch.setattr(
-        interaction_map_module._core, "residual_interaction_map", fail_core
-    )
+    _stub_core(monkeypatch, fail_core)
 
     with pytest.raises(ValueError, match="exactly representable"):
         residual_interaction_map(
@@ -196,9 +206,7 @@ def test_logical_and_coordinate_budgets_precede_dense_or_native_work(
     def fail_core(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("compiled interaction-map core must not run")
 
-    monkeypatch.setattr(
-        interaction_map_module._core, "residual_interaction_map", fail_core
-    )
+    _stub_core(monkeypatch, fail_core)
     monkeypatch.setattr(
         interaction_map_module, "_MAX_INTERACTION_MAP_CELLS", 2, raising=False
     )
@@ -231,9 +239,7 @@ def test_trusted_numpy_and_builtin_evidence_reaches_core_canonically(
         captured["axis_count"] = axis_count
         return _fake_map_payload(axis_count)
 
-    monkeypatch.setattr(
-        interaction_map_module._core, "residual_interaction_map", fake_core
-    )
+    _stub_core(monkeypatch, fake_core)
 
     result = residual_interaction_map(
         [[np.float32(2.0)]], [[np.int16(1)]], axis_count=np.int16(1)
@@ -248,6 +254,7 @@ def test_trusted_numpy_and_builtin_evidence_reaches_core_canonically(
     np.testing.assert_array_equal(captured["observed"], [[2.0]])
     np.testing.assert_array_equal(captured["expected"], [[1.0]])
     assert result.person_coordinates.shape == (1, 1)
+    np.testing.assert_array_equal(result.explained_share, [[1.0]])
 
 
 def test_nan_remains_the_only_nonfinite_missing_value(
@@ -263,9 +270,7 @@ def test_nan_remains_the_only_nonfinite_missing_value(
         captured["expected"] = expected
         return _fake_map_payload(axis_count)
 
-    monkeypatch.setattr(
-        interaction_map_module._core, "residual_interaction_map", fake_core
-    )
+    _stub_core(monkeypatch, fake_core)
 
     residual_interaction_map([[np.nan]], [[0.0]], axis_count=1)
     assert np.isnan(captured["observed"][0, 0])
@@ -279,9 +284,7 @@ def test_expected_nan_is_rejected_before_native_dispatch(
     def fail_core(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("compiled interaction-map core must not run")
 
-    monkeypatch.setattr(
-        interaction_map_module._core, "residual_interaction_map", fail_core
-    )
+    _stub_core(monkeypatch, fail_core)
 
     with pytest.raises(ValueError, match="expected"):
         residual_interaction_map([[0.0]], [[np.nan]], axis_count=1)

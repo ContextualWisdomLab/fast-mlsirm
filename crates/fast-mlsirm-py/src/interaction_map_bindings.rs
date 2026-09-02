@@ -1,5 +1,6 @@
-//! Python binding for the versioned Rust residual interaction-map envelope.
+//! Python bindings for the Rust residual interaction-map bounded context.
 
+use mlsirm_core::interaction_map::residual_interaction_map as core_residual_interaction_map;
 use mlsirm_core::interaction_map_envelope::{
     residual_interaction_map_envelope as core_residual_interaction_map_envelope,
 };
@@ -8,6 +9,47 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 use pyo3::wrap_pyfunction;
+
+#[pyfunction(name = "residual_interaction_map")]
+fn py_residual_interaction_map(
+    py: Python<'_>,
+    observed: PyReadonlyArray2<'_, f64>,
+    expected: PyReadonlyArray2<'_, f64>,
+    axis_count: usize,
+) -> PyResult<Py<PyDict>> {
+    if observed.shape() != expected.shape() {
+        return Err(PyValueError::new_err(
+            "observed and expected must have the same two-dimensional shape",
+        ));
+    }
+    let shape = observed.shape();
+    let result = core_residual_interaction_map(
+        observed.as_slice()?,
+        expected.as_slice()?,
+        shape[0],
+        shape[1],
+        axis_count,
+    )
+    .map_err(PyValueError::new_err)?;
+
+    let out = PyDict::new(py);
+    out.set_item("person_indices", result.person_indices)?;
+    out.set_item("item_indices", result.item_indices)?;
+    out.set_item("scored_person_count", result.scored_person_count)?;
+    out.set_item("scored_item_count", result.scored_item_count)?;
+    out.set_item("person_coordinates", result.person_coordinates)?;
+    out.set_item("item_coordinates", result.item_coordinates)?;
+    out.set_item("singular_values", result.singular_values)?;
+    out.set_item("axis_shares", result.axis_shares)?;
+    out.set_item("residual", result.residual)?;
+    out.set_item("distance", result.distance)?;
+    out.set_item("reconstruction", result.reconstruction)?;
+    out.set_item("explained_share", result.explained_share)?;
+    out.set_item("unexplained", result.unexplained)?;
+    out.set_item("cross_share", result.cross_share)?;
+    out.set_item("axis_count", result.axis_count)?;
+    Ok(out.into())
+}
 
 #[pyfunction(name = "residual_interaction_map_envelope")]
 #[allow(clippy::too_many_arguments)]
@@ -90,6 +132,7 @@ fn py_residual_interaction_map_envelope(
 #[pymodule]
 #[pyo3(name = "_interaction_map_core")]
 fn fast_mlsirm_interaction_map_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(py_residual_interaction_map, m)?)?;
     m.add_function(wrap_pyfunction!(py_residual_interaction_map_envelope, m)?)?;
     Ok(())
 }

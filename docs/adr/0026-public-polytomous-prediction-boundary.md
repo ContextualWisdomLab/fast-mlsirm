@@ -1,4 +1,4 @@
-# ADR-0016: Public polytomous prediction boundary
+# ADR-0026: Public polytomous prediction boundary
 
 Status: **Proposed**
 Date: 2026-08-23

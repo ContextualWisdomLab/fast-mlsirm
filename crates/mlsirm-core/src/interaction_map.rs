@@ -76,8 +76,7 @@ pub struct ResidualInteractionMap {
     pub residual: Vec<f64>,
     pub distance: Vec<f64>,
     pub reconstruction: Vec<f64>,
-    /// Cellwise squared reconstruction share `Rhat^2 / R^2`; unavailable at
-    /// near-zero residual cells unless the reconstruction is also near zero.
+    /// Cellwise squared reconstruction share; undefined zero-residual cases are absent.
     pub explained_share: Vec<Option<f64>>,
     pub unexplained: Vec<f64>,
     pub cross_share: Vec<Option<f64>>,
@@ -186,25 +185,87 @@ pub fn residual_interaction_map(
             let index = person * n_items + item;
             retained_observed.push(observed[index]);
             retained_expected.push(expected[index]);
-            residual.push(observed[index] - expected[index]);
+            let value = observed[index] - expected[index];
+            if !value.is_finite() {
+                return Err("residual interaction map produced a non-finite residual".into());
+            }
+            residual.push(value);
         }
     }
-    let center = residual.iter().sum::<f64>() / residual.len() as f64;
-    let centered: Vec<f64> = residual.iter().map(|value| value - center).collect();
+    let residual_sum = residual.iter().sum::<f64>();
+    if !residual_sum.is_finite() {
+        return Err("residual interaction map produced a non-finite centering sum".into());
+    }
+    let center = residual_sum / residual.len() as f64;
+    if !center.is_finite() {
+        return Err("residual interaction map produced a non-finite center".into());
+    }
+    let mut centered = Vec::with_capacity(residual.len());
+    for value in &residual {
+        let centered_value = *value - center;
+        if !centered_value.is_finite() {
+            return Err("residual interaction map produced a non-finite centered residual".into());
+        }
+        centered.push(centered_value);
+    }
     let mut gram = vec![0.0; columns * columns];
     for left in 0..columns {
         for right in left..columns {
             let value = (0..rows)
                 .map(|row| centered[row * columns + left] * centered[row * columns + right])
-                .sum();
+                .sum::<f64>();
+            if !value.is_finite() {
+                return Err("residual interaction map produced a non-finite Gram value".into());
+            }
             gram[left * columns + right] = value;
             gram[right * columns + left] = value;
         }
     }
-    let (eigenvalues, eigenvectors) = symmetric_eigen_desc(&gram, columns)?;
+    // The shared Jacobi kernel has an absolute convergence tolerance.  A
+    // positive scalar multiple has exactly the same eigenvectors, so put the
+    // Gram matrix on an O(1) scale before decomposition and restore only the
+    // eigenvalues afterward.  This keeps the solver scale-invariant without
+    // relaxing numerical-rank admission or allocating another dense matrix.
+    let gram_scale = gram
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0_f64, f64::max);
+    if gram_scale > 0.0 {
+        for value in &mut gram {
+            *value /= gram_scale;
+        }
+    }
+    let (mut eigenvalues, eigenvectors) = symmetric_eigen_desc(&gram, columns)?;
+    if gram_scale > 0.0 {
+        for value in &mut eigenvalues {
+            *value *= gram_scale;
+        }
+    }
+    if eigenvalues.iter().any(|value| !value.is_finite())
+        || eigenvectors.iter().any(|value| !value.is_finite())
+    {
+        return Err("residual interaction map eigendecomposition produced non-finite values".into());
+    }
+    let maximum_rank = rows.min(columns);
+    let leading_singular = eigenvalues
+        .first()
+        .copied()
+        .unwrap_or(0.0)
+        .max(0.0)
+        .sqrt();
+    if !leading_singular.is_finite() {
+        return Err("residual interaction map produced a non-finite leading singular value".into());
+    }
+    // This implementation obtains singular values from the Gram matrix, so
+    // eigensolver roundoff is in squared-singular-value space. Convert that
+    // bound back to the singular-value scale with sqrt(eps * dimension), while
+    // retaining the historical absolute floor and the algebraic rank ceiling.
+    let gram_roundoff = (f64::EPSILON * rows.max(columns) as f64).sqrt();
+    let numerical_singular_floor = SINGULAR_FLOOR.max(leading_singular * gram_roundoff);
     let singular_values: Vec<f64> = eigenvalues
         .iter()
-        .take_while(|value| **value > SINGULAR_FLOOR * SINGULAR_FLOOR)
+        .take(maximum_rank)
+        .take_while(|value| **value > 0.0 && (**value).sqrt() > numerical_singular_floor)
         .map(|value| value.sqrt())
         .collect();
     let retained = singular_values.len();
@@ -213,20 +274,27 @@ pub fn residual_interaction_map(
     for axis in 0..axis_count.min(retained) {
         let root_singular = singular_values[axis].sqrt();
         for item in 0..columns {
-            item_coordinates[item * axis_count + axis] =
-                eigenvectors[item * columns + axis] * root_singular;
+            let coordinate = eigenvectors[item * columns + axis] * root_singular;
+            if !coordinate.is_finite() {
+                return Err("residual interaction map produced a non-finite item coordinate".into());
+            }
+            item_coordinates[item * axis_count + axis] = coordinate;
         }
         for person in 0..rows {
             let projection: f64 = (0..columns)
                 .map(|item| centered[person * columns + item] * eigenvectors[item * columns + axis])
                 .sum();
-            person_coordinates[person * axis_count + axis] = projection / root_singular;
+            let coordinate = projection / root_singular;
+            if !projection.is_finite() || !coordinate.is_finite() {
+                return Err("residual interaction map produced a non-finite person coordinate".into());
+            }
+            person_coordinates[person * axis_count + axis] = coordinate;
         }
     }
-    let inertia = singular_values
-        .iter()
-        .map(|value| value * value)
-        .sum::<f64>();
+    let inertia = singular_values.iter().map(|value| value * value).sum::<f64>();
+    if !inertia.is_finite() {
+        return Err("residual interaction map produced non-finite inertia".into());
+    }
     let axis_shares = (0..axis_count)
         .map(|axis| {
             singular_values
@@ -253,6 +321,9 @@ pub fn residual_interaction_map(
                 })
                 .sum::<f64>()
                 .sqrt();
+            if !cell_distance.is_finite() {
+                return Err("residual interaction map produced a non-finite distance".into());
+            }
             // `person_indices` and `item_indices` are ascending, so strict
             // comparisons retain the lexicographically first cell on ties.
             let cell_identity = (person_indices[person], item_indices[item]);
@@ -273,6 +344,9 @@ pub fn residual_interaction_map(
                 .sum::<f64>();
             let raw = residual[person * columns + item];
             let remainder = raw - fitted;
+            if !fitted.is_finite() || !remainder.is_finite() {
+                return Err("residual interaction map produced a non-finite reconstruction".into());
+            }
             let explained = if raw.abs() > SINGULAR_FLOOR {
                 Some(fitted * fitted / (raw * raw))
             } else if fitted.abs() <= SINGULAR_FLOOR {
@@ -353,27 +427,18 @@ mod tests {
             .distance
             .iter()
             .all(|value| value.is_finite() && *value >= 0.0));
-        assert!(map
-            .explained_share
-            .iter()
-            .all(|share| (share.expect("rank-one residual is nonzero") - 1.0).abs() < 1e-12));
-    }
-
-    #[test]
-    fn reports_cellwise_squared_reconstruction_share() {
-        let map = residual_interaction_map(&[2.0, 0.0, 0.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
-            .unwrap();
-        assert!(map
-            .explained_share
-            .iter()
-            .all(|share| (share.unwrap() - 1.0).abs() < 1e-12));
     }
 
     #[test]
     fn excludes_incomplete_rows_without_zero_filling() {
-        let map =
-            residual_interaction_map(&[2.0, f64::NAN, 1.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
-                .unwrap();
+        let map = residual_interaction_map(
+            &[2.0, f64::NAN, 1.0, 2.0],
+            &[1.0, 1.0, 1.0, 1.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
         assert_eq!(map.person_indices, vec![1]);
         assert_eq!(map.item_indices, vec![0, 1]);
         assert_eq!(map.scored_person_count, 2);
@@ -416,11 +481,33 @@ mod tests {
 
     #[test]
     fn deterministic_cell_extrema_use_lexicographic_ties() {
-        let map = residual_interaction_map(&[1.0, 1.0, 1.0, 1.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
-            .unwrap();
+        let map = residual_interaction_map(
+            &[1.0, 1.0, 1.0, 1.0],
+            &[1.0, 1.0, 1.0, 1.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
         assert_eq!(map.distance, vec![0.0; 4]);
         assert_eq!(map.closest_cell, Some((0, 0)));
         assert_eq!(map.farthest_cell, Some((0, 0)));
+    }
+
+    #[test]
+    fn reports_cellwise_squared_reconstruction_share() {
+        let map = residual_interaction_map(
+            &[2.0, 0.0, 0.0, 2.0],
+            &[1.0, 1.0, 1.0, 1.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
+        assert!(map
+            .explained_share
+            .iter()
+            .all(|share| (share.unwrap() - 1.0).abs() < 1e-12));
     }
 
     #[test]

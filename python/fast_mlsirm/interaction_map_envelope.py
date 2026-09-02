@@ -21,6 +21,7 @@ _RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE = (
 )
 _RESIDUAL_INTERACTION_MAP_TIE_POLICY = "lexicographic-first-original-index"
 _MAX_INTERACTION_MAP_IDENTIFIER_COUNT = 20_000_000
+_MAX_INTERACTION_MAP_IDENTIFIER_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -87,9 +88,15 @@ def _opaque_ids(name: str, value: object) -> list[str]:
             f"{name} identifier count exceeds {_MAX_INTERACTION_MAP_IDENTIFIER_COUNT}"
         )
     normalized: list[str] = []
+    identifier_bytes = 0
     for identifier in value:
         if type(identifier) is not str:
             raise ValueError(f"{name} must contain only exact strings")
+        identifier_bytes += len(identifier.encode("utf-8"))
+        if identifier_bytes > _MAX_INTERACTION_MAP_IDENTIFIER_BYTES:
+            raise ValueError(
+                f"{name} identifier bytes exceed {_MAX_INTERACTION_MAP_IDENTIFIER_BYTES}"
+            )
         normalized.append(identifier)
     return normalized
 
@@ -294,6 +301,21 @@ def _rust_index_pair(raw: dict[str, object], key: str) -> tuple[int, int] | None
     return value[0], value[1]
 
 
+def _readonly_array(
+    values: object,
+    *,
+    dtype: np.dtype | type[np.generic],
+    shape: tuple[int, ...] | None = None,
+) -> np.ndarray:
+    """Materialize numerical evidence on an immutable byte buffer."""
+    materialized = np.asarray(values, dtype=dtype)
+    immutable_bytes = materialized.tobytes(order="C")
+    array = np.frombuffer(immutable_bytes, dtype=materialized.dtype)
+    if shape is not None:
+        array = array.reshape(shape)
+    return array
+
+
 def residual_interaction_map_envelope(
     observed: object,
     expected: object,
@@ -418,8 +440,8 @@ def residual_interaction_map_envelope(
         retained_item_ids=retained_item_ids,
         closest_cell_ids=closest_cell_ids,
         farthest_cell_ids=farthest_cell_ids,
-        person_indices=np.asarray(person_indices, dtype=np.int64),
-        item_indices=np.asarray(item_indices, dtype=np.int64),
+        person_indices=_readonly_array(person_indices, dtype=np.int64),
+        item_indices=_readonly_array(item_indices, dtype=np.int64),
         scored_person_count=scored_person_count,
         scored_item_count=scored_item_count,
         effective_rank=effective_rank,
@@ -429,38 +451,42 @@ def residual_interaction_map_envelope(
         incomplete_item_count=incomplete_item_count,
         closest_cell=closest_cell,
         farthest_cell=farthest_cell,
-        person_coordinates=np.asarray(person_coordinates, dtype=np.float64).reshape(
-            map_person_count, axis
+        person_coordinates=_readonly_array(
+            person_coordinates, dtype=np.float64, shape=(map_person_count, axis)
         ),
-        item_coordinates=np.asarray(item_coordinates, dtype=np.float64).reshape(
-            map_item_count, axis
+        item_coordinates=_readonly_array(
+            item_coordinates, dtype=np.float64, shape=(map_item_count, axis)
         ),
-        singular_values=np.asarray(singular_values, dtype=np.float64),
-        axis_shares=np.asarray(axis_shares, dtype=np.float64),
-        observed=np.asarray(observed_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        singular_values=_readonly_array(singular_values, dtype=np.float64),
+        axis_shares=_readonly_array(axis_shares, dtype=np.float64),
+        observed=_readonly_array(
+            observed_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        expected=np.asarray(expected_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        expected=_readonly_array(
+            expected_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        residual=np.asarray(residual_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        residual=_readonly_array(
+            residual_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        distance=np.asarray(distance_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        distance=_readonly_array(
+            distance_values, dtype=np.float64, shape=(map_person_count, map_item_count)
         ),
-        reconstruction=np.asarray(reconstruction_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+        reconstruction=_readonly_array(
+            reconstruction_values,
+            dtype=np.float64,
+            shape=(map_person_count, map_item_count),
         ),
-        explained_share=np.asarray(
+        explained_share=_readonly_array(
             [np.nan if value is None else value for value in explained_share_values],
             dtype=np.float64,
-        ).reshape(map_person_count, map_item_count),
-        unexplained=np.asarray(unexplained_values, dtype=np.float64).reshape(
-            map_person_count, map_item_count
+            shape=(map_person_count, map_item_count),
         ),
-        cross_share=np.asarray(
+        unexplained=_readonly_array(
+            unexplained_values, dtype=np.float64, shape=(map_person_count, map_item_count)
+        ),
+        cross_share=_readonly_array(
             [np.nan if value is None else value for value in cross_share_values],
             dtype=np.float64,
-        ).reshape(map_person_count, map_item_count),
+            shape=(map_person_count, map_item_count),
+        ),
     )

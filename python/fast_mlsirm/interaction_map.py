@@ -7,9 +7,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import _core
+from ._interaction_map_core_loader import interaction_map_core
 
 _MAX_INTERACTION_MAP_CELLS = 20_000_000
+_MAX_INTERACTION_MAP_STRUCTURAL_NODES = 2 * _MAX_INTERACTION_MAP_CELLS
 _MAX_INTERACTION_MAP_COORDINATE_CELLS = 20_000_000
 _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.int8,
@@ -170,11 +171,24 @@ def _trusted_matrix(name: str, value: object, *, allow_nan: bool) -> np.ndarray:
     width: int | None = None
     normalized_rows: list[list[float]] = []
     logical_cells = 0
+    structural_nodes = 0
     for row in value:
+        structural_nodes += 1
+        if structural_nodes > _MAX_INTERACTION_MAP_STRUCTURAL_NODES:
+            raise ValueError(
+                f"{name} structural-node count exceeds "
+                f"{_MAX_INTERACTION_MAP_STRUCTURAL_NODES}"
+            )
         if type(row) is np.ndarray:
             if row.ndim != 1:
                 raise ValueError(f"{name} must be two-dimensional")
             row_width = int(row.size)
+            structural_nodes += row_width
+            if structural_nodes > _MAX_INTERACTION_MAP_STRUCTURAL_NODES:
+                raise ValueError(
+                    f"{name} structural-node count exceeds "
+                    f"{_MAX_INTERACTION_MAP_STRUCTURAL_NODES}"
+                )
             logical_cells += row_width
             if logical_cells > _MAX_INTERACTION_MAP_CELLS:
                 raise ValueError(
@@ -185,6 +199,12 @@ def _trusted_matrix(name: str, value: object, *, allow_nan: bool) -> np.ndarray:
             ).tolist()
         elif type(row) in (list, tuple):
             row_width = len(row)
+            structural_nodes += row_width
+            if structural_nodes > _MAX_INTERACTION_MAP_STRUCTURAL_NODES:
+                raise ValueError(
+                    f"{name} structural-node count exceeds "
+                    f"{_MAX_INTERACTION_MAP_STRUCTURAL_NODES}"
+                )
             logical_cells += row_width
             if logical_cells > _MAX_INTERACTION_MAP_CELLS:
                 raise ValueError(
@@ -219,7 +239,8 @@ def residual_interaction_map(
     because the consuming measurement contract, not this library, determines how
     many reader-visible axes are retained. Controls are sealed before caller
     evidence is inspected; accepted matrices are callback-free, lossless at the
-    Rust ``f64`` boundary, and bounded before dense materialization.
+    Rust ``f64`` boundary, and bounded by logical-cell and structural-work limits
+    before dense materialization.
 
     References:
         Gabriel, K. R. (1971). The biplot graphic display of matrices with
@@ -238,16 +259,10 @@ def residual_interaction_map(
             "observed and expected must have the same two-dimensional shape"
         )
 
-    rows, columns = observed_array.shape
-    coordinate_cells = (rows + columns) * axis_count_value
-    if coordinate_cells > _MAX_INTERACTION_MAP_COORDINATE_CELLS:
-        raise ValueError(
-            "interaction map coordinate request exceeds "
-            f"{_MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
-        )
-
     raw = dict(
-        _core.residual_interaction_map(observed_array, expected_array, axis_count_value)
+        interaction_map_core().residual_interaction_map(
+            observed_array, expected_array, axis_count_value
+        )
     )
     person_indices = np.asarray(raw["person_indices"], dtype=np.int64)
     item_indices = np.asarray(raw["item_indices"], dtype=np.int64)

@@ -229,3 +229,35 @@ def test_schema_and_identifier_carriers_fail_before_caller_matrix_protocols() ->
             axis_count=1,
         )
     assert hostile.calls == []
+
+
+def test_public_envelope_array_fields_are_read_only() -> None:
+    """Returned numerical evidence cannot be mutated while retaining the original digest."""
+    result = residual_interaction_map_envelope(
+        np.array([[2.0, 0.0], [0.0, 2.0]], dtype=np.float64),
+        np.ones((2, 2), dtype=np.float64),
+        person_ids=["person-a", "person-b"],
+        item_ids=["item-a", "item-b"],
+        axis_count=2,
+    )
+
+    array_fields = (
+        "person_indices",
+        "item_indices",
+        "person_coordinates",
+        "item_coordinates",
+        "singular_values",
+        "axis_shares",
+        "observed",
+        "expected",
+        "residual",
+        "distance",
+        "reconstruction",
+        "explained_share",
+        "unexplained",
+        "cross_share",
+    )
+    for name in array_fields:
+        value = getattr(result, name)
+        assert isinstance(value, np.ndarray)
+        assert value.flags.writeable is False, name

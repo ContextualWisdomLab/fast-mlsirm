@@ -1,14 +1,34 @@
 use mlsirm_core::interaction_map::residual_interaction_map;
 use mlsirm_core::interaction_map_envelope::{
-    residual_interaction_map_envelope, ResidualInteractionMapEnvelope,
-    RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION, RESIDUAL_INTERACTION_MAP_TIE_POLICY,
+    residual_interaction_map_envelope, residual_interaction_map_input_digest,
+    ResidualInteractionMapEnvelope, RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+    RESIDUAL_INTERACTION_MAP_TIE_POLICY,
 };
-
-const INPUT_DIGEST: &str =
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn ids(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn request_digest(
+    persons: &[String],
+    items: &[String],
+    observed: &[f64],
+    expected: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    axis_count: usize,
+) -> String {
+    residual_interaction_map_input_digest(
+        RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        persons,
+        items,
+        observed,
+        expected,
+        n_persons,
+        n_items,
+        axis_count,
+    )
+    .unwrap()
 }
 
 fn distance_for(
@@ -45,20 +65,25 @@ fn retained_cell_values_are_rust_owned_in_original_index_order() {
 
 #[test]
 fn envelope_persists_requested_axis_count_and_tie_contract() {
+    let persons = ids(&["person-0", "person-1"]);
+    let items = ids(&["item-0", "item-1"]);
+    let observed = [1.0, 1.0, 1.0, 1.0];
+    let expected = [1.0, 1.0, 1.0, 1.0];
+    let digest = request_digest(&persons, &items, &observed, &expected, 2, 2, 2);
     let envelope = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
-        INPUT_DIGEST,
-        &ids(&["person-0", "person-1"]),
-        &ids(&["item-0", "item-1"]),
-        &[1.0, 1.0, 1.0, 1.0],
-        &[1.0, 1.0, 1.0, 1.0],
+        &digest,
+        &persons,
+        &items,
+        &observed,
+        &expected,
         2,
         2,
         2,
     )
     .unwrap();
 
-    assert_eq!(envelope.input_digest, INPUT_DIGEST);
+    assert_eq!(envelope.input_digest, digest);
     assert_eq!(envelope.requested_axis_count, 2);
     assert_eq!(
         envelope.cell_extrema_tie_policy,
@@ -76,17 +101,16 @@ fn envelope_persists_requested_axis_count_and_tie_contract() {
 
 #[test]
 fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
-    // The true interaction is the zero-mean rank-one matrix
-    // [[+1, -1], [-1, +1]].  With two requested axes, the Rust-owned
-    // factorization must recover rank one, allocate all inertia to that axis,
-    // and reconstruct the complete interaction without unexplained residual.
     let observed = [2.0, 0.0, 0.0, 2.0];
     let expected = [1.0, 1.0, 1.0, 1.0];
+    let persons = ids(&["person-a", "person-b"]);
+    let items = ids(&["item-a", "item-b"]);
+    let digest = request_digest(&persons, &items, &observed, &expected, 2, 2, 2);
     let envelope = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
-        INPUT_DIGEST,
-        &ids(&["person-a", "person-b"]),
-        &ids(&["item-a", "item-b"]),
+        &digest,
+        &persons,
+        &items,
         &observed,
         &expected,
         2,
@@ -124,17 +148,24 @@ fn envelope_recovers_a_known_rank_one_interaction_without_residual_error() {
 
 #[test]
 fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
-    // The true interaction is the zero-mean rank-two 3 x 3 matrix with +2 on
-    // the diagonal and -1 elsewhere. Reordering both axes must preserve the
-    // singular spectrum and the requested-axis distance attached to every
-    // opaque identity, while two axes reconstruct the true interaction.
     let observed = [4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0];
     let expected = [2.0; 9];
+    let original_persons = ids(&["person-a", "person-b", "person-c"]);
+    let original_items = ids(&["item-a", "item-b", "item-c"]);
+    let original_digest = request_digest(
+        &original_persons,
+        &original_items,
+        &observed,
+        &expected,
+        3,
+        3,
+        2,
+    );
     let original = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
-        INPUT_DIGEST,
-        &ids(&["person-a", "person-b", "person-c"]),
-        &ids(&["item-a", "item-b", "item-c"]),
+        &original_digest,
+        &original_persons,
+        &original_items,
         &observed,
         &expected,
         3,
@@ -143,14 +174,25 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
     )
     .unwrap();
 
-    // Rows: C, A, B. Columns: B, C, A.
     let permuted_observed = [1.0, 4.0, 1.0, 1.0, 1.0, 4.0, 4.0, 1.0, 1.0];
     let permuted_expected = [2.0; 9];
+    let permuted_persons = ids(&["person-c", "person-a", "person-b"]);
+    let permuted_items = ids(&["item-b", "item-c", "item-a"]);
+    let permuted_digest = request_digest(
+        &permuted_persons,
+        &permuted_items,
+        &permuted_observed,
+        &permuted_expected,
+        3,
+        3,
+        2,
+    );
+    assert_ne!(original_digest, permuted_digest);
     let permuted = residual_interaction_map_envelope(
         RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
-        INPUT_DIGEST,
-        &ids(&["person-c", "person-a", "person-b"]),
-        &ids(&["item-b", "item-c", "item-a"]),
+        &permuted_digest,
+        &permuted_persons,
+        &permuted_items,
         &permuted_observed,
         &permuted_expected,
         3,
@@ -190,4 +232,25 @@ fn envelope_rank_two_recovery_is_deterministic_under_axis_permutations() {
     {
         assert!((observed_value - expected_value - fitted).abs() < 1e-10);
     }
+}
+
+#[test]
+fn envelope_rejects_a_valid_but_foreign_input_digest_before_map_work() {
+    let persons = ids(&["person-a"]);
+    let items = ids(&["item-a"]);
+    let foreign_digest = request_digest(&persons, &items, &[3.0], &[1.0], 1, 1, 1);
+    let error = residual_interaction_map_envelope(
+        RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+        &foreign_digest,
+        &persons,
+        &items,
+        &[2.0],
+        &[1.0],
+        1,
+        1,
+        1,
+    )
+    .unwrap_err();
+
+    assert!(error.contains("input digest mismatch"));
 }

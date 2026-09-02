@@ -4,6 +4,9 @@
 //! interaction-map arithmetic out of `interaction_map`.
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
+
+use sha2::{Digest, Sha256};
 
 use crate::interaction_map::{residual_interaction_map, ResidualInteractionMap};
 
@@ -21,6 +24,10 @@ pub const RESIDUAL_INTERACTION_MAP_IMPLEMENTATION_VERSION: &str = env!("CARGO_PK
 /// Stable calculation-provenance identity for the numerical owner.
 pub const RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE: &str =
     "mlsirm-core::interaction_map::residual_interaction_map";
+
+const MAX_INTERACTION_MAP_INPUT_CELLS: usize = 20_000_000;
+const MAX_INTERACTION_MAP_AXIS_COUNT: usize = 20_000_000;
+const MAX_INTERACTION_MAP_IDENTIFIER_BYTES: usize = 16 * 1024 * 1024;
 
 /// Versioned product-neutral result envelope for downstream persistence.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,12 +75,144 @@ fn validate_identifiers(ids: &[String], expected: usize, axis: &str) -> Result<(
         ));
     }
     let mut seen = BTreeSet::new();
+    let mut identifier_bytes = 0_usize;
     for id in ids {
+        identifier_bytes = identifier_bytes
+            .checked_add(id.len())
+            .ok_or_else(|| format!("{axis} identifier bytes overflow"))?;
+        if identifier_bytes > MAX_INTERACTION_MAP_IDENTIFIER_BYTES {
+            return Err(format!(
+                "{axis} identifier bytes exceed {MAX_INTERACTION_MAP_IDENTIFIER_BYTES}"
+            ));
+        }
         if !seen.insert(id.as_str()) {
             return Err(format!("duplicate {axis} identifier"));
         }
     }
     Ok(())
+}
+
+fn validate_digest_evidence(
+    observed: &[f64],
+    expected: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    axis_count: usize,
+) -> Result<(), String> {
+    if axis_count == 0 {
+        return Err("axis_count must be positive".into());
+    }
+    if axis_count > MAX_INTERACTION_MAP_AXIS_COUNT {
+        return Err(format!(
+            "residual interaction map coordinate request exceeds {MAX_INTERACTION_MAP_AXIS_COUNT} cells"
+        ));
+    }
+    let cell_count = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "residual interaction map shape overflows".to_string())?;
+    if cell_count > MAX_INTERACTION_MAP_INPUT_CELLS {
+        return Err(format!(
+            "residual interaction map logical-cell count exceeds {MAX_INTERACTION_MAP_INPUT_CELLS}"
+        ));
+    }
+    if observed.len() != cell_count || expected.len() != cell_count {
+        return Err("observed and expected lengths must match the declared shape".into());
+    }
+    if observed.iter().any(|value| value.is_infinite()) {
+        return Err("observed values must not be infinite".into());
+    }
+    if expected.iter().any(|value| !value.is_finite()) {
+        return Err("expected values must be finite".into());
+    }
+    Ok(())
+}
+
+fn digest_field(hasher: &mut Sha256, tag: &str, payload: &[u8]) -> Result<(), String> {
+    let tag_len = u16::try_from(tag.len())
+        .map_err(|_| "residual interaction map digest tag length overflows".to_string())?;
+    let payload_len = u64::try_from(payload.len())
+        .map_err(|_| "residual interaction map digest payload length overflows".to_string())?;
+    hasher.update(tag_len.to_be_bytes());
+    hasher.update(tag.as_bytes());
+    hasher.update(payload_len.to_be_bytes());
+    hasher.update(payload);
+    Ok(())
+}
+
+fn digest_f64_field(hasher: &mut Sha256, tag: &str, values: &[f64]) -> Result<(), String> {
+    let payload_len = values
+        .len()
+        .checked_mul(std::mem::size_of::<f64>())
+        .ok_or_else(|| "residual interaction map digest payload length overflows".to_string())?;
+    let tag_len = u16::try_from(tag.len())
+        .map_err(|_| "residual interaction map digest tag length overflows".to_string())?;
+    let payload_len = u64::try_from(payload_len)
+        .map_err(|_| "residual interaction map digest payload length overflows".to_string())?;
+    hasher.update(tag_len.to_be_bytes());
+    hasher.update(tag.as_bytes());
+    hasher.update(payload_len.to_be_bytes());
+    for value in values {
+        hasher.update(value.to_le_bytes());
+    }
+    Ok(())
+}
+
+/// Derive the canonical SHA-256 identity for validated interaction-map evidence.
+///
+/// This is provenance serialization only. It intentionally mirrors the public
+/// Python byte contract and does not calculate interaction-map numerics.
+pub fn residual_interaction_map_input_digest(
+    schema_version: &str,
+    person_ids: &[String],
+    item_ids: &[String],
+    observed: &[f64],
+    expected: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    axis_count: usize,
+) -> Result<String, String> {
+    if schema_version != RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION {
+        return Err("unsupported residual interaction map schema version".into());
+    }
+    validate_identifiers(person_ids, n_persons, "person")?;
+    validate_identifiers(item_ids, n_items, "item")?;
+    validate_digest_evidence(observed, expected, n_persons, n_items, axis_count)?;
+
+    let axis = u64::try_from(axis_count)
+        .map_err(|_| "residual interaction map axis count overflows digest encoding".to_string())?;
+    let person_count = u64::try_from(person_ids.len())
+        .map_err(|_| "residual interaction map person count overflows digest encoding".to_string())?;
+    let item_count = u64::try_from(item_ids.len())
+        .map_err(|_| "residual interaction map item count overflows digest encoding".to_string())?;
+    let rows = u64::try_from(n_persons)
+        .map_err(|_| "residual interaction map row count overflows digest encoding".to_string())?;
+    let columns = u64::try_from(n_items)
+        .map_err(|_| "residual interaction map column count overflows digest encoding".to_string())?;
+
+    let mut hasher = Sha256::new();
+    digest_field(&mut hasher, "schema", schema_version.as_bytes())?;
+    digest_field(&mut hasher, "axis_count", &axis.to_be_bytes())?;
+    digest_field(&mut hasher, "person_count", &person_count.to_be_bytes())?;
+    for identifier in person_ids {
+        digest_field(&mut hasher, "person_id", identifier.as_bytes())?;
+    }
+    digest_field(&mut hasher, "item_count", &item_count.to_be_bytes())?;
+    for identifier in item_ids {
+        digest_field(&mut hasher, "item_id", identifier.as_bytes())?;
+    }
+    let mut shape = [0_u8; 16];
+    shape[..8].copy_from_slice(&rows.to_be_bytes());
+    shape[8..].copy_from_slice(&columns.to_be_bytes());
+    digest_field(&mut hasher, "matrix_shape", &shape)?;
+    digest_f64_field(&mut hasher, "observed_f64le", observed)?;
+    digest_f64_field(&mut hasher, "expected_f64le", expected)?;
+
+    let mut encoded = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        write!(&mut encoded, "{byte:02x}")
+            .map_err(|_| "residual interaction map digest encoding failed".to_string())?;
+    }
+    Ok(encoded)
 }
 
 fn retained_ids(indices: &[usize], ids: &[String], axis: &str) -> Result<Vec<String>, String> {
@@ -148,6 +287,19 @@ pub fn residual_interaction_map_envelope(
     validate_input_digest(input_digest)?;
     validate_identifiers(person_ids, n_persons, "person")?;
     validate_identifiers(item_ids, n_items, "item")?;
+    let canonical_digest = residual_interaction_map_input_digest(
+        schema_version,
+        person_ids,
+        item_ids,
+        observed,
+        expected,
+        n_persons,
+        n_items,
+        axis_count,
+    )?;
+    if input_digest != canonical_digest {
+        return Err("residual interaction map input digest mismatch".into());
+    }
 
     let map = residual_interaction_map(observed, expected, n_persons, n_items, axis_count)?;
     if !map_is_finite(&map) {
@@ -164,7 +316,7 @@ pub fn residual_interaction_map_envelope(
         algorithm_id: RESIDUAL_INTERACTION_MAP_ALGORITHM_ID,
         implementation_version: RESIDUAL_INTERACTION_MAP_IMPLEMENTATION_VERSION,
         calculation_provenance: RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE,
-        input_digest: input_digest.to_string(),
+        input_digest: canonical_digest,
         requested_axis_count: axis_count,
         cell_extrema_tie_policy: RESIDUAL_INTERACTION_MAP_TIE_POLICY,
         finite_value_status: true,
@@ -189,13 +341,28 @@ mod tests {
 
     #[test]
     fn preserves_opaque_ids_and_versioned_provenance() {
+        let person_ids = ids(&["person-0", "person-1"]);
+        let item_ids = ids(&["item-0", "item-1"]);
+        let observed = [9.0, f64::NAN, 2.0, 3.0];
+        let expected = [8.0, 7.0, 0.5, 1.5];
+        let input_digest = residual_interaction_map_input_digest(
+            RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+            &person_ids,
+            &item_ids,
+            &observed,
+            &expected,
+            2,
+            2,
+            1,
+        )
+        .unwrap();
         let envelope = residual_interaction_map_envelope(
             RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
-            INPUT_DIGEST,
-            &ids(&["person-0", "person-1"]),
-            &ids(&["item-0", "item-1"]),
-            &[9.0, f64::NAN, 2.0, 3.0],
-            &[8.0, 7.0, 0.5, 1.5],
+            &input_digest,
+            &person_ids,
+            &item_ids,
+            &observed,
+            &expected,
             2,
             2,
             1,
@@ -212,7 +379,7 @@ mod tests {
             envelope.calculation_provenance,
             RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE
         );
-        assert_eq!(envelope.input_digest, INPUT_DIGEST);
+        assert_eq!(envelope.input_digest, input_digest);
         assert_eq!(envelope.requested_axis_count, 1);
         assert_eq!(
             envelope.cell_extrema_tie_policy,
@@ -296,5 +463,22 @@ mod tests {
         )
         .unwrap_err();
         assert!(mismatch.contains("person identifier count"));
+    }
+
+    #[test]
+    fn rejects_valid_but_foreign_digest_before_numerical_work() {
+        let error = residual_interaction_map_envelope(
+            RESIDUAL_INTERACTION_MAP_SCHEMA_VERSION,
+            INPUT_DIGEST,
+            &ids(&["person"]),
+            &ids(&["item"]),
+            &[2.0],
+            &[1.0],
+            1,
+            1,
+            1,
+        )
+        .unwrap_err();
+        assert!(error.contains("input digest mismatch"));
     }
 }
