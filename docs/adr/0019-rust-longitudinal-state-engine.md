@@ -23,8 +23,16 @@ layer does not collide with those citation records.
 
 ## Ownership and dependency direction
 
+ADR-0028 governs the temporal/event ownership boundary for this Proposed numerical layer.
+TEPP owns event ontology, temporal validity, event ordering, changing-membership history,
+longitudinal leakage policy, and temporal/event composition. fast-mlsirm owns only the OLS
+and discrete-AR psychometric arithmetic over explicit supplied occasion/time carriers described here.
+TEPP-originated carrier designs enter only through the versioned, immutable Anti-Corruption Layer
+defined by ADR-0028; this ADR does not authorize cross-service SQL, direct TEPP database access,
+or a hidden TEPP runtime dependency.
+
 `ContextualWisdomLab/fast-mlsirm` owns this reusable measurement state layer.
-Time-flow / longitudinal state arithmetic belongs here, not in `kaefa`,
+The OLS and discrete-occasion AR numerical arithmetic belongs here, not in `kaefa`,
 `aFIPC`, or Psychometrics Commons. Downstream products consume the sealed
 design and returned diagnostics; they do not reimplement the estimator.
 
