@@ -26,7 +26,9 @@ def _format_non_execution_counts(counts: Mapping[str, int]) -> str:
 
 
 def _enforce_no_hidden_outcomes(session: object, terminalreporter: object | None) -> None:
-    """Make any hidden non-execution outcome fail the complete pytest invocation."""
+    """Fail a successful invocation on non-execution without erasing stronger failures."""
+    if session.exitstatus != pytest.ExitCode.OK:
+        return
     if terminalreporter is None:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
         return
