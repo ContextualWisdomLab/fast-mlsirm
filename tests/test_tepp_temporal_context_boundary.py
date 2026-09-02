@@ -12,6 +12,8 @@ ARCHITECTURE_PATH = "ARCHITECTURE.md"
 PRD_PATH = "docs/PRD.md"
 TRD_PATH = "docs/TRD.md"
 REQUIREMENTS_MATRIX_PATH = "docs/traceability/requirements-matrix.md"
+AGENTS_PATH = "AGENTS.md"
+CLAUDE_PATH = "CLAUDE.md"
 RUST_MANIFEST_PATHS = (
     "Cargo.toml",
     "crates/mlsirm-core/Cargo.toml",
@@ -146,6 +148,21 @@ def test_requirements_matrix_traces_temporal_owner_boundary() -> None:
         "Accepted ownership boundary / active PR |"
         in matrix
     )
+
+
+def test_agent_guidance_preserves_temporal_and_context_fabric_boundaries() -> None:
+    """Prevent coding agents from rebuilding TEPP or unreleased Context Fabric authority locally."""
+    agents = _read(AGENTS_PATH)
+    claude = _read(CLAUDE_PATH)
+
+    for document in (agents, claude):
+        assert "TEPP owns temporal/event composition and semantics" in document
+        assert "fast-mlsirm owns reusable time-indexed psychometric numerical kernels" in document
+        assert "cross-service SQL" in document
+        assert "immutable released" in document
+        assert "context-graph-contracts" in document
+        assert "enterprise-architecture-core" in document
+        assert "Estimator values, latent scores, DIF/fit diagnostics" in document
 
 
 def test_existing_ctar_rasch_remains_a_rust_numerical_kernel() -> None:
