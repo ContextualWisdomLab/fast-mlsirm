@@ -48,10 +48,10 @@ def test_required_python_check_context_aggregates_matrix() -> None:
     """Branch protection requires the exact check name ``python``.
 
     Matrix legs alone report as versioned Python checks and do not satisfy that
-    context. A non-matrix aggregate job must re-export matrix success under the
-    protected name.
+    context. The aggregate job must re-export matrix success under the
+    protected name while retaining the independently required GPU parity lane.
     """
     gate = _python_gate_job_source()
-    assert "needs: python-matrix" in gate
+    assert "needs: [python-matrix, gpu-smoke]" in gate
     assert "name: python" in gate
     assert 'test "${{ needs.python-matrix.result }}" = "success"' in gate
