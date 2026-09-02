@@ -589,6 +589,8 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         str(repo_root / "scripts" / "release_acceptance.py"),
         "--out",
         str(acceptance_dir),
+        "--distribution-root",
+        str(dist_dir),
     ]
     if args.require_rust:
         acceptance_command.append("--require-rust")
