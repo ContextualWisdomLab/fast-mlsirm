@@ -3,7 +3,7 @@
 ## Added
 
 - Add a framework-neutral Rust API that converts already-calibrated posterior draws and immutable ordered cut scores into normalized level probabilities, a weighted posterior mean and standard deviation, a shortest contiguous credible-level set, and an ambiguity-preserving modal-level decision.
-- Preserve ordinal semantics: exact cut scores enter the upper level, tied modal probabilities do not force a reported level, and cut scores are never reordered or repaired.
+- Preserve ordinal semantics: exact cut scores enter the upper level, only exact represented normalized-probability ties suppress a reported modal level, numerically close but distinct probabilities retain their unique mode, and cut scores are never reordered or repaired.
 - Rank equally short credible intervals by retained posterior mass, then use the lower start only when mass also ties; accumulate candidate interval mass with compensated summation so knife-edge credible-mass decisions use the same numerical discipline as level-probability normalization.
 - Bound admitted posterior evidence to 1,000,000 draws before value scanning, pair allocation, canonical sorting, or variance-term allocation, so caller-controlled posterior size cannot induce unbounded Rust memory or sorting work.
 - Preflight inert weight-length, cut-score-presence/search-budget, and credible-mass controls before posterior value scans, so independently invalid structural/scalar input cannot force avoidable O(n) posterior validation work.
