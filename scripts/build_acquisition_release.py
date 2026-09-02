@@ -100,6 +100,15 @@ def _source_commit(repo_root: Path) -> str:
     return commit
 
 
+def _admit_output_root(repo_root: Path, output_root: Path) -> Path:
+    """Reject output roots whose untracked-file exception could cover source."""
+    repo_root = repo_root.resolve()
+    output_root = output_root.resolve()
+    if output_root == repo_root or output_root in repo_root.parents:
+        raise RuntimeError("output directory must not be the repository root or an ancestor")
+    return output_root
+
+
 def _require_clean_source(
     repo_root: Path,
     *,
@@ -531,7 +540,7 @@ def _required_packet_artifact(payload: dict[str, Any], field: str) -> Path:
 def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     """Build one exact-source, price-neutral acquisition-readiness evidence bundle."""
     repo_root = Path(args.repo_root).resolve()
-    out_dir = Path(args.out).resolve()
+    out_dir = _admit_output_root(repo_root, Path(args.out))
     _require_clean_source(repo_root, allowed_untracked_root=out_dir)
     source_commit = _source_commit(repo_root)
     out_dir.mkdir(parents=True, exist_ok=True)

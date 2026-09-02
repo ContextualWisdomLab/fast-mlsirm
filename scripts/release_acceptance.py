@@ -66,6 +66,66 @@ def _source_commit(repo_root: Path) -> str:
     return commit
 
 
+def _admit_output_root(repo_root: Path, output_root: Path) -> Path:
+    """Reject output roots whose generated-file exception could cover source."""
+    repo_root = repo_root.resolve()
+    output_root = output_root.resolve()
+    if output_root == repo_root or output_root in repo_root.parents:
+        raise RuntimeError("output directory must not be the repository root or an ancestor")
+    return output_root
+
+
+def _require_clean_source(
+    repo_root: Path,
+    *,
+    allowed_untracked_root: Path | None = None,
+) -> None:
+    """Require a clean Git tree except generated files under one admitted output root."""
+    completed = subprocess.run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    allowed = allowed_untracked_root.resolve() if allowed_untracked_root is not None else None
+    violations: list[str] = []
+    for record in completed.stdout.split("\0"):
+        if not record:
+            continue
+        if len(record) < 4:
+            violations.append(record)
+            continue
+        status = record[:2]
+        relative_path = record[3:]
+        if status != "??":
+            violations.append(record)
+            continue
+        candidate = (repo_root / relative_path).resolve()
+        if allowed is not None and (candidate == allowed or allowed in candidate.parents):
+            continue
+        violations.append(record)
+    if violations:
+        preview = ", ".join(violations[:5])
+        raise RuntimeError(f"source working tree is not clean: {preview}")
+
+
+def _assert_source_unchanged(
+    repo_root: Path,
+    expected: str,
+    *,
+    allowed_untracked_root: Path | None = None,
+) -> None:
+    """Fail closed if the source revision or working tree changes during acceptance."""
+    actual = _source_commit(repo_root)
+    if actual != expected:
+        raise RuntimeError(
+            f"source HEAD changed during release acceptance: expected {expected}, observed {actual}"
+        )
+    _require_clean_source(repo_root, allowed_untracked_root=allowed_untracked_root)
+
+
 def _require_auto_fit_resolved_to_rust(
     summary: dict[str, object], fit_payload: dict[str, object]
 ) -> None:
@@ -144,8 +204,9 @@ def _run_cli(
 def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     acceptance_started = time.perf_counter()
     repo_root = Path(__file__).resolve().parents[1]
+    out_dir = _admit_output_root(repo_root, Path(args.out))
+    _require_clean_source(repo_root, allowed_untracked_root=out_dir)
     source_commit = _source_commit(repo_root)
-    out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, object] = {
         "command": "release_acceptance",
@@ -328,6 +389,11 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
             if not path.exists():
                 raise RuntimeError(f"expected rust artifact missing: {path}")
 
+    _assert_source_unchanged(
+        repo_root,
+        source_commit,
+        allowed_untracked_root=out_dir,
+    )
     summary_path = out_dir / "acceptance_summary.json"
     summary_payload = {
         "status": "ok",
@@ -338,6 +404,11 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     }
     summary_path.write_text(
         json.dumps(summary_payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    _assert_source_unchanged(
+        repo_root,
+        source_commit,
+        allowed_untracked_root=out_dir,
     )
     return {"status": "ok", "out": str(out_dir), "report": str(summary_path)}
 

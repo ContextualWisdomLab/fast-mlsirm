@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 GIT_METADATA_TIMEOUT_SECONDS = 5
+BUYER_PACKET_ARTIFACT_SCHEMA = "fast-mlsirm.buyer-evidence-packet"
+BUYER_PACKET_ARTIFACT_SCHEMA_VERSION = 2
 
 try:
     from scripts._bounded_json import read_json_object
@@ -555,6 +557,8 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     manifest: dict[str, Any] = {
+        "artifact_schema": BUYER_PACKET_ARTIFACT_SCHEMA,
+        "artifact_schema_version": BUYER_PACKET_ARTIFACT_SCHEMA_VERSION,
         "status": "ok",
         "command": "build_buyer_packet",
         "contract_value_krw": args.contract_value_krw,
@@ -565,9 +569,11 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         "files": source_entries,
         "payload_zip_file": str(payload_zip_path),
         "payload_zip_sha256": payload_zip_sha256,
-        # Compatibility aliases retained for existing evidence consumers. New
-        # consumers must use the explicit payload_* names and validate the
-        # delivered packet through packet_file + packet_sha256_file.
+        # Schema v2 splits the immutable inner payload from the finalized delivery
+        # envelope. The deprecated zip_* aliases therefore mean payload only in
+        # v2; consumers that require the delivered artifact must use packet_file
+        # plus packet_sha256_file. The CLI still exposes the legacy `zip` key as
+        # the delivered packet path for stdout compatibility.
         "zip_file": str(payload_zip_path),
         "zip_sha256": payload_zip_sha256,
         "packet_file": str(packet_path),
@@ -650,6 +656,7 @@ def main(argv: list[str] | None = None) -> int:
                     Path(args.out).resolve() / "buyer_evidence_manifest.json"
                 ),
                 "report": str(Path(args.out).resolve() / "buyer_evidence_report.html"),
+                "zip": manifest["packet_file"],
                 "packet": manifest["packet_file"],
                 "payload_zip": manifest["payload_zip_file"],
                 "packet_sha256_file": manifest["packet_sha256_file"],
