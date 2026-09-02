@@ -259,6 +259,14 @@ def residual_interaction_map(
             "observed and expected must have the same two-dimensional shape"
         )
 
+    rows, columns = observed_array.shape
+    coordinate_cells = (rows + columns) * axis_count_value
+    if coordinate_cells > _MAX_INTERACTION_MAP_COORDINATE_CELLS:
+        raise ValueError(
+            "interaction map coordinate request exceeds "
+            f"{_MAX_INTERACTION_MAP_COORDINATE_CELLS} cells"
+        )
+
     raw = dict(
         interaction_map_core().residual_interaction_map(
             observed_array, expected_array, axis_count_value
