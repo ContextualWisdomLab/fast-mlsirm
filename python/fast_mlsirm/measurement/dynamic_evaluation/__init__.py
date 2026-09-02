@@ -49,6 +49,30 @@ def _exact_collection_guard(
     return guarded
 
 
+def _canonical_item_set_guard(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Canonicalize mathematical item sets after safe domain-value admission."""
+
+    @wraps(function)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        """Sort exact admitted item values without executing caller protocols."""
+        value = kwargs.get("items", _MISSING)
+        if value is not _MISSING:
+            if type(value) not in (tuple, list):
+                raise TypeError("$.items must be a tuple or list")
+            if all(type(item) is DynamicEvaluationItemSnapshot for item in value):
+                for item in value:
+                    item._assert_integrity()
+                    if type(item.item_instance_ref) is not str:
+                        raise TypeError("$.items contains a non-string item identity")
+                kwargs = {
+                    **kwargs,
+                    "items": tuple(sorted(value, key=lambda item: item.item_instance_ref)),
+                }
+        return function(*args, **kwargs)
+
+    return guarded
+
+
 build_evaluation_criterion_definition = _exact_collection_guard(
     _criteria.build_evaluation_criterion_definition,
     "category_definitions",
@@ -60,10 +84,8 @@ build_evaluation_criterion_set_snapshot = _exact_collection_guard(
     "$.criteria",
 )
 build_dynamic_evaluation_item = _items.build_dynamic_evaluation_item
-build_evaluation_item_set_snapshot = _exact_collection_guard(
-    _items.build_evaluation_item_set_snapshot,
-    "items",
-    "$.items",
+build_evaluation_item_set_snapshot = _canonical_item_set_guard(
+    _items.build_evaluation_item_set_snapshot
 )
 
 # Keep the named submodule entry points aligned with the package Public Binding.
