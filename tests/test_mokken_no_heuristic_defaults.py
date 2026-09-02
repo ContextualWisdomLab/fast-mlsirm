@@ -45,3 +45,19 @@ def test_explicit_aisp_controls_remain_supported(monkeypatch) -> None:
 
     result = mokken.mokken_analysis(responses, lower_bound=0.3, alpha=0.05)
     assert result.scale.tolist() == [1, 1]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"lower_bound": 0.3},
+        {"alpha": 0.05},
+    ],
+)
+def test_omitted_aisp_controls_keep_response_admission_precedence(
+    kwargs: dict[str, float],
+) -> None:
+    """Missing-control errors never mask malformed response evidence."""
+    with pytest.raises(ValueError, match="responses must be a numeric array"):
+        mokken.mokken_analysis(object(), **kwargs)
