@@ -20,7 +20,7 @@ Production psychometric arithmetic is Rust-owned. Python is limited to validatio
 | `Diagnostics` | Fit, dependence, DIF/invariance/fairness and other measurement diagnostics whose estimands are explicitly defined. | EA facts, temporal event meaning, generic product analytics. |
 | `Simulation-Recovery` | Known-truth simulation, deterministic seed manifests, bias/MAE/RMSE/coverage, Monte Carlo uncertainty, identifiability/recovery evidence and reproducibility gates. | Production respondent/session records or architecture inventory. |
 | `Compute Backend` | Rust CPU parallelism, GPU kernels where promoted, CPU/GPU parity, deterministic execution/resource contracts. | Model semantics or provider/model routing. |
-| `Public Binding` | Stable Rust/PyO3/Python API contracts, validation, immutable marshalling, installed-package behavior, reporting and compatibility/version surfaces. | Independent statistical arithmetic or hidden fallback estimators. |
+| `Public Binding` | Stable Rust/PyO3/Python API contracts, validation, immutable marshalling, installed-package behavior, reporting and compatibility/version surfaces. | Independent production statistical arithmetic or hidden fallback estimators; governed explicit reference/parity calculations remain permitted. |
 
 ### Internal dependency direction
 
@@ -39,7 +39,7 @@ Model Specification
                 Public Binding
 ```
 
-The diagram is an ownership dependency map, not a runtime call graph. A public binding may expose contracts from the other contexts, but it may not reimplement their numerical rules.
+The diagram is an ownership dependency map, not a runtime call graph. A public binding may expose contracts from the other contexts, but it may not reimplement their numerical rules. Explicit NumPy/reference surfaces that exist solely for governed validation or CPU/GPU/parity comparison remain reference evidence rather than production numerical ownership.
 
 ## Foreign bounded contexts and relationship contracts
 
