@@ -17,6 +17,15 @@ from .dynamic_evaluation import (
     DynamicEvaluationItemSnapshot as DynamicEvaluationItemSnapshot,
 )
 from .dynamic_evaluation import DynamicItemOrigin as DynamicItemOrigin
+from .dynamic_evaluation import (
+    EvaluationCategoryDefinition as EvaluationCategoryDefinition,
+)
+from .dynamic_evaluation import (
+    EvaluationCriterionDefinition as EvaluationCriterionDefinition,
+)
+from .dynamic_evaluation import (
+    EvaluationCriterionSetSnapshot as EvaluationCriterionSetSnapshot,
+)
 from .dynamic_evaluation import EvaluationItemRole as EvaluationItemRole
 from .dynamic_evaluation import EvaluationItemSetSnapshot as EvaluationItemSetSnapshot
 from .dynamic_evaluation import LinkingStatus as LinkingStatus
@@ -25,6 +34,15 @@ from .dynamic_evaluation import ReferenceStatus as ReferenceStatus
 from .dynamic_evaluation import RegenerationStatus as RegenerationStatus
 from .dynamic_evaluation import (
     build_dynamic_evaluation_item as build_dynamic_evaluation_item,
+)
+from .dynamic_evaluation import (
+    build_evaluation_category_definition as build_evaluation_category_definition,
+)
+from .dynamic_evaluation import (
+    build_evaluation_criterion_definition as build_evaluation_criterion_definition,
+)
+from .dynamic_evaluation import (
+    build_evaluation_criterion_set_snapshot as build_evaluation_criterion_set_snapshot,
 )
 from .dynamic_evaluation import (
     build_evaluation_item_set_snapshot as build_evaluation_item_set_snapshot,
@@ -40,6 +58,9 @@ __all__ = [
     "DynamicEvaluationContractError",
     "DynamicEvaluationItemSnapshot",
     "DynamicItemOrigin",
+    "EvaluationCategoryDefinition",
+    "EvaluationCriterionDefinition",
+    "EvaluationCriterionSetSnapshot",
     "EvaluationItemRole",
     "EvaluationItemSetSnapshot",
     "LinkingStatus",
@@ -49,5 +70,8 @@ __all__ = [
     "build_binary_response_cell",
     "build_binary_response_matrix",
     "build_dynamic_evaluation_item",
+    "build_evaluation_category_definition",
+    "build_evaluation_criterion_definition",
+    "build_evaluation_criterion_set_snapshot",
     "build_evaluation_item_set_snapshot",
 ]
