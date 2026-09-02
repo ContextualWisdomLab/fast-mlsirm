@@ -525,10 +525,11 @@ def mokken_analysis(
     ``responses`` is a complete ``persons x items`` array of integer scores
     (dichotomous 0/1 or polytomous); missing values are not supported because
     these Mokken sample statistics assume complete data (van der Ark, 2007).
-    Response evidence is validated before decision-control admission so malformed
-    or hostile response containers retain their existing fail-closed boundary.
-    Complex/object response storage and values outside signed ``int64`` are
-    rejected before Rust marshalling.
+    Explicitly supplied controls are normalized and range-checked before response
+    traversal. When a control is omitted, response evidence is still validated
+    before the missing-control error so malformed or hostile response containers
+    retain their existing fail-closed boundary. Complex/object response storage
+    and values outside signed ``int64`` are rejected before Rust marshalling.
 
     References (APA 7th ed.):
         van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
@@ -541,25 +542,30 @@ def mokken_analysis(
         Mokken, R. J. (1971). *A theory and procedure of scale analysis*.
             De Gruyter. (as cited in van der Ark, 2007)
     """
+    lower_bound_value: float | None = None
+    alpha_value: float | None = None
+
+    if lower_bound is not None:
+        lower_bound_value = _real_control("lower_bound", lower_bound)
+        if not (0.0 <= lower_bound_value < 1.0):
+            raise ValueError("lower_bound must be in [0, 1)")
+    if alpha is not None:
+        alpha_value = _real_control("alpha", alpha)
+        if not (0.0 < alpha_value < 1.0):
+            raise ValueError("alpha must be in (0, 1)")
+
     x, n_persons, n_items = _validated_scores(responses)
 
-    if lower_bound is None:
+    if lower_bound_value is None:
         raise ValueError(
             "lower_bound must be explicitly provided; no rule-of-thumb AISP "
             "threshold is authoritative"
         )
-    if alpha is None:
+    if alpha_value is None:
         raise ValueError(
             "alpha must be explicitly provided; no nominal significance "
             "default is authoritative"
         )
-
-    lower_bound_value = _real_control("lower_bound", lower_bound)
-    if not (0.0 <= lower_bound_value < 1.0):
-        raise ValueError("lower_bound must be in [0, 1)")
-    alpha_value = _real_control("alpha", alpha)
-    if not (0.0 < alpha_value < 1.0):
-        raise ValueError("alpha must be in (0, 1)")
 
     from .fitstats import _core_module
 
