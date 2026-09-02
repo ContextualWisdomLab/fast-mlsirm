@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _read(path: str) -> str:
-    """Return one historical ADR as UTF-8 repository text."""
-    return (ROOT / path).read_text(encoding="utf-8")
+    """Return one historical ADR as normalized UTF-8 repository text."""
+    return " ".join((ROOT / path).read_text(encoding="utf-8").split())
 
 
 def test_adr_0019_keeps_temporal_event_semantics_in_tepp() -> None:
