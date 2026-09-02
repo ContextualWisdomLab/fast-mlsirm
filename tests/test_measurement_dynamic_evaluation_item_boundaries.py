@@ -199,16 +199,25 @@ def test_digest_carrier_and_item_set_resource_limits_fail_closed() -> None:
     with pytest.raises(TypeError, match="content_sha256 must be a string"):
         _build(content_sha256=object())
 
-    for invalid_items in ((), [], "not-an-item-set"):
+    for invalid_items in ((), []):
         with pytest.raises(DynamicEvaluationContractError) as caught:
             build_evaluation_item_set_snapshot(
                 run_snapshot_ref="evaluation_run_snapshot_empty",
                 blueprint_revision_ref="evaluation_blueprint_revision_1",
-                items=invalid_items,  # type: ignore[arg-type]
+                items=invalid_items,
                 criterion_set_snapshot=_criterion_set(),
                 linking_status=LinkingStatus.UNAVAILABLE,
             )
         assert caught.value.code == "invalid_item_set"
+
+    with pytest.raises(TypeError, match="items must be a tuple or list"):
+        build_evaluation_item_set_snapshot(
+            run_snapshot_ref="evaluation_run_snapshot_wrong_carrier",
+            blueprint_revision_ref="evaluation_blueprint_revision_1",
+            items="not-an-item-set",  # type: ignore[arg-type]
+            criterion_set_snapshot=_criterion_set(),
+            linking_status=LinkingStatus.UNAVAILABLE,
+        )
 
     with pytest.raises(DynamicEvaluationContractError) as caught:
         build_evaluation_item_set_snapshot(
