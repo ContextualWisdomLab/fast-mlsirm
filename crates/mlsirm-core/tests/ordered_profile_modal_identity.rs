@@ -1,6 +1,6 @@
 //! Exact represented-probability contract for ordered-profile modal decisions.
 
-use mlsirm_core::ordered_profile::{summarize_ordered_profile, OrderedProfileInput};
+use mlsirm_core::ordered_profile::{OrderedProfileInput, summarize_ordered_profile};
 
 #[test]
 fn distinct_represented_level_probabilities_do_not_become_a_tie() {
