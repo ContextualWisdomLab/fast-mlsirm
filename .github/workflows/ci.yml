@@ -45,14 +45,16 @@ jobs:
 
   python:
     name: python
-    needs: python-matrix
+    needs: [python-matrix, gpu-smoke]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every CPython matrix leg
+      - name: Require every CPython matrix leg and GPU parity
         run: |
           echo "python-matrix result=${{ needs.python-matrix.result }}"
+          echo "gpu-smoke result=${{ needs.gpu-smoke.result }}"
           test "${{ needs.python-matrix.result }}" = "success"
+          test "${{ needs.gpu-smoke.result }}" = "success"
 
 
   rust:
