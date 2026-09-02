@@ -9,6 +9,7 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     DynamicEvaluationContractError,
     DynamicEvaluationItemSnapshot,
     DynamicItemOrigin,
+    EvaluationCategoryDefinition,
     EvaluationCriterionDefinition,
     EvaluationCriterionSetSnapshot,
     EvaluationItemRole,
@@ -18,6 +19,7 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     ReferenceStatus,
     RegenerationStatus,
     build_dynamic_evaluation_item,
+    build_evaluation_category_definition,
     build_evaluation_criterion_definition,
     build_evaluation_criterion_set_snapshot,
     build_evaluation_item_set_snapshot,
@@ -25,6 +27,18 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
 
 _SHA_A = "a" * 64
 _SHA_B = "b" * 64
+
+
+def _category(
+    category_ref: str, marker: str, order_index: int
+) -> EvaluationCategoryDefinition:
+    """Build one explicit response category for a synthetic criterion."""
+    return build_evaluation_category_definition(
+        category_ref=category_ref,
+        definition_ref=f"definition_{category_ref}_1",
+        definition_sha256=marker * 64,
+        order_index=order_index,
+    )
 
 
 def _criterion(criterion_ref: str, marker: str) -> EvaluationCriterionDefinition:
@@ -35,20 +49,33 @@ def _criterion(criterion_ref: str, marker: str) -> EvaluationCriterionDefinition
         definition_ref=f"definition_{criterion_ref}_1",
         definition_sha256=marker * 64,
         admissible_evidence_rule_ref=f"admissible_evidence_{criterion_ref}_1",
+        admissible_evidence_rule_sha256="1" * 64,
         exclusion_rule_ref=f"exclusion_{criterion_ref}_1",
+        exclusion_rule_sha256="2" * 64,
         response_semantics_ref=f"response_semantics_{criterion_ref}_1",
+        response_semantics_sha256="3" * 64,
         abstention_rule_ref=f"abstention_{criterion_ref}_1",
+        abstention_rule_sha256="4" * 64,
         not_observable_rule_ref=f"not_observable_{criterion_ref}_1",
+        not_observable_rule_sha256="5" * 64,
+        category_definitions=(
+            _category(f"{criterion_ref}_not_satisfied", "6", 0),
+            _category(f"{criterion_ref}_satisfied", "7", 1),
+        ),
     )
 
 
-def _criterion_set() -> EvaluationCriterionSetSnapshot:
+def _criterion_set(
+    *,
+    blueprint_revision_ref: str = "evaluation_blueprint_revision_1",
+    rubric_revision_ref: str = "rubric_revision_1",
+) -> EvaluationCriterionSetSnapshot:
     """Freeze the actual criteria used by every item in this test module."""
     return build_evaluation_criterion_set_snapshot(
         criterion_set_snapshot_ref="criterion_set_snapshot_1",
         criterion_set_revision_ref="criterion_set_revision_1",
-        blueprint_revision_ref="evaluation_blueprint_revision_1",
-        rubric_revision_ref="rubric_revision_1",
+        blueprint_revision_ref=blueprint_revision_ref,
+        rubric_revision_ref=rubric_revision_ref,
         intended_use_ref="intended_use_response_quality_1",
         construct_ref="construct_response_quality_1",
         population_scope_ref="population_scope_synthetic_1",
@@ -82,6 +109,7 @@ def _item(
         reference_semantics=ReferenceSemantics.RUBRIC,
         reference_status=reference_status,
         rubric_revision_ref="rubric_revision_1",
+        criterion_set_snapshot=_criterion_set(),
         criterion_refs=("criterion_accuracy", "criterion_evidence"),
         provenance_refs=("source_snapshot_1", "generation_invocation_1"),
         generation_invocation_ref="generation_invocation_1",
@@ -93,7 +121,8 @@ def _item(
     )
 
 
-def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable() -> None:
+def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable(
+) -> None:
     """Cold-start evaluation may run without anchors but cannot claim linked scores."""
     snapshot = build_evaluation_item_set_snapshot(
         run_snapshot_ref="evaluation_run_snapshot_1",
@@ -130,7 +159,7 @@ def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable(
 
 
 def test_adjudicated_is_not_validated_or_anchor_authority() -> None:
-    """Adjudication provenance does not promote an item to a validated anchor."""
+    """Adjudication does not silently promote an item to a validated anchor."""
     item = _item(
         reference_status=ReferenceStatus.ADJUDICATED,
         adjudication_ref="adjudication_resolution_1",
@@ -156,7 +185,7 @@ def test_adjudicated_is_not_validated_or_anchor_authority() -> None:
 
 
 def test_reference_status_controls_adjudication_and_validation_evidence() -> None:
-    """Each reference status carries only evidence appropriate to that state."""
+    """Each reference status carries only the evidence appropriate to that state."""
     with pytest.raises(DynamicEvaluationContractError) as caught:
         _item(reference_status=ReferenceStatus.ADJUDICATED)
     assert caught.value.code == "adjudicated_reference_requires_resolution"
@@ -217,6 +246,7 @@ def test_generated_items_require_generation_identity_and_exact_content_digest() 
             reference_semantics=ReferenceSemantics.RUBRIC,
             reference_status=ReferenceStatus.PROVISIONAL,
             rubric_revision_ref="rubric_revision_1",
+            criterion_set_snapshot=_criterion_set(),
             criterion_refs=("criterion_accuracy",),
             provenance_refs=("source_snapshot_1",),
             generation_invocation_ref="generation_invocation_1",
@@ -235,6 +265,7 @@ def test_generated_items_require_generation_identity_and_exact_content_digest() 
             reference_semantics=ReferenceSemantics.RUBRIC,
             reference_status=ReferenceStatus.PROVISIONAL,
             rubric_revision_ref="rubric_revision_1",
+            criterion_set_snapshot=_criterion_set(),
             criterion_refs=("criterion_accuracy",),
             provenance_refs=("source_snapshot_1",),
             generation_invocation_ref=None,
@@ -277,6 +308,10 @@ def test_item_set_is_immutable_unique_and_blueprint_consistent() -> None:
         reference_semantics=ReferenceSemantics.EXACT,
         reference_status=ReferenceStatus.PROVISIONAL,
         rubric_revision_ref="rubric_revision_2",
+        criterion_set_snapshot=_criterion_set(
+            blueprint_revision_ref="evaluation_blueprint_revision_2",
+            rubric_revision_ref="rubric_revision_2",
+        ),
         criterion_refs=("criterion_accuracy",),
         provenance_refs=("authoring_record_1",),
         generation_invocation_ref=None,
@@ -306,6 +341,10 @@ def test_public_aggregates_are_factory_sealed() -> None:
             reference_semantics=ReferenceSemantics.RUBRIC,
             reference_status=ReferenceStatus.PROVISIONAL,
             rubric_revision_ref="rubric_revision_1",
+            criterion_set_snapshot_ref=(
+                _criterion_set().criterion_set_snapshot_ref
+            ),
+            criterion_set_sha256=_criterion_set().snapshot_sha256,
             criterion_refs=("criterion_accuracy",),
             provenance_refs=("source_snapshot_1",),
             generation_invocation_ref="generation_invocation_1",
