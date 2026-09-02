@@ -25,7 +25,10 @@ def test_clean_source_allows_only_inert_untracked_distribution_artifacts(
 ) -> None:
     """A custom non-ignored dist can exist without becoming a source exemption."""
     repo_root = tmp_path / "repo"
-    repo_root.mkdir()
+    dist_dir = repo_root / "custom-dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "fast_mlsirm-0.9.2-py3-none-any.whl").write_bytes(b"wheel")
+    (dist_dir / "fast_mlsirm-0.9.2.tar.gz").write_bytes(b"sdist")
     status = "?? custom-dist/fast_mlsirm-0.9.2-py3-none-any.whl\0?? custom-dist/fast_mlsirm-0.9.2.tar.gz\0"
     monkeypatch.setattr(subject.subprocess, "run", lambda *args, **kwargs: _status(status))
 
@@ -38,7 +41,10 @@ def test_distribution_artifact_exception_does_not_hide_source_like_files(
 ) -> None:
     """A generated dist directory must not turn into a generic untracked subtree bypass."""
     repo_root = tmp_path / "repo"
-    repo_root.mkdir()
+    dist_dir = repo_root / "custom-dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "fast_mlsirm-0.9.2.whl").write_bytes(b"wheel")
+    (dist_dir / "rogue.py").write_text("raise SystemExit", encoding="utf-8")
     status = "?? custom-dist/fast_mlsirm-0.9.2.whl\0?? custom-dist/rogue.py\0"
     monkeypatch.setattr(subject.subprocess, "run", lambda *args, **kwargs: _status(status))
 
@@ -52,7 +58,9 @@ def test_distribution_artifact_exception_never_hides_tracked_changes(
 ) -> None:
     """Tracked/staged mutations remain fatal even when their name looks like a package."""
     repo_root = tmp_path / "repo"
-    repo_root.mkdir()
+    dist_dir = repo_root / "custom-dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "fast_mlsirm-0.9.2.whl").write_bytes(b"wheel")
     status = " M custom-dist/fast_mlsirm-0.9.2.whl\0"
     monkeypatch.setattr(subject.subprocess, "run", lambda *args, **kwargs: _status(status))
 
