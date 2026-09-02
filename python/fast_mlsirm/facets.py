@@ -91,7 +91,8 @@ def _response_array(value: object) -> np.ndarray:
         if response_array.shape != admitted_shape or snapshot_size != admitted_size:
             raise ValueError(dimension_error)
     elif value_type is list or value_type is tuple:
-        if len(value) == 0:
+        admitted_persons = len(value)
+        if admitted_persons == 0:
             raise ValueError(nonempty_error)
 
         # A valid non-empty 3-D built-in tree with N scalar cells visits at most
@@ -189,8 +190,70 @@ def _response_array(value: object) -> np.ndarray:
         ):
             raise ValueError(nonempty_error)
 
+        # Structural admission above is intentionally performed on the caller's
+        # exact built-in tree before allocating dense NumPy storage. Freeze each
+        # mutable container into bounded tuples now and replay shape/scalar
+        # admission on that package-owned tree. NumPy must never reread retained
+        # caller lists after this ownership boundary.
+        outer = (
+            tuple(value[: admitted_persons + 1])
+            if value_type is list
+            else value
+        )
+        if len(outer) != admitted_persons:
+            raise ValueError(dimension_error)
+        snapshot_people: list[tuple[tuple[object, ...], ...]] = []
+        for person in outer:
+            person_type = type(person)
+            if person_type is not list and person_type is not tuple:
+                raise ValueError(dimension_error)
+            person_source = (
+                tuple(person[: expected_items + 1])
+                if person_type is list
+                else person
+            )
+            if len(person_source) != expected_items:
+                raise ValueError(dimension_error)
+            snapshot_items: list[tuple[object, ...]] = []
+            for item in person_source:
+                item_type = type(item)
+                if item_type is not list and item_type is not tuple:
+                    raise ValueError(dimension_error)
+                item_snapshot = (
+                    tuple(item[: expected_raters + 1])
+                    if item_type is list
+                    else item
+                )
+                if len(item_snapshot) != expected_raters:
+                    raise ValueError(dimension_error)
+                for entry in item_snapshot:
+                    entry_type = type(entry)
+                    trusted_entry = (
+                        entry_type is bool
+                        or entry_type is np.bool_
+                        or entry_type is int
+                        or entry_type is float
+                        or any(
+                            entry_type is trusted_type
+                            for trusted_type in (
+                                *_NUMPY_INTEGER_SCALAR_TYPES,
+                                *_NUMPY_FLOAT_SCALAR_TYPES,
+                            )
+                        )
+                    )
+                    if not trusted_entry:
+                        raise ValueError("responses must be a numeric array")
+                snapshot_items.append(tuple(item_snapshot))
+            snapshot_people.append(tuple(snapshot_items))
+        response_snapshot = tuple(snapshot_people)
+        snapshot_cells = admitted_persons * expected_items * expected_raters
+        if snapshot_cells > _MAX_FACETS_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        if snapshot_cells != logical_cells:
+            raise ValueError(dimension_error)
+
         try:
-            response_array = np.asarray(value)
+            response_array = np.asarray(response_snapshot)
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError("responses must be a numeric array") from exc
     else:
