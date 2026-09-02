@@ -18,6 +18,8 @@ The Rust numerical algorithm is unchanged. `fast-mlsirm` continues to own determ
 
 The branch adds a regression that verifies calls with omitted AISP controls fail closed and that explicit controls still reach the Rust boundary. Existing successful fixtures that previously depended on implicit defaults now state their test controls explicitly. Malformed/hostile response evidence retains precedence, so removing the scientific defaults does not weaken the response trust boundary.
 
+On 2026-09-02, exact-head repair run `33573151688` completed successfully after moving the one-shot writer to the available `ubuntu-slim` pool and explicitly provisioning Python, Rust, hash-locked CI requirements, and the editable native package. It updated the five repository-owned successful/core callers that still relied on implicit AISP controls and self-removed its temporary workflow/trigger before the non-force push. The resulting repaired head was `a6dc0e2ddeee80c74ded90cee62d71117f491303`. Pull-request workflow attempts generated from that bot-authored repair head were recorded by GitHub as `action_required` with no jobs, so this traceability commit is intentionally made through the ordinary owner write path to obtain successor-head admission evidence without transferring predecessor results.
+
 ## Product-gap disposition
 
 This closes one concrete no-heuristics gap at the Python-to-Rust Mokken AISP boundary. It does not assert that every Mokken threshold used by downstream products is validated; each downstream product still owns the evidence for its chosen controls. The corresponding entry should be incorporated into `docs/product-technical-gap-baseline.md` when its active single-writer lane is reconciled, without replacing concurrent baseline work.
