@@ -7,7 +7,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-const PROBABILITY_TOLERANCE: f64 = 1.0e-12;
 const MAX_POSTERIOR_SAMPLES: usize = 1_000_000;
 const MAX_CREDIBLE_INTERVAL_CANDIDATES: usize = 20_000_000;
 
@@ -29,7 +28,7 @@ pub struct OrderedProfileInput<'a> {
 pub struct OrderedProfileSummary {
     /// Normalized posterior probability for every ordered level.
     pub level_probabilities: Vec<f64>,
-    /// Unique modal level when it lies in the credible set, otherwise `None`.
+    /// Unique exact modal level when it lies in the credible set, otherwise `None`.
     pub reported_level_index: Option<usize>,
     /// Shortest contiguous ordered-level interval meeting `credible_mass`.
     pub credible_level_indices: Vec<usize>,
@@ -123,7 +122,8 @@ impl Error for OrderedProfileError {}
 /// validated in their supplied order; the function never sorts cut scores,
 /// repairs weights, or forces a reported level outside the credible set. Posterior
 /// draw/weight pairs are canonically ordered internally so a joint permutation
-/// produces bit-identical output.
+/// produces bit-identical output. Modal ties are determined from the exact
+/// represented normalized probabilities; no empirical near-tie tolerance is used.
 pub fn summarize_ordered_profile(
     input: OrderedProfileInput<'_>,
 ) -> Result<OrderedProfileSummary, OrderedProfileError> {
@@ -314,7 +314,7 @@ fn unique_modal_level(probabilities: &[f64]) -> Option<usize> {
         .fold(f64::NEG_INFINITY, f64::max);
     let mut modal_index = None;
     for (index, probability) in probabilities.iter().enumerate() {
-        if (*probability - maximum).abs() <= PROBABILITY_TOLERANCE {
+        if *probability == maximum {
             if modal_index.is_some() {
                 return None;
             }
