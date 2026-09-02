@@ -100,7 +100,7 @@ def test_adr_0007_delegates_temporal_event_semantics_to_tepp() -> None:
         in adr
     )
     assert (
-        "event ontology, temporal validity, event ordering, changing-membership history, and "
+        "Event ontology, temporal validity, event ordering, changing-membership history, and "
         "longitudinal leakage policy remain outside this ADR"
         in adr
     )
