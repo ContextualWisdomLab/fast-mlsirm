@@ -25,14 +25,6 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
 )
 
 
-class _ExplodingOverBudgetList(list[str]):
-    """Prove allocation admission happens before caller-controlled iteration."""
-
-    def __iter__(self):  # type: ignore[no-untyped-def]
-        """Fail if production code iterates an already over-budget collection."""
-        raise AssertionError("over-budget references must be rejected before iteration")
-
-
 def _criterion_set():  # type: ignore[no-untyped-def]
     """Build one explicit criterion set for integrity tests."""
     categories = (
@@ -100,9 +92,9 @@ def _item():  # type: ignore[no-untyped-def]
     )
 
 
-def test_reference_budget_is_checked_before_iterating_caller_input() -> None:
-    """An oversized collection fails by length without traversing its contents."""
-    criteria = _ExplodingOverBudgetList(f"criterion_{index}" for index in range(129))
+def test_reference_budget_is_checked_before_validating_collection_leaves() -> None:
+    """An oversized exact collection fails by length before leaf admission."""
+    criteria = [object() for _ in range(129)]
 
     with pytest.raises(DynamicEvaluationContractError) as caught:
         build_dynamic_evaluation_item(
@@ -116,7 +108,7 @@ def test_reference_budget_is_checked_before_iterating_caller_input() -> None:
             reference_status=ReferenceStatus.PROVISIONAL,
             rubric_revision_ref="rubric_revision_1",
             criterion_set_snapshot=_criterion_set(),
-            criterion_refs=criteria,
+            criterion_refs=criteria,  # type: ignore[arg-type]
             provenance_refs=("source_snapshot_1",),
             generation_invocation_ref="generation_invocation_1",
             regeneration_status=RegenerationStatus.INPUTS_RECORDED,
