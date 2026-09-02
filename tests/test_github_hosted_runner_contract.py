@@ -77,3 +77,13 @@ def test_queue_sensitive_pr_workflows_cancel_predecessor_heads() -> None:
         concurrency = source.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
         assert expected_group in concurrency, workflow
         assert "cancel-in-progress: true" in concurrency, workflow
+
+
+def test_required_python_context_cannot_pass_without_gpu_parity() -> None:
+    """The protected ``python`` context must fail when explicit GPU parity fails."""
+    source = (WORKFLOW_DIRECTORY / "ci.yml").read_text(encoding="utf-8")
+    python_job = source.split("\n  python:\n", 1)[1].split("\n\n  rust:\n", 1)[0]
+
+    assert "needs: [python-matrix, gpu-smoke]" in python_job
+    assert 'test "${{ needs.python-matrix.result }}" = "success"' in python_job
+    assert 'test "${{ needs.gpu-smoke.result }}" = "success"' in python_job
