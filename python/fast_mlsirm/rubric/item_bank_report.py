@@ -445,9 +445,9 @@ def render_item_bank_report_html(
         for kind, status in report["evidence_status"].items()
     )
     timeline_rows = "".join(
-        "<tr><td>"
+        '<tr><th scope="row">'
         + escape(str(step["state"]))
-        + "</td><td>"
+        + "</th><td>"
         + escape(str(step["transition_reason_id"]))
         + "</td><td><code>"
         + escape(str(step["record_fingerprint"]))
@@ -470,17 +470,19 @@ def render_item_bank_report_html(
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{escaped_title}</title>\n"
         "<style>"
-        "body{font-family:system-ui,sans-serif;line-height:1.5;margin:0;}"
+        "body{font-family:system-ui,sans-serif;line-height:1.5;margin:0;font-variant-numeric:tabular-nums;}"
         "main{max-width:72rem;margin:auto;padding:1.25rem;}"
+        "main:focus:not(:focus-visible){outline:none;}"
         ".skip-link{position:absolute;left:.5rem;top:.5rem;padding:.5rem;}"
         ":focus-visible{outline:3px solid currentColor;outline-offset:2px;}"
         "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
-        "th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
+        "thead th,tbody th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
+        "tbody th{font-weight:normal;}"
         "dt{font-weight:700;margin-top:.5rem;}dd{margin-left:0;}"
         "code{overflow-wrap:anywhere;}"
         "</style>\n</head>\n<body>\n"
         '<a class="skip-link" href="#main-content">Skip to report</a>\n'
-        '<main id="main-content">\n'
+        '<main id="main-content" tabindex="-1">\n'
         f"<h1>{escaped_title}</h1>\n"
         '<section aria-labelledby="summary-heading"><h2 id="summary-heading">'
         "Summary</h2><dl>"
