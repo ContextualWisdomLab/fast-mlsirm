@@ -97,11 +97,13 @@ def _snapshot_builtin_response_tree(
             if len(item) != n_raters:
                 raise ValueError(dimension_error)
 
-            for rater_index in range(n_raters):
-                try:
-                    entry = item[rater_index]
-                except IndexError:
-                    raise ValueError(dimension_error) from None
+            item_snapshot = item
+            if item_type is list:
+                item_snapshot = tuple(item[: n_raters + 1])
+                if len(item_snapshot) != n_raters:
+                    raise ValueError(dimension_error)
+
+            for rater_index, entry in enumerate(item_snapshot):
                 entry_type = type(entry)
                 trusted_entry = (
                     entry_type is bool
