@@ -18,6 +18,7 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     ReferenceStatus,
     RegenerationStatus,
     build_dynamic_evaluation_item,
+    build_evaluation_category_definition,
     build_evaluation_criterion_definition,
     build_evaluation_criterion_set_snapshot,
     build_evaluation_item_set_snapshot,
@@ -28,22 +29,42 @@ class _ExplodingOverBudgetList(list[str]):
     """Prove allocation admission happens before caller-controlled iteration."""
 
     def __iter__(self):  # type: ignore[no-untyped-def]
-        """Fail if production code iterates an over-budget collection."""
-        raise AssertionError("over-budget references must fail before iteration")
+        """Fail if production code iterates an already over-budget collection."""
+        raise AssertionError("over-budget references must be rejected before iteration")
 
 
 def _criterion_set():  # type: ignore[no-untyped-def]
     """Build one explicit criterion set for integrity tests."""
+    categories = (
+        build_evaluation_category_definition(
+            category_ref="category_not_satisfied",
+            definition_ref="definition_category_not_satisfied_1",
+            definition_sha256="6" * 64,
+            order_index=0,
+        ),
+        build_evaluation_category_definition(
+            category_ref="category_satisfied",
+            definition_ref="definition_category_satisfied_1",
+            definition_sha256="7" * 64,
+            order_index=1,
+        ),
+    )
     criterion = build_evaluation_criterion_definition(
         criterion_ref="criterion_accuracy",
         criterion_revision_ref="criterion_accuracy_revision_1",
         definition_ref="definition_criterion_accuracy_1",
         definition_sha256="c" * 64,
         admissible_evidence_rule_ref="admissible_evidence_accuracy_1",
+        admissible_evidence_rule_sha256="1" * 64,
         exclusion_rule_ref="exclusion_accuracy_1",
+        exclusion_rule_sha256="2" * 64,
         response_semantics_ref="response_semantics_accuracy_1",
+        response_semantics_sha256="3" * 64,
         abstention_rule_ref="abstention_accuracy_1",
+        abstention_rule_sha256="4" * 64,
         not_observable_rule_ref="not_observable_accuracy_1",
+        not_observable_rule_sha256="5" * 64,
+        category_definitions=categories,
     )
     return build_evaluation_criterion_set_snapshot(
         criterion_set_snapshot_ref="criterion_set_snapshot_1",
@@ -71,6 +92,7 @@ def _item():  # type: ignore[no-untyped-def]
         reference_semantics=ReferenceSemantics.RUBRIC,
         reference_status=ReferenceStatus.PROVISIONAL,
         rubric_revision_ref="rubric_revision_1",
+        criterion_set_snapshot=_criterion_set(),
         criterion_refs=("criterion_accuracy",),
         provenance_refs=("source_snapshot_1",),
         generation_invocation_ref="generation_invocation_1",
@@ -80,9 +102,7 @@ def _item():  # type: ignore[no-untyped-def]
 
 def test_reference_budget_is_checked_before_iterating_caller_input() -> None:
     """An oversized collection fails by length without traversing its contents."""
-    criteria = _ExplodingOverBudgetList(
-        f"criterion_{index}" for index in range(129)
-    )
+    criteria = _ExplodingOverBudgetList(f"criterion_{index}" for index in range(129))
 
     with pytest.raises(DynamicEvaluationContractError) as caught:
         build_dynamic_evaluation_item(
@@ -95,6 +115,7 @@ def test_reference_budget_is_checked_before_iterating_caller_input() -> None:
             reference_semantics=ReferenceSemantics.RUBRIC,
             reference_status=ReferenceStatus.PROVISIONAL,
             rubric_revision_ref="rubric_revision_1",
+            criterion_set_snapshot=_criterion_set(),
             criterion_refs=criteria,
             provenance_refs=("source_snapshot_1",),
             generation_invocation_ref="generation_invocation_1",
@@ -131,7 +152,7 @@ def test_item_snapshot_rejects_post_construction_mutation() -> None:
 
 
 def test_run_snapshot_rejects_post_construction_mutation() -> None:
-    """A frozen run cannot acquire a later linking claim through mutation."""
+    """A frozen run cannot acquire a later linking claim through object mutation."""
     run = build_evaluation_item_set_snapshot(
         run_snapshot_ref="evaluation_run_snapshot_1",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
@@ -163,7 +184,7 @@ def test_run_snapshot_rejects_post_construction_mutation() -> None:
 
 
 def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
-    """Equivalent admitted snapshots publish deterministic identities."""
+    """Equivalent admitted snapshots publish the same deterministic identities."""
     first = _item()
     second = _item()
     assert first.contract_id == "fast_mlsirm_dynamic_evaluation_item/v1"
@@ -189,20 +210,24 @@ def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
 
 
 def test_dynamic_evaluation_module_has_complete_docstrings() -> None:
-    """Every class and function in the new public module has a docstring."""
-    source_path = Path(dynamic_evaluation.__file__)
-    tree = ast.parse(source_path.read_text(encoding="utf-8"))
-    missing = [
-        f"{node.name}@{node.lineno}"
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-        and ast.get_docstring(node) is None
-    ]
+    """Every class and function in the new public module has a real docstring."""
+    package_path = Path(dynamic_evaluation.__file__).parent
+    missing = []
+    for source_path in sorted(package_path.glob("*.py")):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        missing.extend(
+            f"{source_path.name}:{node.name}@{node.lineno}"
+            for node in ast.walk(tree)
+            if isinstance(
+                node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            )
+            and ast.get_docstring(node) is None
+        )
     assert missing == []
 
 
 def test_dynamic_evaluation_contract_is_exported_from_measurement_package() -> None:
-    """Consumers discover the versioned contract through its owner package."""
+    """Consumers can discover the versioned contract through its owner package."""
     assert measurement.DYNAMIC_EVALUATION_ITEM_CONTRACT_ID == (
         "fast_mlsirm_dynamic_evaluation_item/v1"
     )
