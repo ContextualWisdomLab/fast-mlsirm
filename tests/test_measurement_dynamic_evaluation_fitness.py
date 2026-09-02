@@ -13,10 +13,12 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     DynamicEvaluationContractError,
     DynamicItemOrigin,
     EvaluationItemRole,
+    LinkingStatus,
     ReferenceSemantics,
     ReferenceStatus,
     RegenerationStatus,
     build_dynamic_evaluation_item,
+    build_evaluation_item_set_snapshot,
 )
 
 
@@ -26,6 +28,25 @@ class _ExplodingOverBudgetList(list[str]):
     def __iter__(self):  # type: ignore[no-untyped-def]
         """Fail if production code iterates an already over-budget collection."""
         raise AssertionError("over-budget references must be rejected before iteration")
+
+
+def _item():  # type: ignore[no-untyped-def]
+    """Build one valid item for integrity and public-contract tests."""
+    return build_dynamic_evaluation_item(
+        item_instance_ref="evaluation_item_alpha",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        content_ref="content_alpha",
+        content_sha256="a" * 64,
+        origin=DynamicItemOrigin.GENERATED,
+        role=EvaluationItemRole.CANDIDATE,
+        reference_semantics=ReferenceSemantics.RUBRIC,
+        reference_status=ReferenceStatus.PROVISIONAL,
+        rubric_revision_ref="rubric_revision_1",
+        criterion_refs=("criterion_accuracy",),
+        provenance_refs=("source_snapshot_1",),
+        generation_invocation_ref="generation_invocation_1",
+        regeneration_status=RegenerationStatus.INPUTS_RECORDED,
+    )
 
 
 def test_reference_budget_is_checked_before_iterating_caller_input() -> None:
@@ -52,6 +73,67 @@ def test_reference_budget_is_checked_before_iterating_caller_input() -> None:
         )
 
     assert caught.value.code == "invalid_reference_count"
+
+
+def test_item_snapshot_rejects_post_construction_mutation() -> None:
+    """A frozen item cannot be changed through object-level mutation and reused."""
+    item = _item()
+    object.__setattr__(item, "role", EvaluationItemRole.ANCHOR)
+
+    with pytest.raises(DynamicEvaluationContractError) as caught:
+        item.to_dict()
+    assert caught.value.code == "item_snapshot_integrity_mismatch"
+
+    with pytest.raises(DynamicEvaluationContractError) as caught:
+        build_evaluation_item_set_snapshot(
+            run_snapshot_ref="evaluation_run_snapshot_1",
+            blueprint_revision_ref="evaluation_blueprint_revision_1",
+            items=(item,),
+            linking_status=LinkingStatus.UNAVAILABLE,
+        )
+    assert caught.value.code == "item_snapshot_integrity_mismatch"
+
+
+def test_run_snapshot_rejects_post_construction_mutation() -> None:
+    """A frozen run cannot acquire a later linking claim through object mutation."""
+    run = build_evaluation_item_set_snapshot(
+        run_snapshot_ref="evaluation_run_snapshot_1",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        items=(_item(),),
+        linking_status=LinkingStatus.UNAVAILABLE,
+    )
+    object.__setattr__(run, "linking_status", LinkingStatus.LINKED)
+
+    with pytest.raises(DynamicEvaluationContractError) as caught:
+        run.to_dict()
+    assert caught.value.code == "run_snapshot_integrity_mismatch"
+
+    with pytest.raises(DynamicEvaluationContractError) as caught:
+        _ = run.anchor_item_refs
+    assert caught.value.code == "run_snapshot_integrity_mismatch"
+
+
+def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
+    """Equivalent admitted snapshots publish the same deterministic identities."""
+    first = _item()
+    second = _item()
+    assert first.snapshot_sha256 == second.snapshot_sha256
+    assert first.to_dict()["snapshot_sha256"] == first.snapshot_sha256
+
+    first_run = build_evaluation_item_set_snapshot(
+        run_snapshot_ref="evaluation_run_snapshot_1",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        items=(first,),
+        linking_status=LinkingStatus.UNAVAILABLE,
+    )
+    second_run = build_evaluation_item_set_snapshot(
+        run_snapshot_ref="evaluation_run_snapshot_1",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        items=[second],
+        linking_status="unavailable",
+    )
+    assert first_run.snapshot_sha256 == second_run.snapshot_sha256
+    assert first_run.to_dict()["snapshot_sha256"] == first_run.snapshot_sha256
 
 
 def test_dynamic_evaluation_module_has_complete_docstrings() -> None:
