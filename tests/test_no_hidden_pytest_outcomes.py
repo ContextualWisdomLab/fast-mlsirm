@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from _outcome_policy import _enforce_no_hidden_outcomes, _non_execution_counts
+from _outcome_policy import (
+    _enforce_no_hidden_outcomes,
+    _format_non_execution_counts,
+    _non_execution_counts,
+)
 
 
 def test_clean_terminal_statistics_preserve_success() -> None:
@@ -44,3 +48,12 @@ def test_non_execution_counts_omit_zero_buckets() -> None:
     stats = {"skipped": [object(), object()], "xfailed": [], "passed": [object()]}
 
     assert _non_execution_counts(stats) == {"skipped": 2}
+
+
+def test_non_execution_diagnostic_uses_stable_bucket_order() -> None:
+    """Failure logs name every observed bucket without depending on mapping insertion order."""
+    counts = {"xpassed": 3, "skipped": 2, "xfailed": 1}
+
+    assert _format_non_execution_counts(counts) == (
+        "non-execution outcomes are non-passing: skipped=2, xfailed=1, xpassed=3"
+    )

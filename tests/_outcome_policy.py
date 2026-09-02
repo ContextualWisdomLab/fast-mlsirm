@@ -19,6 +19,12 @@ def _non_execution_counts(stats: Mapping[str, Sized]) -> dict[str, int]:
     }
 
 
+def _format_non_execution_counts(counts: Mapping[str, int]) -> str:
+    """Render deterministic terminal evidence for prohibited non-execution states."""
+    detail = ", ".join(f"{bucket}={counts[bucket]}" for bucket in _NON_EXECUTION_BUCKETS if bucket in counts)
+    return f"non-execution outcomes are non-passing: {detail}"
+
+
 def _enforce_no_hidden_outcomes(session: object, terminalreporter: object | None) -> None:
     """Make any hidden non-execution outcome fail the complete pytest invocation."""
     if terminalreporter is None:
