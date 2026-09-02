@@ -19,7 +19,7 @@ def test_timeline_uses_semantic_row_headers_and_tabular_numbers() -> None:
 
     rendered = render_item_bank_report_html(records)
 
-    assert '<tr><th scope="row">piloting</th><td>calibration_pending</td>' in rendered
+    assert '<tr><th scope="row">piloting</th><td>pilot_admission</td>' in rendered
     assert '<tr><th scope="row">active</th><td>release_activation</td>' in rendered
     assert "font-variant-numeric:tabular-nums" in rendered
     assert "tbody th{font-weight:normal;}" in rendered
