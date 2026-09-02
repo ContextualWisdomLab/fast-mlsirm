@@ -18,6 +18,8 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     ReferenceStatus,
     RegenerationStatus,
     build_dynamic_evaluation_item,
+    build_evaluation_criterion_definition,
+    build_evaluation_criterion_set_snapshot,
     build_evaluation_item_set_snapshot,
 )
 
@@ -26,8 +28,35 @@ class _ExplodingOverBudgetList(list[str]):
     """Prove allocation admission happens before caller-controlled iteration."""
 
     def __iter__(self):  # type: ignore[no-untyped-def]
-        """Fail if production code iterates an already over-budget collection."""
-        raise AssertionError("over-budget references must be rejected before iteration")
+        """Fail if production code iterates an over-budget collection."""
+        raise AssertionError("over-budget references must fail before iteration")
+
+
+def _criterion_set():  # type: ignore[no-untyped-def]
+    """Build one explicit criterion set for integrity tests."""
+    criterion = build_evaluation_criterion_definition(
+        criterion_ref="criterion_accuracy",
+        criterion_revision_ref="criterion_accuracy_revision_1",
+        definition_ref="definition_criterion_accuracy_1",
+        definition_sha256="c" * 64,
+        admissible_evidence_rule_ref="admissible_evidence_accuracy_1",
+        exclusion_rule_ref="exclusion_accuracy_1",
+        response_semantics_ref="response_semantics_accuracy_1",
+        abstention_rule_ref="abstention_accuracy_1",
+        not_observable_rule_ref="not_observable_accuracy_1",
+    )
+    return build_evaluation_criterion_set_snapshot(
+        criterion_set_snapshot_ref="criterion_set_snapshot_1",
+        criterion_set_revision_ref="criterion_set_revision_1",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        rubric_revision_ref="rubric_revision_1",
+        intended_use_ref="intended_use_accuracy_1",
+        construct_ref="construct_accuracy_1",
+        population_scope_ref="population_scope_synthetic_1",
+        language_scope_ref="language_scope_synthetic_1",
+        domain_scope_ref="domain_scope_contract_test_1",
+        criteria=(criterion,),
+    )
 
 
 def _item():  # type: ignore[no-untyped-def]
@@ -89,6 +118,7 @@ def test_item_snapshot_rejects_post_construction_mutation() -> None:
             run_snapshot_ref="evaluation_run_snapshot_1",
             blueprint_revision_ref="evaluation_blueprint_revision_1",
             items=(item,),
+            criterion_set_snapshot=_criterion_set(),
             linking_status=LinkingStatus.UNAVAILABLE,
         )
     assert caught.value.code == "item_snapshot_integrity_mismatch"
@@ -101,11 +131,12 @@ def test_item_snapshot_rejects_post_construction_mutation() -> None:
 
 
 def test_run_snapshot_rejects_post_construction_mutation() -> None:
-    """A frozen run cannot acquire a later linking claim through object mutation."""
+    """A frozen run cannot acquire a later linking claim through mutation."""
     run = build_evaluation_item_set_snapshot(
         run_snapshot_ref="evaluation_run_snapshot_1",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=(_item(),),
+        criterion_set_snapshot=_criterion_set(),
         linking_status=LinkingStatus.UNAVAILABLE,
     )
     object.__setattr__(run, "linking_status", LinkingStatus.LINKED)
@@ -122,6 +153,7 @@ def test_run_snapshot_rejects_post_construction_mutation() -> None:
         run_snapshot_ref="evaluation_run_snapshot_2",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=(_item(),),
+        criterion_set_snapshot=_criterion_set(),
         linking_status=LinkingStatus.UNAVAILABLE,
     )
     object.__setattr__(malformed, "linking_status", object())
@@ -131,7 +163,7 @@ def test_run_snapshot_rejects_post_construction_mutation() -> None:
 
 
 def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
-    """Equivalent admitted snapshots publish the same deterministic identities."""
+    """Equivalent admitted snapshots publish deterministic identities."""
     first = _item()
     second = _item()
     assert first.contract_id == "fast_mlsirm_dynamic_evaluation_item/v1"
@@ -142,12 +174,14 @@ def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
         run_snapshot_ref="evaluation_run_snapshot_1",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=(first,),
+        criterion_set_snapshot=_criterion_set(),
         linking_status=LinkingStatus.UNAVAILABLE,
     )
     second_run = build_evaluation_item_set_snapshot(
         run_snapshot_ref="evaluation_run_snapshot_1",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=[second],
+        criterion_set_snapshot=_criterion_set(),
         linking_status="unavailable",
     )
     assert first_run.snapshot_sha256 == second_run.snapshot_sha256
@@ -155,7 +189,7 @@ def test_snapshot_fingerprints_are_deterministic_and_exposed() -> None:
 
 
 def test_dynamic_evaluation_module_has_complete_docstrings() -> None:
-    """Every class and function in the new public module has a real docstring."""
+    """Every class and function in the new public module has a docstring."""
     source_path = Path(dynamic_evaluation.__file__)
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
     missing = [
@@ -168,13 +202,15 @@ def test_dynamic_evaluation_module_has_complete_docstrings() -> None:
 
 
 def test_dynamic_evaluation_contract_is_exported_from_measurement_package() -> None:
-    """Consumers can discover the versioned contract through its owner package."""
-    assert (
-        measurement.DYNAMIC_EVALUATION_ITEM_CONTRACT_ID
-        == "fast_mlsirm_dynamic_evaluation_item/v1"
+    """Consumers discover the versioned contract through its owner package."""
+    assert measurement.DYNAMIC_EVALUATION_ITEM_CONTRACT_ID == (
+        "fast_mlsirm_dynamic_evaluation_item/v1"
     )
     assert measurement.DynamicEvaluationItemSnapshot is (
         dynamic_evaluation.DynamicEvaluationItemSnapshot
+    )
+    assert measurement.EvaluationCriterionSetSnapshot is (
+        dynamic_evaluation.EvaluationCriterionSetSnapshot
     )
     assert measurement.EvaluationItemSetSnapshot is (
         dynamic_evaluation.EvaluationItemSetSnapshot
