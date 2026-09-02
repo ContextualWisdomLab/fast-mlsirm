@@ -49,6 +49,23 @@ def _exact_collection_guard(
     return guarded
 
 
+def _canonical_item_criterion_guard(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Canonicalize criterion membership without ordering caller-owned objects."""
+
+    @wraps(function)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        """Sort exact criterion references before item identity is fingerprinted."""
+        value = kwargs.get("criterion_refs", _MISSING)
+        if value is not _MISSING:
+            if type(value) not in (tuple, list):
+                raise TypeError("$.criterion_refs must be a tuple or list")
+            if all(type(reference) is str for reference in value):
+                kwargs = {**kwargs, "criterion_refs": tuple(sorted(value))}
+        return function(*args, **kwargs)
+
+    return guarded
+
+
 def _canonical_item_set_guard(function: Callable[..., Any]) -> Callable[..., Any]:
     """Canonicalize mathematical item sets after safe domain-value admission."""
 
@@ -83,7 +100,9 @@ build_evaluation_criterion_set_snapshot = _exact_collection_guard(
     "criteria",
     "$.criteria",
 )
-build_dynamic_evaluation_item = _items.build_dynamic_evaluation_item
+build_dynamic_evaluation_item = _canonical_item_criterion_guard(
+    _items.build_dynamic_evaluation_item
+)
 build_evaluation_item_set_snapshot = _canonical_item_set_guard(
     _items.build_evaluation_item_set_snapshot
 )
@@ -93,6 +112,7 @@ build_evaluation_item_set_snapshot = _canonical_item_set_guard(
 # import path receives the same callback-free collection guard.
 _criteria.build_evaluation_criterion_definition = build_evaluation_criterion_definition
 _criteria.build_evaluation_criterion_set_snapshot = build_evaluation_criterion_set_snapshot
+_items.build_dynamic_evaluation_item = build_dynamic_evaluation_item
 _items.build_evaluation_item_set_snapshot = build_evaluation_item_set_snapshot
 
 __all__ = [
