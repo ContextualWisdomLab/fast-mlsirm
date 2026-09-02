@@ -91,6 +91,7 @@ class DynamicEvaluationContractError(ValueError):
 
 
 def _error(code: str, path: str, message: str) -> DynamicEvaluationContractError:
+    """Build one stable contract rejection without echoing caller content."""
     return DynamicEvaluationContractError(code, path, message)
 
 
@@ -103,7 +104,9 @@ def _enum(value: Any, enum_type: type[_ENUM_T], path: str) -> _ENUM_T:
     try:
         return enum_type(value)
     except ValueError as exc:
-        raise _error("invalid_enum_value", path, f"unsupported {enum_type.__name__}") from exc
+        raise _error(
+            "invalid_enum_value", path, f"unsupported {enum_type.__name__}"
+        ) from exc
 
 
 def _reference(value: Any, path: str) -> str:
@@ -133,6 +136,7 @@ def _reference(value: Any, path: str) -> str:
 
 
 def _optional_reference(value: Any, path: str) -> str | None:
+    """Validate an optional opaque reference while preserving explicit absence."""
     if value is None:
         return None
     return _reference(value, path)
@@ -148,17 +152,17 @@ def _reference_tuple(
     """Copy and validate a bounded unique reference collection."""
     if isinstance(value, (str, bytes)) or not isinstance(value, (tuple, list)):
         raise TypeError(f"{path} must be a tuple or list")
-    normalized = tuple(
-        _reference(item, f"{path}[{index}]")
-        for index, item in enumerate(value)
-    )
-    if (not allow_empty and not normalized) or len(normalized) > maximum:
+    if (not allow_empty and not value) or len(value) > maximum:
         lower = 0 if allow_empty else 1
         raise _error(
             "invalid_reference_count",
             path,
             f"reference collection must contain {lower}..{maximum} entries",
         )
+    normalized = tuple(
+        _reference(item, f"{path}[{index}]")
+        for index, item in enumerate(value)
+    )
     if len(set(normalized)) != len(normalized):
         raise _error(
             "duplicate_reference", path, "reference collection must be unique"
@@ -208,7 +212,8 @@ class DynamicEvaluationItemSnapshot:
         """Prevent direct construction that bypasses the public builder."""
         if _admission_token is not _ITEM_TOKEN:
             raise ValueError(
-                "DynamicEvaluationItemSnapshot must be created by build_dynamic_evaluation_item"
+                "DynamicEvaluationItemSnapshot must be created by "
+                "build_dynamic_evaluation_item"
             )
 
     @property
@@ -287,7 +292,10 @@ def build_dynamic_evaluation_item(
             "$.generation_invocation_ref",
             "generated, perturbation, and synthetic items require generation identity",
         )
-    if normalized_origin not in generated_origins and normalized_generation_ref is not None:
+    if (
+        normalized_origin not in generated_origins
+        and normalized_generation_ref is not None
+    ):
         raise _error(
             "unexpected_generation_invocation",
             "$.generation_invocation_ref",
@@ -308,17 +316,22 @@ def build_dynamic_evaluation_item(
             raise _error(
                 "adjudicated_reference_requires_resolution",
                 "$.adjudication_ref",
-                "adjudicated reference status requires an immutable resolution reference",
+                "adjudicated reference status requires an immutable "
+                "resolution reference",
             )
     elif normalized_adjudication_ref is not None:
         if normalized_reference_status is not ReferenceStatus.VALIDATED:
             raise _error(
                 "unexpected_adjudication_resolution",
                 "$.adjudication_ref",
-                "only adjudicated or validated references may retain adjudication provenance",
+                "only adjudicated or validated references may retain "
+                "adjudication provenance",
             )
 
-    if normalized_reference_status in {ReferenceStatus.VALIDATED, ReferenceStatus.INVALIDATED}:
+    if normalized_reference_status in {
+        ReferenceStatus.VALIDATED,
+        ReferenceStatus.INVALIDATED,
+    }:
         if not normalized_validation_refs:
             raise _error(
                 "validated_reference_requires_evidence",
@@ -329,7 +342,8 @@ def build_dynamic_evaluation_item(
         raise _error(
             "unexpected_validation_evidence",
             "$.validation_evidence_refs",
-            "validation evidence is admitted only for validated or invalidated references",
+            "validation evidence is admitted only for validated or "
+            "invalidated references",
         )
 
     if (
@@ -408,7 +422,8 @@ class EvaluationItemSetSnapshot:
         """Prevent direct construction outside the aggregate builder."""
         if _admission_token is not _SET_TOKEN:
             raise ValueError(
-                "EvaluationItemSetSnapshot must be created by build_evaluation_item_set_snapshot"
+                "EvaluationItemSetSnapshot must be created by "
+                "build_evaluation_item_set_snapshot"
             )
 
     @property
@@ -441,7 +456,10 @@ def build_evaluation_item_set_snapshot(
     *,
     run_snapshot_ref: str,
     blueprint_revision_ref: str,
-    items: tuple[DynamicEvaluationItemSnapshot, ...] | list[DynamicEvaluationItemSnapshot],
+    items: (
+        tuple[DynamicEvaluationItemSnapshot, ...]
+        | list[DynamicEvaluationItemSnapshot]
+    ),
     linking_status: LinkingStatus | str,
     linking_evidence_ref: str | None = None,
 ) -> EvaluationItemSetSnapshot:
@@ -459,8 +477,12 @@ def build_evaluation_item_set_snapshot(
             f"item set may contain at most {MAX_DYNAMIC_EVALUATION_ITEMS} items",
         )
     normalized_items = tuple(items)
-    if any(type(item) is not DynamicEvaluationItemSnapshot for item in normalized_items):
-        raise TypeError("$.items must contain exact DynamicEvaluationItemSnapshot values")
+    if any(
+        type(item) is not DynamicEvaluationItemSnapshot for item in normalized_items
+    ):
+        raise TypeError(
+            "$.items must contain exact DynamicEvaluationItemSnapshot values"
+        )
 
     normalized_blueprint_ref = _reference(
         blueprint_revision_ref, "$.blueprint_revision_ref"
