@@ -9,6 +9,8 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     DynamicEvaluationContractError,
     DynamicEvaluationItemSnapshot,
     DynamicItemOrigin,
+    EvaluationCriterionDefinition,
+    EvaluationCriterionSetSnapshot,
     EvaluationItemRole,
     EvaluationItemSetSnapshot,
     LinkingStatus,
@@ -16,11 +18,47 @@ from fast_mlsirm.measurement.dynamic_evaluation import (
     ReferenceStatus,
     RegenerationStatus,
     build_dynamic_evaluation_item,
+    build_evaluation_criterion_definition,
+    build_evaluation_criterion_set_snapshot,
     build_evaluation_item_set_snapshot,
 )
 
 _SHA_A = "a" * 64
 _SHA_B = "b" * 64
+
+
+def _criterion(criterion_ref: str, marker: str) -> EvaluationCriterionDefinition:
+    """Build one explicit synthetic criterion definition for contract tests."""
+    return build_evaluation_criterion_definition(
+        criterion_ref=criterion_ref,
+        criterion_revision_ref=f"{criterion_ref}_revision_1",
+        definition_ref=f"definition_{criterion_ref}_1",
+        definition_sha256=marker * 64,
+        admissible_evidence_rule_ref=f"admissible_evidence_{criterion_ref}_1",
+        exclusion_rule_ref=f"exclusion_{criterion_ref}_1",
+        response_semantics_ref=f"response_semantics_{criterion_ref}_1",
+        abstention_rule_ref=f"abstention_{criterion_ref}_1",
+        not_observable_rule_ref=f"not_observable_{criterion_ref}_1",
+    )
+
+
+def _criterion_set() -> EvaluationCriterionSetSnapshot:
+    """Freeze the actual criteria used by every item in this test module."""
+    return build_evaluation_criterion_set_snapshot(
+        criterion_set_snapshot_ref="criterion_set_snapshot_1",
+        criterion_set_revision_ref="criterion_set_revision_1",
+        blueprint_revision_ref="evaluation_blueprint_revision_1",
+        rubric_revision_ref="rubric_revision_1",
+        intended_use_ref="intended_use_response_quality_1",
+        construct_ref="construct_response_quality_1",
+        population_scope_ref="population_scope_synthetic_1",
+        language_scope_ref="language_scope_synthetic_1",
+        domain_scope_ref="domain_scope_contract_test_1",
+        criteria=(
+            _criterion("criterion_accuracy", "c"),
+            _criterion("criterion_evidence", "d"),
+        ),
+    )
 
 
 def _item(
@@ -61,6 +99,7 @@ def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable(
         run_snapshot_ref="evaluation_run_snapshot_1",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=(_item(),),
+        criterion_set_snapshot=_criterion_set(),
         linking_status=LinkingStatus.UNAVAILABLE,
     )
 
@@ -73,6 +112,7 @@ def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable(
         run_snapshot_ref="evaluation_run_snapshot_2",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=(_item(),),
+        criterion_set_snapshot=_criterion_set(),
         linking_status=LinkingStatus.WITHIN_RUN_ONLY,
     )
     assert within_run.linking_status is LinkingStatus.WITHIN_RUN_ONLY
@@ -82,6 +122,7 @@ def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable(
             run_snapshot_ref="evaluation_run_snapshot_3",
             blueprint_revision_ref="evaluation_blueprint_revision_1",
             items=(_item(),),
+            criterion_set_snapshot=_criterion_set(),
             linking_status=LinkingStatus.LINKED,
             linking_evidence_ref="linking_evidence_1",
         )
@@ -89,7 +130,7 @@ def test_zero_anchor_snapshot_is_valid_but_cross_version_linking_is_unavailable(
 
 
 def test_adjudicated_is_not_validated_or_anchor_authority() -> None:
-    """Adjudication provenance does not silently promote an item to a validated anchor."""
+    """Adjudication provenance does not promote an item to a validated anchor."""
     item = _item(
         reference_status=ReferenceStatus.ADJUDICATED,
         adjudication_ref="adjudication_resolution_1",
@@ -115,7 +156,7 @@ def test_adjudicated_is_not_validated_or_anchor_authority() -> None:
 
 
 def test_reference_status_controls_adjudication_and_validation_evidence() -> None:
-    """Each reference status carries only the evidence appropriate to that state."""
+    """Each reference status carries only evidence appropriate to that state."""
     with pytest.raises(DynamicEvaluationContractError) as caught:
         _item(reference_status=ReferenceStatus.ADJUDICATED)
     assert caught.value.code == "adjudicated_reference_requires_resolution"
@@ -139,7 +180,7 @@ def test_reference_status_controls_adjudication_and_validation_evidence() -> Non
 
 
 def test_seed_and_recorded_inputs_do_not_claim_deterministic_regeneration() -> None:
-    """A seed is provenance only until reproducibility has separate validation evidence."""
+    """A seed is provenance until separate evidence verifies regeneration."""
     item = _item(regeneration_status=RegenerationStatus.INPUTS_RECORDED)
     assert item.seed_ref == "seed_recorded_not_deterministic"
     assert item.regeneration_status is RegenerationStatus.INPUTS_RECORDED
@@ -210,6 +251,7 @@ def test_item_set_is_immutable_unique_and_blueprint_consistent() -> None:
         run_snapshot_ref="evaluation_run_snapshot_1",
         blueprint_revision_ref="evaluation_blueprint_revision_1",
         items=[first, second],
+        criterion_set_snapshot=_criterion_set(),
         linking_status=LinkingStatus.WITHIN_RUN_ONLY,
     )
     assert snapshot.items == (first, second)
@@ -220,6 +262,7 @@ def test_item_set_is_immutable_unique_and_blueprint_consistent() -> None:
             run_snapshot_ref="evaluation_run_snapshot_duplicate",
             blueprint_revision_ref="evaluation_blueprint_revision_1",
             items=(first, first),
+            criterion_set_snapshot=_criterion_set(),
             linking_status=LinkingStatus.UNAVAILABLE,
         )
     assert caught.value.code == "duplicate_item_instance"
@@ -244,13 +287,14 @@ def test_item_set_is_immutable_unique_and_blueprint_consistent() -> None:
             run_snapshot_ref="evaluation_run_snapshot_foreign",
             blueprint_revision_ref="evaluation_blueprint_revision_1",
             items=(first, foreign),
+            criterion_set_snapshot=_criterion_set(),
             linking_status=LinkingStatus.UNAVAILABLE,
         )
     assert caught.value.code == "item_blueprint_mismatch"
 
 
 def test_public_aggregates_are_factory_sealed() -> None:
-    """Callers cannot instantiate admitted domain values without replaying invariants."""
+    """Callers cannot instantiate admitted values without replaying invariants."""
     with pytest.raises(ValueError, match="build_dynamic_evaluation_item"):
         DynamicEvaluationItemSnapshot(  # type: ignore[call-arg]
             item_instance_ref="evaluation_item_alpha",
@@ -276,6 +320,7 @@ def test_public_aggregates_are_factory_sealed() -> None:
         EvaluationItemSetSnapshot(  # type: ignore[call-arg]
             run_snapshot_ref="evaluation_run_snapshot_1",
             blueprint_revision_ref="evaluation_blueprint_revision_1",
+            criterion_set_snapshot=_criterion_set(),
             items=(_item(),),
             linking_status=LinkingStatus.UNAVAILABLE,
             linking_evidence_ref=None,
