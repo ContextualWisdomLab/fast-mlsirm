@@ -75,6 +75,17 @@ def _admit_output_root(repo_root: Path, output_root: Path) -> Path:
     return output_root
 
 
+def _admit_distribution_root(repo_root: Path, distribution_root: Path) -> Path:
+    """Reject distribution roots whose artifact exception could cover source."""
+    repo_root = repo_root.resolve()
+    distribution_root = distribution_root.resolve()
+    if distribution_root == repo_root or distribution_root in repo_root.parents:
+        raise RuntimeError(
+            "distribution directory must not be the repository root or an ancestor"
+        )
+    return distribution_root
+
+
 def _is_inert_distribution_artifact(path: Path) -> bool:
     """Return whether an untracked path is a concrete wheel/sdist output only."""
     if path.is_symlink() or not path.is_file():
@@ -86,14 +97,14 @@ def _require_clean_source(
     repo_root: Path,
     *,
     allowed_untracked_root: Path | None = None,
+    allowed_distribution_root: Path | None = None,
 ) -> None:
-    """Require clean source while admitting only known generated artifacts.
+    """Require clean source while admitting only explicitly scoped generated files.
 
     The acceptance output root may contain arbitrary generated acceptance files.
-    Independently, concrete untracked wheel/sdist files are inert build outputs,
-    not checkout source, so a caller's non-ignored custom distribution directory
-    does not invalidate source identity. Tracked/staged changes and every other
-    untracked file remain fatal.
+    A separately admitted distribution root may contain only concrete, non-symlink
+    wheel/sdist outputs. Tracked/staged changes and every other untracked file
+    remain fatal.
     """
     completed = subprocess.run(
         ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
@@ -104,6 +115,11 @@ def _require_clean_source(
         timeout=10,
     )
     allowed = allowed_untracked_root.resolve() if allowed_untracked_root is not None else None
+    distribution = (
+        allowed_distribution_root.resolve()
+        if allowed_distribution_root is not None
+        else None
+    )
     violations: list[str] = []
     for record in completed.stdout.split("\0"):
         if not record:
@@ -120,7 +136,11 @@ def _require_clean_source(
         candidate = raw_candidate.resolve()
         if allowed is not None and (candidate == allowed or allowed in candidate.parents):
             continue
-        if _is_inert_distribution_artifact(raw_candidate):
+        if (
+            distribution is not None
+            and (candidate == distribution or distribution in candidate.parents)
+            and _is_inert_distribution_artifact(raw_candidate)
+        ):
             continue
         violations.append(record)
     if violations:
@@ -133,6 +153,7 @@ def _assert_source_unchanged(
     expected: str,
     *,
     allowed_untracked_root: Path | None = None,
+    allowed_distribution_root: Path | None = None,
 ) -> None:
     """Fail closed if the source revision or working tree changes during acceptance."""
     actual = _source_commit(repo_root)
@@ -140,7 +161,11 @@ def _assert_source_unchanged(
         raise RuntimeError(
             f"source HEAD changed during release acceptance: expected {expected}, observed {actual}"
         )
-    _require_clean_source(repo_root, allowed_untracked_root=allowed_untracked_root)
+    _require_clean_source(
+        repo_root,
+        allowed_untracked_root=allowed_untracked_root,
+        allowed_distribution_root=allowed_distribution_root,
+    )
 
 
 def _require_auto_fit_resolved_to_rust(
@@ -222,7 +247,16 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
     acceptance_started = time.perf_counter()
     repo_root = Path(__file__).resolve().parents[1]
     out_dir = _admit_output_root(repo_root, Path(args.out))
-    _require_clean_source(repo_root, allowed_untracked_root=out_dir)
+    distribution_root = (
+        _admit_distribution_root(repo_root, Path(args.distribution_root))
+        if args.distribution_root is not None
+        else None
+    )
+    _require_clean_source(
+        repo_root,
+        allowed_untracked_root=out_dir,
+        allowed_distribution_root=distribution_root,
+    )
     source_commit = _source_commit(repo_root)
     out_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, object] = {
@@ -410,6 +444,7 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
         repo_root,
         source_commit,
         allowed_untracked_root=out_dir,
+        allowed_distribution_root=distribution_root,
     )
     summary_path = out_dir / "acceptance_summary.json"
     summary_payload = {
@@ -426,6 +461,7 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
         repo_root,
         source_commit,
         allowed_untracked_root=out_dir,
+        allowed_distribution_root=distribution_root,
     )
     return {"status": "ok", "out": str(out_dir), "report": str(summary_path)}
 
@@ -438,6 +474,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--out",
         default="acceptance_check",
         help="Output directory for generated artifacts.",
+    )
+    parser.add_argument(
+        "--distribution-root",
+        help=(
+            "Explicit directory containing wheel/sdist build outputs that source "
+            "sealing may admit as regular package artifacts."
+        ),
     )
     parser.add_argument(
         "--persons", type=int, default=12, help="Number of persons to simulate."
