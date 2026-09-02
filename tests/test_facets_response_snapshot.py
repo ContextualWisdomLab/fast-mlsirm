@@ -88,6 +88,96 @@ def test_response_array_seals_builtin_sequence_before_numpy_materialization(
     np.testing.assert_array_equal(admitted, expected)
 
 
+@pytest.mark.parametrize(
+    ("source", "n_persons", "n_items", "n_raters", "message"),
+    [
+        (
+            [[[0.0]]],
+            2,
+            1,
+            1,
+            "responses must be a 3-D persons x items x raters array",
+        ),
+        (
+            [0.0],
+            1,
+            1,
+            1,
+            "responses must be a 3-D persons x items x raters array",
+        ),
+        (
+            [[[0.0]]],
+            1,
+            2,
+            1,
+            "responses must be a 3-D persons x items x raters array",
+        ),
+        (
+            [[0.0]],
+            1,
+            1,
+            1,
+            "responses must be a 3-D persons x items x raters array",
+        ),
+        (
+            [[[0.0]]],
+            1,
+            1,
+            2,
+            "responses must be a 3-D persons x items x raters array",
+        ),
+        (
+            [[[object()]]],
+            1,
+            1,
+            1,
+            "responses must be a numeric array",
+        ),
+    ],
+)
+def test_builtin_response_snapshot_replays_admitted_structure(
+    source: list[object],
+    n_persons: int,
+    n_items: int,
+    n_raters: int,
+    message: str,
+) -> None:
+    """The owned tree rejects structural or scalar drift before NumPy use."""
+
+    with pytest.raises(ValueError, match=message):
+        facets._snapshot_builtin_response_tree(
+            source,
+            n_persons=n_persons,
+            n_items=n_items,
+            n_raters=n_raters,
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        [[[0.0], [1.0]]],
+        (((0.0,), (1.0,)),),
+    ],
+)
+def test_builtin_response_snapshot_is_independent_of_mutable_rows(
+    source: list[object] | tuple[object, ...],
+) -> None:
+    """A valid exact-container tree is frozen into package-owned tuples."""
+
+    snapshot = facets._snapshot_builtin_response_tree(
+        source,
+        n_persons=1,
+        n_items=2,
+        n_raters=1,
+    )
+
+    assert snapshot == (((0.0,), (1.0,)),)
+    if type(source) is list:
+        source[0][0][0] = 7.0
+        assert snapshot == (((0.0,), (1.0,)),)
+
+
 def test_fit_facets_dispatches_pre_mutation_ndarray_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
