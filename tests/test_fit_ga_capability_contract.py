@@ -11,6 +11,7 @@ import pytest
 from fast_mlsirm.capabilities import (
     FIT_CAPABILITY_SCHEMA_VERSION,
     PRODUCTION_NUMERIC_OWNER,
+    FitCapability,
     fit_capabilities,
     fit_capability_manifest,
     main as capability_main,
@@ -62,6 +63,23 @@ def test_reserved_estimators_are_not_advertised(estimator: str) -> None:
     assert estimator not in advertised
     with pytest.raises(ValueError, match="estimator must be one of"):
         FitConfig(estimator=estimator)
+
+
+def test_fit_capability_value_object_rejects_forged_support() -> None:
+    with pytest.raises(ValueError, match="canonical model-estimator capability"):
+        FitCapability(model="BIFAC2PLM", estimators=("jmle", "mmle"))
+
+
+def test_fit_capabilities_do_not_expose_shared_mutable_authority() -> None:
+    first = fit_capabilities()
+    original_model = first[0].model
+    try:
+        object.__setattr__(first[0], "model", "caller-mutation")
+        second = fit_capabilities()
+        assert second[0].model == original_model
+        assert fit_capability_manifest()["models"][0]["model"] == original_model
+    finally:
+        object.__setattr__(first[0], "model", original_model)
 
 
 def test_fit_capability_manifest_is_json_shaped_and_fresh() -> None:
