@@ -202,7 +202,7 @@ def fit(
         raise ValueError("factor_id implies more dimensions than items")
 
     if model in {"ULS2PLM", "ULSRM"}:
-        factors = np.zeros_like(factors)  # pragma: no cover
+        factors = np.zeros_like(factors)
     factors = validate_factor_id(factors, n_items, n_dims)
     if group_id is not None and cluster_id is not None:
         raise ValueError("group_id and cluster_id are mutually exclusive")
