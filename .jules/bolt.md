@@ -49,6 +49,6 @@
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
 
-## 2024-09-03 - Single-pass moment calculations in Rust
-**Learning:** Calculating multiple mathematical moments (like the sum of squares and sum of fourth powers) using separate `.iter().map().sum()` passes over a slice forces redundant memory iterations and overhead.
-**Action:** Replace multiple `.iter().map().sum()` passes with a single `iter().fold()` operation (e.g., `fold((0.0, 0.0), |(s2, s4), &x| ...)`) to process elements in a single pass, improving performance.
+## 2026-09-03 - Single-pass moment calculations in Rust
+**Learning:** Calculating multiple moments over the same Rust slice with separate iterator reductions performs two traversals. Fusing the reductions into one `fold` preserves linear O(N) complexity while reducing the number of slice traversals from two to one; the actual runtime effect depends on compiler optimization, cache state, input size, and the surrounding hot path.
+**Action:** Fuse compatible reductions only when numerical and error-contract parity are retained. Do not describe two O(N) traversals as an O(2N) to O(N) complexity-class improvement or claim a speedup percentage without a reproducible current-head benchmark.
