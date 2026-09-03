@@ -108,3 +108,50 @@ def test_real_pytest_hook_preserves_interrupt_after_skip(tmp_path: Path) -> None
 
     assert completed.returncode == int(pytest.ExitCode.INTERRUPTED)
     assert "non-execution outcomes are non-passing" not in completed.stdout
+
+
+def test_real_pytest_hook_resists_late_success_override_after_skip(tmp_path: Path) -> None:
+    """A later session-finish plugin cannot turn skipped evidence back into success."""
+    probe = tmp_path / "test_outcome_policy_probe.py"
+    probe.write_text(
+        "import pytest\n"
+        "def test_non_execution(): pytest.skip('integration probe')\n",
+        encoding="utf-8",
+    )
+    resetter = tmp_path / "late_success_plugin.py"
+    resetter.write_text(
+        "import pytest\n"
+        "@pytest.hookimpl(trylast=True)\n"
+        "def pytest_sessionfinish(session, exitstatus):\n"
+        "    del exitstatus\n"
+        "    session.exitstatus = pytest.ExitCode.OK\n",
+        encoding="utf-8",
+    )
+    test_root = Path(__file__).resolve().parent
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        part
+        for part in (str(test_root), str(tmp_path), env.get("PYTHONPATH", ""))
+        if part
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "conftest",
+            "-p",
+            "late_success_plugin",
+            str(probe),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.returncode == int(pytest.ExitCode.TESTS_FAILED)
+    assert "non-execution outcomes are non-passing" in completed.stdout
