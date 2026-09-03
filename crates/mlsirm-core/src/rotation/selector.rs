@@ -252,8 +252,7 @@ fn simple_structure_metrics(
     for i in 0..rows {
         let row = &pattern[i * factors + first..(i + 1) * factors];
         let (row_ss, row_fourth) = row.iter().fold((0.0, 0.0), |(ss, fourth), &x| {
-            let x2 = x * x;
-            (ss + x2, fourth + x2 * x2)
+            (ss + x * x, fourth + x.powi(4))
         });
         complexity_numerator += row_ss * row_ss - row_fourth;
         complexity_denominator += row_ss * row_ss;

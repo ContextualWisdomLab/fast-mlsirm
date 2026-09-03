@@ -545,8 +545,7 @@ fn tandem(l: &[f64], rows: usize, factors: usize, first: bool) -> CriterionEvalu
 
 fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     let (sum2, sum4) = l.iter().fold((0.0, 0.0), |(s2, s4), &x| {
-        let x2 = x * x;
-        (s2 + x2, s4 + x2 * x2)
+        (s2 + x * x, s4 + x.powi(4))
     });
     if sum2 <= 0.0 || sum4 <= 0.0 {
         return Err("oblimax requires nonzero loadings".into());
