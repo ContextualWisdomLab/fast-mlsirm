@@ -449,9 +449,9 @@ def render_item_bank_report_html(
         for kind, status in report["evidence_status"].items()
     )
     timeline_rows = "".join(
-        '<tr><th scope="row">'
+        "<tr><td>"
         + escape(str(step["state"]))
-        + "</th><td>"
+        + "</td><td>"
         + escape(str(step["transition_reason_id"]))
         + "</td><td><code>"
         + escape(str(step["record_fingerprint"]))
@@ -481,9 +481,8 @@ def render_item_bank_report_html(
         "main:focus:not(:focus-visible){outline:none;}"
         "main:focus-visible{outline:3px solid currentColor;outline-offset:3px;}"
         "@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }"
-        "table{border-collapse:collapse;width:100%;margin-block:1rem;font-variant-numeric:tabular-nums;}"
+        "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
         "th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
-        "tbody th{font-weight:normal;}"
         "dt{font-weight:700;margin-top:.5rem;}dd{margin-left:0;}"
         "code{overflow-wrap:anywhere;}"
         "</style>\n</head>\n<body>\n"
