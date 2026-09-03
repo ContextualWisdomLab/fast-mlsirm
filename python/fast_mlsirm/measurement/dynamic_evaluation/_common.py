@@ -148,7 +148,7 @@ def _reference_tuple(
     maximum: int,
     allow_empty: bool,
 ) -> tuple[str, ...]:
-    """Copy and validate an exact bounded reference collection."""
+    """Copy, validate, and canonicalize exact reference membership."""
     if type(value) not in (tuple, list):
         raise TypeError(f"{path} must be a tuple or list")
     if (not allow_empty and not value) or len(value) > maximum:
@@ -166,7 +166,7 @@ def _reference_tuple(
         raise _error(
             "duplicate_reference", path, "reference collection must be unique"
         )
-    return normalized
+    return tuple(sorted(normalized))
 
 
 def _sha256(value: Any, path: str) -> str:
