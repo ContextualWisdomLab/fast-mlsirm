@@ -218,6 +218,11 @@ class MembershipStructure:
             raise ValueError(
                 "cross-classified membership requires at least two distinct axes"
             )
+        if (
+            self.classification is MembershipClassification.CROSS_CLASSIFIED
+            and len(set(axes)) != len(axes)
+        ):
+            raise ValueError("cross-classified membership axes must be unique")
         if self.multiplicity is MembershipMultiplicity.SINGLE:
             if self.weight_authority is not MembershipWeightAuthority.NOT_APPLICABLE:
                 raise ValueError("single membership cannot have membership weights")
