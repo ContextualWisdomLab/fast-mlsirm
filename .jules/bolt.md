@@ -48,7 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-
-## 2024-10-24 - Simplifying transcendental function calls
-**Learning:** Expressions involving `_log_sigmoid(x)` (which wraps `np.logaddexp`) like `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)` are mathematically equivalent to `r * x + n * _log_sigmoid(-x)` because `_log_sigmoid(x) - _log_sigmoid(-x) = x`. Evaluating `_log_sigmoid` multiple times inside heavy loops (like M-steps) can drastically degrade performance.
-**Action:** Mathematically simplify expressions to avoid redundant evaluations of expensive transcendental functions like `np.logaddexp` or `_log_sigmoid`, keeping only the minimal evaluations necessary for calculation.
