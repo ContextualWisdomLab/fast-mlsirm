@@ -310,7 +310,7 @@ def build_dynamic_evaluation_item(
         rubric_revision_ref=normalized_rubric_ref,
         criterion_set_snapshot_ref=criterion_set_snapshot.criterion_set_snapshot_ref,
         criterion_set_sha256=criterion_set_snapshot.snapshot_sha256,
-        criterion_refs=normalized_criterion_refs,
+        criterion_refs=tuple(sorted(normalized_criterion_refs)),
         provenance_refs=_reference_tuple(
             provenance_refs,
             "$.provenance_refs",
