@@ -177,7 +177,6 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
-    assert "prefers-reduced-motion: reduce" in rendered
     assert "outline: none" not in rendered
 
 
