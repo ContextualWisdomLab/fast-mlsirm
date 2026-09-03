@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import runpy
 
 import pytest
 
@@ -19,6 +20,7 @@ from fast_mlsirm.config import FitConfig, VALID_ESTIMATORS, VALID_MODELS
 
 _REPOSITORY_ROOT = Path(__file__).parents[1]
 _CAPABILITY_CONTRACT = _REPOSITORY_ROOT / "contracts" / "fit-capabilities-v1.json"
+_CAPABILITY_MODULE = _REPOSITORY_ROOT / "python" / "fast_mlsirm" / "capabilities.py"
 _GIT_ATTRIBUTES = _REPOSITORY_ROOT / ".gitattributes"
 
 
@@ -78,6 +80,18 @@ def test_fit_capability_manifest_is_json_shaped_and_fresh() -> None:
 
 def test_fit_capability_manifest_has_a_machine_readable_module_cli(capsys) -> None:
     assert capability_main([]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out) == fit_capability_manifest()
+
+
+def test_fit_capability_module_entrypoint_is_coverage_owned(capsys) -> None:
+    source = _CAPABILITY_MODULE.read_text(encoding="utf-8")
+    assert "pragma: no cover" not in source
+
+    with pytest.raises(SystemExit) as exit_info:
+        runpy.run_module("fast_mlsirm.capabilities", run_name="__main__")
+    assert exit_info.value.code == 0
     captured = capsys.readouterr()
     assert captured.err == ""
     assert json.loads(captured.out) == fit_capability_manifest()
