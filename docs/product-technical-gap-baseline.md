@@ -98,7 +98,7 @@ The central CodeQL correction exposes a separate integration defect in fast-mlsi
 
 #1714 remains Draft after its source-level RED → GREEN topology repair. Its source is not moved merely to retrigger hosted execution, and predecessor workflow/review evidence is not transferred. The same rule applies to #1733 and its overlapping portability evidence: #1522 and #1646 must establish their own exact-head evidence, integrate normally, and only then may #1733 drop temporary overlap and regenerate its own landing evidence.
 
-The latest observed protected central `.github/main` is `09ac6366ddd018fd0085368f4b669ba797fd0158` through the required-workflow/code-scanning governance repair. Central owner movement is evidence of control-plane work, not proof that any fast-mlsirm current head is GREEN.
+The latest observed protected central `.github/main` is `51b812d181989ed28366b5850d1a34f51df10187` through the reusable Scorecard default-branch analysis repair. Central owner movement is evidence of control-plane work, not proof that any fast-mlsirm current head is GREEN.
 
 ## 7. Next executable commercialization priorities
 
