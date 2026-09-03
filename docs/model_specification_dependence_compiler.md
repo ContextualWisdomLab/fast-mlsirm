@@ -135,6 +135,15 @@ compiled `DependenceStructure.baseline_citations`. This prevents evidence for
 one dimensional, mixed-membership, dependence, or unrelated research record
 from promoting another represented model.
 
+`evidence_by_candidate_id` is an admission boundary, not an extensible callback
+surface. The public compiler accepts an exact built-in `dict` whose keys are
+exact nonblank candidate IDs and whose values are exact `CapabilityEvidence`
+objects, then copies that dictionary before constructing any candidate identity.
+A custom mapping therefore cannot run a `get()` callback between identity
+derivation and manifest assembly and mutate the structural objects that the
+manifest repeats. This preserves one coherent structural snapshot per compiled
+candidate instead of merely digesting an internally inconsistent payload.
+
 ## Generalized mixed-model boundary
 
 `GeneralizedMixedStructure` is declarative and does not use a free-form
