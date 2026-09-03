@@ -694,6 +694,7 @@ def _candidate_identity(
 def _missing_support_requirements(
     base: ModelSpecification,
     candidate_id: str,
+    dependence: DependenceStructure,
     evidence: CapabilityEvidence | None,
 ) -> tuple[str, ...]:
     """Derive promotion gates from candidate-scoped canonical owners."""
@@ -719,6 +720,10 @@ def _missing_support_requirements(
     has_citations = (
         evidence is not None
         and _primary_citations_are_complete(evidence.primary_citations)
+        and all(
+            citation in evidence.primary_citations
+            for citation in dependence.baseline_citations
+        )
     )
     membership = base.mixed_structure.membership
     membership_recovery_metric = membership.weight_recovery_metric
@@ -778,7 +783,12 @@ def _compile_one(
         status = CapabilityStatus.UNSUPPORTED
         missing = ("multidimensional_main_effects_required",)
     else:
-        missing = _missing_support_requirements(base, candidate_id, evidence)
+        missing = _missing_support_requirements(
+            base,
+            candidate_id,
+            dependence,
+            evidence,
+        )
         status = (
             CapabilityStatus.RESEARCH_CANDIDATE
             if missing
