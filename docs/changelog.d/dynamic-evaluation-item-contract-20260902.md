@@ -7,6 +7,7 @@
 - Content-address criterion definitions, admissible-evidence rules, exclusion rules, response semantics, abstention rules, not-observable rules, and response-category definitions.
 - Bind every admitted item and run to the exact criterion-set identity and SHA-256 digest, reject unregistered criteria or rubric/blueprint substitution, and require every declared criterion to be administered.
 - Canonicalize each item's mathematical criterion membership by criterion identity so caller collection order cannot create false item identities.
+- Canonicalize item provenance and validation-evidence reference membership after exact bounded admission so equivalent evidence sets have one immutable item identity; temporal or administration sequence remains separate TEPP-owned event evidence.
 - Canonicalize mathematical item-set membership by immutable item-instance identity so caller collection order cannot create false run-snapshot identities; administration order remains outside this set contract.
 - Keep item origin, evaluation role, reference semantics, reference status, regeneration evidence, adjudication provenance, validation evidence, and linking status as independent state axes.
 - Fail closed on cross-version linking without a validated anchor and immutable linking evidence.
