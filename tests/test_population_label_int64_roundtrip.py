@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import warnings
 
 import numpy as np
@@ -194,3 +196,14 @@ def test_population_labels_preserve_mixed_sequence_identity_before_numpy_promoti
 
     assert n_populations == 2
     assert ids.tolist() == [1, 0]
+
+
+def test_unidimensional_factor_normalization_remains_coverage_owned() -> None:
+    """Reachable ULS factor normalization must stay inside the coverage denominator."""
+    fit_module = importlib.import_module("fast_mlsirm.fit")
+    source = inspect.getsource(fit_module.fit)
+    normalization_line = next(
+        line for line in source.splitlines() if "factors = np.zeros_like(factors)" in line
+    )
+
+    assert "pragma: no cover" not in normalization_line
