@@ -19,14 +19,6 @@ FIT_CAPABILITY_SCHEMA_VERSION = "1.0"
 PRODUCTION_NUMERIC_OWNER = "rust"
 
 
-@dataclass(frozen=True, slots=True)
-class FitCapability:
-    """One model and the public estimators admitted for production fitting."""
-
-    model: str
-    estimators: tuple[str, ...]
-
-
 def _accepted_estimators(model: str) -> tuple[str, ...]:
     accepted: list[str] = []
     for estimator in sorted(VALID_ESTIMATORS):
@@ -38,15 +30,36 @@ def _accepted_estimators(model: str) -> tuple[str, ...]:
     return tuple(accepted)
 
 
-_FIT_CAPABILITIES = tuple(
-    FitCapability(model=model, estimators=_accepted_estimators(model))
-    for model in sorted(VALID_MODELS)
+@dataclass(frozen=True, slots=True)
+class FitCapability:
+    """One canonical model and its admitted production estimators."""
+
+    model: str
+    estimators: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Reject forged or non-canonical public capability records."""
+        if type(self.model) is not str or self.model not in VALID_MODELS:
+            raise ValueError("FitCapability must match a canonical model-estimator capability")
+        if type(self.estimators) is not tuple or any(
+            type(estimator) is not str for estimator in self.estimators
+        ):
+            raise ValueError("FitCapability must match a canonical model-estimator capability")
+        if self.estimators != _accepted_estimators(self.model):
+            raise ValueError("FitCapability must match a canonical model-estimator capability")
+
+
+_FIT_CAPABILITY_ROWS = tuple(
+    (model, _accepted_estimators(model)) for model in sorted(VALID_MODELS)
 )
 
 
 def fit_capabilities() -> tuple[FitCapability, ...]:
-    """Return the immutable bounded 1.0 model-by-estimator capability table."""
-    return _FIT_CAPABILITIES
+    """Return fresh canonical 1.0 model-by-estimator capability value objects."""
+    return tuple(
+        FitCapability(model=model, estimators=estimators)
+        for model, estimators in _FIT_CAPABILITY_ROWS
+    )
 
 
 def fit_capability_manifest() -> dict[str, object]:
@@ -56,10 +69,10 @@ def fit_capability_manifest() -> dict[str, object]:
         "production_numeric_owner": PRODUCTION_NUMERIC_OWNER,
         "models": [
             {
-                "model": capability.model,
-                "estimators": list(capability.estimators),
+                "model": model,
+                "estimators": list(estimators),
             }
-            for capability in _FIT_CAPABILITIES
+            for model, estimators in _FIT_CAPABILITY_ROWS
         ],
     }
 
