@@ -113,10 +113,11 @@ identification, Rust estimator, and true-parameter recovery evidence exist.
 Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
 
 - `supported`: explicit generative-equation identity, exact-candidate-scoped Rust
-  estimator, exact-candidate-scoped identification evidence, primary citation,
-  and exact-candidate-scoped passing recovery evidence are all present; when
-  membership weights are model-estimated, their declared recovery metric is
-  also present in that recovery contract;
+  estimator, exact-candidate-scoped identification evidence, primary citation
+  evidence that includes the canonical baseline formulation citation declared
+  by the compiled dependence family, and exact-candidate-scoped passing recovery
+  evidence are all present; when membership weights are model-estimated, their
+  declared recovery metric is also present in that recovery contract;
 - `research_candidate`: the coupling is representable but one or more support
   gates are missing;
 - `unsupported`: the base kernel declares the dependence incoherent, or a
@@ -124,13 +125,15 @@ Every requested LSIRM/MLSIRM/DLSJM variant is materialized as exactly one of:
   unidimensional main-effect specification).
 
 A candidate cannot become `supported` merely because its name is in the
-registry. A base-kernel estimator, base identification proof, or base recovery
-study does not transfer to an LSIRM/MLSIRM/DLSJM extension. `EstimationPlan`,
-`IdentificationContract`, and `RecoveryContract` must each name the exact full
-candidate through `applies_to_candidate_id`, and documentary equation/citation
-evidence is looked up through `evidence_by_candidate_id`. This prevents evidence
-for one dimensional, mixed-membership, or dependence specification from
-promoting another represented model.
+registry. A base-kernel estimator, base identification proof, base recovery
+study, or unrelated nonblank citation does not transfer to an
+LSIRM/MLSIRM/DLSJM extension. `EstimationPlan`, `IdentificationContract`, and
+`RecoveryContract` must each name the exact full candidate through
+`applies_to_candidate_id`; documentary equation/citation evidence is looked up
+through `evidence_by_candidate_id`, and the citation tuple must contain the
+compiled `DependenceStructure.baseline_citations`. This prevents evidence for
+one dimensional, mixed-membership, dependence, or unrelated research record
+from promoting another represented model.
 
 ## Generalized mixed-model boundary
 
