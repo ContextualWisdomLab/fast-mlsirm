@@ -150,7 +150,7 @@ Embretson, S. E. (1991). A multidimensional latent trait model for measuring lea
 
 Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel IRT model using Gibbs sampling. *Psychometrika, 66*, 271–288. https://doi.org/10.1007/BF02294839
 
-Jeon, M., & Rabe-Hesketh, S. (2016). An autoregressive growth model for longitudinal item analysis. *Psychometrika, 81*(3), 830–850. https://doi.org/10.1007/s11336-015-9489-2
+Jeon, M., & Rabe-Hesketh, S. (2025). An autoregressive growth model for longitudinal item analysis. *Psychometrika*. Advance online publication.
 
 Tranmer, M., Steel, D., & Browne, W. J. (2014). Multiple-membership multiple-classification models for social network and group dependencies. *Journal of the Royal Statistical Society: Series A (Statistics in Society), 177*(2), 439–455. https://doi.org/10.1111/rssa.12021
 
