@@ -923,7 +923,7 @@ def _validate_raw_manifest_depth(content: str) -> None:
             depth += 1
             if depth > MAX_MANIFEST_NESTING:
                 raise ValueError("manifest JSON nesting is too deep")
-        elif char in "]}":
+        elif char in "]}" and depth:
             depth -= 1
 
 
