@@ -254,15 +254,15 @@ def fit(
             "use 'jmle' or 'mmle'."
         )
 
-    best: FitResult | None = None
-    for restart in range(config.n_restarts):
+    best = _run_single_fit(
+        y, observed, factors, n_dims, config, model, 0, backend, device
+    )
+    for restart in range(1, config.n_restarts):
         candidate = _run_single_fit(
             y, observed, factors, n_dims, config, model, restart, backend, device
         )
-        if best is None or candidate.objective < best.objective:
+        if candidate.objective < best.objective:
             best = candidate
-    if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
 
 
