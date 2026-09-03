@@ -568,7 +568,7 @@ def build_evaluation_item_set_snapshot(
         run_snapshot_ref=_reference(run_snapshot_ref, "$.run_snapshot_ref"),
         blueprint_revision_ref=normalized_blueprint_ref,
         criterion_set_snapshot=criterion_set_snapshot,
-        items=normalized_items,
+        items=tuple(sorted(normalized_items, key=lambda item: item.item_instance_ref)),
         linking_status=normalized_linking_status,
         linking_evidence_ref=normalized_linking_evidence_ref,
         _admission_token=_SET_TOKEN,
