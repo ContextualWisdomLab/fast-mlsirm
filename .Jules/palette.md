@@ -51,3 +51,15 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2025-02-20 - HTML Report Skip-to-Content Link Dark Mode Contrast
+**Learning:** Using hardcoded `white` text color for the `skip-link` can result in very poor contrast or complete illegibility when the background color (e.g., `var(--teal)`) adapts to dark mode.
+**Action:** Use CSS variables that correctly adapt to both light and dark color schemes (such as `color: var(--bg);` instead of `color: white;`) to maintain accessible text contrast for the skip link.
+
+## 2025-02-20 - Bar Chart Hover Transitions
+**Learning:** Adding hover background colors to interactive elements like `.bar-row` without a transition makes the interaction feel abrupt and unpolished, especially when adjacent elements like `.table-row` have smooth transitions.
+**Action:** When applying hover effects like `background-color` changes, include an appropriate transition property (e.g., `transition: background-color 0.15s ease-in-out;`) to improve the perceived smoothness of the UX.
+
+## 2025-02-20 - HTML Report Skip-to-Content Link Dark Mode Contrast
+**Learning:** Using hardcoded `white` text color for the `skip-link` can result in very poor contrast or complete illegibility when the background color (e.g., `var(--teal)`) adapts to dark mode.
+**Action:** Use CSS variables that correctly adapt to both light and dark color schemes (such as `color: var(--bg);` instead of `color: white;`) to maintain accessible text contrast for the skip link.
