@@ -54,6 +54,20 @@ def _assert_descriptor_write_capability() -> bool:
     return supported
 
 
+def test_descriptor_write_capability_fails_closed_when_prerequisite_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing atomic-write primitives must be failing evidence, never a passing return."""
+    monkeypatch.setattr(
+        __import__(__name__),
+        "_descriptor_write_prerequisites",
+        lambda: {"posix": False, "open_dir_fd": True},
+    )
+
+    with pytest.raises(AssertionError, match="posix"):
+        _assert_descriptor_write_capability()
+
+
 def _permissions(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
 
