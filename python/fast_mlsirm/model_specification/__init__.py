@@ -540,6 +540,32 @@ class CapabilityEvidence:
         )
 
 
+def _snapshot_evidence_by_candidate_id(
+    value: object,
+) -> dict[str, CapabilityEvidence]:
+    """Seal candidate evidence before identity-dependent compilation begins.
+
+    Only an exact built-in dictionary is admitted. A mapping subclass can run
+    caller code from ``get`` between candidate identity construction and
+    manifest assembly, allowing one compiled record to mix two structural
+    states. Copying an exact dictionary first gives every candidate one
+    package-owned evidence snapshot for the whole compilation.
+    """
+    if type(value) is not dict:
+        raise TypeError("evidence_by_candidate_id must be a built-in dict")
+    snapshot = value.copy()
+    for candidate_id, evidence in snapshot.items():
+        if not _exact_nonblank_string(candidate_id):
+            raise TypeError(
+                "evidence_by_candidate_id keys must be non-blank built-in strings"
+            )
+        if type(evidence) is not CapabilityEvidence:
+            raise TypeError(
+                "evidence_by_candidate_id values must be CapabilityEvidence"
+            )
+    return snapshot
+
+
 @dataclass(frozen=True)
 class CompiledModelCandidate:
     """Immutable result of base + mixed + dependence composition."""
@@ -814,7 +840,7 @@ def _compile_one(
 def compile_dependence_candidates(
     base: ModelSpecification,
     *,
-    evidence_by_candidate_id: Mapping[str, CapabilityEvidence] | None = None,
+    evidence_by_candidate_id: dict[str, CapabilityEvidence] | None = None,
 ) -> tuple[CompiledModelCandidate, ...]:
     """Compile LSIRM, MLSIRM, and DLSJM variants without family-specific branching.
 
@@ -823,8 +849,17 @@ def compile_dependence_candidates(
     equation, implementation, identification, citation, or recovery evidence
     becomes ``research_candidate``. The compiler never substitutes the
     local-independent base model for a requested dependence structure.
+
+    Candidate evidence must be supplied as an exact built-in dictionary. The
+    compiler snapshots and type-validates that dictionary before constructing
+    any candidate identity so caller-controlled mapping callbacks cannot mutate
+    structural evidence between identity and manifest assembly.
     """
-    evidence = {} if evidence_by_candidate_id is None else evidence_by_candidate_id
+    evidence = (
+        {}
+        if evidence_by_candidate_id is None
+        else _snapshot_evidence_by_candidate_id(evidence_by_candidate_id)
+    )
     return tuple(_compile_one(base, kind, evidence) for kind in _DEPENDENCE_ORDER)
 
 
