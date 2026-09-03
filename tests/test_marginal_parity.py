@@ -7,6 +7,8 @@ far tighter than the 1e-6 workspace contract — after a full EM run.
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import numpy as np
 import pytest
 
@@ -14,10 +16,9 @@ from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit
 from fast_mlsirm.reference import fit_reference
 
-pytestmark = pytest.mark.skipif(
-    pytest.importorskip("fast_mlsirm._core", reason="compiled core required") is None,
-    reason="compiled core required",
-)
+# Marginal parity is release evidence for the compiled numerical owner. Missing
+# native capability is therefore a hard collection error, not a passing skip.
+import_module("fast_mlsirm._core")
 
 
 def _simulate(seed=0, n_persons=250, n_items=12, n_dims=2, latent_dim=2, missing=0.0):
@@ -138,10 +139,18 @@ def test_marginal_gpu_agrees_with_cpu_loosely(capfd):
         )
         results[device] = fit(y, fid, cfg, cluster_id=cluster_id)
     device_stderr = capfd.readouterr().err
-    if "no usable GPU adapter was found" in device_stderr:
-        pytest.skip("no usable GPU adapter; explicit GPU request fell back to CPU")
 
     r, g = results["cpu"], results["gpu"]
+    if "no usable GPU adapter was found" in device_stderr:
+        # A CPU-only host cannot provide GPU parity evidence, but it must prove
+        # the documented fallback is deterministic rather than hiding the lane.
+        np.testing.assert_allclose(g.params.b, r.params.b, atol=1e-12)
+        np.testing.assert_allclose(g.params.zeta, r.params.zeta, atol=1e-12)
+        np.testing.assert_allclose(g.params.theta, r.params.theta, atol=1e-12)
+        np.testing.assert_allclose(g.population["sigma_u"], r.population["sigma_u"], atol=1e-12)
+        np.testing.assert_allclose(g.loglik_trace[-1], r.loglik_trace[-1], rtol=0, atol=1e-12)
+        return
+
     np.testing.assert_allclose(g.params.b, r.params.b, atol=1e-3)
     np.testing.assert_allclose(g.params.zeta, r.params.zeta, atol=5e-3)
     np.testing.assert_allclose(g.params.theta, r.params.theta, atol=1e-3)
