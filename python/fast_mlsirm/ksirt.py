@@ -45,6 +45,7 @@ _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES = frozenset(
 _KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
 _MAX_KSIRT_RESPONSE_CELLS = 20_000_000
 _MAX_KSIRT_RESPONSE_STRUCTURAL_NODES = 40_000_000
+_MAX_KSIRT_EVALUATION_TERMS = 20_000_000
 _KSIRT_RESULT_KEYS = frozenset(
     {
         "theta",
@@ -167,6 +168,20 @@ def _response_shape_before_materialization(value: object) -> tuple[int, int]:
                     raise ValueError("responses must be a 2-D persons x items array")
 
     return n_persons, 0 if n_items is None else n_items
+
+
+def _require_evaluation_work_budget(
+    n_persons: int,
+    n_items: int,
+    nevalpoints: int,
+) -> None:
+    """Bound Rust person-item-grid smoothing work before value traversal."""
+    evaluation_terms = n_persons * n_items * nevalpoints
+    if evaluation_terms > _MAX_KSIRT_EVALUATION_TERMS:
+        raise ValueError(
+            "KSIRT evaluation work exceeds "
+            f"{_MAX_KSIRT_EVALUATION_TERMS} person-item-grid terms"
+        )
 
 
 def _scalar_preserves_float64_identity(value: object) -> bool:
@@ -399,13 +414,14 @@ def ksirt_analysis(
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
     or compiled-core discovery. Response shape, logical cell count, minimum
-    dimensions, built-in structural work, and finite-value identity through
-    Rust ``f64`` normalization are validated before dispatch. Evidence admission
-    accepts exact NumPy arrays or plain built-in list/tuple trees of trusted
-    concrete numeric scalars; callback-bearing providers, complex values, and
-    object/text storage fail before real-valued marshalling. The Rust result
-    payload is replayed for exact carrier, length, and finite-value invariants
-    before any public NumPy materialization.
+    dimensions, built-in structural work, person-item-grid evaluation work,
+    and finite-value identity through Rust ``f64`` normalization are validated
+    before dispatch. Evidence admission accepts exact NumPy arrays or plain
+    built-in list/tuple trees of trusted concrete numeric scalars;
+    callback-bearing providers, complex values, and object/text storage fail
+    before real-valued marshalling. The Rust result payload is replayed for
+    exact carrier, length, and finite-value invariants before any public NumPy
+    materialization.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
@@ -423,6 +439,7 @@ def ksirt_analysis(
     n_persons, n_items = _response_shape_before_materialization(responses)
     if n_persons < 2 or n_items < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
+    _require_evaluation_work_budget(n_persons, n_items, nevalpoints_value)
     bw = _bandwidth_control(bandwidth, n_items)
 
     y = _real_float_array(responses, "responses")
