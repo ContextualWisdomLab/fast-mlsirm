@@ -61,6 +61,8 @@
 
 use crate::mokken::normal_upper_quantile;
 
+const MAX_KSIRT_EVALUATION_TERMS: usize = 20_000_000;
+
 /// Kernel function for the Nadaraya-Watson smoother.
 ///
 /// Formulas verified against Mazza et al. (2014, Section 2) and
@@ -131,7 +133,9 @@ pub struct KsirtResult {
 /// `x[i][j]` is the observed (pre-scored, finite) response of subject `i`
 /// to item `j`; the distinct values of column `j` form the option set.
 /// `bandwidth` overrides the Silverman default `1.06 * n^{-1/5}` (per-item
-/// values, all > 0). See the module docs for the algorithm and sources.
+/// values, all > 0). Person-item-grid work is bounded before response-value
+/// traversal so valid request dimensions cannot trigger unbounded smoothing
+/// or OCC allocation. See the module docs for the algorithm and sources.
 pub fn ksirt<R>(
     x: &[R],
     kernel: KsirtKernel,
@@ -157,14 +161,31 @@ where
                 row.len()
             ));
         }
-        for (j, &v) in row.iter().enumerate() {
+    }
+    if nevalpoints < 2 {
+        return Err("nevalpoints must be at least 2".to_string());
+    }
+    let evaluation_terms = n
+        .checked_mul(k)
+        .and_then(|response_cells| response_cells.checked_mul(nevalpoints))
+        .ok_or_else(|| {
+            format!(
+                "ksirt evaluation work exceeds {MAX_KSIRT_EVALUATION_TERMS} \
+                 person-item-grid terms"
+            )
+        })?;
+    if evaluation_terms > MAX_KSIRT_EVALUATION_TERMS {
+        return Err(format!(
+            "ksirt evaluation work exceeds {MAX_KSIRT_EVALUATION_TERMS} \
+             person-item-grid terms"
+        ));
+    }
+    for (i, row) in x.iter().enumerate() {
+        for (j, &v) in row.as_ref().iter().enumerate() {
             if !v.is_finite() {
                 return Err(format!("non-finite response at subject {i}, item {j}"));
             }
         }
-    }
-    if nevalpoints < 2 {
-        return Err("nevalpoints must be at least 2".to_string());
     }
     let h: Vec<f64> = match bandwidth {
         Some(b) => {
