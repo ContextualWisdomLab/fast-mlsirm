@@ -30,3 +30,12 @@ def test_ksirt_rejects_oversized_evaluation_work_before_value_materialization(
         match=r"KSIRT evaluation work exceeds 6 person-item-grid terms",
     ):
         ksirt.ksirt_analysis(responses, nevalpoints=2)
+
+
+def test_ksirt_evaluation_work_budget_accepts_exact_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The configured evaluation ceiling is inclusive rather than off by one."""
+    monkeypatch.setattr(ksirt, "_MAX_KSIRT_EVALUATION_TERMS", 8)
+
+    ksirt._require_evaluation_work_budget(2, 2, 2)
