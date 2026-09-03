@@ -45,14 +45,17 @@ def _descriptor_writes_supported() -> bool:
     return all(_descriptor_write_prerequisites().values())
 
 
-def _assert_descriptor_write_capability() -> bool:
-    """Prove unsupported platforms lack a named prerequisite instead of skipping."""
-    prerequisites = _descriptor_write_prerequisites()
-    supported = all(prerequisites.values())
-    if not supported:
-        missing = tuple(name for name, available in prerequisites.items() if not available)
-        assert missing
-    return supported
+def _assert_descriptor_write_capability() -> None:
+    """Require every descriptor-relative replacement primitive."""
+    missing = tuple(
+        name
+        for name, available in _descriptor_write_prerequisites().items()
+        if not available
+    )
+    assert not missing, (
+        "descriptor-relative atomic-write prerequisites are unavailable: "
+        + ", ".join(missing)
+    )
 
 
 def test_descriptor_write_capability_fails_closed_when_prerequisite_is_missing(
@@ -78,8 +81,7 @@ def test_descriptor_write_failure_preserves_existing_manifest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed descriptor write must not truncate the accepted manifest."""
-    if not _assert_descriptor_write_capability():
-        return
+    _assert_descriptor_write_capability()
 
     monkeypatch.chdir(tmp_path)
     output_path = Path("secure") / "gate.json"
@@ -117,8 +119,7 @@ def test_descriptor_replacement_preserves_existing_manifest_permissions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Atomic replacement must retain an existing manifest's access contract."""
-    if not _assert_descriptor_write_capability():
-        return
+    _assert_descriptor_write_capability()
 
     monkeypatch.chdir(tmp_path)
     output_path = Path("secure") / "gate.json"
@@ -139,8 +140,7 @@ def test_descriptor_new_manifest_uses_normal_creation_permissions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A new atomic manifest must retain ordinary file-creation permissions."""
-    if not _assert_descriptor_write_capability():
-        return
+    _assert_descriptor_write_capability()
 
     monkeypatch.chdir(tmp_path)
     baseline = Path("baseline.json")
