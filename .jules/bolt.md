@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-10-24 - Finite-precision instability in _log_sigmoid simplification
+**Learning:** The algebraic identity `_log_sigmoid(x) - _log_sigmoid(-x) = x` is exact over reals but not numerically equivalent in finite-precision arithmetic. Using it to rewrite expressions like `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)` into `r * x + n * _log_sigmoid(-x)` introduces cancellation for saturated positive logits and can flatten or overflow the M-step objective.
+**Action:** Do not mathematically simplify stable logistic/cross-entropy functions without validating finite-precision behavior. Always prioritize numerical stability over removing redundant function calls, and provide repository-required paper-first evidence for any algorithmic changes.
