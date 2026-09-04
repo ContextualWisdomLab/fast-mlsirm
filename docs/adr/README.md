@@ -43,6 +43,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0024](0024-macos-native-rust-mlx-metal-consumer-boundary.md) | Accepted | Consume macOS-native Rust-owned MLX Metal through authenticated host transport with exact backend/parity receipts; Linux never claims Metal. |
 | [0025](0025-finite-population-achieved-proportion.md) | Proposed | Rust terminates a complete one-stratum SRSWOR design with the achieved proportion, design variance, and Wang/Konijn exact interval. |
 | [0026](0026-public-polytomous-prediction-boundary.md) | Proposed | Expose Rust-owned GRM/GPCM category probabilities and expected responses through the public Python boundary. |
+| [0027](0027-rust-registry-distribution-boundary.md) | Accepted | Keep `mlsirm-core` inside the `fast-mlsirm` Maturin/PyPI product boundary; crates.io publication requires a successor ADR and independent release contract. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule
