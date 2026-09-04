@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2026-09-04 - Advanced NumPy Objective Vectorization
+**Learning:** During likelihood reductions like `float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))`, enormous intermediate arrays are allocated before reduction. Additionally, the identity `log(sigmoid(x)) - log(sigmoid(-x)) = x` simplifies the mathematical terms directly.
+**Action:** Optimize mathematically and structurally by reducing the equation to `r_i * eta + n_i * _log_sigmoid(-eta)` and utilizing `np.vdot(A, B)` to do scalar reduction in C without any intermediate array memory allocations.
