@@ -153,9 +153,12 @@ def _trusted_ld_population(population: Any) -> None:
     """Admit only the standard-normal single-population expectation contract."""
     if population is None:
         return
-    if type(population) is not dict or set(population) != {"kind"}:
+    if type(population) is not dict:
         raise ValueError("population must be None or {'kind': 'single'}")
-    kind = population["kind"]
+    keys = tuple(population.keys())
+    if len(keys) != 1 or type(keys[0]) is not str or keys[0] != "kind":
+        raise ValueError("population must be None or {'kind': 'single'}")
+    kind = population[keys[0]]
     if type(kind) is not str or kind != "single":
         raise ValueError("population currently supports only kind='single'")
 
@@ -220,8 +223,26 @@ def _ld_resource_preflight(
         raise ValueError("params.zeta must be a 2-D NumPy array aligned to items")
     latent_dim = int(zeta.shape[1])
     uses_space = model.upper() != "MIRT"
-    n_x = pow(q_xi, latent_dim) if uses_space else 1
-    probability_cells = n_items * q_theta * n_x
+    base_probability_cells = n_items * q_theta
+    max_n_x = _MAX_LD_PROBABILITY_CELLS // base_probability_cells
+    if uses_space:
+        if max_n_x < 1:
+            raise ValueError(
+                "ld_indices workspace exceeds the "
+                f"{_MAX_LD_PROBABILITY_CELLS:,}-probability-cell limit"
+            )
+        n_x = 1
+        if q_xi != 1:
+            for _ in range(latent_dim):
+                if q_xi > max_n_x // n_x:
+                    raise ValueError(
+                        "ld_indices workspace exceeds the "
+                        f"{_MAX_LD_PROBABILITY_CELLS:,}-probability-cell limit"
+                    )
+                n_x *= q_xi
+        probability_cells = base_probability_cells * n_x
+    else:
+        probability_cells = base_probability_cells
     if probability_cells > _MAX_LD_PROBABILITY_CELLS:
         raise ValueError(
             "ld_indices workspace exceeds the "
@@ -340,6 +361,12 @@ def _add_bh_cells(current: int, added: int) -> int:
 
 def _trusted_probability_tree(value: Any) -> int:
     """Preflight inert probability evidence with bounded logical/structural work."""
+    # Each frame stores [object, depth, next_child_index, entered, logical_cells].
+    # Children are pushed one at a time so a huge malformed built-in fan-out
+    # cannot allocate an equally huge validation stack before the node budget is
+    # checked. Shared acyclic containers retain occurrence semantics: every
+    # occurrence is charged against both structural work and logical p-value
+    # cells, while active-path identity catches true cycles.
     frames: list[list[Any]] = [[value, 0, 0, False, 0]]
     active_container_ids: set[int] = set()
     structural_nodes = 0
