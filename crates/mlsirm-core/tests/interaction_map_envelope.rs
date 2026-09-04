@@ -254,3 +254,20 @@ fn envelope_rejects_a_valid_but_foreign_input_digest_before_map_work() {
 
     assert!(error.contains("input digest mismatch"));
 }
+
+#[test]
+fn input_digest_canonicalizes_missing_nan_payload_bits() {
+    let persons = ids(&["person-a", "person-b"]);
+    let items = ids(&["item-a", "item-b"]);
+    let expected = [1.0; 4];
+    let observed_one = [2.0, f64::from_bits(0x7ff8_0000_0000_0001), 0.0, 2.0];
+    let observed_two = [2.0, f64::from_bits(0x7ff8_0000_0000_0002), 0.0, 2.0];
+
+    assert!(observed_one[1].is_nan());
+    assert!(observed_two[1].is_nan());
+    assert_ne!(observed_one[1].to_bits(), observed_two[1].to_bits());
+    assert_eq!(
+        request_digest(&persons, &items, &observed_one, &expected, 2, 2, 1),
+        request_digest(&persons, &items, &observed_two, &expected, 2, 2, 1)
+    );
+}
