@@ -6,6 +6,7 @@ core; this module only validates and marshals arrays."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NoReturn
 
 import numpy as np
 
@@ -42,6 +43,21 @@ _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES = frozenset(
     }
 )
 _KSIRT_KERNELS = ("gaussian", "quadratic", "uniform")
+_MAX_KSIRT_RESPONSE_CELLS = 20_000_000
+_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES = 40_000_000
+_MAX_KSIRT_EVALUATION_TERMS = 20_000_000
+_KSIRT_RESULT_KEYS = frozenset(
+    {
+        "theta",
+        "grid",
+        "bandwidth",
+        "options",
+        "occ",
+        "expected",
+        "expected_total",
+    }
+)
+_KSIRT_RESULT_ERROR = "invalid KSIRT Rust result payload"
 
 
 @dataclass
@@ -54,7 +70,8 @@ class KsirtResult:
     used. ``options[j]`` lists item ``j``'s distinct observed scores
     (ascending), ``occ[j]`` is the matching ``m_j x len(grid)`` option
     characteristic curve matrix, ``expected[j]`` the expected item score
-    curve, and ``expected_total`` their sum over items."""
+    curve, and ``expected_total`` their sum over items.
+    """
 
     theta: np.ndarray
     grid: np.ndarray
@@ -91,13 +108,127 @@ def _nevalpoints_control(value: object) -> int:
     if parsed < 2:
         raise ValueError("nevalpoints must be at least 2")
     if parsed > 100_000:
-        # trust boundary: nevalpoints drives Rust-side allocations
         raise ValueError("nevalpoints must be at most 100000")
     return parsed
 
 
+def _response_shape_before_materialization(value: object) -> tuple[int, int]:
+    """Return a bounded rectangular response shape without NumPy conversion."""
+    if type(value) is np.ndarray:
+        if value.ndim != 2:
+            raise ValueError("responses must be a 2-D persons x items array")
+        n_persons, n_items = value.shape
+        if value.size > _MAX_KSIRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses exceed {_MAX_KSIRT_RESPONSE_CELLS} logical cells"
+            )
+        return int(n_persons), int(n_items)
+
+    if type(value) not in (list, tuple):
+        raise ValueError("responses must be a numeric array")
+    if not value:
+        raise ValueError("responses must be a 2-D persons x items array")
+
+    n_persons = len(value)
+    n_items: int | None = None
+    logical_cells = 0
+    structural_nodes = 0
+    for row in value:
+        row_is_builtin = type(row) in (list, tuple)
+        if row_is_builtin:
+            row_items = len(row)
+        elif type(row) is np.ndarray and row.ndim == 1:
+            row_items = int(row.shape[0])
+        else:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        if n_items is None:
+            n_items = row_items
+        elif row_items != n_items:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        logical_cells += row_items
+        if logical_cells > _MAX_KSIRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses exceed {_MAX_KSIRT_RESPONSE_CELLS} logical cells"
+            )
+
+        structural_nodes += 1 + row_items
+        if structural_nodes > _MAX_KSIRT_RESPONSE_STRUCTURAL_NODES:
+            raise ValueError(
+                "responses exceed "
+                f"{_MAX_KSIRT_RESPONSE_STRUCTURAL_NODES} structural nodes"
+            )
+
+        if row_is_builtin:
+            for cell in row:
+                if type(cell) in (list, tuple) or (
+                    type(cell) is np.ndarray and cell.ndim != 0
+                ):
+                    raise ValueError("responses must be a 2-D persons x items array")
+
+    return n_persons, 0 if n_items is None else n_items
+
+
+def _require_evaluation_work_budget(
+    n_persons: int,
+    n_items: int,
+    nevalpoints: int,
+) -> None:
+    """Bound Rust person-item-grid smoothing work before value traversal."""
+    evaluation_terms = n_persons * n_items * nevalpoints
+    if evaluation_terms > _MAX_KSIRT_EVALUATION_TERMS:
+        raise ValueError(
+            "KSIRT evaluation work exceeds "
+            f"{_MAX_KSIRT_EVALUATION_TERMS} person-item-grid terms"
+        )
+
+
+def _scalar_preserves_float64_identity(value: object) -> bool:
+    """Return whether one trusted scalar survives exact Rust-f64 normalization."""
+    value_type = type(value)
+    if value_type in (bool, np.bool_):
+        return True
+    if value_type is int or any(
+        value_type is trusted for trusted in _TRUSTED_NUMPY_INTEGER_TYPES
+    ):
+        exact = int(value)
+        try:
+            narrowed = float(exact)
+        except OverflowError:
+            return False
+        return np.isfinite(narrowed) and int(narrowed) == exact
+    if value_type in (float, np.float16, np.float32, np.float64):
+        return True
+    if value_type is np.longdouble:
+        if not np.isfinite(value):
+            return True
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = np.float64(value)
+        return bool(np.isfinite(narrowed) and np.longdouble(narrowed) == value)
+    if value_type in (complex, np.complex64, np.complex128, np.clongdouble):
+        return True
+    return False
+
+
+def _array_preserves_float64_identity(value: np.ndarray) -> bool:
+    """Return whether finite real array values survive exact float64 normalization."""
+    if value.dtype.kind in ("i", "u") and value.dtype.itemsize > 4:
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = value.astype(np.float64)
+            roundtrip = narrowed.astype(value.dtype)
+        return bool(np.array_equal(roundtrip, value))
+    if value.dtype.kind == "f" and value.dtype.itemsize > np.dtype(np.float64).itemsize:
+        finite = np.isfinite(value)
+        with np.errstate(over="ignore", invalid="ignore"):
+            narrowed = value.astype(np.float64)
+            roundtrip = narrowed.astype(value.dtype)
+        return bool(np.array_equal(roundtrip[finite], value[finite]))
+    return True
+
+
 def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
-    """Materialize only inert numeric array/sequence identities."""
+    """Materialize only inert numeric identities without losing finite values."""
     if type(value) is np.ndarray:
         raw = value
     elif type(value) in (list, tuple):
@@ -110,9 +241,17 @@ def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
             if type(current) is np.ndarray:
                 if current.dtype.kind not in ("b", "i", "u", "f", "c"):
                     raise ValueError(f"{name} must be a numeric array")
+                if not _array_preserves_float64_identity(current):
+                    raise ValueError(
+                        f"{name} entries must be exactly representable as float64"
+                    )
                 continue
             if type(current) not in _TRUSTED_REAL_SEQUENCE_SCALAR_TYPES:
                 raise ValueError(f"{name} must be a numeric array")
+            if not _scalar_preserves_float64_identity(current):
+                raise ValueError(
+                    f"{name} entries must be exactly representable as float64"
+                )
         try:
             raw = np.asarray(value)
         except (TypeError, ValueError, OverflowError):
@@ -122,6 +261,16 @@ def _trusted_numeric_storage(value: object, name: str) -> np.ndarray:
     return raw
 
 
+def _lossless_float64_array(raw: np.ndarray, name: str) -> np.ndarray:
+    """Normalize trusted real evidence without changing any finite value."""
+    if not _array_preserves_float64_identity(raw):
+        raise ValueError(f"{name} entries must be exactly representable as float64")
+    try:
+        return np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+
+
 def _real_float_array(value: object, name: str) -> np.ndarray:
     """Materialize trusted real numeric storage without caller callbacks."""
     raw = _trusted_numeric_storage(value, name)
@@ -129,10 +278,110 @@ def _real_float_array(value: object, name: str) -> np.ndarray:
         raise ValueError(f"{name} must be real-valued")
     if raw.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError(f"{name} must be a numeric array")
-    try:
-        return np.asarray(raw, dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError(f"{name} must be numeric and convertible to float64") from None
+    return _lossless_float64_array(raw, name)
+
+
+def _bandwidth_control(value: object | None, n_items: int) -> list[float] | None:
+    """Validate optional per-item bandwidth before response value marshalling."""
+    if value is None:
+        return None
+    bandwidth = _real_float_array(value, "bandwidth").reshape(-1)
+    if bandwidth.shape[0] != n_items:
+        raise ValueError("bandwidth must supply one value per item")
+    if not np.all(np.isfinite(bandwidth)) or np.any(bandwidth <= 0.0):
+        raise ValueError("bandwidths must be finite and positive")
+    return [float(v) for v in bandwidth]
+
+
+def _invalid_ksirt_result() -> NoReturn:
+    """Raise the stable fail-closed error for a foreign/stale native result."""
+    raise RuntimeError(_KSIRT_RESULT_ERROR)
+
+
+def _native_float_vector(
+    value: object,
+    *,
+    expected_length: int | None = None,
+    nonempty: bool = False,
+) -> list[float]:
+    """Validate one native Rust vector without invoking conversion protocols."""
+    if type(value) not in (list, tuple):
+        _invalid_ksirt_result()
+    if expected_length is not None and len(value) != expected_length:
+        _invalid_ksirt_result()
+    if nonempty and not value:
+        _invalid_ksirt_result()
+
+    validated: list[float] = []
+    for scalar in value:
+        if type(scalar) is not float or not np.isfinite(scalar):
+            _invalid_ksirt_result()
+        validated.append(scalar)
+    return validated
+
+
+def _validated_ksirt_result(
+    value: object,
+    *,
+    n_persons: int,
+    n_items: int,
+    nevalpoints: int,
+) -> tuple[
+    list[float],
+    list[float],
+    list[float],
+    list[list[float]],
+    list[list[float]],
+    list[list[float]],
+    list[float],
+]:
+    """Replay the exact current Rust result contract before NumPy marshalling."""
+    if type(value) is not dict:
+        _invalid_ksirt_result()
+    keys = list(value.keys())
+    if any(type(key) is not str for key in keys) or set(keys) != _KSIRT_RESULT_KEYS:
+        _invalid_ksirt_result()
+
+    theta = _native_float_vector(value["theta"], expected_length=n_persons)
+    grid = _native_float_vector(value["grid"], expected_length=nevalpoints)
+    bandwidth = _native_float_vector(value["bandwidth"], expected_length=n_items)
+    if any(item_bandwidth <= 0.0 for item_bandwidth in bandwidth):
+        _invalid_ksirt_result()
+
+    raw_options = value["options"]
+    raw_occ = value["occ"]
+    raw_expected = value["expected"]
+    if type(raw_options) not in (list, tuple) or len(raw_options) != n_items:
+        _invalid_ksirt_result()
+    if type(raw_occ) not in (list, tuple) or len(raw_occ) != n_items:
+        _invalid_ksirt_result()
+    if type(raw_expected) not in (list, tuple) or len(raw_expected) != n_items:
+        _invalid_ksirt_result()
+
+    options: list[list[float]] = []
+    occ: list[list[float]] = []
+    expected: list[list[float]] = []
+    for item_index in range(n_items):
+        item_options = _native_float_vector(raw_options[item_index], nonempty=True)
+        options.append(item_options)
+        occ.append(
+            _native_float_vector(
+                raw_occ[item_index],
+                expected_length=len(item_options) * nevalpoints,
+            )
+        )
+        expected.append(
+            _native_float_vector(
+                raw_expected[item_index],
+                expected_length=nevalpoints,
+            )
+        )
+
+    expected_total = _native_float_vector(
+        value["expected_total"],
+        expected_length=nevalpoints,
+    )
+    return theta, grid, bandwidth, options, occ, expected, expected_total
 
 
 def ksirt_analysis(
@@ -164,10 +413,15 @@ def ksirt_analysis(
     options. ``kernel`` is ``"gaussian"``, ``"quadratic"``, or
     ``"uniform"``. ``bandwidth`` optionally gives one positive value per
     item. Semantic controls are normalized before caller array materialization
-    or compiled-core discovery. Evidence admission accepts exact NumPy arrays
-    or plain built-in list/tuple trees of trusted concrete numeric scalars;
+    or compiled-core discovery. Response shape, logical cell count, minimum
+    dimensions, built-in structural work, person-item-grid evaluation work,
+    and finite-value identity through Rust ``f64`` normalization are validated
+    before dispatch. Evidence admission accepts exact NumPy arrays or plain
+    built-in list/tuple trees of trusted concrete numeric scalars;
     callback-bearing providers, complex values, and object/text storage fail
-    before real-valued marshalling.
+    before real-valued marshalling. The Rust result payload is replayed for
+    exact carrier, length, and finite-value invariants before any public NumPy
+    materialization.
 
     References (APA 7th ed.):
         Mazza, A., Punzo, A., & McGuire, B. (2014). KernSmoothIRT: An R
@@ -182,23 +436,15 @@ def ksirt_analysis(
     kernel_value = _kernel_control(kernel)
     nevalpoints_value = _nevalpoints_control(nevalpoints)
 
-    y = _real_float_array(responses, "responses")
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
+    n_persons, n_items = _response_shape_before_materialization(responses)
     if n_persons < 2 or n_items < 1:
         raise ValueError("responses needs at least 2 persons and 1 item")
+    _require_evaluation_work_budget(n_persons, n_items, nevalpoints_value)
+    bw = _bandwidth_control(bandwidth, n_items)
+
+    y = _real_float_array(responses, "responses")
     if not np.all(np.isfinite(y)):
         raise ValueError("responses must be complete (no missing values)")
-
-    bw = None
-    if bandwidth is not None:
-        bw_arr = _real_float_array(bandwidth, "bandwidth").reshape(-1)
-        if bw_arr.shape[0] != n_items:
-            raise ValueError("bandwidth must supply one value per item")
-        if not np.all(np.isfinite(bw_arr)) or np.any(bw_arr <= 0.0):
-            raise ValueError("bandwidths must be finite and positive")
-        bw = [float(v) for v in bw_arr]
 
     from .fitstats import _core_module
 
@@ -206,7 +452,7 @@ def ksirt_analysis(
     if core is None or not hasattr(core, "ksirt_occ"):
         raise RuntimeError("ksirt_analysis requires the compiled Rust core")
 
-    res = core.ksirt_occ(
+    raw_result = core.ksirt_occ(
         y.reshape(-1),
         int(n_persons),
         int(n_items),
@@ -214,19 +460,27 @@ def ksirt_analysis(
         nevalpoints_value,
         bw,
     )
-    grid = np.asarray(res["grid"], dtype=np.float64)
-    q = grid.shape[0]
-    options = [np.asarray(o, dtype=np.float64) for o in res["options"]]
+    theta_values, grid_values, bandwidth_values, option_values, occ_values, expected_values, expected_total_values = _validated_ksirt_result(
+        raw_result,
+        n_persons=n_persons,
+        n_items=n_items,
+        nevalpoints=nevalpoints_value,
+    )
+    grid = np.asarray(grid_values, dtype=np.float64)
+    options = [np.asarray(item_options, dtype=np.float64) for item_options in option_values]
     occ = [
-        np.asarray(flat, dtype=np.float64).reshape(len(opts), q)
-        for flat, opts in zip(res["occ"], options)
+        np.asarray(flat, dtype=np.float64).reshape(len(item_options), nevalpoints_value)
+        for flat, item_options in zip(occ_values, option_values, strict=True)
     ]
     return KsirtResult(
-        theta=np.asarray(res["theta"], dtype=np.float64),
+        theta=np.asarray(theta_values, dtype=np.float64),
         grid=grid,
-        bandwidth=np.asarray(res["bandwidth"], dtype=np.float64),
+        bandwidth=np.asarray(bandwidth_values, dtype=np.float64),
         options=options,
         occ=occ,
-        expected=[np.asarray(e, dtype=np.float64) for e in res["expected"]],
-        expected_total=np.asarray(res["expected_total"], dtype=np.float64),
+        expected=[
+            np.asarray(item_expected, dtype=np.float64)
+            for item_expected in expected_values
+        ],
+        expected_total=np.asarray(expected_total_values, dtype=np.float64),
     )
