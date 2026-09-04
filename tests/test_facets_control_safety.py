@@ -184,7 +184,7 @@ class _FakeCore:
             "n_iter": 1,
             "converged": True,
             "connected": True,
-            "n_parameters": 1,
+            "n_parameters": n_items + (n_raters - 1) + (n_cat - 2),
         }
 
 
@@ -310,6 +310,61 @@ def test_fit_facets_rejects_control_domains_before_core(
     values[field] = bad_value
     with pytest.raises(ValueError, match=message):
         fit_facets(_RESPONSES, **values)
+
+
+def test_fit_facets_rejects_lossy_longdouble_tolerance_before_response_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Extended-precision tolerance evidence cannot be silently rounded to Rust f64."""
+
+    if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
+        pytest.skip("np.longdouble has no additional precision on this platform")
+
+    one = np.longdouble(1)
+    tol = np.nextafter(one, np.longdouble(2), dtype=np.longdouble)
+    assert np.longdouble(float(tol)) != tol
+
+    response_calls: list[str] = []
+    core_calls: list[str] = []
+    import fast_mlsirm.facets as facets
+
+    def unexpected_response_work(_value: object) -> np.ndarray:
+        response_calls.append("responses")
+        raise AssertionError("response materialization ran before tolerance rejection")
+
+    monkeypatch.setattr(facets, "_response_array", unexpected_response_work)
+    monkeypatch.setattr(
+        fitstats,
+        "_core_module",
+        lambda: core_calls.append("core") or None,
+    )
+
+    with pytest.raises(ValueError, match="tol must be finite and > 0"):
+        fit_facets(_RESPONSES, n_cat=2, q_theta=41, max_iter=10, tol=tol)
+
+    assert response_calls == []
+    assert core_calls == []
+
+
+def test_fit_facets_accepts_exact_longdouble_tolerance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exactly representable extended precision remains compatible with Rust f64."""
+
+    core = _FakeCore()
+    monkeypatch.setattr(fitstats, "_core_module", lambda: core)
+
+    result = fit_facets(
+        _RESPONSES,
+        n_cat=2,
+        q_theta=41,
+        max_iter=10,
+        tol=np.longdouble(0.5),
+    )
+
+    assert core.calls == [(2, 41, 10, 0.5)]
+    assert result.converged is True
+    assert result.connected is True
 
 
 def test_fit_facets_validates_responses_before_core_discovery(
