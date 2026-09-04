@@ -35,6 +35,7 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
     np.longdouble,
 )
 _BH_HARDENED_ATTR = "__fast_mlsirm_bh_admission_hardened__"
+_LD_HARDENED_ATTR = "__fast_mlsirm_ld_admission_hardened__"
 _MAX_PROBABILITY_TREE_DEPTH = 64
 _MAX_BH_PROBABILITY_CELLS = 20_000_000
 _MAX_BH_STRUCTURAL_NODES = 40_000_000
@@ -92,6 +93,14 @@ def _trusted_real(value: Any, name: str) -> float:
     raise ValueError(f"{name} must be a finite number")
 
 
+def _trusted_quadrature(value: Any, name: str) -> int:
+    """Return one embedded quadrature size without caller-controlled coercion."""
+    normalized = _trusted_integer(value, name)
+    if normalized not in _SUPPORTED_QUADRATURE:
+        raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
+    return normalized
+
+
 def _validate_sx2_controls(
     q_theta: Any,
     q_xi: Any,
@@ -100,12 +109,10 @@ def _validate_sx2_controls(
     min_effect: Any,
 ) -> tuple[int, int, float, float, float]:
     """Validate S-X² scalar controls without executing caller callbacks."""
-    quadrature = []
-    for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
-        normalized = _trusted_integer(value, name)
-        if normalized not in _SUPPORTED_QUADRATURE:
-            raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
-        quadrature.append(normalized)
+    quadrature = [
+        _trusted_quadrature(q_theta, "q_theta"),
+        _trusted_quadrature(q_xi, "q_xi"),
+    ]
 
     numeric = []
     for name, value in (
@@ -279,28 +286,73 @@ def _bind_legacy_bh(function: Callable[..., Any]) -> None:
         _legacy_init.benjamini_hochberg = function
 
 
+def _bind_legacy_ld(function: Callable[..., Any]) -> None:
+    """Rebind the package-root compatibility export to hardened LD admission."""
+    from . import _legacy_init
+
+    if hasattr(_legacy_init, "ld_indices"):
+        _legacy_init.ld_indices = function
+
+
 def install(fitstats_module: ModuleType) -> None:
-    """Install callback-free S-X² controls and BH evidence admission."""
+    """Install callback-free fit-statistics control and BH evidence admission."""
     fitstats_module._validate_sx2_controls = _validate_sx2_controls
 
     current_bh: Callable[..., Any] = fitstats_module.benjamini_hochberg
     if getattr(current_bh, _BH_HARDENED_ATTR, False):
         _bind_legacy_bh(current_bh)
+    else:
+        original_bh = current_bh
+
+        @wraps(original_bh)
+        def safe_benjamini_hochberg(p_values: Any, q: Any = 0.05) -> np.ndarray:
+            """Validate BH threshold and probability evidence before Rust discovery."""
+            q_value = _trusted_real(q, "q")
+            if not np.isfinite(q_value) or not 0.0 < q_value <= 1.0:
+                raise ValueError("q must be in (0, 1]")
+            probabilities = _trusted_probability_array(p_values)
+            output_shape = probabilities.shape
+            flat_probabilities = np.ascontiguousarray(probabilities.ravel())
+            result = original_bh(flat_probabilities, q_value)
+            return np.asarray(result, dtype=bool).reshape(output_shape)
+
+        setattr(safe_benjamini_hochberg, _BH_HARDENED_ATTR, True)
+        fitstats_module.benjamini_hochberg = safe_benjamini_hochberg
+        _bind_legacy_bh(safe_benjamini_hochberg)
+
+    current_ld = getattr(fitstats_module, "ld_indices", None)
+    if current_ld is None:
         return
-    original_bh = current_bh
+    if getattr(current_ld, _LD_HARDENED_ATTR, False):
+        _bind_legacy_ld(current_ld)
+        return
+    original_ld = current_ld
 
-    @wraps(original_bh)
-    def safe_benjamini_hochberg(p_values: Any, q: Any = 0.05) -> np.ndarray:
-        """Validate BH threshold and probability evidence before Rust discovery."""
-        q_value = _trusted_real(q, "q")
-        if not np.isfinite(q_value) or not 0.0 < q_value <= 1.0:
-            raise ValueError("q must be in (0, 1]")
-        probabilities = _trusted_probability_array(p_values)
-        output_shape = probabilities.shape
-        flat_probabilities = np.ascontiguousarray(probabilities.ravel())
-        result = original_bh(flat_probabilities, q_value)
-        return np.asarray(result, dtype=bool).reshape(output_shape)
+    @wraps(original_ld)
+    def safe_ld_indices(
+        responses: Any,
+        factor_id: Any,
+        params: Any,
+        model: Any,
+        mask: Any = None,
+        q_theta: Any = 21,
+        q_xi: Any = 11,
+        eps_distance: Any = 1e-8,
+    ) -> dict:
+        """Seal embedded quadrature controls before LD parameter/native work."""
+        q_theta_value = _trusted_quadrature(q_theta, "q_theta")
+        q_xi_value = _trusted_quadrature(q_xi, "q_xi")
+        return original_ld(
+            responses,
+            factor_id,
+            params,
+            model,
+            mask=mask,
+            q_theta=q_theta_value,
+            q_xi=q_xi_value,
+            eps_distance=eps_distance,
+        )
 
-    setattr(safe_benjamini_hochberg, _BH_HARDENED_ATTR, True)
-    fitstats_module.benjamini_hochberg = safe_benjamini_hochberg
-    _bind_legacy_bh(safe_benjamini_hochberg)
+    setattr(safe_ld_indices, _LD_HARDENED_ATTR, True)
+    fitstats_module.ld_indices = safe_ld_indices
+    _bind_legacy_ld(safe_ld_indices)
