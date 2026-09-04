@@ -29,30 +29,30 @@ from .item_parameter_evidence import (
 _MAX_REPORT_RECORDS = 256
 _MAX_TITLE_CHARACTERS = 160
 _REPORT_SCHEMA_VERSION = "fast-mlsirm-item-bank-report-v2"
-_RECORD_INSTANCE_FIELDS = frozenset(
-    {
-        "item_id",
-        "item_version",
-        "candidate_fingerprint",
-        "pilot_record_fingerprint",
-        "audit_report_fingerprint",
-        "blueprint_id",
-        "rubric_id",
-        "rubric_version",
-        "lifecycle_state",
-        "policy_criticality",
-        "approved_use_ids",
-        "evidence_references",
-        "previous_record_fingerprint",
-        "transition_reason_id",
-        "suspension_concern_kinds",
-        "schema_version",
-        "_record_fingerprint",
-    }
-)
-_EVIDENCE_INSTANCE_FIELDS = frozenset(
-    {"evidence_kind", "evidence_id", "evidence_fingerprint"}
-)
+_RECORD_INSTANCE_FIELDS = frozenset({
+    "item_id",
+    "item_version",
+    "candidate_fingerprint",
+    "pilot_record_fingerprint",
+    "audit_report_fingerprint",
+    "blueprint_id",
+    "rubric_id",
+    "rubric_version",
+    "lifecycle_state",
+    "policy_criticality",
+    "approved_use_ids",
+    "evidence_references",
+    "previous_record_fingerprint",
+    "transition_reason_id",
+    "suspension_concern_kinds",
+    "schema_version",
+    "_record_fingerprint",
+})
+_EVIDENCE_INSTANCE_FIELDS = frozenset({
+    "evidence_kind",
+    "evidence_id",
+    "evidence_fingerprint",
+})
 
 
 class ItemBankReportError(ValueError):
@@ -199,7 +199,9 @@ def _normalize_records(records: object) -> tuple[ItemBankLifecycleRecord, ...]:
             record.policy_criticality,
         )
         if current_identity != stable_identity:
-            raise ItemBankReportError("lifecycle identity changed across report records")
+            raise ItemBankReportError(
+                "lifecycle identity changed across report records"
+            )
         if record.previous_record_fingerprint != previous.record_fingerprint:
             raise ItemBankReportError("lifecycle lineage is not contiguous")
         previous = record
@@ -210,7 +212,9 @@ def _present_evidence_kinds(
     record: ItemBankLifecycleRecord,
 ) -> frozenset[ItemBankEvidenceKind]:
     """Return the evidence classes accumulated by the current lifecycle record."""
-    return frozenset(reference.evidence_kind for reference in record.evidence_references)
+    return frozenset(
+        reference.evidence_kind for reference in record.evidence_references
+    )
 
 
 def _evidence_status(
@@ -362,12 +366,15 @@ def render_item_bank_report_json(
 ) -> str:
     """Render one deterministic UTF-8 JSON representation of the bank report."""
     report = build_item_bank_report(records, parameter_evidence=parameter_evidence)
-    return json.dumps(
-        report,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ) + "\n"
+    return (
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
 
 
 def _normalize_title(title: object) -> str:
@@ -378,9 +385,7 @@ def _normalize_title(title: object) -> str:
     if not normalized:
         raise ValueError("title must not be empty")
     if len(normalized) > _MAX_TITLE_CHARACTERS:
-        raise ValueError(
-            f"title must be at most {_MAX_TITLE_CHARACTERS} characters"
-        )
+        raise ValueError(f"title must be at most {_MAX_TITLE_CHARACTERS} characters")
     if "\n" in normalized or "\r" in normalized:
         raise ValueError("title must be a single line")
     return normalized
@@ -413,31 +418,28 @@ def render_item_bank_report_html(
         else str(parameter_payload["evidence_fingerprint"])
     )
 
-    summary = "".join(
-        (
-            _table_row("Item", str(report["item_id"])),
-            _table_row("Version", str(report["item_version"])),
-            _table_row("Blueprint", str(report["blueprint_id"])),
-            _table_row("Current state", str(report["current_state"])),
-            _table_row("Parameter status", str(report["parameter_status"])),
-            _table_row("Parameter evidence", parameter_fingerprint),
-            _table_row("Rubric", str(report["rubric_id"])),
-            _table_row("Rubric version", str(report["rubric_version"])),
-            _table_row("Policy criticality", str(report["policy_criticality"])),
-            _table_row(
-                "Approved-use scope",
-                ", ".join(str(value) for value in report["approved_use_ids"])
-                or "none",
-            ),
-            _table_row(
-                "Cross-version comparability",
-                str(report["cross_version_comparability"]),
-            ),
-        )
-    )
+    summary = "".join((
+        _table_row("Item", str(report["item_id"])),
+        _table_row("Version", str(report["item_version"])),
+        _table_row("Blueprint", str(report["blueprint_id"])),
+        _table_row("Current state", str(report["current_state"])),
+        _table_row("Parameter status", str(report["parameter_status"])),
+        _table_row("Parameter evidence", parameter_fingerprint),
+        _table_row("Rubric", str(report["rubric_id"])),
+        _table_row("Rubric version", str(report["rubric_version"])),
+        _table_row("Policy criticality", str(report["policy_criticality"])),
+        _table_row(
+            "Approved-use scope",
+            ", ".join(str(value) for value in report["approved_use_ids"]) or "none",
+        ),
+        _table_row(
+            "Cross-version comparability",
+            str(report["cross_version_comparability"]),
+        ),
+    ))
 
     evidence_rows = "".join(
-        "<tr><th scope=\"row\">"
+        '<tr><th scope="row">'
         + escape(kind)
         + "</th><td>"
         + escape(status)
@@ -473,27 +475,29 @@ def render_item_bank_report_html(
         "body{font-family:system-ui,sans-serif;line-height:1.5;margin:0;}"
         "main{max-width:72rem;margin:auto;padding:1.25rem;}"
         ".skip-link{position:absolute;left:.5rem;top:.5rem;padding:.5rem;}"
+        "main:focus:not(:focus-visible){outline:none;}"
         ":focus-visible{outline:3px solid currentColor;outline-offset:2px;}"
         "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
-        "th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
+        "thead th,tbody th,td{border:1px solid currentColor;padding:.5rem;text-align:left;font-variant-numeric:tabular-nums;}"
+        "tbody th{font-weight:normal;}"
         "dt{font-weight:700;margin-top:.5rem;}dd{margin-left:0;}"
         "code{overflow-wrap:anywhere;}"
         "</style>\n</head>\n<body>\n"
         '<a class="skip-link" href="#main-content">Skip to report</a>\n'
-        '<main id="main-content">\n'
+        '<main id="main-content" tabindex="-1">\n'
         f"<h1>{escaped_title}</h1>\n"
         '<section aria-labelledby="summary-heading"><h2 id="summary-heading">'
         "Summary</h2><dl>"
         f"{summary}</dl></section>\n"
         '<section aria-labelledby="evidence-heading"><h2 id="evidence-heading">'
         "Evidence</h2><table><caption>Evidence inventory</caption>"
-        "<thead><tr><th scope=\"col\">Evidence class</th>"
-        "<th scope=\"col\">Status</th></tr></thead><tbody>"
+        '<thead><tr><th scope="col">Evidence class</th>'
+        '<th scope="col">Status</th></tr></thead><tbody>'
         f"{evidence_rows}</tbody></table></section>\n"
         '<section aria-labelledby="timeline-heading"><h2 id="timeline-heading">'
         "Timeline</h2><table><caption>Lifecycle timeline</caption>"
-        "<thead><tr><th scope=\"col\">State</th>"
-        "<th scope=\"col\">Reason</th><th scope=\"col\">Record fingerprint</th>"
+        '<thead><tr><th scope="col">State</th>'
+        '<th scope="col">Reason</th><th scope="col">Record fingerprint</th>'
         f"</tr></thead><tbody>{timeline_rows}</tbody></table></section>\n"
         '<section aria-labelledby="limitations-heading">'
         '<h2 id="limitations-heading">Limitations</h2>'

@@ -51,3 +51,11 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-08-02 - Item Bank Report Skip Link Focus Accessibility
+**Learning:** The item bank report was missing `tabindex="-1"` and `outline: none;` on its `<main>` container which broke keyboard accessibility for users navigating via the skip link. Additionally, it lacked a `main:focus:not(:focus-visible)` rule to ensure mouse clicks wouldn't trigger the focus ring while maintaining the `:focus-visible` fallback for keyboard users.
+**Action:** When adding a skip-to-content link, ensure the target element (like `<main>`) has `tabindex="-1"`. When removing the default focus outline (e.g. `outline: none;` via `:focus:not(:focus-visible)`), always pair it with a `:focus-visible` style to maintain keyboard accessibility without breaking pointer interactions.
+
+## 2024-08-02 - Item Bank Report Tabular Number Alignment
+**Learning:** The item bank report data tables used `<th>` and `<td>` without specifying tabular numbers or applying standard structural styles (`<th scope="row">` inside `<tbody>`), which can lead to numbers shifting horizontally and poor screen reader announcement of row headers.
+**Action:** Always apply `font-variant-numeric: tabular-nums;` to data table cells. When styling, explicitly target `thead th, tbody th, td` and ensure `tbody th` has `font-weight: normal;` so that data values remain structurally aligned while looking consistent.
