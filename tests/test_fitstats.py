@@ -375,10 +375,11 @@ def test_adjusted_chi2_pairs_rejects_invalid_inputs_and_preserves_undefined_max(
     assert np.isnan(sparse["max_ratio"])
 
 
-@pytest.mark.skipif(
-    fitstats_module._core_module() is None, reason="compiled core unavailable"
-)
 def test_ld_indices_exposes_native_pair_order_and_sparse_evidence():
+    core = fitstats_module._core_module()
+    assert core is not None and hasattr(core, "ld_indices"), (
+        "compiled Rust core with ld_indices is required integration evidence"
+    )
     params = SimpleNamespace(
         alpha=np.zeros(3),
         b=np.zeros(3),
