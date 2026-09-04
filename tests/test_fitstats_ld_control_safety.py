@@ -68,6 +68,18 @@ def test_ld_indices_rejects_integer_subclasses_without_callbacks(monkeypatch):
         )
 
 
+def test_ld_indices_rejects_q_xi_outside_native_usize_before_native(monkeypatch):
+    """Python integers larger than Rust usize fail before native dispatch."""
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
+    responses, factor_id, params = _fixture()
+    too_large = int(np.iinfo(np.uintp).max) + 1
+
+    with pytest.raises(ValueError, match="q_xi must fit Rust usize"):
+        fitstats_module.ld_indices(
+            responses, factor_id, params, "MIRT", q_theta=7, q_xi=too_large
+        )
+
+
 def test_ld_indices_rejects_unsafe_distance_controls_without_callbacks(monkeypatch):
     """Distance controls fail closed before caller coercion or native discovery."""
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
