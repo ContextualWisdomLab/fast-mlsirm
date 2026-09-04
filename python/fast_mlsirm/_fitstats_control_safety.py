@@ -39,9 +39,13 @@ _BH_HARDENED_ATTR = "__fast_mlsirm_bh_admission_hardened__"
 _LD_HARDENED_ATTR = "__fast_mlsirm_ld_admission_hardened__"
 _LD_RESULT_KEYS = frozenset(("x2_signed", "g2_signed"))
 _MAX_RUST_USIZE = int(np.iinfo(np.uintp).max)
+_MAX_I64 = int(np.iinfo(np.int64).max)
 _MAX_PROBABILITY_TREE_DEPTH = 64
 _MAX_BH_PROBABILITY_CELLS = 20_000_000
 _MAX_BH_STRUCTURAL_NODES = 40_000_000
+_MAX_LD_PROBABILITY_CELLS = 20_000_000
+_MAX_LD_PAIR_COUNT = 5_000_000
+_MAX_LD_PAIR_PERSON_CELLS = 200_000_000
 
 
 def _trusted_integer(value: Any, name: str) -> int:
@@ -145,13 +149,81 @@ def _trusted_ld_theta_quadrature(value: Any) -> int:
     return normalized
 
 
-def _inert_ld_item_count(factor_id: Any) -> int | None:
-    """Read item cardinality only from inert factor-id carriers."""
-    if type(factor_id) is np.ndarray:
-        return int(factor_id.size) if factor_id.ndim == 1 else None
-    if type(factor_id) is list or type(factor_id) is tuple:
-        return len(factor_id)
-    return None
+def _trusted_ld_factor_id(factor_id: Any) -> np.ndarray:
+    """Return a package-owned int64 factor vector without coercion callbacks."""
+    value_type = type(factor_id)
+    if value_type is np.ndarray:
+        if factor_id.ndim != 1 or factor_id.dtype.kind not in "iu":
+            raise ValueError("factor_id must be a 1-D integer array")
+        if factor_id.size and (
+            np.any(factor_id < 0) or np.any(factor_id > _MAX_I64)
+        ):
+            raise ValueError("factor_id values must fit non-negative int64")
+        normalized = np.array(factor_id, dtype=np.int64, copy=True, order="C")
+    elif value_type is list or value_type is tuple:
+        values: list[int] = []
+        for item in factor_id:
+            item_type = type(item)
+            if item_type is int:
+                normalized_item = item
+            elif any(
+                item_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+            ):
+                normalized_item = int(item)
+            else:
+                raise ValueError("factor_id must contain exact integer values")
+            if normalized_item < 0 or normalized_item > _MAX_I64:
+                raise ValueError("factor_id values must fit non-negative int64")
+            values.append(normalized_item)
+        normalized = np.asarray(values, dtype=np.int64)
+    else:
+        raise ValueError("factor_id must be a 1-D integer array")
+
+    if normalized.size and int(normalized.max()) >= int(normalized.size):
+        raise ValueError("factor_id values must be in 0..n_items-1")
+    return np.ascontiguousarray(normalized)
+
+
+def _ld_resource_preflight(
+    responses: Any,
+    params: Any,
+    model: Any,
+    q_theta: int,
+    q_xi: int,
+    n_items: int,
+) -> None:
+    """Bound LD probability storage and quadratic pair work before Rust dispatch."""
+    if type(responses) is not np.ndarray or responses.ndim != 2:
+        raise ValueError("responses must be a 2-D NumPy array for ld_indices")
+    if int(responses.shape[1]) != n_items:
+        raise ValueError("factor_id length must match the number of response items")
+    if type(model) is not str:
+        raise ValueError("model must be a string")
+
+    zeta = getattr(params, "zeta", None)
+    if type(zeta) is not np.ndarray or zeta.ndim != 2 or int(zeta.shape[0]) != n_items:
+        raise ValueError("params.zeta must be a 2-D NumPy array aligned to items")
+    latent_dim = int(zeta.shape[1])
+    uses_space = model.upper() != "MIRT"
+    n_x = pow(q_xi, latent_dim) if uses_space else 1
+    probability_cells = n_items * q_theta * n_x
+    if probability_cells > _MAX_LD_PROBABILITY_CELLS:
+        raise ValueError(
+            "ld_indices workspace exceeds the "
+            f"{_MAX_LD_PROBABILITY_CELLS:,}-probability-cell limit"
+        )
+
+    pair_count = n_items * (n_items - 1) // 2
+    if pair_count > _MAX_LD_PAIR_COUNT:
+        raise ValueError(
+            f"ld_indices pair output exceeds the {_MAX_LD_PAIR_COUNT:,}-pair limit"
+        )
+    pair_person_cells = pair_count * int(responses.shape[0])
+    if pair_person_cells > _MAX_LD_PAIR_PERSON_CELLS:
+        raise ValueError(
+            "ld_indices pair-person work exceeds the "
+            f"{_MAX_LD_PAIR_PERSON_CELLS:,}-cell limit"
+        )
 
 
 def _validated_ld_result(
@@ -436,15 +508,28 @@ def install(fitstats_module: ModuleType) -> None:
         q_xi: Any = 11,
         eps_distance: Any = 1e-8,
     ) -> dict:
-        """Seal LD scalar controls and replay the native result envelope."""
+        """Seal LD controls, model scope, workspace, and native result envelope."""
         q_theta_value = _trusted_ld_theta_quadrature(q_theta)
         q_xi_value = _trusted_positive_usize(q_xi, "q_xi")
         eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
-        expected_item_count = _inert_ld_item_count(factor_id)
+        factor_id_value = _trusted_ld_factor_id(factor_id)
+        if factor_id_value.size and np.any(factor_id_value != 0):
+            raise ValueError(
+                "ld_indices currently supports one trait dimension (factor_id == 0)"
+            )
+        expected_item_count = int(factor_id_value.size)
+        _ld_resource_preflight(
+            responses,
+            params,
+            model,
+            q_theta_value,
+            q_xi_value,
+            expected_item_count,
+        )
         try:
             result = original_ld(
                 responses,
-                factor_id,
+                factor_id_value,
                 params,
                 model,
                 mask=mask,
