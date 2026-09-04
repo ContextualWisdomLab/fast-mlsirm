@@ -101,6 +101,20 @@ def _trusted_quadrature(value: Any, name: str) -> int:
     return normalized
 
 
+def _trusted_positive_integer(value: Any, name: str) -> int:
+    """Return one positive exact integer without caller-controlled coercion."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be a positive integer")
+    if normalized < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return normalized
+
+
 def _validate_sx2_controls(
     q_theta: Any,
     q_xi: Any,
@@ -156,12 +170,6 @@ def _add_bh_cells(current: int, added: int) -> int:
 
 def _trusted_probability_tree(value: Any) -> int:
     """Preflight inert probability evidence with bounded logical/structural work."""
-    # Each frame stores [object, depth, next_child_index, entered, logical_cells].
-    # Children are pushed one at a time so a huge malformed built-in fan-out
-    # cannot allocate an equally huge validation stack before the node budget is
-    # checked. Shared acyclic containers retain occurrence semantics: every
-    # occurrence is charged against both structural work and logical p-value
-    # cells, while active-path identity catches true cycles.
     frames: list[list[Any]] = [[value, 0, 0, False, 0]]
     active_container_ids: set[int] = set()
     structural_nodes = 0
@@ -339,9 +347,9 @@ def install(fitstats_module: ModuleType) -> None:
         q_xi: Any = 11,
         eps_distance: Any = 1e-8,
     ) -> dict:
-        """Seal embedded quadrature controls before LD parameter/native work."""
+        """Seal LD integer controls before parameter or native work."""
         q_theta_value = _trusted_quadrature(q_theta, "q_theta")
-        q_xi_value = _trusted_quadrature(q_xi, "q_xi")
+        q_xi_value = _trusted_positive_integer(q_xi, "q_xi")
         return original_ld(
             responses,
             factor_id,
