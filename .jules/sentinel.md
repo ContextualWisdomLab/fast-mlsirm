@@ -50,3 +50,8 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
+## 2026-08-25 - [JSON Duplicate Key Smuggling and Non-finite Constant DoS Vulnerability]
+**Vulnerability:** The functions `_contract_object` and `_response_object` used `json.loads` without preventing duplicate keys or non-finite constants. A maliciously crafted JSON string with duplicate keys could smuggle unexpected values bypassing validations, while non-finite constants (like NaN or Infinity) could cause unexpected behavior or DoS in subsequent numerical processing.
+**Learning:** Python's `json.loads` allows duplicate keys (keeping the last one) and non-finite constants by default, which deviates from strict JSON standards and can lead to logic bugs, caching poisoning, or DoS.
+**Prevention:** Always provide `object_pairs_hook` to reject duplicate keys and `parse_constant` to reject non-finite numbers when deserializing untrusted JSON using `json.loads`.
