@@ -48,7 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-
-## 2024-05-19 - Iterator Multi-pass Allocation and Redundancy
-**Learning:** Chaining multiple separate `.iter().map(...).sum()` operations over the same data sequentially causes redundant loop traversals and potentially intermediate allocations. This was observed in mathematical criterion functions (e.g. `sum2` and `sum4` calculations) and fit statistics where multiple aggregations were built separately over identical vectors.
-**Action:** Always combine multi-pass iterator operations into a single `.iter().fold(...)` pass that computes all necessary sums simultaneously in a single iteration loop to avoid redundant iteration overhead and reduce execution time.

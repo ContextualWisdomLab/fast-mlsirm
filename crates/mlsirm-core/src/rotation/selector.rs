@@ -251,10 +251,8 @@ fn simple_structure_metrics(
     let mut factor_ss = vec![0.0; active];
     for i in 0..rows {
         let row = &pattern[i * factors + first..(i + 1) * factors];
-        let (row_ss, row_fourth) = row.iter().fold((0.0, 0.0), |(s2, s4), &x| {
-            let x2 = x * x;
-            (s2 + x2, s4 + x2 * x2)
-        });
+        let row_ss: f64 = row.iter().map(|x| x * x).sum();
+        let row_fourth: f64 = row.iter().map(|x| x.powi(4)).sum();
         complexity_numerator += row_ss * row_ss - row_fourth;
         complexity_denominator += row_ss * row_ss;
         for (j, value) in row.iter().enumerate() {
