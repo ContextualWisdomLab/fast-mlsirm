@@ -8,6 +8,7 @@ work remain owned by the compiled Rust fit-statistics implementation.
 from __future__ import annotations
 
 from functools import wraps
+from math import isqrt
 from types import ModuleType
 from typing import Any, Callable
 
@@ -36,6 +37,7 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
 )
 _BH_HARDENED_ATTR = "__fast_mlsirm_bh_admission_hardened__"
 _LD_HARDENED_ATTR = "__fast_mlsirm_ld_admission_hardened__"
+_LD_RESULT_KEYS = frozenset(("x2_signed", "g2_signed"))
 _MAX_RUST_USIZE = int(np.iinfo(np.uintp).max)
 _MAX_PROBABILITY_TREE_DEPTH = 64
 _MAX_BH_PROBABILITY_CELLS = 20_000_000
@@ -141,6 +143,45 @@ def _trusted_ld_theta_quadrature(value: Any) -> int:
     if normalized not in _SUPPORTED_QUADRATURE:
         raise ValueError(f"q_theta must be one of {_SUPPORTED_QUADRATURE}")
     return normalized
+
+
+def _validated_ld_result(result: Any) -> dict[str, np.ndarray]:
+    """Replay the public shape/value contract of one LD result envelope."""
+    if type(result) is not dict or frozenset(result) != _LD_RESULT_KEYS:
+        raise RuntimeError(
+            "ld_indices native result must contain exactly x2_signed and g2_signed"
+        )
+    x2_signed = result["x2_signed"]
+    g2_signed = result["g2_signed"]
+    if (
+        type(x2_signed) is not np.ndarray
+        or type(g2_signed) is not np.ndarray
+        or x2_signed.dtype != np.dtype(np.float64)
+        or g2_signed.dtype != np.dtype(np.float64)
+        or x2_signed.ndim != 1
+        or g2_signed.ndim != 1
+        or x2_signed.shape != g2_signed.shape
+    ):
+        raise RuntimeError(
+            "ld_indices native result must contain matching one-dimensional pair vectors"
+        )
+
+    pair_count = int(x2_signed.size)
+    discriminant = 1 + 8 * pair_count
+    root = isqrt(discriminant)
+    if (
+        pair_count < 1
+        or root * root != discriminant
+        or (1 + root) % 2 != 0
+    ):
+        raise RuntimeError("ld_indices native result must have a triangular pair count")
+    if np.any(np.isinf(x2_signed)) or np.any(np.isinf(g2_signed)):
+        raise RuntimeError("ld_indices native statistics must be finite or NaN")
+
+    return {
+        "x2_signed": np.array(x2_signed, dtype=np.float64, copy=True, order="C"),
+        "g2_signed": np.array(g2_signed, dtype=np.float64, copy=True, order="C"),
+    }
 
 
 def _validate_sx2_controls(
@@ -381,20 +422,28 @@ def install(fitstats_module: ModuleType) -> None:
         q_xi: Any = 11,
         eps_distance: Any = 1e-8,
     ) -> dict:
-        """Seal LD scalar controls before parameter or native work."""
+        """Seal LD scalar controls and replay the native result envelope."""
         q_theta_value = _trusted_ld_theta_quadrature(q_theta)
         q_xi_value = _trusted_positive_usize(q_xi, "q_xi")
         eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
-        return original_ld(
-            responses,
-            factor_id,
-            params,
-            model,
-            mask=mask,
-            q_theta=q_theta_value,
-            q_xi=q_xi_value,
-            eps_distance=eps_distance_value,
-        )
+        try:
+            result = original_ld(
+                responses,
+                factor_id,
+                params,
+                model,
+                mask=mask,
+                q_theta=q_theta_value,
+                q_xi=q_xi_value,
+                eps_distance=eps_distance_value,
+            )
+        except KeyError as error:
+            if error.args and error.args[0] in _LD_RESULT_KEYS:
+                raise RuntimeError(
+                    "ld_indices native result is missing required pair evidence"
+                ) from error
+            raise
+        return _validated_ld_result(result)
 
     setattr(safe_ld_indices, _LD_HARDENED_ATTR, True)
     fitstats_module.ld_indices = safe_ld_indices
