@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from fast_mlsirm.rsm import fit_rsm
+from fast_mlsirm.rsm import _real_numeric_response_matrix, fit_rsm
 
 
 class _FloatTrap:
@@ -51,10 +51,10 @@ class _FakeCore:
         self.yy = np.asarray(yy)
         self.observed = np.asarray(observed)
         return {
-            "item_location": np.zeros(n_items),
-            "thresholds": np.zeros(n_cat - 1),
-            "theta": np.zeros(n_persons),
-            "loglik_trace": np.zeros(1),
+            "item_location": [0.0] * n_items,
+            "thresholds": [0.0] * (n_cat - 1),
+            "theta": [0.0] * n_persons,
+            "loglik_trace": [0.0],
             "n_iter": 1,
             "converged": True,
             "n_parameters": n_items + n_cat - 2,
@@ -63,6 +63,10 @@ class _FakeCore:
 
 def _native_must_not_run():
     raise AssertionError("compiled-core discovery must not run for rejected evidence")
+
+
+def _numpy_materialization_must_not_run(*args: object, **kwargs: object) -> np.ndarray:
+    raise AssertionError("NumPy materialization must not run for invalid ndarray storage")
 
 
 def test_array_provider_fails_without_protocol_or_native_discovery() -> None:
@@ -78,6 +82,76 @@ def test_complex_responses_fail_before_lossy_cast_or_native_discovery() -> None:
     with patch("fast_mlsirm.fitstats._core_module", side_effect=_native_must_not_run):
         with pytest.raises(ValueError, match="responses must be a real numeric array"):
             fit_rsm(responses, n_cat=3)
+
+
+def test_top_level_invalid_ndarray_storage_fails_before_numpy_materialization() -> None:
+    responses = np.array([[0.0 + 1.0j, 1.0], [1.0, 2.0]], dtype=np.complex128)
+    with patch(
+        "fast_mlsirm.rsm.np.asarray",
+        side_effect=_numpy_materialization_must_not_run,
+    ):
+        with pytest.raises(ValueError, match="responses must be a real numeric array"):
+            _real_numeric_response_matrix(responses)
+
+
+def test_top_level_float64_response_array_is_package_owned_after_admission() -> None:
+    responses = np.array([[0.0, 1.0], [2.0, np.nan]], dtype=np.float64)
+
+    admitted = _real_numeric_response_matrix(responses)
+
+    assert type(admitted) is np.ndarray
+    assert admitted.dtype == np.dtype(np.float64)
+    assert admitted.flags.c_contiguous
+    assert admitted.flags.owndata
+    assert not np.shares_memory(admitted, responses)
+    expected = admitted.copy()
+    responses[0, 0] = 2.0
+    responses[1, 1] = 1.0
+    np.testing.assert_array_equal(admitted, expected)
+
+
+def test_sequence_outer_rebind_at_numpy_seam_cannot_redefine_admitted_evidence() -> None:
+    responses = [[0.0, 1.0], [2.0, 0.0]]
+    expected = np.array(responses, dtype=np.float64)
+    real_asarray = np.asarray
+
+    def mutate_then_materialize(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        responses[1] = [0.0, 0.0]
+        return real_asarray(value, *args, **kwargs)
+
+    with patch("fast_mlsirm.rsm.np.asarray", side_effect=mutate_then_materialize):
+        admitted = _real_numeric_response_matrix(responses)
+
+    np.testing.assert_array_equal(admitted, expected)
+
+
+def test_sequence_row_mutation_at_numpy_seam_cannot_redefine_admitted_evidence() -> None:
+    mutable_row = [2.0, 0.0]
+    responses = [[0.0, 1.0], mutable_row]
+    expected = np.array(responses, dtype=np.float64)
+    real_asarray = np.asarray
+
+    def mutate_then_materialize(value: object, *args: object, **kwargs: object) -> np.ndarray:
+        mutable_row[0] = 0.0
+        return real_asarray(value, *args, **kwargs)
+
+    with patch("fast_mlsirm.rsm.np.asarray", side_effect=mutate_then_materialize):
+        admitted = _real_numeric_response_matrix(responses)
+
+    np.testing.assert_array_equal(admitted, expected)
+
+
+def test_sequence_invalid_ndarray_row_storage_fails_before_numpy_materialization() -> None:
+    responses = [
+        np.array([0.0 + 1.0j, 1.0], dtype=np.complex128),
+        np.array([1.0, 0.0], dtype=np.float64),
+    ]
+    with patch(
+        "fast_mlsirm.rsm.np.asarray",
+        side_effect=_numpy_materialization_must_not_run,
+    ):
+        with pytest.raises(ValueError, match="responses must be a real numeric array"):
+            _real_numeric_response_matrix(responses)
 
 
 def test_object_response_cells_fail_without_numeric_callbacks_or_native_discovery() -> None:

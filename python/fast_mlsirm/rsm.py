@@ -45,6 +45,18 @@ _RSM_MATRIX_SHAPE_ERROR = "responses must be a 2-D persons x items array"
 _RSM_MINIMUM_SHAPE_ERROR = (
     "responses must contain at least one person and at least two item columns"
 )
+_RSM_RESULT_ERROR = "invalid RSM Rust result payload"
+_RSM_RESULT_KEYS = frozenset(
+    {
+        "item_location",
+        "thresholds",
+        "theta",
+        "loglik_trace",
+        "n_iter",
+        "converged",
+        "n_parameters",
+    }
+)
 
 
 def _rsm_structural_resource_error() -> str:
@@ -209,10 +221,196 @@ def _trusted_response_source(value: object) -> object:
 def _real_numeric_response_matrix(value: object) -> np.ndarray:
     """Admit bounded real numeric response storage before ``float64`` marshalling."""
     source = _trusted_response_source(value)
-    array = np.asarray(source)
+    if type(source) is np.ndarray:
+        admitted_shape = tuple(int(axis) for axis in source.shape)
+        admitted_size = int(source.size)
+        admitted_dtype = source.dtype
+        if admitted_dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError("responses must be a real numeric array")
+
+        snapshot = np.array(source, copy=True, order="K", subok=False)
+        if (
+            type(snapshot) is not np.ndarray
+            or snapshot.ndim != 2
+            or tuple(int(axis) for axis in snapshot.shape) != admitted_shape
+            or int(snapshot.size) != admitted_size
+            or snapshot.dtype != admitted_dtype
+            or snapshot.dtype.kind not in {"b", "i", "u", "f"}
+            or not snapshot.flags.owndata
+            or np.shares_memory(snapshot, source)
+        ):
+            raise ValueError("responses must be a real numeric array")
+        return np.ascontiguousarray(snapshot, dtype=np.float64)
+
+    source_len = len(source)
+    if type(source) is list:
+        rows = source.copy()
+        if len(rows) != source_len or len(source) != source_len:
+            raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+    else:
+        rows = source
+    if len(rows) != source_len or not rows:
+        raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+
+    first_row = rows[0]
+    if type(first_row) is np.ndarray:
+        expected_width = int(first_row.size)
+    else:
+        expected_width = len(first_row)
+
+    row_snapshots: list[tuple[object, ...] | np.ndarray] = []
+    for row in rows:
+        row_type = type(row)
+        if row_type is np.ndarray:
+            admitted_size = int(row.size)
+            admitted_dtype = row.dtype
+            if (
+                row.ndim != 1
+                or admitted_size != expected_width
+                or admitted_dtype.kind not in {"b", "i", "u", "f"}
+            ):
+                if row.ndim != 1 or admitted_size != expected_width:
+                    raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+                raise ValueError("responses must be a real numeric array")
+            row_snapshot = np.array(row, copy=True, order="K", subok=False)
+            if (
+                type(row_snapshot) is not np.ndarray
+                or row_snapshot.ndim != 1
+                or int(row_snapshot.size) != admitted_size
+                or int(row_snapshot.size) != expected_width
+                or row_snapshot.dtype != admitted_dtype
+                or row_snapshot.dtype.kind not in {"b", "i", "u", "f"}
+                or not row_snapshot.flags.owndata
+                or np.shares_memory(row_snapshot, row)
+            ):
+                raise ValueError("responses must be a real numeric array")
+            row_snapshots.append(row_snapshot)
+            continue
+
+        if row_type is list:
+            admitted_size = len(row)
+            if admitted_size != expected_width:
+                raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+            row_snapshot = tuple(row)
+            if len(row_snapshot) != admitted_size or len(row) != admitted_size:
+                raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        elif row_type is tuple:
+            row_snapshot = row
+            if len(row_snapshot) != expected_width:
+                raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        else:
+            raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+        if any(type(cell) not in _TRUSTED_RESPONSE_SCALAR_TYPES for cell in row_snapshot):
+            raise ValueError("responses must be a real numeric array")
+        row_snapshots.append(row_snapshot)
+
+    if type(source) is list and len(source) != source_len:
+        raise ValueError(_RSM_MATRIX_SHAPE_ERROR)
+
+    array = np.asarray(row_snapshots)
     if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
         raise ValueError("responses must be a real numeric array")
     return np.ascontiguousarray(array, dtype=np.float64)
+
+
+def _sealed_native_vector(
+    value: object,
+    *,
+    expected_len: int | None = None,
+    require_nonempty: bool = False,
+) -> np.ndarray:
+    """Seal the exact built-in list emitted by the PyO3 ``Vec<f64>`` binding."""
+
+    if type(value) is not list:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    source_len = len(value)
+    if expected_len is not None and source_len != expected_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if require_nonempty and source_len == 0:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    snapshot = value.copy()
+    if type(snapshot) is not list or len(snapshot) != source_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if expected_len is not None and len(snapshot) != expected_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if require_nonempty and len(snapshot) == 0:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if any(type(item) is not float or not np.isfinite(item) for item in snapshot):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    array = np.array(snapshot, dtype=np.float64, copy=True, order="C")
+    if (
+        type(array) is not np.ndarray
+        or array.dtype != np.dtype(np.float64)
+        or array.ndim != 1
+        or int(array.shape[0]) != len(snapshot)
+        or not array.flags.c_contiguous
+        or not array.flags.owndata
+        or not np.all(np.isfinite(array))
+    ):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    return array
+
+
+def _validated_native_result(
+    value: object,
+    *,
+    n_persons: int,
+    n_items: int,
+    n_cat: int,
+    max_iter: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool, int]:
+    """Seal and validate the deterministic Rust RSM result envelope."""
+
+    if type(value) is not dict or len(value) != len(_RSM_RESULT_KEYS):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    snapshot = dict.copy(value)
+    if len(snapshot) != len(_RSM_RESULT_KEYS):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if any(type(key) is not str for key in snapshot):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    if frozenset(snapshot) != _RSM_RESULT_KEYS:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    item_location = _sealed_native_vector(
+        dict.__getitem__(snapshot, "item_location"), expected_len=n_items
+    )
+    thresholds = _sealed_native_vector(
+        dict.__getitem__(snapshot, "thresholds"), expected_len=n_cat - 1
+    )
+    theta = _sealed_native_vector(
+        dict.__getitem__(snapshot, "theta"), expected_len=n_persons
+    )
+    trace_source = dict.__getitem__(snapshot, "loglik_trace")
+    if type(trace_source) is not list or not 1 <= len(trace_source) <= max_iter + 1:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    loglik_trace = _sealed_native_vector(trace_source, require_nonempty=True)
+
+    n_iter = dict.__getitem__(snapshot, "n_iter")
+    converged = dict.__getitem__(snapshot, "converged")
+    n_parameters = dict.__getitem__(snapshot, "n_parameters")
+    if (
+        type(n_iter) is not int
+        or not 1 <= n_iter <= max_iter
+        or type(converged) is not bool
+        or type(n_parameters) is not int
+        or n_parameters != n_items + n_cat - 2
+    ):
+        raise RuntimeError(_RSM_RESULT_ERROR)
+    expected_trace_len = n_iter if converged else n_iter + 1
+    if int(loglik_trace.shape[0]) != expected_trace_len:
+        raise RuntimeError(_RSM_RESULT_ERROR)
+
+    return (
+        item_location,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters,
+    )
 
 
 def fit_rsm(
@@ -298,12 +496,27 @@ def fit_rsm(
         max_iter,
         tol,
     )
+    (
+        item_location,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters,
+    ) = _validated_native_result(
+        res,
+        n_persons=int(n_persons),
+        n_items=int(n_items),
+        n_cat=n_cat,
+        max_iter=max_iter,
+    )
     return RsmFit(
-        item_location=np.asarray(res["item_location"], dtype=np.float64),
-        thresholds=np.asarray(res["thresholds"], dtype=np.float64),
-        theta=np.asarray(res["theta"], dtype=np.float64),
-        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
-        n_iter=int(res["n_iter"]),
-        converged=bool(res["converged"]),
-        n_parameters=int(res["n_parameters"]),
+        item_location=item_location,
+        thresholds=thresholds,
+        theta=theta,
+        loglik_trace=loglik_trace,
+        n_iter=n_iter,
+        converged=converged,
+        n_parameters=n_parameters,
     )
