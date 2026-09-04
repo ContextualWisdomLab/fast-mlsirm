@@ -8,7 +8,7 @@ from typing import Any
 
 _WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
 _EXPECTED_GROUP = (
-    "ci-${{ github.workflow }}-"
+    "${{ github.workflow }}-${{ github.repository }}-"
     "${{ github.event.pull_request.number || github.ref }}"
 )
 
@@ -65,7 +65,7 @@ def test_ci_cancels_superseded_runs_for_the_same_pull_request():
     concurrency = _top_level_mapping("concurrency")
     assert concurrency == {
         "group": _EXPECTED_GROUP,
-        "cancel-in-progress": True,
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
     }
 
 
@@ -73,5 +73,9 @@ def test_ci_push_runs_remain_scoped_by_ref():
     """Main/develop push evidence cannot cancel an unrelated branch or PR run."""
     group = _top_level_mapping("concurrency")["group"]
     assert group == _EXPECTED_GROUP
+    assert "github.repository" in group
     assert "github.event.pull_request.head.sha" not in group
     assert "github.run_id" not in group
+    assert _top_level_mapping("concurrency")["cancel-in-progress"] == (
+        "${{ github.event_name == 'pull_request' }}"
+    )
