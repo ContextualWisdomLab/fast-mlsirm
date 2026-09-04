@@ -40,6 +40,31 @@ def _call(monkeypatch, payload):
     )
 
 
+def test_ld_indices_rejects_mapping_protocol_before_callbacks(monkeypatch):
+    """A non-PyO3 mapping must fail before its mapping protocol can execute."""
+
+    class BombMapping:
+        def keys(self):
+            raise AssertionError("caller-controlled mapping protocol executed")
+
+    with pytest.raises(RuntimeError, match="exact built-in dict"):
+        _call(monkeypatch, BombMapping())
+
+
+def test_ld_indices_rejects_array_protocol_before_callbacks(monkeypatch):
+    """A non-PyO3 vector must fail before NumPy conversion hooks can execute."""
+
+    class BombVector:
+        def __array__(self, *_args, **_kwargs):
+            raise AssertionError("caller-controlled array protocol executed")
+
+    with pytest.raises(RuntimeError, match="exact built-in list"):
+        _call(
+            monkeypatch,
+            {"x2_signed": BombVector(), "g2_signed": [0.0]},
+        )
+
+
 def test_ld_indices_rejects_missing_native_pair_evidence(monkeypatch):
     """The public boundary must translate a missing required native field."""
     with pytest.raises(RuntimeError, match="missing required pair evidence"):
@@ -116,16 +141,14 @@ def test_ld_indices_rejects_infinite_native_statistics(monkeypatch, payload):
 
 
 def test_ld_indices_accepts_nan_and_owns_published_pair_vectors(monkeypatch):
-    """Undefined NaNs survive while published arrays no longer alias native storage."""
-    x2_native = np.array([np.nan], dtype=np.float64)
-    g2_native = np.array([np.nan], dtype=np.float64)
+    """Undefined NaNs survive while published arrays are package-owned."""
     result = _call(
         monkeypatch,
-        {"x2_signed": x2_native, "g2_signed": g2_native},
+        {"x2_signed": [np.nan], "g2_signed": [np.nan]},
     )
     assert result["x2_signed"].shape == (1,)
     assert result["g2_signed"].shape == (1,)
     assert np.isnan(result["x2_signed"][0])
     assert np.isnan(result["g2_signed"][0])
-    assert not np.shares_memory(result["x2_signed"], x2_native)
-    assert not np.shares_memory(result["g2_signed"], g2_native)
+    assert result["x2_signed"].flags.owndata
+    assert result["g2_signed"].flags.owndata
