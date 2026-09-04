@@ -8,3 +8,7 @@
   validation plus NumPy marshalling. Pairs with fewer than 20 jointly observed
   responses remain undefined, and the API deliberately supplies no universal
   pass/fail cutoff.
+- Reuse the package-owned callback-free fit-statistics quadrature admission for
+  `q_theta` and `q_xi`. Only embedded Gauss-Hermite rule sizes cross the public
+  Rust boundary; callback-bearing integer subclasses and unsupported positive
+  sizes fail before parameter marshalling or native dispatch.
