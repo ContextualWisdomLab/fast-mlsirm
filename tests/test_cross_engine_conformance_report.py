@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import re
 
 import pytest
 
@@ -161,7 +164,34 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "<caption>Capability × engine conformance evidence</caption>" in html_text
     assert '<th scope="col">Capability</th>' in html_text
     assert '<th scope="col">Execution status</th>' in html_text
+    assert html_text.count('<th scope="row">dichotomous_probability</th>') == 2
     assert "Exact values are shown in text; this report has no hover-only evidence." in html_text
+
+
+def test_report_accessibility_styles_are_csp_hash_bound() -> None:
+    """Skip-link/focus CSS stays keyboard-visible without weakening the report CSP."""
+    html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
+
+    style_match = re.search(r"<style>(.*?)</style>", html_text, flags=re.DOTALL)
+    assert style_match is not None
+    style_text = style_match.group(1)
+    digest = base64.b64encode(hashlib.sha256(style_text.encode("utf-8")).digest()).decode(
+        "ascii"
+    )
+
+    csp_match = re.search(
+        r'<meta http-equiv="Content-Security-Policy" content="([^"]+)">', html_text
+    )
+    assert csp_match is not None
+    csp = csp_match.group(1)
+    assert f"style-src &#x27;sha256-{digest}&#x27;" in csp
+    assert "unsafe-inline" not in csp
+    assert "script-src &#x27;none&#x27;" in csp
+    assert '<a class="skip-link" href="#main-content">Skip to report content</a>' in html_text
+    assert '<main id="main-content" tabindex="-1">' in html_text
+    assert "main:focus-visible" in style_text
+    assert ".skip-link:focus-visible" in style_text
+    assert "prefers-reduced-motion: reduce" in style_text
 
 
 def test_report_exposes_exact_inventory_and_run_provenance() -> None:
