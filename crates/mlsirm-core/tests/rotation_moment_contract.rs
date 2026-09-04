@@ -164,3 +164,40 @@ fn oblimax_cancels_exact_power_of_two_scale_before_log_assembly() {
         "exact power-of-two common scaling must cancel at the Oblimax logarithm decomposition boundary"
     );
 }
+
+#[test]
+fn oblimax_avoids_moment_overflow_and_underflow_for_finite_power_of_two_scales() {
+    let loadings = [0.8, -0.2, 0.1, 0.7, 0.5, -0.4, 0.3, 0.6];
+    let baseline = RotationCriterion::Oblimax
+        .evaluate(&loadings, 4, 2)
+        .expect("baseline loadings are valid");
+
+    for scale in [
+        f64::from_bits(((1023 + 300) as u64) << 52),
+        f64::from_bits(((1023 - 300) as u64) << 52),
+    ] {
+        let scaled: Vec<f64> = loadings.iter().map(|value| scale * value).collect();
+        let evaluation = RotationCriterion::Oblimax
+            .evaluate(&scaled, 4, 2)
+            .expect("finite scale-equivalent loadings must not fail from raw moment range");
+
+        assert_eq!(
+            evaluation.value.to_bits(),
+            baseline.value.to_bits(),
+            "exact power-of-two scaling must preserve the Oblimax objective even when raw fourth moments would overflow or underflow"
+        );
+        assert_eq!(
+            evaluation
+                .gradient
+                .iter()
+                .map(|value| (value * scale).to_bits())
+                .collect::<Vec<_>>(),
+            baseline
+                .gradient
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            "the Oblimax loading gradient must transform with inverse common scale"
+        );
+    }
+}
