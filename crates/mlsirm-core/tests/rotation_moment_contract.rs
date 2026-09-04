@@ -1,9 +1,9 @@
 //! Formula-level numerical-contract checks for Oblimax rotation.
 //!
-//! These tests intentionally mirror the current production integer-power route
-//! while #1747 owns removal of Rust `f64::powi` from the deterministic CPU-f64
-//! reference. Passing here is mathematical/formula evidence, not a claim of
-//! cross-platform bitwise reproducibility.
+//! These tests intentionally mirror the current production `powi`/`ln` route
+//! while #1747 owns the deterministic-reference contract for Rust operations
+//! whose standard-library precision is unspecified. Passing here is
+//! mathematical/formula evidence, not cross-platform bitwise reproducibility.
 
 use mlsirm_core::rotation::RotationCriterion;
 
