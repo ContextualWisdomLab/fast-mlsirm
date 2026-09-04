@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-08-11 - Replace Hardcoded System Colors with CSS Variables
+**Learning:** Hardcoding system colors like `GrayText` in HTML reports bypasses the project's contrast-managed CSS variables, leading to inconsistent UI styling and potential contrast issues across light and dark themes.
+**Action:** When defining border or text colors for elements like `.empty-state`, `<pre>`, or `<table>`, always use defined CSS variables such as `var(--muted)` for text and `var(--line)` for borders. Ensure these variables are declared in both the default `:root` and dark mode `@media` contexts.
