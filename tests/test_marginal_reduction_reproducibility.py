@@ -40,3 +40,37 @@ def test_item_q_preserves_elementwise_objective_reduction_order() -> None:
     assert split_vdot != expected
     assert split_vdot == np.nextafter(expected, -np.inf)
     assert actual == expected
+
+
+def test_item_q_avoids_split_reduction_overflow_for_saturated_logits() -> None:
+    """Keep per-cell cancellation finite before reducing saturated logits."""
+    n_i = np.array([2.0], dtype=np.float64)
+    r_i = np.array([2.0], dtype=np.float64)
+    eta = np.array([1.0e308], dtype=np.float64)
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        expected = float(
+            np.sum(
+                r_i * _log_sigmoid(eta)
+                + (n_i - r_i) * _log_sigmoid(-eta)
+            )
+        )
+        rejected_split = float(
+            np.vdot(r_i, eta)
+            + np.vdot(n_i, _log_sigmoid(-eta))
+        )
+        actual = _item_q(
+            n_i=n_i,
+            r_i=r_i,
+            eta=eta,
+            alpha_i=1.0,
+            b_i=0.0,
+            zeta_i=np.empty(0, dtype=np.float64),
+            free_alpha=False,
+            uses_space=False,
+            pen={"lambda_b": 0.0},
+        )
+
+    assert expected == 0.0
+    assert np.isnan(rejected_split)
+    assert actual == expected
