@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 GIT_METADATA_TIMEOUT_SECONDS = 5
+BUYER_PACKET_ARTIFACT_SCHEMA = "fast-mlsirm.buyer-evidence-packet"
+BUYER_PACKET_ARTIFACT_SCHEMA_VERSION = 2
 
 try:
     from scripts._bounded_json import read_json_object
@@ -261,14 +263,12 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
         contract_value_display = ""
     else:
         contract_value_display = f"KRW {contract_value}"
+    payload_digest = manifest.get("payload_zip_sha256", manifest.get("zip_sha256", ""))
     cards = [
         ("Contract Value", contract_value_display),
         ("Artifact Count", manifest.get("artifact_count", "")),
         ("Source Commit", manifest.get("source_commit", "")),
-        (
-            "Packet ZIP SHA256",
-            manifest.get("zip_sha256", "calculated after archive write"),
-        ),
+        ("Payload ZIP SHA256", payload_digest),
     ]
     card_markup = [
         "\n".join(
@@ -330,6 +330,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
             "</tbody>",
             "</table>",
             "</div>",
+            '<p class="note">Payload ZIP SHA256 binds the immutable inner payload archive. The delivered packet is validated separately by its detached packet SHA256 sidecar to avoid a self-referential archive hash.</p>',
             '<p class="note">This report summarizes procurement evidence only. It is not a valuation guarantee or regulated-use approval.</p>',
             "</section>",
             "</main>",
@@ -493,16 +494,25 @@ code {
 """
 
 
+def _write_archive(path: Path, files: dict[str, Path]) -> None:
+    """Write one deterministic-content ZIP envelope from already-finalized files."""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as packet:
+        for archive_path, source in sorted(files.items()):
+            packet.write(source, archive_path)
+
+
 def build_packet(args: argparse.Namespace) -> dict[str, Any]:
-    """Build, validate, and return a signed-by-digest buyer evidence packet."""
+    """Build, validate, and return a digest-bound buyer evidence packet."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / "fast_mlsirm_buyer_evidence_packet.zip"
+    payload_zip_path = out_dir / "buyer_evidence_payload.zip"
+    packet_path = out_dir / "fast_mlsirm_buyer_evidence_packet.zip"
+    packet_digest_path = out_dir / "fast_mlsirm_buyer_evidence_packet.sha256"
     manifest_path = out_dir / "buyer_evidence_manifest.json"
     report_path = out_dir / "buyer_evidence_report.html"
 
-    files = _collect_files(
+    source_files = _collect_files(
         repo_root=repo_root,
         acceptance_path=Path(args.acceptance).resolve(),
         sales_readiness_path=Path(args.sales_readiness).resolve(),
@@ -516,38 +526,26 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
             else None
         ),
     )
-    file_entries = [
+    source_entries = [
         {
             "archive_path": archive_path,
             "source_path": str(path),
             "size_bytes": path.stat().st_size,
             "sha256": _sha256(path),
         }
-        for archive_path, path in sorted(files.items())
+        for archive_path, path in sorted(source_files.items())
     ]
-    coverage = _coverage(files)
-    manifest: dict[str, Any] = {
-        "status": "ok",
-        "command": "build_buyer_packet",
-        "contract_value_krw": args.contract_value_krw,
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "source_commit": _source_commit(repo_root),
-        "artifact_count": len(file_entries),
-        "coverage": coverage,
-        "files": file_entries,
-    }
-    report_path.write_text(_render_report_html(manifest), encoding="utf-8")
-    files["buyer_evidence_report.html"] = report_path
-    file_entries = [
-        {
-            "archive_path": archive_path,
-            "source_path": str(path),
-            "size_bytes": path.stat().st_size,
-            "sha256": _sha256(path),
-        }
-        for archive_path, path in sorted(files.items())
-    ]
-    coverage = _coverage(files)
+
+    # The payload archive deliberately excludes its manifest and HTML report. Its
+    # digest can therefore be embedded in both without a cryptographic
+    # self-reference. The delivered packet is finalized afterward and receives a
+    # detached digest sidecar.
+    _write_archive(payload_zip_path, source_files)
+    payload_zip_sha256 = _sha256(payload_zip_path)
+
+    coverage_files = dict(source_files)
+    coverage_files["buyer_evidence_report.html"] = report_path
+    coverage = _coverage(coverage_files)
     optional_coverage = {"benchmark_report", "release_evidence_index"}
     required_coverage = {
         name: ok for name, ok in coverage.items() if name not in optional_coverage
@@ -557,27 +555,43 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError(
             f"buyer evidence packet is missing required coverage: {missing}"
         )
-    manifest["coverage"] = coverage
-    manifest["artifact_count"] = len(file_entries)
-    manifest["files"] = file_entries
-    manifest["report_file"] = str(report_path)
-    manifest["report_sha256"] = _sha256(report_path)
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
-    )
 
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as packet:
-        for archive_path, path in sorted(files.items()):
-            packet.write(path, archive_path)
-        packet.write(manifest_path, "buyer_evidence_manifest.json")
+    manifest: dict[str, Any] = {
+        "artifact_schema": BUYER_PACKET_ARTIFACT_SCHEMA,
+        "artifact_schema_version": BUYER_PACKET_ARTIFACT_SCHEMA_VERSION,
+        "status": "ok",
+        "command": "build_buyer_packet",
+        "contract_value_krw": args.contract_value_krw,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "source_commit": _source_commit(repo_root),
+        "artifact_count": len(source_entries),
+        "coverage": coverage,
+        "files": source_entries,
+        "payload_zip_file": str(payload_zip_path),
+        "payload_zip_sha256": payload_zip_sha256,
+        # Schema v2 splits the immutable inner payload from the finalized delivery
+        # envelope. The deprecated zip_* aliases therefore mean payload only in
+        # v2; consumers that require the delivered artifact must use packet_file
+        # plus packet_sha256_file. The CLI still exposes the legacy `zip` key as
+        # the delivered packet path for stdout compatibility.
+        "zip_file": str(payload_zip_path),
+        "zip_sha256": payload_zip_sha256,
+        "packet_file": str(packet_path),
+        "packet_sha256_file": str(packet_digest_path),
+        "report_file": str(report_path),
+    }
 
-    manifest["zip_file"] = str(zip_path)
-    manifest["zip_sha256"] = _sha256(zip_path)
     report_path.write_text(_render_report_html(manifest), encoding="utf-8")
     manifest["report_sha256"] = _sha256(report_path)
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
+
+    delivery_files = dict(source_files)
+    delivery_files["buyer_evidence_report.html"] = report_path
+    delivery_files["buyer_evidence_manifest.json"] = manifest_path
+    _write_archive(packet_path, delivery_files)
+    packet_digest_path.write_text(_sha256(packet_path) + "\n", encoding="ascii")
     return manifest
 
 
@@ -642,7 +656,10 @@ def main(argv: list[str] | None = None) -> int:
                     Path(args.out).resolve() / "buyer_evidence_manifest.json"
                 ),
                 "report": str(Path(args.out).resolve() / "buyer_evidence_report.html"),
-                "zip": manifest["zip_file"],
+                "zip": manifest["packet_file"],
+                "packet": manifest["packet_file"],
+                "payload_zip": manifest["payload_zip_file"],
+                "packet_sha256_file": manifest["packet_sha256_file"],
             },
             indent=2,
             sort_keys=True,

@@ -19,11 +19,12 @@ concurrency:
 jobs:
   # Matrix legs report as "python (3.12)" / "python (3.14)". Branch protection
   # still requires the exact check context name `python`, so a thin aggregate
-  # job below re-exports matrix success under that name.
+  # job below re-exports CPU matrix plus explicit GPU parity success under that
+  # protected name.
   python-matrix:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
     name: python (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -47,19 +48,20 @@ jobs:
 
   python:
     name: python
-    needs: python-matrix
+    needs: [python-matrix, gpu-smoke]
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Require every CPython matrix leg
+      - name: Require every CPython matrix leg and GPU parity
         run: |
           echo "python-matrix result=${{ needs.python-matrix.result }}"
+          echo "gpu-smoke result=${{ needs.gpu-smoke.result }}"
           test "${{ needs.python-matrix.result }}" = "success"
-
+          test "${{ needs.gpu-smoke.result }}" = "success"
 
   rust:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -76,9 +78,9 @@ jobs:
 
   gpu-smoke:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    # One bounded explicit-GPU parity test remains on every PR. The full
+    # One bounded explicit-GPU parity test remains on every active PR. The full
     # paper-design GPU recovery study runs in the scheduled/manual workflow.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       WGPU_BACKEND: vulkan
@@ -161,7 +163,7 @@ jobs:
     # property-based Hypothesis tests already run in the `python` job (via the
     # dev extra); this job adds the Atheris coverage-guided harnesses with a
     # ~60s-per-target budget. Longer campaigns can be run nightly if desired.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -190,7 +192,7 @@ jobs:
 
   package:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
