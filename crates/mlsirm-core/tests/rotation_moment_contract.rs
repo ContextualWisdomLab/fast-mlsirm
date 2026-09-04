@@ -148,6 +148,22 @@ fn oblimax_single_support_is_an_exact_stationary_point() {
 }
 
 #[test]
+fn oblimax_equal_magnitude_supports_are_an_exact_stationary_point() {
+    for active in [1.1_f64, 1.3_f64] {
+        let loadings = [active, -active, active, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let evaluation = RotationCriterion::Oblimax
+            .evaluate(&loadings, 4, 2)
+            .expect("equal-magnitude finite supports have a defined Oblimax criterion");
+
+        assert!(
+            evaluation.gradient.iter().all(|value| *value == 0.0),
+            "equal represented nonzero magnitudes are an exact Oblimax stationary manifold, got {:?}",
+            evaluation.gradient
+        );
+    }
+}
+
+#[test]
 fn oblimax_remains_scale_invariant_with_finite_nonzero_loadings() {
     let loadings = [0.8, -0.2, 0.1, 0.7, 0.5, -0.4, 0.3, 0.6];
     let scaled: Vec<f64> = loadings.iter().map(|value| 7.25 * value).collect();
