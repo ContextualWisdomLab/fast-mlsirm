@@ -9,3 +9,8 @@
   the same chronology after post-construction mutation, while evidence remains
   constrained only by `available_time <= analysis_cutoff` so evidence may
   legitimately predate protocol registration.
+- Profile construction now replays each nested evidence `available_time` through
+  exact callback-free UTC admission after nested evidence validation and before
+  comparison with `analysis_cutoff`. A post-replay mutation therefore fails
+  closed instead of executing caller-controlled chronology comparison protocols
+  or splicing mixed-time evidence into one preregistered profile.
