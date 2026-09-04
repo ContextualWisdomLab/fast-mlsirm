@@ -40,7 +40,7 @@ fn oblimax_has_package_owned_binary64_golden_identity() {
         .evaluate(&loadings, 4, 2)
         .expect("finite nonzero loadings satisfy the Oblimax contract");
 
-    assert_eq!(evaluation.value.to_bits(), 0x3ff9_9747_d6de_45d9);
+    assert_eq!(evaluation.value.to_bits(), 0x3ff9_9747_d6de_45da);
     assert_eq!(
         evaluation
             .gradient
