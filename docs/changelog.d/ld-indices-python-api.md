@@ -15,3 +15,8 @@
   core as authority for materializing and validating that model-dependent rule.
   Callback-bearing integer subclasses fail before parameter marshalling or
   native discovery.
+- Seal `eps_distance` at the same public boundary as an exact, losslessly
+  representable, finite positive Rust `f64` control. Callback-bearing scalar
+  subclasses and non-positive or non-finite values fail before parameter
+  marshalling or native discovery; the Rust core remains the numerical owner
+  of distance and local-dependence arithmetic.
