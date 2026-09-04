@@ -412,7 +412,12 @@ def test_ld_indices_rejects_incomplete_design_and_unsafe_controls(monkeypatch):
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: object())
     with pytest.raises(RuntimeError, match="compiled Rust core"):
         ld_indices(np.zeros((20, 2)), factor_id, params, "MIRT")
-    monkeypatch.undo()
+
+    class BombCore:
+        def ld_indices(self, *_args, **_kwargs):
+            raise AssertionError("invalid inputs reached the native core")
+
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
     with pytest.raises(ValueError, match="at least one person"):
         ld_indices(np.empty((0, 2)), factor_id, params, "MIRT")
     with pytest.raises(ValueError, match="at least two items"):
