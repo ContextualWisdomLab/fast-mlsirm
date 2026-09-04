@@ -612,10 +612,12 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     if sum2 <= 0.0 || sum4 <= 0.0 {
         return Err("oblimax requires nonzero loadings".into());
     }
-    let log_sum2 = deterministic_ln_positive(sum2)
-        .ok_or_else(|| "oblimax second moment must remain finite and positive".to_string())?;
-    let log_sum4 = deterministic_ln_positive(sum4)
-        .ok_or_else(|| "oblimax fourth moment must remain finite and positive".to_string())?;
+    // Form the scale-free fourth/second-moment ratio before taking the logarithm.
+    // This preserves Oblimax's exact common-power-of-two scale identity instead
+    // of assembling two large logarithms and subtracting nearly equal exponents.
+    let normalized_moment_ratio = (sum4 / sum2) / sum2;
+    let log_normalized_moment_ratio = deterministic_ln_positive(normalized_moment_ratio)
+        .ok_or_else(|| "oblimax normalized moment ratio must remain finite and positive".to_string())?;
     let gradient = l
         .iter()
         .map(|x| {
@@ -624,7 +626,7 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
         })
         .collect();
     Ok(CriterionEvaluation {
-        value: -(log_sum4 - 2.0 * log_sum2),
+        value: -log_normalized_moment_ratio,
         gradient,
     })
 }
