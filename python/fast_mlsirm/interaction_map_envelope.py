@@ -22,6 +22,7 @@ _RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE = (
 _RESIDUAL_INTERACTION_MAP_TIE_POLICY = "lexicographic-first-original-index"
 _MAX_INTERACTION_MAP_IDENTIFIER_COUNT = 20_000_000
 _MAX_INTERACTION_MAP_IDENTIFIER_BYTES = 16 * 1024 * 1024
+_CANONICAL_MISSING_NAN_BITS = np.uint64(0x7FF8000000000000)
 
 
 @dataclass(frozen=True)
@@ -110,9 +111,16 @@ def _digest_field(
     digest.update(payload)
 
 
-def _canonical_float64_bytes(array: np.ndarray) -> memoryview:
-    """Expose validated matrix evidence as C-order little-endian float64 bytes."""
-    canonical = array.astype("<f8", copy=False)
+def _canonical_float64_bytes(
+    array: np.ndarray, *, canonicalize_missing_nan: bool = False
+) -> memoryview:
+    """Expose canonical C-order little-endian float64 evidence bytes."""
+    canonical = np.ascontiguousarray(array, dtype="<f8")
+    if canonicalize_missing_nan:
+        missing = np.isnan(canonical)
+        if missing.any():
+            canonical = canonical.copy()
+            canonical.view("<u8")[missing] = _CANONICAL_MISSING_NAN_BITS
     return memoryview(canonical).cast("B")
 
 
@@ -124,7 +132,7 @@ def _input_digest(
     observed: np.ndarray,
     expected: np.ndarray,
 ) -> str:
-    """Return SHA-256 over the exact validated interaction-map request evidence."""
+    """Return SHA-256 over canonical validated interaction-map request evidence."""
     digest = hashlib.sha256()
     _digest_field(digest, "schema", schema.encode("utf-8"))
     _digest_field(digest, "axis_count", struct.pack(">Q", axis))
@@ -136,7 +144,11 @@ def _input_digest(
         _digest_field(digest, "item_id", identifier.encode("utf-8"))
     rows, columns = observed.shape
     _digest_field(digest, "matrix_shape", struct.pack(">QQ", rows, columns))
-    _digest_field(digest, "observed_f64le", _canonical_float64_bytes(observed))
+    _digest_field(
+        digest,
+        "observed_f64le",
+        _canonical_float64_bytes(observed, canonicalize_missing_nan=True),
+    )
     _digest_field(digest, "expected_f64le", _canonical_float64_bytes(expected))
     return digest.hexdigest()
 
