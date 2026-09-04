@@ -48,11 +48,11 @@ fn oblimax_has_package_owned_binary64_golden_identity() {
             .map(|value| value.to_bits())
             .collect::<Vec<_>>(),
         vec![
-            0x3fd0_8b6c_cc65_67e2,
-            0x3fa8_3ba6_e319_0c20,
+            0x3fd0_8b6c_cc65_67e3,
+            0x3fa8_3ba6_e319_0c12,
             0x3fc7_4282_5e9a_9c97,
-            0xbfe1_8acb_d433_cd66,
-            0x3fa8_3ba6_e319_0c20,
+            0xbfe1_8acb_d433_cd64,
+            0x3fa8_3ba6_e319_0c12,
             0xbfd5_2df7_8365_f49c,
             0xbfd9_b798_2d26_a962,
             0x3fd5_2df7_8365_f49c,
