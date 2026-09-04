@@ -128,6 +128,26 @@ fn oblimax_matches_second_and_fourth_moment_formula() {
 }
 
 #[test]
+fn oblimax_single_support_is_an_exact_stationary_point() {
+    for active in [1.1_f64, 1.3_f64, -1.1_f64] {
+        let loadings = [active, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let evaluation = RotationCriterion::Oblimax
+            .evaluate(&loadings, 4, 2)
+            .expect("one finite nonzero loading has a defined Oblimax criterion");
+
+        assert_eq!(
+            evaluation.value, 0.0,
+            "a single-support loading matrix has exactly zero Oblimax objective"
+        );
+        assert!(
+            evaluation.gradient.iter().all(|value| *value == 0.0),
+            "a single-support loading matrix must have an exact zero Oblimax gradient, got {:?}",
+            evaluation.gradient
+        );
+    }
+}
+
+#[test]
 fn oblimax_remains_scale_invariant_with_finite_nonzero_loadings() {
     let loadings = [0.8, -0.2, 0.1, 0.7, 0.5, -0.4, 0.3, 0.6];
     let scaled: Vec<f64> = loadings.iter().map(|value| 7.25 * value).collect();
