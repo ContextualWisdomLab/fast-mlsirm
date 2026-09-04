@@ -70,3 +70,26 @@ def test_ld_indices_rejects_pair_person_work_bomb_before_native(monkeypatch):
             q_theta=7,
             q_xi=3,
         )
+
+
+def test_ld_indices_requires_explicit_supported_population_before_native(monkeypatch):
+    """Population expectations cannot silently fall back to standard normal."""
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
+    responses = np.zeros((20, 2))
+    factor_id = np.zeros(2, dtype=np.int64)
+    params = _params(2)
+
+    with pytest.raises(ValueError, match="population.*single"):
+        fitstats_module.ld_indices(
+            responses, factor_id, params, "MIRT", q_theta=7, q_xi=3
+        )
+    with pytest.raises(ValueError, match="population.*single"):
+        fitstats_module.ld_indices(
+            responses,
+            factor_id,
+            params,
+            "MIRT",
+            q_theta=7,
+            q_xi=3,
+            population={"kind": "singlefree"},
+        )
