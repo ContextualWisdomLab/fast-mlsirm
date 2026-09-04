@@ -1,7 +1,7 @@
 # fast-mlsirm Context Map
 
-Status: Active architecture contract  
-Owner: `ContextualWisdomLab/fast-mlsirm`  
+Status: Active architecture contract
+Owner: `ContextualWisdomLab/fast-mlsirm`
 Governing temporal boundary: ADR-0028
 
 ## Purpose

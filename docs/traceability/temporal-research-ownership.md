@@ -1,7 +1,7 @@
 # Temporal psychometric research and bounded-context ownership
 
-Scientific status: Proposed / evolving implementation  
-Ownership status: Accepted via ADR-0028  
+Scientific status: Proposed / evolving implementation
+Ownership status: Accepted via ADR-0028
 Reviewed: 2026-09-02
 
 ## Why this record exists
