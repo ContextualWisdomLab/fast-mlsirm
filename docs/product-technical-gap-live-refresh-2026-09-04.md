@@ -1,0 +1,42 @@
+# Product and technical gap live refresh — 2026-09-04
+
+Status: **Non-authoritative live supplement**  
+Protected-product basis: `main@b5a3a0c1057d4b53d7a4bb18e0de69f630c2b45c`  
+Canonical historical baseline: `docs/product-technical-gap-baseline.md`  
+Latest immutable release: `v0.9.1` (published 2026-08-26)
+
+This supplement exists because the preceding refresh lane replaced the 1,036-line protected-main baseline with a 121-line live inventory. That rewrite removed valid PRD/TRD/UML, completion-profile, claim-register, standards/research, buyer-gate, release, accessibility and traceability material rather than refreshing it. The canonical baseline has therefore been restored byte-for-byte from protected `main`; current facts are carried here until a later reviewed consolidation can update the baseline without deleting valid evidence.
+
+A capability remains product authority only after integration into protected `main` and terminal applicable scientific, package, coverage, security, review, SBOM/provenance and release evidence on one unchanged exact head. Drafts, queued checks and predecessor approvals are evidence inputs only.
+
+## Current ownership and scientific boundary
+
+`fast-mlsirm` remains the canonical reusable psychometric numerical owner for LSIRM/MLSIRM/IRT/generalized-dependence kernels, true-parameter recovery and stable public bindings. Result-affecting likelihood, estimation, scoring, uncertainty, covariance/correlation, vector/linear/matrix and recovery arithmetic remain Rust/PyO3 owned. Python remains validation, provenance sealing, marshalling, orchestration, reporting and explicit reference/parity only.
+
+TEPP owns temporal/event semantics and composition. `contextual-orchestrator` owns provider/model routing and LLM orchestration. Foreign scientific/domain truth is consumed only through released/versioned contracts or explicit ACLs; no source copying, mutable sibling-head dependency or cross-service SQL is product authority.
+
+## Current high-leverage owner lanes
+
+| Gap | State | Exact owner evidence | Acceptance before product claim |
+| --- | --- | --- | --- |
+| Validation-profile preregistration chronology | ACTIVE DRAFT | #1737 `6a0e43e10192895703cf18c5f50fdfb0fa73cc76` | Preserve exact UTC datetime admission after nested evidence replay. Caller-controlled chronology callbacks must fail closed. Exact-head required checks and independent approval must be reacquired after the RED→GREEN repair. |
+| Generalized dependence / Model Specification | ACTIVE DRAFT | #1714 `619c9fa3daf37d59b96baf10e41b1f1df7813f6a` | Preserve supported/research-candidate/unsupported semantics; promotion still requires the exact primary citation, generative equation, identification contract, Rust estimator and formulation-specific recovery. |
+| Machine-readable fit capability support | ACTIVE DRAFT | #1710 `711055d49a7fcea7a0aa7a2536d9227a827b8c1f` | Canonical support authority stays in package-owned primitive rows; returned `FitCapability` records are fresh validated values and forged direct construction fails closed. |
+| Static covariance standardization | ACTIVE PR | #1722 `338dbb2d25f32b0e201102e7bf73076846fb57b3` | Rust numerical ownership, exact represented-input admission and scale/permutation invariance; TEPP may consume only a released immutable contract. |
+| Mokken/AISP admission and decision controls | ACTIVE STACK | #1506 `cd46160c0a035fec2ded13fbacb11159f0d33ad4`; child #1724 `7764245d3d7618de08dc57e1434bb9b8e8c918ac` | Preserve package-owned response/result/control snapshots and Rust-owned H/Z/AISP arithmetic. Parent integrates first; child evidence is regenerated after ancestry movement. Embedded PR-body references to other predecessor SHAs are historical, not live head authority. |
+| Multiple-membership/crossed recovery | ACTIVE PR | #1536 `77bef27cff780b909be484b52be35e97be752780` | Known-truth bias/MAE/RMSE, membership invariants, direct-Rust admission and worker determinism; no longitudinal or interval-coverage claim without its own evidence. |
+| Rust distribution boundary + `sha2` 0.11 | ACTIVE PR | #1694 `756cf889a111717725de806329e8e5a64bbb5bc0` | Both internal Cargo implementation crates remain `publish = false`; Maturin/PyPI remains the external product unless a separate Rust SDK release boundary is governed. |
+| Marginal objective binary64 reproducibility | ACTIVE DRAFT | #1742 `63912b2e0d63b8a2d42f36f3e2631437d2e1044f` | Preserve the deterministic CPU-f64 reference reduction until a profiled optimization has explicit numerical-contract, recovery and parity evidence; material hot-path work belongs in the Rust numerical owner. |
+| Product/technical gap documentation | ACTIVE DRAFT | #1519 | Never trade live freshness for evidence deletion. The full protected baseline and the current live supplement must both survive until a reviewed consolidation proves no valid PRD/TRD/UML/research/release/buyer evidence is lost. |
+
+## Current merge and release gate
+
+Protected `main` is still `b5a3a0c1057d4b53d7a4bb18e0de69f630c2b45c`. It independently requires `Analyze (actions)`, `close-empty`, `scan-pr-queue`, `dependency-review`, `osv-scan`, `trivy-fs`, `scorecard`, `required-workflow-bootstrap`, `coverage-evidence`, `opencode-review`, `python`, `rust`, `package` and `fuzz` contexts. The latest observed central workflow owner remains `.github/main@07d9ec23fb265c76539d23249e1dfa124ea7b23b`.
+
+The current Actions defect remains a control-plane/admission problem rather than authority to churn clean leaf heads. For #1737 exact `6a0e43e...`, CodeQL run `33820461820` materialized `Analyze (actions)` job `100861817838` but the job remained runnerless with no steps; CI `33820461734` remained pending with no jobs at the latest exact-head evidence recorded by the PR. Queued or absent execution is non-passing.
+
+A fresh open-PR approval search on this refresh found no qualifying `review:approved` lane. Therefore no current open PR is landed merely because repository-owned source tests or predecessor checks were green. Self-approval, administrator bypass, force update, no-op retrigger and predecessor-evidence transfer remain prohibited.
+
+## Non-destructive refresh rule
+
+Future baseline refreshes must be additive or surgically replacement-scoped. Before any update, compare line count and semantic sections against protected main. A refresh that removes valid completion profiles, PRD/TRD/UML, standards/research traceability, claim limitations, release gates or buyer acceptance evidence is a repair finding, not successful maintenance. The correct response is forward restoration or verified supersession, never silent truncation.
