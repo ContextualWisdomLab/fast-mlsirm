@@ -98,8 +98,7 @@ use mlsirm_core::factor::{
     velicer_map_data as core_velicer_map_data, MinresFaResult,
 };
 use mlsirm_core::fitstats::{
-    adjusted_chi2_pairs as core_adjusted_chi2_pairs,
-    ld_indices as core_ld_indices,
+    adjusted_chi2_pairs as core_adjusted_chi2_pairs, ld_indices as core_ld_indices,
     person_fit_resampling as core_person_fit_resampling,
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
