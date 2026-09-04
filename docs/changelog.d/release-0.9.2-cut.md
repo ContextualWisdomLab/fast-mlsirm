@@ -2,26 +2,6 @@
 
 ## Changed
 
-- Project version is bumped to 0.9.2 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.9.2] - 2026-08-27` release section: preregistered external-validation and
-  transportability evidence profiles, a domain-neutral Rust/PyO3
-  finite-population proportion sampling-design contract (sample size, finite-
-  population correction, proportional/equal-cost Neyman allocation, and a
-  terminal SRSWOR achieved-proportion artifact with Wang/Konijn exact
-  confidence limits) plus a bounded threshold-sorted water-filling capped-strata
-  allocation, a domain-neutral lineage-channel-weight evidence contract, a
-  shared canonical judge-result IRT projection core, provisional-versus-
-  calibrated item-parameter provenance with independent (non-self-referential)
-  provenance edges, item-bank lifecycle public-identity replay, customer-facing
-  error-copy actionability across the CLI and public API, and a continuation of
-  the hostile-input/structural-budget hardening sweep (2PL response/tolerance
-  admission, confirmatory loading-pattern evidence, residual interaction-map
-  and RSM structural traversal, sampling result-contract replay, release
-  acceptance watchdog budget, and release helper import integrity).
-- This cut removes the standing predecessor note `release-0.9.1-cut.md`, whose
-  substance is permanently recorded in the `[0.9.1] - 2026-08-25` section and
-  in git history, mirroring the precedent set by the v0.9.1 cut's removal of
-  the stale `release-0.9.0-cut.md` leftover.
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
+- Stage package version metadata at `0.9.2` across Python, Rust, `python/fast_mlsirm/_version.py`, and the derived lock metadata on the Draft release branch. This fragment does not claim that a `v0.9.2` tag, package, or immutable GitHub release already exists.
+- The historical 2026-08-27 cut folded the then-current 17 unreleased fragments into the draft `[0.9.2]` section. The branch has since been merged forward non-destructively with protected `main`, including the binary-response Measurement contract, so that historical section is no longer complete release provenance for the code that would now be tagged.
+- Keep the current authoritative fragments until the exact tag target is ready. Before release, regenerate the managed `Unreleased` block and the dated `0.9.2` release body from that exact inventory, fold every released fragment without losing its evidence, and require `python scripts/render_changelog_fragments.py --check CHANGELOG.md` plus the release-consistency gates to pass on one unchanged head.
