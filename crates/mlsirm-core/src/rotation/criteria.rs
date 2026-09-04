@@ -543,18 +543,88 @@ fn tandem(l: &[f64], rows: usize, factors: usize, first: bool) -> CriterionEvalu
     CriterionEvaluation { value, gradient }
 }
 
+/// Evaluate the natural logarithm using a fixed binary64 operator sequence.
+///
+/// The input must be finite and strictly positive. The implementation normalizes
+/// the IEEE-754 significand with exact power-of-two scaling and evaluates the
+/// `atanh` series with a fixed 24-term Kahan-compensated reduction. Unlike
+/// `f64::ln`, this criterion-local reference does not delegate to a
+/// platform-dependent transcendental implementation.
+fn deterministic_ln_positive(value: f64) -> Option<f64> {
+    const FRACTION_MASK: u64 = 0x000f_ffff_ffff_ffff;
+    const LN_2: f64 = f64::from_bits(0x3fe6_2e42_fefa_39ef);
+    const SQRT_2: f64 = f64::from_bits(0x3ff6_a09e_667f_3bcd);
+
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+
+    let bits = value.to_bits();
+    let exponent_field = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & FRACTION_MASK;
+    let (mut mantissa, mut exponent) = if exponent_field == 0 {
+        let bit_index = 63_i32 - fraction.leading_zeros() as i32;
+        let shift = 52_i32 - bit_index;
+        let normalized_fraction = (fraction << shift as u32) & FRACTION_MASK;
+        (
+            f64::from_bits((1023_u64 << 52) | normalized_fraction),
+            bit_index - 1074,
+        )
+    } else {
+        (
+            f64::from_bits((1023_u64 << 52) | fraction),
+            exponent_field - 1023,
+        )
+    };
+
+    if mantissa > SQRT_2 {
+        mantissa *= 0.5;
+        exponent += 1;
+    }
+
+    let y = (mantissa - 1.0) / (mantissa + 1.0);
+    let y_squared = y * y;
+    let mut term = y;
+    let mut sum = 0.0;
+    let mut correction = 0.0;
+    let mut denominator = 1.0;
+    for _ in 0..24 {
+        let addend = term / denominator;
+        let adjusted = addend - correction;
+        let next = sum + adjusted;
+        correction = (next - sum) - adjusted;
+        sum = next;
+        term *= y_squared;
+        denominator += 2.0;
+    }
+
+    Some(2.0 * sum + exponent as f64 * LN_2)
+}
+
 fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
-    let sum2: f64 = l.iter().map(|x| x * x).sum();
-    let sum4: f64 = l.iter().map(|x| x.powi(4)).sum();
+    let mut sum2 = 0.0;
+    let mut sum4 = 0.0;
+    for x in l.iter().copied() {
+        let square = x * x;
+        sum2 += square;
+        sum4 += square * square;
+    }
     if sum2 <= 0.0 || sum4 <= 0.0 {
         return Err("oblimax requires nonzero loadings".into());
     }
+    let log_sum2 = deterministic_ln_positive(sum2)
+        .ok_or_else(|| "oblimax second moment must remain finite and positive".to_string())?;
+    let log_sum4 = deterministic_ln_positive(sum4)
+        .ok_or_else(|| "oblimax fourth moment must remain finite and positive".to_string())?;
     let gradient = l
         .iter()
-        .map(|x| -(4.0 * x.powi(3) / sum4 - 4.0 * x / sum2))
+        .map(|x| {
+            let cube = (x * x) * x;
+            -(4.0 * cube / sum4 - 4.0 * x / sum2)
+        })
         .collect();
     Ok(CriterionEvaluation {
-        value: -(sum4.ln() - 2.0 * sum2.ln()),
+        value: -(log_sum4 - 2.0 * log_sum2),
         gradient,
     })
 }
@@ -682,6 +752,21 @@ mod tests {
                 evaluation.gradient[2],
                 numeric
             );
+        }
+    }
+
+    #[test]
+    fn deterministic_log_handles_domain_and_binary64_edges() {
+        assert_eq!(deterministic_ln_positive(1.0), Some(0.0));
+        assert_eq!(
+            deterministic_ln_positive(2.0).map(f64::to_bits),
+            Some(0x3fe6_2e42_fefa_39ef)
+        );
+        assert!(deterministic_ln_positive(f64::from_bits(1))
+            .expect("smallest positive subnormal is in-domain")
+            .is_finite());
+        for value in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(deterministic_ln_positive(value), None);
         }
     }
 
