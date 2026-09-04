@@ -76,6 +76,8 @@ pub struct ResidualInteractionMap {
     pub residual: Vec<f64>,
     pub distance: Vec<f64>,
     pub reconstruction: Vec<f64>,
+    /// Cellwise squared reconstruction share; undefined zero-residual cases are absent.
+    pub explained_share: Vec<Option<f64>>,
     pub unexplained: Vec<f64>,
     pub cross_share: Vec<Option<f64>>,
     pub axis_count: usize,
@@ -164,6 +166,7 @@ pub fn residual_interaction_map(
             residual: Vec::new(),
             distance: Vec::new(),
             reconstruction: Vec::new(),
+            explained_share: Vec::new(),
             unexplained: Vec::new(),
             cross_share: Vec::new(),
             axis_count,
@@ -258,8 +261,7 @@ pub fn residual_interaction_map(
     // bound back to the singular-value scale with sqrt(eps * dimension), while
     // retaining the historical absolute floor and the algebraic rank ceiling.
     let gram_roundoff = (f64::EPSILON * rows.max(columns) as f64).sqrt();
-    let numerical_singular_floor =
-        SINGULAR_FLOOR.max(leading_singular * gram_roundoff);
+    let numerical_singular_floor = SINGULAR_FLOOR.max(leading_singular * gram_roundoff);
     let singular_values: Vec<f64> = eigenvalues
         .iter()
         .take(maximum_rank)
@@ -289,10 +291,7 @@ pub fn residual_interaction_map(
             person_coordinates[person * axis_count + axis] = coordinate;
         }
     }
-    let inertia = singular_values
-        .iter()
-        .map(|value| value * value)
-        .sum::<f64>();
+    let inertia = singular_values.iter().map(|value| value * value).sum::<f64>();
     if !inertia.is_finite() {
         return Err("residual interaction map produced non-finite inertia".into());
     }
@@ -304,6 +303,7 @@ pub fn residual_interaction_map(
         })
         .collect();
     let mut reconstruction = Vec::with_capacity(rows * columns);
+    let mut explained_share = Vec::with_capacity(rows * columns);
     let mut distance = Vec::with_capacity(rows * columns);
     let mut unexplained = Vec::with_capacity(rows * columns);
     let mut cross_share = Vec::with_capacity(rows * columns);
@@ -347,6 +347,13 @@ pub fn residual_interaction_map(
             if !fitted.is_finite() || !remainder.is_finite() {
                 return Err("residual interaction map produced a non-finite reconstruction".into());
             }
+            let explained = if raw.abs() > SINGULAR_FLOOR {
+                Some(fitted * fitted / (raw * raw))
+            } else if fitted.abs() <= SINGULAR_FLOOR {
+                Some(0.0)
+            } else {
+                None
+            };
             let share = if raw.abs() > SINGULAR_FLOOR {
                 Some(2.0 * fitted * remainder / (raw * raw))
             } else if fitted.abs() <= SINGULAR_FLOOR && remainder.abs() <= SINGULAR_FLOOR {
@@ -355,6 +362,7 @@ pub fn residual_interaction_map(
                 None
             };
             reconstruction.push(fitted);
+            explained_share.push(explained.filter(|value| value.is_finite()));
             unexplained.push(remainder);
             cross_share.push(share.filter(|value| value.is_finite()));
         }
@@ -381,6 +389,7 @@ pub fn residual_interaction_map(
         residual,
         distance,
         reconstruction,
+        explained_share,
         unexplained,
         cross_share,
         axis_count,
@@ -422,9 +431,14 @@ mod tests {
 
     #[test]
     fn excludes_incomplete_rows_without_zero_filling() {
-        let map =
-            residual_interaction_map(&[2.0, f64::NAN, 1.0, 2.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
-                .unwrap();
+        let map = residual_interaction_map(
+            &[2.0, f64::NAN, 1.0, 2.0],
+            &[1.0, 1.0, 1.0, 1.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
         assert_eq!(map.person_indices, vec![1]);
         assert_eq!(map.item_indices, vec![0, 1]);
         assert_eq!(map.scored_person_count, 2);
@@ -459,6 +473,7 @@ mod tests {
         assert!(map.person_coordinates.is_empty());
         assert!(map.item_coordinates.is_empty());
         assert!(map.reconstruction.is_empty());
+        assert!(map.explained_share.is_empty());
         assert!(map.unexplained.is_empty());
         assert!(map.cross_share.is_empty());
         assert_eq!(map.axis_shares, vec![0.0, 0.0]);
@@ -466,11 +481,33 @@ mod tests {
 
     #[test]
     fn deterministic_cell_extrema_use_lexicographic_ties() {
-        let map = residual_interaction_map(&[1.0, 1.0, 1.0, 1.0], &[1.0, 1.0, 1.0, 1.0], 2, 2, 2)
-            .unwrap();
+        let map = residual_interaction_map(
+            &[1.0, 1.0, 1.0, 1.0],
+            &[1.0, 1.0, 1.0, 1.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
         assert_eq!(map.distance, vec![0.0; 4]);
         assert_eq!(map.closest_cell, Some((0, 0)));
         assert_eq!(map.farthest_cell, Some((0, 0)));
+    }
+
+    #[test]
+    fn reports_cellwise_squared_reconstruction_share() {
+        let map = residual_interaction_map(
+            &[2.0, 0.0, 0.0, 2.0],
+            &[1.0, 1.0, 1.0, 1.0],
+            2,
+            2,
+            2,
+        )
+        .unwrap();
+        assert!(map
+            .explained_share
+            .iter()
+            .all(|share| (share.unwrap() - 1.0).abs() < 1e-12));
     }
 
     #[test]

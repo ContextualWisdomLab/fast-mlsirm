@@ -11,6 +11,20 @@ from fast_mlsirm import residual_interaction_map
 interaction_map_module = importlib.import_module("fast_mlsirm.interaction_map")
 
 
+class _InteractionMapCoreStub:
+    def __init__(self, residual_interaction_map_fn: object) -> None:
+        self.residual_interaction_map = residual_interaction_map_fn
+
+
+def _stub_core(monkeypatch: pytest.MonkeyPatch, function: object) -> None:
+    """Replace only the package-owned dedicated interaction-map Rust loader."""
+    monkeypatch.setattr(
+        interaction_map_module,
+        "interaction_map_core",
+        lambda: _InteractionMapCoreStub(function),
+    )
+
+
 def _fake_map_payload(axis_count: int) -> dict[str, object]:
     """Return one minimal shape-consistent interaction-map core payload."""
     return {
@@ -25,6 +39,7 @@ def _fake_map_payload(axis_count: int) -> dict[str, object]:
         "residual": [1.0, 2.0],
         "distance": [0.0, 0.0],
         "reconstruction": [1.0, 2.0],
+        "explained_share": [1.0, 1.0],
         "unexplained": [0.0, 0.0],
         "cross_share": [0.0, 0.0],
         "axis_count": axis_count,
@@ -55,11 +70,7 @@ def test_empty_row_fanout_hits_structural_budget_before_dense_or_native_work(
         raise AssertionError("compiled interaction-map core must not run")
 
     monkeypatch.setattr(interaction_map_module.np, "ascontiguousarray", fail_dense)
-    monkeypatch.setattr(
-        interaction_map_module._core,
-        "residual_interaction_map",
-        fail_core,
-    )
+    _stub_core(monkeypatch, fail_core)
 
     with pytest.raises(ValueError, match="structural-node"):
         residual_interaction_map(
@@ -97,11 +108,7 @@ def test_valid_matrix_at_reduced_structural_boundary_reaches_core(
         captured["axis_count"] = axis_count
         return _fake_map_payload(axis_count)
 
-    monkeypatch.setattr(
-        interaction_map_module._core,
-        "residual_interaction_map",
-        fake_core,
-    )
+    _stub_core(monkeypatch, fake_core)
 
     result = residual_interaction_map(
         [[1.0], [2.0]],
@@ -119,3 +126,4 @@ def test_valid_matrix_at_reduced_structural_boundary_reaches_core(
     np.testing.assert_array_equal(captured["expected"], [[0.0], [0.0]])
     assert result.person_coordinates.shape == (2, 1)
     assert result.item_coordinates.shape == (1, 1)
+    np.testing.assert_array_equal(result.explained_share, [[1.0], [1.0]])

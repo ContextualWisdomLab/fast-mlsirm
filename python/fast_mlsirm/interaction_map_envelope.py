@@ -30,8 +30,9 @@ class ResidualInteractionMapEnvelope:
     """Versioned product-neutral interaction-map result calculated by Rust.
 
     Python validates and marshals caller evidence only. Rank, coverage, retained
-    cells, coordinates, extrema, distances, residuals, and reconstruction are
-    returned by the Rust numerical owner and are not recomputed here.
+    cells, coordinates, extrema, distances, residuals, reconstruction, and
+    decomposition shares are returned by the Rust numerical owner and are not
+    recomputed here.
     """
 
     schema_version: str
@@ -66,6 +67,7 @@ class ResidualInteractionMapEnvelope:
     residual: np.ndarray
     distance: np.ndarray
     reconstruction: np.ndarray
+    explained_share: np.ndarray
     unexplained: np.ndarray
     cross_share: np.ndarray
 
@@ -431,6 +433,9 @@ def residual_interaction_map_envelope(
     residual_values = _rust_float_vector(raw, "residual", cell_count)
     distance_values = _rust_float_vector(raw, "distance", cell_count)
     reconstruction_values = _rust_float_vector(raw, "reconstruction", cell_count)
+    explained_share_values = _rust_float_vector(
+        raw, "explained_share", cell_count, allow_none=True
+    )
     unexplained_values = _rust_float_vector(raw, "unexplained", cell_count)
     cross_share_values = _rust_float_vector(raw, "cross_share", cell_count, allow_none=True)
 
@@ -480,6 +485,11 @@ def residual_interaction_map_envelope(
         ),
         reconstruction=_readonly_array(
             reconstruction_values,
+            dtype=np.float64,
+            shape=(map_person_count, map_item_count),
+        ),
+        explained_share=_readonly_array(
+            [np.nan if value is None else value for value in explained_share_values],
             dtype=np.float64,
             shape=(map_person_count, map_item_count),
         ),

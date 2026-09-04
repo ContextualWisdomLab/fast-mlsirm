@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import _core
+from ._interaction_map_core_loader import interaction_map_core
 
 _MAX_INTERACTION_MAP_CELLS = 20_000_000
 _MAX_INTERACTION_MAP_STRUCTURAL_NODES = 2 * _MAX_INTERACTION_MAP_CELLS
@@ -49,6 +49,7 @@ class ResidualInteractionMap:
     residual: np.ndarray
     distance: np.ndarray
     reconstruction: np.ndarray
+    explained_share: np.ndarray
     unexplained: np.ndarray
     cross_share: np.ndarray
 
@@ -267,7 +268,9 @@ def residual_interaction_map(
         )
 
     raw = dict(
-        _core.residual_interaction_map(observed_array, expected_array, axis_count_value)
+        interaction_map_core().residual_interaction_map(
+            observed_array, expected_array, axis_count_value
+        )
     )
     person_indices = np.asarray(raw["person_indices"], dtype=np.int64)
     item_indices = np.asarray(raw["item_indices"], dtype=np.int64)
@@ -291,6 +294,10 @@ def residual_interaction_map(
         reconstruction=np.asarray(raw["reconstruction"], dtype=np.float64).reshape(
             rows, columns
         ),
+        explained_share=np.asarray(
+            [np.nan if value is None else value for value in raw["explained_share"]],
+            dtype=np.float64,
+        ).reshape(rows, columns),
         unexplained=np.asarray(raw["unexplained"], dtype=np.float64).reshape(
             rows, columns
         ),

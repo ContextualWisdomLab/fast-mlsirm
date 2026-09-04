@@ -20,13 +20,21 @@ fast-mlsirm owns `residual_interaction_map(observed, expected, axis_count)`.
 The Rust core computes `R = Y - E`, excludes incomplete rows and columns
 without zero filling, centers the admitted residual rectangle, performs the
 Gabriel symmetric factorization, and returns coordinates, singular values,
-axis inertia, truncated reconstruction `Rhat`, `U = R - Rhat`, and the exact
-algebraic cross term `2 Rhat U / R^2`. The number of retained axes is required
-from the caller; the library does not invent a display dimension.
+axis inertia, truncated reconstruction `Rhat`, `U = R - Rhat`, the cellwise
+squared reconstruction share `Rhat^2 / R^2`, and the exact algebraic cross term
+`2 Rhat U / R^2`. A zero residual reconstructed as zero has explained share
+zero; any other zero-residual case is unavailable. The share remains unclamped
+because an overshooting reconstruction is evidence, not a probability. The
+number of retained axes is required from the caller; the library does not
+invent a display dimension.
 
-The contract contains array indices only. Products retain responsibility for
-domain identifiers, authorization, persistence, closest/farthest selection,
-and UI wording. A consumer must not reproduce the factorization or cross-term
+The low-level `residual_interaction_map` result uses original array indices.
+The versioned `residual_interaction_map_envelope` defined by the same Rust-owned
+boundary adds validated opaque caller identifiers and deterministic
+closest/farthest retained-cell identities without recomputing map geometry in
+Python or downstream products. Products retain responsibility for
+authorization, persistence, and UI wording. A consumer must not reproduce the
+factorization, extrema selection, reconstruction-share, or cross-term
 arithmetic locally.
 
 ## Consequences
@@ -35,6 +43,10 @@ arithmetic locally.
 - Missing cells remain absent rather than becoming evidence-valued zeros.
 - The cross term is an auditable algebraic identity, not a fitted weight,
   threshold, quality score, or heuristic.
+- The squared reconstruction share is cell-local diagnostic evidence and may
+  exceed one; products must not present it as a probability or clamp it.
+- Opaque identifiers and deterministic extrema can be persisted from the
+  versioned Rust envelope without downstream numerical reconstruction.
 - This API does not fit an LSIRM or replace the caller's GRM/GPCM fit.
 
 ## References

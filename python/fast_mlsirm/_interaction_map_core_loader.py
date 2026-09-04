@@ -1,4 +1,4 @@
-"""Load the interaction-map envelope PyO3 module from the package shared library."""
+"""Load the dedicated interaction-map PyO3 module from the package shared library."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ def interaction_map_core() -> ModuleType:
     Raises
     ------
     ImportError
-        If the installed wheel predates the interaction-map envelope entrypoint
-        or the extension loader cannot initialize ``PyInit__interaction_map_core``.
+        If the installed wheel predates the interaction-map entrypoints or the
+        extension loader cannot initialize ``PyInit__interaction_map_core``.
     """
 
     with _LOAD_LOCK:
