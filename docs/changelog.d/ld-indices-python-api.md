@@ -28,3 +28,11 @@
   factor-id carrier, and values may be finite or `NaN` but never infinite.
   Published vectors are copied into package-owned arrays so stale or malformed
   native evidence cannot define a contradictory public pair surface.
+- Fail closed on multidimensional trait banks until LD expectations integrate
+  independent trait dimensions correctly. The current public path accepts only
+  the one-dimension `factor_id == 0` contract rather than aliasing distinct
+  traits onto one Gauss-Hermite node.
+- Preflight LD probability-table storage, pair-output cardinality, and
+  pair-by-person work before native dispatch. This bounds otherwise valid
+  quadrature/item combinations that could request multi-gigabyte Rust
+  allocations or unbounded quadratic diagnostic work.
