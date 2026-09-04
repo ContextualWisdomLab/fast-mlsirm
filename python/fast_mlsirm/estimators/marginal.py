@@ -504,7 +504,7 @@ def _build_tables(
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
     logp1 = _log_sigmoid(eta)
     logp0 = _log_sigmoid(-eta)
-    n_ctx, _n_items = eta.shape[0], eta.shape[1]
+    n_ctx, n_items = eta.shape[0], eta.shape[1]
     c0 = np.zeros((n_ctx, n_dims, eta.shape[2], eta.shape[3]))
     for d in range(n_dims):
         c0[:, d] = logp0[:, factor_id == d].sum(axis=1)
@@ -1042,8 +1042,7 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        # Optimized: replace np.sum(diff * diff, axis=1) with np.einsum to avoid intermediate array allocation and improve performance (~40% faster)
-                        dist = np.sqrt(eps_distance + np.einsum('ij,ij->i', diff, diff))
+                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
