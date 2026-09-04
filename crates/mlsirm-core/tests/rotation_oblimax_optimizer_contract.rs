@@ -57,21 +57,36 @@ fn oblimax_optimizer_preserves_exact_power_of_two_scale_equivalence() {
     )
     .expect("exactly scale-equivalent finite loadings must produce an Oblimax solution");
 
-    assert_eq!(baseline.criterion_value.to_bits(), scaled_solution.criterion_value.to_bits());
-    assert_eq!(bits(&baseline.start_values), bits(&scaled_solution.start_values));
-    assert_eq!(bits(&baseline.transform_matrix), bits(&scaled_solution.transform_matrix));
+    assert_eq!(
+        baseline.criterion_value.to_bits(),
+        scaled_solution.criterion_value.to_bits()
+    );
+    assert_eq!(
+        bits(&baseline.start_values),
+        bits(&scaled_solution.start_values)
+    );
+    assert_eq!(
+        bits(&baseline.transform_matrix),
+        bits(&scaled_solution.transform_matrix)
+    );
     assert_eq!(
         bits(&baseline.factor_correlation),
         bits(&scaled_solution.factor_correlation)
     );
     assert_eq!(baseline.best_start_index, scaled_solution.best_start_index);
     assert_eq!(baseline.converged, scaled_solution.converged);
-    assert_eq!(baseline.termination_reason, scaled_solution.termination_reason);
+    assert_eq!(
+        baseline.termination_reason,
+        scaled_solution.termination_reason
+    );
 
     let restored_scaled_pattern: Vec<f64> = scaled_solution
         .pattern_matrix
         .iter()
         .map(|value| value / scale)
         .collect();
-    assert_eq!(bits(&baseline.pattern_matrix), bits(&restored_scaled_pattern));
+    assert_eq!(
+        bits(&baseline.pattern_matrix),
+        bits(&restored_scaled_pattern)
+    );
 }
