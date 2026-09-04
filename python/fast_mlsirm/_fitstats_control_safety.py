@@ -93,6 +93,17 @@ def _trusted_real(value: Any, name: str) -> float:
     raise ValueError(f"{name} must be a finite number")
 
 
+def _trusted_positive_real(value: Any, name: str) -> float:
+    """Return one finite positive exact real without caller conversion hooks."""
+    try:
+        normalized = _trusted_real(value, name)
+    except ValueError as error:
+        raise ValueError(f"{name} must be > 0 and finite") from error
+    if not np.isfinite(normalized) or normalized <= 0.0:
+        raise ValueError(f"{name} must be > 0 and finite")
+    return normalized
+
+
 def _trusted_quadrature(value: Any, name: str) -> int:
     """Return one embedded quadrature size without caller-controlled coercion."""
     normalized = _trusted_integer(value, name)
@@ -361,9 +372,10 @@ def install(fitstats_module: ModuleType) -> None:
         q_xi: Any = 11,
         eps_distance: Any = 1e-8,
     ) -> dict:
-        """Seal LD integer controls before parameter or native work."""
+        """Seal LD scalar controls before parameter or native work."""
         q_theta_value = _trusted_ld_theta_quadrature(q_theta)
         q_xi_value = _trusted_positive_integer(q_xi, "q_xi")
+        eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
         return original_ld(
             responses,
             factor_id,
@@ -372,7 +384,7 @@ def install(fitstats_module: ModuleType) -> None:
             mask=mask,
             q_theta=q_theta_value,
             q_xi=q_xi_value,
-            eps_distance=eps_distance,
+            eps_distance=eps_distance_value,
         )
 
     setattr(safe_ld_indices, _LD_HARDENED_ATTR, True)
