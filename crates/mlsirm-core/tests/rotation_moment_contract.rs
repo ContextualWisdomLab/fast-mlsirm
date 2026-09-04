@@ -15,8 +15,8 @@ fn scaled_tolerance(expected: f64) -> f64 {
 fn oblimax_deterministic_reference_avoids_unspecified_std_math() {
     let source = include_str!("../src/rotation/criteria.rs");
     let start = source
-        .find("fn oblimax(")
-        .expect("Oblimax criterion implementation must exist");
+        .find("fn deterministic_ln_positive(")
+        .expect("Oblimax deterministic logarithm implementation must exist");
     let end = start
         + source[start..]
             .find("\nfn bentler(")
@@ -142,5 +142,25 @@ fn oblimax_remains_scale_invariant_with_finite_nonzero_loadings() {
     assert!(
         (baseline.value - rescaled.value).abs() <= scaled_tolerance(baseline.value),
         "Oblimax value must remain invariant to a common nonzero scale"
+    );
+}
+
+#[test]
+fn oblimax_cancels_exact_power_of_two_scale_before_log_assembly() {
+    let loadings = [0.8, -0.2, 0.1, 0.7, 0.5, -0.4, 0.3, 0.6];
+    let scale = f64::from_bits(0x4bb0_0000_0000_0000); // exactly 2^188
+    let scaled: Vec<f64> = loadings.iter().map(|value| scale * value).collect();
+
+    let baseline = RotationCriterion::Oblimax
+        .evaluate(&loadings, 4, 2)
+        .expect("baseline loadings are valid");
+    let rescaled = RotationCriterion::Oblimax
+        .evaluate(&scaled, 4, 2)
+        .expect("power-of-two scaled loadings remain finite and valid");
+
+    assert_eq!(
+        rescaled.value.to_bits(),
+        baseline.value.to_bits(),
+        "exact power-of-two common scaling must cancel at the Oblimax logarithm decomposition boundary"
     );
 }
