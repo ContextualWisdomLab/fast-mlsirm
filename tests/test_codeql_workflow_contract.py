@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 WORKFLOW_PATH = Path(__file__).parents[1] / ".github" / "workflows" / "codeql.yml"
+CODEQL_ACTION_SHA = "db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28"
 
 
 def _job_block(workflow: str, job_id: str, next_job_id: str | None = None) -> str:
@@ -48,10 +49,14 @@ def test_advanced_jobs_do_not_upload_while_default_setup_is_enabled() -> None:
 
 
 def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
-    """The trigger repair must not loosen action pinning or workflow permissions."""
+    """Keep init/analyze on one reviewed CodeQL release SHA with least privilege."""
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    init_pin = f"github/codeql-action/init@{CODEQL_ACTION_SHA}"
+    analyze_pin = f"github/codeql-action/analyze@{CODEQL_ACTION_SHA}"
 
     assert "permissions:\n  contents: read\n" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
-    assert "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
-    assert "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
+    assert workflow.count("github/codeql-action/init@") == 2
+    assert workflow.count("github/codeql-action/analyze@") == 2
+    assert workflow.count(init_pin) == 2
+    assert workflow.count(analyze_pin) == 2
