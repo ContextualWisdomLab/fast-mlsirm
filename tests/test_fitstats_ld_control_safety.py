@@ -35,18 +35,14 @@ def _fixture():
     return responses, factor_id, params
 
 
-def test_ld_indices_rejects_unsupported_quadrature_before_native(monkeypatch):
-    """Only embedded Gauss-Hermite rules may cross the public Rust boundary."""
+def test_ld_indices_rejects_unsupported_theta_quadrature_before_native(monkeypatch):
+    """The always-used trait grid must be an embedded Gauss-Hermite rule."""
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
     responses, factor_id, params = _fixture()
 
     with pytest.raises(ValueError, match="q_theta must be one of"):
         fitstats_module.ld_indices(
-            responses, factor_id, params, "MIRT", q_theta=3, q_xi=11
-        )
-    with pytest.raises(ValueError, match="q_xi must be one of"):
-        fitstats_module.ld_indices(
-            responses, factor_id, params, "MIRT", q_theta=7, q_xi=3
+            responses, factor_id, params, "MIRT", q_theta=3, q_xi=3
         )
 
 
@@ -55,9 +51,13 @@ def test_ld_indices_rejects_integer_subclasses_without_callbacks(monkeypatch):
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
     responses, factor_id, params = _fixture()
 
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be a positive integer"):
         fitstats_module.ld_indices(
-            responses, factor_id, params, "MIRT", q_theta=_BombInt(7), q_xi=11
+            responses, factor_id, params, "MIRT", q_theta=_BombInt(7), q_xi=3
+        )
+    with pytest.raises(ValueError, match="q_xi must be a positive integer"):
+        fitstats_module.ld_indices(
+            responses, factor_id, params, "MIRT", q_theta=7, q_xi=_BombInt(3)
         )
 
 
