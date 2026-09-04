@@ -36,6 +36,7 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
 )
 _BH_HARDENED_ATTR = "__fast_mlsirm_bh_admission_hardened__"
 _LD_HARDENED_ATTR = "__fast_mlsirm_ld_admission_hardened__"
+_MAX_RUST_USIZE = int(np.iinfo(np.uintp).max)
 _MAX_PROBABILITY_TREE_DEPTH = 64
 _MAX_BH_PROBABILITY_CELLS = 20_000_000
 _MAX_BH_STRUCTURAL_NODES = 40_000_000
@@ -123,6 +124,14 @@ def _trusted_positive_integer(value: Any, name: str) -> int:
         raise ValueError(f"{name} must be a positive integer")
     if normalized < 1:
         raise ValueError(f"{name} must be a positive integer")
+    return normalized
+
+
+def _trusted_positive_usize(value: Any, name: str) -> int:
+    """Return one positive integer representable by the native Rust usize."""
+    normalized = _trusted_positive_integer(value, name)
+    if normalized > _MAX_RUST_USIZE:
+        raise ValueError(f"{name} must fit Rust usize")
     return normalized
 
 
@@ -374,7 +383,7 @@ def install(fitstats_module: ModuleType) -> None:
     ) -> dict:
         """Seal LD scalar controls before parameter or native work."""
         q_theta_value = _trusted_ld_theta_quadrature(q_theta)
-        q_xi_value = _trusted_positive_integer(q_xi, "q_xi")
+        q_xi_value = _trusted_positive_usize(q_xi, "q_xi")
         eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
         return original_ld(
             responses,
