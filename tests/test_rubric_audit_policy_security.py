@@ -33,6 +33,7 @@ def test_public_policy_identity_is_fixed_and_replay_verified():
     assert build_pilot_candidate_record(
         candidate,
         report,
+        screening_result=_FIXTURES["_screening_result"](candidate, report),
         **_pilot_kwargs(),
     ).audit_report_fingerprint == report.audit_report_fingerprint
 
@@ -69,7 +70,7 @@ def test_report_from_an_unimplemented_policy_is_rejected_before_admission():
     candidate = _candidate()
     unsupported = CandidateAuditReport(
         audit_policy_id="generated_item_audit",
-        audit_policy_version="2.0.0",
+        audit_policy_version="3.0.0",
         candidate_fingerprint=candidate.candidate_fingerprint,
         findings=(),
         lifecycle_state=CandidateLifecycleState.AUDITED,

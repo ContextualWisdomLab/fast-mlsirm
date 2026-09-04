@@ -40,7 +40,12 @@ def _pilot(
     candidate = _candidate(mutate=mutate)
     report = audit_generated_item_candidate(candidate)
     pilot_kwargs = {**_base_pilot_kwargs(), **pilot_overrides}
-    return build_pilot_candidate_record(candidate, report, **pilot_kwargs)
+    return build_pilot_candidate_record(
+        candidate,
+        report,
+        screening_result=_FIXTURES["_screening_result"](candidate, report),
+        **pilot_kwargs,
+    )
 
 
 def _observation(

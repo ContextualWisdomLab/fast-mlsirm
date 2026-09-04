@@ -16,10 +16,15 @@ from fast_mlsirm.rubric import (
     RubricSpecification,
     audit_policy,
     build_generation_request,
+    build_pilot_candidate_record,
     compile_item_blueprints,
 )
 from fast_mlsirm.rubric import semantic_screening as screening
-from fast_mlsirm.rubric.candidates import GeneratedItemCandidate, parse_generated_item_candidate
+from fast_mlsirm.rubric.audit import PilotAdmissionError
+from fast_mlsirm.rubric.candidates import (
+    GeneratedItemCandidate,
+    parse_generated_item_candidate,
+)
 
 
 def fp(char: str) -> str:
@@ -169,6 +174,76 @@ def test_screening_result_is_content_addressed_and_complete() -> None:
     assert len(result.screening_result_fingerprint) == 64
     assert "stem" not in result.to_dict()
     assert "response_text" not in result.to_dict()
+
+
+def test_pilot_admission_requires_eligible_screening_and_retains_its_identity() -> None:
+    """Pilot admission cannot bypass or detach the semantic screening result."""
+    item, audit_report = audited_candidate()
+    with pytest.raises(PilotAdmissionError) as missing:
+        build_pilot_candidate_record(
+            item,
+            audit_report,
+            pilot_study_id="pilot_study_alpha",
+            query_testlet_id="query_testlet_alpha",
+            generator_family_id="generator_family_alpha",
+            judge_policy_id="judge_policy_alpha",
+            occasion_id="occasion_window_alpha",
+        )
+    assert missing.value.code == "screening_required"
+
+    blocked_checks = list(all_checks())
+    blocked_checks[0] = screening.build_semantic_screening_check(
+        dimension=blocked_checks[0].dimension,
+        status="blocking",
+        decision_evidence_fingerprint=fp("a"),
+    )
+    blocked = screening.build_candidate_screening_result(
+        item,
+        audit_report,
+        screening_policy_id="semantic_screening_policy",
+        screening_policy_version="1.0.0",
+        evaluator_kind="human",
+        evaluator_fingerprint=fp("f"),
+        checks=blocked_checks,
+    )
+
+    with pytest.raises(PilotAdmissionError, match="screening") as error:
+        build_pilot_candidate_record(
+            item,
+            audit_report,
+            pilot_study_id="pilot_study_alpha",
+            query_testlet_id="query_testlet_alpha",
+            generator_family_id="generator_family_alpha",
+            judge_policy_id="judge_policy_alpha",
+            occasion_id="occasion_window_alpha",
+            screening_result=blocked,
+        )
+    assert error.value.code == "screening_not_clear"
+
+    eligible = screening.build_candidate_screening_result(
+        item,
+        audit_report,
+        screening_policy_id="semantic_screening_policy",
+        screening_policy_version="1.0.0",
+        evaluator_kind="hybrid",
+        evaluator_fingerprint=fp("f"),
+        checks=all_checks(),
+    )
+    pilot = build_pilot_candidate_record(
+        item,
+        audit_report,
+        pilot_study_id="pilot_study_alpha",
+        query_testlet_id="query_testlet_alpha",
+        generator_family_id="generator_family_alpha",
+        judge_policy_id="judge_policy_alpha",
+        occasion_id="occasion_window_alpha",
+        screening_result=eligible,
+    )
+    assert pilot.screening_result_fingerprint == eligible.screening_result_fingerprint
+    assert (
+        pilot.to_dict()["screening_result_fingerprint"]
+        == eligible.screening_result_fingerprint
+    )
 
 
 @pytest.mark.parametrize(

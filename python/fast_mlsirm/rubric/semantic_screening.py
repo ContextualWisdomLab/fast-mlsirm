@@ -9,9 +9,10 @@ records; exact content fingerprints bind the decision to governed evidence.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 from . import audit_policy
 from .audit import CandidateAuditReport
@@ -30,6 +31,101 @@ from .models import (
 _CHECK_CREATION_TOKEN = object()
 _RESULT_CREATION_TOKEN = object()
 _MAX_FINGERPRINT_CHARACTERS = 64
+_CHECK_INSTANCE_FIELDS = (
+    "dimension",
+    "status",
+    "decision_evidence_fingerprint",
+    "limitation_decision_fingerprint",
+    "_check_fingerprint",
+)
+_RESULT_INSTANCE_FIELDS = (
+    "screening_policy_id",
+    "screening_policy_version",
+    "evaluator_kind",
+    "evaluator_fingerprint",
+    "candidate_fingerprint",
+    "audit_report_fingerprint",
+    "checks",
+    "schema_version",
+    "_screening_result_fingerprint",
+)
+_CHECK_CREATION_SEALS: dict[
+    int,
+    tuple[weakref.ReferenceType[object], tuple[object, ...]],
+] = {}
+_RESULT_CREATION_SEALS: dict[
+    int,
+    tuple[weakref.ReferenceType[object], tuple[object, ...]],
+] = {}
+
+
+def _forget_creation_seal(
+    registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
+    record_key: int,
+    reference: weakref.ReferenceType[object],
+) -> None:
+    """Discard one dead seal without deleting a reused object-identity entry."""
+    current = registry.get(record_key)
+    if current is not None and current[0] is reference:
+        registry.pop(record_key, None)
+
+
+def _seal_creation(
+    record: object,
+    fields: tuple[str, ...],
+    registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
+) -> None:
+    """Bind one exact factory-created object to its normalized creation state."""
+    record_key = id(record)
+    state = vars(record)
+    snapshot = tuple(state[name] for name in fields)
+    reference = weakref.ref(
+        record,
+        lambda collected, key=record_key, target=registry: _forget_creation_seal(
+            target,
+            key,
+            collected,
+        ),
+    )
+    registry[record_key] = (reference, snapshot)
+
+
+def _same_creation_value(current: object, expected: object) -> bool:
+    """Compare normalized immutable state without invoking caller-defined equality."""
+    if type(current) is not type(expected):
+        return False
+    if type(expected) is tuple:
+        current_tuple = current
+        expected_tuple = expected
+        return len(current_tuple) == len(expected_tuple) and all(
+            current_value is expected_value
+            for current_value, expected_value in zip(
+                current_tuple,
+                expected_tuple,
+                strict=True,
+            )
+        )
+    return current == expected
+
+
+def _verify_creation(
+    record: object,
+    fields: tuple[str, ...],
+    registry: dict[int, tuple[weakref.ReferenceType[object], tuple[object, ...]]],
+    message: str,
+) -> dict[str, Any]:
+    """Validate live state and return its package-owned creation snapshot."""
+    sealed = registry.get(id(record))
+    if sealed is None or sealed[0]() is not record:
+        raise ValueError(message)
+    state = vars(record)
+    if any(
+        name not in state
+        or not _same_creation_value(state[name], expected)
+        for name, expected in zip(fields, sealed[1], strict=True)
+    ):
+        raise ValueError(message)
+    return dict(zip(fields, sealed[1], strict=True))
 
 
 class ScreeningDimension(str, Enum):
@@ -138,6 +234,7 @@ class SemanticScreeningCheck:
             "_check_fingerprint",
             _sha256_hex(self._content_dict()),
         )
+        _seal_creation(self, _CHECK_INSTANCE_FIELDS, _CHECK_CREATION_SEALS)
 
     def _content_dict(self) -> dict[str, str | None]:
         """Return canonical decision content without derived identity."""
@@ -148,15 +245,32 @@ class SemanticScreeningCheck:
             "limitation_decision_fingerprint": self.limitation_decision_fingerprint,
         }
 
-    def _verify_seal(self) -> None:
-        """Reject post-construction mutation of a screening decision."""
-        if self._check_fingerprint != _sha256_hex(self._content_dict()):
-            raise ValueError("screening check no longer matches its factory seal")
+    def _verify_seal(self) -> dict[str, str | None]:
+        """Validate the live check and return sealed canonical content."""
+        message = "screening check no longer matches its factory seal"
+        snapshot = _verify_creation(
+            self,
+            _CHECK_INSTANCE_FIELDS,
+            _CHECK_CREATION_SEALS,
+            message,
+        )
+        content = {
+            "dimension": snapshot["dimension"].value,
+            "status": snapshot["status"].value,
+            "decision_evidence_fingerprint": snapshot[
+                "decision_evidence_fingerprint"
+            ],
+            "limitation_decision_fingerprint": snapshot[
+                "limitation_decision_fingerprint"
+            ],
+        }
+        if snapshot["_check_fingerprint"] != _sha256_hex(content):
+            raise ValueError(message)
+        return content
 
     def to_dict(self) -> dict[str, str | None]:
         """Return source-text-free JSON-compatible screening decision content."""
-        self._verify_seal()
-        return self._content_dict()
+        return self._verify_seal()
 
 
 def build_semantic_screening_check(
@@ -250,13 +364,26 @@ class CandidateScreeningResult:
                 raise ValueError(
                     f"checks[{index}] must be a SemanticScreeningCheck"
                 )
-            check._verify_seal()
-            if check.dimension in by_dimension:
+            verified_check = check._verify_seal()
+            dimension = ScreeningDimension(
+                cast(str, verified_check["dimension"])
+            )
+            if dimension in by_dimension:
                 raise ValueError(
                     "checks must contain exactly one decision for every required "
                     "screening dimension"
                 )
-            by_dimension[check.dimension] = check
+            by_dimension[dimension] = build_semantic_screening_check(
+                dimension=dimension,
+                status=ScreeningStatus(cast(str, verified_check["status"])),
+                decision_evidence_fingerprint=cast(
+                    str,
+                    verified_check["decision_evidence_fingerprint"],
+                ),
+                limitation_decision_fingerprint=verified_check[
+                    "limitation_decision_fingerprint"
+                ],
+            )
         if set(by_dimension) != set(REQUIRED_SCREENING_DIMENSIONS):
             raise ValueError(
                 "checks must contain exactly one decision for every required "
@@ -275,21 +402,49 @@ class CandidateScreeningResult:
             "_screening_result_fingerprint",
             _sha256_hex(self._content_dict()),
         )
+        _seal_creation(self, _RESULT_INSTANCE_FIELDS, _RESULT_CREATION_SEALS)
 
-    def _verify_seal(self) -> None:
-        """Reject post-construction mutation of a screening result."""
-        if self._screening_result_fingerprint != _sha256_hex(self._content_dict()):
-            raise ValueError("screening result no longer matches its factory seal")
+    def _verify_seal(self) -> tuple[dict[str, Any], str]:
+        """Validate the live result and return sealed content plus identity."""
+        message = "screening result no longer matches its factory seal"
+        snapshot = _verify_creation(
+            self,
+            _RESULT_INSTANCE_FIELDS,
+            _RESULT_CREATION_SEALS,
+            message,
+        )
+        content = {
+            "schema_version": snapshot["schema_version"],
+            "screening_policy_id": snapshot["screening_policy_id"],
+            "screening_policy_version": snapshot["screening_policy_version"],
+            "evaluator_kind": snapshot["evaluator_kind"].value,
+            "evaluator_fingerprint": snapshot["evaluator_fingerprint"],
+            "candidate_fingerprint": snapshot["candidate_fingerprint"],
+            "audit_report_fingerprint": snapshot["audit_report_fingerprint"],
+            "checks": [check.to_dict() for check in snapshot["checks"]],
+        }
+        fingerprint = snapshot["_screening_result_fingerprint"]
+        if fingerprint != _sha256_hex(content):
+            raise ValueError(message)
+        return content, fingerprint
+
+    @staticmethod
+    def _pilot_eligible_from_content(content: dict[str, Any]) -> bool:
+        """Replay pilot eligibility from already verified screening content."""
+        return all(
+            check["status"]
+            in {
+                ScreeningStatus.PASS.value,
+                ScreeningStatus.ACCEPTED_LIMITATION.value,
+            }
+            for check in content["checks"]
+        )
 
     @property
     def is_pilot_eligible(self) -> bool:
         """Return whether every dimension passed or has a governed limitation."""
-        self._verify_seal()
-        return all(
-            check.status
-            in {ScreeningStatus.PASS, ScreeningStatus.ACCEPTED_LIMITATION}
-            for check in self.checks
-        )
+        content, _ = self._verify_seal()
+        return self._pilot_eligible_from_content(content)
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical result content without derived public identities."""
@@ -307,23 +462,23 @@ class CandidateScreeningResult:
     @property
     def screening_result_fingerprint(self) -> str:
         """Return the SHA-256 identity of the complete screening decision."""
-        self._verify_seal()
-        return self._screening_result_fingerprint
+        _, fingerprint = self._verify_seal()
+        return fingerprint
 
     @property
     def screening_result_id(self) -> str:
         """Return a descriptive 128-bit public handle for this screening result."""
-        self._verify_seal()
-        return f"screening_result_{self._screening_result_fingerprint[:32]}"
+        _, fingerprint = self._verify_seal()
+        return f"screening_result_{fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
         """Return source-text-free result content plus deterministic identities."""
-        self._verify_seal()
+        content, fingerprint = self._verify_seal()
         return {
-            **self._content_dict(),
-            "screening_result_id": self.screening_result_id,
-            "screening_result_fingerprint": self.screening_result_fingerprint,
-            "is_pilot_eligible": self.is_pilot_eligible,
+            **content,
+            "screening_result_id": f"screening_result_{fingerprint[:32]}",
+            "screening_result_fingerprint": fingerprint,
+            "is_pilot_eligible": self._pilot_eligible_from_content(content),
         }
 
 
