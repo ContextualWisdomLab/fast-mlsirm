@@ -21,3 +21,9 @@
   subclasses and non-positive or non-finite values fail before parameter
   marshalling or native discovery; the Rust core remains the numerical owner
   of distance and local-dependence arithmetic.
+- Replay the Rust/PyO3 LD result postcondition before publication. The signed X2
+  and G2 vectors must be one-dimensional binary64 arrays with matching
+  cardinality, their cardinality must be a valid upper-triangle pair count, and
+  values may be finite or `NaN` but never infinite. Published vectors are copied
+  into package-owned arrays so stale or malformed native evidence cannot define
+  a contradictory public pair surface.
