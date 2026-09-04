@@ -1,0 +1,3 @@
+### Fixed
+
+- Oblimax rotation no longer delegates its second/fourth-moment power route or objective logarithms to Rust `f64::powi` / `f64::ln`, whose precision is not a package-owned reproducibility contract. The Rust criterion now uses explicit binary64 multiplication for integer powers and a fixed 24-term, Kahan-compensated `atanh` logarithm over an IEEE-754 bit-normalized significand. A package-owned golden-bit fixture, repeated-evaluation identity, analytic-gradient finite-difference coverage, scale invariance, and finite/nonzero failure checks define the local deterministic-reference boundary. This does not make other rotation criteria bitwise reproducible, and supported-target parity remains a separate hosted-release requirement.
