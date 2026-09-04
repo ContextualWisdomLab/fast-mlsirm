@@ -1,4 +1,9 @@
-//! Numerical-contract checks for rotation moment reductions.
+//! Formula-level numerical-contract checks for Oblimax rotation.
+//!
+//! These tests intentionally mirror the current production integer-power route
+//! while #1747 owns removal of Rust `f64::powi` from the deterministic CPU-f64
+//! reference. Passing here is mathematical/formula evidence, not a claim of
+//! cross-platform bitwise reproducibility.
 
 use mlsirm_core::rotation::RotationCriterion;
 
@@ -7,21 +12,19 @@ fn scaled_tolerance(expected: f64) -> f64 {
 }
 
 #[test]
-fn oblimax_matches_explicit_second_and_fourth_moment_formula() {
+fn oblimax_matches_current_second_and_fourth_moment_formula() {
     let loadings = [0.8, -0.2, 0.1, 0.7, 0.5, -0.4, 0.3, 0.6];
     let evaluation = RotationCriterion::Oblimax
         .evaluate(&loadings, 4, 2)
         .expect("nonzero finite loadings satisfy the oblimax contract");
 
-    let (sum2, sum4) = loadings.iter().fold((0.0_f64, 0.0_f64), |(s2, s4), &x| {
-        let x2 = x * x;
-        (s2 + x2, s4 + x2 * x2)
-    });
+    let sum2: f64 = loadings.iter().map(|x| x * x).sum();
+    let sum4: f64 = loadings.iter().map(|x| x.powi(4)).sum();
     let expected_value = -(sum4.ln() - 2.0 * sum2.ln());
 
     assert!(
         (evaluation.value - expected_value).abs() <= scaled_tolerance(expected_value),
-        "oblimax value drifted from the explicit second/fourth-moment formula: actual={} expected={}",
+        "oblimax value drifted from the current second/fourth-moment formula: actual={} expected={}",
         evaluation.value,
         expected_value
     );
