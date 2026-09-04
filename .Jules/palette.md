@@ -55,3 +55,7 @@
 ## 2026-08-11 - Replace Hardcoded System Colors with CSS Variables
 **Learning:** Hardcoding system colors like `GrayText` in HTML reports bypasses the project's contrast-managed CSS variables, leading to inconsistent UI styling and potential contrast issues across light and dark themes.
 **Action:** When defining border or text colors for elements like `.empty-state`, `<pre>`, or `<table>`, always use defined CSS variables such as `var(--muted)` for text and `var(--line)` for borders. Ensure these variables are declared in both the default `:root` and dark mode `@media` contexts.
+
+## 2026-08-11 - Enforcing Contrast and High-Contrast Mode for CSS Variables
+**Learning:** When defining palette tokens like `--muted` (for text) and `--line` (for borders), arbitrary hex codes may fail strict contrast tests (e.g., 4.5:1 for text, 3:1 for borders). Additionally, author-defined RGB values interfere with OS-level high-contrast settings unless explicitly delegated.
+**Action:** Always measure hex codes against pure white (`#ffffff`) and pure black (`#000000`) to ensure contrast ratio boundaries are respected. Furthermore, always add an `@media (forced-colors: active)` block to delegate decorative variables (e.g., `--muted: CanvasText; --line: CanvasText;`) to semantic system colors, ensuring the UI remains accessible for users relying on forced color modes.
