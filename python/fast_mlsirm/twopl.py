@@ -4,16 +4,18 @@ Reckase (2009) / Bock, Gibbons & Muraki (1988) full-information item factor mode
 which an item may load freely on several latent dimensions that trade off additively in the
 logit. Factors are orthogonal by default (``estimate_corr=False``, ``Sigma = I``) or their
 correlation matrix is estimated (``estimate_corr=True``). Estimated in the Rust core over a
-product Gauss-Hermite grid."""
+product Gauss-Hermite grid.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 
 import numpy as np
 
 from ._integration_rule import normalize_node_rule
-
+from ._twopl_result_safety import validate_twopl_native_result
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
 from .irt_contract import MAX_IRT_RESPONSE_CELLS, MIN_IRT_ITEMS, validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
@@ -145,6 +147,35 @@ def _require_minimum_item_count(n_items: int) -> None:
         )
 
 
+def _preflight_sequence_response_rows(rows: list[object] | tuple[object, ...]) -> int | None:
+    """Validate callback-free row structure and return the admitted common width."""
+
+    expected_width: int | None = None
+    logical_cells = 0
+    for row in rows:
+        if type(row) is np.ndarray:
+            if row.ndim != 1:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_size = int(row.size)
+        elif type(row) in (list, tuple):
+            row_size = len(row)
+        else:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        _require_minimum_item_count(row_size)
+        if expected_width is None:
+            expected_width = row_size
+        elif row_size != expected_width:
+            raise ValueError("responses must be a 2-D persons x items array")
+
+        logical_cells += row_size
+        if logical_cells > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
+    return expected_width
+
+
 def _trusted_response_matrix(responses: object) -> np.ndarray:
     """Admit dichotomous response evidence before any lossy NumPy coercion."""
 
@@ -157,6 +188,20 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
                 f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
             )
         _require_minimum_item_count(int(source.shape[1]))
+        if source.dtype.kind == "c":
+            raise ValueError("responses must be real-valued")
+        if source.dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError("responses must be a real numeric matrix")
+
+        admitted_shape = source.shape
+        admitted_size = int(source.size)
+        source = np.array(source, copy=True)
+        if (
+            source.ndim != 2
+            or source.shape != admitted_shape
+            or int(source.size) != admitted_size
+        ):
+            raise ValueError("responses must be a 2-D persons x items array")
         if source.dtype.kind == "c":
             raise ValueError("responses must be real-valued")
         if source.dtype.kind not in {"b", "i", "u", "f"}:
@@ -176,51 +221,89 @@ def _trusted_response_matrix(responses: object) -> np.ndarray:
 
     if type(responses) not in (list, tuple):
         raise ValueError("responses must be a real numeric matrix")
-    if len(responses) > 2 * MAX_IRT_RESPONSE_CELLS + 1:
+    row_count = len(responses)
+    if row_count > 2 * MAX_IRT_RESPONSE_CELLS + 1:
         raise ValueError("responses exceed the structural-work limit")
 
-    normalized_rows: list[list[float]] = []
-    expected_width: int | None = None
-    logical_cells = 0
-    for row in responses:
+    if type(responses) is tuple:
+        rows = responses
+        expected_width = _preflight_sequence_response_rows(rows)
+    else:
+        # Inspect the live exact built-in list without first duplicating every
+        # row reference. Any already-provable row/shape/cell failure therefore
+        # wins before package-owned snapshot allocation.
+        _preflight_sequence_response_rows(responses)
+        snapshot_limit = MAX_IRT_RESPONSE_CELLS // MIN_IRT_ITEMS + 1
+        rows = tuple(islice(responses, snapshot_limit))
+        if len(rows) != row_count or len(responses) != row_count:
+            raise ValueError("responses must be a 2-D persons x items array")
+        # The bounded package-owned snapshot is authoritative. Replay metadata
+        # so same-cardinality row replacement cannot redefine admitted shape.
+        expected_width = _preflight_sequence_response_rows(rows)
+
+    if not rows:
+        return np.empty((0, 0), dtype=np.float64)
+    if expected_width is None:
+        raise ValueError("responses must be a 2-D persons x items array")
+
+    # After whole-matrix shape/resource precedence is settled, reject ndarray
+    # storage kinds from inert dtype metadata before allocating any dense target.
+    for row in rows:
         if type(row) is np.ndarray:
-            if row.ndim != 1:
+            if row.ndim != 1 or int(row.size) != expected_width:
                 raise ValueError("responses must be a 2-D persons x items array")
             if row.dtype.kind == "c":
                 raise ValueError("responses must be real-valued")
             if row.dtype.kind not in {"b", "i", "u", "f"}:
                 raise ValueError("responses must be a real numeric matrix")
-            row_size = int(row.size)
-            _require_minimum_item_count(row_size)
-            logical_cells += row_size
-            if logical_cells > MAX_IRT_RESPONSE_CELLS:
-                raise ValueError(
-                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
-                )
-            row_values = [_response_scalar(value) for value in row]
-        elif type(row) in (list, tuple):
-            row_size = len(row)
-            _require_minimum_item_count(row_size)
-            logical_cells += row_size
-            if logical_cells > MAX_IRT_RESPONSE_CELLS:
-                raise ValueError(
-                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
-                )
-            row_values = [_response_scalar(value) for value in row]
+
+    # Seal every mutable row before any scalar traversal. Row-local snapshots are
+    # insufficient: an earlier scalar callback could otherwise rewrite a later
+    # live row before that later row was frozen, creating one mixed-time matrix.
+    row_snapshots: list[tuple[object, ...] | np.ndarray] = []
+    for row in rows:
+        if type(row) is np.ndarray:
+            if row.ndim != 1 or int(row.size) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            if row.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError("responses must be a real numeric matrix")
+            row_snapshot = np.array(row, copy=True)
+            if row_snapshot.ndim != 1 or int(row_snapshot.size) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            if row_snapshot.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row_snapshot.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError("responses must be a real numeric matrix")
+            row_snapshots.append(row_snapshot)
+        elif type(row) is list:
+            if len(row) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_snapshot = tuple(row)
+            if len(row_snapshot) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_snapshots.append(row_snapshot)
+        elif type(row) is tuple:
+            if len(row) != expected_width:
+                raise ValueError("responses must be a 2-D persons x items array")
+            row_snapshots.append(row)
         else:
             raise ValueError("responses must be a 2-D persons x items array")
-        if expected_width is None:
-            expected_width = len(row_values)
-        elif len(row_values) != expected_width:
-            raise ValueError("responses must be a 2-D persons x items array")
-        normalized_rows.append(row_values)
 
-    if not normalized_rows:
-        source = np.empty((0, 0), dtype=np.float64)
-    else:
-        source = np.asarray(normalized_rows, dtype=np.float64)
-    if source.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
+    source = np.empty((len(rows), expected_width), dtype=np.float64)
+    for row_index, row_snapshot in enumerate(row_snapshots):
+        row_values = [_response_scalar(value) for value in row_snapshot]
+        live_row = rows[row_index]
+        if type(live_row) is np.ndarray and (
+            live_row.ndim != 1
+            or int(live_row.size) != expected_width
+            or len(row_values) != expected_width
+        ):
+            raise ValueError("responses must be a 2-D persons x items array")
+        if len(row_values) != expected_width:
+            raise ValueError("responses must be a 2-D persons x items array")
+        source[row_index, :] = row_values
     return source
 
 
@@ -231,12 +314,13 @@ class TwoPlFit:
     ``loading`` is the items x dimensions matrix of free loadings ``a_id`` (exactly ``0``
     where the confirmatory model loading pattern is ``0``); ``intercept`` the per-item ``b_i``; ``theta``
     the persons x dimensions trait EAP; ``corr`` the ``n_dims x n_dims`` latent correlation
-    matrix (identity when ``estimate_corr=False``, estimated off-diagonals otherwise). The
+    matrix (identity when ``estimate_corr=False``, estimated offdiagonals otherwise). The
     model is ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with
     ``theta_j ~ MVN(0, Sigma)``, ``Sigma`` a unit-diagonal correlation matrix.
     ``termination_reason`` is either ``"converged"`` or ``"max_iter_reached"``;
     ``final_loglik_change`` is the absolute difference between the final two evaluated
-    marginal log-likelihoods."""
+    marginal log-likelihoods.
+    """
 
     model: IrtModel
     loading: np.ndarray
@@ -379,16 +463,34 @@ def fit_2pl(
         xi_points_int,
         xi_seed_int,
     )
+    (
+        loading,
+        intercept,
+        theta,
+        corr,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters,
+        termination_reason,
+        final_loglik_change,
+    ) = validate_twopl_native_result(
+        res,
+        n_persons=n_persons,
+        n_items=n_items,
+        n_dims=n_dims,
+        max_iter=max_iter_int,
+    )
     return TwoPlFit(
         model=resolved_model,
-        loading=np.asarray(res["loading"], dtype=np.float64).reshape(n_items, n_dims),
-        intercept=np.asarray(res["intercept"], dtype=np.float64),
-        theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
-        corr=np.asarray(res["corr"], dtype=np.float64).reshape(n_dims, n_dims),
-        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
-        n_iter=int(res["n_iter"]),
-        converged=bool(res["converged"]),
-        n_parameters=int(res["n_parameters"]),
-        termination_reason=str(res["termination_reason"]),
-        final_loglik_change=float(res["final_loglik_change"]),
+        loading=loading.reshape(n_items, n_dims),
+        intercept=intercept,
+        theta=theta.reshape(n_persons, n_dims),
+        corr=corr.reshape(n_dims, n_dims),
+        loglik_trace=loglik_trace,
+        n_iter=n_iter,
+        converged=converged,
+        n_parameters=n_parameters,
+        termination_reason=termination_reason,
+        final_loglik_change=final_loglik_change,
     )

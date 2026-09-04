@@ -90,7 +90,7 @@ def test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_res
     """A wider real value must not become 1.0 merely because float64 narrows it."""
 
     if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
-        pytest.skip("np.longdouble has no additional precision on this platform")
+        pytest.fail("np.longdouble has no additional precision on this platform")
 
     core_calls = _install_no_core(monkeypatch)
     one = np.longdouble(1)
@@ -200,7 +200,8 @@ def test_fit_2pl_preserves_trusted_builtin_and_numpy_response_scalars(
                 "loading": np.ones(n_items * n_dims),
                 "intercept": np.zeros(n_items),
                 "theta": np.zeros(n_persons * n_dims),
-                "corr": np.eye(n_dims),
+                "n_dims": n_dims,
+                "corr": np.eye(n_dims).reshape(-1),
                 "loglik_trace": np.array([-2.0, -1.0]),
                 "n_iter": 2,
                 "converged": True,
