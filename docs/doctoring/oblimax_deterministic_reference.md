@@ -2,7 +2,7 @@
 
 ## Claim boundary
 
-`RotationCriterion::Oblimax` owns a deterministic CPU-binary64 arithmetic route for its criterion value and analytic gradient. For identical finite input bits, the implementation fixes the integer-power route to explicit multiplication and the logarithm route to package-owned IEEE-754 bit normalization plus a fixed 24-term Kahan-compensated `atanh` series. The repository therefore has a reviewable operator sequence and golden binary64 identity rather than delegating these operations to a platform transcendental implementation.
+`RotationCriterion::Oblimax` owns a deterministic CPU-binary64 arithmetic route for its criterion value and analytic gradient. For identical finite input bits, the implementation fixes the integer-power route to explicit multiplication and the logarithm route to package-owned IEEE-754 bit normalization plus a fixed 24-term Kahan-compensated `atanh` series. The criterion forms the dimensionless fourth/second-moment ratio `(sum4 / sum2) / sum2` before logarithm evaluation, so exact common power-of-two scaling cancels before large logarithms are assembled. The repository therefore has a reviewable operator sequence and golden binary64 identity rather than delegating these operations to a platform transcendental implementation.
 
 This is a criterion-local reproducibility contract. It does not imply that every rotation criterion, GPU kernel, foreign package, compiler configuration, or mathematical-library function is bitwise reproducible. Cross-target release evidence remains a separate requirement: a supported target/toolchain is not covered until its exact-head CI executes the golden-bit contract successfully. Formula agreement and factor-recovery validity also remain separate from bitwise identity.
 
@@ -10,17 +10,18 @@ This is a criterion-local reproducibility contract. It does not imply that every
 
 Rust 1.98.1 documents `f64` as IEEE-754 binary64. Primitive addition, subtraction, multiplication, and division use IEEE round-to-nearest, ties-to-even semantics. By contrast, the Rust `f64::powi` and `f64::ln` documentation explicitly marks their precision as unspecified and potentially varying by platform, Rust version, and invocation. The Oblimax reference therefore does not use either operation.
 
-The logarithm decomposes the positive finite input into a binary64 significand and exponent, uses exact power-of-two normalization, bounds the transformed series variable around unity, and evaluates the same finite reduction in the same order. The helper rejects zero, negative, NaN, and infinite inputs. Oblimax separately rejects zero or non-finite moments before returning a criterion result.
+The logarithm decomposes a positive finite input into a binary64 significand and exponent, uses exact power-of-two normalization, bounds the transformed series variable around unity, and evaluates the same finite reduction in the same order. Oblimax first reduces the second and fourth moments to their scale-free ratio and then applies that logarithm once. This avoids cancellation from separately materializing `ln(sum4)` and `2 ln(sum2)` when the loadings have a large shared exponent. The helper rejects zero, negative, NaN, and infinite inputs. Oblimax separately rejects zero or non-finite moments before returning a criterion result.
 
 ## Evidence contract
 
 The current-head acceptance suite requires all of the following without substituting one form of evidence for another:
 
-- a source-level guard that the Oblimax implementation contains neither `.powi(` nor `.ln()`;
+- a source-level guard covering both the deterministic logarithm helper and Oblimax body, rejecting `.powi(` and `.ln()` in that owner span;
 - an exact golden-bit criterion value and all analytic-gradient components for a fixed finite loading matrix;
 - repeated evaluation with bit-identical outputs;
 - analytic-gradient versus central finite-difference coverage in the Rust criterion suite;
-- common-scale invariance within the declared binary64 tolerance;
+- ordinary common-scale invariance within the declared binary64 tolerance;
+- bit-identical objective value under an exact `2^188` common scale, which exercises exponent cancellation without decimal scale-rounding ambiguity;
 - fail-closed handling for zero, non-finite input, and invalid logarithm domain;
 - hosted supported-target execution before a cross-target release claim is made.
 
