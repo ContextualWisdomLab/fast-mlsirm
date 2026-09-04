@@ -145,7 +145,19 @@ def _trusted_ld_theta_quadrature(value: Any) -> int:
     return normalized
 
 
-def _validated_ld_result(result: Any) -> dict[str, np.ndarray]:
+def _inert_ld_item_count(factor_id: Any) -> int | None:
+    """Read item cardinality only from inert factor-id carriers."""
+    if type(factor_id) is np.ndarray:
+        return int(factor_id.size) if factor_id.ndim == 1 else None
+    if type(factor_id) is list or type(factor_id) is tuple:
+        return len(factor_id)
+    return None
+
+
+def _validated_ld_result(
+    result: Any,
+    expected_item_count: int | None,
+) -> dict[str, np.ndarray]:
     """Replay the public shape/value contract of one LD result envelope."""
     if type(result) is not dict or frozenset(result) != _LD_RESULT_KEYS:
         raise RuntimeError(
@@ -169,12 +181,14 @@ def _validated_ld_result(result: Any) -> dict[str, np.ndarray]:
     pair_count = int(x2_signed.size)
     discriminant = 1 + 8 * pair_count
     root = isqrt(discriminant)
-    if (
-        pair_count < 1
-        or root * root != discriminant
-        or (1 + root) % 2 != 0
-    ):
+    if pair_count < 1 or root * root != discriminant:
         raise RuntimeError("ld_indices native result must have a triangular pair count")
+    if expected_item_count is not None:
+        expected_pairs = expected_item_count * (expected_item_count - 1) // 2
+        if pair_count != expected_pairs:
+            raise RuntimeError(
+                "ld_indices native pair count must match the admitted item count"
+            )
     if np.any(np.isinf(x2_signed)) or np.any(np.isinf(g2_signed)):
         raise RuntimeError("ld_indices native statistics must be finite or NaN")
 
@@ -426,6 +440,7 @@ def install(fitstats_module: ModuleType) -> None:
         q_theta_value = _trusted_ld_theta_quadrature(q_theta)
         q_xi_value = _trusted_positive_usize(q_xi, "q_xi")
         eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
+        expected_item_count = _inert_ld_item_count(factor_id)
         try:
             result = original_ld(
                 responses,
@@ -443,7 +458,7 @@ def install(fitstats_module: ModuleType) -> None:
                     "ld_indices native result is missing required pair evidence"
                 ) from error
             raise
-        return _validated_ld_result(result)
+        return _validated_ld_result(result, expected_item_count)
 
     setattr(safe_ld_indices, _LD_HARDENED_ATTR, True)
     fitstats_module.ld_indices = safe_ld_indices
