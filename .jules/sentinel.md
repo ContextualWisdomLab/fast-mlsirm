@@ -51,7 +51,7 @@ group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
 
-## 2026-08-25 - [JSON Duplicate Key Smuggling and Non-finite Constant DoS Vulnerability]
-**Vulnerability:** The functions `_contract_object` and `_response_object` used `json.loads` without preventing duplicate keys or non-finite constants. A maliciously crafted JSON string with duplicate keys could smuggle unexpected values bypassing validations, while non-finite constants (like NaN or Infinity) could cause unexpected behavior or DoS in subsequent numerical processing.
-**Learning:** Python's `json.loads` allows duplicate keys (keeping the last one) and non-finite constants by default, which deviates from strict JSON standards and can lead to logic bugs, caching poisoning, or DoS.
-**Prevention:** Always provide `object_pairs_hook` to reject duplicate keys and `parse_constant` to reject non-finite numbers when deserializing untrusted JSON using `json.loads`.
+## 2026-08-25 - [Strict JSON object and numeric-constant admission]
+**Vulnerability:** `_contract_object` accepted duplicate object members and Python's non-standard `NaN` / `Infinity` / `-Infinity` constants. `_response_object` already rejected duplicate members on the protected baseline but still admitted those non-finite constants. The two trust boundaries therefore exposed different strict-JSON guarantees.
+**Learning:** Python's `json.loads` accepts non-standard non-finite constants by default and resolves duplicate object members with last-key-wins semantics unless an `object_pairs_hook` rejects them. Security evidence must distinguish a pre-existing guard from the newly repaired behavior instead of attributing the same defect to both boundaries.
+**Prevention:** Require `parse_constant` rejection at both boundaries and duplicate-member rejection wherever the protected baseline does not already provide it. Keep focused regression coverage for `NaN`, `Infinity`, `-Infinity`, and duplicate members, and avoid unsupported DoS/cache-poisoning claims unless a concrete execution path demonstrates them.
