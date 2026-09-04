@@ -16,11 +16,18 @@ class _BombInt(int):
         raise AssertionError("caller-controlled __int__ executed")
 
 
+class _BombFloat(float):
+    """Float subclass that proves distance admission never executes coercion hooks."""
+
+    def __float__(self):
+        raise AssertionError("caller-controlled __float__ executed")
+
+
 class _BombCore:
     """Native stand-in that fails if invalid controls reach Rust dispatch."""
 
     def ld_indices(self, *_args, **_kwargs):
-        raise AssertionError("invalid quadrature control reached the native core")
+        raise AssertionError("invalid local-dependence control reached the native core")
 
 
 def _fixture():
@@ -59,6 +66,24 @@ def test_ld_indices_rejects_integer_subclasses_without_callbacks(monkeypatch):
         fitstats_module.ld_indices(
             responses, factor_id, params, "MIRT", q_theta=7, q_xi=_BombInt(3)
         )
+
+
+def test_ld_indices_rejects_unsafe_distance_controls_without_callbacks(monkeypatch):
+    """Distance controls fail closed before caller coercion or native discovery."""
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
+    responses, factor_id, params = _fixture()
+
+    for value in (_BombFloat(1e-8), 0.0, -1e-8, np.nan, np.inf):
+        with pytest.raises(ValueError, match="eps_distance must be > 0 and finite"):
+            fitstats_module.ld_indices(
+                responses,
+                factor_id,
+                params,
+                "MIRT",
+                q_theta=7,
+                q_xi=3,
+                eps_distance=value,
+            )
 
 
 def test_ld_indices_package_root_uses_the_hardened_callable():
