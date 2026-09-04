@@ -663,12 +663,18 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     let normalized_moment_ratio = (sum4 / sum2) / sum2;
     let log_normalized_moment_ratio = deterministic_ln_positive(normalized_moment_ratio)
         .ok_or_else(|| "oblimax normalized moment ratio must remain finite and positive".to_string())?;
+    let moment_ratio = sum4 / sum2;
     let gradient = l
         .iter()
         .map(|x| {
             let normalized = *x * scale;
-            let cube = (normalized * normalized) * normalized;
-            let normalized_gradient = -(4.0 * cube / sum4 - 4.0 * normalized / sum2);
+            let square = normalized * normalized;
+            // Factor the analytic derivative around the moment ratio instead of
+            // subtracting two independently rounded reciprocal terms. A loading
+            // matrix with exactly one nonzero support is an exact stationary
+            // point of Oblimax, and this route preserves that zero in binary64.
+            let normalized_gradient =
+                (4.0 * normalized / sum2) * (1.0 - square / moment_ratio);
             normalized_gradient * scale
         })
         .collect();
