@@ -67,7 +67,11 @@ fn oblimax_repeated_evaluation_is_bitwise_stable() {
         .evaluate(&loadings, 4, 2)
         .expect("baseline loadings are valid");
     let baseline_value = baseline.value.to_bits();
-    let baseline_gradient: Vec<u64> = baseline.gradient.iter().map(|value| value.to_bits()).collect();
+    let baseline_gradient: Vec<u64> = baseline
+        .gradient
+        .iter()
+        .map(|value| value.to_bits())
+        .collect();
 
     for _ in 0..32 {
         let repeated = RotationCriterion::Oblimax
