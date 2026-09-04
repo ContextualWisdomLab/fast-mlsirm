@@ -255,7 +255,8 @@ class ValidationProfile:
             if evidence_id in seen_ids:
                 raise ValueError("evidence_id must be unique within a validation profile")
             seen_ids[evidence_id] = content["artifact_fingerprint"]
-            if reference.available_time > cutoff:
+            available_time = _utc_datetime(reference.available_time, "available_time")
+            if available_time > cutoff:
                 raise ValueError("available_time must not exceed analysis_cutoff")
             normalized.append(reference)
 
