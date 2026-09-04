@@ -149,6 +149,17 @@ def _trusted_ld_theta_quadrature(value: Any) -> int:
     return normalized
 
 
+def _trusted_ld_population(population: Any) -> None:
+    """Admit only the standard-normal single-population expectation contract."""
+    if population is None:
+        return
+    if type(population) is not dict or set(population) != {"kind"}:
+        raise ValueError("population must be None or {'kind': 'single'}")
+    kind = population["kind"]
+    if type(kind) is not str or kind != "single":
+        raise ValueError("population currently supports only kind='single'")
+
+
 def _trusted_ld_factor_id(factor_id: Any) -> np.ndarray:
     """Return a package-owned int64 factor vector without coercion callbacks."""
     value_type = type(factor_id)
@@ -195,6 +206,10 @@ def _ld_resource_preflight(
     """Bound LD probability storage and quadratic pair work before Rust dispatch."""
     if type(responses) is not np.ndarray or responses.ndim != 2:
         raise ValueError("responses must be a 2-D NumPy array for ld_indices")
+    if int(responses.shape[0]) == 0:
+        raise ValueError("responses must contain at least one person")
+    if int(responses.shape[1]) < 2:
+        raise ValueError("local-dependence indices need at least two items")
     if int(responses.shape[1]) != n_items:
         raise ValueError("factor_id length must match the number of response items")
     if type(model) is not str:
@@ -325,12 +340,6 @@ def _add_bh_cells(current: int, added: int) -> int:
 
 def _trusted_probability_tree(value: Any) -> int:
     """Preflight inert probability evidence with bounded logical/structural work."""
-    # Each frame stores [object, depth, next_child_index, entered, logical_cells].
-    # Children are pushed one at a time so a huge malformed built-in fan-out
-    # cannot allocate an equally huge validation stack before the node budget is
-    # checked. Shared acyclic containers retain occurrence semantics: every
-    # occurrence is charged against both structural work and logical p-value
-    # cells, while active-path identity catches true cycles.
     frames: list[list[Any]] = [[value, 0, 0, False, 0]]
     active_container_ids: set[int] = set()
     structural_nodes = 0
@@ -497,7 +506,6 @@ def install(fitstats_module: ModuleType) -> None:
         return
     original_ld = current_ld
 
-    @wraps(original_ld)
     def safe_ld_indices(
         responses: Any,
         factor_id: Any,
@@ -507,11 +515,20 @@ def install(fitstats_module: ModuleType) -> None:
         q_theta: Any = 21,
         q_xi: Any = 11,
         eps_distance: Any = 1e-8,
+        population: Any = None,
     ) -> dict:
-        """Seal LD controls, model scope, workspace, and native result envelope."""
+        """Compute LD indices for an explicit standard-normal single population.
+
+        ``population=None`` is the backwards-compatible spelling of the
+        standard-normal single-population contract. Supplying population
+        metadata is recommended for fitted marginal models; any non-single
+        population fails closed until its fitted trait distribution is wired
+        into the Rust LD expectation kernel.
+        """
         q_theta_value = _trusted_ld_theta_quadrature(q_theta)
         q_xi_value = _trusted_positive_usize(q_xi, "q_xi")
         eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
+        _trusted_ld_population(population)
         factor_id_value = _trusted_ld_factor_id(factor_id)
         if factor_id_value.size and np.any(factor_id_value != 0):
             raise ValueError(
@@ -545,6 +562,9 @@ def install(fitstats_module: ModuleType) -> None:
             raise
         return _validated_ld_result(result, expected_item_count)
 
+    safe_ld_indices.__name__ = getattr(original_ld, "__name__", "ld_indices")
+    safe_ld_indices.__qualname__ = getattr(original_ld, "__qualname__", "ld_indices")
+    safe_ld_indices.__module__ = getattr(original_ld, "__module__", fitstats_module.__name__)
     setattr(safe_ld_indices, _LD_HARDENED_ATTR, True)
     fitstats_module.ld_indices = safe_ld_indices
     _bind_legacy_ld(safe_ld_indices)
