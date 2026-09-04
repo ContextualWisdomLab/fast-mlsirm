@@ -46,6 +46,7 @@ _MAX_BH_STRUCTURAL_NODES = 40_000_000
 _MAX_LD_PROBABILITY_CELLS = 20_000_000
 _MAX_LD_PAIR_COUNT = 5_000_000
 _MAX_LD_PAIR_PERSON_CELLS = 200_000_000
+_MAX_LD_PAIR_QUADRATURE_CELLS = 200_000_000
 
 
 def _trusted_integer(value: Any, name: str) -> int:
@@ -253,6 +254,12 @@ def _ld_resource_preflight(
     if pair_count > _MAX_LD_PAIR_COUNT:
         raise ValueError(
             f"ld_indices pair output exceeds the {_MAX_LD_PAIR_COUNT:,}-pair limit"
+        )
+    cell = probability_cells // n_items
+    if cell > _MAX_LD_PAIR_QUADRATURE_CELLS // pair_count:
+        raise ValueError(
+            "ld_indices pair-quadrature work exceeds the "
+            f"{_MAX_LD_PAIR_QUADRATURE_CELLS:,}-cell limit"
         )
     pair_person_cells = pair_count * int(responses.shape[0])
     if pair_person_cells > _MAX_LD_PAIR_PERSON_CELLS:
