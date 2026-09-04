@@ -8,7 +8,10 @@
   validation plus NumPy marshalling. Pairs with fewer than 20 jointly observed
   responses remain undefined, and the API deliberately supplies no universal
   pass/fail cutoff.
-- Reuse the package-owned callback-free fit-statistics quadrature admission for
-  `q_theta` and `q_xi`. Only embedded Gauss-Hermite rule sizes cross the public
-  Rust boundary; callback-bearing integer subclasses and unsupported positive
-  sizes fail before parameter marshalling or native dispatch.
+- Reuse package-owned callback-free fit-statistics admission for LD quadrature
+  controls. The always-used `q_theta` must be an embedded Gauss-Hermite rule;
+  `q_xi` is admitted as an exact positive integer before dispatch because MIRT
+  does not consume the latent-space rule, while spatial models retain the Rust
+  core as authority for materializing and validating that model-dependent rule.
+  Callback-bearing integer subclasses fail before parameter marshalling or
+  native discovery.
