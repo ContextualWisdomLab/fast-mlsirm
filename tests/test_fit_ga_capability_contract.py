@@ -82,6 +82,18 @@ def test_fit_capabilities_do_not_expose_shared_mutable_authority() -> None:
         object.__setattr__(first[0], "model", original_model)
 
 
+def test_fit_capability_authority_is_sealed_from_live_config_set_mutation() -> None:
+    """Versioned capability authority does not reread mutable config-set aliases."""
+    baseline_capabilities = fit_capabilities()
+    baseline_manifest = fit_capability_manifest()
+    try:
+        VALID_ESTIMATORS.remove("jmle")
+        assert fit_capabilities() == baseline_capabilities
+        assert fit_capability_manifest() == baseline_manifest
+    finally:
+        VALID_ESTIMATORS.add("jmle")
+
+
 def test_fit_capability_manifest_is_json_shaped_and_fresh() -> None:
     first = fit_capability_manifest()
     assert first == {
