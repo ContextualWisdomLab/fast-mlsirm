@@ -1,4 +1,4 @@
-"""Accessibility regressions for item-bank report table semantics."""
+"""Accessibility regressions for item-bank report table and focus semantics."""
 
 from __future__ import annotations
 
@@ -23,3 +23,14 @@ def test_timeline_uses_semantic_row_headers_and_tabular_numbers() -> None:
     assert '<tr><th scope="row">active</th><td>release_activation</td>' in rendered
     assert "font-variant-numeric:tabular-nums" in rendered
     assert "tbody th{font-weight:normal;}" in rendered
+
+
+def test_skip_link_target_suppresses_only_pointer_focus_outline() -> None:
+    """The skip target is focusable and retains an explicit keyboard focus ring."""
+    records = _REPORT_FIXTURES["_lifecycle"]()
+
+    rendered = render_item_bank_report_html(records)
+
+    assert '<main id="main-content" tabindex="-1">' in rendered
+    assert "main:focus:not(:focus-visible){outline:none;}" in rendered
+    assert "main:focus-visible{outline:3px solid currentColor;outline-offset:3px;}" in rendered
