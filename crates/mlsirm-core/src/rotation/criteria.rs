@@ -543,6 +543,38 @@ fn tandem(l: &[f64], rows: usize, factors: usize, first: bool) -> CriterionEvalu
     CriterionEvaluation { value, gradient }
 }
 
+/// Return the floor base-two exponent of a finite positive binary64 value.
+///
+/// This is derived from the encoded exponent/significand and therefore does not
+/// call a platform transcendental or logarithm implementation.
+fn binary_exponent_positive(value: f64) -> i32 {
+    const FRACTION_MASK: u64 = 0x000f_ffff_ffff_ffff;
+    debug_assert!(value.is_finite() && value > 0.0);
+
+    let bits = value.to_bits();
+    let exponent_field = ((bits >> 52) & 0x7ff) as i32;
+    if exponent_field == 0 {
+        let fraction = bits & FRACTION_MASK;
+        let bit_index = 63_i32 - fraction.leading_zeros() as i32;
+        bit_index - 1074
+    } else {
+        exponent_field - 1023
+    }
+}
+
+/// Construct an exact finite binary64 power of two for exponents -1023..=1023.
+///
+/// The -1023 endpoint is subnormal; every other supported exponent is encoded as
+/// a normal value. Oblimax uses this only as an exact range-conditioning scale.
+fn exact_power_of_two(exponent: i32) -> f64 {
+    debug_assert!((-1023..=1023).contains(&exponent));
+    if exponent == -1023 {
+        f64::from_bits(1_u64 << 51)
+    } else {
+        f64::from_bits(((exponent + 1023) as u64) << 52)
+    }
+}
+
 /// Evaluate the natural logarithm using a fixed binary64 operator sequence.
 ///
 /// The input must be finite and strictly positive. The implementation normalizes
@@ -602,16 +634,29 @@ fn deterministic_ln_positive(value: f64) -> Option<f64> {
 }
 
 fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
+    let max_abs = l.iter().copied().map(f64::abs).fold(0.0, f64::max);
+    if max_abs == 0.0 {
+        return Err("oblimax requires nonzero loadings".into());
+    }
+
+    // Condition the loading range with one exact power-of-two multiplier before
+    // forming second/fourth moments. This preserves the represented significands
+    // while preventing a scale-equivalent finite matrix from failing merely
+    // because raw fourth moments overflow or underflow binary64.
+    let scale_exponent = (-binary_exponent_positive(max_abs)).clamp(-1023, 1023);
+    let scale = exact_power_of_two(scale_exponent);
     let mut sum2 = 0.0;
     let mut sum4 = 0.0;
     for x in l.iter().copied() {
-        let square = x * x;
+        let normalized = x * scale;
+        let square = normalized * normalized;
         sum2 += square;
         sum4 += square * square;
     }
-    if sum2 <= 0.0 || sum4 <= 0.0 {
-        return Err("oblimax requires nonzero loadings".into());
+    if sum2 <= 0.0 || sum4 <= 0.0 || !sum2.is_finite() || !sum4.is_finite() {
+        return Err("oblimax requires nonzero representable loading moments".into());
     }
+
     // Form the scale-free fourth/second-moment ratio before taking the logarithm.
     // This preserves Oblimax's exact common-power-of-two scale identity instead
     // of assembling two large logarithms and subtracting nearly equal exponents.
@@ -621,8 +666,10 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     let gradient = l
         .iter()
         .map(|x| {
-            let cube = (x * x) * x;
-            -(4.0 * cube / sum4 - 4.0 * x / sum2)
+            let normalized = *x * scale;
+            let cube = (normalized * normalized) * normalized;
+            let normalized_gradient = -(4.0 * cube / sum4 - 4.0 * normalized / sum2);
+            normalized_gradient * scale
         })
         .collect();
     Ok(CriterionEvaluation {
@@ -770,6 +817,18 @@ mod tests {
         for value in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert_eq!(deterministic_ln_positive(value), None);
         }
+    }
+
+    #[test]
+    fn oblimax_range_conditioner_covers_binary64_exponent_edges() {
+        assert_eq!(binary_exponent_positive(f64::from_bits(1)), -1074);
+        assert_eq!(binary_exponent_positive(f64::MIN_POSITIVE), -1022);
+        assert_eq!(binary_exponent_positive(1.0), 0);
+        assert_eq!(binary_exponent_positive(f64::MAX), 1023);
+        assert_eq!(exact_power_of_two(-1023).to_bits(), 1_u64 << 51);
+        assert_eq!(exact_power_of_two(-1022), f64::MIN_POSITIVE);
+        assert_eq!(exact_power_of_two(0), 1.0);
+        assert_eq!(exact_power_of_two(1023).to_bits(), 0x7fe0_0000_0000_0000);
     }
 
     #[test]
