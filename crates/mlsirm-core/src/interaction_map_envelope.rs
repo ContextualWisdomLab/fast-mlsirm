@@ -28,6 +28,7 @@ pub const RESIDUAL_INTERACTION_MAP_CALCULATION_PROVENANCE: &str =
 const MAX_INTERACTION_MAP_INPUT_CELLS: usize = 20_000_000;
 const MAX_INTERACTION_MAP_AXIS_COUNT: usize = 20_000_000;
 const MAX_INTERACTION_MAP_IDENTIFIER_BYTES: usize = 16 * 1024 * 1024;
+const CANONICAL_MISSING_NAN_BITS: u64 = 0x7ff8_0000_0000_0000;
 
 /// Versioned product-neutral result envelope for downstream persistence.
 #[derive(Debug, Clone, PartialEq)]
@@ -139,7 +140,12 @@ fn digest_field(hasher: &mut Sha256, tag: &str, payload: &[u8]) -> Result<(), St
     Ok(())
 }
 
-fn digest_f64_field(hasher: &mut Sha256, tag: &str, values: &[f64]) -> Result<(), String> {
+fn digest_f64_field(
+    hasher: &mut Sha256,
+    tag: &str,
+    values: &[f64],
+    canonicalize_missing_nan: bool,
+) -> Result<(), String> {
     let payload_len = values
         .len()
         .checked_mul(std::mem::size_of::<f64>())
@@ -152,15 +158,23 @@ fn digest_f64_field(hasher: &mut Sha256, tag: &str, values: &[f64]) -> Result<()
     hasher.update(tag.as_bytes());
     hasher.update(payload_len.to_be_bytes());
     for value in values {
-        hasher.update(value.to_le_bytes());
+        let bits = if canonicalize_missing_nan && value.is_nan() {
+            CANONICAL_MISSING_NAN_BITS
+        } else {
+            value.to_bits()
+        };
+        hasher.update(bits.to_le_bytes());
     }
     Ok(())
 }
 
 /// Derive the canonical SHA-256 identity for validated interaction-map evidence.
 ///
-/// This is provenance serialization only. It intentionally mirrors the public
-/// Python byte contract and does not calculate interaction-map numerics.
+/// Observed `NaN` payload/sign variants are serialized as one canonical missing
+/// value because the interaction-map contract treats every observed `NaN` as
+/// the same missing-response state. This is provenance serialization only; it
+/// intentionally mirrors the public Python byte contract and does not calculate
+/// interaction-map numerics.
 pub fn residual_interaction_map_input_digest(
     schema_version: &str,
     person_ids: &[String],
@@ -204,8 +218,8 @@ pub fn residual_interaction_map_input_digest(
     shape[..8].copy_from_slice(&rows.to_be_bytes());
     shape[8..].copy_from_slice(&columns.to_be_bytes());
     digest_field(&mut hasher, "matrix_shape", &shape)?;
-    digest_f64_field(&mut hasher, "observed_f64le", observed)?;
-    digest_f64_field(&mut hasher, "expected_f64le", expected)?;
+    digest_f64_field(&mut hasher, "observed_f64le", observed, true)?;
+    digest_f64_field(&mut hasher, "expected_f64le", expected, false)?;
 
     let mut encoded = String::with_capacity(64);
     for byte in hasher.finalize() {
