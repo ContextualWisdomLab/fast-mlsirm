@@ -37,7 +37,8 @@
   (`None` or `{"kind": "single"}`); explicit `singlefree`, multigroup, or
   multilevel population metadata fails closed rather than silently reusing
   zero-mean/unit-SD expectations.
-- Preflight LD probability-table storage, pair-output cardinality, and
-  pair-by-person work before native dispatch. This bounds otherwise valid
-  quadrature/item combinations that could request multi-gigabyte Rust
-  allocations or unbounded quadratic diagnostic work.
+- Preflight LD probability-table storage, pair-output cardinality,
+  pair-by-person work, and pair-by-quadrature work before native dispatch.
+  This bounds otherwise valid quadrature/item combinations that could request
+  multi-gigabyte Rust allocations or billions of quadratic diagnostic
+  iterations without changing the Rust-owned X2/G2 arithmetic.
