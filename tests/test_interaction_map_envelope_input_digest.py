@@ -60,3 +60,19 @@ def test_input_digest_changes_with_evidence_identity_or_axis_request() -> None:
         != baseline
     )
     assert _envelope(observed, expected, axis_count=2).input_digest != baseline
+
+
+def test_input_digest_canonicalizes_missing_nan_payload_bits() -> None:
+    """Equivalent missing-response NaNs must share one provenance identity."""
+    nan_payload_one = np.array([0x7FF8000000000001], dtype=np.uint64).view(np.float64)[0]
+    nan_payload_two = np.array([0x7FF8000000000002], dtype=np.uint64).view(np.float64)[0]
+    observed_one = np.array([[2.0, nan_payload_one], [0.0, 2.0]], dtype=np.float64)
+    observed_two = np.array([[2.0, nan_payload_two], [0.0, 2.0]], dtype=np.float64)
+    expected = np.ones((2, 2), dtype=np.float64)
+
+    assert np.isnan(observed_one[0, 1])
+    assert np.isnan(observed_two[0, 1])
+    assert observed_one.view(np.uint64)[0, 1] != observed_two.view(np.uint64)[0, 1]
+    assert _envelope(observed_one, expected).input_digest == _envelope(
+        observed_two, expected
+    ).input_digest
