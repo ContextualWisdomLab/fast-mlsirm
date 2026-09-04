@@ -32,6 +32,11 @@
   independent trait dimensions correctly. The current public path accepts only
   the one-dimension `factor_id == 0` contract rather than aliasing distinct
   traits onto one Gauss-Hermite node.
+- Surface the population expectation as a public `population` control. The
+  current numerical kernel supports only the standard-normal single population
+  (`None` or `{"kind": "single"}`); explicit `singlefree`, multigroup, or
+  multilevel population metadata fails closed rather than silently reusing
+  zero-mean/unit-SD expectations.
 - Preflight LD probability-table storage, pair-output cardinality, and
   pair-by-person work before native dispatch. This bounds otherwise valid
   quadrature/item combinations that could request multi-gigabyte Rust
