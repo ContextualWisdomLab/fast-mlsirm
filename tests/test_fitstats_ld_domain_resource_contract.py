@@ -1,5 +1,6 @@
 """Fail-closed contracts for local-dependence model scope and workspace."""
 
+from inspect import signature
 from types import SimpleNamespace
 
 import numpy as np
@@ -72,22 +73,16 @@ def test_ld_indices_rejects_pair_person_work_bomb_before_native(monkeypatch):
         )
 
 
-def test_ld_indices_requires_explicit_supported_population_before_native(monkeypatch):
-    """Population expectations cannot silently fall back to standard normal."""
+def test_ld_indices_surfaces_and_rejects_unsupported_population_before_native(monkeypatch):
+    """Non-single fitted populations cannot silently use standard-normal expectations."""
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
-    responses = np.zeros((20, 2))
-    factor_id = np.zeros(2, dtype=np.int64)
-    params = _params(2)
+    assert "population" in signature(fitstats_module.ld_indices).parameters
 
     with pytest.raises(ValueError, match="population.*single"):
         fitstats_module.ld_indices(
-            responses, factor_id, params, "MIRT", q_theta=7, q_xi=3
-        )
-    with pytest.raises(ValueError, match="population.*single"):
-        fitstats_module.ld_indices(
-            responses,
-            factor_id,
-            params,
+            np.zeros((20, 2)),
+            np.zeros(2, dtype=np.int64),
+            _params(2),
             "MIRT",
             q_theta=7,
             q_xi=3,
