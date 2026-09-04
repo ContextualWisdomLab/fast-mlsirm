@@ -30,6 +30,11 @@ def _accepted_estimators(model: str) -> tuple[str, ...]:
     return tuple(accepted)
 
 
+_FIT_CAPABILITY_ROWS = tuple(
+    (model, _accepted_estimators(model)) for model in sorted(VALID_MODELS)
+)
+
+
 @dataclass(frozen=True, slots=True)
 class FitCapability:
     """One canonical model and its admitted production estimators."""
@@ -39,19 +44,20 @@ class FitCapability:
 
     def __post_init__(self) -> None:
         """Reject forged or non-canonical public capability records."""
-        if type(self.model) is not str or self.model not in VALID_MODELS:
-            raise ValueError("FitCapability must match a canonical model-estimator capability")
-        if type(self.estimators) is not tuple or any(
+        if type(self.model) is not str or type(self.estimators) is not tuple or any(
             type(estimator) is not str for estimator in self.estimators
         ):
             raise ValueError("FitCapability must match a canonical model-estimator capability")
-        if self.estimators != _accepted_estimators(self.model):
+        canonical_estimators = next(
+            (
+                estimators
+                for model, estimators in _FIT_CAPABILITY_ROWS
+                if self.model == model
+            ),
+            None,
+        )
+        if canonical_estimators is None or self.estimators != canonical_estimators:
             raise ValueError("FitCapability must match a canonical model-estimator capability")
-
-
-_FIT_CAPABILITY_ROWS = tuple(
-    (model, _accepted_estimators(model)) for model in sorted(VALID_MODELS)
-)
 
 
 def fit_capabilities() -> tuple[FitCapability, ...]:
