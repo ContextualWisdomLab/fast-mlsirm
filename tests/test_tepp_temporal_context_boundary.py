@@ -176,7 +176,7 @@ def test_agent_guidance_preserves_temporal_and_context_fabric_boundaries() -> No
     agents = _read(AGENTS_PATH)
     claude = _read(CLAUDE_PATH)
 
-    for document in (" ".join(agents.split()), " ".join(claude.split())):
+    for document in (agents.replace("\n", " "), claude.replace("\n", " ")):
         assert "TEPP owns temporal/event composition and semantics" in document
         assert "fast-mlsirm owns reusable time-indexed psychometric numerical kernels" in document
         assert "cross-service SQL" in document
