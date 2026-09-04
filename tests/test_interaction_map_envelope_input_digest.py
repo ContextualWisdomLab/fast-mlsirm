@@ -63,11 +63,13 @@ def test_input_digest_changes_with_evidence_identity_or_axis_request() -> None:
 
 
 def test_input_digest_canonicalizes_missing_nan_payload_and_sign_bits() -> None:
-    """Equivalent missing-response NaNs must share one provenance identity."""
+    """Equivalent quiet and signaling missing-response NaNs must share one provenance identity."""
     nan_bits = (
         0x7FF8000000000001,
         0x7FF8000000000002,
         0xFFF8000000000001,
+        0x7FF0000000000001,
+        0xFFF0000000000001,
     )
     expected = np.ones((2, 2), dtype=np.float64)
     observed_variants = []
