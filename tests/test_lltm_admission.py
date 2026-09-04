@@ -114,6 +114,14 @@ def test_invalid_control_domains_fail_before_data_or_native_discovery(monkeypatc
             lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), **kwargs)
 
 
+def test_lossy_tolerance_fails_before_data_or_native_discovery(monkeypatch):
+    """The exact tolerance identity must survive the Rust binary64 boundary."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    with pytest.raises(ValueError, match="tol must be finite and non-negative"):
+        lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), tol=2**53 + 1)
+
+
 def test_trusted_numpy_controls_preserve_native_marshalling(monkeypatch):
     """Concrete NumPy scalar controls normalize to inert built-in Rust arguments."""
 
@@ -149,3 +157,114 @@ def test_trusted_numpy_controls_preserve_native_marshalling(monkeypatch):
     assert type(args[8]) is int and args[8] == 1
     assert type(args[9]) is float and args[9] == 0.0
     assert fitted.n_iter == 1
+
+
+def test_exact_large_integer_tolerance_preserves_native_marshalling(monkeypatch):
+    """An exactly representable integer tolerance remains a package-owned Rust float."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_lltm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    lltm.fit_lltm(
+        np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
+        np.array([[0.0], [1.0]], dtype=np.float64),
+        compute_lr=False,
+        max_iter=1,
+        tol=2**53,
+    )
+
+    assert type(captured["args"][9]) is float
+    assert captured["args"][9] == float(2**53)
+
+
+def test_untrusted_scientific_carriers_fail_before_numpy_or_native_discovery(monkeypatch):
+    """Observed responses and explanatory design must reject caller array protocols."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    responses = [[0.0, 1.0], [1.0, 0.0]]
+    q_design = [[0.0], [1.0]]
+
+    with pytest.raises(ValueError, match="responses must be an exact NumPy array or built-in matrix"):
+        lltm.fit_lltm(_ArrayProbe(), q_design)
+    with pytest.raises(ValueError, match="q_design must be an exact NumPy array or built-in matrix"):
+        lltm.fit_lltm(responses, _ArrayProbe())
+
+
+def test_nested_real_provider_fails_without_conversion_callback(monkeypatch):
+    """Nested scientific evidence must be inert before float64 marshalling."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    with pytest.raises(ValueError, match="responses must contain real-valued numeric evidence"):
+        lltm.fit_lltm([[_RealProvider(), 1.0], [1.0, 0.0]], [[0.0], [1.0]])
+    with pytest.raises(ValueError, match="q_design must contain real-valued numeric evidence"):
+        lltm.fit_lltm([[0.0, 1.0], [1.0, 0.0]], [[_RealProvider()], [1.0]])
+
+
+def test_trusted_builtin_and_exact_numpy_rows_preserve_marshalling(monkeypatch):
+    """Callback-free built-in matrices and exact NumPy rows remain supported."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_lltm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    responses = [[np.float32(0.0), np.int16(1)], np.array([1.0, 0.0], dtype=np.float32)]
+    q_design = [np.array([0.0], dtype=np.float32), [np.uint8(1)]]
+
+    lltm.fit_lltm(responses, q_design, max_iter=1, tol=0.0)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.0, 1.0, 1.0, 0.0]))
+    np.testing.assert_array_equal(args[2], np.array([0.0, 1.0]))
+    assert args[3:6] == (2, 2, 1)
+
+
+def test_response_infinity_is_not_reclassified_as_missing(monkeypatch):
+    """Only NaN is LLTM missingness; infinities are invalid observed evidence."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    q_design = np.array([[0.0], [1.0]], dtype=np.float64)
+    for invalid in (float("inf"), float("-inf")):
+        responses = np.array([[invalid, 1.0], [0.0, 1.0]], dtype=np.float64)
+        with pytest.raises(ValueError, match="responses must contain only finite values or NaN missingness"):
+            lltm.fit_lltm(responses, q_design)
+
+
+def test_nonfinite_design_fails_before_native_discovery(monkeypatch):
+    """The public boundary should replay Rust's finite explanatory-design contract."""
+
+    monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
+    responses = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
+    for invalid in (float("nan"), float("inf"), float("-inf")):
+        q_design = np.array([[0.0], [invalid]], dtype=np.float64)
+        with pytest.raises(ValueError, match="q_design entries must be finite"):
+            lltm.fit_lltm(responses, q_design)
+
+
+def test_nan_response_remains_explicit_missingness(monkeypatch):
+    """NaN remains the sole supported public missing-response sentinel."""
+
+    captured: dict[str, tuple[object, ...]] = {}
+
+    class CapturingCore:
+        def fit_lltm(self, *args):
+            captured["args"] = args
+            return _result()
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
+    responses = np.array([[np.nan, 1.0], [0.0, 1.0]], dtype=np.float64)
+    q_design = np.array([[0.0], [1.0]], dtype=np.float64)
+
+    lltm.fit_lltm(responses, q_design, max_iter=1, tol=0.0)
+
+    args = captured["args"]
+    np.testing.assert_array_equal(args[0], np.array([0.0, 1.0, 0.0, 1.0]))
+    np.testing.assert_array_equal(args[1], np.array([False, True, True, True]))
