@@ -73,6 +73,22 @@ def test_ld_indices_rejects_pair_person_work_bomb_before_native(monkeypatch):
         )
 
 
+def test_ld_indices_rejects_pair_quadrature_work_bomb_before_native(monkeypatch):
+    """Every item-pair by quadrature-cell traversal is bounded before Rust."""
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
+    n_items = 1_000
+
+    with pytest.raises(ValueError, match="pair-quadrature work"):
+        fitstats_module.ld_indices(
+            np.zeros((20, n_items)),
+            np.zeros(n_items, dtype=np.int64),
+            _params(n_items, latent_dim=2),
+            "MLS2PLM",
+            q_theta=41,
+            q_xi=21,
+        )
+
+
 def test_ld_indices_surfaces_and_rejects_unsupported_population_before_native(monkeypatch):
     """Non-single fitted populations cannot silently use standard-normal expectations."""
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: _BombCore())
