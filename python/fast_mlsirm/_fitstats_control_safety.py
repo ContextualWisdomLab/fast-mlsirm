@@ -115,6 +115,14 @@ def _trusted_positive_integer(value: Any, name: str) -> int:
     return normalized
 
 
+def _trusted_ld_theta_quadrature(value: Any) -> int:
+    """Return a positive embedded trait-grid size with LD-stable diagnostics."""
+    normalized = _trusted_positive_integer(value, "q_theta")
+    if normalized not in _SUPPORTED_QUADRATURE:
+        raise ValueError(f"q_theta must be one of {_SUPPORTED_QUADRATURE}")
+    return normalized
+
+
 def _validate_sx2_controls(
     q_theta: Any,
     q_xi: Any,
@@ -170,6 +178,12 @@ def _add_bh_cells(current: int, added: int) -> int:
 
 def _trusted_probability_tree(value: Any) -> int:
     """Preflight inert probability evidence with bounded logical/structural work."""
+    # Each frame stores [object, depth, next_child_index, entered, logical_cells].
+    # Children are pushed one at a time so a huge malformed built-in fan-out
+    # cannot allocate an equally huge validation stack before the node budget is
+    # checked. Shared acyclic containers retain occurrence semantics: every
+    # occurrence is charged against both structural work and logical p-value
+    # cells, while active-path identity catches true cycles.
     frames: list[list[Any]] = [[value, 0, 0, False, 0]]
     active_container_ids: set[int] = set()
     structural_nodes = 0
@@ -348,7 +362,7 @@ def install(fitstats_module: ModuleType) -> None:
         eps_distance: Any = 1e-8,
     ) -> dict:
         """Seal LD integer controls before parameter or native work."""
-        q_theta_value = _trusted_quadrature(q_theta, "q_theta")
+        q_theta_value = _trusted_ld_theta_quadrature(q_theta)
         q_xi_value = _trusted_positive_integer(q_xi, "q_xi")
         return original_ld(
             responses,
