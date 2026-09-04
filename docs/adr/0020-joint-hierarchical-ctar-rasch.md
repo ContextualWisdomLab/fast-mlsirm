@@ -40,6 +40,11 @@ links, and summarizes them rather than attaching the PDFs.
 
 ## Ownership and dependency direction
 
+ADR-0028 governs temporal/event composition for this Proposed CT-AR Rasch numerical kernel.
+TEPP owns event ontology, temporal validity, event ordering, changing-membership history, longitudinal leakage policy, and temporal/event composition.
+fast-mlsirm owns the joint MAP likelihood, elapsed-time transition arithmetic, optimization, and uncertainty calculations over explicit supplied occasion/time carriers.
+TEPP-originated carrier designs enter only through the versioned, immutable Anti-Corruption Layer defined by ADR-0028; this ADR does not authorize cross-service SQL, direct TEPP database access, or a hidden TEPP runtime dependency.
+
 `ContextualWisdomLab/fast-mlsirm` owns this reusable measurement kernel.
 Psychometrics Commons and other hosted products consume the sealed design and
 returned diagnostics. This slice depends on the `#976` longitudinal design

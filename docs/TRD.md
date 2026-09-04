@@ -194,6 +194,10 @@ observations, estimation returns
 producer successor, Rust CPU/GPU same-objective parity, true-parameter and
 known-weight recovery, and uncertainty coverage before activation.
 
+**TRD-MLT-007** Measurement-occasion carriers and elapsed-time inputs are numerical model inputs, not a local event ontology. TEPP retains event semantics, temporal validity, event ordering, changing-membership history, and longitudinal leakage policy.
+
+**TRD-MLT-008** A TEPP-originated temporal design shall be admitted only through a versioned, immutable ACL contract with compatibility identity and provenance; adapters shall not bypass that contract or introduce cross-service SQL, direct TEPP database access, or a hidden TEPP runtime dependency.
+
 ### 4.12 Testing and scientific evidence
 
 **TRD-TEST-001** Owned production Python statement/branch coverage target is 100%; public docstrings and Rust documentation shall be complete and beginner-readable.

@@ -180,6 +180,10 @@ without pair-level criterion observations shall remain explicitly unavailable
 for estimation; channel score floors, internal covariance, ranks, equal shares,
 and Python numerical kernels are prohibited substitutes.
 
+**PRD-FR-064** TEPP owns temporal/event semantics, event ordering, temporal validity, changing-membership history, and longitudinal leakage policy; fast-mlsirm owns reusable time-indexed psychometric numerical kernels over explicit supplied carriers.
+
+**PRD-FR-065** TEPP-originated temporal designs shall enter fast-mlsirm only through the versioned, immutable Anti-Corruption Layer governed by ADR-0028; direct TEPP database access, cross-service SQL, and hidden TEPP runtime dependencies are prohibited.
+
 ### 6.8 Reporting and evidence
 
 **PRD-FR-070** Reports shall separate exact machine-readable values from human-readable summaries and preserve provenance needed to reconstruct the analysis.
