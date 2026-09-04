@@ -90,6 +90,18 @@ def test_ld_indices_rejects_invalid_native_pair_count(monkeypatch, payload):
         _call(monkeypatch, payload)
 
 
+def test_ld_indices_rejects_native_pair_count_for_wrong_item_surface(monkeypatch):
+    """A triangular vector still must match the admitted two-item request."""
+    with pytest.raises(RuntimeError, match="match the admitted item count"):
+        _call(
+            monkeypatch,
+            {
+                "x2_signed": [0.0, 1.0, 2.0],
+                "g2_signed": [0.0, 1.0, 2.0],
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "payload",
     [
