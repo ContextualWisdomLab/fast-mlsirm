@@ -647,9 +647,18 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     let scale = exact_power_of_two(scale_exponent);
     let mut sum2 = 0.0;
     let mut sum4 = 0.0;
+    let mut equal_support_square = None;
+    let mut equal_magnitude_supports = true;
     for x in l.iter().copied() {
         let normalized = x * scale;
         let square = normalized * normalized;
+        if square > 0.0 {
+            if let Some(reference) = equal_support_square {
+                equal_magnitude_supports &= square.to_bits() == reference.to_bits();
+            } else {
+                equal_support_square = Some(square);
+            }
+        }
         sum2 += square;
         sum4 += square * square;
     }
@@ -663,16 +672,24 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     let normalized_moment_ratio = (sum4 / sum2) / sum2;
     let log_normalized_moment_ratio = deterministic_ln_positive(normalized_moment_ratio)
         .ok_or_else(|| "oblimax normalized moment ratio must remain finite and positive".to_string())?;
-    let moment_ratio = sum4 / sum2;
+    // For an exact equal-magnitude nonzero support manifold, the mathematical
+    // fourth/second-moment ratio is the represented common square. Reconstructing
+    // it as sum4/sum2 can round one ULP away when three or more equal supports are
+    // accumulated, which creates a false nonzero gradient at an exact stationary
+    // point. Preserve that identity without changing the established ratio route
+    // for non-equal supports.
+    let moment_ratio = match (equal_magnitude_supports, equal_support_square) {
+        (true, Some(square)) => square,
+        _ => sum4 / sum2,
+    };
     let gradient = l
         .iter()
         .map(|x| {
             let normalized = *x * scale;
             let square = normalized * normalized;
             // Factor the analytic derivative around the moment ratio instead of
-            // subtracting two independently rounded reciprocal terms. A loading
-            // matrix with exactly one nonzero support is an exact stationary
-            // point of Oblimax, and this route preserves that zero in binary64.
+            // subtracting two independently rounded reciprocal terms. Exact
+            // equal-magnitude represented supports retain their stationary zero.
             let normalized_gradient =
                 (4.0 * normalized / sum2) * (1.0 - square / moment_ratio);
             normalized_gradient * scale
