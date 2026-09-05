@@ -21,13 +21,15 @@
   subclasses and non-positive or non-finite values fail before parameter
   marshalling or native discovery; the Rust core remains the numerical owner
   of distance and local-dependence arithmetic.
-- Replay the Rust/PyO3 LD result postcondition before publication. The signed X2
-  and G2 vectors must be one-dimensional binary64 arrays with matching
-  cardinality, their cardinality must be a valid upper-triangle pair count and
-  match the admitted item count whenever that count is available from an inert
-  factor-id carrier, and values may be finite or `NaN` but never infinite.
-  Published vectors are copied into package-owned arrays so stale or malformed
-  native evidence cannot define a contradictory public pair surface.
+- Replay the raw Rust/PyO3 LD result before any general mapping or NumPy
+  conversion protocol can execute. The native carrier must be an exact built-in
+  dictionary with exactly `x2_signed` and `g2_signed`; each pair vector must be
+  an exact built-in list of binary64 Python floats with matching cardinality.
+  The cardinality must be a valid upper-triangle pair count matching the
+  admitted item count, and values may be finite or `NaN` but never infinite.
+  Only after that carrier is sealed are package-owned NumPy arrays created, so a
+  stale or malformed native boundary cannot invoke caller-controlled `keys`,
+  iteration, or `__array__` hooks or define a contradictory public pair surface.
 - Fail closed on multidimensional trait banks until LD expectations integrate
   independent trait dimensions correctly. The current public path accepts only
   the one-dimension `factor_id == 0` contract rather than aliasing distinct
