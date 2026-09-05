@@ -26,7 +26,8 @@ fn aisp_applies_search_normal_epsilon_before_start_pair_argmax() {
         x.extend_from_slice(&[block_a, block_b, block_b_peer, block_a]);
     }
 
-    let labels = aisp(&x, 40, 4, 0.3, 0.05).expect("AISP should accept the finite integer fixture");
+    let labels =
+        aisp(&x, 40, 4, 0.3, 0.05).expect("AISP should accept the finite integer fixture");
 
     assert_eq!(
         labels,
