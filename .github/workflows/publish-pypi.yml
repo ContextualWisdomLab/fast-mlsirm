@@ -262,6 +262,26 @@ jobs:
           output-file: dist/fast-mlsirm.spdx.json
           upload-artifact: "false"
           upload-release-assets: "false"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Validate SPDX 2.3 SBOM
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("dist/fast-mlsirm.spdx.json")
+          with path.open("r", encoding="utf-8") as stream:
+              document = json.load(stream)
+
+          expected = "SPDX-2.3"
+          actual = document.get("spdxVersion")
+          if actual != expected:
+              raise SystemExit(
+                  f"release SBOM declares unsupported SPDX version: expected {expected!r}, got {actual!r}"
+              )
+          PY
       - name: Attest release SBOM provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
