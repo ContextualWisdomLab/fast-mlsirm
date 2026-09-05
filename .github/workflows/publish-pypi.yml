@@ -271,9 +271,12 @@ jobs:
           import json
           from pathlib import Path
 
+          def _reject_nonfinite(token: str) -> None:
+              raise ValueError(f"non-standard JSON constant in release SBOM: {token}")
+
           path = Path("dist/fast-mlsirm.spdx.json")
           with path.open("r", encoding="utf-8") as stream:
-              document = json.load(stream)
+              document = json.load(stream, parse_constant=_reject_nonfinite)
 
           expected = "SPDX-2.3"
           actual = document.get("spdxVersion")
