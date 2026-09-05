@@ -156,13 +156,15 @@ def test_release_asset_write_is_isolated_and_recoverable_while_draft() -> None:
 
 
 def test_release_mutations_replay_draft_state_at_the_mutation_seam() -> None:
-    """A stale early draft check must not authorize later destructive writes."""
+    """A stale early draft check must not authorize later irreversible publication."""
     text = _workflow_text()
     assets = _job_block(text, "release-assets")
+    publish = _job_block(text, "publish-pypi")
     finalize = _job_block(text, "finalize-release")
 
     for block, mutation in (
         (assets, 'gh release upload "$RELEASE_TAG"'),
+        (publish, f"uses: pypa/gh-action-pypi-publish@{PYPI_PUBLISH_SHA}"),
         (finalize, 'gh release edit "$RELEASE_TAG"'),
     ):
         assert "- name: Revalidate exact draft release state" in block
