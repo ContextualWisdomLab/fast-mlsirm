@@ -227,9 +227,16 @@ pub fn coef_h(x: &[i64], n_persons: usize, n_items: usize) -> Result<MokkenH, St
 ///
 /// Returns `z` such that `P(N(0,1) > z) = p`. Tail branches work directly
 /// from the supplied tail probability so tiny positive probabilities do not
-/// disappear when rounded through `1.0 - p`.
+/// disappear when rounded through `1.0 - p`. Derived probabilities that
+/// round to an endpoint use the exact limiting quantile.
 pub(crate) fn normal_upper_quantile(p: f64) -> f64 {
-    debug_assert!(p > 0.0 && p < 1.0);
+    debug_assert!((0.0..=1.0).contains(&p));
+    if p == 0.0 {
+        return f64::INFINITY;
+    }
+    if p == 1.0 {
+        return f64::NEG_INFINITY;
+    }
     const A: [f64; 6] = [
         -3.969683028665376e+01,
         2.209460984245205e+02,
