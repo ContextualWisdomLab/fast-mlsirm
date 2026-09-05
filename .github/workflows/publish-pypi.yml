@@ -266,37 +266,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Validate SPDX 2.3 SBOM
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          def _reject_nonfinite(token: str) -> None:
-              raise ValueError(f"non-standard JSON constant in release SBOM: {token}")
-
-          def _reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
-              document: dict[str, object] = {}
-              for key, value in pairs:
-                  if key in document:
-                      raise ValueError(f"duplicate JSON member in release SBOM: {key}")
-                  document[key] = value
-              return document
-
-          path = Path("dist/fast-mlsirm.spdx.json")
-          with path.open("r", encoding="utf-8") as stream:
-              document = json.load(
-                  stream,
-                  parse_constant=_reject_nonfinite,
-                  object_pairs_hook=_reject_duplicates,
-              )
-
-          expected = "SPDX-2.3"
-          actual = document.get("spdxVersion")
-          if actual != expected:
-              raise SystemExit(
-                  f"release SBOM declares unsupported SPDX version: expected {expected!r}, got {actual!r}"
-              )
-          PY
+        run: python scripts/validate_release_spdx.py dist/fast-mlsirm.spdx.json
       - name: Attest release SBOM provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
