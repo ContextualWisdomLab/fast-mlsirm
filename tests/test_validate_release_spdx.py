@@ -92,6 +92,7 @@ def test_required_document_identity_fields_fail_closed(
         {},
         {"created": "2026-09-05T13:00:00Z", "creators": []},
         {"created": "2026-09-05T13:00:00Z", "creators": [""]},
+        {"created": "2026-09-05T13:00:00Z", "creators": ["syft-v1.51.1"]},
         {"created": "2026-09-05T13:00:00+09:00", "creators": ["Tool: syft"]},
     ],
 )
