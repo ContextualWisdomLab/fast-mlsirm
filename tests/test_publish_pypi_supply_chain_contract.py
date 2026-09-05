@@ -72,6 +72,7 @@ def test_sbom_is_exact_release_source_bound_spdx_and_attested():
     assert 'upload-release-assets: "false"' in block
     assert validate in block
     assert "json.load" in block
+    assert "parse_constant=_reject_nonfinite" in block
     assert 'document.get("spdxVersion")' in block
     assert 'expected = "SPDX-2.3"' in block
     assert attest in block
