@@ -50,3 +50,9 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+## 2026-09-05 - [CSP unsafe-inline Risk & Hash Exact Match Requirement]
+**Vulnerability:** The HTML report generation modules (`report.py` and `scoring/essay/report_html.py`) used the `'unsafe-inline'` directive in the Content-Security-Policy (CSP) `style-src` header. This permissive policy significantly increases the attack surface for Cross-Site Scripting (XSS) via CSS injections.
+**Learning:** Hardening CSP by replacing `'unsafe-inline'` with a strict SHA-256 hash (e.g., `style-src 'sha256-...'`) is an essential defense-in-depth practice. However, when implementing this, the hashed content must *exactly* match the raw text content inside the DOM `<style>` element, including all leading or trailing whitespace. If the HTML tags are constructed from a list of strings joined by newlines (e.g., `["<style>", css, "</style>"]`), the resulting DOM text node will contain surrounding newlines, causing a hash mismatch in the browser and breaking all styles.
+**Prevention:**
+- Replace `'unsafe-inline'` with dynamically computed base64-encoded SHA-256 hashes for inline styles and scripts.
+- To prevent whitespace-induced hash mismatches, always construct the inline element as a single tightly-bound string (e.g., `f"<style>{_css()}</style>"`) instead of relying on list-joining routines that might inject unwanted characters around the content.
