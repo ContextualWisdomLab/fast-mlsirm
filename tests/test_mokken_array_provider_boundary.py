@@ -80,6 +80,10 @@ def test_mokken_preserves_inert_builtin_and_numpy_row_inputs(
         np.array([1, 0], dtype=np.uint8),
     ]
 
-    assert mokken.mokken_analysis(builtin).scale.tolist() == [1, 1]
-    assert mokken.mokken_analysis(numpy_rows).scale.tolist() == [1, 1]
+    assert mokken.mokken_analysis(
+        builtin, lower_bound=0.3, alpha=0.05
+    ).scale.tolist() == [1, 1]
+    assert mokken.mokken_analysis(
+        numpy_rows, lower_bound=0.3, alpha=0.05
+    ).scale.tolist() == [1, 1]
     assert [row.tolist() for row in captured] == [[0, 1, 1, 0], [0, 1, 1, 0]]
