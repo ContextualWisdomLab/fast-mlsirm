@@ -170,3 +170,22 @@ def test_new_release_sbom_job_uses_the_explicit_linux_runner_contract() -> None:
 
     assert "runs-on: ubuntu-24.04" in sbom
     assert "runs-on: ubuntu-latest" not in sbom
+
+
+def test_immutable_release_is_published_only_after_assets_and_pypi_succeed() -> None:
+    """Assets must be attached while the release is still mutable, then sealed once."""
+    publish_text = _workflow_text()
+    release_job = _job_block(_release_tag_workflow_text(), "publish-release-tag")
+    finalize = _job_block(publish_text, "finalize-release")
+
+    assert 'gh release create "v$RELEASE_VERSION"' in release_job
+    assert "--draft" in release_job
+    assert release_job.index('gh release create "v$RELEASE_VERSION"') < release_job.index(
+        "gh workflow run publish-pypi.yml"
+    )
+
+    assert "needs: [release-assets, publish-pypi]" in finalize
+    assert "permissions:\n      contents: write" in finalize
+    assert "GH_TOKEN: ${{ github.token }}" in finalize
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in finalize
+    assert 'gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false' in finalize
