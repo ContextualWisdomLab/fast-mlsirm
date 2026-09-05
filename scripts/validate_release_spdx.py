@@ -10,6 +10,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+_CREATOR_PREFIXES = ("Person: ", "Organization: ", "Tool: ")
+
+
 def _reject_nonfinite(token: str) -> None:
     """Reject Python JSON decoder extensions that are not interoperable JSON."""
     raise ValueError(f"non-standard JSON constant in release SBOM: {token}")
@@ -62,8 +65,13 @@ def _validate_creation_info(value: object) -> None:
     creators = value.get("creators")
     if not isinstance(creators, list) or not creators:
         raise ValueError("release SBOM creationInfo.creators must be a non-empty list")
-    if any(not isinstance(creator, str) or not creator.strip() for creator in creators):
-        raise ValueError("release SBOM creationInfo.creators must contain non-blank strings")
+    for creator in creators:
+        if not isinstance(creator, str) or not creator.strip():
+            raise ValueError("release SBOM creationInfo.creators must contain non-blank strings")
+        if not creator.startswith(_CREATOR_PREFIXES) or not creator.split(":", 1)[1].strip():
+            raise ValueError(
+                "release SBOM creationInfo.creators must use Person, Organization, or Tool identities"
+            )
 
 
 def validate_release_spdx(path: Path) -> None:
@@ -103,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         validate_release_spdx(args.path)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         parser.exit(1, f"error: {exc}\n")
     return 0
 
