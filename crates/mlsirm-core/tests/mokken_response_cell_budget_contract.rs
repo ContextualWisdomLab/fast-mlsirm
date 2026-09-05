@@ -3,7 +3,10 @@
 //! The Python binding rejects analyses above 20,000,000 logical response
 //! cells before dense marshalling. Direct Rust callers must not bypass that
 //! package resource contract and enter `pairwise`, which owns response-sized
-//! centered and sorted workspaces.
+//! centered and sorted workspaces. AISP semantic controls are cheaper and
+//! independent of the response payload, so their domain diagnostics must win
+//! before response-resource or payload replay just as they do at the Python
+//! public boundary.
 
 use mlsirm_core::mokken::{aisp, coef_h};
 
@@ -24,6 +27,21 @@ fn direct_rust_rejects_response_work_above_the_public_cell_budget_before_payload
     assert_eq!(
         aisp(&[], n_persons, n_items, 0.3, 0.05).unwrap_err(),
         expected
+    );
+}
+
+#[test]
+fn direct_rust_aisp_rejects_invalid_controls_before_response_resource_replay() {
+    let n_items = 3usize;
+    let n_persons = MAX_RESPONSE_CELLS / n_items + 1;
+
+    assert_eq!(
+        aisp(&[], n_persons, n_items, 1.0, 0.05).unwrap_err(),
+        "lower bound c must be in [0, 1)"
+    );
+    assert_eq!(
+        aisp(&[], n_persons, n_items, 0.3, 0.0).unwrap_err(),
+        "alpha must be in (0, 1)"
     );
 }
 
