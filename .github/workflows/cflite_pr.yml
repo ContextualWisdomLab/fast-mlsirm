@@ -2,7 +2,7 @@ name: ClusterFuzzLite PR fuzzing
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
     paths:
       - ".clusterfuzzlite/**"
       - ".github/workflows/cflite_pr.yml"
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   PR:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
