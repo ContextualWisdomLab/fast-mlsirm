@@ -36,12 +36,15 @@
 //!
 //! The AISP ("search normal") partitions items into Mokken scales: a start
 //! pair maximizing `Hij` among pairs significantly positive (`|Zij| >= Z_c`)
-//! with pair `H >= c`, then repeatedly adds the free item that (1) has no
-//! negative `Hij` with any selected item (nonnegative allowed), (2) has
-//! within-augmented-set `Hi >= c`, (3) has `Zi >= Z_c`, and (4) maximizes the
-//! augmented set's total `H`; the scale closes when the best augmented-set
-//! `H < c`, and further scales are formed from leftover items. The
-//! significance level is Bonferroni-adjusted per scale as
+//! with pair `H >= c`, then repeatedly evaluates free items that (1) have no
+//! negative `Hij` with any item already selected before that add step
+//! (nonnegative allowed), (2) have within-augmented-set `Hi >= c`, and (3)
+//! have `Zi >= Z_c`. Every candidate exactly tied at the maximum augmented
+//! set `H` is added in that same reference step, matching `search.normal.R`;
+//! tied batch members are therefore not re-screened against one another
+//! before assignment. The scale closes when the best augmented-set `H < c`,
+//! and further scales are formed from leftover items. The significance level
+//! is Bonferroni-adjusted per scale as
 //! `alpha / (K1*(K1-1)/2 + sum of later step candidate counts)`, with the
 //! candidate-count vector resetting at each new scale, matching
 //! `search.normal.R` (`adjusted.alpha`).
@@ -372,7 +375,7 @@ pub fn aisp(
             k_rest += candidates.len() as f64;
             let zc = z_c(k_rest);
             let mut best_h = f64::NEG_INFINITY;
-            let mut best_item = None;
+            let mut best_items = Vec::new();
             for &cand in &candidates {
                 let mut aug = selected.clone();
                 aug.push(cand);
@@ -386,15 +389,20 @@ pub fn aisp(
                 }
                 if h_total > best_h {
                     best_h = h_total;
-                    best_item = Some(cand);
+                    best_items.clear();
+                    best_items.push(cand);
+                } else if h_total == best_h {
+                    best_items.push(cand);
                 }
             }
-            match best_item {
-                Some(it) if best_h >= c => {
-                    in_set[it] = scale;
-                    selected.push(it);
-                }
-                _ => break,
+            if best_h < c || best_items.is_empty() {
+                break;
+            }
+            // search.normal.R assigns every item whose pre-step result equals
+            // max(result) in one step rather than recomputing after one tie.
+            for it in best_items {
+                in_set[it] = scale;
+                selected.push(it);
             }
         }
     }
