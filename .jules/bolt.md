@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2024-05-24 - [Log-Sigmoid Binomial Simplification]
+**Learning:** In performance-critical NumPy calculations, expressions involving transcendental functions like `_log_sigmoid` (which wraps `np.logaddexp`) can often be algebraically simplified. For instance, the expected binomial log-likelihood `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)` mathematically simplifies to `r * x + n * _log_sigmoid(-x)` due to the identity `_log_sigmoid(x) - _log_sigmoid(-x) = x`. This halves the number of expensive exponential operations.
+**Action:** Whenever calculating binomial log-likelihoods or encountering `r * _log_sigmoid(x) + (n - r) * _log_sigmoid(-x)`, mathematically simplify it to `r * x + n * _log_sigmoid(-x)` to minimize costly evaluations.
