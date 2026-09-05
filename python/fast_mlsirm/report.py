@@ -357,9 +357,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
                 [
                     '<div class="bar-row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
-                    '<div class="bar-track" aria-hidden="true">',
-                    f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
-                    "</div>",
+                    f'<progress class="bar-track" max="100" value="{width:.1f}"></progress>',
                     f'<span class="bar-value"{_title_attr(value)}>{escape(_format_value(value))}</span>',
                     "</div>",
                 ]
@@ -810,23 +808,12 @@ h3 {
 }
 
 .bar-track {
+  width: 100%;
   height: 12px;
   overflow: hidden;
   background: var(--track-bg);
   border-radius: 999px;
-}
-
-.bar-fill {
-  height: 100%;
-  min-width: 8px;
-  background: var(--teal);
-  transform-origin: left;
-  animation: bar-grow 0.8s ease-out forwards;
-}
-
-@keyframes bar-grow {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+  accent-color: var(--teal);
 }
 
 .table-wrap {
