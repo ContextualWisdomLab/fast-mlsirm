@@ -272,6 +272,7 @@ def _trusted_score_source(responses: object) -> object:
     structural_nodes = 0
     rectangular_width: int | None = None
     rectangular_rows = True
+    nested_ndarray_storage_issue: str | None = None
     for row in responses:
         row_type = type(row)
         if row_type is np.ndarray:
@@ -282,6 +283,13 @@ def _trusted_score_source(responses: object) -> object:
             structural_nodes += 1 + row_cells
             if structural_nodes > _MAX_MOKKEN_RESPONSE_STRUCTURAL_NODES:
                 _raise_response_structural_resource_error()
+            if nested_ndarray_storage_issue is None:
+                if row.dtype.kind == "c":
+                    nested_ndarray_storage_issue = "complex"
+                elif row.dtype.kind not in ("b", "i", "u", "f"):
+                    nested_ndarray_storage_issue = "numeric"
+                elif int(row.nbytes) > _MAX_MOKKEN_RESPONSE_SNAPSHOT_BYTES:
+                    nested_ndarray_storage_issue = "resource"
             if row.ndim != 1:
                 rectangular_rows = False
             else:
@@ -326,6 +334,12 @@ def _trusted_score_source(responses: object) -> object:
         and rectangular_width * rectangular_width > _MAX_MOKKEN_MATRIX_CELLS
     ):
         _raise_item_matrix_resource_error(rectangular_width)
+    if nested_ndarray_storage_issue == "complex":
+        raise ValueError("responses must be real-valued")
+    if nested_ndarray_storage_issue == "numeric":
+        raise ValueError("responses must be a numeric array")
+    if nested_ndarray_storage_issue == "resource":
+        _raise_response_resource_error()
     return responses
 
 
