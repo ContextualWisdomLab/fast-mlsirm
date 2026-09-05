@@ -65,6 +65,40 @@ jobs:
             echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
             exit 1
           fi
+      - name: Require exact draft release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          releases_file="$(mktemp)"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases_file"
+          python3 - "$releases_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_tag = os.environ["RELEASE_TAG"]
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_tag
+          ]
+          if len(matches) != 1:
+              raise SystemExit(
+                  "publication requires exactly one matching unpublished draft release"
+              )
+          release = matches[0]
+          if release.get("draft") is not True or release.get("name") != expected_tag:
+              raise SystemExit(
+                  "publication requires exactly one matching unpublished draft release"
+              )
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.release_commit }}
