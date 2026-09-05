@@ -162,3 +162,11 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
     assert "needs: [sdist, wheels, sbom]" in assets
     assert "needs: [sdist, wheels, sbom]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
+
+
+def test_new_release_sbom_job_uses_the_explicit_linux_runner_contract() -> None:
+    """New release-evidence jobs must not reintroduce a moving Ubuntu alias."""
+    sbom = _job_block(_workflow_text(), "sbom")
+
+    assert "runs-on: ubuntu-24.04" in sbom
+    assert "runs-on: ubuntu-latest" not in sbom
