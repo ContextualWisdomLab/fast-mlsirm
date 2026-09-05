@@ -21,7 +21,7 @@ fn aisp_applies_search_normal_epsilon_before_start_pair_argmax() {
     let mut x = Vec::with_capacity(40 * 4);
     for person in 0..40 {
         let block_a = if person < 20 { 1 } else { 0 };
-        let block_b = if person % 2 == 1 { 1_000_000_000 } else { 0 };
+        let block_b = if person % 2 == 1 { 1_000_000_000_i64 } else { 0 };
         let block_b_peer = if person == 1 { block_b - 1 } else { block_b };
         x.extend_from_slice(&[block_a, block_b, block_b_peer, block_a]);
     }
