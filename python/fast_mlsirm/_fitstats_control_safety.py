@@ -271,46 +271,60 @@ def _ld_resource_preflight(
 
 def _validated_ld_result(
     result: Any,
-    expected_item_count: int | None,
+    expected_item_count: int,
 ) -> dict[str, np.ndarray]:
-    """Replay the public shape/value contract of one LD result envelope."""
-    if type(result) is not dict or frozenset(result) != _LD_RESULT_KEYS:
+    """Seal and replay the exact PyO3 LD result before conversion protocols."""
+    if type(result) is not dict:
+        raise RuntimeError("ld_indices native result must be an exact built-in dict")
+
+    result_snapshot = result.copy()
+    keys = tuple(result_snapshot)
+    if any(type(key) is not str for key in keys):
         raise RuntimeError(
             "ld_indices native result must contain exactly x2_signed and g2_signed"
         )
-    x2_signed = result["x2_signed"]
-    g2_signed = result["g2_signed"]
-    if (
-        type(x2_signed) is not np.ndarray
-        or type(g2_signed) is not np.ndarray
-        or x2_signed.dtype != np.dtype(np.float64)
-        or g2_signed.dtype != np.dtype(np.float64)
-        or x2_signed.ndim != 1
-        or g2_signed.ndim != 1
-        or x2_signed.shape != g2_signed.shape
+    key_set = frozenset(keys)
+    if not _LD_RESULT_KEYS.issubset(key_set):
+        raise RuntimeError("ld_indices native result is missing required pair evidence")
+    if len(keys) != 2 or key_set != _LD_RESULT_KEYS:
+        raise RuntimeError(
+            "ld_indices native result must contain exactly x2_signed and g2_signed"
+        )
+
+    x2_source = result_snapshot["x2_signed"]
+    g2_source = result_snapshot["g2_signed"]
+    if type(x2_source) is not list or type(g2_source) is not list:
+        raise RuntimeError("ld_indices native pair vectors must be exact built-in lists")
+
+    x2_snapshot = x2_source.copy()
+    g2_snapshot = g2_source.copy()
+    if len(x2_snapshot) != len(g2_snapshot):
+        raise RuntimeError(
+            "ld_indices native result must contain matching one-dimensional pair vectors"
+        )
+    if any(type(value) is not float for value in x2_snapshot) or any(
+        type(value) is not float for value in g2_snapshot
     ):
         raise RuntimeError(
             "ld_indices native result must contain matching one-dimensional pair vectors"
         )
 
-    pair_count = int(x2_signed.size)
+    pair_count = len(x2_snapshot)
     discriminant = 1 + 8 * pair_count
     root = isqrt(discriminant)
     if pair_count < 1 or root * root != discriminant:
         raise RuntimeError("ld_indices native result must have a triangular pair count")
-    if expected_item_count is not None:
-        expected_pairs = expected_item_count * (expected_item_count - 1) // 2
-        if pair_count != expected_pairs:
-            raise RuntimeError(
-                "ld_indices native pair count must match the admitted item count"
-            )
+    expected_pairs = expected_item_count * (expected_item_count - 1) // 2
+    if pair_count != expected_pairs:
+        raise RuntimeError(
+            "ld_indices native pair count must match the admitted item count"
+        )
+
+    x2_signed = np.array(x2_snapshot, dtype=np.float64, copy=True, order="C")
+    g2_signed = np.array(g2_snapshot, dtype=np.float64, copy=True, order="C")
     if np.any(np.isinf(x2_signed)) or np.any(np.isinf(g2_signed)):
         raise RuntimeError("ld_indices native statistics must be finite or NaN")
-
-    return {
-        "x2_signed": np.array(x2_signed, dtype=np.float64, copy=True, order="C"),
-        "g2_signed": np.array(g2_signed, dtype=np.float64, copy=True, order="C"),
-    }
+    return {"x2_signed": x2_signed, "g2_signed": g2_signed}
 
 
 def _validate_sx2_controls(
@@ -577,23 +591,41 @@ def install(fitstats_module: ModuleType) -> None:
             q_xi_value,
             expected_item_count,
         )
-        try:
-            result = original_ld(
-                responses,
-                factor_id_value,
-                params,
-                model,
-                mask=mask,
-                q_theta=q_theta_value,
-                q_xi=q_xi_value,
-                eps_distance=eps_distance_value,
-            )
-        except KeyError as error:
-            if error.args and error.args[0] in _LD_RESULT_KEYS:
-                raise RuntimeError(
-                    "ld_indices native result is missing required pair evidence"
-                ) from error
-            raise
+
+        core = fitstats_module._core_module()
+        if core is None or not hasattr(core, "ld_indices"):
+            raise RuntimeError("ld_indices requires the compiled Rust core")
+        y, observed, d_of_i = fitstats_module._prepare_dichotomous_diagnostic_inputs(
+            responses, factor_id_value, mask
+        )
+        n_persons, n_items = y.shape
+        if n_persons == 0:
+            raise ValueError("responses must contain at least one person")
+        if n_items < 2:
+            raise ValueError("local-dependence indices need at least two items")
+        n_dims = int(d_of_i.max()) + 1
+        bank = fitstats_module._bank_args(
+            params, d_of_i, model, n_dims, eps_distance_value
+        )
+        result = core.ld_indices(
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            np.zeros(n_dims),
+            np.ones(n_dims),
+            q_theta=q_theta_value,
+            xi_rule="gh",
+            q_xi=q_xi_value,
+        )
         return _validated_ld_result(result, expected_item_count)
 
     safe_ld_indices.__name__ = getattr(original_ld, "__name__", "ld_indices")
