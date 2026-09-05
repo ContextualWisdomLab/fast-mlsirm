@@ -119,7 +119,7 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     )
 
 
-def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
+def test_release_asset_write_is_isolated_and_recoverable_while_draft() -> None:
     text = _workflow_text()
     assets = _job_block(text, "release-assets")
     publish = _job_block(text, "publish-pypi")
@@ -128,7 +128,10 @@ def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
     assert "GH_TOKEN: ${{ github.token }}" in assets
     assert "RELEASE_TAG: ${{ inputs.release_tag }}" in assets
     assert 'gh release upload "$RELEASE_TAG"' in assets
-    assert "--clobber" not in assets
+    # The release is deliberately still a draft here. A retry after a prior
+    # successful asset job must replace same-name draft assets instead of
+    # deadlocking publication before the independently retryable PyPI sink.
+    assert "--clobber" in assets
     assert "secrets.PIPY_TOKEN" not in assets
 
     assert "environment: pypi" in publish
@@ -150,18 +153,18 @@ def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     assert "skip-existing" not in publish
 
 
-def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> None:
+def test_pypi_publish_can_recover_independently_of_draft_asset_upload() -> None:
     text = _workflow_text()
     assets = _job_block(text, "release-assets")
     publish = _job_block(text, "publish-pypi")
 
-    # Both irreversible publication sinks require the same verified builds and
-    # successful SBOM/provenance evidence. They remain independent after that
-    # prerequisite, so a rerun can retry a failed PyPI publication even when
-    # immutable GitHub asset upload correctly refuses to overwrite an asset.
+    # Both publication sinks require the same verified builds and successful
+    # SBOM/provenance evidence. They remain independent after that prerequisite;
+    # release-assets is retry-safe while the GitHub release is still a draft.
     assert "needs: [sdist, wheels, sbom]" in assets
     assert "needs: [sdist, wheels, sbom]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
+    assert "--clobber" in assets
 
 
 def test_new_release_sbom_job_uses_the_explicit_linux_runner_contract() -> None:
