@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 _CREATOR_PREFIXES = ("Person: ", "Organization: ", "Tool: ")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_LINE_BREAK_CHARACTERS = frozenset("\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029")
 _SPDX_CREATED_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
@@ -36,6 +37,14 @@ def _nonblank_string(document: dict[str, object], field: str) -> str:
     value = document.get(field)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"release SBOM {field} must be a non-blank string")
+    return value
+
+
+def _single_line_string(document: dict[str, object], field: str) -> str:
+    """Return one required SPDX single-line field without normalizing its text."""
+    value = _nonblank_string(document, field)
+    if any(character in _LINE_BREAK_CHARACTERS for character in value):
+        raise ValueError(f"release SBOM {field} must be a single line of text")
     return value
 
 
@@ -73,6 +82,8 @@ def _validate_creation_info(value: object) -> None:
     for creator in creators:
         if not isinstance(creator, str) or not creator.strip():
             raise ValueError("release SBOM creationInfo.creators must contain non-blank strings")
+        if any(character in _LINE_BREAK_CHARACTERS for character in creator):
+            raise ValueError("release SBOM creationInfo.creators must be single-line identities")
         if not creator.startswith(_CREATOR_PREFIXES) or not creator.split(":", 1)[1].strip():
             raise ValueError(
                 "release SBOM creationInfo.creators must use Person, Organization, or Tool identities"
@@ -103,7 +114,7 @@ def validate_release_spdx(path: Path) -> None:
                 f"release SBOM {field} must be {expected!r}, got {actual!r}"
             )
 
-    _nonblank_string(document, "name")
+    _single_line_string(document, "name")
     namespace = _nonblank_string(document, "documentNamespace")
     _validate_namespace(namespace)
     _validate_creation_info(document.get("creationInfo"))
