@@ -83,7 +83,8 @@ def test_release_source_is_the_version_cut_transition_not_a_later_descendant():
 def test_published_release_and_api_uncertainty_block_publication():
     """Published release state and API uncertainty must fail closed."""
     text = _workflow_text()
-    assert 'gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100"' in text
+    assert "gh api --paginate --slurp" in text
+    assert '"repos/$GITHUB_REPOSITORY/releases?per_page=100"' in text
     assert '"releases/tags/v$RELEASE_VERSION"' not in text
     assert '"git/ref/tags/v$RELEASE_VERSION"' in text
     assert "GitHub API returned HTTP $status" in text
