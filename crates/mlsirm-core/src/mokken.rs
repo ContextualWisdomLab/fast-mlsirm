@@ -75,6 +75,9 @@
 /// Maximum number of cells in each quadratic item-pair matrix.
 pub const MOKKEN_MAX_MATRIX_CELLS: usize = 4_000_000;
 
+/// Maximum number of logical response cells admitted by direct Mokken APIs.
+pub const MOKKEN_MAX_RESPONSE_CELLS: usize = 20_000_000;
+
 /// Scalability coefficients and Mokken Z statistics for one item set.
 #[derive(Debug, Clone)]
 pub struct MokkenH {
@@ -108,6 +111,11 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
         ));
     }
     let expected = crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if expected > MOKKEN_MAX_RESPONSE_CELLS {
+        return Err(format!(
+            "n_persons * n_items = {expected} exceeds the {MOKKEN_MAX_RESPONSE_CELLS}-cell response budget"
+        ));
+    }
     if x.len() != expected {
         return Err(format!(
             "responses length {} != n_persons*n_items {}",
