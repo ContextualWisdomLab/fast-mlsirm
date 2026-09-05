@@ -329,7 +329,7 @@ pub fn aisp(
         let mut k_rest = 0.0f64;
         let z_c = |k_rest: f64| {
             let adj = alpha / (k1 * (k1 - 1.0) * 0.5 + k_rest);
-            normal_upper_quantile(adj)
+            normal_upper_quantile(adj).abs()
         };
         // start pair: max eligible Hij after applying search.normal.R's
         // lower-triangle row epsilon. R subtracts row * 1e-10 before argmax,
