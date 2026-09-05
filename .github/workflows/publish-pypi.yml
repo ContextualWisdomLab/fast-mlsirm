@@ -113,6 +113,10 @@ jobs:
     needs: verify-release
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -127,6 +131,10 @@ jobs:
           command: sdist
           maturin-version: v1.14.1
           args: --out dist
+      - name: Attest sdist build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-sdist
@@ -137,6 +145,10 @@ jobs:
     needs: verify-release
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -216,14 +228,57 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           maturin-version: v1.14.1
           args: --release --out dist -i ${{ matrix.interpreter }}
+      - name: Attest wheel build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
           path: dist
 
+  sbom:
+    name: release SBOM
+    needs: verify-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_commit }}
+          persist-credentials: false
+      - name: Prepare SBOM output directory
+        run: mkdir -p dist
+      - name: Generate SPDX JSON SBOM from release source
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          path: .
+          format: spdx-json
+          syft-version: v1.51.1
+          output-file: dist/fast-mlsirm.spdx.json
+          upload-artifact: "false"
+          upload-release-assets: "false"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Validate SPDX 2.3 SBOM
+        run: python scripts/validate_release_spdx.py dist/fast-mlsirm.spdx.json
+      - name: Attest release SBOM provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: dist/fast-mlsirm.spdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-sbom
+          path: dist/fast-mlsirm.spdx.json
+
   release-assets:
     name: attach release assets
-    needs: [sdist, wheels]
+    needs: [sdist, wheels, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -234,6 +289,10 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-sbom
+          path: dist
       - name: List built artifacts
         run: ls -la dist
       - name: Attach release assets
@@ -244,7 +303,7 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI
-    needs: [sdist, wheels]
+    needs: [sdist, wheels, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: pypi

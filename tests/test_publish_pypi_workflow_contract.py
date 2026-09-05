@@ -155,10 +155,18 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
     assets = _job_block(text, "release-assets")
     publish = _job_block(text, "publish-pypi")
 
-    # Release assets and PyPI are two independent publication sinks fed by the
-    # same verified build artifacts. A rerun after GitHub assets already exist
-    # must still be able to retry a previously failed PyPI publication rather
-    # than being skipped because immutable asset upload correctly fails closed.
-    assert "needs: [sdist, wheels]" in assets
-    assert "needs: [sdist, wheels]" in publish
+    # Both irreversible publication sinks require the same verified builds and
+    # successful SBOM/provenance evidence. They remain independent after that
+    # prerequisite, so a rerun can retry a failed PyPI publication even when
+    # immutable GitHub asset upload correctly refuses to overwrite an asset.
+    assert "needs: [sdist, wheels, sbom]" in assets
+    assert "needs: [sdist, wheels, sbom]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
+
+
+def test_new_release_sbom_job_uses_the_explicit_linux_runner_contract() -> None:
+    """New release-evidence jobs must not reintroduce a moving Ubuntu alias."""
+    sbom = _job_block(_workflow_text(), "sbom")
+
+    assert "runs-on: ubuntu-24.04" in sbom
+    assert "runs-on: ubuntu-latest" not in sbom
