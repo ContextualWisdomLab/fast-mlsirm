@@ -50,3 +50,8 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
+## 2026-08-30 - [JSON Deserialization with Duplicate Keys and Non-Finite Numbers]
+**Vulnerability:** The `json.loads` calls in `fast_mlsirm/rubric/generation.py` (`_contract_object`) and `fast_mlsirm/llm_judge.py` (`_response_object`) parsed untrusted JSON payloads without explicitly rejecting duplicate keys or non-finite numbers (e.g. `NaN`, `Infinity`). This could lead to JSON smuggling, logic bugs, or cache poisoning when dealing with non-standard JSON representations.
+**Learning:** Python's default `json.loads` is overly permissive. By default, it allows duplicate object keys (last key wins) and non-finite numbers, which are outside the strict JSON specification and can lead to unexpected behaviors when untrusted payloads bypass assumptions made about standard interoperable JSON.
+**Prevention:** When using `json.loads` to deserialize untrusted JSON in Python, always explicitly provide an `object_pairs_hook` to reject duplicate keys and a `parse_constant` hook to reject non-finite numbers.
