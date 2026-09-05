@@ -317,11 +317,12 @@ def _trusted_score_source(responses: object) -> object:
         if row_type not in _TRUSTED_RESPONSE_SCALAR_TYPES:
             raise ValueError("responses must be a numeric array")
 
-    if rectangular_rows and rectangular_width is not None and rectangular_width < 2:
+    if not rectangular_rows:
+        raise ValueError("responses must be a 2-D persons x items array")
+    if rectangular_width is not None and rectangular_width < 2:
         raise ValueError("mokken requires at least 2 items")
     if (
-        rectangular_rows
-        and rectangular_width is not None
+        rectangular_width is not None
         and rectangular_width * rectangular_width > _MAX_MOKKEN_MATRIX_CELLS
     ):
         _raise_item_matrix_resource_error(rectangular_width)
@@ -428,6 +429,8 @@ def _validated_scores(responses: object) -> tuple[np.ndarray, int, int]:
             raise ValueError("responses must be a 2-D persons x items array")
         admitted_ndarray_shape = tuple(int(axis) for axis in source.shape)
         source_n_items = int(source.shape[1])
+        if source_n_items < 2:
+            raise ValueError("mokken requires at least 2 items")
         if source_n_items * source_n_items > _MAX_MOKKEN_MATRIX_CELLS:
             _raise_item_matrix_resource_error(source_n_items)
         if source.dtype.kind == "c":
