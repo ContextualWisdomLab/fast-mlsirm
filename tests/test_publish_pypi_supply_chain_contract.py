@@ -50,11 +50,12 @@ def test_sdist_and_wheels_emit_builder_local_provenance():
 
 
 def test_sbom_is_exact_release_source_bound_spdx_and_attested():
-    """The released SBOM is generated and attested from the reviewed source commit."""
+    """The released SBOM is generated, validated, and attested from the reviewed source."""
     text = _workflow_text()
     block = _job_block(text, "sbom", "release-assets")
     attest = f"uses: actions/attest-build-provenance@{_ATTEST_BUILD_PROVENANCE_SHA}"
     sbom = f"uses: anchore/sbom-action@{_SBOM_ACTION_SHA}"
+    validate = "- name: Validate SPDX 2.3 SBOM"
 
     assert "needs: verify-release" in block
     assert "contents: read" in block
@@ -69,9 +70,13 @@ def test_sbom_is_exact_release_source_bound_spdx_and_attested():
     assert "output-file: dist/fast-mlsirm.spdx.json" in block
     assert 'upload-artifact: "false"' in block
     assert 'upload-release-assets: "false"' in block
+    assert validate in block
+    assert "json.load" in block
+    assert 'document.get("spdxVersion")' in block
+    assert 'expected = "SPDX-2.3"' in block
     assert attest in block
     assert "subject-path: dist/fast-mlsirm.spdx.json" in block
-    assert block.index(sbom) < block.index(attest)
+    assert block.index(sbom) < block.index(validate) < block.index(attest)
     assert "name: release-sbom" in block
     assert "path: dist/fast-mlsirm.spdx.json" in block
 
