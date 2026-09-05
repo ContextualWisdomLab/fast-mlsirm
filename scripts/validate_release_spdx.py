@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 _CREATOR_PREFIXES = ("Person: ", "Organization: ", "Tool: ")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_SPDX_CREATED_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def _reject_nonfinite(token: str) -> None:
@@ -50,21 +51,21 @@ def _validate_namespace(namespace: str) -> None:
 
 
 def _validate_creation_info(value: object) -> None:
-    """Validate the required SPDX creator and UTC creation-time evidence."""
+    """Validate the required SPDX creator and exact UTC creation-time evidence."""
     if not isinstance(value, dict):
         raise ValueError("release SBOM creationInfo must be an object")
 
     created = value.get("created")
-    if not isinstance(created, str) or not created.endswith("Z"):
-        raise ValueError("release SBOM creationInfo.created must be an ISO-8601 UTC timestamp")
+    if not isinstance(created, str) or _SPDX_CREATED_PATTERN.fullmatch(created) is None:
+        raise ValueError(
+            "release SBOM creationInfo.created must use SPDX format YYYY-MM-DDThh:mm:ssZ"
+        )
     try:
-        parsed_created = datetime.fromisoformat(created[:-1] + "+00:00")
+        datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ")
     except ValueError as exc:
         raise ValueError(
-            "release SBOM creationInfo.created must be an ISO-8601 UTC timestamp"
+            "release SBOM creationInfo.created must use SPDX format YYYY-MM-DDThh:mm:ssZ"
         ) from exc
-    if parsed_created.utcoffset() is None or parsed_created.utcoffset().total_seconds() != 0:
-        raise ValueError("release SBOM creationInfo.created must be an ISO-8601 UTC timestamp")
 
     creators = value.get("creators")
     if not isinstance(creators, list) or not creators:
