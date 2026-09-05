@@ -37,12 +37,12 @@ def _nonblank_string(document: dict[str, object], field: str) -> str:
 
 
 def _validate_namespace(namespace: str) -> None:
-    """Require the SPDX document namespace to be an absolute URI without whitespace."""
+    """Require the SPDX document namespace to be an absolute, fragment-free URI."""
     if any(character.isspace() for character in namespace):
-        raise ValueError("release SBOM documentNamespace must be an absolute URI")
+        raise ValueError("release SBOM documentNamespace must be an absolute fragment-free URI")
     parsed = urlsplit(namespace)
-    if not parsed.scheme:
-        raise ValueError("release SBOM documentNamespace must be an absolute URI")
+    if not parsed.scheme or parsed.fragment:
+        raise ValueError("release SBOM documentNamespace must be an absolute fragment-free URI")
 
 
 def _validate_creation_info(value: object) -> None:
