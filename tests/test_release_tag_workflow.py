@@ -71,7 +71,7 @@ def test_release_source_is_the_version_cut_transition_not_a_later_descendant():
     text = _workflow_text()
     version_step = "Verify the requested version is the released source version"
     transition_step = "Verify the release source is the version-cut transition"
-    tag_state_step = "Verify the release is absent and classify the tag state"
+    tag_state_step = "Verify release state and classify tag recovery"
     assert transition_step in text
     assert 'git rev-parse "$RELEASE_COMMIT^"' in text
     assert "release commit must have a verifiable first parent" in text
@@ -80,15 +80,33 @@ def test_release_source_is_the_version_cut_transition_not_a_later_descendant():
     assert text.index(version_step) < text.index(transition_step) < text.index(tag_state_step)
 
 
-def test_existing_release_and_api_uncertainty_block_publication():
-    """An existing release or an uncertain API answer can never be reused."""
+def test_published_release_and_api_uncertainty_block_publication():
+    """A published release or an uncertain API answer can never be reused."""
     text = _workflow_text()
     assert '"releases/tags/v$RELEASE_VERSION"' in text
     assert '"git/ref/tags/v$RELEASE_VERSION"' in text
     assert "404)" in text
     assert "200)" in text
     assert "GitHub API returned HTTP $status" in text
-    assert "refusing to overwrite or reuse it" in text
+    assert "is already published; refusing to overwrite or reuse it" in text
+
+
+def test_existing_matching_draft_can_resume_before_publication():
+    """An interrupted draft is reusable only with the same release identity and tag."""
+    text = _workflow_text()
+    assert "resume_existing_release=false" in text
+    assert "resume_existing_release=true" in text
+    assert 'response.get("draft") is not True' in text
+    assert 'response.get("tag_name") != expected_name' in text
+    assert 'response.get("name") != expected_name' in text
+    assert "existing draft release identity does not match the requested release" in text
+    assert "existing draft release is missing its required release tag" in text
+    assert "resuming exact-tag publication" in text
+    guard = "if: steps.release_tag_state.outputs.resume_existing_release != 'true'"
+    create_step = "Create the draft GitHub release from the verified tag"
+    assert guard in text
+    assert text.index(create_step) < text.index(guard) + len(guard)
+    assert abs(text.index(guard) - text.index(create_step)) < 200
 
 
 def test_tag_without_release_resumes_only_at_the_requested_source_commit():
@@ -96,7 +114,7 @@ def test_tag_without_release_resumes_only_at_the_requested_source_commit():
     text = _workflow_text()
     assert "resume_existing_tag=true" in text
     assert "resume_existing_tag=false" in text
-    assert "resuming publication for the existing immutable tag" in text
+    assert "tag v$RELEASE_VERSION exists and targets the requested immutable source" in text
     assert "existing tag does not target the requested release commit" in text
     assert 'actual_tag_sha != os.environ["RELEASE_COMMIT"]' in text
     guard = "if: steps.release_tag_state.outputs.resume_existing_tag != 'true'"
@@ -133,14 +151,15 @@ def test_release_tag_is_created_atomically_at_the_explicit_source_commit():
     assert 'actual_sha != os.environ["RELEASE_COMMIT"]' in text
 
 
-def test_release_creation_requires_the_verified_existing_tag():
-    """Release publication cannot silently create or retarget a tag after checks."""
+def test_release_creation_requires_the_verified_existing_tag_and_stays_draft():
+    """Assets remain attachable until the downstream publication workflow finalizes."""
     text = _workflow_text()
-    preflight = "Verify the release is absent and classify the tag state"
+    preflight = "Verify release state and classify tag recovery"
     atomic_create = "Atomically create the immutable release tag"
-    publish = 'gh release create "v$RELEASE_VERSION"'
-    assert publish in text
+    create_release = 'gh release create "v$RELEASE_VERSION"'
+    assert create_release in text
     assert "--verify-tag" in text
+    assert "--draft" in text
     assert '--target "$GITHUB_SHA"' not in text
     assert "--notes-file release_notes.md" in text
-    assert text.index(preflight) < text.index(atomic_create) < text.index(publish)
+    assert text.index(preflight) < text.index(atomic_create) < text.index(create_release)
