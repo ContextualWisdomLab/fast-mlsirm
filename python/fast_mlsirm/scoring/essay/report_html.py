@@ -212,7 +212,7 @@ main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 .hero { padding: 48px 0 24px; }
 h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); }
 .subtitle { margin: 0; max-width: 78ch; }
-section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-radius: 10px; }
+section { margin-top: 20px; padding: 20px; border: 1px solid var(--line, #d9ded6); border-radius: 10px; }
 .review-required { border-inline-start: 8px solid var(--review-required); }
 .review-clear { border-inline-start: 8px solid var(--review-clear); }
 .notice { padding: 14px; border: 2px solid currentColor; font-weight: 650; }
@@ -224,13 +224,13 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+thead th, tbody th, td { padding: 10px; border: 1px solid var(--line, #d9ded6); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
-pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
-.empty-state { font-style: italic; color: GrayText; }
+pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--line, #d9ded6); white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty-state { font-style: italic; color: var(--muted, #60656f); }
 @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } .details-grid dd { margin-bottom: 8px; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
