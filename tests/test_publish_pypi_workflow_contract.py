@@ -155,6 +155,26 @@ def test_release_asset_write_is_isolated_and_recoverable_while_draft() -> None:
     assert "contents: write" not in publish
 
 
+def test_release_mutations_replay_draft_state_at_the_mutation_seam() -> None:
+    """A stale early draft check must not authorize later destructive writes."""
+    text = _workflow_text()
+    assets = _job_block(text, "release-assets")
+    finalize = _job_block(text, "finalize-release")
+
+    for block, mutation in (
+        (assets, 'gh release upload "$RELEASE_TAG"'),
+        (finalize, 'gh release edit "$RELEASE_TAG"'),
+    ):
+        assert "- name: Revalidate exact draft release state" in block
+        assert "gh api --paginate --slurp" in block
+        assert 'release.get("tag_name") == expected_tag' in block
+        assert "len(matches) != 1" in block
+        assert 'release.get("draft") is not True' in block
+        assert block.index("- name: Revalidate exact draft release state") < block.index(
+            mutation
+        )
+
+
 def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     text = _workflow_text()
     publish = _job_block(text, "publish-pypi")
