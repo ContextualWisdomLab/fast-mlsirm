@@ -115,6 +115,12 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
     if x.iter().any(|&v| v < 0) {
         return Err("scores must be nonnegative integers".to_string());
     }
+    if x
+        .iter()
+        .any(|&v| (v as f64) as i128 != i128::from(v))
+    {
+        return Err("scores must be exactly representable as f64".to_string());
+    }
     Ok(())
 }
 
