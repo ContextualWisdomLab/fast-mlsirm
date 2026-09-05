@@ -310,13 +310,13 @@ pub fn aisp(
     c: f64,
     alpha: f64,
 ) -> Result<Vec<u32>, String> {
-    validate(x, n_persons, n_items)?;
     if !(0.0..1.0).contains(&c) {
         return Err("lower bound c must be in [0, 1)".to_string());
     }
     if !(alpha > 0.0 && alpha < 1.0) {
         return Err("alpha must be in (0, 1)".to_string());
     }
+    validate(x, n_persons, n_items)?;
     let (s, smax) = pairwise(x, n_persons, n_items)?;
     let j = n_items;
     let sqn = ((n_persons - 1) as f64).sqrt();
