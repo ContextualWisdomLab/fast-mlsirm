@@ -223,13 +223,13 @@ pub fn coef_h(x: &[i64], n_persons: usize, n_items: usize) -> Result<MokkenH, St
     Ok(MokkenH { hij, hi, h, zij, zi, z })
 }
 
-/// Standard-normal upper quantile via inverse complementary error function
-/// (Acklam-style rational approximation; |error| < 1.15e-9, sufficient for
-/// an alpha cut-off). Returns z such that P(N(0,1) > z) = p.
+/// Standard-normal upper quantile via an Acklam-style rational approximation.
+///
+/// Returns `z` such that `P(N(0,1) > z) = p`. Tail branches work directly
+/// from the supplied tail probability so tiny positive probabilities do not
+/// disappear when rounded through `1.0 - p`.
 pub(crate) fn normal_upper_quantile(p: f64) -> f64 {
-    // invert the CDF at 1 - p using Peter Acklam's approximation
-    let q = 1.0 - p;
-    debug_assert!(q > 0.0 && q < 1.0);
+    debug_assert!(p > 0.0 && p < 1.0);
     const A: [f64; 6] = [
         -3.969683028665376e+01,
         2.209460984245205e+02,
@@ -260,21 +260,23 @@ pub(crate) fn normal_upper_quantile(p: f64) -> f64 {
         3.754408661907416e+00,
     ];
     let plow = 0.02425;
-    // standard Acklam sign convention: lower branch yields negative values,
-    // central passes through, upper is the negated lower expression.
-    if q < plow {
-        let r = (-2.0 * q.ln()).sqrt();
+    let tail_ratio = |r: f64| {
         (((((C[0] * r + C[1]) * r + C[2]) * r + C[3]) * r + C[4]) * r + C[5])
             / ((((D[0] * r + D[1]) * r + D[2]) * r + D[3]) * r + 1.0)
-    } else if q <= 1.0 - plow {
+    };
+
+    if p < plow {
+        let r = (-2.0 * p.ln()).sqrt();
+        -tail_ratio(r)
+    } else if p <= 1.0 - plow {
+        let q = 1.0 - p;
         let r = q - 0.5;
         let t = r * r;
         (((((A[0] * t + A[1]) * t + A[2]) * t + A[3]) * t + A[4]) * t + A[5]) * r
             / (((((B[0] * t + B[1]) * t + B[2]) * t + B[3]) * t + B[4]) * t + 1.0)
     } else {
-        let r = (-2.0 * (1.0 - q).ln()).sqrt();
-        -((((((C[0] * r + C[1]) * r + C[2]) * r + C[3]) * r + C[4]) * r + C[5])
-            / ((((D[0] * r + D[1]) * r + D[2]) * r + D[3]) * r + 1.0))
+        let r = (-2.0 * (-p).ln_1p()).sqrt();
+        tail_ratio(r)
     }
 }
 
