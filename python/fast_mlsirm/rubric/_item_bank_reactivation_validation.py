@@ -57,8 +57,13 @@ def _creation_fingerprint(record: _base.ItemBankLifecycleRecord) -> str | None:
 
 
 def _verify_current_record(record: Any) -> _base.ItemBankLifecycleRecord:
-    """Replay mutable state and require its external factory-time identity seal."""
-    verified = _ORIGINAL_VERIFY_CURRENT_RECORD(record)
+    """Replay mutable state and preserve the stable lifecycle failure boundary."""
+    try:
+        verified = _ORIGINAL_VERIFY_CURRENT_RECORD(record)
+    except _base.ItemBankLifecycleError:
+        raise
+    except ValueError:
+        _base._raise_lifecycle_replay_mismatch()
     sealed_fingerprint = _creation_fingerprint(verified)
     if (
         sealed_fingerprint is None
@@ -66,6 +71,73 @@ def _verify_current_record(record: Any) -> _base.ItemBankLifecycleRecord:
     ):
         _base._raise_lifecycle_replay_mismatch()
     return verified
+
+
+def _evidence_reference_state(
+    reference: Any,
+) -> dict[str, Any]:
+    """Replay one standalone evidence identity without caller protocol dispatch."""
+    if type(reference) is not _base.ItemBankEvidenceReference:
+        raise ValueError("evidence reference must be an exact ItemBankEvidenceReference")
+    state = vars(reference)
+    field_names = tuple(state)
+    if (
+        any(type(name) is not str for name in field_names)
+        or frozenset(field_names) != _base._EVIDENCE_REFERENCE_INSTANCE_FIELDS
+        or type(state["evidence_kind"]) is not _base.ItemBankEvidenceKind
+        or type(state["evidence_id"]) is not str
+        or type(state["evidence_fingerprint"]) is not str
+    ):
+        raise ValueError("evidence reference no longer matches its normalized identity")
+    _base._identifier(state["evidence_id"], "evidence_id")
+    _base._fingerprint(state["evidence_fingerprint"], "evidence_fingerprint")
+    return state
+
+
+def _evidence_reference_to_dict(
+    reference: _base.ItemBankEvidenceReference,
+) -> dict[str, str]:
+    """Serialize one evidence identity only after package-owned invariant replay."""
+    state = _evidence_reference_state(reference)
+    return {
+        "evidence_kind": state["evidence_kind"].value,
+        "evidence_id": state["evidence_id"],
+        "evidence_fingerprint": state["evidence_fingerprint"],
+    }
+
+
+def _transition_evidence_references(
+    values: Iterable[_base.ItemBankEvidenceReference],
+) -> tuple[_base.ItemBankEvidenceReference, ...]:
+    """Bound and replay newly supplied transition evidence before normalization."""
+    try:
+        raw = _base._bounded_values(
+            values,
+            "evidence_references",
+            minimum=0,
+            maximum=_base._MAX_EVIDENCE_REFERENCES,
+        )
+    except ValueError:
+        raise _base.ItemBankLifecycleError(
+            "invalid_evidence_references",
+            "$.evidence_references",
+            "evidence references must be a bounded collection",
+        ) from None
+
+    for index, reference in enumerate(raw):
+        try:
+            _evidence_reference_state(reference)
+        except ValueError:
+            raise _base.ItemBankLifecycleError(
+                "invalid_evidence_reference",
+                f"$.evidence_references[{index}]",
+                "evidence reference no longer matches its normalized identity",
+            ) from None
+
+    return _base._normalize_evidence_references(
+        raw,
+        error_type=_base.ItemBankLifecycleError,
+    )
 
 
 def transition_item_bank_record(
@@ -76,11 +148,8 @@ def transition_item_bank_record(
     transition_reason_id: str,
     approved_use_ids: Iterable[str] | None = None,
 ) -> _base.ItemBankLifecycleRecord:
-    """Reject historical evidence fingerprints on suspended-item reactivation."""
-    additions = _base._normalize_evidence_references(
-        evidence_references,
-        error_type=_base.ItemBankLifecycleError,
-    )
+    """Replay transition evidence and reject historical reactivation fingerprints."""
+    additions = _transition_evidence_references(evidence_references)
     successor = _ORIGINAL_TRANSITION_ITEM_BANK_RECORD(
         current_record,
         target_state,
@@ -120,6 +189,7 @@ def install(module: Any) -> None:
     """Install lifecycle identity and fresh-evidence enforcement."""
     module._create_record = _create_record
     module._verify_current_record = _verify_current_record
+    module.ItemBankEvidenceReference.to_dict = _evidence_reference_to_dict
     module.transition_item_bank_record = transition_item_bank_record
 
 
