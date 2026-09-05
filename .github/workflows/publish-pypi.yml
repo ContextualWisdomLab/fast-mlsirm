@@ -295,7 +295,7 @@ jobs:
           path: dist
       - name: List built artifacts
         run: ls -la dist
-      - name: Attach release assets
+      - name: Attach release assets to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -322,3 +322,17 @@ jobs:
         with:
           password: ${{ secrets.PIPY_TOKEN }}
           attestations: false
+
+  finalize-release:
+    name: publish immutable GitHub release
+    needs: [release-assets, publish-pypi]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the fully assembled draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false
