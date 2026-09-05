@@ -39,8 +39,13 @@
   (`None` or `{"kind": "single"}`); explicit `singlefree`, multigroup, or
   multilevel population metadata fails closed rather than silently reusing
   zero-mean/unit-SD expectations.
-- Preflight LD probability-table storage, pair-output cardinality,
-  pair-by-person work, and pair-by-quadrature work before native dispatch.
-  This bounds otherwise valid quadrature/item combinations that could request
-  multi-gigabyte Rust allocations or billions of quadratic diagnostic
-  iterations without changing the Rust-owned X2/G2 arithmetic.
+- Make `mlsirm-core` the canonical owner of LD resource admission with the
+  versioned `ld-resource-v1` contract. The Rust public boundary now checks the
+  item-by-quadrature probability surface, upper-triangle pair outputs,
+  pair-by-person work, and pair-by-quadrature work before `icc_nodes` or pair
+  allocation, using checked/division-before-multiplication arithmetic. MIRT
+  continues to ignore the latent-space rule while spatial GH/QMC/MC node counts
+  follow their native model-aware cardinality. Python retains the same ceilings
+  as an earlier caller boundary rather than substituting for the Rust invariant.
+  `ld_resource_preflight` exposes the admitted native work surface without
+  executing the diagnostic so Rust consumers can validate capacity explicitly.
