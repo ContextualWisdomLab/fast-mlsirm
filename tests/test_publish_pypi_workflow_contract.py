@@ -57,6 +57,21 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert text.count("maturin-version: v1.14.1") == 2
 
 
+def test_publication_requires_exact_unpublished_draft_before_destructive_retry() -> None:
+    """Direct dispatch must not let draft-recovery semantics mutate a published release."""
+    verify = _job_block(_workflow_text(), "verify-release")
+
+    assert "- name: Require exact draft release state" in verify
+    assert "GH_TOKEN: ${{ github.token }}" in verify
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in verify
+    assert "gh api --paginate --slurp" in verify
+    assert 'releases?per_page=100' in verify
+    assert 'release.get("tag_name") == expected_tag' in verify
+    assert "len(matches) != 1" in verify
+    assert 'release.get("draft") is not True' in verify
+    assert "publication requires exactly one matching unpublished draft release" in verify
+
+
 def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
     wheels = _job_block(_workflow_text(), "wheels")
 
