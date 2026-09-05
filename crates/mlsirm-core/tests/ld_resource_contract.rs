@@ -123,3 +123,60 @@ fn ld_resource_contract_preserves_mirt_xi_nonuse() {
     assert_eq!(usage.pair_person_cells, 20);
     assert_eq!(usage.pair_quadrature_cells, 7);
 }
+
+#[test]
+fn ld_resource_contract_reuses_native_stochastic_node_rules() {
+    let alpha = vec![0.0; 2];
+    let b = vec![0.0; 2];
+    let factor_id = vec![0usize; 2];
+
+    let zeta = vec![0.0; 4];
+    let spatial = bank(&alpha, &b, &zeta, &factor_id, ModelType::Mls2plm, 2);
+    let usage = ld_resource_preflight(
+        &spatial,
+        20,
+        7,
+        XiRule::Halton {
+            n: 100,
+            shift_seed: 17,
+        },
+    )
+    .expect("supported Halton cardinality must be admitted without node allocation");
+    assert_eq!(usage.probability_cells, 1_400);
+    assert_eq!(usage.pair_outputs, 1);
+    assert_eq!(usage.pair_person_cells, 20);
+    assert_eq!(usage.pair_quadrature_cells, 700);
+
+    let high_dim_zeta = vec![0.0; 14];
+    let high_dim = bank(
+        &alpha,
+        &b,
+        &high_dim_zeta,
+        &factor_id,
+        ModelType::Mls2plm,
+        7,
+    );
+    let error = ld_resource_preflight(
+        &high_dim,
+        20,
+        7,
+        XiRule::Halton {
+            n: 100,
+            shift_seed: 0,
+        },
+    )
+    .expect_err("Halton dimensional support must match native node construction");
+    assert!(error.contains("Halton rule supports latent_dim <= 6"));
+
+    let error = ld_resource_preflight(
+        &spatial,
+        20,
+        7,
+        XiRule::MonteCarlo {
+            n: 1_000_001,
+            seed: 23,
+        },
+    )
+    .expect_err("Monte Carlo point ceiling must match native node construction");
+    assert!(error.contains("supports at most 1000000 points"));
+}
