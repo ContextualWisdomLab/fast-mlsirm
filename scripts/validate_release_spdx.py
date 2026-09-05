@@ -14,6 +14,9 @@ from urllib.parse import urlsplit
 _CREATOR_PREFIXES = ("Person: ", "Organization: ", "Tool: ")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _LINE_BREAK_CHARACTERS = frozenset("\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+_RFC3986_LITERAL_CHARACTERS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?[]@!$&'()*+,;="
+)
 _SPDX_CREATED_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
@@ -49,9 +52,13 @@ def _single_line_string(document: dict[str, object], field: str) -> str:
 
 
 def _validate_namespace(namespace: str) -> None:
-    """Require an absolute, RFC 3986 percent-well-formed, fragment-free URI."""
-    if any(character.isspace() for character in namespace) or _INVALID_PERCENT_ESCAPE.search(
-        namespace
+    """Require an absolute, RFC 3986 character-safe, fragment-free URI."""
+    if (
+        any(
+            character != "%" and character not in _RFC3986_LITERAL_CHARACTERS
+            for character in namespace
+        )
+        or _INVALID_PERCENT_ESCAPE.search(namespace)
     ):
         raise ValueError("release SBOM documentNamespace must be an absolute fragment-free URI")
     parsed = urlsplit(namespace)
