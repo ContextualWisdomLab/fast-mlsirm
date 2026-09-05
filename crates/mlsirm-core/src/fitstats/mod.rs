@@ -13,7 +13,7 @@ mod implementation;
 
 pub use implementation::*;
 
-use crate::nodes::{XiRule, MAX_XI_LATENT_DIM, MAX_XI_POINTS};
+use crate::nodes::XiRule;
 use crate::scoring::{validate_bank, ItemBank, PriorSpec};
 
 /// Version of the native local-dependence resource/work contract.
@@ -30,12 +30,18 @@ pub const LD_MAX_PAIR_QUADRATURE_CELLS: usize = 200_000_000;
 /// Exact work surfaces admitted for one native LD request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LdResourceUsage {
+    /// Item-by-quadrature cells needed for model-implied response probabilities.
     pub probability_cells: usize,
+    /// Upper-triangle item pairs returned by the diagnostic.
     pub pair_outputs: usize,
+    /// Pair-by-person cells scanned for observed 2x2 tables.
     pub pair_person_cells: usize,
+    /// Pair-by-quadrature cells scanned for model-implied 2x2 tables.
     pub pair_quadrature_cells: usize,
 }
 
+/// Compute the upper-triangle item-pair cardinality without overflowing before
+/// the resource ceiling can reject the request.
 fn ld_pair_count(n_items: usize) -> Result<usize, String> {
     if n_items < 2 {
         return Err("local-dependence indices need at least 2 items".into());
@@ -49,61 +55,14 @@ fn ld_pair_count(n_items: usize) -> Result<usize, String> {
         .ok_or_else(|| "local-dependence pair count overflows usize".to_string())
 }
 
-fn ld_xi_node_count(bank: &ItemBank<'_>, xi_rule: XiRule) -> Result<usize, String> {
-    let (_, uses_space) = crate::model_exec_flags(bank.model_type);
-    if !uses_space {
-        return Ok(1);
-    }
-    if !(1..=MAX_XI_LATENT_DIM).contains(&bank.latent_dim) {
-        return Err(format!(
-            "latent_dim must be in 1..={MAX_XI_LATENT_DIM} for latent-space nodes"
-        ));
-    }
-    match xi_rule {
-        XiRule::GaussHermite { q_xi } => {
-            crate::quadrature::require_gh_rule(q_xi, "latent-space quadrature size")?;
-            if bank.latent_dim > 3 {
-                return Err(
-                    "tensor Gauss-Hermite supports latent_dim <= 3; use Halton/MonteCarlo".into(),
-                );
-            }
-            q_xi
-                .checked_pow(bank.latent_dim as u32)
-                .ok_or_else(|| "Gauss-Hermite node count overflows usize".to_string())
-        }
-        XiRule::Halton { n, .. } => {
-            if n == 0 {
-                return Err("Halton rule needs n >= 1".into());
-            }
-            if n > MAX_XI_POINTS {
-                return Err(format!(
-                    "Halton rule supports at most {MAX_XI_POINTS} points; got {n}"
-                ));
-            }
-            if bank.latent_dim > 6 {
-                return Err("Halton rule supports latent_dim <= 6".into());
-            }
-            Ok(n)
-        }
-        XiRule::MonteCarlo { n, .. } => {
-            if n == 0 {
-                return Err("MonteCarlo rule needs n >= 1".into());
-            }
-            if n > MAX_XI_POINTS {
-                return Err(format!(
-                    "MonteCarlo rule supports at most {MAX_XI_POINTS} points; got {n}"
-                ));
-            }
-            Ok(n)
-        }
-    }
-}
-
 /// Validate native LD work before `icc_nodes` or pair-vector allocation.
 ///
 /// This is public so Rust consumers can inspect the exact admitted work surface
 /// without executing the diagnostic. [`ld_indices`] always calls this same
-/// function before delegating to the numerical implementation.
+/// function before delegating to the numerical implementation. Latent-space
+/// node support/cardinality comes from `nodes::xi_node_count`, the same native
+/// owner used by actual node construction; MIRT deliberately uses one Xi cell
+/// because it does not consume a latent-space rule.
 pub fn ld_resource_preflight(
     bank: &ItemBank<'_>,
     n_persons: usize,
@@ -119,7 +78,12 @@ pub fn ld_resource_preflight(
     }
 
     crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
-    let n_x = ld_xi_node_count(bank, xi_rule)?;
+    let (_, uses_space) = crate::model_exec_flags(bank.model_type);
+    let n_x = if uses_space {
+        crate::nodes::xi_node_count(xi_rule, bank.latent_dim)?
+    } else {
+        1
+    };
     let quadrature_cells = q_theta
         .checked_mul(n_x)
         .ok_or_else(|| "ld_indices quadrature cell count overflows usize".to_string())?;
@@ -155,7 +119,11 @@ pub fn ld_resource_preflight(
     })
 }
 
-/// Chen-Thissen local-dependence indices with canonical Rust resource admission.
+/// Compute Chen-Thissen local-dependence indices after native resource admission.
+///
+/// The wrapper owns only work/resource admission. The existing numerical kernel
+/// remains in `fitstats_impl.rs` and continues to own X2/G2 expectations,
+/// observed tables, signed direction, and sparse-pair `NaN` semantics.
 #[allow(clippy::too_many_arguments)]
 pub fn ld_indices(
     bank: &ItemBank<'_>,
