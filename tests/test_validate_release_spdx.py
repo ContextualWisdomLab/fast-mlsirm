@@ -69,6 +69,7 @@ def test_duplicate_member_and_nonfinite_json_fail_closed(tmp_path: Path):
         ("dataLicense", "MIT", "dataLicense"),
         ("SPDXID", "SPDXRef-OTHER", "SPDXID"),
         ("name", "", "name"),
+        ("name", "fast-mlsirm\nrelease source", "name"),
         ("documentNamespace", "relative/path", "documentNamespace"),
         (
             "documentNamespace",
@@ -108,6 +109,7 @@ def test_required_document_identity_fields_fail_closed(
         {"created": "2026-09-05T13:00:00Z", "creators": []},
         {"created": "2026-09-05T13:00:00Z", "creators": [""]},
         {"created": "2026-09-05T13:00:00Z", "creators": ["syft-v1.51.1"]},
+        {"created": "2026-09-05T13:00:00Z", "creators": ["Tool: syft\nv1.51.1"]},
         {"created": "2026-09-05T13:00:00+09:00", "creators": ["Tool: syft"]},
         {"created": "2026-09-05Z", "creators": ["Tool: syft"]},
         {"created": "2026-09-05 13:00:00Z", "creators": ["Tool: syft"]},
@@ -118,7 +120,7 @@ def test_required_document_identity_fields_fail_closed(
 def test_creation_information_is_complete_and_exact_spdx_utc(
     tmp_path: Path, creation_info: object
 ):
-    """Creation evidence must use the exact SPDX 2.3 UTC second-resolution form."""
+    """Creation evidence must use SPDX's single-line creator and exact UTC form."""
     module = _validator_module()
     document = _valid_document()
     document["creationInfo"] = creation_info
