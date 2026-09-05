@@ -206,7 +206,7 @@ def _validated_report(
             "essay_facets_connectedness_mismatch",
             "$.report.fit_connected",
             "fit connectedness does not match the source design",
-        ) from None
+        )
 
     replayed = EssayFacetsCalibrationReport(
         report_id=report.report_id,
