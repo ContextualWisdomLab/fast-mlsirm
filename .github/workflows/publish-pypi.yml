@@ -274,9 +274,21 @@ jobs:
           def _reject_nonfinite(token: str) -> None:
               raise ValueError(f"non-standard JSON constant in release SBOM: {token}")
 
+          def _reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+              document: dict[str, object] = {}
+              for key, value in pairs:
+                  if key in document:
+                      raise ValueError(f"duplicate JSON member in release SBOM: {key}")
+                  document[key] = value
+              return document
+
           path = Path("dist/fast-mlsirm.spdx.json")
           with path.open("r", encoding="utf-8") as stream:
-              document = json.load(stream, parse_constant=_reject_nonfinite)
+              document = json.load(
+                  stream,
+                  parse_constant=_reject_nonfinite,
+                  object_pairs_hook=_reject_duplicates,
+              )
 
           expected = "SPDX-2.3"
           actual = document.get("spdxVersion")
