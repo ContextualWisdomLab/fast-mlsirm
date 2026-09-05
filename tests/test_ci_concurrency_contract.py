@@ -82,12 +82,11 @@ def test_ci_push_runs_remain_independent():
     )
 
 
-def test_ci_skips_expensive_jobs_for_inactive_pull_requests():
+def test_ci_admits_only_useful_pull_request_events_and_skips_drafts():
     workflow = _WORKFLOW.read_text(encoding="utf-8")
-    assert (
-        "types: [opened, synchronize, reopened, ready_for_review, "
-        "converted_to_draft, closed]"
-    ) in workflow
+    assert "types: [opened, synchronize, reopened, ready_for_review]" in workflow
+    assert "converted_to_draft" not in workflow
+    assert "closed" not in workflow
     for job_name in (
         "python-matrix",
         "python",
@@ -102,4 +101,3 @@ def test_ci_skips_expensive_jobs_for_inactive_pull_requests():
         assert match is not None
         job = match.group(1)
         assert "!github.event.pull_request.draft" in job
-        assert "github.event.action != 'closed'" in job

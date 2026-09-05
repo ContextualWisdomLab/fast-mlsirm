@@ -14,6 +14,7 @@ def test_cflite_cancels_only_the_superseded_head_for_one_repository_pr() -> None
     ) in workflow
     assert "cancel-in-progress: true" in workflow
     assert "ready_for_review" in workflow
-    assert "converted_to_draft" in workflow
+    assert "converted_to_draft" not in workflow
+    assert "closed" not in workflow
     assert "github.event.pull_request.draft" in workflow
-    assert "github.event.action != 'closed'" in workflow
+    assert workflow.index("concurrency:") < workflow.index("jobs:")

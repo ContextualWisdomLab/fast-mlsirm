@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
   # still requires the exact check context name `python`, so a thin aggregate
   # job below re-exports matrix success under that name.
   python-matrix:
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     name: python (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
@@ -48,7 +48,7 @@ jobs:
   python:
     name: python
     needs: python-matrix
-    if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     steps:
       - name: Require every CPython matrix leg
@@ -58,7 +58,7 @@ jobs:
 
 
   rust:
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -75,7 +75,7 @@ jobs:
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
 
   gpu-smoke:
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # One bounded explicit-GPU parity test remains on every PR. The full
     # paper-design GPU recovery study runs in the scheduled/manual workflow.
     runs-on: ubuntu-latest
@@ -156,7 +156,7 @@ jobs:
           PY
 
   fuzz:
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # Short, bounded coverage-guided fuzzing so PR cost stays low. The
     # property-based Hypothesis tests already run in the `python` job (via the
     # dev extra); this job adds the Atheris coverage-guided harnesses with a
@@ -189,7 +189,7 @@ jobs:
             -max_total_time=60 -timeout=25 fuzz/corpus/config
 
   package:
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
