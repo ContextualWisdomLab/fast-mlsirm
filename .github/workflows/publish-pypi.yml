@@ -329,6 +329,36 @@ jobs:
           path: dist
       - name: List built artifacts
         run: ls -la dist
+      - name: Revalidate exact draft release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          releases_file="$(mktemp)"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases_file"
+          python3 - "$releases_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_tag = os.environ["RELEASE_TAG"]
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_tag
+          ]
+          if len(matches) != 1:
+              raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          release = matches[0]
+          if release.get("draft") is not True or release.get("name") != expected_tag:
+              raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          PY
       - name: Attach release assets to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -351,6 +381,36 @@ jobs:
           merge-multiple: true
       - name: List built artifacts
         run: ls -la dist
+      - name: Revalidate exact draft release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          releases_file="$(mktemp)"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases_file"
+          python3 - "$releases_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_tag = os.environ["RELEASE_TAG"]
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_tag
+          ]
+          if len(matches) != 1:
+              raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          release = matches[0]
+          if release.get("draft") is not True or release.get("name") != expected_tag:
+              raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          PY
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
@@ -365,6 +425,36 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Revalidate exact draft release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          releases_file="$(mktemp)"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases_file"
+          python3 - "$releases_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_tag = os.environ["RELEASE_TAG"]
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_tag
+          ]
+          if len(matches) != 1:
+              raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          release = matches[0]
+          if release.get("draft") is not True or release.get("name") != expected_tag:
+              raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          PY
       - name: Publish the fully assembled draft release
         env:
           GH_TOKEN: ${{ github.token }}
