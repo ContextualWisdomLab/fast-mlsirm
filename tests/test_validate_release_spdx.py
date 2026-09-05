@@ -109,12 +109,16 @@ def test_required_document_identity_fields_fail_closed(
         {"created": "2026-09-05T13:00:00Z", "creators": [""]},
         {"created": "2026-09-05T13:00:00Z", "creators": ["syft-v1.51.1"]},
         {"created": "2026-09-05T13:00:00+09:00", "creators": ["Tool: syft"]},
+        {"created": "2026-09-05Z", "creators": ["Tool: syft"]},
+        {"created": "2026-09-05 13:00:00Z", "creators": ["Tool: syft"]},
+        {"created": "2026-09-05T13:00Z", "creators": ["Tool: syft"]},
+        {"created": "2026-09-05T13:00:00.123Z", "creators": ["Tool: syft"]},
     ],
 )
-def test_creation_information_is_complete_and_utc(
+def test_creation_information_is_complete_and_exact_spdx_utc(
     tmp_path: Path, creation_info: object
 ):
-    """Creation time and creator evidence must satisfy the SPDX 2.3 envelope."""
+    """Creation evidence must use the exact SPDX 2.3 UTC second-resolution form."""
     module = _validator_module()
     document = _valid_document()
     document["creationInfo"] = creation_info
