@@ -328,28 +328,31 @@ pub fn aisp(
             let adj = alpha / (k1 * (k1 - 1.0) * 0.5 + k_rest);
             normal_upper_quantile(adj)
         };
-        // start pair: max Hij among free pairs with |Zij| >= Z_c. Ties mirror
-        // mokken's eps rule (search.normal.R subtracts row*1e-10 where row is
-        // the LARGER member index): smaller larger-member index wins, then
-        // smaller smaller-member index.
+        // start pair: max eligible Hij after applying search.normal.R's
+        // lower-triangle row epsilon. R subtracts row * 1e-10 before argmax,
+        // so the rule governs near-ties as well as bit-identical Hij values.
+        // Here b is the larger zero-based member index, hence R row = b + 1.
         let zc0 = z_c(0.0);
-        let mut best: Option<(usize, usize, f64)> = None;
+        let mut best: Option<(usize, usize, f64, f64)> = None;
         for (ai, &a) in free.iter().enumerate() {
             for &b in free.iter().skip(ai + 1) {
                 if zij(a, b).abs() < zc0 {
                     continue;
                 }
                 let h = hij(a, b);
+                let rank = h - (b + 1) as f64 * 1e-10;
                 let better = match best {
                     None => true,
-                    Some((ba, bb, bh)) => h > bh || (h == bh && (b, a) < (bb, ba)),
+                    Some((ba, bb, _, best_rank)) => {
+                        rank > best_rank || (rank == best_rank && (b, a) < (bb, ba))
+                    }
                 };
                 if better {
-                    best = Some((a, b, h));
+                    best = Some((a, b, h, rank));
                 }
             }
         }
-        let Some((a0, b0, h0)) = best else { break };
+        let Some((a0, b0, h0, _)) = best else { break };
         // pair Hi == Hij for both members; require >= c
         if h0 < c {
             break;
