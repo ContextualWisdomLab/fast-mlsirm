@@ -249,35 +249,50 @@ jobs:
               "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$endpoint"
           }
           response_file="$(mktemp)"
-          resume_existing_release=false
-          status="$(api_status "releases/tags/v$RELEASE_VERSION" "$response_file")"
-          case "$status" in
-            404)
-              echo "resume_existing_release=false" >> "$GITHUB_OUTPUT"
-              ;;
-            200)
-              python3 - "$response_file" <<'PY'
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$response_file"
+          release_state="$(python3 - "$response_file" <<'PY'
           import json
           import os
           import sys
           from pathlib import Path
 
-          response = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          if response.get("draft") is not True:
-              raise SystemExit(
-                  f"release v{os.environ['RELEASE_VERSION']} is already published; refusing to overwrite or reuse it"
-              )
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
           expected_name = f"v{os.environ['RELEASE_VERSION']}"
-          if response.get("tag_name") != expected_name or response.get("name") != expected_name:
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_name
+          ]
+          if len(matches) > 1:
+              raise SystemExit("multiple releases unexpectedly share the requested tag")
+          if not matches:
+              print("absent")
+              raise SystemExit(0)
+          release = matches[0]
+          if release.get("draft") is not True:
+              raise SystemExit(
+                  f"release {expected_name} is already published; refusing to overwrite or reuse it"
+              )
+          if release.get("tag_name") != expected_name or release.get("name") != expected_name:
               raise SystemExit("existing draft release identity does not match the requested release")
+          print("draft")
           PY
+          )"
+          resume_existing_release=false
+          case "$release_state" in
+            absent)
+              echo "resume_existing_release=false" >> "$GITHUB_OUTPUT"
+              ;;
+            draft)
               resume_existing_release=true
               echo "release v$RELEASE_VERSION already exists as an unpublished draft; resuming exact-tag publication"
               echo "resume_existing_release=true" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              cat "$response_file" >&2
-              echo "GitHub API returned HTTP $status while checking release v$RELEASE_VERSION" >&2
+              echo "unexpected release state: $release_state" >&2
               exit 1
               ;;
           esac
