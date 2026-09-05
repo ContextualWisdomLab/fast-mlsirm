@@ -249,6 +249,7 @@ jobs:
               "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$endpoint"
           }
           response_file="$(mktemp)"
+          resume_existing_release=false
           status="$(api_status "releases/tags/v$RELEASE_VERSION" "$response_file")"
           case "$status" in
             404)
@@ -270,6 +271,7 @@ jobs:
           if response.get("tag_name") != expected_name or response.get("name") != expected_name:
               raise SystemExit("existing draft release identity does not match the requested release")
           PY
+              resume_existing_release=true
               echo "release v$RELEASE_VERSION already exists as an unpublished draft; resuming exact-tag publication"
               echo "resume_existing_release=true" >> "$GITHUB_OUTPUT"
               ;;
@@ -282,7 +284,7 @@ jobs:
           status="$(api_status "git/ref/tags/v$RELEASE_VERSION" "$response_file")"
           case "$status" in
             404)
-              if [ "${{ steps.release_tag_state.outputs.resume_existing_release }}" = "true" ]; then
+              if [ "$resume_existing_release" = "true" ]; then
                 echo "existing draft release is missing its required release tag" >&2
                 exit 1
               fi
