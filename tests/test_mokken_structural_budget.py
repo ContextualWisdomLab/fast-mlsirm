@@ -28,6 +28,20 @@ def test_mokken_rejects_empty_row_fanout_before_numpy_or_core(
         mokken.mokken_analysis([[], [], []])
 
 
+def test_mokken_rejects_zero_width_matrix_before_snapshot_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An impossible zero-item matrix fails before proportional row snapshots."""
+
+    def _unexpected_snapshot(source: object) -> tuple[object, ...]:
+        raise AssertionError("row snapshot allocation occurred")
+
+    monkeypatch.setattr(mokken, "_snapshot_builtin_score_source", _unexpected_snapshot)
+
+    with pytest.raises(ValueError, match="mokken requires at least 2 items"):
+        mokken.mokken_analysis([(), (), ()])
+
+
 def test_mokken_preserves_valid_matrix_at_structural_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
