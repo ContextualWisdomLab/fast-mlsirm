@@ -22,6 +22,8 @@ Likewise, this workflow does not claim a SLSA Build Level merely because it emit
   Scope used here: build provenance is artifact-oriented and is intended to let consumers trace build outputs to the source and build process. This supports creating provenance in the same job that produces each sdist/wheel instead of reconstructing builder identity later in an aggregation job.
 - SPDX Workgroup. (2022). *Software Package Data Exchange (SPDX) Specification Version 2.3*. Linux Foundation. https://spdx.github.io/spdx-spec/v2.3/  
   Scope used here: SPDX is the interchange format family selected for the standalone release SBOM. The release gate must inspect the emitted document's declared `spdxVersion`; the workflow does not infer a format revision solely from the `spdx-json` option name.
+- Bray, T. (2017). *The JavaScript Object Notation (JSON) Data Interchange Format (RFC 8259)*. Internet Engineering Task Force. https://www.rfc-editor.org/rfc/rfc8259  
+  Scope used here: JSON object member names should be unique for interoperable interpretation; receivers do not agree reliably on duplicate-member behavior. Release SBOM validation therefore rejects duplicate members at every object depth as well as non-standard numeric constants before provenance attestation or publication.
 - GitHub. (2026). *Using artifact attestations to establish provenance for builds*. GitHub Docs. https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations  
   Scope used here: GitHub requires `contents: read`, `id-token: write`, and `attestations: write` for artifact attestations; `subject-path` identifies the artifact being attested. The same guidance distinguishes ordinary build provenance from an SBOM attestation, which uses a subject artifact together with an `sbom-path`.
 
@@ -33,7 +35,7 @@ For a candidate release commit, acceptance evidence must establish all of the fo
 
 - the sdist and every wheel were built from the reviewed release commit and their builder-local provenance steps succeeded;
 - `fast-mlsirm.spdx.json` was generated from that same `inputs.release_commit`, its generation/provenance step succeeded, and the release asset is byte-identical to the uploaded workflow artifact;
-- the emitted SBOM declares the expected SPDX version and parses as JSON; unsupported or malformed output fails the release rather than being relabeled;
+- the emitted SBOM declares the expected SPDX version and parses as interoperable JSON; malformed syntax, non-standard numeric constants, duplicate object members, or an unsupported SPDX version fail the release rather than being normalized or relabeled;
 - the GitHub release sink receives package distributions plus the separately named SBOM asset;
 - the PyPI sink receives only `dist-*` package artifacts and remains gated on the SBOM job without downloading `release-sbom`;
 - artifact attestations can be verified against `ContextualWisdomLab/fast-mlsirm` with the GitHub CLI before release evidence is accepted;
