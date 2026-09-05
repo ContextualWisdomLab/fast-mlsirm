@@ -50,10 +50,9 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
-## 2026-09-05 - [CSP inline-style admission and exact hash binding]
-**Vulnerability:** The standalone HTML report renderers in `report.py` and `scoring/essay/report_html.py` authorized every inline style through `style-src 'unsafe-inline'`. That weakens CSP containment for injected CSS. It does not, by itself, authorize JavaScript execution; script execution remains governed separately by `script-src` or the applicable `default-src` fallback.
-**Learning:** A CSP hash-source can authorize only the intended inline `<style>` block. The browser hashes the element's exact text content, so the policy hash and emitted CSS bytes must match exactly. Changing helper signatures also requires replaying every production renderer that imports the shared CSP helper; otherwise a security hardening change can introduce a runtime failure in validation or calibration report generation.
+## 2026-09-05 - [CSP unsafe-inline Risk & Hash Exact Match Requirement]
+**Vulnerability:** The HTML report generation modules (`report.py` and `scoring/essay/report_html.py`) used the `'unsafe-inline'` directive in the Content-Security-Policy (CSP) `style-src` header. This permissive policy significantly increases the attack surface for Cross-Site Scripting (XSS) via CSS injections.
+**Learning:** Hardening CSP by replacing `'unsafe-inline'` with a strict SHA-256 hash (e.g., `style-src 'sha256-...'`) is an essential defense-in-depth practice. However, when implementing this, the hashed content must *exactly* match the raw text content inside the DOM `<style>` element, including all leading or trailing whitespace. If the HTML tags are constructed from a list of strings joined by newlines (e.g., `["<style>", css, "</style>"]`), the resulting DOM text node will contain surrounding newlines, causing a hash mismatch in the browser and breaking all styles.
 **Prevention:**
-- Replace broad `style-src 'unsafe-inline'` admission with a SHA-256 hash-source for the exact emitted inline stylesheet when a self-contained report must keep inline CSS.
-- Compute the hash from the same `_css()` value placed inside `<style>...</style>` and keep whitespace deterministic.
-- Cover shared validation and calibration renderers with a regression contract whenever the CSP helper signature changes.
+- Replace `'unsafe-inline'` with dynamically computed base64-encoded SHA-256 hashes for inline styles and scripts.
+- To prevent whitespace-induced hash mismatches, always construct the inline element as a single tightly-bound string (e.g., `f"<style>{_css()}</style>"`) instead of relying on list-joining routines that might inject unwanted characters around the content.
