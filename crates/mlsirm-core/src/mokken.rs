@@ -69,6 +69,9 @@
 //! - Sijtsma, K., & Molenaar, I. W. (2002). *Introduction to nonparametric
 //!   item response theory*. Sage. (as cited in Straat et al., 2013)
 
+/// Maximum number of cells in each quadratic item-pair matrix.
+pub const MOKKEN_MAX_MATRIX_CELLS: usize = 4_000_000;
+
 /// Scalability coefficients and Mokken Z statistics for one item set.
 #[derive(Debug, Clone)]
 pub struct MokkenH {
@@ -93,6 +96,14 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
     if n_items < 2 {
         return Err("mokken requires at least 2 items".to_string());
     }
+    let matrix_cells = n_items
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_items * n_items overflows usize".to_string())?;
+    if matrix_cells > MOKKEN_MAX_MATRIX_CELLS {
+        return Err(format!(
+            "n_items * n_items = {matrix_cells} exceeds the {MOKKEN_MAX_MATRIX_CELLS}-cell matrix budget"
+        ));
+    }
     let expected = crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
     if x.len() != expected {
         return Err(format!(
@@ -103,6 +114,12 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
     }
     if x.iter().any(|&v| v < 0) {
         return Err("scores must be nonnegative integers".to_string());
+    }
+    if x
+        .iter()
+        .any(|&v| (v as f64) as i128 != i128::from(v))
+    {
+        return Err("scores must be exactly representable as f64".to_string());
     }
     Ok(())
 }
