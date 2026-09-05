@@ -8,7 +8,7 @@
 
 #![allow(hidden_glob_reexports)]
 
-#[path = "fitstats_impl.rs"]
+#[path = "../fitstats_impl.rs"]
 mod implementation;
 
 pub use implementation::*;
