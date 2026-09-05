@@ -8,7 +8,11 @@ import hashlib
 import inspect
 
 import fast_mlsirm.report as general_report
-from fast_mlsirm.scoring.essay import calibration_report_html, report_html, validation_report_html
+from fast_mlsirm.scoring.essay import (
+    calibration_report_html,
+    report_html,
+    validation_report_html,
+)
 
 
 def _expected_hash(css: str) -> str:
