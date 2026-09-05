@@ -75,6 +75,16 @@ def test_duplicate_member_and_nonfinite_json_fail_closed(tmp_path: Path):
             "https://github.com/ContextualWisdomLab/fast-mlsirm/sbom/test#fragment",
             "documentNamespace",
         ),
+        (
+            "documentNamespace",
+            "https://github.com/ContextualWisdomLab/fast-mlsirm/sbom/%ZZ",
+            "documentNamespace",
+        ),
+        (
+            "documentNamespace",
+            "https://github.com/ContextualWisdomLab/fast-mlsirm/sbom/%",
+            "documentNamespace",
+        ),
     ],
 )
 def test_required_document_identity_fields_fail_closed(
