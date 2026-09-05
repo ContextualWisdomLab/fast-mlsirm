@@ -1,4 +1,4 @@
-"""Resource regressions for Mokken built-in response traversal."""
+"""Resource regressions for Mokken response traversal and snapshots."""
 
 from __future__ import annotations
 
@@ -40,6 +40,47 @@ def test_mokken_rejects_zero_width_matrix_before_snapshot_allocation(
 
     with pytest.raises(ValueError, match="mokken requires at least 2 items"):
         mokken.mokken_analysis([(), (), ()])
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        [0, 1, 0],
+        [[0, 1], [1]],
+        [np.array([[0, 1]]), np.array([[1, 0]])],
+    ],
+    ids=["flat", "ragged", "higher-rank-row"],
+)
+def test_mokken_rejects_known_nonmatrix_before_snapshot_allocation(
+    responses: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preflight-proven non-matrices fail before any proportional snapshot."""
+
+    def _unexpected_snapshot(source: object) -> tuple[object, ...]:
+        raise AssertionError("row snapshot allocation occurred")
+
+    monkeypatch.setattr(mokken, "_snapshot_builtin_score_source", _unexpected_snapshot)
+
+    with pytest.raises(ValueError, match="2-D persons x items array"):
+        mokken.mokken_analysis(responses)
+
+
+@pytest.mark.parametrize("n_items", [0, 1])
+def test_mokken_rejects_narrow_ndarray_before_snapshot_copy(
+    n_items: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inert zero/one-item ndarray shape fails before dtype-preserving copying."""
+    responses = np.empty((3, n_items), dtype=np.float64)
+
+    def _unexpected_copy(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("ndarray snapshot allocation occurred")
+
+    monkeypatch.setattr(mokken.np, "array", _unexpected_copy)
+
+    with pytest.raises(ValueError, match="mokken requires at least 2 items"):
+        mokken.mokken_analysis(responses)
 
 
 def test_mokken_preserves_valid_matrix_at_structural_boundary(
