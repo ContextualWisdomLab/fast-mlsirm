@@ -119,7 +119,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _reject_nonfinite_json(literal: str) -> Any:
+def _reject_nonfinite_json(_literal: str) -> Any:
     """Reject non-finite JSON constants."""
     raise ValueError("contract_json contains a non-finite numeric value")
 
