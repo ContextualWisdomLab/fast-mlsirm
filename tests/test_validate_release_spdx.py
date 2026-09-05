@@ -70,6 +70,11 @@ def test_duplicate_member_and_nonfinite_json_fail_closed(tmp_path: Path):
         ("SPDXID", "SPDXRef-OTHER", "SPDXID"),
         ("name", "", "name"),
         ("documentNamespace", "relative/path", "documentNamespace"),
+        (
+            "documentNamespace",
+            "https://github.com/ContextualWisdomLab/fast-mlsirm/sbom/test#fragment",
+            "documentNamespace",
+        ),
     ],
 )
 def test_required_document_identity_fields_fail_closed(
