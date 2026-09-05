@@ -56,6 +56,7 @@ def test_sbom_is_exact_release_source_bound_spdx_and_attested():
     attest = f"uses: actions/attest-build-provenance@{_ATTEST_BUILD_PROVENANCE_SHA}"
     sbom = f"uses: anchore/sbom-action@{_SBOM_ACTION_SHA}"
     validate = "- name: Validate SPDX 2.3 SBOM"
+    validator = "python scripts/validate_release_spdx.py dist/fast-mlsirm.spdx.json"
 
     assert "needs: verify-release" in block
     assert "contents: read" in block
@@ -71,12 +72,7 @@ def test_sbom_is_exact_release_source_bound_spdx_and_attested():
     assert 'upload-artifact: "false"' in block
     assert 'upload-release-assets: "false"' in block
     assert validate in block
-    assert "json.load" in block
-    assert "parse_constant=_reject_nonfinite" in block
-    assert "object_pairs_hook=_reject_duplicates" in block
-    assert "duplicate JSON member in release SBOM" in block
-    assert 'document.get("spdxVersion")' in block
-    assert 'expected = "SPDX-2.3"' in block
+    assert validator in block
     assert attest in block
     assert "subject-path: dist/fast-mlsirm.spdx.json" in block
     assert block.index(sbom) < block.index(validate) < block.index(attest)
