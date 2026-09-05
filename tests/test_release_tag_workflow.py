@@ -81,12 +81,11 @@ def test_release_source_is_the_version_cut_transition_not_a_later_descendant():
 
 
 def test_published_release_and_api_uncertainty_block_publication():
-    """A published release or an uncertain API answer can never be reused."""
+    """Published release state and API uncertainty must fail closed."""
     text = _workflow_text()
-    assert '"releases/tags/v$RELEASE_VERSION"' in text
+    assert 'gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100"' in text
+    assert '"releases/tags/v$RELEASE_VERSION"' not in text
     assert '"git/ref/tags/v$RELEASE_VERSION"' in text
-    assert "404)" in text
-    assert "200)" in text
     assert "GitHub API returned HTTP $status" in text
     assert "is already published; refusing to overwrite or reuse it" in text
 
@@ -96,9 +95,9 @@ def test_existing_matching_draft_can_resume_before_publication():
     text = _workflow_text()
     assert "resume_existing_release=false" in text
     assert "resume_existing_release=true" in text
-    assert 'response.get("draft") is not True' in text
-    assert 'response.get("tag_name") != expected_name' in text
-    assert 'response.get("name") != expected_name' in text
+    assert 'release.get("draft") is not True' in text
+    assert 'release.get("tag_name") != expected_name' in text
+    assert 'release.get("name") != expected_name' in text
     assert "existing draft release identity does not match the requested release" in text
     assert "existing draft release is missing its required release tag" in text
     assert "resuming exact-tag publication" in text
