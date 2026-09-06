@@ -29,9 +29,9 @@ fn aisp_applies_start_set_gate_to_all_tied_maximum_pairs() {
     ];
 
     let coefficients = coef_h(&x, 6, 3).expect("fixture must have finite nonzero item variance");
-    assert!((coefficients.hij[0 * 3 + 2] - 1.0).abs() < 1e-12);
-    assert!((coefficients.hij[1 * 3 + 2] - 1.0).abs() < 1e-12);
-    assert!((coefficients.hij[0 * 3 + 1] + 0.5).abs() < 1e-12);
+    assert!((coefficients.hij[2] - 1.0).abs() < 1e-12);
+    assert!((coefficients.hij[5] - 1.0).abs() < 1e-12);
+    assert!((coefficients.hij[1] + 0.5).abs() < 1e-12);
 
     let labels = aisp(&x, 6, 3, 0.3, 0.9).expect("AISP should accept the finite integer fixture");
     assert_eq!(
