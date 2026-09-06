@@ -106,7 +106,8 @@ def test_final_release_publication_replays_exact_github_asset_digests():
     publish = "- name: Publish the fully assembled draft release"
 
     assert verify in block
-    assert "releases/tags/$RELEASE_TAG" in block
+    assert '"repos/$GITHUB_REPOSITORY/releases?per_page=100"' in block
+    assert '"repos/$GITHUB_REPOSITORY/releases/${release_id}/assets?per_page=100"' in block
     assert 'asset.get("digest")' in block
     assert 'f"sha256:{local_sha}"' in block
     assert "set(remote) != set(expected)" in block
