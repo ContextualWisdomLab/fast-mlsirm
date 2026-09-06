@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -104,7 +105,7 @@ def _write_benchmark_report(tmp_path: Path) -> Path:
                 "status": "ok",
                 "budget_ok": True,
                 "html_report_file": str(html),
-                "html_report_sha256": "abc123",
+                "html_report_sha256": hashlib.sha256(html.read_bytes()).hexdigest(),
             }
         ),
     )
@@ -121,7 +122,7 @@ def _write_release_evidence_index(tmp_path: Path) -> Path:
             {
                 "status": "ok",
                 "html_report_file": str(html),
-                "html_report_sha256": "abc123",
+                "html_report_sha256": hashlib.sha256(html.read_bytes()).hexdigest(),
             }
         ),
     )
@@ -225,6 +226,37 @@ def test_build_buyer_packet_can_include_benchmark_report(tmp_path):
     assert "benchmark/benchmark_report.html" in names
 
 
+def test_build_buyer_packet_rejects_tampered_benchmark_html(tmp_path):
+    module = _load_packet_builder()
+    repo = tmp_path / "repo"
+    dist = tmp_path / "dist"
+    out = tmp_path / "packet"
+    _write_repo_evidence(repo, module)
+    _write_dist(dist)
+    acceptance = _write_acceptance(tmp_path)
+    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
+    _write(sales, json.dumps({"status": "ok"}))
+    benchmark_report = _write_benchmark_report(tmp_path)
+    benchmark = json.loads(benchmark_report.read_text(encoding="utf-8"))
+    Path(benchmark["html_report_file"]).write_text("tampered", encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo),
+        acceptance=str(acceptance),
+        sales_readiness=str(sales),
+        dist=str(dist),
+        out=str(out),
+        contract_value_krw=2_000_000_000,
+        benchmark_report=str(benchmark_report),
+    )
+
+    try:
+        module.build_packet(args)
+    except RuntimeError as exc:
+        assert "benchmark HTML SHA256 does not match benchmark_report.json" in str(exc)
+    else:
+        raise AssertionError("tampered benchmark HTML should fail buyer packet collection")
+
+
 def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
     module = _load_packet_builder()
     repo = tmp_path / "repo"
@@ -253,6 +285,37 @@ def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
         names = set(packet.namelist())
     assert "release/release_evidence_index.json" in names
     assert "release/release_evidence_index.html" in names
+
+
+def test_build_buyer_packet_rejects_tampered_release_evidence_html(tmp_path):
+    module = _load_packet_builder()
+    repo = tmp_path / "repo"
+    dist = tmp_path / "dist"
+    out = tmp_path / "packet"
+    _write_repo_evidence(repo, module)
+    _write_dist(dist)
+    acceptance = _write_acceptance(tmp_path)
+    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
+    _write(sales, json.dumps({"status": "ok"}))
+    release_index = _write_release_evidence_index(tmp_path)
+    release = json.loads(release_index.read_text(encoding="utf-8"))
+    Path(release["html_report_file"]).write_text("tampered", encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo),
+        acceptance=str(acceptance),
+        sales_readiness=str(sales),
+        dist=str(dist),
+        out=str(out),
+        contract_value_krw=2_000_000_000,
+        release_evidence_index=str(release_index),
+    )
+
+    try:
+        module.build_packet(args)
+    except RuntimeError as exc:
+        assert "release evidence HTML SHA256 does not match release_evidence_index.json" in str(exc)
+    else:
+        raise AssertionError("tampered release evidence HTML should fail buyer packet collection")
 
 
 def test_build_buyer_packet_fails_without_source_distribution(tmp_path):
