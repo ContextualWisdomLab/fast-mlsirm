@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+SOURCE_COMMIT = "a" * 40
+OTHER_SOURCE_COMMIT = "b" * 40
+
 
 def _load_packet_builder():
     script = Path(__file__).resolve().parents[1] / "scripts" / "build_buyer_packet.py"
@@ -33,7 +36,7 @@ def _base_paths(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     repo_root.mkdir()
     acceptance_path = _write_json(
         tmp_path / "acceptance" / "acceptance_summary.json",
-        {"status": "ok", "steps": []},
+        {"status": "ok", "source_commit": SOURCE_COMMIT, "steps": []},
     )
     sales_path = _write_json(
         tmp_path / "acceptance" / "sales_readiness_manifest.json",
@@ -99,4 +102,71 @@ def test_collect_files_rejects_failed_release_evidence_index(
             sales_readiness_path=sales_path,
             dist_dir=dist_dir,
             release_evidence_index_path=release_index_path,
+        )
+
+
+def test_collect_files_rejects_cross_revision_benchmark_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicitly cross-revision benchmark must not be relabeled as current evidence."""
+    module = _load_packet_builder()
+    monkeypatch.setattr(module, "PRODUCT_DOCS", [])
+    monkeypatch.setattr(module, "PRODUCT_MANIFESTS", [])
+    repo_root, acceptance_path, sales_path, dist_dir = _base_paths(tmp_path)
+    html_path = tmp_path / "benchmark" / "benchmark_report.html"
+    html_sha = _write_html(html_path)
+    benchmark_path = _write_json(
+        tmp_path / "benchmark" / "benchmark_report.json",
+        {
+            "status": "ok",
+            "source_commit": OTHER_SOURCE_COMMIT,
+            "html_report_file": str(html_path),
+            "html_report_sha256": html_sha,
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError, match="benchmark source commit does not match buyer packet source"
+    ):
+        module._collect_files(
+            repo_root=repo_root,
+            acceptance_path=acceptance_path,
+            sales_readiness_path=sales_path,
+            dist_dir=dist_dir,
+            benchmark_report_path=benchmark_path,
+            expected_source_commit=SOURCE_COMMIT,
+        )
+
+
+def test_collect_files_rejects_cross_revision_release_evidence_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicitly cross-revision release index must not be relabeled as current evidence."""
+    module = _load_packet_builder()
+    monkeypatch.setattr(module, "PRODUCT_DOCS", [])
+    monkeypatch.setattr(module, "PRODUCT_MANIFESTS", [])
+    repo_root, acceptance_path, sales_path, dist_dir = _base_paths(tmp_path)
+    html_path = tmp_path / "release" / "release_evidence_index.html"
+    html_sha = _write_html(html_path)
+    release_index_path = _write_json(
+        tmp_path / "release" / "release_evidence_index.json",
+        {
+            "status": "ok",
+            "source_commit": OTHER_SOURCE_COMMIT,
+            "html_report_file": str(html_path),
+            "html_report_sha256": html_sha,
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="release evidence source commit does not match buyer packet source",
+    ):
+        module._collect_files(
+            repo_root=repo_root,
+            acceptance_path=acceptance_path,
+            sales_readiness_path=sales_path,
+            dist_dir=dist_dir,
+            release_evidence_index_path=release_index_path,
+            expected_source_commit=SOURCE_COMMIT,
         )
