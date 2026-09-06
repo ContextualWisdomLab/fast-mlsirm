@@ -83,6 +83,16 @@ def _validate_optional_source_identity(
         raise RuntimeError(f"{evidence_name} source commit is missing")
 
 
+def _validate_distribution_artifacts(dist_dir: Path) -> None:
+    """Reject indirection before distribution files become buyer evidence."""
+    for pattern in ("*.whl", "*.tar.gz"):
+        for path in sorted(dist_dir.glob(pattern)):
+            if path.is_symlink() or not path.is_file():
+                raise RuntimeError(
+                    f"distribution artifact must be a regular file: {path}"
+                )
+
+
 def _collect_files(
     *,
     repo_root: Path,
@@ -108,6 +118,7 @@ def _collect_files(
         expected_source_commit,
         evidence_name="release evidence",
     )
+    _validate_distribution_artifacts(dist_dir)
     return _original_collect_files(
         repo_root=repo_root,
         acceptance_path=acceptance_path,
