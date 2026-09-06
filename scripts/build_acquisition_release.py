@@ -514,11 +514,8 @@ def _verify_generated_stage(
 ) -> None:
     """Validate a generated stage payload, persisted manifest, and live source."""
     _require_ok(name, payload)
-    require_source = "sales_readiness" not in name
-    _require_source_identity(name, payload, source_commit, required=require_source)
-    _require_manifest_source_identity(
-        name, path, source_commit, required=require_source
-    )
+    _require_source_identity(name, payload, source_commit)
+    _require_manifest_source_identity(name, path, source_commit)
     _assert_source_unchanged(
         repo_root,
         source_commit,
