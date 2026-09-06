@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-05-18 - 마우스 사용자를 위한 표 컨테이너 초점 표시 제거
+**Learning:** `tabindex="0"` 속성이 적용된 `.table-wrap` 같은 스크롤 가능한 컨테이너 요소는 키보드 내비게이션 접근성을 위해 `:focus-visible`를 통해 뚜렷한 초점 표시(outline)가 필요하지만, 마우스 클릭 시 브라우저 기본 포커스 링이 나타나 시각적으로 어색할 수 있습니다.
+**Action:** 마우스 사용자 경험을 개선하고 시각적 거슬림을 방지하기 위해 키보드 탐색을 제외한 모든 초점 상태(`.table-wrap:focus:not(:focus-visible)`)에 `outline: none;`을 명시적으로 추가하여 키보드 접근성과 시각적 미려함을 모두 확보해야 합니다.
