@@ -1489,6 +1489,73 @@ def adjusted_chi2_pairs(
     return res
 
 
+def ld_indices(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> dict:
+    """Compute Chen-Thissen signed X2 and G2 local-dependence indices.
+
+    Results follow upper-triangle item-pair order: ``(0, 1), (0, 2), ...``.
+    Pairs with fewer than 20 jointly observed responses are ``NaN``. These are
+    diagnostics, not universal pass/fail flags; consumers must preregister any
+    decision threshold for their population and multiplicity plan.
+
+    References
+    ----------
+    Chen, W.-H., & Thissen, D. (1997). Local dependence indexes for item pairs
+        using item response theory. *Journal of Educational and Behavioral
+        Statistics, 22*(3), 265–289. https://doi.org/10.3102/10769986022003265
+    """
+    core = _core_module()
+    if core is None or not hasattr(core, "ld_indices"):
+        raise RuntimeError("ld_indices requires the compiled Rust core")
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
+    n_persons, n_items = y.shape
+    if n_persons == 0:
+        raise ValueError("responses must contain at least one person")
+    if n_items < 2:
+        raise ValueError("local-dependence indices need at least two items")
+    for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ) or int(value) < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    n_dims = int(d_of_i.max()) + 1
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = dict(
+        core.ld_indices(
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            np.zeros(n_dims),
+            np.ones(n_dims),
+            q_theta=int(q_theta),
+            xi_rule="gh",
+            q_xi=int(q_xi),
+        )
+    )
+    res["x2_signed"] = np.asarray(res["x2_signed"])
+    res["g2_signed"] = np.asarray(res["g2_signed"])
+    return res
+
+
 def person_fit_resampling(
     responses: np.ndarray,
     factor_id: np.ndarray,
