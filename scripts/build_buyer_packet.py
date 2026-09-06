@@ -148,6 +148,10 @@ def _collect_files(
             raise RuntimeError(
                 f"benchmark HTML report is outside benchmark evidence root: {html_report_path}"
             ) from None
+        if _sha256(html_report_path) != benchmark_report.get("html_report_sha256"):
+            raise RuntimeError(
+                "benchmark HTML SHA256 does not match benchmark_report.json"
+            )
         _add_file(files, "benchmark/benchmark_report.html", html_report_path)
 
     if release_evidence_index_path is not None:
@@ -173,6 +177,10 @@ def _collect_files(
             raise RuntimeError(
                 f"release evidence HTML report is outside release evidence root: {html_report_path}"
             ) from None
+        if _sha256(html_report_path) != release_index.get("html_report_sha256"):
+            raise RuntimeError(
+                "release evidence HTML SHA256 does not match release_evidence_index.json"
+            )
         _add_file(files, "release/release_evidence_index.html", html_report_path)
 
     for path in sorted(dist_dir.glob("*.whl")):
