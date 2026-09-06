@@ -138,6 +138,16 @@ def _collect_files(
             "acceptance source commit does not match buyer packet source: "
             f"expected {expected_source_commit}, observed {acceptance.get('source_commit')}"
         )
+    sales_source_commit = sales_readiness.get("source_commit")
+    if (
+        expected_source_commit is not None
+        and sales_source_commit is not None
+        and sales_source_commit != expected_source_commit
+    ):
+        raise RuntimeError(
+            "sales readiness source commit does not match buyer packet source: "
+            f"expected {expected_source_commit}, observed {sales_source_commit}"
+        )
     files: dict[str, Path] = {}
     _add_file(files, "acceptance/acceptance_summary.json", acceptance_path)
     _add_file(files, "sales/sales_readiness_manifest.json", sales_readiness_path)
