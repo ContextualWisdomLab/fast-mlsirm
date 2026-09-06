@@ -34,32 +34,36 @@
 //! Z   = (sum_{i < j} S_ij) * sqrt(N-1) / sqrt(sum_{i < j} s_ii * s_jj)
 //! ```
 //!
-//! The AISP ("search normal") partitions items into Mokken scales: every
-//! eligible start pair tied at the maximum epsilon-adjusted `Hij` contributes
-//! its endpoints to one unique start set, that whole set must satisfy
-//! `Hi >= c`, and then free items are repeatedly evaluated. A free item must
-//! (1) have no negative `Hij` with any item already selected before that add
-//! step (nonnegative allowed), (2) have within-augmented-set `Hi >= c`, and
-//! (3) have `Zi >= Z_c`. Every candidate exactly tied at the maximum augmented
-//! set `H` is added in that same reference step, matching `search.normal.R`;
-//! tied batch members are therefore not re-screened against one another
-//! before assignment. The scale closes when the best augmented-set `H < c`,
-//! and further scales are formed from leftover items. The significance level
-//! is Bonferroni-adjusted per scale as
+//! The AISP ("search normal") partitions items into Mokken scales. Each scale
+//! starts from exactly one eligible two-item pair with the maximum
+//! epsilon-adjusted `Hij`; an exact adjusted tie is resolved deterministically
+//! by scan order so the published two-item start invariant is preserved. That
+//! pair must satisfy `Hi >= c`, after which free items are repeatedly
+//! evaluated. A free item must (1) have no negative `Hij` with any item already
+//! selected before that add step (nonnegative allowed), (2) have
+//! within-augmented-set `Hi >= c`, and (3) have `Zi >= Z_c`. Every candidate
+//! exactly tied at the maximum augmented-set `H` is added in that same
+//! reference step, matching `search.normal.R`; tied batch members are therefore
+//! not re-screened against one another before assignment. The scale closes
+//! when the best augmented-set `H < c`, and further scales are formed from
+//! leftover items. The significance level is Bonferroni-adjusted per scale as
 //! `alpha / (K1*(K1-1)/2 + sum of later step candidate counts)`, with the
 //! candidate-count vector resetting at each new scale, matching
 //! `search.normal.R` (`adjusted.alpha`).
 //!
 //! Verification status: the coefficient definitions, rules of thumb, and the
 //! Mokken-scale definition (all inter-item covariances nonnegative in the
-//! selection sense and `Hi >= c > 0`) were read in van der Ark (2007) and
-//! Straat et al. (2013); the exact sample statistics, Z forms, tie-breaking,
-//! and AISP mechanics were verified line-by-line against the mokken R package
-//! source (CRAN, `R/internalFunctions.R::coefHTiny`, `R/coefZ.R`,
-//! `R/search.normal.R`). Mokken (1971) and Sijtsma & Molenaar (2002) were NOT
-//! read directly; claims from them are relayed via the above sources. No
-//! primary-source derivation of the Z normal approximation was verified;
-//! it is implementation-verified only.
+//! selection sense and `Hi >= c > 0`) were read in van der Ark (2007), Straat
+//! et al. (2013), and Koopman et al. (2022). Exact sample statistics, Z forms,
+//! row-epsilon ranking, Bonferroni adjustment, and candidate-add mechanics were
+//! verified line-by-line against the mokken R package source (CRAN,
+//! `R/internalFunctions.R::coefHTiny`, `R/coefZ.R`, `R/search.normal.R`). The
+//! start-set cardinality follows the published AISP algorithm's explicit
+//! "first two items" step rather than the CRAN equal-max vectorization edge,
+//! which can expand the start set and duplicate a shared endpoint. Mokken
+//! (1971) and Sijtsma & Molenaar (2002) were NOT read directly; claims from
+//! them are relayed via the above sources. No primary-source derivation of the
+//! Z normal approximation was verified; it is implementation-verified only.
 //!
 //! References (APA 7th ed.):
 //! - van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
@@ -68,6 +72,10 @@
 //!   optimization algorithms for item selection in Mokken scale analysis.
 //!   *Journal of Classification, 30*(1), 75-99.
 //!   https://doi.org/10.1007/s00357-013-9122-y
+//! - Koopman, L., Zijlstra, B. J. H., & van der Ark, L. A. (2022). A two-step,
+//!   test-guided Mokken scale analysis, for nonclustered and clustered data.
+//!   *Quality of Life Research, 31*, 25-36.
+//!   https://doi.org/10.1007/s11136-021-02840-2
 //! - Mokken, R. J. (1971). *A theory and procedure of scale analysis*.
 //!   De Gruyter. (as cited in van der Ark, 2007, and Straat et al., 2013)
 //! - Sijtsma, K., & Molenaar, I. W. (2002). *Introduction to nonparametric
@@ -340,14 +348,14 @@ pub fn aisp(
             let adj = alpha / (k1 * (k1 - 1.0) * 0.5 + k_rest);
             normal_upper_quantile(adj).abs()
         };
-        // Start-set construction follows search.normal.R exactly: rank every
-        // eligible lower-triangle pair after subtracting row * 1e-10, retain
-        // every pair tied at the maximum adjusted Hij, then form one unique
-        // StartSet from all of those endpoints before applying the Hi >= c gate.
+        // The methodological AISP starts a scale from exactly two items. Keep
+        // the CRAN lower-triangle row epsilon, then resolve any remaining exact
+        // adjusted tie by deterministic scan order instead of vectorizing all
+        // equal maxima into a larger/duplicated start set.
         // Here b is the larger zero-based member index, hence R row = b + 1.
         let zc0 = z_c(0.0);
         let mut best_rank = f64::NEG_INFINITY;
-        let mut best_pairs: Vec<(usize, usize)> = Vec::new();
+        let mut best_pair: Option<(usize, usize)> = None;
         for (ai, &a) in free.iter().enumerate() {
             for &b in free.iter().skip(ai + 1) {
                 if zij(a, b).abs() < zc0 {
@@ -356,25 +364,14 @@ pub fn aisp(
                 let rank = hij(a, b) - (b + 1) as f64 * 1e-10;
                 if rank > best_rank {
                     best_rank = rank;
-                    best_pairs.clear();
-                    best_pairs.push((a, b));
-                } else if rank == best_rank {
-                    best_pairs.push((a, b));
+                    best_pair = Some((a, b));
                 }
             }
         }
-        if best_pairs.is_empty() {
+        let Some((a, b)) = best_pair else {
             break;
-        }
-        let mut selected = Vec::new();
-        for (a, b) in best_pairs {
-            if !selected.contains(&a) {
-                selected.push(a);
-            }
-            if !selected.contains(&b) {
-                selected.push(b);
-            }
-        }
+        };
+        let mut selected = vec![a, b];
         let (start_hi, _, _, _) = h_subset(&s, &smax, j, &selected, n_persons);
         if start_hi.iter().any(|&value| value < c) {
             break;
