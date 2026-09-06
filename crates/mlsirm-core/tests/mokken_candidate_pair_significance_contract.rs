@@ -28,10 +28,10 @@ fn aisp_rejects_candidate_when_one_selected_pair_fails_criterion_one() {
 
     let coefficients =
         coef_h(&x, 6, 3).expect("fixture must have finite nonzero item variance");
-    assert!((coefficients.hij[0 * 3 + 1] - 1.0).abs() < 1e-12);
-    assert!((coefficients.hij[0 * 3 + 2] - 1.0).abs() < 1e-12);
-    assert_eq!(coefficients.hij[1 * 3 + 2], 0.0);
-    assert_eq!(coefficients.zij[1 * 3 + 2], 0.0);
+    assert!((coefficients.hij[1] - 1.0).abs() < 1e-12);
+    assert!((coefficients.hij[2] - 1.0).abs() < 1e-12);
+    assert_eq!(coefficients.hij[5], 0.0);
+    assert_eq!(coefficients.zij[5], 0.0);
 
     let labels =
         aisp(&x, 6, 3, 0.0, 0.9).expect("AISP should accept the finite binary fixture");
