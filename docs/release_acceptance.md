@@ -67,6 +67,16 @@ PR-queue, and Figma evidence, then finishes with the canonical
 gate therefore evaluates evidence completeness rather than a hard-coded deal
 value.
 
+The canonical acquisition path seals one exact repository revision and carries
+that lowercase full `source_commit` through release acceptance and every
+sales-readiness manifest. Buyer-packet collection requires the sales-readiness
+identity to be present and equal to the sealed packet revision, while the
+acquisition stage verifier independently checks the in-memory and persisted
+manifest against the same source. A direct legacy/non-Git `sales_readiness.py`
+recheck can still inherit an acceptance summary with no source identity and emit
+`source_commit: null`; that output is verification-only legacy evidence and is
+not admissible to the canonical source-bound buyer packet.
+
 The primary machine-readable outputs are:
 
 - `acquisition-release/acquisition_release_manifest.json` — exact-source bundle
