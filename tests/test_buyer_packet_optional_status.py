@@ -40,7 +40,7 @@ def _base_paths(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     )
     sales_path = _write_json(
         tmp_path / "acceptance" / "sales_readiness_manifest.json",
-        {"status": "ok"},
+        {"status": "ok", "source_commit": SOURCE_COMMIT},
     )
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
@@ -138,6 +138,36 @@ def test_collect_files_rejects_cross_revision_benchmark_report(
         )
 
 
+def test_collect_files_rejects_missing_benchmark_source_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source-bound packet must reject benchmark evidence without source identity."""
+    module = _load_packet_builder()
+    monkeypatch.setattr(module, "PRODUCT_DOCS", [])
+    monkeypatch.setattr(module, "PRODUCT_MANIFESTS", [])
+    repo_root, acceptance_path, sales_path, dist_dir = _base_paths(tmp_path)
+    html_path = tmp_path / "benchmark" / "benchmark_report.html"
+    html_sha = _write_html(html_path)
+    benchmark_path = _write_json(
+        tmp_path / "benchmark" / "benchmark_report.json",
+        {
+            "status": "ok",
+            "html_report_file": str(html_path),
+            "html_report_sha256": html_sha,
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="benchmark source commit is missing"):
+        module._collect_files(
+            repo_root=repo_root,
+            acceptance_path=acceptance_path,
+            sales_readiness_path=sales_path,
+            dist_dir=dist_dir,
+            benchmark_report_path=benchmark_path,
+            expected_source_commit=SOURCE_COMMIT,
+        )
+
+
 def test_collect_files_rejects_cross_revision_release_evidence_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -162,6 +192,36 @@ def test_collect_files_rejects_cross_revision_release_evidence_index(
         RuntimeError,
         match="release evidence source commit does not match buyer packet source",
     ):
+        module._collect_files(
+            repo_root=repo_root,
+            acceptance_path=acceptance_path,
+            sales_readiness_path=sales_path,
+            dist_dir=dist_dir,
+            release_evidence_index_path=release_index_path,
+            expected_source_commit=SOURCE_COMMIT,
+        )
+
+
+def test_collect_files_rejects_missing_release_evidence_source_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source-bound packet must reject release evidence without source identity."""
+    module = _load_packet_builder()
+    monkeypatch.setattr(module, "PRODUCT_DOCS", [])
+    monkeypatch.setattr(module, "PRODUCT_MANIFESTS", [])
+    repo_root, acceptance_path, sales_path, dist_dir = _base_paths(tmp_path)
+    html_path = tmp_path / "release" / "release_evidence_index.html"
+    html_sha = _write_html(html_path)
+    release_index_path = _write_json(
+        tmp_path / "release" / "release_evidence_index.json",
+        {
+            "status": "ok",
+            "html_report_file": str(html_path),
+            "html_report_sha256": html_sha,
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="release evidence source commit is missing"):
         module._collect_files(
             repo_root=repo_root,
             acceptance_path=acceptance_path,
