@@ -176,9 +176,11 @@ def _collect_files(
             raise RuntimeError(f"acceptance artifact is missing: {resolved}")
         try:
             relative = resolved.relative_to(acceptance_dir)
-            archive_path = f"acceptance/artifacts/{relative.as_posix()}"
         except ValueError:
-            archive_path = f"acceptance/artifacts/{resolved.name}"
+            raise RuntimeError(
+                f"acceptance artifact is outside acceptance evidence root: {resolved}"
+            ) from None
+        archive_path = f"acceptance/artifacts/{relative.as_posix()}"
         files.setdefault(archive_path, resolved)
     return files
 
