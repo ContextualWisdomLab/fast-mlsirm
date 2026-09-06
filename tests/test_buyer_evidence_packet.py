@@ -162,8 +162,8 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     assert "Buyer Evidence Review" in html
     assert 'http-equiv="Content-Security-Policy"' in html
     assert 'role="region" aria-label="Required evidence coverage table" tabindex="0"' in html
-    assert "Packet ZIP SHA256" in html
-    assert manifest["zip_sha256"] in html
+    assert "Payload ZIP SHA256" in html
+    assert manifest["payload_zip_sha256"] in html
 
     payload_zip = Path(manifest["zip_file"])
     assert payload_zip.name == "buyer_evidence_payload.zip"
