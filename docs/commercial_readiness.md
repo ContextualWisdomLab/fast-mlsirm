@@ -26,6 +26,8 @@ For acquisition or commercial review, the current gate is **evidence completenes
 
 ## Seller Acceptance Checklist
 
+The **Enterprise Sales Gate** is the same evidence-bound acquisition-readiness decision; it is not a separate monetary threshold.
+
 Before treating a build as ready for buyer review, verify the exact release commit with the repository-owned test/package gates, then run:
 
 ```bash
