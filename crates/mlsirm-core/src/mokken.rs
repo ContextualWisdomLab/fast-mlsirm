@@ -34,12 +34,13 @@
 //! Z   = (sum_{i < j} S_ij) * sqrt(N-1) / sqrt(sum_{i < j} s_ii * s_jj)
 //! ```
 //!
-//! The AISP ("search normal") partitions items into Mokken scales: a start
-//! pair maximizing `Hij` among pairs significantly positive (`|Zij| >= Z_c`)
-//! with pair `H >= c`, then repeatedly evaluates free items that (1) have no
-//! negative `Hij` with any item already selected before that add step
-//! (nonnegative allowed), (2) have within-augmented-set `Hi >= c`, and (3)
-//! have `Zi >= Z_c`. Every candidate exactly tied at the maximum augmented
+//! The AISP ("search normal") partitions items into Mokken scales: every
+//! eligible start pair tied at the maximum epsilon-adjusted `Hij` contributes
+//! its endpoints to one unique start set, that whole set must satisfy
+//! `Hi >= c`, and then free items are repeatedly evaluated. A free item must
+//! (1) have no negative `Hij` with any item already selected before that add
+//! step (nonnegative allowed), (2) have within-augmented-set `Hi >= c`, and
+//! (3) have `Zi >= Z_c`. Every candidate exactly tied at the maximum augmented
 //! set `H` is added in that same reference step, matching `search.normal.R`;
 //! tied batch members are therefore not re-screened against one another
 //! before assignment. The scale closes when the best augmented-set `H < c`,
@@ -339,38 +340,48 @@ pub fn aisp(
             let adj = alpha / (k1 * (k1 - 1.0) * 0.5 + k_rest);
             normal_upper_quantile(adj).abs()
         };
-        // start pair: max eligible Hij after applying search.normal.R's
-        // lower-triangle row epsilon. R subtracts row * 1e-10 before argmax,
-        // so the rule governs near-ties as well as bit-identical Hij values.
+        // Start-set construction follows search.normal.R exactly: rank every
+        // eligible lower-triangle pair after subtracting row * 1e-10, retain
+        // every pair tied at the maximum adjusted Hij, then form one unique
+        // StartSet from all of those endpoints before applying the Hi >= c gate.
         // Here b is the larger zero-based member index, hence R row = b + 1.
         let zc0 = z_c(0.0);
-        let mut best: Option<(usize, usize, f64, f64)> = None;
+        let mut best_rank = f64::NEG_INFINITY;
+        let mut best_pairs: Vec<(usize, usize)> = Vec::new();
         for (ai, &a) in free.iter().enumerate() {
             for &b in free.iter().skip(ai + 1) {
                 if zij(a, b).abs() < zc0 {
                     continue;
                 }
-                let h = hij(a, b);
-                let rank = h - (b + 1) as f64 * 1e-10;
-                let better = match best {
-                    None => true,
-                    Some((ba, bb, _, best_rank)) => {
-                        rank > best_rank || (rank == best_rank && (b, a) < (bb, ba))
-                    }
-                };
-                if better {
-                    best = Some((a, b, h, rank));
+                let rank = hij(a, b) - (b + 1) as f64 * 1e-10;
+                if rank > best_rank {
+                    best_rank = rank;
+                    best_pairs.clear();
+                    best_pairs.push((a, b));
+                } else if rank == best_rank {
+                    best_pairs.push((a, b));
                 }
             }
         }
-        let Some((a0, b0, h0, _)) = best else { break };
-        // pair Hi == Hij for both members; require >= c
-        if h0 < c {
+        if best_pairs.is_empty() {
             break;
         }
-        let mut selected = vec![a0, b0];
-        in_set[a0] = scale;
-        in_set[b0] = scale;
+        let mut selected = Vec::new();
+        for (a, b) in best_pairs {
+            if !selected.contains(&a) {
+                selected.push(a);
+            }
+            if !selected.contains(&b) {
+                selected.push(b);
+            }
+        }
+        let (start_hi, _, _, _) = h_subset(&s, &smax, j, &selected, n_persons);
+        if start_hi.iter().any(|&value| value < c) {
+            break;
+        }
+        for &item in &selected {
+            in_set[item] = scale;
+        }
         // add loop
         loop {
             let candidates: Vec<usize> = (0..j)
