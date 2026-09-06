@@ -12,3 +12,6 @@
   containing manifest evidence root after path resolution, so absolute paths,
   parent traversal, and symlink-resolved escapes cannot import unrelated files
   into procurement evidence.
+- Replay each linked benchmark and release HTML SHA-256 against the digest
+  declared by its containing manifest before admitting the file to the buyer
+  packet, so in-root post-manifest tampering fails closed.
