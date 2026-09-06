@@ -59,6 +59,7 @@ def test_release_acceptance_manifest_records_sealed_source_commit(
     out_dir = tmp_path / "acceptance"
     args = SimpleNamespace(
         out=str(out_dir),
+        distribution_root=None,
         persons=2,
         dims=1,
         items_per_dim=2,
