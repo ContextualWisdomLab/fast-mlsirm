@@ -1,24 +1,26 @@
-//! Regression coverage for exact-tie candidate batches in Mokken AISP.
+//! Regression coverage for exact ties during AISP candidate addition.
 //!
-//! `mokken::search.normal` assigns every candidate whose augmented-set H
-//! equals the step maximum in the same iteration. Recomputing after only one
-//! tied candidate can change the reference result when tied candidates are
-//! negatively associated with one another.
+//! The methodological AISP adds one next item at a time: among candidates
+//! satisfying both Mokken criteria, choose the item that yields the highest
+//! augmented-set `H`, then repeat the step against the enlarged scale. Exact
+//! ties therefore need deterministic one-item resolution; batching tied
+//! candidates from the same pre-step set can create a final scale containing a
+//! negative `Hij` relationship that neither candidate was screened against.
 
-use mlsirm_core::mokken::aisp;
+use mlsirm_core::mokken::{aisp, coef_h};
 
 #[test]
-fn aisp_adds_all_exactly_tied_best_candidates_in_one_reference_step() {
+fn aisp_rechecks_exactly_tied_candidates_one_item_at_a_time() {
     // Items 0 and 1 are the unambiguous start pair. Items 2 and 3 have the
     // same margins and the same association (Hij = 0.4) with both start
     // items, so each produces the same augmented-set H = 0.6 and clears the
-    // step's Hi/Z gates. They are negatively associated with each other
+    // pre-step Hi/Z gates. They are negatively associated with each other
     // (Hij = -0.2).
     //
-    // search.normal.R computes all candidate H values from the pre-step set,
-    // then assigns every item exactly equal to max(result). The reference
-    // therefore adds items 2 and 3 together. Adding only the first winner and
-    // recomputing incorrectly excludes the other on the next iteration.
+    // A valid Mokken scale requires positive pairwise scalability. The
+    // deterministic first tied candidate (item 2) may join the start pair;
+    // item 3 must then be reconsidered against the enlarged set and rejected
+    // because Hij(2,3) is negative.
     let mut x = Vec::with_capacity(40 * 4);
     for person in 0..40 {
         let start = if person < 20 { 1 } else { 0 };
@@ -27,12 +29,16 @@ fn aisp_adds_all_exactly_tied_best_candidates_in_one_reference_step() {
         x.extend_from_slice(&[start, start, candidate_a, candidate_b]);
     }
 
+    let coefficients =
+        coef_h(&x, 40, 4).expect("fixture must have finite nonzero item variance");
+    assert!((coefficients.hij[2 * 4 + 3] + 0.2).abs() < 1e-12);
+
     let labels =
         aisp(&x, 40, 4, 0.3, 0.05).expect("AISP should accept the finite binary fixture");
 
     assert_eq!(
         labels,
-        vec![1, 1, 1, 1],
-        "exactly tied best candidates must be admitted as one search.normal step",
+        vec![1, 1, 1, 0],
+        "an exact candidate tie must resolve one item at a time and replay pairwise admissibility",
     );
 }
