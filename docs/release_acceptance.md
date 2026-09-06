@@ -114,6 +114,11 @@ historical 20B compatibility profile. It still carries legacy deal-value and
 acquisition-readiness entry point. Current documentation and the root README use
 `scripts/build_acquisition_release.py` instead.
 
+Older automation may still name `sales_readiness_manifest.json` and
+`commercial_release_manifest.json`. Those filenames belong to the retained
+legacy compatibility flow; they are not substitutes for the generic
+`final_acquisition_readiness_manifest.json` decision.
+
 If a real transaction scenario is being evaluated, pass its value explicitly to
 `build_acquisition_release.py --contract-value-krw ...`. The scenario is
 recorded separately from the generic readiness decision and does not become a
