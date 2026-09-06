@@ -67,9 +67,16 @@ def _initialize_git_repo(repo_root: Path) -> None:
 
 
 def _write_acceptance(tmp_path: Path) -> Path:
+    source_commit = subprocess.run(
+        ["git", "-C", str(tmp_path / "repo"), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     artifacts = tmp_path / "acceptance" / "artifacts"
     summary = {
         "status": "ok",
+        "source_commit": source_commit,
         "steps": [
             {
                 "command": "simulate",
