@@ -122,13 +122,22 @@ def _write_benchmark(tmp_path: Path, *, html_sha: str | None = None) -> Path:
 
 
 def _write_buyer_packet(tmp_path: Path) -> Path:
-    packet_zip = tmp_path / "packet" / "fast_mlsirm_buyer_evidence_packet.zip"
-    packet_zip.parent.mkdir(parents=True, exist_ok=True)
+    packet_dir = tmp_path / "packet"
+    payload_zip = packet_dir / "buyer_evidence_payload.zip"
+    payload_zip.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(payload_zip, "w") as payload:
+        payload.writestr("acceptance/acceptance_summary.json", "{}")
+
+    packet_zip = packet_dir / "fast_mlsirm_buyer_evidence_packet.zip"
     with zipfile.ZipFile(packet_zip, "w") as packet:
         packet.writestr("buyer_evidence_manifest.json", "{}")
-    html = tmp_path / "packet" / "buyer_evidence_report.html"
+
+    packet_digest = packet_dir / "fast_mlsirm_buyer_evidence_packet.sha256"
+    _write(packet_digest, _sha256(packet_zip) + "\n")
+
+    html = packet_dir / "buyer_evidence_report.html"
     _write(html, "<!doctype html><title>Buyer Evidence Review</title>")
-    manifest = tmp_path / "packet" / "buyer_evidence_manifest.json"
+    manifest = packet_dir / "buyer_evidence_manifest.json"
     _write(
         manifest,
         json.dumps(
@@ -136,8 +145,12 @@ def _write_buyer_packet(tmp_path: Path) -> Path:
                 "status": "ok",
                 "contract_value_krw": 2_000_000_000,
                 "artifact_count": 12,
-                "zip_file": str(packet_zip),
-                "zip_sha256": _sha256(packet_zip),
+                "payload_zip_file": str(payload_zip),
+                "payload_zip_sha256": _sha256(payload_zip),
+                "zip_file": str(payload_zip),
+                "zip_sha256": _sha256(payload_zip),
+                "packet_file": str(packet_zip),
+                "packet_sha256_file": str(packet_digest),
                 "report_file": str(html),
                 "report_sha256": _sha256(html),
             }
@@ -174,6 +187,8 @@ def test_build_release_evidence_index_creates_json_and_html(tmp_path):
     assert index["coverage"]["sdist"] is True
     assert index["coverage"]["benchmark_html_report"] is True
     assert index["coverage"]["buyer_packet_zip"] is True
+    assert index["coverage"]["buyer_packet_delivery"] is True
+    assert index["coverage"]["buyer_packet_delivery_digest"] is True
     assert index["html_report_sha256"]
     assert index["dist"]["wheel_count"] == 1
     assert index["dist"]["sdist_count"] == 1
