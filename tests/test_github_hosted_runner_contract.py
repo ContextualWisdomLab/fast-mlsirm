@@ -18,6 +18,9 @@ PR_WORKFLOWS = (
     WORKFLOW_DIRECTORY / "codeql.yml",
 )
 QUEUE_SENSITIVE_PR_WORKFLOWS = (WORKFLOW_DIRECTORY / "codeql.yml",)
+PR_LIFECYCLE_TYPES = (
+    "types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]"
+)
 FLOATING_RUNNER_ASSIGNMENT = re.compile(
     r"(?m)^\s*runs-on:\s*ubuntu-latest\s*(?:#.*)?$"
 )
@@ -77,6 +80,24 @@ def test_queue_sensitive_pr_workflows_cancel_predecessor_heads() -> None:
         concurrency = source.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
         assert expected_group in concurrency, workflow
         assert "cancel-in-progress: true" in concurrency, workflow
+
+
+def test_queue_sensitive_pr_workflows_reacquire_after_draft_lifecycle() -> None:
+    """Ready transitions must create fresh evidence without a no-op source commit."""
+    inactive_guard = (
+        "if: ${{ github.event_name != 'pull_request' || "
+        "(!github.event.pull_request.draft && github.event.action != 'closed') }}"
+    )
+    for workflow in QUEUE_SENSITIVE_PR_WORKFLOWS:
+        source = workflow.read_text(encoding="utf-8")
+        pull_request = source.split("\n  pull_request:\n", 1)[1].split(
+            "\n  workflow_dispatch:\n", 1
+        )[0]
+        assert PR_LIFECYCLE_TYPES in pull_request, workflow
+        analyze_actions = source.split("\n  analyze-actions:\n", 1)[1].split(
+            "\n  analyze-python:\n", 1
+        )[0]
+        assert inactive_guard in analyze_actions, workflow
 
 
 def test_required_python_context_cannot_pass_without_gpu_parity() -> None:
