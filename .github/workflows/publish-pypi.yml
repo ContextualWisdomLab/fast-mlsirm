@@ -411,11 +411,156 @@ jobs:
           if release.get("draft") is not True or release.get("name") != expected_tag:
               raise SystemExit("release mutation requires exactly one matching unpublished draft release")
           PY
+      - name: Prepare digest-bound PyPI retry set
+        id: pypi-recovery
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release_version="${RELEASE_TAG#v}"
+          evidence_dir=".release-evidence"
+          pypi_json="$evidence_dir/pypi-before.json"
+          mkdir -p "$evidence_dir/already-published"
+          http_status="$(curl --silent --show-error --location \
+            --output "$pypi_json" --write-out '%{http_code}' \
+            "https://pypi.org/pypi/fast-mlsirm/${release_version}/json")"
+          case "$http_status" in
+            200|404) ;;
+            *) echo "PyPI release lookup failed with HTTP $http_status" >&2; exit 1 ;;
+          esac
+          python3 - "$http_status" "$pypi_json" "$evidence_dir/pypi-manifest.json" <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          status, response_path, manifest_path = sys.argv[1:]
+          local_files = sorted(path for path in Path("dist").iterdir() if path.is_file())
+          if not local_files:
+              raise SystemExit("publication requires at least one built distribution")
+
+          def digest(path: Path) -> str:
+              hasher = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      hasher.update(chunk)
+              return hasher.hexdigest()
+
+          local = {path.name: (path, digest(path)) for path in local_files}
+          if len(local) != len(local_files):
+              raise SystemExit("duplicate local distribution filenames are not publishable")
+
+          if status == "404":
+              payload = {"urls": []}
+          else:
+              payload = json.loads(Path(response_path).read_text(encoding="utf-8"))
+          urls = payload.get("urls") if isinstance(payload, dict) else None
+          if not isinstance(urls, list):
+              raise SystemExit("PyPI release response does not contain a file list")
+
+          remote: dict[str, str] = {}
+          for entry in urls:
+              if not isinstance(entry, dict):
+                  raise SystemExit("PyPI release response contains an invalid file entry")
+              filename = entry.get("filename")
+              digests = entry.get("digests")
+              remote_sha = digests.get("sha256") if isinstance(digests, dict) else None
+              if not isinstance(filename, str) or not isinstance(remote_sha, str):
+                  raise SystemExit("PyPI release response is missing a filename or SHA-256 digest")
+              if filename in remote:
+                  raise SystemExit("PyPI release response contains duplicate filenames")
+              remote[filename] = remote_sha
+
+          unexpected = sorted(set(remote) - set(local))
+          if unexpected:
+              raise SystemExit(
+                  "unexpected PyPI files for this release: " + ", ".join(unexpected)
+              )
+
+          missing: list[str] = []
+          already_published = Path(".release-evidence/already-published")
+          for filename, (local_path, local_sha) in sorted(local.items()):
+              remote_sha = remote.get(filename)
+              if remote_sha is None:
+                  missing.append(filename)
+                  continue
+              if remote_sha != local_sha:
+                  raise SystemExit(
+                      "published PyPI digest does not match the reviewed artifact: " + filename
+                  )
+              local_path.replace(already_published / filename)
+
+          manifest = {"files": {name: sha for name, (_, sha) in sorted(local.items())}}
+          Path(manifest_path).write_text(
+              json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write(f"needs_publish={str(bool(missing)).lower()}\n")
+          PY
       - name: Publish package distributions to PyPI
+        if: steps.pypi-recovery.outputs.needs_publish == 'true'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
           password: ${{ secrets.PIPY_TOKEN }}
           attestations: false
+      - name: Verify complete PyPI artifact set
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release_version="${RELEASE_TAG#v}"
+          evidence_dir=".release-evidence"
+          manifest="$evidence_dir/pypi-manifest.json"
+          pypi_json="$evidence_dir/pypi-after.json"
+          verified=false
+          for attempt in 1 2 3 4 5 6; do
+            if curl --silent --show-error --location --fail \
+              --output "$pypi_json" \
+              "https://pypi.org/pypi/fast-mlsirm/${release_version}/json"; then
+              if python3 - "$manifest" "$pypi_json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected = manifest.get("files") if isinstance(manifest, dict) else None
+          response = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          urls = response.get("urls") if isinstance(response, dict) else None
+          if not isinstance(expected, dict) or not isinstance(urls, list):
+              raise SystemExit("PyPI artifact set is incomplete or contains unexpected files")
+
+          remote: dict[str, str] = {}
+          for entry in urls:
+              if not isinstance(entry, dict):
+                  raise SystemExit("PyPI artifact set is incomplete or contains unexpected files")
+              filename = entry.get("filename")
+              digests = entry.get("digests")
+              remote_sha = digests.get("sha256") if isinstance(digests, dict) else None
+              if not isinstance(filename, str) or not isinstance(remote_sha, str):
+                  raise SystemExit("PyPI artifact set is incomplete or contains unexpected files")
+              if filename in remote:
+                  raise SystemExit("PyPI artifact set is incomplete or contains unexpected files")
+              remote[filename] = remote_sha
+
+          if set(remote) != set(expected):
+              raise SystemExit("PyPI artifact set is incomplete or contains unexpected files")
+          for filename, local_sha in expected.items():
+              if remote.get(filename) != local_sha:
+                  raise SystemExit("PyPI artifact digest mismatch after publication: " + filename)
+          PY
+              then
+                verified=true
+                break
+              fi
+            fi
+            sleep 5
+          done
+          if [ "$verified" != true ]; then
+            echo "PyPI artifact verification did not converge on the reviewed distribution set" >&2
+            exit 1
+          fi
 
   finalize-release:
     name: publish immutable GitHub release
