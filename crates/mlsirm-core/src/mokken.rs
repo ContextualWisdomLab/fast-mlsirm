@@ -39,32 +39,31 @@
 //! epsilon-adjusted `Hij`; an exact adjusted tie is resolved deterministically
 //! by scan order so the published two-item start invariant is preserved. That
 //! pair must satisfy `Hi >= c`, after which free items are repeatedly
-//! evaluated. A free item must (1) have no negative `Hij` with any item already
-//! selected before that add step (nonnegative allowed), (2) have
-//! within-augmented-set `Hi >= c`, and (3) have `Zi >= Z_c`. Each add step
-//! chooses one admissible candidate with the maximum augmented-set `H`; exact
-//! `H` ties resolve in deterministic candidate order. The step is then repeated
-//! against the enlarged selected set so pairwise admissibility is replayed for
-//! remaining candidates. The scale closes when the best augmented-set `H < c`,
-//! and further scales are formed from leftover items. The significance level
-//! is Bonferroni-adjusted per scale as
+//! evaluated. A free item must (1) satisfy pairwise Criterion 1 against every
+//! already-selected item (`Zij >= Z_c`, hence positive observed pairwise
+//! scalability), (2) have within-augmented-set `Hi >= c`, and (3) have
+//! `Zi >= Z_c`. Each add step chooses one admissible candidate with the maximum
+//! augmented-set `H`; exact `H` ties resolve in deterministic candidate order.
+//! The step is then repeated against the enlarged selected set so pairwise
+//! admissibility is replayed for remaining candidates. The scale closes when
+//! the best augmented-set `H < c`, and further scales are formed from leftover
+//! items. The significance level is Bonferroni-adjusted per scale as
 //! `alpha / (K1*(K1-1)/2 + sum of later step candidate counts)`, with the
 //! candidate-count vector resetting at each new scale, matching
 //! `search.normal.R` (`adjusted.alpha`).
 //!
 //! Verification status: the coefficient definitions, rules of thumb, and the
-//! Mokken-scale definition (all inter-item covariances nonnegative in the
-//! selection sense and `Hi >= c > 0`) were read in van der Ark (2007), Straat
-//! et al. (2013), and Koopman et al. (2022). Exact sample statistics, Z forms,
-//! row-epsilon ranking, and Bonferroni adjustment were verified line-by-line
-//! against the mokken R package source (CRAN, `R/internalFunctions.R::coefHTiny`,
-//! `R/coefZ.R`, `R/search.normal.R`). Start-set cardinality and candidate
-//! selection follow the published AISP algorithm's explicit two-item start and
-//! one-next-item-at-a-time steps rather than CRAN equal-max vectorization edges,
-//! which can expand a start set or batch mutually inadmissible candidates.
-//! Mokken (1971) and Sijtsma & Molenaar (2002) were NOT read directly; claims
-//! from them are relayed via the above sources. No primary-source derivation of
-//! the Z normal approximation was verified; it is implementation-verified only.
+//! Mokken-scale definition (`Hij > 0` for every pair and `Hi >= c > 0`) were
+//! read in van der Ark (2007), Straat et al. (2013), and Koopman et al. (2022).
+//! Exact sample statistics, Z forms, row-epsilon ranking, and Bonferroni
+//! adjustment were verified line-by-line against the mokken R package source
+//! (CRAN, `R/internalFunctions.R::coefHTiny`, `R/coefZ.R`, `R/search.normal.R`).
+//! Start-set cardinality, one-next-item selection, and pairwise Criterion 1
+//! follow the published AISP algorithm where CRAN implementation edges are
+//! weaker or vectorized differently. Mokken (1971) and Sijtsma & Molenaar
+//! (2002) were NOT read directly; claims from them are relayed via the above
+//! sources. No primary-source derivation of the Z normal approximation was
+//! verified; it is implementation-verified only.
 //!
 //! References (APA 7th ed.):
 //! - van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
@@ -359,7 +358,7 @@ pub fn aisp(
         let mut best_pair: Option<(usize, usize)> = None;
         for (ai, &a) in free.iter().enumerate() {
             for &b in free.iter().skip(ai + 1) {
-                if zij(a, b).abs() < zc0 {
+                if zij(a, b) < zc0 {
                     continue;
                 }
                 let rank = hij(a, b) - (b + 1) as f64 * 1e-10;
@@ -381,8 +380,8 @@ pub fn aisp(
             in_set[item] = scale;
         }
         // Add one next item, then replay candidate admissibility against the
-        // enlarged scale. This preserves the pairwise Mokken criterion even
-        // when multiple pre-step candidates have exactly the same H.
+        // enlarged scale. This preserves both pairwise Mokken Criterion 1 and
+        // the one-next-item-at-a-time invariant after every addition.
         loop {
             let candidates: Vec<usize> = (0..j)
                 .filter(|&i| in_set[i] == 0)
@@ -396,6 +395,9 @@ pub fn aisp(
             let mut best_h = f64::NEG_INFINITY;
             let mut best_item: Option<usize> = None;
             for &cand in &candidates {
+                if selected.iter().any(|&sj| zij(cand, sj) < zc) {
+                    continue;
+                }
                 let mut aug = selected.clone();
                 aug.push(cand);
                 let (hi, h_total, zi, _) = h_subset(&s, &smax, j, &aug, n_persons);
