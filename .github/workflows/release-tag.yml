@@ -229,7 +229,7 @@ jobs:
                   )
               notes_path.write_text(capped_text, encoding="utf-8")
           PY
-      - name: Verify the release is absent and classify the tag state
+      - name: Verify release state and classify tag recovery
         id: release_tag_state
         env:
           GH_TOKEN: ${{ github.token }}
@@ -249,23 +249,60 @@ jobs:
               "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$endpoint"
           }
           response_file="$(mktemp)"
-          status="$(api_status "releases/tags/v$RELEASE_VERSION" "$response_file")"
-          case "$status" in
-            404)
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$response_file"
+          release_state="$(python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_name = f"v{os.environ['RELEASE_VERSION']}"
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_name
+          ]
+          if len(matches) > 1:
+              raise SystemExit("multiple releases unexpectedly share the requested tag")
+          if not matches:
+              print("absent")
+              raise SystemExit(0)
+          release = matches[0]
+          if release.get("draft") is not True:
+              raise SystemExit(
+                  f"release {expected_name} is already published; refusing to overwrite or reuse it"
+              )
+          if release.get("tag_name") != expected_name or release.get("name") != expected_name:
+              raise SystemExit("existing draft release identity does not match the requested release")
+          print("draft")
+          PY
+          )"
+          resume_existing_release=false
+          case "$release_state" in
+            absent)
+              echo "resume_existing_release=false" >> "$GITHUB_OUTPUT"
               ;;
-            200)
-              echo "release v$RELEASE_VERSION already exists; refusing to overwrite or reuse it" >&2
-              exit 1
+            draft)
+              resume_existing_release=true
+              echo "release v$RELEASE_VERSION already exists as an unpublished draft; resuming exact-tag publication"
+              echo "resume_existing_release=true" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              cat "$response_file" >&2
-              echo "GitHub API returned HTTP $status while checking release v$RELEASE_VERSION" >&2
+              echo "unexpected release state: $release_state" >&2
               exit 1
               ;;
           esac
           status="$(api_status "git/ref/tags/v$RELEASE_VERSION" "$response_file")"
           case "$status" in
             404)
+              if [ "$resume_existing_release" = "true" ]; then
+                echo "existing draft release is missing its required release tag" >&2
+                exit 1
+              fi
               echo "resume_existing_tag=false" >> "$GITHUB_OUTPUT"
               ;;
             200)
@@ -286,7 +323,7 @@ jobs:
                   "existing tag does not target the requested release commit"
               )
           PY
-              echo "tag v$RELEASE_VERSION exists without a release; resuming publication for the existing immutable tag"
+              echo "tag v$RELEASE_VERSION exists and targets the requested immutable source"
               echo "resume_existing_tag=true" >> "$GITHUB_OUTPUT"
               ;;
             *)
@@ -359,7 +396,8 @@ jobs:
                   "GitHub returned an unexpected ref or commit for the release tag"
               )
           PY
-      - name: Publish the GitHub release from the verified tag
+      - name: Create the draft GitHub release from the verified tag
+        if: steps.release_tag_state.outputs.resume_existing_release != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
@@ -368,6 +406,7 @@ jobs:
           gh release create "v$RELEASE_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --draft \
             --title "v$RELEASE_VERSION" \
             --notes-file release_notes.md
       - name: Dispatch package publication from the verified release source

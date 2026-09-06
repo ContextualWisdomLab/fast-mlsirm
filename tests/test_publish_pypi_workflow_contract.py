@@ -57,6 +57,21 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert text.count("maturin-version: v1.14.1") == 2
 
 
+def test_publication_requires_exact_unpublished_draft_before_destructive_retry() -> None:
+    """Direct dispatch must not let draft-recovery semantics mutate a published release."""
+    verify = _job_block(_workflow_text(), "verify-release")
+
+    assert "- name: Require exact draft release state" in verify
+    assert "GH_TOKEN: ${{ github.token }}" in verify
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in verify
+    assert "gh api --paginate --slurp" in verify
+    assert 'releases?per_page=100' in verify
+    assert 'release.get("tag_name") == expected_tag' in verify
+    assert "len(matches) != 1" in verify
+    assert 'release.get("draft") is not True' in verify
+    assert "publication requires exactly one matching unpublished draft release" in verify
+
+
 def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
     wheels = _job_block(_workflow_text(), "wheels")
 
@@ -119,7 +134,7 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     )
 
 
-def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
+def test_release_asset_write_is_isolated_and_recoverable_while_draft() -> None:
     text = _workflow_text()
     assets = _job_block(text, "release-assets")
     publish = _job_block(text, "publish-pypi")
@@ -128,13 +143,38 @@ def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
     assert "GH_TOKEN: ${{ github.token }}" in assets
     assert "RELEASE_TAG: ${{ inputs.release_tag }}" in assets
     assert 'gh release upload "$RELEASE_TAG"' in assets
-    assert "--clobber" not in assets
+    # The release is deliberately still a draft here. A retry after a prior
+    # successful asset job must replace same-name draft assets instead of
+    # deadlocking publication before the independently retryable PyPI sink.
+    assert "--clobber" in assets
     assert "secrets.PIPY_TOKEN" not in assets
 
     assert "environment: pypi" in publish
     assert "permissions:\n      contents: read" in publish
     assert "gh release upload" not in publish
     assert "contents: write" not in publish
+
+
+def test_release_mutations_replay_draft_state_at_the_mutation_seam() -> None:
+    """A stale early draft check must not authorize later irreversible publication."""
+    text = _workflow_text()
+    assets = _job_block(text, "release-assets")
+    publish = _job_block(text, "publish-pypi")
+    finalize = _job_block(text, "finalize-release")
+
+    for block, mutation in (
+        (assets, 'gh release upload "$RELEASE_TAG"'),
+        (publish, f"uses: pypa/gh-action-pypi-publish@{PYPI_PUBLISH_SHA}"),
+        (finalize, 'gh release edit "$RELEASE_TAG"'),
+    ):
+        assert "- name: Revalidate exact draft release state" in block
+        assert "gh api --paginate --slurp" in block
+        assert 'release.get("tag_name") == expected_tag' in block
+        assert "len(matches) != 1" in block
+        assert 'release.get("draft") is not True' in block
+        assert block.index("- name: Revalidate exact draft release state") < block.index(
+            mutation
+        )
 
 
 def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
@@ -150,15 +190,42 @@ def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     assert "skip-existing" not in publish
 
 
-def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> None:
+def test_pypi_publish_can_recover_independently_of_draft_asset_upload() -> None:
     text = _workflow_text()
     assets = _job_block(text, "release-assets")
     publish = _job_block(text, "publish-pypi")
 
-    # Release assets and PyPI are two independent publication sinks fed by the
-    # same verified build artifacts. A rerun after GitHub assets already exist
-    # must still be able to retry a previously failed PyPI publication rather
-    # than being skipped because immutable asset upload correctly fails closed.
-    assert "needs: [sdist, wheels]" in assets
-    assert "needs: [sdist, wheels]" in publish
+    # Both publication sinks require the same verified builds and successful
+    # SBOM/provenance evidence. They remain independent after that prerequisite;
+    # release-assets is retry-safe while the GitHub release is still a draft.
+    assert "needs: [sdist, wheels, sbom]" in assets
+    assert "needs: [sdist, wheels, sbom]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
+    assert "--clobber" in assets
+
+
+def test_new_release_sbom_job_uses_the_explicit_linux_runner_contract() -> None:
+    """New release-evidence jobs must not reintroduce a moving Ubuntu alias."""
+    sbom = _job_block(_workflow_text(), "sbom")
+
+    assert "runs-on: ubuntu-24.04" in sbom
+    assert "runs-on: ubuntu-latest" not in sbom
+
+
+def test_immutable_release_is_published_only_after_assets_and_pypi_succeed() -> None:
+    """Assets must be attached while the release is still mutable, then sealed once."""
+    publish_text = _workflow_text()
+    release_job = _job_block(_release_tag_workflow_text(), "publish-release-tag")
+    finalize = _job_block(publish_text, "finalize-release")
+
+    assert 'gh release create "v$RELEASE_VERSION"' in release_job
+    assert "--draft" in release_job
+    assert release_job.index('gh release create "v$RELEASE_VERSION"') < release_job.index(
+        "gh workflow run publish-pypi.yml"
+    )
+
+    assert "needs: [release-assets, publish-pypi]" in finalize
+    assert "permissions:\n      contents: write" in finalize
+    assert "GH_TOKEN: ${{ github.token }}" in finalize
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in finalize
+    assert 'gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false' in finalize

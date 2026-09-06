@@ -14,7 +14,7 @@ def test_release_workflow_checks_fragment_aggregate_before_tag_state() -> None:
     """Immutable publication must fail closed on fragment/CHANGELOG drift."""
     workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
     parity_check = "python scripts/render_changelog_fragments.py --check CHANGELOG.md"
-    tag_state = "Verify the release is absent and classify the tag state"
+    tag_state = "Verify release state and classify tag recovery"
     tag_create = "Atomically create the immutable release tag"
 
     assert parity_check in workflow
