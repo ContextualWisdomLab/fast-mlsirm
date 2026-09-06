@@ -442,10 +442,18 @@ def _write_buyer_packet_manifest(
     zip_sha: str | None = None,
     report_sha: str | None = None,
 ) -> Path:
-    packet_zip = tmp_path / "buyer_packet.zip"
+    payload_zip = tmp_path / "buyer_evidence_payload.zip"
+    with zipfile.ZipFile(payload_zip, "w") as payload:
+        payload.writestr("acceptance/acceptance_summary.json", "{}")
+    actual_payload_sha = hashlib.sha256(payload_zip.read_bytes()).hexdigest()
+
+    packet_zip = tmp_path / "fast_mlsirm_buyer_evidence_packet.zip"
     with zipfile.ZipFile(packet_zip, "w") as packet:
         packet.writestr("buyer_evidence_manifest.json", "{}")
-    actual_sha = hashlib.sha256(packet_zip.read_bytes()).hexdigest()
+    actual_packet_sha = hashlib.sha256(packet_zip.read_bytes()).hexdigest()
+    packet_digest = tmp_path / "fast_mlsirm_buyer_evidence_packet.sha256"
+    packet_digest.write_text(actual_packet_sha + "\n", encoding="ascii")
+
     html_report = tmp_path / "buyer_evidence_report.html"
     html_report.write_text("<!doctype html><title>Buyer Evidence Review</title>", encoding="utf-8")
     actual_report_sha = hashlib.sha256(html_report.read_bytes()).hexdigest()
@@ -465,8 +473,12 @@ def _write_buyer_packet_manifest(
         },
         "report_file": str(html_report),
         "report_sha256": report_sha or actual_report_sha,
-        "zip_file": str(packet_zip),
-        "zip_sha256": zip_sha or actual_sha,
+        "payload_zip_file": str(payload_zip),
+        "payload_zip_sha256": zip_sha or actual_payload_sha,
+        "zip_file": str(payload_zip),
+        "zip_sha256": zip_sha or actual_payload_sha,
+        "packet_file": str(packet_zip),
+        "packet_sha256_file": str(packet_digest),
     }
     path = tmp_path / "buyer_evidence_manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -656,6 +668,7 @@ def test_sales_readiness_validates_required_buyer_packet(tmp_path):
     check_names = {check["name"] for check in manifest["checks"]}
     assert "buyer_packet:coverage" in check_names
     assert "buyer_packet:zip_sha256" in check_names
+    assert "buyer_packet:packet_sha256" in check_names
     assert "buyer_packet:html_report_sha256" in check_names
 
 
