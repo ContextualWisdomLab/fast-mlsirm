@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2025-02-12 - Redundant `title` Attributes for Unformatted Floats
+**Learning:** In modern Python (3.1+), `str(value)` and `repr(value)` for floats produce the exact same unrounded string representation. Adding a `title` attribute containing `repr(value)` to elements where the text content is already `str(value)` creates redundant screen reader announcements (bloat) without providing any new visual or accessible information.
+**Action:** Do not add redundant HTML `title` attributes to unformatted floats using `repr(value)` if the visible text is already rendered using `str(value)`.

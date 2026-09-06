@@ -9,7 +9,6 @@ authorization.
 from __future__ import annotations
 
 import json
-import math
 from html import escape
 from pathlib import Path
 
@@ -51,23 +50,14 @@ def _validated_report(report: EssayScoreReport) -> EssayScoreReport:
 
 def _content_security_policy() -> str:
     """Return a restrictive meta-delivered policy for the standalone artifact."""
-    return "; ".join(
-        (
-            "default-src 'none'",
-            "style-src 'unsafe-inline'",
-            "img-src data:",
-            "object-src 'none'",
-            "base-uri 'none'",
-            "form-action 'none'",
-        )
-    )
-
-
-def _title_attr(value: object | None) -> str:
-    """Return an exact string title attribute for finite floats, else empty."""
-    if isinstance(value, float) and math.isfinite(value):
-        return f' title="{escape(repr(value))}"'
-    return ""
+    return "; ".join((
+        "default-src 'none'",
+        "style-src 'unsafe-inline'",
+        "img-src data:",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+    ))
 
 
 def _display(value: object | None) -> str:
@@ -79,12 +69,10 @@ def _definition_rows(rows: tuple[tuple[str, object], ...]) -> str:
     """Render exact key-value provenance as a semantic definition list."""
     items = []
     for label, value in rows:
-        items.extend(
-            (
-                f"<dt>{escape(label)}</dt>",
-                f"<dd{_title_attr(value)}>{_display(value)}</dd>",
-            )
-        )
+        items.extend((
+            f"<dt>{escape(label)}</dt>",
+            f"<dd>{_display(value)}</dd>",
+        ))
     return "\n".join(('<dl class="details-grid">', *items, "</dl>"))
 
 
@@ -123,24 +111,20 @@ def _table(
         cells = []
         for column_index, value in enumerate(row):
             if column_index == row_header_column:
-                cells.append(
-                    f'<th scope="row"{_title_attr(value)}>{_display(value)}</th>'
-                )
+                cells.append(f'<th scope="row">{_display(value)}</th>')
             else:
-                cells.append(f"<td{_title_attr(value)}>{_display(value)}</td>")
+                cells.append(f"<td>{_display(value)}</td>")
         body.append(f"<tr>{''.join(cells)}</tr>")
-    return "\n".join(
-        (
-            '<div class="table-scroll" tabindex="0" role="region" '
-            f'aria-label="{escape(caption, quote=True)}">',
-            "<table>",
-            f"<caption>{escape(caption)}</caption>",
-            f"<thead><tr>{heading}</tr></thead>",
-            f"<tbody>{''.join(body)}</tbody>",
-            "</table>",
-            "</div>",
-        )
-    )
+    return "\n".join((
+        '<div class="table-scroll" tabindex="0" role="region" '
+        f'aria-label="{escape(caption, quote=True)}">',
+        "<table>",
+        f"<caption>{escape(caption)}</caption>",
+        f"<thead><tr>{heading}</tr></thead>",
+        f"<tbody>{''.join(body)}</tbody>",
+        "</table>",
+        "</div>",
+    ))
 
 
 def _criterion_rows(report: EssayScoreReport) -> tuple[tuple[object | None, ...], ...]:
@@ -266,23 +250,21 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
         if report.human_review_required
         else "No structural trigger"
     )
-    provenance = _definition_rows(
-        (
-            ("Report ID", report.report_id),
-            ("Report handle", report.report_handle),
-            ("Report fingerprint", report.report_fingerprint),
-            ("Schema version", report.schema_version),
-            ("Request fingerprint", request.request_fingerprint),
-            ("Result fingerprint", report.scoring_result.result_fingerprint),
-            ("Assessment fingerprint", request.assessment_fingerprint),
-            ("Rubric fingerprint", request.rubric_fingerprint),
-            ("Task revision fingerprint", request.task_revision_fingerprint),
-            ("Engine ID", engine.engine_id),
-            ("Engine family", engine.engine_family_id),
-            ("Engine version", engine.engine_version),
-            ("Engine fingerprint", engine.engine_fingerprint),
-        )
-    )
+    provenance = _definition_rows((
+        ("Report ID", report.report_id),
+        ("Report handle", report.report_handle),
+        ("Report fingerprint", report.report_fingerprint),
+        ("Schema version", report.schema_version),
+        ("Request fingerprint", request.request_fingerprint),
+        ("Result fingerprint", report.scoring_result.result_fingerprint),
+        ("Assessment fingerprint", request.assessment_fingerprint),
+        ("Rubric fingerprint", request.rubric_fingerprint),
+        ("Task revision fingerprint", request.task_revision_fingerprint),
+        ("Engine ID", engine.engine_id),
+        ("Engine family", engine.engine_family_id),
+        ("Engine version", engine.engine_version),
+        ("Engine fingerprint", engine.engine_fingerprint),
+    ))
     criteria = _table(
         caption="Criterion-level scoring outcomes",
         headers=(
@@ -310,55 +292,53 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
         rows=_evidence_rows(report),
         empty_message="No evidence references are attached to this report.",
     )
-    return "\n".join(
-        (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            '<meta http-equiv="Content-Security-Policy" '
-            f'content="{escape(_content_security_policy(), quote=True)}">',
-            f"<title>{escape(title)}</title>",
-            f"<style>{_css()}</style>",
-            "</head>",
-            "<body>",
-            '<a class="skip-link" href="#main-content">Skip to report content</a>',
-            '<main id="main-content" tabindex="-1">',
-            '<header class="hero">',
-            f"<h1>{escape(title)}</h1>",
-            '<p class="subtitle">Exact governed scoring provenance and transparent review routing without source text.</p>',
-            "</header>",
-            f'<section class="{review_class}" aria-labelledby="review-routing-heading">',
-            '<h2 id="review-routing-heading">Review routing</h2>',
-            f"<p><strong>{escape(review_label)}</strong></p>",
-            f'<p class="notice">{escape(_VALIDITY_NOTICE)}</p>',
-            _trigger_section(report),
-            "</section>",
-            '<section aria-labelledby="provenance-heading">',
-            '<h2 id="provenance-heading">Exact provenance</h2>',
-            provenance,
-            "</section>",
-            '<section aria-labelledby="criteria-heading">',
-            '<h2 id="criteria-heading">Criterion outcomes</h2>',
-            criteria,
-            "</section>",
-            '<section aria-labelledby="evidence-heading">',
-            '<h2 id="evidence-heading">Evidence references</h2>',
-            evidence,
-            "</section>",
-            '<section aria-labelledby="json-heading">',
-            '<h2 id="json-heading">Canonical JSON</h2>',
-            "<p>The complete deterministic report payload is available below for audit reconstruction.</p>",
-            '<pre tabindex="0" role="region" aria-label="Canonical essay score report JSON">',
-            _canonical_json(report),
-            "</pre>",
-            "</section>",
-            "</main>",
-            "</body>",
-            "</html>",
-        )
-    )
+    return "\n".join((
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        '<meta http-equiv="Content-Security-Policy" '
+        f'content="{escape(_content_security_policy(), quote=True)}">',
+        f"<title>{escape(title)}</title>",
+        f"<style>{_css()}</style>",
+        "</head>",
+        "<body>",
+        '<a class="skip-link" href="#main-content">Skip to report content</a>',
+        '<main id="main-content" tabindex="-1">',
+        '<header class="hero">',
+        f"<h1>{escape(title)}</h1>",
+        '<p class="subtitle">Exact governed scoring provenance and transparent review routing without source text.</p>',
+        "</header>",
+        f'<section class="{review_class}" aria-labelledby="review-routing-heading">',
+        '<h2 id="review-routing-heading">Review routing</h2>',
+        f"<p><strong>{escape(review_label)}</strong></p>",
+        f'<p class="notice">{escape(_VALIDITY_NOTICE)}</p>',
+        _trigger_section(report),
+        "</section>",
+        '<section aria-labelledby="provenance-heading">',
+        '<h2 id="provenance-heading">Exact provenance</h2>',
+        provenance,
+        "</section>",
+        '<section aria-labelledby="criteria-heading">',
+        '<h2 id="criteria-heading">Criterion outcomes</h2>',
+        criteria,
+        "</section>",
+        '<section aria-labelledby="evidence-heading">',
+        '<h2 id="evidence-heading">Evidence references</h2>',
+        evidence,
+        "</section>",
+        '<section aria-labelledby="json-heading">',
+        '<h2 id="json-heading">Canonical JSON</h2>',
+        "<p>The complete deterministic report payload is available below for audit reconstruction.</p>",
+        '<pre tabindex="0" role="region" aria-label="Canonical essay score report JSON">',
+        _canonical_json(report),
+        "</pre>",
+        "</section>",
+        "</main>",
+        "</body>",
+        "</html>",
+    ))
 
 
 def render_essay_score_report_html(
