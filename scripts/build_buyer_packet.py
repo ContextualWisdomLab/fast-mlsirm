@@ -155,6 +155,16 @@ def _collect_files(
         benchmark_report = _read_json(benchmark_report_path)
         if benchmark_report.get("status") != "ok":
             raise RuntimeError("benchmark report status is not ok")
+        benchmark_source_commit = benchmark_report.get("source_commit")
+        if (
+            expected_source_commit is not None
+            and benchmark_source_commit is not None
+            and benchmark_source_commit != expected_source_commit
+        ):
+            raise RuntimeError(
+                "benchmark source commit does not match buyer packet source: "
+                f"expected {expected_source_commit}, observed {benchmark_source_commit}"
+            )
         _add_file(files, "benchmark/benchmark_report.json", benchmark_report_path)
         html_report_file = benchmark_report.get("html_report_file")
         html_report_path = (
@@ -184,6 +194,16 @@ def _collect_files(
         release_index = _read_json(release_evidence_index_path)
         if release_index.get("status") != "ok":
             raise RuntimeError("release evidence index status is not ok")
+        release_source_commit = release_index.get("source_commit")
+        if (
+            expected_source_commit is not None
+            and release_source_commit is not None
+            and release_source_commit != expected_source_commit
+        ):
+            raise RuntimeError(
+                "release evidence source commit does not match buyer packet source: "
+                f"expected {expected_source_commit}, observed {release_source_commit}"
+            )
         _add_file(
             files, "release/release_evidence_index.json", release_evidence_index_path
         )
