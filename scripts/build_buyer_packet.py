@@ -140,6 +140,14 @@ def _collect_files(
             html_report_path = benchmark_report_path.parent / html_report_path
         if html_report_path is None:
             raise RuntimeError("benchmark report is missing html_report_file")
+        benchmark_root = benchmark_report_path.parent.resolve()
+        html_report_path = html_report_path.resolve()
+        try:
+            html_report_path.relative_to(benchmark_root)
+        except ValueError:
+            raise RuntimeError(
+                f"benchmark HTML report is outside benchmark evidence root: {html_report_path}"
+            ) from None
         _add_file(files, "benchmark/benchmark_report.html", html_report_path)
 
     if release_evidence_index_path is not None:
@@ -157,6 +165,14 @@ def _collect_files(
             html_report_path = release_evidence_index_path.parent / html_report_path
         if html_report_path is None:
             raise RuntimeError("release evidence index is missing html_report_file")
+        release_root = release_evidence_index_path.parent.resolve()
+        html_report_path = html_report_path.resolve()
+        try:
+            html_report_path.relative_to(release_root)
+        except ValueError:
+            raise RuntimeError(
+                f"release evidence HTML report is outside release evidence root: {html_report_path}"
+            ) from None
         _add_file(files, "release/release_evidence_index.html", html_report_path)
 
     for path in sorted(dist_dir.glob("*.whl")):
