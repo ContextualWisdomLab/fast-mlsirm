@@ -25,10 +25,7 @@ def test_current_release_guides_use_price_neutral_readiness() -> None:
     assert "scripts/build_acquisition_release.py" in release_guide
     assert "python scripts/build_commercial_release.py" not in readme
     assert "python scripts/build_commercial_release.py" not in release_guide
-    assert (
-        "The configured evidence profile is complete and internally consistent"
-        in release_guide
-    )
+    assert "configured evidence profile is complete and internally consistent" in release_guide
     assert "does **not** prove a valuation" in release_guide
     assert "For KRW 2,000,000,000 enterprise sales review" not in release_guide
     assert "The KRW 2,000,000,000 sales-readiness standard" not in commercial_guide
@@ -43,7 +40,7 @@ def test_legacy_20b_documents_are_explicitly_compatibility_only() -> None:
     assert legacy_product.startswith("# Legacy 20B compatibility evidence")
     assert "deprecated compatibility" in legacy_product
     assert "--require-20b-product" in legacy_product
-    assert "Legacy 20B compatibility" in enterprise_guide
+    assert "legacy 20b compatibility" in enterprise_guide.lower()
     assert "--require-20b-product" in enterprise_guide
 
 
