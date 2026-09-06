@@ -125,6 +125,11 @@ def _collect_files(
 ) -> dict[str, Path]:
     """Collect required and optional procurement evidence for the packet."""
     acceptance = _read_json(acceptance_path)
+    sales_readiness = _read_json(sales_readiness_path)
+    if acceptance.get("status") != "ok":
+        raise RuntimeError("acceptance status is not ok")
+    if sales_readiness.get("status") != "ok":
+        raise RuntimeError("sales readiness status is not ok")
     if (
         expected_source_commit is not None
         and acceptance.get("source_commit") != expected_source_commit
