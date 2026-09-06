@@ -58,6 +58,17 @@ def _validate_acceptance_artifact_digests(
             )
 
 
+def _validate_sales_readiness_source(
+    sales_readiness_path: Path, expected_source_commit: str | None
+) -> None:
+    """Require source identity before sales evidence enters a source-bound packet."""
+    if expected_source_commit is None:
+        return
+    sales_readiness = _impl._read_json(sales_readiness_path)
+    if sales_readiness.get("source_commit") is None:
+        raise RuntimeError("sales readiness source commit is missing")
+
+
 def _collect_files(
     *,
     repo_root: Path,
@@ -68,10 +79,11 @@ def _collect_files(
     release_evidence_index_path: Path | None = None,
     expected_source_commit: str | None = None,
 ) -> dict[str, Path]:
-    """Validate acceptance digests, then delegate canonical packet collection."""
+    """Validate acceptance provenance, then delegate canonical packet collection."""
     _impl.PRODUCT_DOCS = PRODUCT_DOCS
     _impl.PRODUCT_MANIFESTS = PRODUCT_MANIFESTS
     _validate_acceptance_artifact_digests(acceptance_path, expected_source_commit)
+    _validate_sales_readiness_source(sales_readiness_path, expected_source_commit)
     return _original_collect_files(
         repo_root=repo_root,
         acceptance_path=acceptance_path,
