@@ -96,3 +96,18 @@ def test_release_assets_attach_sbom_without_leaking_it_into_pypi_upload():
     assert "pattern: dist-*" in publish
     assert "release-sbom" not in publish
     assert "attestations: false" in publish
+
+
+def test_final_release_publication_replays_exact_github_asset_digests():
+    """Draft publication is gated by the exact reviewed GitHub asset set and SHA-256 digests."""
+    text = _workflow_text()
+    block = _job_block(text, "finalize-release")
+    verify = "- name: Verify exact GitHub release asset set"
+    publish = "- name: Publish the fully assembled draft release"
+
+    assert verify in block
+    assert "releases/tags/$RELEASE_TAG" in block
+    assert 'asset.get("digest")' in block
+    assert 'f"sha256:{local_sha}"' in block
+    assert "set(remote) != set(expected)" in block
+    assert block.index(verify) < block.index(publish)
