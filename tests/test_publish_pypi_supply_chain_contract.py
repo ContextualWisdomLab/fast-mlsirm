@@ -84,7 +84,7 @@ def test_release_assets_attach_sbom_without_leaking_it_into_pypi_upload():
     """SBOM success gates PyPI, but its JSON never enters the upload directory."""
     text = _workflow_text()
     release_assets = _job_block(text, "release-assets", "publish-pypi")
-    publish = _job_block(text, "publish-pypi")
+    publish = _job_block(text, "publish-pypi", "finalize-release")
 
     assert "needs: [sdist, wheels, sbom]" in release_assets
     assert "pattern: dist-*" in release_assets
