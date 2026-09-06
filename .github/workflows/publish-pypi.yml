@@ -570,6 +570,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: dist-*
+          path: .release-evidence/github-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-sbom
+          path: .release-evidence/github-assets
       - name: Revalidate exact draft release state
         env:
           GH_TOKEN: ${{ github.token }}
@@ -599,6 +608,69 @@ jobs:
           release = matches[0]
           if release.get("draft") is not True or release.get("name") != expected_tag:
               raise SystemExit("release mutation requires exactly one matching unpublished draft release")
+          PY
+      - name: Verify exact GitHub release asset set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release_json="$(mktemp)"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$release_json"
+          python3 - "$release_json" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          asset_dir = Path(".release-evidence/github-assets")
+          local_files = sorted(path for path in asset_dir.iterdir() if path.is_file())
+          if not local_files:
+              raise SystemExit("GitHub release publication requires reviewed release assets")
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          expected = {path.name: (sha256(path), path.stat().st_size) for path in local_files}
+          if len(expected) != len(local_files):
+              raise SystemExit("duplicate reviewed GitHub release asset filenames are not publishable")
+
+          release = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assets = release.get("assets") if isinstance(release, dict) else None
+          if not isinstance(assets, list):
+              raise SystemExit("GitHub release response does not contain an asset list")
+
+          remote: dict[str, tuple[str, int]] = {}
+          for asset in assets:
+              if not isinstance(asset, dict):
+                  raise SystemExit("GitHub release response contains an invalid asset entry")
+              name = asset.get("name")
+              remote_digest = asset.get("digest")
+              size = asset.get("size")
+              if (
+                  not isinstance(name, str)
+                  or not isinstance(remote_digest, str)
+                  or not isinstance(size, int)
+                  or asset.get("state") != "uploaded"
+              ):
+                  raise SystemExit("GitHub release asset is missing uploaded digest evidence")
+              if name in remote:
+                  raise SystemExit("GitHub release response contains duplicate asset filenames")
+              remote[name] = (remote_digest, size)
+
+          if set(remote) != set(expected):
+              raise SystemExit("GitHub release asset set differs from the reviewed artifact set")
+          for filename, (local_sha, local_size) in expected.items():
+              remote_digest, remote_size = remote[filename]
+              if remote_digest != f"sha256:{local_sha}" or remote_size != local_size:
+                  raise SystemExit(
+                      "GitHub release asset digest/size differs from the reviewed artifact: "
+                      + filename
+                  )
           PY
       - name: Publish the fully assembled draft release
         env:
