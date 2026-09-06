@@ -31,19 +31,19 @@ MAX_SOURCE_CHARACTERS = 262_144
 MAX_SOURCES = 32
 MAX_TOTAL_SOURCE_CHARACTERS = 1_048_576
 MAX_RAW_RESPONSE_CHARACTERS = 262_144
-_ALLOWED_MEDIA_TYPES = frozenset({
-    "application/json",
-    "application/xml",
-    "text/csv",
-    "text/markdown",
-    "text/plain",
-})
+_ALLOWED_MEDIA_TYPES = frozenset(
+    {
+        "application/json",
+        "application/xml",
+        "text/csv",
+        "text/markdown",
+        "text/plain",
+    }
+)
 _DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-_CONTRACT_IDENTITY_FIELDS = frozenset({
-    "contract_id",
-    "contract_handle",
-    "contract_fingerprint",
-})
+_CONTRACT_IDENTITY_FIELDS = frozenset(
+    {"contract_id", "contract_handle", "contract_fingerprint"}
+)
 
 
 def _source_content(value: Any) -> str:
@@ -119,7 +119,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _reject_nonfinite_json(literal: str) -> Any:
+def _reject_nonfinite_json(_literal: str) -> Any:
     """Reject non-finite JSON constants."""
     raise ValueError("contract_json contains a non-finite numeric value")
 
@@ -603,17 +603,19 @@ class GenerationExecution:
     @property
     def execution_fingerprint(self) -> str:
         """Return SHA-256 over the complete redacted execution provenance."""
-        return _sha256_hex({
-            "schema_version": self.schema_version,
-            "request_id": self.request_id,
-            "request_fingerprint": self.request_fingerprint,
-            "contract_id": self.contract_id,
-            "contract_fingerprint": self.contract_fingerprint,
-            "provider_id": self.provider_id,
-            "model_id": self.model_id,
-            "candidate_fingerprint": self.candidate.candidate_fingerprint,
-            "raw_response_digest": self.raw_response_digest,
-        })
+        return _sha256_hex(
+            {
+                "schema_version": self.schema_version,
+                "request_id": self.request_id,
+                "request_fingerprint": self.request_fingerprint,
+                "contract_id": self.contract_id,
+                "contract_fingerprint": self.contract_fingerprint,
+                "provider_id": self.provider_id,
+                "model_id": self.model_id,
+                "candidate_fingerprint": self.candidate.candidate_fingerprint,
+                "raw_response_digest": self.raw_response_digest,
+            }
+        )
 
     @property
     def execution_handle(self) -> str:
