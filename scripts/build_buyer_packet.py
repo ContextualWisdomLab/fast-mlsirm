@@ -69,6 +69,20 @@ def _validate_sales_readiness_source(
         raise RuntimeError("sales readiness source commit is missing")
 
 
+def _validate_optional_source_identity(
+    evidence_path: Path | None,
+    expected_source_commit: str | None,
+    *,
+    evidence_name: str,
+) -> None:
+    """Require source identity for supplied optional evidence in a source-bound packet."""
+    if evidence_path is None or expected_source_commit is None:
+        return
+    evidence = _impl._read_json(evidence_path)
+    if evidence.get("source_commit") is None:
+        raise RuntimeError(f"{evidence_name} source commit is missing")
+
+
 def _collect_files(
     *,
     repo_root: Path,
@@ -84,6 +98,16 @@ def _collect_files(
     _impl.PRODUCT_MANIFESTS = PRODUCT_MANIFESTS
     _validate_acceptance_artifact_digests(acceptance_path, expected_source_commit)
     _validate_sales_readiness_source(sales_readiness_path, expected_source_commit)
+    _validate_optional_source_identity(
+        benchmark_report_path,
+        expected_source_commit,
+        evidence_name="benchmark",
+    )
+    _validate_optional_source_identity(
+        release_evidence_index_path,
+        expected_source_commit,
+        evidence_name="release evidence",
+    )
     return _original_collect_files(
         repo_root=repo_root,
         acceptance_path=acceptance_path,
