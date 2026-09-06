@@ -73,7 +73,8 @@ def _write_acceptance(tmp_path: Path) -> Path:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    artifacts = tmp_path / "acceptance" / "artifacts"
+    acceptance_dir = tmp_path / "acceptance"
+    artifacts = acceptance_dir / "artifacts"
     summary = {
         "status": "ok",
         "source_commit": source_commit,
@@ -91,7 +92,14 @@ def _write_acceptance(tmp_path: Path) -> Path:
             },
         ],
     }
-    path = tmp_path / "acceptance" / "acceptance_summary.json"
+    summary["artifact_sha256"] = {
+        Path(path).resolve().relative_to(acceptance_dir.resolve()).as_posix(): hashlib.sha256(
+            Path(path).read_bytes()
+        ).hexdigest()
+        for step in summary["steps"]
+        for path in step["files"].values()
+    }
+    path = acceptance_dir / "acceptance_summary.json"
     _write(path, json.dumps(summary))
     return path
 

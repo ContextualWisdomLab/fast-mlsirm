@@ -9,6 +9,7 @@ simulate -> fit (auto and optionally rust) -> diagnostics -> report rendering.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import importlib.util
 import os
@@ -35,6 +36,15 @@ RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = {
     "render-report-fit": 120.0,
     "render-report-dimensions": 120.0,
 }
+
+
+def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest of one finalized acceptance artifact."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _cli_timeout_seconds(out_label: str) -> float:
@@ -166,6 +176,38 @@ def _assert_source_unchanged(
         allowed_untracked_root=allowed_untracked_root,
         allowed_distribution_root=allowed_distribution_root,
     )
+
+
+def _acceptance_artifact_sha256(
+    out_dir: Path, steps: object
+) -> dict[str, str]:
+    """Seal every step-declared artifact under the acceptance evidence root."""
+    if not isinstance(steps, list):
+        raise RuntimeError("acceptance steps must be a list before artifact sealing")
+    evidence_root = out_dir.resolve()
+    digests: dict[str, str] = {}
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        files = step.get("files")
+        if files is None:
+            continue
+        if not isinstance(files, dict):
+            raise RuntimeError("acceptance step files must be an object")
+        for raw_path in files.values():
+            if not isinstance(raw_path, str) or not raw_path:
+                raise RuntimeError("acceptance artifact path must be a non-empty string")
+            resolved = Path(raw_path).resolve()
+            try:
+                relative = resolved.relative_to(evidence_root)
+            except ValueError:
+                raise RuntimeError(
+                    f"acceptance artifact is outside acceptance evidence root: {resolved}"
+                ) from None
+            if not resolved.is_file():
+                raise RuntimeError(f"acceptance artifact is missing: {resolved}")
+            digests[relative.as_posix()] = _sha256(resolved)
+    return dict(sorted(digests.items()))
 
 
 def _require_auto_fit_resolved_to_rust(
@@ -451,6 +493,7 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
         "status": "ok",
         "out": str(out_dir),
         "source_commit": source_commit,
+        "artifact_sha256": _acceptance_artifact_sha256(out_dir, report["steps"]),
         "steps": report["steps"],
         "total_duration_seconds": round(time.perf_counter() - acceptance_started, 6),
     }
