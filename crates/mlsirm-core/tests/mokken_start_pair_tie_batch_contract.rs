@@ -1,24 +1,22 @@
-//! Regression coverage for tied AISP start-pair formation.
+//! Regression coverage for exact ties at AISP start-pair selection.
 //!
-//! `mokken::search.normal` collects every lower-triangle cell tied at the
-//! maximum epsilon-adjusted `Hij`, forms one unique `StartSet` from all of
-//! those pair endpoints, and then applies the start-set `Hi >= c` gate. A
-//! Rust implementation must not collapse that tied maximum to one arbitrary
-//! pair before the start-set gate.
+//! The methodological AISP starts each scale with exactly two items: the
+//! admissible pair with the highest `Hij`. Exact ties therefore need a
+//! deterministic two-item resolution; they must not be unioned into a larger
+//! start set before the `Hi >= c` gate. The CRAN implementation vectorizes
+//! equal maxima in `search.normal.R`, but that edge behavior can duplicate a
+//! shared endpoint and no longer represents the published two-item start step.
 
 use mlsirm_core::mokken::{aisp, coef_h};
 
 #[test]
-fn aisp_applies_start_set_gate_to_all_tied_maximum_pairs() {
+fn aisp_keeps_exact_start_ties_to_one_deterministic_pair() {
     // Pair (0, 2) and pair (1, 2) both have Hij = 1 and share the same
     // lower-triangle row, so their epsilon-adjusted start-pair scores tie.
-    // Pair (0, 1) has Hij = -0.5. The canonical search.normal StartSet is
-    // therefore {0, 1, 2}; its item Hi values include values below c = 0.3,
-    // so scale formation stops with every item unassigned.
-    //
-    // Collapsing the tied maximum to only pair (0, 2) incorrectly forms a
-    // two-item scale because the negative (0, 1) relationship is then used
-    // only to exclude item 1 from the later candidate step.
+    // Pair (0, 1) has Hij = -0.5. The AISP start step is nevertheless one
+    // pair, not the union {0, 1, 2}; deterministic scan order selects (0, 2).
+    // Item 1 is then excluded from the add step by its negative Hij with item
+    // 0, leaving the scientifically admissible two-item scale.
     let x = vec![
         0, 0, 0,
         0, 1, 0,
@@ -36,7 +34,7 @@ fn aisp_applies_start_set_gate_to_all_tied_maximum_pairs() {
     let labels = aisp(&x, 6, 3, 0.3, 0.9).expect("AISP should accept the finite integer fixture");
     assert_eq!(
         labels,
-        vec![0, 0, 0],
-        "all epsilon-adjusted maximum start pairs must participate in the canonical StartSet gate",
+        vec![1, 0, 1],
+        "an exact maximum tie must resolve to one deterministic two-item start pair",
     );
 }
