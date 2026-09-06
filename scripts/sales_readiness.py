@@ -1579,6 +1579,15 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     existing release consumers.
     """
     repo_root = Path(args.repo_root).resolve()
+    acceptance_path = Path(args.acceptance).resolve()
+    acceptance = _read_json(acceptance_path)
+    source_commit = acceptance.get("source_commit")
+    if source_commit is not None and (
+        not isinstance(source_commit, str)
+        or len(source_commit) not in {40, 64}
+        or any(character not in "0123456789abcdef" for character in source_commit)
+    ):
+        raise RuntimeError("acceptance source_commit is malformed")
     buyer_packet_manifest = getattr(args, "buyer_packet_manifest", None)
     require_acquisition_readiness = bool(
         getattr(args, "require_acquisition_readiness", False)
@@ -1625,7 +1634,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         )
     checks.extend(
         _validate_acceptance_summary(
-            Path(args.acceptance).resolve(),
+            acceptance_path,
             require_rust=args.require_rust,
             max_acceptance_seconds=args.max_acceptance_seconds,
         )
@@ -1691,6 +1700,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     manifest = {
         "command": "sales_readiness",
         "status": "ok" if not failed else "failed",
+        "source_commit": source_commit,
         "contract_value_krw": args.contract_value_krw,
         "require_20b_product": args.require_20b_product,
         "require_acquisition_readiness": require_acquisition_readiness,
@@ -1708,7 +1718,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "require_pr_queue_governance": require_pr_queue_governance,
         "require_figma_evidence_sync": require_figma_evidence_sync,
         "repo_root": str(repo_root),
-        "acceptance": str(Path(args.acceptance).resolve()),
+        "acceptance": str(acceptance_path),
         "checks": checks,
         "failed_checks": failed,
     }
