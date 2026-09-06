@@ -137,3 +137,38 @@ def test_collect_files_rejects_release_html_outside_manifest_root(
             dist_dir=dist_dir,
             release_evidence_index_path=release_path,
         )
+
+
+@pytest.mark.parametrize("artifact_name", ["candidate.whl", "candidate.tar.gz"])
+def test_collect_files_rejects_symlinked_distribution_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact_name: str,
+) -> None:
+    """A packet must not promote a symlink target as a release distribution."""
+    module = _load_packet_builder()
+    monkeypatch.setattr(module, "PRODUCT_DOCS", [])
+    monkeypatch.setattr(module, "PRODUCT_MANIFESTS", [])
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    acceptance_path = acceptance_dir / "acceptance_summary.json"
+    acceptance_path.write_text('{"status":"ok","steps":[]}', encoding="utf-8")
+    sales_path = acceptance_dir / "sales_readiness_manifest.json"
+    sales_path.write_text('{"status":"ok"}', encoding="utf-8")
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+
+    outside = tmp_path / artifact_name
+    outside.write_bytes(b"not a packet-owned distribution")
+    (dist_dir / artifact_name).symlink_to(outside)
+
+    with pytest.raises(RuntimeError, match="distribution artifact must be a regular file"):
+        module._collect_files(
+            repo_root=repo_root,
+            acceptance_path=acceptance_path,
+            sales_readiness_path=sales_path,
+            dist_dir=dist_dir,
+        )
