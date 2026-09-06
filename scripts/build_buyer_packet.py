@@ -121,9 +121,18 @@ def _collect_files(
     dist_dir: Path,
     benchmark_report_path: Path | None = None,
     release_evidence_index_path: Path | None = None,
+    expected_source_commit: str | None = None,
 ) -> dict[str, Path]:
     """Collect required and optional procurement evidence for the packet."""
     acceptance = _read_json(acceptance_path)
+    if (
+        expected_source_commit is not None
+        and acceptance.get("source_commit") != expected_source_commit
+    ):
+        raise RuntimeError(
+            "acceptance source commit does not match buyer packet source: "
+            f"expected {expected_source_commit}, observed {acceptance.get('source_commit')}"
+        )
     files: dict[str, Path] = {}
     _add_file(files, "acceptance/acceptance_summary.json", acceptance_path)
     _add_file(files, "sales/sales_readiness_manifest.json", sales_readiness_path)
@@ -530,6 +539,7 @@ def _write_archive(path: Path, files: dict[str, Path]) -> None:
 def build_packet(args: argparse.Namespace) -> dict[str, Any]:
     """Build, validate, and return a digest-bound buyer evidence packet."""
     repo_root = Path(args.repo_root).resolve()
+    source_commit = _source_commit(repo_root)
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     payload_zip_path = out_dir / "buyer_evidence_payload.zip"
@@ -551,6 +561,7 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
             if getattr(args, "release_evidence_index", None)
             else None
         ),
+        expected_source_commit=source_commit,
     )
     source_entries = [
         {
@@ -589,7 +600,7 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         "command": "build_buyer_packet",
         "contract_value_krw": args.contract_value_krw,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "source_commit": _source_commit(repo_root),
+        "source_commit": source_commit,
         "artifact_count": len(source_entries),
         "coverage": coverage,
         "files": source_entries,
