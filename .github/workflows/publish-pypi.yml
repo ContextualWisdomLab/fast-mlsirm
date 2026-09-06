@@ -615,9 +615,42 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          release_json="$(mktemp)"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$release_json"
-          python3 - "$release_json" <<'PY'
+          releases_file="$(mktemp)"
+          assets_file="$(mktemp)"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases_file"
+          release_id="$(python3 - "$releases_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_tag = os.environ["RELEASE_TAG"]
+          matches = [
+              release
+              for page in pages
+              if isinstance(page, list)
+              for release in page
+              if isinstance(release, dict) and release.get("tag_name") == expected_tag
+          ]
+          if len(matches) != 1:
+              raise SystemExit("asset verification requires exactly one matching draft release")
+          release = matches[0]
+          release_id = release.get("id")
+          if (
+              release.get("draft") is not True
+              or release.get("name") != expected_tag
+              or not isinstance(release_id, int)
+              or release_id <= 0
+          ):
+              raise SystemExit("asset verification requires exactly one matching draft release")
+          print(release_id)
+          PY
+          )"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases/${release_id}/assets?per_page=100" > "$assets_file"
+          python3 - "$assets_file" <<'PY'
           import hashlib
           import json
           import sys
@@ -639,11 +672,13 @@ jobs:
           if len(expected) != len(local_files):
               raise SystemExit("duplicate reviewed GitHub release asset filenames are not publishable")
 
-          release = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          assets = release.get("assets") if isinstance(release, dict) else None
-          if not isinstance(assets, list):
-              raise SystemExit("GitHub release response does not contain an asset list")
-
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assets = [
+              asset
+              for page in pages
+              if isinstance(page, list)
+              for asset in page
+          ]
           remote: dict[str, tuple[str, int]] = {}
           for asset in assets:
               if not isinstance(asset, dict):
