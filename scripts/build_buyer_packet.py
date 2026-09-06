@@ -153,6 +153,8 @@ def _collect_files(
     _add_file(files, "sales/sales_readiness_manifest.json", sales_readiness_path)
     if benchmark_report_path is not None:
         benchmark_report = _read_json(benchmark_report_path)
+        if benchmark_report.get("status") != "ok":
+            raise RuntimeError("benchmark report status is not ok")
         _add_file(files, "benchmark/benchmark_report.json", benchmark_report_path)
         html_report_file = benchmark_report.get("html_report_file")
         html_report_path = (
@@ -180,6 +182,8 @@ def _collect_files(
 
     if release_evidence_index_path is not None:
         release_index = _read_json(release_evidence_index_path)
+        if release_index.get("status") != "ok":
+            raise RuntimeError("release evidence index status is not ok")
         _add_file(
             files, "release/release_evidence_index.json", release_evidence_index_path
         )
