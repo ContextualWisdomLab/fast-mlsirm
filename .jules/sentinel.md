@@ -50,3 +50,7 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+## 2026-08-25 - [JSON Depth Counter Underflow 취약점]
+**Vulnerability:** JSON 깊이를 수동으로 검증하는 `_validate_json_depth` 로직(문자열 스트림 파싱 중 최대 재귀 깊이를 초과하는 DoS 공격 방지 목적)에서 닫는 괄호(`]`, `}`)를 만날 때 깊이 카운터(`depth`)가 음수로 떨어질 수 있는 문제. 악의적인 페이로드가 문자열 외부에서 닫는 괄호를 여러 개 삽입해 카운터를 고의로 감소시키면, 뒤이어 엄청난 깊이의 중첩 객체가 오더라도 `MAX_JSON_DEPTH` 검증을 통과하게 되고, 결국 내장 `json.loads` 가 처리하다가 `RecursionError`를 유발할 수 있음.
+**Learning:** 카운터 기반의 보안 검증은 경계값(Underflow/Overflow) 공격에 취약할 수 있음. 매칭되지 않은 닫는 괄호가 존재할 경우 카운터가 0 미만으로 떨어지는 것을 방지해야 실제 중첩 깊이가 제대로 측정됨.
+**Prevention:** `depth -= 1`을 수행하기 전에 `depth > 0` 인지 확인하여 카운터가 음수로 내려가지 않도록 차단. (e.g. `elif char in "]}" and depth: depth -= 1`)
