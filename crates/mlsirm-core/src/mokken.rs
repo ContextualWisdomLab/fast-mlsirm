@@ -41,12 +41,13 @@
 //! pair must satisfy `Hi >= c`, after which free items are repeatedly
 //! evaluated. A free item must (1) have no negative `Hij` with any item already
 //! selected before that add step (nonnegative allowed), (2) have
-//! within-augmented-set `Hi >= c`, and (3) have `Zi >= Z_c`. Every candidate
-//! exactly tied at the maximum augmented-set `H` is added in that same
-//! reference step, matching `search.normal.R`; tied batch members are therefore
-//! not re-screened against one another before assignment. The scale closes
-//! when the best augmented-set `H < c`, and further scales are formed from
-//! leftover items. The significance level is Bonferroni-adjusted per scale as
+//! within-augmented-set `Hi >= c`, and (3) have `Zi >= Z_c`. Each add step
+//! chooses one admissible candidate with the maximum augmented-set `H`; exact
+//! `H` ties resolve in deterministic candidate order. The step is then repeated
+//! against the enlarged selected set so pairwise admissibility is replayed for
+//! remaining candidates. The scale closes when the best augmented-set `H < c`,
+//! and further scales are formed from leftover items. The significance level
+//! is Bonferroni-adjusted per scale as
 //! `alpha / (K1*(K1-1)/2 + sum of later step candidate counts)`, with the
 //! candidate-count vector resetting at each new scale, matching
 //! `search.normal.R` (`adjusted.alpha`).
@@ -55,15 +56,15 @@
 //! Mokken-scale definition (all inter-item covariances nonnegative in the
 //! selection sense and `Hi >= c > 0`) were read in van der Ark (2007), Straat
 //! et al. (2013), and Koopman et al. (2022). Exact sample statistics, Z forms,
-//! row-epsilon ranking, Bonferroni adjustment, and candidate-add mechanics were
-//! verified line-by-line against the mokken R package source (CRAN,
-//! `R/internalFunctions.R::coefHTiny`, `R/coefZ.R`, `R/search.normal.R`). The
-//! start-set cardinality follows the published AISP algorithm's explicit
-//! "first two items" step rather than the CRAN equal-max vectorization edge,
-//! which can expand the start set and duplicate a shared endpoint. Mokken
-//! (1971) and Sijtsma & Molenaar (2002) were NOT read directly; claims from
-//! them are relayed via the above sources. No primary-source derivation of the
-//! Z normal approximation was verified; it is implementation-verified only.
+//! row-epsilon ranking, and Bonferroni adjustment were verified line-by-line
+//! against the mokken R package source (CRAN, `R/internalFunctions.R::coefHTiny`,
+//! `R/coefZ.R`, `R/search.normal.R`). Start-set cardinality and candidate
+//! selection follow the published AISP algorithm's explicit two-item start and
+//! one-next-item-at-a-time steps rather than CRAN equal-max vectorization edges,
+//! which can expand a start set or batch mutually inadmissible candidates.
+//! Mokken (1971) and Sijtsma & Molenaar (2002) were NOT read directly; claims
+//! from them are relayed via the above sources. No primary-source derivation of
+//! the Z normal approximation was verified; it is implementation-verified only.
 //!
 //! References (APA 7th ed.):
 //! - van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
@@ -379,7 +380,9 @@ pub fn aisp(
         for &item in &selected {
             in_set[item] = scale;
         }
-        // add loop
+        // Add one next item, then replay candidate admissibility against the
+        // enlarged scale. This preserves the pairwise Mokken criterion even
+        // when multiple pre-step candidates have exactly the same H.
         loop {
             let candidates: Vec<usize> = (0..j)
                 .filter(|&i| in_set[i] == 0)
@@ -391,7 +394,7 @@ pub fn aisp(
             k_rest += candidates.len() as f64;
             let zc = z_c(k_rest);
             let mut best_h = f64::NEG_INFINITY;
-            let mut best_items = Vec::new();
+            let mut best_item: Option<usize> = None;
             for &cand in &candidates {
                 let mut aug = selected.clone();
                 aug.push(cand);
@@ -405,21 +408,17 @@ pub fn aisp(
                 }
                 if h_total > best_h {
                     best_h = h_total;
-                    best_items.clear();
-                    best_items.push(cand);
-                } else if h_total == best_h {
-                    best_items.push(cand);
+                    best_item = Some(cand);
                 }
             }
-            if best_h < c || best_items.is_empty() {
+            let Some(item) = best_item else {
+                break;
+            };
+            if best_h < c {
                 break;
             }
-            // search.normal.R assigns every item whose pre-step result equals
-            // max(result) in one step rather than recomputing after one tie.
-            for it in best_items {
-                in_set[it] = scale;
-                selected.push(it);
-            }
+            in_set[item] = scale;
+            selected.push(item);
         }
     }
     Ok(in_set)
