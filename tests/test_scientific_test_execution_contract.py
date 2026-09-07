@@ -66,13 +66,13 @@ def test_personfit_monte_carlo_acceptance_is_not_ignored() -> None:
 
 def test_ignore_guard_is_attribute_order_independent() -> None:
     """Reject an ignore attribute even when it precedes the test attribute."""
-    reordered = f"#[ignore]\n#[test]\nfn {TARGET_TEST}() {{}}\n"
+    reordered = f"#[ignore]\n#[test]\nfn {TARGET_TEST}() {{\n}}\n"
 
     assert _personfit_acceptance_is_ignored(reordered)
 
 
 def test_ignore_guard_rejects_reason_form() -> None:
     """Reject Rust's name-value ignore syntax as non-execution evidence."""
-    reasoned = f'#[test]\n#[ignore = "slow"]\nfn {TARGET_TEST}() {{}}\n'
+    reasoned = f'#[test]\n#[ignore = "slow"]\nfn {TARGET_TEST}() {{\n}}\n'
 
     assert _personfit_acceptance_is_ignored(reasoned)
