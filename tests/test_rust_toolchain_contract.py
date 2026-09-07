@@ -25,6 +25,17 @@ def _dependabot_ecosystem_block(ecosystem: str) -> str:
     return remainder.split("\n  - package-ecosystem:", 1)[0]
 
 
+def _reviewed_toolchain() -> str:
+    """Return the exact repository compiler channel reviewed in rust-toolchain.toml."""
+
+    manifest = tomllib.loads(_TOOLCHAIN.read_text(encoding="utf-8"))
+    assert set(manifest) == {"toolchain"}
+    assert manifest["toolchain"]["profile"] == "minimal"
+    channel = manifest["toolchain"]["channel"]
+    assert isinstance(channel, str) and channel.startswith("1.")
+    return channel
+
+
 def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
     """Return Rust action references paired only with their own ``with.toolchain`` values."""
 
@@ -86,8 +97,7 @@ def _rust_toolchain_steps(workflow: str) -> tuple[tuple[str, str | None], ...]:
 def test_local_rust_toolchain_is_exact_without_raising_public_crate_msrv() -> None:
     """Pin repository builds while leaving each published crate's MSRV unchanged."""
 
-    manifest = tomllib.loads(_TOOLCHAIN.read_text(encoding="utf-8"))
-    assert manifest["toolchain"] == {"channel": "1.97.1", "profile": "minimal"}
+    assert _reviewed_toolchain() == "1.98.1"
 
     for crate_manifest in (
         _ROOT / "crates" / "mlsirm-core" / "Cargo.toml",
@@ -97,16 +107,17 @@ def test_local_rust_toolchain_is_exact_without_raising_public_crate_msrv() -> No
         assert "rust-version" not in crate["package"]
 
 
-def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
-    """No Rust-backed verification lane may silently float to a new stable release."""
+def test_every_product_and_statistical_rust_action_matches_reviewed_toolchain() -> None:
+    """No Rust-backed verification lane may drift from the reviewed compiler baseline."""
 
+    reviewed_toolchain = _reviewed_toolchain()
     expected_counts = ((_CI, 4), (_STUDIES, 5))
     for workflow_path, expected in expected_counts:
         workflow = workflow_path.read_text(encoding="utf-8")
         steps = _rust_toolchain_steps(workflow)
         assert len(steps) == expected
         assert all(action == _ACTION for action, _ in steps)
-        assert all(toolchain == "1.97.1" for _, toolchain in steps)
+        assert all(toolchain == reviewed_toolchain for _, toolchain in steps)
         assert "toolchain: stable" not in workflow
 
 
