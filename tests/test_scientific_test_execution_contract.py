@@ -36,9 +36,18 @@ def _personfit_acceptance_attributes(source: str) -> tuple[str, ...]:
     return tuple(reversed(attributes))
 
 
+def _rust_attribute_meta_name(attribute: str) -> str:
+    """Extract the outer Rust attribute meta-item name without evaluating it."""
+    inner = attribute[2:-1].strip()
+    return inner.split("=", maxsplit=1)[0].split("(", maxsplit=1)[0].strip()
+
+
 def _personfit_acceptance_is_ignored(source: str) -> bool:
-    """Report whether the guarded acceptance carries the direct ignore marker."""
-    return "#[ignore]" in _personfit_acceptance_attributes(source)
+    """Report whether the guarded acceptance carries a direct ignore attribute."""
+    return any(
+        _rust_attribute_meta_name(attribute) == "ignore"
+        for attribute in _personfit_acceptance_attributes(source)
+    )
 
 
 def test_personfit_monte_carlo_acceptance_is_not_ignored() -> None:
@@ -46,9 +55,9 @@ def test_personfit_monte_carlo_acceptance_is_not_ignored() -> None:
     source = PERSONFIT_TESTS.read_text(encoding="utf-8")
     attributes = _personfit_acceptance_attributes(source)
 
-    assert "#[test]" in attributes, (
-        "the deterministic person-fit Monte Carlo acceptance must remain a Rust test"
-    )
+    assert any(
+        _rust_attribute_meta_name(attribute) == "test" for attribute in attributes
+    ), "the deterministic person-fit Monte Carlo acceptance must remain a Rust test"
     assert not _personfit_acceptance_is_ignored(source), (
         "the deterministic 500-rep person-fit Monte Carlo acceptance is skipped; "
         "scientific acceptance must run rather than rely on #[ignore]"
