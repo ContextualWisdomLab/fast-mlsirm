@@ -26,7 +26,7 @@ security posture, test strategy, and operability artifacts. Pair with root
 | ADR-002 | Population structures: single / multigroup / multilevel on MMLE path | Accepted — MMLE design + multilevel contracts |
 | ADR-003 | Multiple-membership and temporal occasion contracts are content-addressed and fail-closed | Accepted — `fast_mlsirm.multilevel` |
 | ADR-004 | CI matrix includes CPython 3.12 and 3.14; required check name is `python` | Accepted — `.github/workflows/ci.yml` |
-| ADR-005 | LLM/agent automation uses `NVIDIA_NIM_API_KEY`; do not use `COPILOT_GITHUB_TOKEN` for agent paths | Accepted — org agent policy; review-bot keys unchanged |
+| ADR-005 | LLM/agent automation routes through contextual-orchestrator `orchestrator/free`; provider credentials remain upstream and leaf workflows do not select provider/model fallback | Accepted — central org agent policy |
 | ADR-006 | PII handling prefers access control and purpose limitation over irreversible masking that blocks scoring | Accepted — commercial/security posture |
 | ADR-007 | Buyer-review Figma evidence is file-ID-bound and Code Connect-disabled in the reusable core | Accepted — `docs/adr/0016-figma-buyer-evidence-design-boundary.md` |
 
