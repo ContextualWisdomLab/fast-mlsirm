@@ -2,7 +2,7 @@
 
 Status: **Authoritative technical requirements baseline**  
 Repository: `ContextualWisdomLab/fast-mlsirm`  
-Last reviewed: 2026-08-09
+Last reviewed: 2026-09-07
 
 ## 1. Purpose
 
@@ -210,13 +210,15 @@ known-weight recovery, and uncertainty coverage before activation.
 
 ### 4.13 LLM/provider tests and automation
 
-**TRD-LLM-001** Model-backed GitHub tests/actions use `NVIDIA_NIM_API_KEY` through GitHub Secrets when a model call is materially necessary. `COPILOT_GITHUB_TOKEN` is prohibited for autonomous development scheduling.
+**TRD-LLM-001** Model-backed GitHub Actions shall consume the organization-owned contextual-orchestrator gateway through the central required-workflow boundary, using `orchestrator/free` plus that boundary's gateway token. Leaf workflows shall not receive provider API keys for model selection or execution.
 
-**TRD-LLM-002** `contextual-orchestrator` is preferred as a provider-neutral orchestration integration when suitable, but remains a read-only external dependency while its own writer loop is active.
+**TRD-LLM-002** Product/research LLM calls shall use a released, versioned `contextual-orchestrator` API/client/schema contract. A mutable branch, sibling PR head, or source checkout is not a production dependency; if a compatible immutable upstream release is unavailable, a new direct client integration remains fail closed rather than pinning mutable source.
 
 **TRD-LLM-003** Deterministic gates must remain executable without model credentials when the feature being validated does not require a model call.
 
-**TRD-LLM-004** Deep orchestration must be justified with comparable-budget evidence versus simpler routing, including task decomposition, recursion/workflow depth, role-specific reasoning effort, and ablations where relevant.
+**TRD-LLM-004** Leaf workflow/model configuration shall not declare a provider/model/group/paid fallback. Missing gateway capability is repaired in the contextual-orchestrator or central-workflow owner and remains non-passing here until then.
+
+**TRD-LLM-005** Deep orchestration must be justified with comparable-budget evidence versus simpler routing, including task decomposition, recursion/workflow depth, role-specific reasoning effort, and ablations where relevant.
 
 ### 4.14 Security and supply chain
 
