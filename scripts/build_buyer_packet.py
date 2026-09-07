@@ -83,6 +83,41 @@ def _validate_optional_source_identity(
         raise RuntimeError(f"{evidence_name} source commit is missing")
 
 
+def _validate_repository_evidence_source(
+    repo_root: Path, expected_source_commit: str | None
+) -> None:
+    """Require repository-owned buyer evidence to match the advertised source tree."""
+    if expected_source_commit is None:
+        return
+    evidence_paths = [*PRODUCT_DOCS, *PRODUCT_MANIFESTS]
+    try:
+        completed = _impl.subprocess.run(
+            [
+                "git",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignored=matching",
+                "--",
+                *evidence_paths,
+            ],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=_impl.GIT_METADATA_TIMEOUT_SECONDS,
+        )
+    except _impl.subprocess.TimeoutExpired as exc:
+        raise RuntimeError("repository-owned buyer evidence source check timed out") from exc
+    except (OSError, _impl.subprocess.SubprocessError) as exc:
+        raise RuntimeError("repository-owned buyer evidence source check failed") from exc
+    if completed.stdout.strip():
+        raise RuntimeError(
+            "repository-owned buyer evidence does not match source commit: "
+            f"{expected_source_commit}"
+        )
+
+
 def _validate_distribution_artifacts(dist_dir: Path) -> None:
     """Reject indirection before distribution files become buyer evidence."""
     for pattern in ("*.whl", "*.tar.gz"):
@@ -118,6 +153,7 @@ def _collect_files(
         expected_source_commit,
         evidence_name="release evidence",
     )
+    _validate_repository_evidence_source(repo_root, expected_source_commit)
     _validate_distribution_artifacts(dist_dir)
     return _original_collect_files(
         repo_root=repo_root,
