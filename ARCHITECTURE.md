@@ -2,7 +2,7 @@
 
 Status: **Authoritative living architecture baseline**
 Repository: `ContextualWisdomLab/fast-mlsirm`  
-Last reviewed: 2026-08-11
+Last reviewed: 2026-09-07
 
 This document describes the current and intended architecture of `fast-mlsirm`
 using the concerns and viewpoints of ISO/IEC/IEEE 42010:2022. It is the root
@@ -261,9 +261,17 @@ identity-bearing hosted data from reusable measurement artifacts. CSAP and SOC
 2 control objectives inform change control, access, logging, supply-chain, and
 incident evidence; this document does not claim certification.
 
-LLM automation uses dedicated `NVIDIA_NIM_API_KEY` credentials when a host
-authorizes model execution and does not use `COPILOT_GITHUB_TOKEN` for agent
-paths. Existing review-agent key schemes are not repurposed.
+LLM automation preserves the same ownership boundary as the product adapter:
+`contextual-orchestrator` owns provider discovery, provider credentials,
+capability routing, and fallback policy. Model-backed GitHub Actions consume the
+central gateway through `orchestrator/free` and its gateway authentication token;
+leaf workflow configuration does not receive or choose provider credentials,
+provider/model groups, concrete paid models, or paid fallback. A new direct
+runtime/client dependency is admitted only from an immutable released,
+versioned contextual-orchestrator API/client/schema; when that release evidence
+is unavailable, the integration fails closed rather than consuming mutable
+source. `COPILOT_GITHUB_TOKEN` is not a model execution credential. See
+ADR-0101.
 
 ## 7. Quality attributes and test strategy
 
