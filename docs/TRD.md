@@ -212,7 +212,7 @@ known-weight recovery, and uncertainty coverage before activation.
 
 **TRD-LLM-001** Model-backed GitHub Actions shall consume the organization-owned contextual-orchestrator gateway through the central required-workflow boundary, using `orchestrator/free` plus that boundary's gateway token. Leaf workflows shall not receive provider API keys for model selection or execution.
 
-**TRD-LLM-002** Product/research LLM calls shall use a released, versioned `contextual-orchestrator` API/client/schema contract. A mutable branch, sibling PR head, or source checkout is not a production dependency; if a compatible immutable upstream release is unavailable, a new direct client integration remains fail closed rather than pinning mutable source.
+**TRD-LLM-002** Product/research LLM calls shall use a released, versioned `contextual-orchestrator` API/client/schema contract. A mutable branch, sibling PR head, or source checkout is not a production dependency; if a compatible immutable upstream release is unavailable, a new direct client integration remains fail-closed rather than pinning mutable source.
 
 **TRD-LLM-003** Deterministic gates must remain executable without model credentials when the feature being validated does not require a model call.
 
