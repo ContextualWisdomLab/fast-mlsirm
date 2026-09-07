@@ -31,3 +31,4 @@ def test_governance_index_does_not_authorize_direct_provider_credentials() -> No
     assert "contextual-orchestrator" in adr_row
     assert "orchestrator/free" in adr_row
     assert "provider credentials" in adr_row.lower()
+    assert "provider/model/group/paid fallback" in adr_row.lower()
