@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import zipfile
 from pathlib import Path
+from typing import Any
 
 try:
     from scripts import _build_buyer_packet_impl as _impl
@@ -18,6 +21,7 @@ for _name, _value in vars(_impl).items():
 PRODUCT_DOCS = _impl.PRODUCT_DOCS
 PRODUCT_MANIFESTS = _impl.PRODUCT_MANIFESTS
 _original_collect_files = _impl._collect_files
+_original_build_packet = _impl.build_packet
 
 
 def _validate_acceptance_artifact_digests(
@@ -166,10 +170,117 @@ def _collect_files(
     )
 
 
+def _archive_entry_sha256(archive: zipfile.ZipFile, archive_path: str) -> str:
+    """Hash one archived evidence member without materializing it in memory."""
+    digest = hashlib.sha256()
+    with archive.open(archive_path, "r") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_archive_entries(
+    archive_path: Path,
+    entries: list[dict[str, Any]],
+) -> None:
+    """Require archived bytes to match the evidence entries sealed before ZIP writing."""
+    expected: dict[str, tuple[int, str]] = {}
+    for entry in entries:
+        name = entry.get("archive_path")
+        size_bytes = entry.get("size_bytes")
+        sha256 = entry.get("sha256")
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(size_bytes, int)
+            or size_bytes < 0
+            or not isinstance(sha256, str)
+            or len(sha256) != 64
+            or any(character not in "0123456789abcdef" for character in sha256)
+            or name in expected
+        ):
+            raise RuntimeError("buyer evidence archive has invalid sealed source entries")
+        expected[name] = (size_bytes, sha256)
+
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            names = archive.namelist()
+            if len(names) != len(set(names)) or set(names) != set(expected):
+                raise RuntimeError(
+                    "buyer evidence archive does not match sealed source entries"
+                )
+            for name, (size_bytes, sha256) in expected.items():
+                info = archive.getinfo(name)
+                if info.file_size != size_bytes or _archive_entry_sha256(archive, name) != sha256:
+                    raise RuntimeError(
+                        "buyer evidence archive does not match sealed source entries"
+                    )
+    except (OSError, zipfile.BadZipFile, KeyError) as exc:
+        raise RuntimeError(
+            "buyer evidence archive does not match sealed source entries"
+        ) from exc
+
+
+def _built_archive_entries(manifest: dict[str, Any], args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Construct the exact payload and delivery entry contracts from the built manifest."""
+    source_entries = manifest.get("files")
+    if not isinstance(source_entries, list) or not all(
+        isinstance(entry, dict) for entry in source_entries
+    ):
+        raise RuntimeError("buyer evidence manifest source entries are invalid")
+    payload_entries = [dict(entry) for entry in source_entries]
+
+    report_path = Path(str(manifest.get("report_file", "")))
+    manifest_path = Path(args.out).resolve() / "buyer_evidence_manifest.json"
+    report_digest = manifest.get("report_sha256")
+    if (
+        not report_path.is_file()
+        or not manifest_path.is_file()
+        or not isinstance(report_digest, str)
+    ):
+        raise RuntimeError("buyer evidence delivery metadata is incomplete")
+
+    delivery_entries = [
+        *payload_entries,
+        {
+            "archive_path": "buyer_evidence_report.html",
+            "size_bytes": report_path.stat().st_size,
+            "sha256": report_digest,
+        },
+        {
+            "archive_path": "buyer_evidence_manifest.json",
+            "size_bytes": manifest_path.stat().st_size,
+            "sha256": _impl._sha256(manifest_path),
+        },
+    ]
+    return payload_entries, delivery_entries
+
+
+def build_packet(args):
+    """Build a packet and verify ZIP members against the already-sealed manifest entries."""
+    manifest = _original_build_packet(args)
+    payload_entries, delivery_entries = _built_archive_entries(manifest, args)
+    try:
+        _validate_archive_entries(Path(manifest["payload_zip_file"]), payload_entries)
+        _validate_archive_entries(Path(manifest["packet_file"]), delivery_entries)
+    except Exception:
+        for candidate in (
+            manifest.get("payload_zip_file"),
+            manifest.get("packet_file"),
+            manifest.get("packet_sha256_file"),
+            manifest.get("report_file"),
+            str(Path(args.out).resolve() / "buyer_evidence_manifest.json"),
+        ):
+            if candidate:
+                Path(str(candidate)).unlink(missing_ok=True)
+        raise
+    return manifest
+
+
 _impl._collect_files = _collect_files
-build_packet = _impl.build_packet
 build_parser = _impl.build_parser
 main = _impl.main
+_impl.build_packet = build_packet
 
 
 if __name__ == "__main__":
