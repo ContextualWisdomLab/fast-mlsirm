@@ -8,6 +8,9 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CHANGELOG_FRAGMENT = (
+    ROOT / "docs" / "changelog.d" / "1697-dependabot-cargo-roots.md"
+)
 
 
 def _cargo_dependabot_blocks() -> list[str]:
@@ -95,3 +98,12 @@ def test_cargo_security_updates_are_grouped_across_lock_roots() -> None:
         r'          - "\*"$',
         block,
     )
+
+
+def test_cargo_lock_root_grouping_is_release_noted() -> None:
+    """The supply-chain behavior change must remain visible in release evidence."""
+    assert CHANGELOG_FRAGMENT.is_file()
+    note = CHANGELOG_FRAGMENT.read_text(encoding="utf-8")
+    assert "PyO3" in note
+    assert "dependency name" in note.lower()
+    assert "security" in note.lower()
