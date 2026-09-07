@@ -46,6 +46,12 @@ def _initialize_git_repo(repo_root: Path) -> None:
         text=True,
     )
     subprocess.run(
+        ["git", "-C", str(repo_root), "add", "."],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
         [
             "git",
             "-C",
@@ -55,7 +61,6 @@ def _initialize_git_repo(repo_root: Path) -> None:
             "-c",
             "user.email=fast-mlsirm-test@example.invalid",
             "commit",
-            "--allow-empty",
             "--quiet",
             "-m",
             "source provenance fixture",
@@ -66,13 +71,17 @@ def _initialize_git_repo(repo_root: Path) -> None:
     )
 
 
-def _write_acceptance(tmp_path: Path) -> Path:
-    source_commit = subprocess.run(
+def _source_commit(tmp_path: Path) -> str:
+    return subprocess.run(
         ["git", "-C", str(tmp_path / "repo"), "rev-parse", "HEAD"],
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
+
+
+def _write_acceptance(tmp_path: Path) -> Path:
+    source_commit = _source_commit(tmp_path)
     acceptance_dir = tmp_path / "acceptance"
     artifacts = acceptance_dir / "artifacts"
     summary = {
@@ -104,6 +113,15 @@ def _write_acceptance(tmp_path: Path) -> Path:
     return path
 
 
+def _write_sales_readiness(tmp_path: Path) -> Path:
+    path = tmp_path / "acceptance" / "sales_readiness_manifest.json"
+    _write(
+        path,
+        json.dumps({"status": "ok", "source_commit": _source_commit(tmp_path)}),
+    )
+    return path
+
+
 def _write_dist(dist: Path) -> None:
     _write(dist / "fast_mlsirm-0.1.0-py3-none-any.whl", "wheel")
     _write(dist / "fast_mlsirm-0.1.0.tar.gz", "sdist")
@@ -118,6 +136,7 @@ def _write_benchmark_report(tmp_path: Path) -> Path:
         json.dumps(
             {
                 "status": "ok",
+                "source_commit": _source_commit(tmp_path),
                 "budget_ok": True,
                 "html_report_file": str(html),
                 "html_report_sha256": hashlib.sha256(html.read_bytes()).hexdigest(),
@@ -136,6 +155,7 @@ def _write_release_evidence_index(tmp_path: Path) -> Path:
         json.dumps(
             {
                 "status": "ok",
+                "source_commit": _source_commit(tmp_path),
                 "html_report_file": str(html),
                 "html_report_sha256": hashlib.sha256(html.read_bytes()).hexdigest(),
             }
@@ -152,8 +172,7 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
         acceptance=str(acceptance),
@@ -219,8 +238,7 @@ def test_build_buyer_packet_can_include_benchmark_report(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     benchmark_report = _write_benchmark_report(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
@@ -249,8 +267,7 @@ def test_build_buyer_packet_rejects_tampered_benchmark_html(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     benchmark_report = _write_benchmark_report(tmp_path)
     benchmark = json.loads(benchmark_report.read_text(encoding="utf-8"))
     Path(benchmark["html_report_file"]).write_text("tampered", encoding="utf-8")
@@ -280,8 +297,7 @@ def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     release_index = _write_release_evidence_index(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
@@ -310,8 +326,7 @@ def test_build_buyer_packet_rejects_tampered_release_evidence_html(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     release_index = _write_release_evidence_index(tmp_path)
     release = json.loads(release_index.read_text(encoding="utf-8"))
     Path(release["html_report_file"]).write_text("tampered", encoding="utf-8")
@@ -341,8 +356,7 @@ def test_build_buyer_packet_fails_without_source_distribution(tmp_path):
     _write_repo_evidence(repo, module)
     _write(dist / "fast_mlsirm-0.1.0-py3-none-any.whl", "wheel")
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
         acceptance=str(acceptance),
