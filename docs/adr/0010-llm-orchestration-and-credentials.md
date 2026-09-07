@@ -1,6 +1,6 @@
 # ADR-0010: LLM orchestration and credential boundary
 
-Status: **Superseded** by **ADR-0101**  
+Status: **Superseded**  
 Date: 2026-08-09
 
 > Historical decision. ADR-0101 supersedes this ADR's provider-credential and GitHub model-routing policy. The original text below is retained as decision history and must not be used to authorize direct provider credentials in `fast-mlsirm`.
