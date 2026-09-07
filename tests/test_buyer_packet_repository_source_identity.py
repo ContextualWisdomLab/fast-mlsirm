@@ -82,8 +82,7 @@ def _write_acceptance(root: Path, source_commit: str) -> Path:
     return _write(acceptance_dir / "acceptance_summary.json", json.dumps(summary))
 
 
-def test_source_bound_packet_rejects_dirty_repository_owned_evidence(tmp_path):
-    module = _load_packet_builder()
+def _build_args(tmp_path: Path, module) -> tuple[argparse.Namespace, Path]:
     repo = tmp_path / "repo"
     source_commit = _commit_repository_evidence(repo, module)
     acceptance = _write_acceptance(tmp_path, source_commit)
@@ -94,11 +93,6 @@ def test_source_bound_packet_rejects_dirty_repository_owned_evidence(tmp_path):
     dist = tmp_path / "dist"
     _write(dist / "fast_mlsirm-0.1.0-py3-none-any.whl", "wheel")
     _write(dist / "fast_mlsirm-0.1.0.tar.gz", "sdist")
-
-    # The packet advertises HEAD as its source identity, so repository-owned
-    # procurement evidence must come from that exact tree rather than dirty bytes.
-    _write(repo / "README.md", "uncommitted replacement\n")
-
     args = argparse.Namespace(
         repo_root=str(repo),
         acceptance=str(acceptance),
@@ -107,8 +101,42 @@ def test_source_bound_packet_rejects_dirty_repository_owned_evidence(tmp_path):
         out=str(tmp_path / "packet"),
         contract_value_krw=2_000_000_000,
     )
+    return args, repo
+
+
+def test_source_bound_packet_rejects_dirty_repository_owned_evidence(tmp_path):
+    module = _load_packet_builder()
+    args, repo = _build_args(tmp_path, module)
+
+    # The packet advertises HEAD as its source identity, so repository-owned
+    # procurement evidence must come from that exact tree rather than dirty bytes.
+    _write(repo / "README.md", "uncommitted replacement\n")
 
     with pytest.raises(
         RuntimeError, match="repository-owned buyer evidence does not match source commit"
+    ):
+        module.build_packet(args)
+
+
+@pytest.mark.parametrize("archive_write_number", [1, 2])
+def test_source_bound_packet_rejects_repository_evidence_mutation_during_archive_write(
+    tmp_path, monkeypatch, archive_write_number
+):
+    module = _load_packet_builder()
+    args, repo = _build_args(tmp_path, module)
+    original_write_archive = module._impl._write_archive
+    write_count = 0
+
+    def mutate_then_write(path, files):
+        nonlocal write_count
+        write_count += 1
+        if write_count == archive_write_number:
+            _write(repo / "README.md", "changed after source evidence was sealed\n")
+        original_write_archive(path, files)
+
+    monkeypatch.setattr(module._impl, "_write_archive", mutate_then_write)
+
+    with pytest.raises(
+        RuntimeError, match="buyer evidence archive does not match sealed source entries"
     ):
         module.build_packet(args)
