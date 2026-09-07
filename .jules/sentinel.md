@@ -50,3 +50,7 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+## 2026-08-30 - [JSON Depth Validation Underflow Bypass]
+**Vulnerability:** The manual JSON depth validation logic in multiple files decremented the depth counter (`depth -= 1`) blindly when encountering a closing brace (`]` or `}`), regardless of whether it was legitimately closing an object/array or merely part of a string. An attacker could embed a massive sequence of closing braces inside a string payload to artificially drive the depth counter into a highly negative number, effectively bypassing the `MAX_JSON_DEPTH` protection.
+**Learning:** Crude pre-flight byte/character scanners for structural limits (like depth) are prone to state manipulation if they don't safeguard the boundary conditions of their own internal counters.
+**Prevention:** Ensure stateful depth counters have a strict floor (e.g., `and depth > 0: depth -= 1`) so they cannot be underflowed via crafted payloads containing unmatched delimiter characters.
