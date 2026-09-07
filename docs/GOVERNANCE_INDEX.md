@@ -10,7 +10,7 @@ security posture, test strategy, and operability artifacts. Pair with root
 | --- | --- | --- |
 | Architecture | Layered Rust-primary numeric core + Python orchestration | `/ARCHITECTURE.md` |
 | Agent / developer rules | Paper-first formula scope, review policy | `/AGENTS.md`, `/CLAUDE.md` |
-| Product / technical requirements | MVP scope, formula contract, out-of-scope | `docs/prd_trd_summary.md` |
+| Product / technical requirements | Current product and technical requirements, formula contract, non-goals | `docs/PRD.md`, `docs/TRD.md` |
 | MMLE / multigroup / multilevel design | Population structures, quadrature, EAP | `docs/mmle_marginal_lsirm_design.md` |
 | Multilevel / multi-membership / temporal contracts | Atomistic-fallacy guards, longitudinal occasions | `python/fast_mlsirm/multilevel/`, `docs/doctoring/multilevel_longitudinal_measurement.md` |
 | Doctoring (APA 7th) | Paper and standard citations for shipped claims | `docs/doctoring/` |
