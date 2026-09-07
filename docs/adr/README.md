@@ -44,7 +44,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0025](0025-finite-population-achieved-proportion.md) | Proposed | Rust terminates a complete one-stratum SRSWOR design with the achieved proportion, design variance, and Wang/Konijn exact interval. |
 | [0026](0026-public-polytomous-prediction-boundary.md) | Proposed | Expose Rust-owned GRM/GPCM category probabilities and expected responses through the public Python boundary. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
-| [0101](0101-contextual-orchestrator-gateway-credential-boundary.md) | Accepted | Provider credentials and routing stay in contextual-orchestrator; model-backed Actions consume the central `orchestrator/free` gateway and mutable upstream source is not a production dependency. |
+| [0101](0101-contextual-orchestrator-gateway-credential-boundary.md) | Proposed | Provider credentials and routing stay in contextual-orchestrator; model-backed Actions consume the central `orchestrator/free` gateway and mutable upstream source is not a production dependency. |
 
 ## ADR completeness rule
 
