@@ -42,10 +42,11 @@ def test_trd_requires_released_gateway_contract_and_free_route() -> None:
 def test_legacy_credential_adr_is_explicitly_superseded() -> None:
     """The historical direct-provider credential decision cannot remain Accepted."""
     old = OLD_ADR.read_text(encoding="utf-8")
+    new = NEW_ADR.read_text(encoding="utf-8")
     assert "Status: **Superseded**" in old
     assert "ADR-0101" in old
-    assert NEW_ADR.is_file()
+    assert "Status: **Proposed**" in new
 
     index = ADR_INDEX.read_text(encoding="utf-8")
     assert "| [0010](0010-llm-orchestration-and-credentials.md) | Superseded |" in index
-    assert "| [0101](0101-contextual-orchestrator-gateway-credential-boundary.md) | Accepted |" in index
+    assert "| [0101](0101-contextual-orchestrator-gateway-credential-boundary.md) | Proposed |" in index
