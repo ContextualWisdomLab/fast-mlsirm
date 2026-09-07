@@ -238,6 +238,18 @@ fn error_paths() {
     assert!(person_fit_np(&[vec![1.0, -1.0]]).is_err(), "-1 must Err");
 }
 
+fn detection_rate_meets_target(flagged: usize, reps: usize, target: f64) -> bool {
+    flagged as f64 / reps as f64 >= target
+}
+
+#[test]
+fn mc_detection_acceptance_rejects_raw_threshold_without_precision_margin() {
+    assert!(
+        !detection_rate_meets_target(475, 500, 0.95),
+        "a raw 95% hit rate must not pass a 95% Monte Carlo target without uncertainty margin"
+    );
+}
+
 /// MC-500: 2PL-conforming data plus one planted reversed respondent.
 /// The reversed respondent's U3 (crate output) must exceed the max
 /// conforming U3 in >= 95% of replications.
