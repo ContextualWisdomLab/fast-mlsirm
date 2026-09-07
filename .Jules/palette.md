@@ -52,6 +52,6 @@
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
 
-## 2024-05-18 - 마우스 사용자를 위한 표 컨테이너 초점 표시 제거
-**Learning:** `tabindex="0"` 속성이 적용된 `.table-wrap` 같은 스크롤 가능한 컨테이너 요소는 키보드 내비게이션 접근성을 위해 `:focus-visible`를 통해 뚜렷한 초점 표시(outline)가 필요하지만, 마우스 클릭 시 브라우저 기본 포커스 링이 나타나 시각적으로 어색할 수 있습니다.
-**Action:** 마우스 사용자 경험을 개선하고 시각적 거슬림을 방지하기 위해 키보드 탐색을 제외한 모든 초점 상태(`.table-wrap:focus:not(:focus-visible)`)에 `outline: none;`을 명시적으로 추가하여 키보드 접근성과 시각적 미려함을 모두 확보해야 합니다.
+## 2026-09-06 - 마우스 사용자를 위한 표 컨테이너 초점 표시 관리
+**Learning:** `tabindex="0"` 속성이 적용된 스크롤 가능한 컨테이너(`.table-wrap` 등)는 키보드 사용자를 위한 명확한 `:focus-visible` 표시가 필요합니다. 하지만 브라우저에 따라 마우스 클릭 시에도 불필요한 포커스 링이 나타날 수 있습니다. 무조건적인 `.table-wrap:focus { outline: none; }`은 키보드 접근성을 해칠 수 있으므로, `:focus-visible` 보존과 함께 마우스 포인터 상호작용 시에만 표시를 숨기는 것이 증거에 기반한 적절한 방식입니다.
+**Action:** 마우스 사용자 경험을 위해 선택적으로 포커스 표시를 숨기려면, 반드시 키보드를 위한 `.table-wrap:focus-visible` 링을 보존한 상태에서 `.table-wrap:focus:not(:focus-visible) { outline: none; }`과 같이 구체적으로 적용해야 합니다. 보편적인 포커스 금지 규칙으로 간주해서는 안 되며, 스크롤 가능성과 키보드 접근성이 유지되는지 렌더링된 출력에서 확인해야 합니다.
