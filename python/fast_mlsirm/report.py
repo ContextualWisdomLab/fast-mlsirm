@@ -71,7 +71,7 @@ def _diagnostics_type(payload: dict[str, Any]) -> str:
     raise ValueError(
         "unsupported diagnostics JSON: expected fit or dimensionality "
         "diagnostics; regenerate the file with fast-mlsirm diagnose-fit or "
-        "fast-mlsirm diagnose-dimensions before rendering"
+        "diagnose-dimensions before rendering"
     )
 
 
@@ -565,7 +565,7 @@ def _title_attr(value: Any) -> str:
 def _content_security_policy(css: str) -> str:
     """Return the strict CSP string embedded in every generated report."""
     css_hash = base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode("utf-8")
-    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'"
 
 
 def _css() -> str:
