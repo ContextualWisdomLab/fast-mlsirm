@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-09-07 - HTML 리포트 Skip-link 명도 대비 및 배경색 전환 효과
+**Learning:** 생성되는 HTML 리포트 내의 `.skip-link` 텍스트에 하드코딩된 `white` 색상을 사용하면 테마 기반 배경색(예: `--teal`)에 따라 다크 모드 등에서 명도 대비 기준에 미달될 수 있습니다. 또한 상호작용 요소(`:hover` 시 배경색 변경 등)에 전환 효과(transition)를 지정하지 않으면 화면 변화가 다소 뻣뻣하게 느껴질 수 있습니다.
+**Action:** 디자인 토큰/변수에 의존하는 요소의 텍스트 색상 지정 시 하드코딩된 색상보다는 `var(--bg)`와 같이 일관된 토큰을 사용하고, `:hover`를 통해 상태가 변하는 요소(예: `.bar-row`)에는 `transition: background-color 0.15s ease-in-out;`을 적용하여 자연스러운 사용자 경험을 제공합니다.
