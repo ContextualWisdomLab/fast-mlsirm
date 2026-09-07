@@ -75,6 +75,12 @@ Missing gateway authentication, missing `orchestrator/free` capability, incompat
 
 Rollback of a future released client adoption returns to the previously accepted immutable release or disables the model-backed integration. It does not restore ADR-0010's direct-provider credential policy.
 
+## Security and privacy implications
+
+- Provider credentials remain owned and discovered by contextual-orchestrator; `fast-mlsirm` leaf workflows do not receive provider API keys for model selection or execution.
+- Model-backed organization workflows receive only the gateway authentication token exposed by the central owner boundary, with its scope limited to gateway access rather than upstream provider authority.
+- Leaf configuration cannot select a provider/model/group/paid fallback, and logs, artifacts, durable identifiers, and generated reports must not expose either gateway credentials or upstream provider secrets.
+
 ## Evidence
 
 - `ContextualWisdomLab/.github` protected `main@78a4937c684a54ca8e415822c913742f41c6efc4` records central review routing through contextual-orchestrator and `orchestrator/free`.
