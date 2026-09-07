@@ -1,6 +1,6 @@
 # ADR-0101: contextual-orchestrator owns provider credentials and model routing
 
-Status: **Accepted**  
+Status: **Proposed**  
 Date: 2026-09-07
 Supersedes: ADR-0010 for provider-credential and GitHub model-routing policy; the remaining provider-neutral judge, untrusted-output, deterministic-test, and separation-of-review-authority decisions continue here.
 
