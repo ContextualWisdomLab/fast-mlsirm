@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-05-19 - Fast sum of squares with einsum
+**Learning:** Computing the sum of squares across an axis using `np.sum(diff * diff, axis=1)` allocates an intermediate 2D array, which becomes a bottleneck in gradient/distance loops.
+**Action:** Replace `np.sum(diff * diff, axis=1)` with `np.einsum('ij,ij->i', diff, diff)` to compute the squared differences across the axis without allocating an intermediate `(N, K)` array, improving execution speed and reducing memory bandwidth.
