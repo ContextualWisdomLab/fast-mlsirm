@@ -118,6 +118,63 @@ def test_source_bound_packet_rejects_dirty_repository_owned_evidence(tmp_path):
         module.build_packet(args)
 
 
+def test_source_bound_packet_rejects_repository_owned_evidence_symlink(tmp_path):
+    module = _load_packet_builder()
+    args, repo = _build_args(tmp_path, module)
+    external_readme = _write(tmp_path / "external-readme.md", "external evidence v1\n")
+    readme = repo / "README.md"
+    readme.unlink()
+    readme.symlink_to(external_readme)
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "README.md"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=fast-mlsirm-test",
+            "-c",
+            "user.email=fast-mlsirm-test@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "replace repository evidence with symlink",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    source_commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    acceptance_path = Path(args.acceptance)
+    acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
+    acceptance["source_commit"] = source_commit
+    acceptance_path.write_text(json.dumps(acceptance), encoding="utf-8")
+    sales_path = Path(args.sales_readiness)
+    sales = json.loads(sales_path.read_text(encoding="utf-8"))
+    sales["source_commit"] = source_commit
+    sales_path.write_text(json.dumps(sales), encoding="utf-8")
+
+    # Git records only the symlink target text. Mutating the dereferenced file does
+    # not dirty HEAD, so source-bound buyer evidence must reject this indirection.
+    external_readme.write_text("external evidence v2\n", encoding="utf-8")
+
+    with pytest.raises(
+        RuntimeError, match="repository-owned buyer evidence must be a regular file"
+    ):
+        module.build_packet(args)
+
+
 @pytest.mark.parametrize("archive_write_number", [1, 2])
 def test_source_bound_packet_rejects_repository_evidence_mutation_during_archive_write(
     tmp_path, monkeypatch, archive_write_number
