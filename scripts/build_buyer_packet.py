@@ -94,6 +94,12 @@ def _validate_repository_evidence_source(
     if expected_source_commit is None:
         return
     evidence_paths = [*PRODUCT_DOCS, *PRODUCT_MANIFESTS]
+    for relative in evidence_paths:
+        path = repo_root / relative
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError(
+                f"repository-owned buyer evidence must be a regular file: {path}"
+            )
     try:
         completed = _impl.subprocess.run(
             [
