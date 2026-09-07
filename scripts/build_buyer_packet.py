@@ -126,7 +126,10 @@ def _validate_repository_source_commit(
     repo_root: Path, expected_source_commit: object
 ) -> None:
     """Require repository HEAD to remain the source revision sealed at build start."""
-    if not isinstance(expected_source_commit, str) or _impl._source_commit(repo_root) != expected_source_commit:
+    if (
+        not isinstance(expected_source_commit, str)
+        or _impl._source_commit(repo_root) != expected_source_commit
+    ):
         raise RuntimeError("repository source commit changed during buyer packet build")
 
 
@@ -219,7 +222,10 @@ def _validate_archive_entries(
                 )
             for name, (size_bytes, sha256) in expected.items():
                 info = archive.getinfo(name)
-                if info.file_size != size_bytes or _archive_entry_sha256(archive, name) != sha256:
+                if (
+                    info.file_size != size_bytes
+                    or _archive_entry_sha256(archive, name) != sha256
+                ):
                     raise RuntimeError(
                         "buyer evidence archive does not match sealed source entries"
                     )
@@ -229,7 +235,9 @@ def _validate_archive_entries(
         ) from exc
 
 
-def _built_archive_entries(manifest: dict[str, Any], args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _built_archive_entries(
+    manifest: dict[str, Any], args
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Construct the exact payload and delivery entry contracts from the built manifest."""
     source_entries = manifest.get("files")
     if not isinstance(source_entries, list) or not all(
