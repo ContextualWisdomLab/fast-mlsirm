@@ -1,4 +1,4 @@
-"""Contracts for the governance index's requirements authority."""
+"""Contracts for the governance index's current authority links and policies."""
 
 from __future__ import annotations
 
@@ -20,3 +20,14 @@ def test_governance_index_points_to_canonical_prd_and_trd() -> None:
     assert "docs/PRD.md" in product_row
     assert "docs/TRD.md" in product_row
     assert "prd_trd_summary.md" not in product_row
+
+
+def test_governance_index_does_not_authorize_direct_provider_credentials() -> None:
+    """The current governance index must preserve contextual-orchestrator ownership."""
+    text = GOVERNANCE_INDEX.read_text(encoding="utf-8")
+    adr_row = next(line for line in text.splitlines() if line.startswith("| ADR-005 |"))
+
+    assert "NVIDIA_NIM_API_KEY" not in adr_row
+    assert "contextual-orchestrator" in adr_row
+    assert "orchestrator/free" in adr_row
+    assert "provider credentials" in adr_row.lower()
