@@ -122,6 +122,14 @@ def _validate_repository_evidence_source(
         )
 
 
+def _validate_repository_source_commit(
+    repo_root: Path, expected_source_commit: object
+) -> None:
+    """Require repository HEAD to remain the source revision sealed at build start."""
+    if not isinstance(expected_source_commit, str) or _impl._source_commit(repo_root) != expected_source_commit:
+        raise RuntimeError("repository source commit changed during buyer packet build")
+
+
 def _validate_distribution_artifacts(dist_dir: Path) -> None:
     """Reject indirection before distribution files become buyer evidence."""
     for pattern in ("*.whl", "*.tar.gz"):
@@ -263,6 +271,9 @@ def build_packet(args):
     try:
         _validate_archive_entries(Path(manifest["payload_zip_file"]), payload_entries)
         _validate_archive_entries(Path(manifest["packet_file"]), delivery_entries)
+        _validate_repository_source_commit(
+            Path(args.repo_root).resolve(), manifest.get("source_commit")
+        )
     except Exception:
         for candidate in (
             manifest.get("payload_zip_file"),
