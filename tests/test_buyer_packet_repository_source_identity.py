@@ -140,3 +140,49 @@ def test_source_bound_packet_rejects_repository_evidence_mutation_during_archive
         RuntimeError, match="buyer evidence archive does not match sealed source entries"
     ):
         module.build_packet(args)
+
+
+def test_source_bound_packet_rejects_head_change_during_build(tmp_path, monkeypatch):
+    """A packet must not keep an earlier source identity after repository HEAD advances."""
+    module = _load_packet_builder()
+    args, repo = _build_args(tmp_path, module)
+    original_collect_files = module._original_collect_files
+    moved = False
+
+    def advance_head_then_collect(**kwargs):
+        nonlocal moved
+        if not moved:
+            moved = True
+            _write(repo / "unrelated.txt", "new committed source state\n")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "unrelated.txt"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "-c",
+                    "user.name=fast-mlsirm-test",
+                    "-c",
+                    "user.email=fast-mlsirm-test@example.invalid",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "advance source during packet build",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        return original_collect_files(**kwargs)
+
+    monkeypatch.setattr(module, "_original_collect_files", advance_head_then_collect)
+
+    with pytest.raises(
+        RuntimeError, match="repository source commit changed during buyer packet build"
+    ):
+        module.build_packet(args)
