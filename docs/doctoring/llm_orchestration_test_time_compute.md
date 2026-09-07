@@ -1,6 +1,6 @@
 # LLM Orchestration and Test-Time Compute Doctoring
 
-Date reviewed: 2026-08-09  
+Date reviewed: 2026-09-07  
 Scope: LLM-backed assessment, rubric/item generation, scoring/judging, and autonomous-development integration policy for `fast-mlsirm`.
 
 ## Decision summary
@@ -95,9 +95,9 @@ Aggregation must retain which worker/stage produced which claim/evidence. Majori
 
 LLM workers/judges generate observations, evidence units, candidates, or qualitative review signals. Likelihoods, parameter estimation, IRT/MIRT/facet calibration, factor/model comparison, ranking/scoring kernels, DIF/linking, and numerical uncertainty remain deterministic Rust-owned computation.
 
-### ORCH-009 — Live-test credentials
+### ORCH-009 — Live-test credentials and routing
 
-Repository live model tests and autonomous-development model calls use GitHub Secret `NVIDIA_NIM_API_KEY`. `COPILOT_GITHUB_TOKEN` is not a model execution credential for this project. Existing independent review-agent credential identities/scopes are not repurposed by product tests.
+Provider credentials are owned by contextual-orchestrator and are not assigned to `fast-mlsirm` leaf workflows. Model-backed GitHub Actions use the organization-owned gateway through `orchestrator/free` and its gateway authentication token; leaf configuration does not select a provider/model/group/paid fallback. `COPILOT_GITHUB_TOKEN` is not a model execution credential. A new direct runtime/client/schema dependency requires an immutable released contextual-orchestrator contract; absence of such a release is a fail-closed readiness state, not permission to consume mutable source.
 
 ### ORCH-010 — Deterministic versus live gates
 
