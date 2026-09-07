@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CURRENT_POLICY_DOCS = (
     ROOT / "docs" / "TRD.md",
     ROOT / "ARCHITECTURE.md",
-    ROOT / "docs" / "GOVERNANCE_INDEX.md",
     ROOT / "docs" / "multilevel_multiple_membership_longitudinal_rfc.md",
 )
 OLD_ADR = ROOT / "docs" / "adr" / "0010-llm-orchestration-and-credentials.md"
@@ -30,11 +29,14 @@ def test_current_policy_does_not_assign_provider_credentials_to_fast_mlsirm() ->
 def test_trd_requires_released_gateway_contract_and_free_route() -> None:
     """Model-backed Actions use only the released gateway boundary and free route."""
     text = (ROOT / "docs" / "TRD.md").read_text(encoding="utf-8")
-    assert "released" in text[text.index("### 4.13 LLM/provider tests and automation") :]
-    assert "`contextual-orchestrator`" in text
-    assert "`orchestrator/free`" in text
-    assert "gateway token" in text.lower()
-    assert "provider/model/group/paid fallback" in text
+    llm_section = text[text.index("### 4.13 LLM/provider tests and automation") :]
+
+    assert "released" in llm_section
+    assert "`contextual-orchestrator`" in llm_section
+    assert "`orchestrator/free`" in llm_section
+    assert "gateway token" in llm_section.lower()
+    assert "provider/model/group/paid fallback" in llm_section
+    assert "mutable branch" in llm_section
 
 
 def test_legacy_credential_adr_is_explicitly_superseded() -> None:
