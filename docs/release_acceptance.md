@@ -13,7 +13,7 @@ The script verifies:
 - explicit Rust fit backend when requested
 - fit and dimensionality diagnostics output
 - diagnostics report HTML rendering
-- per-step and total runtime evidence for sales-readiness review
+- per-step and total runtime evidence for acquisition/commercial readiness review
 
 ## How to Run
 
@@ -47,119 +47,92 @@ python scripts/release_acceptance.py \
   - `fit_report.html`
   - `dimension_report.html`
 
-## Enterprise Sales Gate
+## Acquisition / Commercial Readiness Gate
 
-After building and installing the candidate package, run the enterprise sales
-readiness verifier against the release-acceptance output:
-
-```bash
-python scripts/sales_readiness.py \
-  --acceptance release_acceptance/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --check-import \
-  --out release_acceptance/sales_readiness_manifest.json
-```
-
-The command writes `sales_readiness_manifest.json`. A candidate is ready for
-KRW 2,000,000,000 enterprise sales review only when every manifest check is
-`ok`.
-
-For a full buyer-review evidence bundle, prefer the single commercial release
-builder:
+The complete generic buyer-review path is the price-neutral acquisition release
+orchestrator:
 
 ```bash
-python scripts/build_commercial_release.py \
-  --out commercial-release \
+python scripts/build_acquisition_release.py \
+  --out acquisition-release \
   --require-rust \
   --check-import
 ```
 
-The builder writes `commercial_release_manifest.json` and
-`commercial_release_report.html`, then runs procurement due diligence by
-default to write `procurement_due_diligence_manifest.json` and
-`procurement_due_diligence_report.html`, and runs PR queue governance by
-default to write `pr_queue_governance_manifest.json` and
-`pr_queue_governance_report.html` under the same output directory. It then
-runs Figma evidence sync by default to write
-`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html` after
-PR queue governance so the static Figma buyer-review packet is checked against
-the repo-local evidence bundle. It also
-records each stage command, duration, status, failed stage, source commit,
-contract value, artifact paths, and SHA256 digests for the same release
-candidate.
+Unless `--contract-value-krw` is supplied explicitly, the orchestrator leaves
+transaction value unset. It builds or reuses the release artifacts, runs release
+acceptance, creates benchmark, buyer-packet, release-index, procurement,
+PR-queue, and Figma evidence, then finishes with the canonical
+`sales_readiness.py --require-acquisition-readiness` gate. The final generic
+gate therefore evaluates evidence completeness rather than a hard-coded deal
+value.
 
-For the KRW 2,000,000,000 buyer packet flow, build the benchmark report,
-buyer packet, and release evidence index from the same acceptance output:
+The canonical acquisition path seals one exact repository revision and carries
+that lowercase full `source_commit` through release acceptance and every
+sales-readiness manifest. Buyer-packet collection requires the sales-readiness
+identity to be present and equal to the sealed packet revision, while the
+acquisition stage verifier independently checks the in-memory and persisted
+manifest against the same source. A direct legacy/non-Git `sales_readiness.py`
+recheck can still inherit an acceptance summary with no source identity and emit
+`source_commit: null`; that output is verification-only legacy evidence and is
+not admissible to the canonical source-bound buyer packet.
+
+The primary machine-readable outputs are:
+
+- `acquisition-release/acquisition_release_manifest.json` — exact-source bundle
+  inventory and SHA-256 evidence digests;
+- `acquisition-release/release-acceptance/final_acquisition_readiness_manifest.json`
+  — the complete price-neutral readiness decision;
+- the bounded benchmark, buyer-packet, release-index, procurement, PR-queue, and
+  Figma manifests under the same output tree.
+
+A candidate is ready for buyer review only when the final acquisition-readiness
+manifest is `ok`. That means the configured evidence profile is complete and
+internally consistent; it does **not** prove a valuation, transaction price,
+regulated-use suitability, customer outcome, deployment, or legal transfer.
+
+### Re-check an existing bundle
+
+To validate already-built evidence without rebuilding it, call the canonical
+gate with every required acquisition artifact explicitly:
 
 ```bash
-python scripts/build_benchmark_report.py \
-  --acceptance release_acceptance/acceptance_summary.json \
-  --out release_acceptance/benchmark
-
-python scripts/build_buyer_packet.py \
-  --acceptance release_acceptance/acceptance_summary.json \
-  --sales-readiness release_acceptance/sales_readiness_manifest.json \
+python scripts/sales_readiness.py \
+  --acceptance acquisition-release/release-acceptance/acceptance_summary.json \
   --dist dist \
-  --benchmark-report release_acceptance/benchmark/benchmark_report.json \
-  --out buyer-evidence-packet
-
-python scripts/build_release_evidence_index.py \
-  --acceptance release_acceptance/acceptance_summary.json \
-  --sales-readiness release_acceptance/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report release_acceptance/benchmark/benchmark_report.json \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --out release-evidence-index
+  --benchmark-report acquisition-release/release-acceptance/benchmark/benchmark_report.json \
+  --buyer-packet-manifest acquisition-release/buyer-evidence-packet/buyer_evidence_manifest.json \
+  --release-evidence-index acquisition-release/release-evidence-index/release_evidence_index.json \
+  --procurement-due-diligence acquisition-release/procurement-due-diligence/procurement_due_diligence_manifest.json \
+  --pr-queue-governance acquisition-release/pr-queue-governance/pr_queue_governance_manifest.json \
+  --figma-evidence-sync acquisition-release/figma-evidence-sync/figma_evidence_sync_manifest.json \
+  --require-rust \
+  --require-acquisition-readiness \
+  --check-import \
+  --out acquisition-release/release-acceptance/recheck_acquisition_readiness_manifest.json
 ```
 
-The release index writes `release_evidence_index.json` and
-`release_evidence_index.html`. It records the source commit, package version,
-wheel and source distribution SHA256 digests, acceptance status, benchmark
-budget status, sales-readiness status, buyer packet ZIP digest, and HTML report
-digest. A final gate can require it with
-`scripts/sales_readiness.py --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index`.
+The gate intentionally requires all buyer-facing evidence paths when
+`--require-acquisition-readiness` is active. Missing evidence fails closed rather
+than being silently treated as skipped.
 
-Procurement due diligence can also be generated as a standalone stage when a
-buyer asks for package metadata, policy-file, commercial-release, and GitHub
-snapshot evidence:
+### Legacy compatibility
 
-```bash
-python scripts/build_procurement_due_diligence.py \
-  --dist dist \
-  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
-  --out procurement-due-diligence
-```
+`scripts/build_commercial_release.py` is retained on this revision for the
+historical 20B compatibility profile. It still carries legacy deal-value and
+`--require-20b-product` semantics and is **not** the generic product-quality or
+acquisition-readiness entry point. Current documentation and the root README use
+`scripts/build_acquisition_release.py` instead.
 
-The procurement report writes `procurement_due_diligence_manifest.json` and
-`procurement_due_diligence_report.html`. A final gate can require it with
-`scripts/sales_readiness.py --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence`.
+Older automation may still name `sales_readiness_manifest.json` and
+`commercial_release_manifest.json`. Those filenames belong to the retained
+legacy compatibility flow; they are not substitutes for the generic
+`final_acquisition_readiness_manifest.json` decision.
 
-PR queue governance can also be generated as a standalone stage when a buyer
-asks how open PRs, review delays, stale changes, and release-scope conflicts
-are being managed:
-
-```bash
-python scripts/build_pr_queue_governance.py \
-  --out pr-queue-governance
-```
-
-The PR queue report writes `pr_queue_governance_manifest.json` and
-`pr_queue_governance_report.html`. A final gate can require it with
-`scripts/sales_readiness.py --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance`.
-
-Figma evidence sync can also be generated as a standalone stage when a buyer
-asks whether the static design packet still reflects the same procurement
-evidence being offered:
-
-```bash
-python scripts/build_figma_evidence_sync.py \
-  --out figma-evidence-sync
-```
-
-The Figma sync report writes `figma_evidence_sync_manifest.json` and
-`figma_evidence_sync_report.html`. A final gate can require it with
-`scripts/sales_readiness.py --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync`.
+If a real transaction scenario is being evaluated, pass its value explicitly to
+`build_acquisition_release.py --contract-value-krw ...`. The scenario is
+recorded separately from the generic readiness decision and does not become a
+product valuation claim.
 
 ## Required Rust Core
 

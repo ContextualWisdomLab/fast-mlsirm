@@ -769,9 +769,54 @@ def _validate_buyer_packet(
     zip_path = Path(str(zip_file)) if isinstance(zip_file, str) and zip_file else None
     if zip_path is not None and not zip_path.is_absolute():
         zip_path = manifest_path.parent / zip_path
-    zip_exists = zip_path is not None and zip_path.exists() and zip_path.is_file()
+    zip_exists = zip_path is not None and zip_path.is_file() and not zip_path.is_symlink()
     expected_zip_sha = payload.get("zip_sha256")
     actual_zip_sha = _sha256(zip_path) if zip_exists else None
+
+    packet_file = payload.get("packet_file")
+    packet_path = (
+        Path(str(packet_file))
+        if isinstance(packet_file, str) and packet_file
+        else None
+    )
+    if packet_path is not None and not packet_path.is_absolute():
+        packet_path = manifest_path.parent / packet_path
+    packet_exists = (
+        packet_path is not None
+        and packet_path.is_file()
+        and not packet_path.is_symlink()
+    )
+
+    digest_file = payload.get("packet_sha256_file")
+    digest_path = (
+        Path(str(digest_file))
+        if isinstance(digest_file, str) and digest_file
+        else None
+    )
+    if digest_path is not None and not digest_path.is_absolute():
+        digest_path = manifest_path.parent / digest_path
+    digest_exists = (
+        digest_path is not None
+        and digest_path.is_file()
+        and not digest_path.is_symlink()
+    )
+    expected_packet_sha: str | None = None
+    digest_format_ok = False
+    if digest_exists and digest_path is not None:
+        try:
+            digest_text = digest_path.read_text(encoding="ascii")
+        except (OSError, UnicodeError):
+            digest_text = ""
+        digest_lines = digest_text.splitlines()
+        if len(digest_lines) == 1:
+            candidate_digest = digest_lines[0].strip()
+            digest_format_ok = len(candidate_digest) == 64 and all(
+                char in "0123456789abcdef" for char in candidate_digest
+            )
+            if digest_format_ok:
+                expected_packet_sha = candidate_digest
+    actual_packet_sha = _sha256(packet_path) if packet_exists else None
+
     report_file = payload.get("report_file")
     report_path = (
         Path(str(report_file)) if isinstance(report_file, str) and report_file else None
@@ -816,7 +861,7 @@ def _validate_buyer_packet(
         _check(
             "buyer_packet:zip_file",
             zip_exists,
-            "buyer packet zip file exists",
+            "buyer packet payload ZIP exists",
             actual=str(zip_path) if zip_path is not None else None,
         ),
         _check(
@@ -824,9 +869,31 @@ def _validate_buyer_packet(
             zip_exists
             and isinstance(expected_zip_sha, str)
             and expected_zip_sha == actual_zip_sha,
-            "buyer packet zip SHA256 matches manifest",
+            "buyer packet payload ZIP SHA256 matches manifest",
             expected=expected_zip_sha,
             actual=actual_zip_sha,
+        ),
+        _check(
+            "buyer_packet:packet_file",
+            packet_exists,
+            "buyer delivery packet exists as a regular file",
+            actual=str(packet_path) if packet_path is not None else None,
+        ),
+        _check(
+            "buyer_packet:packet_sha256_file",
+            digest_exists and digest_format_ok,
+            "buyer delivery packet detached SHA256 exists and is well formed",
+            actual=str(digest_path) if digest_path is not None else None,
+        ),
+        _check(
+            "buyer_packet:packet_sha256",
+            packet_exists
+            and digest_exists
+            and digest_format_ok
+            and expected_packet_sha == actual_packet_sha,
+            "buyer delivery packet SHA256 matches its detached digest",
+            expected=expected_packet_sha,
+            actual=actual_packet_sha,
         ),
         _check(
             "buyer_packet:html_report",
@@ -1512,6 +1579,15 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     existing release consumers.
     """
     repo_root = Path(args.repo_root).resolve()
+    acceptance_path = Path(args.acceptance).resolve()
+    acceptance = _read_json(acceptance_path)
+    source_commit = acceptance.get("source_commit")
+    if source_commit is not None and (
+        not isinstance(source_commit, str)
+        or len(source_commit) not in {40, 64}
+        or any(character not in "0123456789abcdef" for character in source_commit)
+    ):
+        raise RuntimeError("acceptance source_commit is malformed")
     buyer_packet_manifest = getattr(args, "buyer_packet_manifest", None)
     require_acquisition_readiness = bool(
         getattr(args, "require_acquisition_readiness", False)
@@ -1558,7 +1634,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         )
     checks.extend(
         _validate_acceptance_summary(
-            Path(args.acceptance).resolve(),
+            acceptance_path,
             require_rust=args.require_rust,
             max_acceptance_seconds=args.max_acceptance_seconds,
         )
@@ -1624,6 +1700,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     manifest = {
         "command": "sales_readiness",
         "status": "ok" if not failed else "failed",
+        "source_commit": source_commit,
         "contract_value_krw": args.contract_value_krw,
         "require_20b_product": args.require_20b_product,
         "require_acquisition_readiness": require_acquisition_readiness,
@@ -1641,7 +1718,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "require_pr_queue_governance": require_pr_queue_governance,
         "require_figma_evidence_sync": require_figma_evidence_sync,
         "repo_root": str(repo_root),
-        "acceptance": str(Path(args.acceptance).resolve()),
+        "acceptance": str(acceptance_path),
         "checks": checks,
         "failed_checks": failed,
     }
