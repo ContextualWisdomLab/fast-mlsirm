@@ -10,7 +10,7 @@ This follows simulation-study guidance to choose replication counts from the pre
 
 The repository execution contract continues to inspect the attributes attached to this exact Rust test independently of attribute order and rejects both Rust `ignore` syntaxes: the MetaWord form `#[ignore]` and the MetaNameValueStr reason form `#[ignore = "..."]`. Either form removes the test from ordinary execution, so neither may silently remove this scientific acceptance from the normal suite.
 
-### Scientific traceability
+Scientific traceability:
 
 Morris, T. P., White, I. R., & Crowther, M. J. (2019). Using simulation studies to evaluate statistical methods. *Statistics in Medicine, 38*(11), 2074–2102. https://doi.org/10.1002/sim.8086
 
