@@ -30,6 +30,13 @@ def test_report_csp_helpers_bind_exact_inline_css() -> None:
         assert _expected_hash(css) in policy
 
 
+def test_meta_policy_does_not_claim_frame_ancestor_protection() -> None:
+    """Portable meta CSP must not claim an HTTP-header-only framing control."""
+    for module in (general_report, report_html):
+        policy = module._content_security_policy(module._css())
+        assert "frame-ancestors" not in policy
+
+
 def test_general_report_bar_chart_uses_csp_safe_value_markup() -> None:
     """Data-dependent bar widths must not rely on blocked style attributes."""
     chart = general_report._bar_chart(
