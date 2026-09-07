@@ -71,7 +71,7 @@ def _diagnostics_type(payload: dict[str, Any]) -> str:
     raise ValueError(
         "unsupported diagnostics JSON: expected fit or dimensionality "
         "diagnostics; regenerate the file with fast-mlsirm diagnose-fit or "
-        "diagnose-dimensions before rendering"
+        "fast-mlsirm diagnose-dimensions before rendering"
     )
 
 
