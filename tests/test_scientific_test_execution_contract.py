@@ -36,6 +36,11 @@ def _personfit_acceptance_attributes(source: str) -> tuple[str, ...]:
     return tuple(reversed(attributes))
 
 
+def _personfit_acceptance_is_ignored(source: str) -> bool:
+    """Report whether the guarded acceptance carries the direct ignore marker."""
+    return "#[ignore]" in _personfit_acceptance_attributes(source)
+
+
 def test_personfit_monte_carlo_acceptance_is_not_ignored() -> None:
     """Keep deterministic person-fit Monte Carlo acceptance in the normal Rust suite."""
     source = PERSONFIT_TESTS.read_text(encoding="utf-8")
@@ -44,7 +49,7 @@ def test_personfit_monte_carlo_acceptance_is_not_ignored() -> None:
     assert "#[test]" in attributes, (
         "the deterministic person-fit Monte Carlo acceptance must remain a Rust test"
     )
-    assert "#[ignore]" not in attributes, (
+    assert not _personfit_acceptance_is_ignored(source), (
         "the deterministic 500-rep person-fit Monte Carlo acceptance is skipped; "
         "scientific acceptance must run rather than rely on #[ignore]"
     )
@@ -54,4 +59,11 @@ def test_ignore_guard_is_attribute_order_independent() -> None:
     """Reject an ignore attribute even when it precedes the test attribute."""
     reordered = f"#[ignore]\n#[test]\nfn {TARGET_TEST}() {{}}\n"
 
-    assert "#[ignore]" in _personfit_acceptance_attributes(reordered)
+    assert _personfit_acceptance_is_ignored(reordered)
+
+
+def test_ignore_guard_rejects_reason_form() -> None:
+    """Reject Rust's name-value ignore syntax as non-execution evidence."""
+    reasoned = f'#[test]\n#[ignore = "slow"]\nfn {TARGET_TEST}() {{}}\n'
+
+    assert _personfit_acceptance_is_ignored(reasoned)
