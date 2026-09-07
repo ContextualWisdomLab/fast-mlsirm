@@ -24,7 +24,7 @@ def test_public_jmle_optimization_does_not_execute_python_optimizer_loops(
     optimizer: str,
 ) -> None:
     """Installed Rust-backed JMLE must not delegate optimizer arithmetic to Python."""
-    pytest.importorskip("fast_mlsirm._core")
+    importlib.import_module("fast_mlsirm._core")
     data = simulate(
         MLS2PLMConfig(
             n_persons=12,

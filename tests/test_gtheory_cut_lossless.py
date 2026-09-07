@@ -37,7 +37,9 @@ def test_phi_lambda_rejects_lossy_longdouble_cut_before_native_discovery(
 ) -> None:
     """Extended-precision mastery cuts cannot be silently rounded to Rust f64."""
     if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
-        pytest.skip("platform longdouble has no precision beyond float64")
+        pytest.fail(
+            "lossless mastery-cut evidence requires longdouble wider than binary64"
+        )
 
     core_calls: list[str] = []
 
