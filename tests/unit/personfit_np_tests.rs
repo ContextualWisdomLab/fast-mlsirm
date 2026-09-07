@@ -242,7 +242,6 @@ fn error_paths() {
 /// The reversed respondent's U3 (crate output) must exceed the max
 /// conforming U3 in >= 95% of replications.
 #[test]
-#[ignore]
 fn mc_500_reversed_respondent_flagged_by_u3() {
     // Local LCG (crate Lcg types are module-private): splitmix-style.
     struct Rng(u64);
