@@ -717,11 +717,40 @@ def _candidate_identity(
     )
 
 
+def _candidate_scoped_support_records(
+    base: ModelSpecification,
+    candidate_id: str,
+) -> tuple[EstimationPlan, IdentificationContract, RecoveryContract]:
+    """Expose only support records scoped to the compiled candidate identity."""
+    estimation_plan = (
+        base.estimation_plan
+        if _scope_matches(base.estimation_plan.applies_to_candidate_id, candidate_id)
+        else EstimationPlan("", "", False, candidate_id)
+    )
+    identification_contract = (
+        base.identification_contract
+        if _scope_matches(
+            base.identification_contract.applies_to_candidate_id,
+            candidate_id,
+        )
+        else IdentificationContract((), False, candidate_id)
+    )
+    recovery_contract = (
+        base.recovery_contract
+        if _scope_matches(base.recovery_contract.applies_to_candidate_id, candidate_id)
+        else RecoveryContract((), False, candidate_id)
+    )
+    return estimation_plan, identification_contract, recovery_contract
+
+
 def _missing_support_requirements(
     base: ModelSpecification,
     candidate_id: str,
     dependence: DependenceStructure,
     evidence: CapabilityEvidence | None,
+    estimation_plan: EstimationPlan,
+    identification_contract: IdentificationContract,
+    recovery_contract: RecoveryContract,
 ) -> tuple[str, ...]:
     """Derive promotion gates from candidate-scoped canonical owners."""
     has_equation = (
@@ -729,19 +758,14 @@ def _missing_support_requirements(
         and _exact_nonblank_string(evidence.generative_equation_id)
     )
     has_rust_estimator = (
-        base.estimation_plan.implemented is True
-        and _exact_nonblank_string(base.estimation_plan.estimator_id)
-        and type(base.estimation_plan.computational_backend) is str
-        and base.estimation_plan.computational_backend == "rust"
-        and _scope_matches(base.estimation_plan.applies_to_candidate_id, candidate_id)
+        estimation_plan.implemented is True
+        and _exact_nonblank_string(estimation_plan.estimator_id)
+        and type(estimation_plan.computational_backend) is str
+        and estimation_plan.computational_backend == "rust"
     )
     has_identification = (
-        base.identification_contract.verified is True
-        and _nonempty_exact_string_tuple(base.identification_contract.rules)
-        and _scope_matches(
-            base.identification_contract.applies_to_candidate_id,
-            candidate_id,
-        )
+        identification_contract.verified is True
+        and _nonempty_exact_string_tuple(identification_contract.rules)
     )
     has_citations = (
         evidence is not None
@@ -757,13 +781,12 @@ def _missing_support_requirements(
         membership.weight_authority is not MembershipWeightAuthority.MODEL_ESTIMATED
         or (
             _exact_nonblank_string(membership_recovery_metric)
-            and membership_recovery_metric in base.recovery_contract.required_metrics
+            and membership_recovery_metric in recovery_contract.required_metrics
         )
     )
     has_recovery = (
-        base.recovery_contract.passing is True
-        and _nonempty_exact_string_tuple(base.recovery_contract.required_metrics)
-        and _scope_matches(base.recovery_contract.applies_to_candidate_id, candidate_id)
+        recovery_contract.passing is True
+        and _nonempty_exact_string_tuple(recovery_contract.required_metrics)
     )
     checks = (
         (has_equation, _MISSING_SUPPORT_REQUIREMENTS[0]),
@@ -801,6 +824,11 @@ def _compile_one(
     identity = _candidate_identity(base, dependence)
     candidate_id = identity.canonical_id()
     evidence = evidence_by_candidate_id.get(candidate_id)
+    (
+        estimation_plan,
+        identification_contract,
+        recovery_contract,
+    ) = _candidate_scoped_support_records(base, candidate_id)
 
     if kind not in base.response_kernel.compatible_dependence:
         status = CapabilityStatus.UNSUPPORTED
@@ -814,6 +842,9 @@ def _compile_one(
             candidate_id,
             dependence,
             evidence,
+            estimation_plan,
+            identification_contract,
+            recovery_contract,
         )
         status = (
             CapabilityStatus.RESEARCH_CANDIDATE
@@ -827,9 +858,9 @@ def _compile_one(
         dimensional_structure=base.dimensional_structure,
         mixed_structure=base.mixed_structure,
         dependence=dependence,
-        estimation_plan=base.estimation_plan,
-        identification_contract=base.identification_contract,
-        recovery_contract=base.recovery_contract,
+        estimation_plan=estimation_plan,
+        identification_contract=identification_contract,
+        recovery_contract=recovery_contract,
         status=status,
         missing_requirements=missing,
         generative_equation_id=_published_equation_id(evidence),
