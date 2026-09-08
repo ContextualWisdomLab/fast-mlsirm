@@ -401,7 +401,7 @@ def _validate_raw_json_depth(content: str) -> None:
             depth += 1
             if depth > MAX_JUDGE_JSON_DEPTH:
                 raise JudgeFormatError(f"judge response JSON nesting exceeds maximum depth of {MAX_JUDGE_JSON_DEPTH}")
-        elif char in "]}":
+        elif char in "]}" and depth:
             depth -= 1
 
 
