@@ -147,42 +147,42 @@ is recorded.
 
 ## 2026-09-08 central Gitleaks stack reconciliation
 
-Canonical CodeQL successor `ContextualWisdomLab/.github#2040` advanced
-concurrently from `a22dd5b7…` to exact head
-`d4a95632af9031d7a40d3cab7e78c04f87044db4`. The two-commit delta suppresses
-status publication after a superseded-base revalidation and adds a bounded
-dual-context migration bridge with an explicit removal condition. Its Python
-Security `34239914762`, Security Scan `34239914829`, Runtime Quality
-`34239914795`, and Semgrep `34239914781` runs succeeded. CodeQL PR
-`34239914870` failed after the protected producer dispatched pending shards;
-handler run `34241333744` remained queued in that snapshot. With no concrete source
-finding or unresolved thread, Ready was restored at `2026-09-08T15:15:53Z`
-solely for review admission. Fresh same-head runs are CodeQL PR `34243627609`,
-Semgrep `34243626726`, Security Scan `34243626759`, and Python Security
-`34243626858`; all were non-terminal at capture. #2040 still has no qualifying
-current-head approval, so its merge gate remains closed.
+Canonical CodeQL successor `ContextualWisdomLab/.github#2040` is now exact
+head `d7bb95f6d6ca705725596df5170d6e1345080535` (tree
+`588f31d1bc499112064911070c5854d8bcaf3491`) on protected
+`main@7fd571dbcdbae6acf29d8f4ee704d7ba6297e4db`. It completely carries the
+valid #1902/#2004/#2043/#2044 deltas in ordinary ancestry and publishes only
+base-bound CodeQL receipt contexts. It is Ready for review admission,
+mergeable, 142 ahead / 0 behind, with zero unresolved review threads. Its
+focused producer/handler/recovery contracts are 139 passed; repository-wide
+verification is 3,086 passed / 1 skipped / 21 subtests with clean diff check.
+Fresh exact-head CodeQL PR `34244658739`, Semgrep `34244658720`, Security
+Scan `34244658738`, Python Security `34244658692`, and Runtime Quality
+`34243847708` remained non-terminal at capture. No qualifying current-head
+independent approval exists; Ready is not merge authority.
 
-The dependent Gitleaks owner `ContextualWisdomLab/.github#2041` was first
-reconciled to #2040@`a22dd5b7…`, then non-force advanced again when the
-prerequisite moved. Its final exact head
-`c51aae180f621d709163d295f1e9113671bc9585` (tree
-`ea330d5467e05a826acd0545ffd00ce742bc3c7c`) is an ordinary two-parent child
-of prior #2041 `50ff203027345bc6337d259bcec511cd98ab554b` and current #2040
-`d4a95632af9031d7a40d3cab7e78c04f87044db4`. Relative to #2040 it is 16
-commits ahead / 0 behind, mergeable, and retains exactly four effective
-Gitleaks-boundary paths. The append-only Gap merge preserves both owner evidence
-sections.
+The dependent Gitleaks owner `ContextualWisdomLab/.github#2041` is exact head
+`0f2b318c01bfa253c8ba13dc5b474cfd4349bf04` (tree
+`cce2c06fe889a5a1c08c729bc345f4a3f326768e`). It is an ordinary force=false
+two-parent child of prior #2041 `c51aae180f621d709163d295f1e9113671bc9585`
+and current #2040 `d7bb95f6d6ca705725596df5170d6e1345080535`.
+A history-aware merge reported clean but would have reverted valid current
+CodeQL files, so that candidate was rejected before publication. The published
+tree instead uses exact #2040 as authority and overlays only #2041's four
+Gitleaks-boundary paths.
 
-Exact merged-tree verification is 61 focused CodeQL/Gitleaks tests and
-repository-wide 3,032 passed / 1 skipped / 21 subtests, with statement and
-branch coverage 100%, public-doc coverage 100%, and clean diff check. Fresh
-#2041 runs are Runtime Quality `34243109706`, Security Scan `34243109766`,
-Semgrep `34243109758`, Python Security `34243109798`, and CodeQL PR
-`34243109771`; all were non-terminal at publication. Evidence:
-`.github#2041` comment `5587386220`. #2041 remains Draft/Proposed until the
-prerequisite integrates and fresh exact-head checks plus qualifying independent
-review are satisfied. Predecessor GREEN is non-authorizing.
+Relative to #2040, #2041 is 17 commits ahead / 0 behind, mergeable, and changes
+exactly `.github/workflows/security-scan.yml`, its CHANGELOG fragment, the
+central Gap baseline, and the Gitleaks contract test. Exact-tree validation is
+139 focused CodeQL/Gitleaks tests and repository-wide 3,090 passed / 1 skipped /
+21 subtests, with statement/branch and public-doc coverage 100% and clean diff
+check. Fresh Runtime Quality `34245990142`, Semgrep `34245990154`, Security
+Scan `34245990120`, Python Security `34245990168`, and CodeQL PR
+`34245990227` remained non-terminal at capture. #2041 remains Draft/Proposed
+with no current-head review or unresolved thread. Evidence: `.github#2041`
+comment `5587793299`.
 
 No lifecycle toggle, merge, approval, auto-merge authorization, protection
-bypass, manual rerun, empty push, force push, destructive rebase, review
-dismissal, or predecessor-evidence transfer is recorded.
+bypass, manual rerun, synthetic status, empty push, force push, destructive
+rebase, review dismissal, predecessor-evidence transfer, or PR Close is
+recorded.
