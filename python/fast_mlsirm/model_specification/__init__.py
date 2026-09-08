@@ -349,8 +349,72 @@ class RecoveryContract:
 
 
 @dataclass(frozen=True)
+class CandidateSupportRecords:
+    """Immutable estimator, identification, and recovery evidence for one candidate."""
+
+    estimation_plan: EstimationPlan
+    identification_contract: IdentificationContract
+    recovery_contract: RecoveryContract
+
+    def __post_init__(self) -> None:
+        """Require every support record to name the same exact candidate identity."""
+        if type(self.estimation_plan) is not EstimationPlan:
+            raise TypeError("estimation_plan must be an EstimationPlan")
+        if type(self.identification_contract) is not IdentificationContract:
+            raise TypeError("identification_contract must be an IdentificationContract")
+        if type(self.recovery_contract) is not RecoveryContract:
+            raise TypeError("recovery_contract must be a RecoveryContract")
+        candidate_id = self.estimation_plan.applies_to_candidate_id
+        if not _exact_nonblank_string(candidate_id):
+            raise ValueError("candidate support scope must be a non-blank candidate ID")
+        if self.identification_contract.applies_to_candidate_id != candidate_id:
+            raise ValueError("identification support scope must match estimator scope")
+        if self.recovery_contract.applies_to_candidate_id != candidate_id:
+            raise ValueError("recovery support scope must match estimator scope")
+
+    @property
+    def candidate_id(self) -> str:
+        """Return the exact candidate identity shared by the three support records."""
+        return self.estimation_plan.applies_to_candidate_id
+
+
+def _snapshot_support_records_by_candidate_id(
+    value: object,
+) -> Mapping[str, CandidateSupportRecords]:
+    """Seal exact-candidate support evidence without caller mapping callbacks."""
+    if type(value) is dict:
+        snapshot = value.copy()
+    elif type(value) is MappingProxyType:
+        snapshot = dict(value)
+    else:
+        raise TypeError(
+            "support_records_by_candidate_id must be a built-in dict or sealed mapping"
+        )
+    for candidate_id, support_records in snapshot.items():
+        if not _exact_nonblank_string(candidate_id):
+            raise TypeError(
+                "support_records_by_candidate_id keys must be non-blank built-in strings"
+            )
+        if type(support_records) is not CandidateSupportRecords:
+            raise TypeError(
+                "support_records_by_candidate_id values must be CandidateSupportRecords"
+            )
+        if support_records.candidate_id != candidate_id:
+            raise ValueError(
+                "support_records_by_candidate_id key must match its support-record scope"
+            )
+    return MappingProxyType(snapshot)
+
+
+@dataclass(frozen=True)
 class ModelSpecification:
-    """Base model aggregate before residual-dependence expansion."""
+    """Base model aggregate before residual-dependence expansion.
+
+    The legacy singleton support fields remain a compatibility path for callers
+    that can support only one compiled candidate. ``support_records_by_candidate_id``
+    is the canonical multi-candidate aggregate when supplied; entries override no
+    conflicting singleton record and are snapshotted before compilation.
+    """
 
     response_kernel: ResponseKernel
     dimensional_structure: DimensionalStructure
@@ -358,6 +422,36 @@ class ModelSpecification:
     estimation_plan: EstimationPlan
     identification_contract: IdentificationContract
     recovery_contract: RecoveryContract
+    support_records_by_candidate_id: Mapping[str, CandidateSupportRecords] | None = None
+
+    def __post_init__(self) -> None:
+        """Seal multi-candidate support records and reject competing same-scope truth."""
+        if self.support_records_by_candidate_id is None:
+            return
+        support_records = _snapshot_support_records_by_candidate_id(
+            self.support_records_by_candidate_id
+        )
+        singleton_scopes = (
+            self.estimation_plan.applies_to_candidate_id,
+            self.identification_contract.applies_to_candidate_id,
+            self.recovery_contract.applies_to_candidate_id,
+        )
+        if len(set(singleton_scopes)) == 1 and singleton_scopes[0] in support_records:
+            mapped = support_records[singleton_scopes[0]]
+            singleton = CandidateSupportRecords(
+                self.estimation_plan,
+                self.identification_contract,
+                self.recovery_contract,
+            )
+            if mapped != singleton:
+                raise ValueError(
+                    "candidate support cannot conflict with legacy singleton support"
+                )
+        object.__setattr__(
+            self,
+            "support_records_by_candidate_id",
+            support_records,
+        )
 
 
 @dataclass(frozen=True)
@@ -722,6 +816,14 @@ def _candidate_scoped_support_records(
     candidate_id: str,
 ) -> tuple[EstimationPlan, IdentificationContract, RecoveryContract]:
     """Expose only support records scoped to the compiled candidate identity."""
+    if base.support_records_by_candidate_id is not None:
+        support_records = base.support_records_by_candidate_id.get(candidate_id)
+        if support_records is not None:
+            return (
+                support_records.estimation_plan,
+                support_records.identification_contract,
+                support_records.recovery_contract,
+            )
     estimation_plan = (
         base.estimation_plan
         if _scope_matches(base.estimation_plan.applies_to_candidate_id, candidate_id)
@@ -884,7 +986,10 @@ def compile_dependence_candidates(
     Candidate evidence must be supplied as an exact built-in dictionary. The
     compiler snapshots and type-validates that dictionary before constructing
     any candidate identity so caller-controlled mapping callbacks cannot mutate
-    structural evidence between identity and manifest assembly.
+    structural evidence between identity and manifest assembly. Candidate support
+    records are snapshotted by ``ModelSpecification`` and can independently cover
+    every exact compiled candidate; legacy singleton support remains a one-candidate
+    compatibility path only.
     """
     evidence = (
         {}
@@ -896,6 +1001,7 @@ def compile_dependence_candidates(
 
 __all__ = [
     "CandidateIdentity",
+    "CandidateSupportRecords",
     "CapabilityEvidence",
     "CapabilityStatus",
     "CompiledModelCandidate",
