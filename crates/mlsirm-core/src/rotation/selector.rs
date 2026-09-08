@@ -238,6 +238,15 @@ pub fn select_rotation_criterion(
     })
 }
 
+/// Computes the row complexity and factor balance metrics for a rotated pattern matrix.
+///
+/// This function calculates the variance of squared loadings across factors for each row,
+/// aggregating them into an overall row complexity measure (closer to 1.0 indicates higher complexity).
+/// It also computes the ratio of the minimum to maximum factor sum of squares, representing
+/// the balance of variance explained across factors.
+///
+/// If `skip_general` is true, the first column is excluded from the calculation, which is
+/// appropriate for bifactor models where the general factor is expected to be dense.
 fn simple_structure_metrics(
     pattern: &[f64],
     rows: usize,
