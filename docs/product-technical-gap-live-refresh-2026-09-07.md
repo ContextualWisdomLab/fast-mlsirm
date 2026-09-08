@@ -182,11 +182,14 @@ exactly `.github/workflows/security-scan.yml`, its CHANGELOG fragment, the
 central Gap baseline, and the Gitleaks contract test. Exact-tree validation is
 139 focused CodeQL/Gitleaks tests and repository-wide 3,090 passed / 1 skipped /
 21 subtests, with statement/branch and public-doc coverage 100% and clean diff
-check. Fresh Runtime Quality `34245990142`, Semgrep `34245990154`, Security
-Scan `34245990120`, Python Security `34245990168`, and CodeQL PR
-`34245990227` remained non-terminal at capture. #2041 remains Draft/Proposed
-with no current-head review or unresolved thread. Evidence: `.github#2041`
-comment `5587793299`.
+check. Runtime Quality `34245990142`, Semgrep `34245990154`, Security Scan
+`34245990120`, and Python Security `34245990168` are terminal GREEN. CodeQL
+PR `34245990227` is terminal failure on attempt 1 after exact language jobs
+failed closed pending a verdict and coordinator `102129408072` dispatched
+successfully. Exact protected handler `34246569084` remains queued, so no SARIF
+or source finding exists yet and no manual rerun is justified. #2041 remains
+Draft/Proposed with no current-head review or unresolved thread. Evidence:
+`.github#2041` comments `5587793299` and `5587910402`.
 
 No lifecycle toggle, merge, approval, auto-merge authorization, protection
 bypass, manual rerun, synthetic status, empty push, force push, destructive
