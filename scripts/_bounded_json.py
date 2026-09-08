@@ -113,7 +113,7 @@ def _validate_json_depth(content: bytes, *, max_depth: int) -> None:
                 raise ValueError(
                     f"JSON input exceeds maximum allowed depth {max_depth}"
                 )
-        elif byte in (0x5D, 0x7D) and depth:
+        elif byte in (0x5D, 0x7D) and not in_string and depth:
             depth -= 1
 
 
