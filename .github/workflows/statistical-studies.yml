@@ -2,6 +2,9 @@ name: Statistical Studies
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "rust-toolchain.toml"
   schedule:
     # Stagger from the top of the hour to reduce hosted-runner congestion.
     - cron: "17 2 * * *"
