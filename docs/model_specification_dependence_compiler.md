@@ -26,7 +26,20 @@ A base `ModelSpecification` composes these Value Objects:
 - `IdentificationContract`: required identification rules, verification state,
   and exact candidate scope;
 - `RecoveryContract`: required known-truth recovery evidence and exact candidate
-  scope.
+  scope;
+- `CandidateSupportRecords`: one immutable exact-candidate aggregate containing
+  the estimation, identification, and recovery records that jointly determine
+  support promotion.
+
+`ModelSpecification.support_records_by_candidate_id` is the canonical carrier
+when more than one dependence candidate has implementation evidence in the same
+compilation. It is snapshotted into a package-owned read-only mapping at aggregate
+admission. The pre-existing singleton `estimation_plan`,
+`identification_contract`, and `recovery_contract` fields remain a compatibility
+path for one-candidate callers. A catalog entry and the legacy singleton may name
+the same candidate only when all three records are exactly equal; conflicting
+same-candidate truth fails closed. Catalog entries never borrow records across
+candidate IDs.
 
 `compile_dependence_candidates()` then attaches a separate
 `DependenceStructure`. It never changes the base parameter blocks and never
@@ -135,14 +148,23 @@ compiled `DependenceStructure.baseline_citations`. This prevents evidence for
 one dimensional, mixed-membership, dependence, or unrelated research record
 from promoting another represented model.
 
-`evidence_by_candidate_id` is an admission boundary, not an extensible callback
-surface. The public compiler accepts an exact built-in `dict` whose keys are
-exact nonblank candidate IDs and whose values are exact `CapabilityEvidence`
-objects, then copies that dictionary before constructing any candidate identity.
-A custom mapping therefore cannot run a `get()` callback between identity
-derivation and manifest assembly and mutate the structural objects that the
-manifest repeats. This preserves one coherent structural snapshot per compiled
-candidate instead of merely digesting an internally inconsistent payload.
+For independently supported sibling candidates, each candidate has a separate
+`CandidateSupportRecords` entry under its own canonical ID. One compilation can
+therefore preserve, for example, both LSIRM and MLSIRM support without swapping
+singleton fields between compilations. A candidate absent from the catalog still
+uses the legacy singleton compatibility path when that singleton names the exact
+candidate; otherwise the compiler publishes explicit incomplete support records
+for that candidate.
+
+Both support and documentary evidence are admission boundaries, not extensible
+callback surfaces. `evidence_by_candidate_id` accepts an exact built-in `dict`
+whose keys are exact nonblank candidate IDs and whose values are exact
+`CapabilityEvidence` objects, then copies that dictionary before constructing
+any candidate identity. `support_records_by_candidate_id` similarly copies an
+exact built-in dictionary and exposes only its sealed mapping snapshot. Custom
+mapping subclasses are rejected. This prevents caller callbacks or later caller
+mutation from changing evidence between candidate identity derivation, promotion,
+and manifest assembly.
 
 ## Generalized mixed-model boundary
 
