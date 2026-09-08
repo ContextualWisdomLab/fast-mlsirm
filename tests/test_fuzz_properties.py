@@ -5,9 +5,9 @@ enforced on every CI run, in addition to the longer coverage-guided Atheris
 harnesses under ``fuzz/atheris/`` and the Rust ``proptest`` harness under
 ``crates/mlsirm-core/tests/``.
 
-Hypothesis is MPL-2.0 licensed and is used only as a dev/test dependency. The
-tests are skipped (not failed) when Hypothesis is not installed so a minimal
-environment still passes.
+Hypothesis is MPL-2.0 licensed and is an owned dev/test dependency. The normal
+CI lock installs it explicitly; a missing Hypothesis installation is therefore
+a collection failure rather than passing non-execution evidence.
 
 The surfaces exercised were located with CodeGraph
 (``codegraph explore "parse load config CSV JSON input file deserialization"``):
@@ -24,15 +24,12 @@ from __future__ import annotations
 
 import json
 
-import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-hypothesis = pytest.importorskip("hypothesis")
-from hypothesis import given, settings  # noqa: E402
-from hypothesis import strategies as st  # noqa: E402
-
-from fast_mlsirm.config import FitConfig, MLS2PLMConfig  # noqa: E402
-from fast_mlsirm.io import load_factor_csv  # noqa: E402
-from fast_mlsirm.report import render_diagnostics_report  # noqa: E402
+from fast_mlsirm.config import FitConfig, MLS2PLMConfig
+from fast_mlsirm.io import load_factor_csv
+from fast_mlsirm.report import render_diagnostics_report
 
 # Exceptions that represent a well-behaved rejection of malformed input.
 BENIGN = (ValueError, UnicodeDecodeError, UnicodeEncodeError, OSError)
