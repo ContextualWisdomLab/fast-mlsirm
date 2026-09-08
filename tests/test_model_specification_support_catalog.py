@@ -119,6 +119,25 @@ def test_support_catalog_rejects_callback_capable_or_malformed_inputs() -> None:
         )
 
 
+def test_support_catalog_rejects_external_mapping_proxy_before_callbacks() -> None:
+    """A caller-created read-only proxy must not become a callback-capable admission path."""
+    callbacks: list[str] = []
+
+    class CallbackDict(dict[str, CandidateSupportRecords]):
+        def keys(self):  # type: ignore[no-untyped-def]
+            callbacks.append("keys")
+            return super().keys()
+
+        def __getitem__(self, key: str) -> CandidateSupportRecords:
+            callbacks.append("getitem")
+            return super().__getitem__(key)
+
+    proxy = MappingProxyType(CallbackDict({"candidate-a": _support("candidate-a")}))
+    with pytest.raises(TypeError, match="built-in dict"):
+        replace(_base_specification(), support_records_by_candidate_id=proxy)
+    assert callbacks == []
+
+
 def test_support_catalog_rejects_conflicting_legacy_singleton_truth() -> None:
     """Migration cannot publish two different support records for one candidate."""
     candidate_id = "candidate-a"
