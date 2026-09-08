@@ -1,6 +1,6 @@
 # ADR-0027: Keep Rust implementation crates inside the `fast-mlsirm` release boundary
 
-Status: **Accepted**  
+Status: **Proposed**  
 Date: 2026-09-01  
 Decision owners: fast-mlsirm maintainers  
 Tracks: #1715
