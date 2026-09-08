@@ -145,3 +145,34 @@ authorization, approval, protection bypass, manual rerun, synthetic status,
 empty push, force push, destructive rebase, or predecessor-evidence transfer
 is recorded.
 
+## 2026-09-08 central Gitleaks stack reconciliation
+
+`ContextualWisdomLab/.github#2041` was still based on obsolete #2040 head
+`e17d1e74e57789141feda99f542759dc99bde6cc`: its own exact-head CodeQL,
+Semgrep, and Security runs were GREEN, but it was 45 commits behind canonical
+#2040 and GitHub reported the stack non-mergeable. Exact head
+`50ff203027345bc6337d259bcec511cd98ab554b` (tree
+`19880d165680f7262b58c04c963c33777c0068cc`) now reconciles prior #2041
+`c760ddf6fd7622f02cdcb251485b86c3f9b3b80d` with
+#2040@`a22dd5b7108698f5ae0c8dc0541c4dcc7b61abae` through an ordinary
+ordered two-parent commit. The append-only Gap conflict retains both owner
+evidence sections. Relative to #2040 the stack is 15 commits ahead / 0 behind,
+mergeable, and its effective delta remains exactly the four Gitleaks boundary
+paths.
+
+Merged-tree verification is 402 focused tests and repository-wide 3,031 passed
+/ 1 skipped / 21 subtests, with statement and branch coverage 100%, public-doc
+coverage 100%, and clean diff check. Fresh #2041 runs are CodeQL PR
+`34241409634`, Semgrep `34241409581`, Python Security `34241409659`,
+Security Scan `34241409784`, and Runtime Quality `34241409676`; all were
+queued at publication. Evidence: `.github#2041` comment `5587163750`.
+
+Meanwhile canonical #2040's Python Security `34237937741`, Security Scan
+`34237937787`, Runtime Quality `34237938200`, and Semgrep `34237937609`
+reached success; CodeQL PR `34237937656` remained queued and no qualifying
+current-head independent approval existed. Therefore neither PR is merge-ready,
+and no predecessor GREEN transfers to either exact head.
+
+No merge, approval, auto-merge authorization, protection bypass, manual rerun,
+empty push, force push, destructive rebase, review dismissal, or predecessor
+evidence transfer is recorded.
