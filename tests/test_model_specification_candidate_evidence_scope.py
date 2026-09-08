@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from fast_mlsirm.model_specification import (
+    CandidateSupportRecords,
     CapabilityEvidence,
     CapabilityStatus,
     DependenceKind,
@@ -62,6 +63,13 @@ def _lsirm_evidence() -> CapabilityEvidence:
     )
 
 
+def _mlsirm_evidence() -> CapabilityEvidence:
+    return CapabilityEvidence(
+        generative_equation_id="2plm_mlsirm_eq_v1",
+        primary_citations=("10.1017/psy.2025.5",),
+    )
+
+
 def _ready_for_candidate(
     base: ModelSpecification,
     candidate_id: str,
@@ -81,6 +89,18 @@ def _ready_for_candidate(
             True,
             candidate_id,
         ),
+    )
+
+
+def _support_records(candidate_id: str, estimator_id: str) -> CandidateSupportRecords:
+    return CandidateSupportRecords(
+        estimation_plan=EstimationPlan(estimator_id, "rust", True, candidate_id),
+        identification_contract=IdentificationContract(
+            ("trait_location_scale", "dependence_geometry_alignment"),
+            True,
+            candidate_id,
+        ),
+        recovery_contract=RecoveryContract(("bias", "rmse"), True, candidate_id),
     )
 
 
@@ -122,6 +142,46 @@ def test_compiled_manifest_never_publishes_another_candidates_support_records() 
             == candidate.canonical_id
         )
         assert manifest["recovery"]["applies_to_candidate_id"] == candidate.canonical_id
+
+
+def test_multiple_candidates_can_publish_distinct_support_records_in_one_compilation() -> None:
+    """One compilation must preserve independently supported sibling candidates."""
+    base = _base_specification()
+    initial = compile_dependence_candidates(base)
+    lsirm_id = initial[0].canonical_id
+    mlsirm_id = initial[1].canonical_id
+    lsirm_support = _support_records(lsirm_id, "lsirm_mmle")
+    mlsirm_support = _support_records(mlsirm_id, "mlsirm_mmle")
+    specification = replace(
+        base,
+        support_records_by_candidate_id={
+            lsirm_id: lsirm_support,
+            mlsirm_id: mlsirm_support,
+        },
+    )
+
+    candidates = compile_dependence_candidates(
+        specification,
+        evidence_by_candidate_id={
+            lsirm_id: _lsirm_evidence(),
+            mlsirm_id: _mlsirm_evidence(),
+        },
+    )
+    lsirm, mlsirm, dlsjm = candidates
+
+    assert lsirm.status is CapabilityStatus.SUPPORTED
+    assert mlsirm.status is CapabilityStatus.SUPPORTED
+    assert lsirm.estimation_plan == lsirm_support.estimation_plan
+    assert mlsirm.estimation_plan == mlsirm_support.estimation_plan
+    assert lsirm.to_manifest()["estimation_plan"]["estimator_id"] == "lsirm_mmle"
+    assert mlsirm.to_manifest()["estimation_plan"]["estimator_id"] == "mlsirm_mmle"
+
+    assert dlsjm.status is CapabilityStatus.RESEARCH_CANDIDATE
+    assert dlsjm.estimation_plan == EstimationPlan("", "", False, dlsjm.canonical_id)
+    assert dlsjm.identification_contract == IdentificationContract(
+        (), False, dlsjm.canonical_id
+    )
+    assert dlsjm.recovery_contract == RecoveryContract((), False, dlsjm.canonical_id)
 
 
 def test_membership_recovery_cannot_be_borrowed_from_a_sibling_candidate() -> None:
