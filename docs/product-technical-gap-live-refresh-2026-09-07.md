@@ -156,10 +156,16 @@ base-bound CodeQL receipt contexts. It is Ready for review admission,
 mergeable, 142 ahead / 0 behind, with zero unresolved review threads. Its
 focused producer/handler/recovery contracts are 139 passed; repository-wide
 verification is 3,086 passed / 1 skipped / 21 subtests with clean diff check.
-Fresh exact-head CodeQL PR `34244658739`, Semgrep `34244658720`, Security
-Scan `34244658738`, Python Security `34244658692`, and Runtime Quality
-`34243847708` remained non-terminal at capture. No qualifying current-head
-independent approval exists; Ready is not merge authority.
+Fresh exact-head Semgrep `34244658720`, Security Scan `34244658738`,
+Python Security `34244658692`, and Runtime Quality `34243847708` are
+terminal GREEN. CodeQL PR `34244658739` failed closed after its initial
+pending shards dispatched exact protected-handler run `34245634444`; handler
+validation job `102126760959` rejected the new wake identity before scanning
+because protected `.github/main@7fd571db…` predates this PR's producer/handler
+contract. No SARIF or source finding was emitted. This is a protected-owner
+circular admission boundary, not terminal GREEN. No qualifying current-head
+independent approval exists; Ready is not merge or bypass authority. Evidence:
+`.github#2040` comment `5587851931`.
 
 The dependent Gitleaks owner `ContextualWisdomLab/.github#2041` is exact head
 `0f2b318c01bfa253c8ba13dc5b474cfd4349bf04` (tree
