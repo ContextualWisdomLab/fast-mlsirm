@@ -50,7 +50,3 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
-## 2024-05-18 - [Fix incomplete JSON depth bypass fix]
-**Vulnerability:** JSON depth validation in `python/fast_mlsirm/io.py` and `python/fast_mlsirm/llm_judge.py` can be bypassed by interleaving opening brackets with strings containing a single closing bracket.
-**Learning:** `depth -= 1` is not enough to secure the depth checker. We also have to ensure that closing brackets are not in strings.
-**Prevention:** If an issue is reported that a depth checker can be bypassed, check if the string context is being ignored when a depth deduction happens.

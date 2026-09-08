@@ -289,7 +289,7 @@ def _load_json_bounded(
                     f"{source} exceeds the maximum JSON nesting depth "
                     f"of {MAX_JSON_NESTING_DEPTH}"
                 )
-        elif char in "]}" and depth > 0 and not in_string:
+        elif char in "]}" and depth > 0:
             depth -= 1
 
     def reject_duplicate_members(pairs):
