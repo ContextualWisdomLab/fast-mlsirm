@@ -8,6 +8,8 @@ authorization.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import math
 from html import escape
@@ -49,12 +51,12 @@ def _validated_report(report: EssayScoreReport) -> EssayScoreReport:
     return replayed
 
 
-def _content_security_policy() -> str:
+def _content_security_policy(css_hash: str) -> str:
     """Return a restrictive meta-delivered policy for the standalone artifact."""
     return "; ".join(
         (
             "default-src 'none'",
-            "style-src 'unsafe-inline'",
+            f"style-src 'sha256-{css_hash}'",
             "img-src data:",
             "object-src 'none'",
             "base-uri 'none'",
@@ -258,6 +260,9 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
 
 def _render_html(report: EssayScoreReport, title: str) -> str:
     """Assemble one complete script-free report document."""
+    css = _css()
+    css_hash = base64.b64encode(hashlib.sha256(css.encode('utf-8')).digest()).decode('utf-8')
+
     engine = report.engine_descriptor
     request = report.essay_request.scoring_request
     review_class = "review-required" if report.human_review_required else "review-clear"
@@ -318,9 +323,9 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" '
-            f'content="{escape(_content_security_policy(), quote=True)}">',
+            f'content="{escape(_content_security_policy(css_hash), quote=True)}">',
             f"<title>{escape(title)}</title>",
-            f"<style>{_css()}</style>",
+            f"<style>{css}</style>",
             "</head>",
             "<body>",
             '<a class="skip-link" href="#main-content">Skip to report content</a>',
