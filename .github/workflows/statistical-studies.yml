@@ -21,8 +21,11 @@ permissions:
 # interpolate into command arguments, or print a credential.
 
 concurrency:
+  # A synchronized compiler-baseline PR invalidates the predecessor head's
+  # recovery evidence. Cancel that obsolete same-ref run instead of making the
+  # current exact head wait behind hours of stale Monte Carlo work.
   group: statistical-studies-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   rust-ignored:
