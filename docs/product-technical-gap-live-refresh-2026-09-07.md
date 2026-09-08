@@ -155,8 +155,12 @@ dual-context migration bridge with an explicit removal condition. Its Python
 Security `34239914762`, Security Scan `34239914829`, Runtime Quality
 `34239914795`, and Semgrep `34239914781` runs succeeded. CodeQL PR
 `34239914870` failed after the protected producer dispatched pending shards;
-handler run `34241333744` remained queued in this snapshot. #2040 is therefore
-Draft/Proposed and has no qualifying current-head approval.
+handler run `34241333744` remained queued in that snapshot. With no concrete source
+finding or unresolved thread, Ready was restored at `2026-09-08T15:15:53Z`
+solely for review admission. Fresh same-head runs are CodeQL PR `34243627609`,
+Semgrep `34243626726`, Security Scan `34243626759`, and Python Security
+`34243626858`; all were non-terminal at capture. #2040 still has no qualifying
+current-head approval, so its merge gate remains closed.
 
 The dependent Gitleaks owner `ContextualWisdomLab/.github#2041` was first
 reconciled to #2040@`a22dd5b7…`, then non-force advanced again when the
