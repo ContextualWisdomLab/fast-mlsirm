@@ -113,3 +113,35 @@ approval. `.github#1902` remains Draft until #2040 integrates ordinarily and
 #1902 can be reconciled non-destructively. No bypass, manual rerun, synthetic
 status, auto-merge authorization, or predecessor-evidence transfer is recorded.
 
+## 2026-09-08 canonical combined handler correction
+
+The preceding `d93a78ab…` snapshot is superseded by
+`ContextualWisdomLab/.github#2040@a22dd5b7108698f5ae0c8dc0541c4dcc7b61abae`
+(tree `d1ebad5966d83e658a8f44bf806af4b0652aedd0`). The exact head is an
+ordinary two-parent child of prior canonical #2040
+`9054b5e664d1540736c6b83a7c4a2bb9399651a3` and
+`ContextualWisdomLab/.github#2044@3720dd853fe399fd453e093a90944b2b0e78a8e6`.
+This makes #2044's valid dual-identity repair, tests, documentation, and
+requirements explicit in the combined successor's ancestry while all
+predecessors remain open Proposed evidence.
+
+The exact tree rejects conflicting ref, conflicting SHA, and either partial
+nested/legacy representation with separate executable fixtures. A fresh full
+run first exposed the inherited scheduler invariant gap at
+`pr_review_merge_scheduler_core.py:497`: 3,026 tests passed, but one uncovered
+statement/branch left total coverage below the 100% contract. The minimal
+fixture then produced focused 60 passed, repository-wide 3,027 passed / 1
+skipped / 21 subtests, statement and branch coverage 100%, public-doc coverage
+100%, and clean diff check. Protected-base comparison is 56 ahead / 0 behind,
+17 bounded paths, mergeable, with zero unresolved threads at publication.
+
+#2040 remains Ready only for review admission. Fresh exact-head runs are Python
+Security `34237937741`, Security Scan `34237937787`, Agent Review Runtime
+Quality `34237938200`, SAST Semgrep `34237937609`, and CodeQL PR
+`34237937656`; all were non-terminal in this snapshot. No qualifying
+current-head independent approval exists, so ordinary merge remains blocked.
+Evidence: `.github#2040` comment `5586694059`. No merge, auto-merge
+authorization, approval, protection bypass, manual rerun, synthetic status,
+empty push, force push, destructive rebase, or predecessor-evidence transfer
+is recorded.
+
