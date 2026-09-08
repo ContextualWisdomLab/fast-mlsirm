@@ -1,7 +1,7 @@
 # Product and technical gap live refresh — 2026-09-07
 
 Status: **Non-authoritative point-in-time supplement**  
-Observed at: **`2026-09-08T10:22:30Z`**  
+Observed at: **`2026-09-08T13:01:15Z`**  
 Protected-product basis: **`main@493326f2de49ea1704da0ded19868ed05d2fe00f`**  
 Canonical historical baseline: **`docs/product-technical-gap-baseline.md`**  
 Previous additive supplement: **`docs/product-technical-gap-live-refresh-2026-09-05.md`**  
@@ -79,3 +79,37 @@ by the consuming product.
 4. Revalidate `fast-mlsirm#1722@28b03055` on its direct protected-main base,
    including Cargo/Rust formatting and numerical recovery evidence, before
    continuing the Rust numerical stack in dependency order.
+
+## 2026-09-08 central handler prerequisite correction
+
+`ContextualWisdomLab/.github#2040` is the canonical handler prerequisite for the
+current CodeQL recovery stack. Its exact head
+`d93a78ab4262c5228af7eda258ee0af58b880de7` (tree
+`bc5e85327c4a531c935091c623e68ec8868e539b`) is 19 commits ahead and 0
+behind protected `main@7fd571dbcdbae6acf29d8f4ee704d7ba6297e4db`, changes
+seven intended paths, is mergeable, and has zero unresolved review threads.
+The handler accepts one nested or legacy rerun envelope, rejects coexistence
+and ambiguity, binds the request to an immutable producer workflow source,
+keeps matrix scans at `actions: read`, and gives one non-matrix settlement
+owner `actions: write`. That owner revalidates the open PR, exact
+head/base/ref, required run/jobs, handler job steps, nonexpired nonempty SARIF
+artifacts, and unrelated-failure absence before one run-wide recovery request.
+
+RED `e0800adf0` required source-bound settlement evidence; GREEN is
+`d93a78ab4262c5228af7eda258ee0af58b880de7`. Exact-tree verification is 45
+focused tests, 3,010 passed / 1 skipped / 21 subtests repository-wide,
+statement and branch coverage 100%, public-doc coverage 100%, and clean diff
+check. Local `actionlint` is unavailable. Ready was restored at
+`2026-09-08T13:01:15Z` solely for review admission. Its automatically created
+Ready-generation runs are CodeQL PR `34229436485`, Python Security
+`34229436817`, SAST Semgrep `34229436541`, and Security Scan
+`34229436635`; none was promoted to GREEN in this snapshot. A qualifying
+independent current-head approval is also absent. Evidence:
+`.github#2040` comment `5585550769`.
+
+The predecessor-head protected-handler run `34228191430` proves the
+protected-main sibling-wake race but is neither current-head hosted GREEN nor
+approval. `.github#1902` remains Draft until #2040 integrates ordinarily and
+#1902 can be reconciled non-destructively. No bypass, manual rerun, synthetic
+status, auto-merge authorization, or predecessor-evidence transfer is recorded.
+
