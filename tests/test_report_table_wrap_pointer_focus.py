@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from scripts.build_benchmark_report import _render_report_html as render_benchmark_report
 from scripts.build_benchmark_report import _report_css as benchmark_css
 from scripts.build_buyer_packet import _report_css as buyer_css
 from scripts.build_pr_queue_governance import _report_css as pr_queue_css
@@ -41,6 +42,25 @@ def test_table_wrap_focus_accessibility(css_factory):
     visible_block = re.search(r"\.table-wrap:focus-visible\s*\{([^}]*)\}", css)
     assert visible_block is not None
     assert "outline: 3px solid" in visible_block.group(1)
+
+
+def test_benchmark_skip_link_has_static_and_browser_contract():
+    """Benchmark evidence must expose a motion-free keyboard bypass path."""
+    html = render_benchmark_report({})
+    css = benchmark_css()
+    repo_root = Path(__file__).resolve().parents[1]
+    verifier = (repo_root / "scripts" / "verify_report_browser_e2e.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '<a href="#main-content" class="skip-link">Skip to main content</a>' in html
+    assert '<main id="main-content" tabindex="-1">' in html
+    assert ".skip-link:focus-visible" in css
+    assert "main:focus-visible" in css
+    assert "transition:" not in css
+    assert "_assert_skip_link_focus" in verifier
+    assert "_assert_skip_target_focus" in verifier
+    assert "session.press_enter()" in verifier
 
 
 def test_jules_palette_focus_guidance_stays_on_canonical_path():
