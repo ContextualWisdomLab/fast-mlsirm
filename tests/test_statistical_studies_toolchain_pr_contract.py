@@ -9,6 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 STATISTICAL_STUDIES = REPO_ROOT / ".github" / "workflows" / "statistical-studies.yml"
 CORR_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_corr_mirt_recovery_500"
 QMC_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500"
+GPCM_MHRM_TEST = "mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_gpcm_mhrm_recovery_500"
+MHRM_TEST = "mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_mhrm_recovery_500"
 
 
 def _event_block(workflow: str) -> str:
@@ -69,7 +71,7 @@ def test_qmc_mirt_recovery_has_dedicated_bounded_evidence_job() -> None:
 
     workflow = STATISTICAL_STUDIES.read_text(encoding="utf-8")
     rust_ignored = _job_block(workflow, "rust-ignored", "rust-pyo3-ignored")
-    qmc_mirt = _job_block(workflow, "qmc-mirt-recovery", "gpu-recovery")
+    qmc_mirt = _job_block(workflow, "qmc-mirt-recovery", "gpcm-mhrm-recovery")
 
     assert f"--skip {QMC_MIRT_TEST}" in rust_ignored
     assert "    timeout-minutes: 360\n" in qmc_mirt
@@ -77,3 +79,33 @@ def test_qmc_mirt_recovery_has_dedicated_bounded_evidence_job() -> None:
     assert "2>&1 | tee qmc-mirt-recovery-study.log" in qmc_mirt
     assert "if: always()" in qmc_mirt
     assert "retention-days: 90" in qmc_mirt
+
+
+def test_gpcm_mhrm_recovery_has_dedicated_bounded_evidence_job() -> None:
+    """The multi-hour GPCM-MHRM study must not inherit the generic 2 h child bound."""
+
+    workflow = STATISTICAL_STUDIES.read_text(encoding="utf-8")
+    rust_ignored = _job_block(workflow, "rust-ignored", "rust-pyo3-ignored")
+    gpcm_mhrm = _job_block(workflow, "gpcm-mhrm-recovery", "mhrm-recovery")
+
+    assert f"--skip {GPCM_MHRM_TEST}" in rust_ignored
+    assert "    timeout-minutes: 360\n" in gpcm_mhrm
+    assert "mhrm::tests::mc_gpcm_mhrm_recovery_500" in gpcm_mhrm
+    assert "2>&1 | tee gpcm-mhrm-recovery-study.log" in gpcm_mhrm
+    assert "if: always()" in gpcm_mhrm
+    assert "retention-days: 90" in gpcm_mhrm
+
+
+def test_mhrm_recovery_has_dedicated_bounded_evidence_job() -> None:
+    """The multi-hour MHRM study must not inherit the generic 2 h child bound."""
+
+    workflow = STATISTICAL_STUDIES.read_text(encoding="utf-8")
+    rust_ignored = _job_block(workflow, "rust-ignored", "rust-pyo3-ignored")
+    mhrm = _job_block(workflow, "mhrm-recovery", "gpu-recovery")
+
+    assert f"--skip {MHRM_TEST}" in rust_ignored
+    assert "    timeout-minutes: 360\n" in mhrm
+    assert "mhrm::tests::mc_mhrm_recovery_500" in mhrm
+    assert "2>&1 | tee mhrm-recovery-study.log" in mhrm
+    assert "if: always()" in mhrm
+    assert "retention-days: 90" in mhrm
