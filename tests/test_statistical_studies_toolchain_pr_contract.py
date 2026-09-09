@@ -8,6 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATISTICAL_STUDIES = REPO_ROOT / ".github" / "workflows" / "statistical-studies.yml"
 CORR_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_corr_mirt_recovery_500"
+QMC_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500"
 
 
 def _event_block(workflow: str) -> str:
@@ -53,7 +54,7 @@ def test_correlated_mirt_recovery_has_dedicated_bounded_evidence_job() -> None:
 
     workflow = STATISTICAL_STUDIES.read_text(encoding="utf-8")
     rust_ignored = _job_block(workflow, "rust-ignored", "rust-pyo3-ignored")
-    corr_mirt = _job_block(workflow, "corr-mirt-recovery", "gpu-recovery")
+    corr_mirt = _job_block(workflow, "corr-mirt-recovery", "qmc-mirt-recovery")
 
     assert f"--skip {CORR_MIRT_TEST}" in rust_ignored
     assert "    timeout-minutes: 360\n" in corr_mirt
@@ -61,3 +62,18 @@ def test_correlated_mirt_recovery_has_dedicated_bounded_evidence_job() -> None:
     assert "2>&1 | tee corr-mirt-recovery-study.log" in corr_mirt
     assert "if: always()" in corr_mirt
     assert "retention-days: 90" in corr_mirt
+
+
+def test_qmc_mirt_recovery_has_dedicated_bounded_evidence_job() -> None:
+    """The multi-hour QMC-MIRT study must not inherit the generic 2 h child bound."""
+
+    workflow = STATISTICAL_STUDIES.read_text(encoding="utf-8")
+    rust_ignored = _job_block(workflow, "rust-ignored", "rust-pyo3-ignored")
+    qmc_mirt = _job_block(workflow, "qmc-mirt-recovery", "gpu-recovery")
+
+    assert f"--skip {QMC_MIRT_TEST}" in rust_ignored
+    assert "    timeout-minutes: 360\n" in qmc_mirt
+    assert "twopl::tests::mc_qmc_mirt_recovery_500" in qmc_mirt
+    assert "2>&1 | tee qmc-mirt-recovery-study.log" in qmc_mirt
+    assert "if: always()" in qmc_mirt
+    assert "retention-days: 90" in qmc_mirt
