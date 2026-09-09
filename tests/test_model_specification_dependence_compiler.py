@@ -357,24 +357,19 @@ def test_supported_requires_exact_candidate_scoped_evidence() -> None:
     )[0].missing_requirements == ("passing_recovery_evidence_required",)
 
 
-def test_evidence_for_one_full_candidate_cannot_promote_another() -> None:
+def test_evidence_for_one_full_candidate_is_rejected_for_another() -> None:
     baseline = _base_spec()
     baseline_id = _lsirm_id(baseline)
     changed = _base_spec(dimensions=3)
     changed_id = _lsirm_id(changed)
     changed_ready = _ready_for_candidate(changed, changed_id)
 
-    candidate = compile_dependence_candidates(
-        changed_ready,
-        evidence_by_candidate_id={baseline_id: _complete_lsirm_evidence()},
-    )[0]
-
     assert baseline_id != changed_id
-    assert candidate.status is CapabilityStatus.RESEARCH_CANDIDATE
-    assert candidate.missing_requirements == (
-        "generative_equation_required",
-        "primary_citation_required",
-    )
+    with pytest.raises(ValueError, match="unknown candidate identities"):
+        compile_dependence_candidates(
+            changed_ready,
+            evidence_by_candidate_id={baseline_id: _complete_lsirm_evidence()},
+        )
 
 
 def test_scope_mismatch_fails_each_support_gate_independently() -> None:
