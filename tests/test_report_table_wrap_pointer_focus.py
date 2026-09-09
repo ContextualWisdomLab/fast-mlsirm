@@ -67,6 +67,8 @@ def test_report_focus_contract_has_real_browser_e2e_lane():
     assert "python -m scripts.verify_report_browser_e2e" in workflow_text
     assert "report-browser-e2e.json" in workflow_text
     assert "actions/upload-artifact@" in workflow_text
+    assert '- ".jules/palette.md"' in workflow_text
+    assert '- ".Jules/palette.md"' in workflow_text
 
 
 def test_report_browser_verifier_module_entrypoint_loads():
