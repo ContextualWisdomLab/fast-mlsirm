@@ -83,3 +83,15 @@ def test_report_browser_verifier_module_entrypoint_loads():
 
     assert completed.returncode == 0, completed.stderr
     assert "Verify commercial report focus" in completed.stdout
+
+
+def test_report_browser_e2e_is_bound_to_exact_pr_head():
+    """Browser evidence must reject GitHub's synthetic pull-request merge checkout."""
+    repo_root = Path(__file__).resolve().parents[1]
+    workflow = (
+        repo_root / ".github" / "workflows" / "report-browser-e2e.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
+    assert "EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
+    assert "evidence[\"source_commit\"] == expected" in workflow
