@@ -11,10 +11,9 @@ import socket
 import subprocess
 import tempfile
 import time
+from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 from typing import Any, Callable
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 from scripts.build_benchmark_report import _render_report_html as render_benchmark_report
 from scripts.build_buyer_packet import _render_report_html as render_buyer_report
@@ -61,7 +60,6 @@ class ChromeSession:
 
     def __init__(self, chromedriver: str, work_dir: Path) -> None:
         self._port = _free_port()
-        self._base = f"http://127.0.0.1:{self._port}"
         self._driver_log = work_dir / "chromedriver.log"
         self._process = subprocess.Popen(
             [
@@ -113,7 +111,7 @@ class ChromeSession:
                 status = self._request("GET", "/status")
                 if status.get("value", {}).get("ready") is True:
                     return
-            except (URLError, ConnectionError, TimeoutError, json.JSONDecodeError) as exc:
+            except (OSError, HTTPException, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = exc
             time.sleep(0.1)
         raise RuntimeError(
@@ -123,15 +121,20 @@ class ChromeSession:
     def _request(
         self, method: str, path: str, payload: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        """Send one WebDriver command only to the loopback ChromeDriver HTTP server."""
         body = None if payload is None else json.dumps(payload).encode("utf-8")
-        request = Request(
-            self._base + path,
-            data=body,
-            method=method,
-            headers={"Content-Type": "application/json; charset=utf-8"},
-        )
-        with urlopen(request, timeout=30) as response:
+        connection = HTTPConnection("127.0.0.1", self._port, timeout=30)
+        try:
+            connection.request(
+                method,
+                path,
+                body=body,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+            )
+            response = connection.getresponse()
             decoded = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
         if not isinstance(decoded, dict):
             raise RuntimeError(f"unexpected WebDriver response for {path}: {decoded!r}")
         value = decoded.get("value")
