@@ -36,7 +36,7 @@ jobs:
           google-chrome --version
           chromedriver --version
       - name: Verify keyboard, pointer, focus, and responsive report behavior
-        run: python scripts/verify_report_browser_e2e.py --out report-browser-e2e.json
+        run: python -m scripts.verify_report_browser_e2e --out report-browser-e2e.json
       - name: Publish browser E2E evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
