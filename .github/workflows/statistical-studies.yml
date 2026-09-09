@@ -62,6 +62,8 @@ jobs:
           --skip mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500
           --skip mlsirm-core/lib/mlsirm_core::twopl::tests::mc_corr_mirt_recovery_500
           --skip mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_gpcm_mhrm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_mhrm_recovery_500
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies
@@ -186,6 +188,64 @@ jobs:
         with:
           name: qmc-mirt-recovery-study-${{ github.run_id }}
           path: qmc-mirt-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  gpcm-mhrm-recovery:
+    name: GPCM MHRM 500-rep recovery study
+    runs-on: ubuntu-latest
+    # Both D=2 cells completed before the generic 7,200-second child bound
+    # expired. Preserve the full study and move only its execution budget.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run GPCM MHRM Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            mhrm::tests::mc_gpcm_mhrm_recovery_500 \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee gpcm-mhrm-recovery-study.log
+      - name: Publish GPCM MHRM recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gpcm-mhrm-recovery-study-${{ github.run_id }}
+          path: gpcm-mhrm-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  mhrm-recovery:
+    name: MHRM 500-rep recovery study
+    runs-on: ubuntu-latest
+    # This study includes D=2 and D=6 normal/skew cells plus correlated-Sigma
+    # recovery. Keep its full denominator and acceptance under a bounded job.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run MHRM Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            mhrm::tests::mc_mhrm_recovery_500 \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee mhrm-recovery-study.log
+      - name: Publish MHRM recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mhrm-recovery-study-${{ github.run_id }}
+          path: mhrm-recovery-study.log
           if-no-files-found: error
           retention-days: 90
 
