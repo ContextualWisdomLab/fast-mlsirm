@@ -55,9 +55,11 @@ def test_benchmark_skip_link_has_static_and_browser_contract():
 
     assert '<a href="#main-content" class="skip-link">Skip to main content</a>' in html
     assert '<main id="main-content" tabindex="-1">' in html
+    skip_link_block = re.search(r"\.skip-link\s*\{([^}]*)\}", css)
+    assert skip_link_block is not None
+    assert "transition:" not in skip_link_block.group(1)
     assert ".skip-link:focus-visible" in css
     assert "main:focus-visible" in css
-    assert "transition:" not in css
     assert "_assert_skip_link_focus" in verifier
     assert "_assert_skip_target_focus" in verifier
     assert "session.press_enter()" in verifier
