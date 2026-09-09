@@ -8,11 +8,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATISTICAL_STUDIES = REPO_ROOT / ".github" / "workflows" / "statistical-studies.yml"
 CORR_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_corr_mirt_recovery_500"
+LEGACY_QMC_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500"
 QMC_MIRT_TESTS = (
-    "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500_d4_normal",
-    "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500_d4_skew",
-    "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500_d5_normal",
-    "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500_d5_skew",
+    "mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d4_normal",
+    "mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d4_skew",
+    "mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d5_normal",
+    "mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d5_skew",
 )
 GPCM_MHRM_TEST = "mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_gpcm_mhrm_recovery_500"
 MHRM_TEST = "mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_mhrm_recovery_500"
@@ -82,36 +83,37 @@ def test_qmc_mirt_recovery_cells_have_independent_bounded_evidence_jobs() -> Non
         (
             "qmc-mirt-d4-normal-recovery",
             "qmc-mirt-d4-skew-recovery",
-            "twopl::tests::mc_qmc_mirt_recovery_500_d4_normal",
+            "mc_qmc_mirt_recovery_500_d4_normal",
             "qmc-mirt-d4-normal-recovery-study.log",
         ),
         (
             "qmc-mirt-d4-skew-recovery",
             "qmc-mirt-d5-normal-recovery",
-            "twopl::tests::mc_qmc_mirt_recovery_500_d4_skew",
+            "mc_qmc_mirt_recovery_500_d4_skew",
             "qmc-mirt-d4-skew-recovery-study.log",
         ),
         (
             "qmc-mirt-d5-normal-recovery",
             "qmc-mirt-d5-skew-recovery",
-            "twopl::tests::mc_qmc_mirt_recovery_500_d5_normal",
+            "mc_qmc_mirt_recovery_500_d5_normal",
             "qmc-mirt-d5-normal-recovery-study.log",
         ),
         (
             "qmc-mirt-d5-skew-recovery",
             "gpcm-mhrm-recovery",
-            "twopl::tests::mc_qmc_mirt_recovery_500_d5_skew",
+            "mc_qmc_mirt_recovery_500_d5_skew",
             "qmc-mirt-d5-skew-recovery-study.log",
         ),
     )
 
+    assert f"--skip {LEGACY_QMC_MIRT_TEST}" in rust_ignored
     for exact_target in QMC_MIRT_TESTS:
         assert f"--skip {exact_target}" in rust_ignored
-    assert "--skip mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500\n" not in rust_ignored
 
     for job, next_job, target, log_name in job_specs:
         block = _job_block(workflow, job, next_job)
         assert "    timeout-minutes: 360\n" in block
+        assert "--test qmc_mirt_recovery_cells" in block
         assert target in block
         assert f"2>&1 | tee {log_name}" in block
         assert "if: always()" in block
