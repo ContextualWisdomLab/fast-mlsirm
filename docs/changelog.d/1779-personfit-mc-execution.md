@@ -10,6 +10,8 @@ This follows simulation-study guidance to choose replication counts from the pre
 
 The repository execution contract continues to inspect the attributes attached to this exact Rust test independently of attribute order and rejects both Rust `ignore` syntaxes: the MetaWord form `#[ignore]` and the MetaNameValueStr reason form `#[ignore = "..."]`. Either form removes the test from ordinary execution, so neither may silently remove this scientific acceptance from the normal suite.
 
+Restore the repository-tracked `files/perfit_spec.md` provenance artifact named by the executable Rust fixture and add a fail-closed contract that keeps that reference resolvable. The artifact pins the package comparator to `cran/PerFit@c9df433cba3d7b03d16284e832d55785cb90464c` (PerFit 1.4.7, 2025-04-02), the deterministic `default_rng(2033)` N=12/I=8 fixture context, and the existing MU1–MU7 mutation-sensitive expectations. It is package-comparator/test-fixture evidence only: primary-source equations, universal cutoffs, operational validity, and an independently retained mutation-tool log are not claimed. The Rust test header is aligned to that bounded evidence statement.
+
 Scientific traceability:
 
 Morris, T. P., White, I. R., & Crowther, M. J. (2019). Using simulation studies to evaluate statistical methods. *Statistics in Medicine, 38*(11), 2074–2102. https://doi.org/10.1002/sim.8086
