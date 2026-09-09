@@ -111,7 +111,7 @@ def test_every_product_and_statistical_rust_action_matches_reviewed_toolchain() 
     """No Rust-backed verification lane may drift from the reviewed compiler baseline."""
 
     reviewed_toolchain = _reviewed_toolchain()
-    expected_counts = ((_CI, 4), (_STUDIES, 5))
+    expected_counts = ((_CI, 4), (_STUDIES, 14))
     for workflow_path, expected in expected_counts:
         workflow = workflow_path.read_text(encoding="utf-8")
         steps = _rust_toolchain_steps(workflow)
