@@ -23,6 +23,7 @@ from scripts.build_release_evidence_index import _render_report_html as render_r
 
 _WEBDRIVER_ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 _TAB = "\ue004"
+_ENTER = "\ue007"
 
 
 def _sha256(path: Path) -> str:
@@ -183,6 +184,25 @@ class ChromeSession:
                         "actions": [
                             {"type": "keyDown", "value": _TAB},
                             {"type": "keyUp", "value": _TAB},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    def press_enter(self) -> None:
+        """Activate the current focus target through a genuine WebDriver Enter key."""
+        self.command(
+            "POST",
+            "/actions",
+            {
+                "actions": [
+                    {
+                        "type": "key",
+                        "id": "keyboard",
+                        "actions": [
+                            {"type": "keyDown", "value": _ENTER},
+                            {"type": "keyUp", "value": _ENTER},
                         ],
                     }
                 ]
@@ -356,7 +376,9 @@ def _focus_snapshot(session: ChromeSession) -> dict[str, Any]:
         const hit = document.elementFromPoint(cx, cy);
         return {
           tag: e.tagName,
+          id: e.id,
           className: e.className,
+          href: e.getAttribute('href'),
           focusVisible: e.matches(':focus-visible'),
           outlineStyle: s.outlineStyle,
           outlineWidth: s.outlineWidth,
@@ -400,6 +422,48 @@ def _layout_snapshot(session: ChromeSession) -> dict[str, Any]:
     return value
 
 
+def _outline_width(snapshot: dict[str, Any]) -> float:
+    """Parse one computed CSS outline width from browser evidence."""
+    try:
+        return float(str(snapshot.get("outlineWidth", "0px")).removesuffix("px"))
+    except ValueError as exc:
+        raise AssertionError(f"invalid focus outline width: {snapshot}") from exc
+
+
+def _assert_skip_link_focus(snapshot: dict[str, Any]) -> None:
+    """Require the benchmark bypass link to be visible under keyboard focus."""
+    if snapshot.get("tag") != "A" or "skip-link" not in str(snapshot.get("className", "")):
+        raise AssertionError(f"first benchmark Tab did not focus the skip link: {snapshot}")
+    if snapshot.get("href") != "#main-content":
+        raise AssertionError(f"skip link does not target the main evidence region: {snapshot}")
+    if snapshot.get("focusVisible") is not True:
+        raise AssertionError(f"skip link is not :focus-visible: {snapshot}")
+    if snapshot.get("outlineStyle") == "none" or _outline_width(snapshot) < 3:
+        raise AssertionError(f"skip link has no contract-sized visible outline: {snapshot}")
+    if snapshot.get("centerUnobscured") is not True:
+        raise AssertionError(f"focused skip link is obscured: {snapshot}")
+    rect = snapshot["rect"]
+    viewport = snapshot["viewport"]
+    if not (rect["bottom"] > 0 and rect["top"] < viewport["height"]):
+        raise AssertionError(f"focused skip link is outside the viewport: {snapshot}")
+
+
+def _assert_skip_target_focus(snapshot: dict[str, Any]) -> None:
+    """Require keyboard activation to move focus to the benchmark main region."""
+    if snapshot.get("tag") != "MAIN" or snapshot.get("id") != "main-content":
+        raise AssertionError(f"skip-link activation did not focus main content: {snapshot}")
+    if snapshot.get("tabindex") != "-1":
+        raise AssertionError(f"main skip target lost its programmatic focus contract: {snapshot}")
+    if snapshot.get("focusVisible") is not True:
+        raise AssertionError(f"keyboard-focused main target is not :focus-visible: {snapshot}")
+    if snapshot.get("outlineStyle") == "none" or _outline_width(snapshot) < 3:
+        raise AssertionError(f"main skip target has no contract-sized visible outline: {snapshot}")
+    rect = snapshot["rect"]
+    viewport = snapshot["viewport"]
+    if not (rect["bottom"] > 0 and rect["top"] < viewport["height"]):
+        raise AssertionError(f"main skip target is outside the viewport: {snapshot}")
+
+
 def _assert_keyboard_focus(snapshot: dict[str, Any]) -> None:
     """Require keyboard focus to be visible and not covered at the focused region."""
     if "table-wrap" not in str(snapshot.get("className", "")):
@@ -412,11 +476,7 @@ def _assert_keyboard_focus(snapshot: dict[str, Any]) -> None:
         raise AssertionError(f"keyboard focus is not :focus-visible: {snapshot}")
     if snapshot.get("outlineStyle") == "none":
         raise AssertionError(f"keyboard focus has no visible outline: {snapshot}")
-    try:
-        outline_width = float(str(snapshot.get("outlineWidth", "0px")).removesuffix("px"))
-    except ValueError as exc:
-        raise AssertionError(f"invalid focus outline width: {snapshot}") from exc
-    if outline_width < 3:
+    if _outline_width(snapshot) < 3:
         raise AssertionError(f"keyboard focus outline is thinner than contract: {snapshot}")
     if snapshot.get("centerUnobscured") is not True:
         raise AssertionError(f"focused table region is obscured at its center: {snapshot}")
@@ -486,6 +546,15 @@ def verify_reports(repo_root: Path, out_path: Path, chromedriver: str) -> dict[s
                 session.navigate(report_path)
                 session.execute("if (document.activeElement) document.activeElement.blur();")
                 session.press_tab()
+                if name == "benchmark":
+                    skip_link = _focus_snapshot(session)
+                    _assert_skip_link_focus(skip_link)
+                    record["skip_link"] = skip_link
+                    session.press_enter()
+                    skip_target = _focus_snapshot(session)
+                    _assert_skip_target_focus(skip_target)
+                    record["skip_target"] = skip_target
+                    session.press_tab()
                 keyboard = _focus_snapshot(session)
                 _assert_keyboard_focus(keyboard)
                 record["keyboard"] = keyboard
