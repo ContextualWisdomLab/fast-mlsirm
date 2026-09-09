@@ -50,3 +50,8 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
+## 2026-08-25 - [JSON Smuggling via Permissive Deserialization in json.loads]
+**Vulnerability:** Built-in `json.loads` calls in `python/fast_mlsirm/rubric/generation.py` and `python/fast_mlsirm/llm_judge.py` did not explicitly reject duplicate keys or non-finite numbers (e.g. `NaN`, `Infinity`). This allowed JSON smuggling, logic bugs, and cache poisoning where maliciously crafted payload structures could map multiple same-named keys, leading different parts of the system to process inconsistent states.
+**Learning:** Python's default behavior for `json.loads` is overly permissive, accepting non-standard extensions (like duplicate keys resolving to the last occurrence, or non-finite floating-point constants) rather than raising an error, which breaks interoperability and security invariants relying on JSON correctness.
+**Prevention:** Always explicitly provide an `object_pairs_hook` to reject duplicate keys and a `parse_constant` hook to reject non-finite numbers when using `json.loads` to deserialize untrusted JSON.
