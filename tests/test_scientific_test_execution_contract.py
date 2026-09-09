@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PERSONFIT_TESTS = ROOT / "tests" / "unit" / "personfit_np_tests.rs"
+PERSONFIT_COMPARATOR_SPEC = ROOT / "files" / "perfit_spec.md"
 TARGET_TEST = "mc_500_reversed_respondent_flagged_by_u3"
 
 
@@ -61,6 +62,19 @@ def test_personfit_monte_carlo_acceptance_is_not_ignored() -> None:
     assert not _personfit_acceptance_is_ignored(source), (
         "the deterministic 500-rep person-fit Monte Carlo acceptance is skipped; "
         "scientific acceptance must run rather than rely on #[ignore]"
+    )
+
+
+def test_personfit_package_comparator_reference_is_tracked() -> None:
+    """Keep the Rust fixture's package-comparator provenance reference resolvable."""
+    source = PERSONFIT_TESTS.read_text(encoding="utf-8")
+
+    assert "files/perfit_spec.md" in source, (
+        "person-fit package-comparator tests must name their repository provenance artifact"
+    )
+    assert PERSONFIT_COMPARATOR_SPEC.is_file(), (
+        "tests/unit/personfit_np_tests.rs references files/perfit_spec.md, but that "
+        "provenance artifact is not tracked"
     )
 
 
