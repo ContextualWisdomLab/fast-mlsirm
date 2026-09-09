@@ -51,3 +51,17 @@ def test_jules_palette_focus_guidance_stays_on_canonical_path():
     assert "마우스 사용자를 위한 표 컨테이너 초점 표시 관리" in canonical
     if legacy_case_path.exists():
         assert legacy_case_path.read_text(encoding="utf-8") == canonical
+
+
+def test_report_focus_contract_has_real_browser_e2e_lane():
+    """Material report focus evidence must execute in a real browser on PR heads."""
+    repo_root = Path(__file__).resolve().parents[1]
+    verifier = repo_root / "scripts" / "verify_report_browser_e2e.py"
+    workflow = repo_root / ".github" / "workflows" / "report-browser-e2e.yml"
+
+    assert verifier.is_file()
+    assert workflow.is_file()
+    workflow_text = workflow.read_text(encoding="utf-8")
+    assert "python scripts/verify_report_browser_e2e.py" in workflow_text
+    assert "report-browser-e2e.json" in workflow_text
+    assert "actions/upload-artifact@" in workflow_text
