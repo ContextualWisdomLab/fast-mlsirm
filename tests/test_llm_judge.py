@@ -11,7 +11,6 @@ import pytest
 from fast_mlsirm import CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
-    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     MAX_BINARY_THRESHOLD_CALLS,
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -31,7 +30,15 @@ class _FakeOrchestrator:
         return {
             "mode": "route",
             "answer": self.answer,
-            "trace": [{"usage": {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}}],
+            "trace": [
+                {
+                    "usage": {
+                        "prompt_tokens": 7,
+                        "completion_tokens": 5,
+                        "total_tokens": 12,
+                    }
+                }
+            ],
         }
 
 
@@ -67,7 +74,15 @@ class _SequencedOrchestrator:
         return {
             "mode": "route",
             "answer": next(self.answers),
-            "trace": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}],
+            "trace": [
+                {
+                    "usage": {
+                        "prompt_tokens": 1,
+                        "completion_tokens": 1,
+                        "total_tokens": 2,
+                    }
+                }
+            ],
         }
 
 
@@ -148,7 +163,8 @@ def _threshold_payload(thresholds=None):
         "score": 0.0,
         "accepted": True,
         "rationale": "The ordered evidence supports separate cumulative thresholds.",
-        "criterion_thresholds": thresholds or {
+        "criterion_thresholds": thresholds
+        or {
             "task_alignment": [True, True, True, True],
             "factual_support": [True, False, False, False],
         },
@@ -175,7 +191,11 @@ def test_judge_uses_contextual_orchestrator_route_and_reports_usage() -> None:
     assert result.accepted is True
     assert result.score == 0.8
     assert result.trace_step_count == 1
-    assert dict(result.usage) == {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}
+    assert dict(result.usage) == {
+        "prompt_tokens": 7,
+        "completion_tokens": 5,
+        "total_tokens": 12,
+    }
     assert orchestrator.calls[0][1] == "auto"
     prompt = orchestrator.calls[0][0][1]["content"]
     payload = json.loads(prompt.split("\n", 1)[1])
@@ -327,7 +347,9 @@ def test_direct_judgment_prompt_includes_complete_schema_example() -> None:
     )
     prompt = orchestrator.calls[0][0][0]["content"]
     assert '"rationale": "brief evidence-based reason"' in prompt
-    assert '"criterion_scores": {"task_alignment": 0.0, "factual_support": 0.0}' in prompt
+    assert (
+        '"criterion_scores": {"task_alignment": 0.0, "factual_support": 0.0}' in prompt
+    )
     assert "keeping every key" in prompt
     assert "never an object" in prompt
 
@@ -375,7 +397,6 @@ def test_judge_rejects_wrapped_or_fenced_json() -> None:
             )
 
 
-
 def test_judge_rejects_duplicate_and_unknown_top_level_fields() -> None:
     duplicate = (
         '{"score":0.8,"accepted":true,"rationale":"supported",'
@@ -418,14 +439,12 @@ def test_judge_result_projects_only_multiple_criteria_to_irt_items() -> None:
 
     single_criterion = ContextualOrchestratorJudge(
         _FakeOrchestrator(
-            json.dumps(
-                {
-                    "score": 0.8,
-                    "accepted": True,
-                    "rationale": "supported",
-                    "criterion_scores": {"task_alignment": 0.8},
-                }
-            )
+            json.dumps({
+                "score": 0.8,
+                "accepted": True,
+                "rationale": "supported",
+                "criterion_scores": {"task_alignment": 0.8},
+            })
         )
     ).judge(
         task="task",
@@ -444,7 +463,9 @@ def test_irt_projection_rejects_malformed_result_mappings() -> None:
     )
     with pytest.raises(JudgeFormatError, match="keys must be strings"):
         replace(result, criterion_scores={1: 0.8, "factual_support": 0.8}).to_irt_row()
-    with pytest.raises(JudgeFormatError, match="criterion_categories must be an object"):
+    with pytest.raises(
+        JudgeFormatError, match="criterion_categories must be an object"
+    ):
         replace(
             result,
             criterion_categories=[0, 1],
@@ -502,7 +523,10 @@ def test_binary_threshold_uses_structured_contextual_transport_when_available() 
     assert schema["required"] == ["meets_threshold", "rationale"]
     assert schema["additionalProperties"] is False
     assert schema["properties"]["rationale"]["maxLength"] == 256
-    assert all(fmt == orchestrator.structured_formats[0] for fmt in orchestrator.structured_formats)
+    assert all(
+        fmt == orchestrator.structured_formats[0]
+        for fmt in orchestrator.structured_formats
+    )
 
 
 def test_category_anchors_are_bound_to_each_binary_threshold() -> None:
@@ -624,7 +648,10 @@ def test_cumulative_threshold_judgment_derives_monotone_polytomous_items() -> No
     ("thresholds", "match"),
     [
         (
-            {"task_alignment": [True, False, True, False], "factual_support": [False] * 4},
+            {
+                "task_alignment": [True, False, True, False],
+                "factual_support": [False] * 4,
+            },
             "monotone",
         ),
         (
@@ -661,14 +688,12 @@ def test_cumulative_threshold_requires_explicit_category_count() -> None:
 
 
 def test_binary_threshold_judgment_uses_independent_boolean_boundaries() -> None:
-    orchestrator = _SequencedOrchestrator(
-        [
-            json.dumps({"meets_threshold": True, "rationale": "supported"}),
-            json.dumps({"meets_threshold": True, "rationale": "supported"}),
-            json.dumps({"meets_threshold": True, "rationale": "supported"}),
-            json.dumps({"meets_threshold": False, "rationale": "not established"}),
-        ]
-    )
+    orchestrator = _SequencedOrchestrator([
+        json.dumps({"meets_threshold": True, "rationale": "supported"}),
+        json.dumps({"meets_threshold": True, "rationale": "supported"}),
+        json.dumps({"meets_threshold": True, "rationale": "supported"}),
+        json.dumps({"meets_threshold": False, "rationale": "not established"}),
+    ])
     result = ContextualOrchestratorJudge(orchestrator).judge(
         task="task",
         answer="answer",
@@ -707,12 +732,10 @@ def test_binary_threshold_reuses_bounded_gateway_concurrency() -> None:
 
 
 def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
-    orchestrator = _SequencedOrchestrator(
-        [
-            json.dumps({"meets_threshold": False, "rationale": "not established"}),
-            json.dumps({"meets_threshold": True, "rationale": "unsupported jump"}),
-        ]
-    )
+    orchestrator = _SequencedOrchestrator([
+        json.dumps({"meets_threshold": False, "rationale": "not established"}),
+        json.dumps({"meets_threshold": True, "rationale": "unsupported jump"}),
+    ])
     with pytest.raises(JudgeFormatError, match="monotone") as exc_info:
         ContextualOrchestratorJudge(orchestrator).judge(
             task="task",
@@ -743,12 +766,10 @@ def test_binary_threshold_judgment_rejects_non_monotone_boundaries() -> None:
 
 
 def test_binary_threshold_failure_exposes_bounded_failure_evidence() -> None:
-    orchestrator = _SequencedOrchestrator(
-        [
-            json.dumps({"meets_threshold": True, "rationale": "supported"}),
-            "not json",
-        ]
-    )
+    orchestrator = _SequencedOrchestrator([
+        json.dumps({"meets_threshold": True, "rationale": "supported"}),
+        "not json",
+    ])
     with pytest.raises(JudgeFormatError, match="failed closed") as exc_info:
         ContextualOrchestratorJudge(orchestrator).judge(
             task="task",
@@ -971,13 +992,15 @@ def test_judge_text_and_usage_boundaries_reject_runtime_subclasses() -> None:
     result = _CompletionOrchestrator({
         "mode": "route",
         "answer": _payload(),
-        "trace": [{
-            "usage": {
-                "prompt_tokens": forged,
-                "completion_tokens": forged,
-                "total_tokens": forged,
+        "trace": [
+            {
+                "usage": {
+                    "prompt_tokens": forged,
+                    "completion_tokens": forged,
+                    "total_tokens": forged,
+                }
             }
-        }],
+        ],
     })
     judged = ContextualOrchestratorJudge(result).judge(
         task="task",
@@ -1099,6 +1122,7 @@ if __name__ == "__main__":
     test_judge_criteria_reject_non_contract_values_with_value_error()
     print("ok")
 
+
 def test_judge_rejects_excessive_json_nesting() -> None:
     """Deeply nested JSON cannot expand into recursive parser DoS."""
     # Nesting depth 33 exceeds MAX_JUDGE_JSON_DEPTH (32).
@@ -1128,3 +1152,17 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+
+def test_judge_rejects_nonfinite():
+    import fast_mlsirm.llm_judge as judge
+    import pytest
+
+    with pytest.raises(judge.JudgeFormatError, match="non-finite"):
+        judge._response_object('{"a": NaN}', required_fields={"a"})
+    with pytest.raises(judge.JudgeFormatError, match="non-finite"):
+        judge._response_object('{"a": Infinity}', required_fields={"a"})
+    with pytest.raises(judge.JudgeFormatError, match="non-finite"):
+        judge._response_object('{"a": -Infinity}', required_fields={"a"})
+    with pytest.raises(judge.JudgeFormatError, match="duplicate"):
+        judge._response_object('{"a": 1, "a": 2}', required_fields={"a"})
