@@ -1,0 +1,47 @@
+name: Report Browser E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "scripts/build_benchmark_report.py"
+      - "scripts/build_buyer_packet.py"
+      - "scripts/build_pr_queue_governance.py"
+      - "scripts/build_procurement_due_diligence.py"
+      - "scripts/build_release_evidence_index.py"
+      - "scripts/verify_report_browser_e2e.py"
+      - "tests/test_report_table_wrap_pointer_focus.py"
+      - ".github/workflows/report-browser-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: report-browser-e2e-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  browser-e2e:
+    name: report-browser-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Record real-browser runtime identity
+        run: |
+          google-chrome --version
+          chromedriver --version
+      - name: Verify keyboard, pointer, focus, and responsive report behavior
+        run: python scripts/verify_report_browser_e2e.py --out report-browser-e2e.json
+      - name: Publish browser E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: report-browser-e2e-${{ github.run_id }}
+          path: report-browser-e2e.json
+          if-no-files-found: error
+          retention-days: 90
