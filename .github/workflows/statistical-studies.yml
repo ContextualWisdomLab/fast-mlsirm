@@ -64,6 +64,8 @@ jobs:
           --skip mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500
           --skip mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_gpcm_mhrm_recovery_500
           --skip mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_mhrm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::testlet::tests::mc_testlet_recovery_500_normal
+          --skip mlsirm-core/lib/mlsirm_core::testlet::tests::mc_testlet_recovery_500_skew
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies
@@ -126,6 +128,66 @@ jobs:
         with:
           name: grm-recovery-study-${{ github.run_id }}
           path: grm-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  testlet-normal-recovery:
+    name: Testlet normal 500-rep recovery study
+    runs-on: ubuntu-latest
+    # This literature-grade cell took more than an hour under Rust 1.98.1.
+    # Give it an independent bounded job so unrelated shard work cannot consume
+    # the wall-clock budget while preserving all 500 replications and thresholds.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run normal-ability testlet Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            testlet::tests::mc_testlet_recovery_500_normal \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee testlet-normal-recovery-study.log
+      - name: Publish normal testlet recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: testlet-normal-recovery-study-${{ github.run_id }}
+          path: testlet-normal-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  testlet-skew-recovery:
+    name: Testlet skew 500-rep recovery study
+    runs-on: ubuntu-latest
+    # Exact Rust 1.98.1 evidence reached this cell only after ~80 minutes of
+    # other shard work and the aggregate 180-minute job was cancelled while it
+    # was still computing. Isolate the cell; do not weaken its scientific design.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run skew-ability testlet Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            testlet::tests::mc_testlet_recovery_500_skew \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee testlet-skew-recovery-study.log
+      - name: Publish skew testlet recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: testlet-skew-recovery-study-${{ github.run_id }}
+          path: testlet-skew-recovery-study.log
           if-no-files-found: error
           retention-days: 90
 
