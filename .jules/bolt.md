@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-09-09 - 거리 계산 시 중간 배열 할당 최적화
+**Learning:** `np.sum(diff * diff, axis=1)`과 같은 패턴은 메모리에 대량의 `(N, K)` 중간 배열을 할당하여 연산 효율을 떨어뜨립니다.
+**Action:** `np.sum(diff * diff, axis=1)`를 `np.einsum('ij,ij->i', diff, diff)`로 교체하여 불필요한 중간 배열 할당을 피하고 성능을 개선합니다.
