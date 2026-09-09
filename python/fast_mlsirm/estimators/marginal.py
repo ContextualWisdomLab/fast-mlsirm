@@ -1723,7 +1723,6 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     stopping_tolerance = float(tol * (1.0 + abs(ll)))
     for it in range(1, max_iter + 1):
         for i in range(n_items):
-            # ⚡ Bolt: Replace loop with optimized 2D boolean mask and dense matrix multiplication for ~3x speedup
             mask = (y[:, i][:, None] == np.arange(k_cat)).astype(post.dtype, copy=False)
             r = post.T @ mask
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
