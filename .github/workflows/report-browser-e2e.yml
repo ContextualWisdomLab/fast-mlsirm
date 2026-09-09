@@ -26,8 +26,12 @@ jobs:
     name: report-browser-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -37,6 +41,18 @@ jobs:
           chromedriver --version
       - name: Verify keyboard, pointer, focus, and responsive report behavior
         run: python -m scripts.verify_report_browser_e2e --out report-browser-e2e.json
+      - name: Bind browser evidence to exact source head
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = json.loads(Path("report-browser-e2e.json").read_text(encoding="utf-8"))
+          expected = os.environ["EXPECTED_SOURCE_COMMIT"]
+          assert evidence["status"] == "ok"
+          assert evidence["source_commit"] == expected
+          PY
       - name: Publish browser E2E evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
