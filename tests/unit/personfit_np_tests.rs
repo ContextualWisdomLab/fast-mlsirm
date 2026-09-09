@@ -1,10 +1,10 @@
 //! Tests for the PerFit nonparametric person-fit port.
 //!
 //! Every assertion reads values RETURNED BY `person_fit_np` (crate
-//! outputs). Pinned oracle: line-by-line Python transcription of the
-//! PerFit R sources (complete-data specialization) at numpy
-//! default_rng(2033), N=12, I=8 — see files/perfit_spec.md. Mutation
-//! kills executed and logged in the spec.
+//! outputs). Package-comparator provenance for the deterministic
+//! numpy default_rng(2033), N=12, I=8 fixture is tracked in
+//! files/perfit_spec.md. Mutation-sensitive expectations are cataloged
+//! there and pinned by the executable tests below.
 
 use super::person_fit_np;
 
