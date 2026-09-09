@@ -11,6 +11,8 @@ CORR_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_corr_mirt_recove
 QMC_MIRT_TEST = "mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500"
 GPCM_MHRM_TEST = "mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_gpcm_mhrm_recovery_500"
 MHRM_TEST = "mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_mhrm_recovery_500"
+TESTLET_NORMAL_TEST = "mlsirm-core/lib/mlsirm_core::testlet::tests::mc_testlet_recovery_500_normal"
+TESTLET_SKEW_TEST = "mlsirm-core/lib/mlsirm_core::testlet::tests::mc_testlet_recovery_500_skew"
 
 
 def _event_block(workflow: str) -> str:
@@ -109,3 +111,25 @@ def test_mhrm_recovery_has_dedicated_bounded_evidence_job() -> None:
     assert "2>&1 | tee mhrm-recovery-study.log" in mhrm
     assert "if: always()" in mhrm
     assert "retention-days: 90" in mhrm
+
+
+def test_testlet_recovery_conditions_have_independent_bounded_evidence_jobs() -> None:
+    """The two 500-rep testlet cells must not share the generic shard wall clock."""
+
+    workflow = STATISTICAL_STUDIES.read_text(encoding="utf-8")
+    rust_ignored = _job_block(workflow, "rust-ignored", "rust-pyo3-ignored")
+    normal = _job_block(workflow, "testlet-normal-recovery", "testlet-skew-recovery")
+    skew = _job_block(workflow, "testlet-skew-recovery", "corr-mirt-recovery")
+
+    assert f"--skip {TESTLET_NORMAL_TEST}" in rust_ignored
+    assert f"--skip {TESTLET_SKEW_TEST}" in rust_ignored
+
+    for block, target, log_name in (
+        (normal, "testlet::tests::mc_testlet_recovery_500_normal", "testlet-normal-recovery-study.log"),
+        (skew, "testlet::tests::mc_testlet_recovery_500_skew", "testlet-skew-recovery-study.log"),
+    ):
+        assert "    timeout-minutes: 360\n" in block
+        assert target in block
+        assert f"2>&1 | tee {log_name}" in block
+        assert "if: always()" in block
+        assert "retention-days: 90" in block
