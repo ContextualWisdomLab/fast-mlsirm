@@ -1016,14 +1016,24 @@ def compile_dependence_candidates(
     structural evidence between identity and manifest assembly. Candidate support
     records are snapshotted by ``ModelSpecification`` and can independently cover
     every exact compiled candidate; legacy singleton support remains a one-candidate
-    compatibility path only.
+    compatibility path only. Supplied evidence must be claimed by one of the
+    canonical candidates compiled from the same base specification; stale or
+    otherwise unknown candidate identities fail closed instead of disappearing
+    from provenance.
     """
     evidence = (
         {}
         if evidence_by_candidate_id is None
         else _snapshot_evidence_by_candidate_id(evidence_by_candidate_id)
     )
-    return tuple(_compile_one(base, kind, evidence) for kind in _DEPENDENCE_ORDER)
+    candidates = tuple(_compile_one(base, kind, evidence) for kind in _DEPENDENCE_ORDER)
+    compiled_candidate_ids = {candidate.canonical_id for candidate in candidates}
+    unknown_candidate_ids = sorted(set(evidence) - compiled_candidate_ids)
+    if unknown_candidate_ids:
+        raise ValueError(
+            "unknown candidate identities: " + ", ".join(unknown_candidate_ids)
+        )
+    return candidates
 
 
 __all__ = [
