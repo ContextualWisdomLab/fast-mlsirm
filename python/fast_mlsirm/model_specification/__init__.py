@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Mapping
+from typing import Iterator, Mapping
 
 
 class DependenceKind(str, Enum):
@@ -378,18 +378,45 @@ class CandidateSupportRecords:
         return self.estimation_plan.applies_to_candidate_id
 
 
+@dataclass(frozen=True, eq=False)
+class _SealedSupportCatalog(Mapping[str, CandidateSupportRecords]):
+    """Package-owned immutable support catalog safe to re-admit on replacement."""
+
+    entries: tuple[tuple[str, CandidateSupportRecords], ...]
+
+    def __getitem__(self, candidate_id: str) -> CandidateSupportRecords:
+        """Return support for one exact candidate ID."""
+        for key, support_records in self.entries:
+            if key == candidate_id:
+                return support_records
+        raise KeyError(candidate_id)
+
+    def __iter__(self) -> Iterator[str]:
+        """Iterate candidate IDs in the caller's admitted insertion order."""
+        return (candidate_id for candidate_id, _ in self.entries)
+
+    def __len__(self) -> int:
+        """Return the number of exact-candidate support records."""
+        return len(self.entries)
+
+    def __eq__(self, other: object) -> bool:
+        """Compare safely with another sealed catalog or an exact built-in dict."""
+        if type(other) is _SealedSupportCatalog:
+            return self.entries == other.entries
+        if type(other) is dict:
+            return dict(self.entries) == other
+        return NotImplemented
+
+
 def _snapshot_support_records_by_candidate_id(
     value: object,
 ) -> Mapping[str, CandidateSupportRecords]:
     """Seal exact-candidate support evidence without caller mapping callbacks."""
-    if type(value) is dict:
-        snapshot = value.copy()
-    elif type(value) is MappingProxyType:
-        snapshot = dict(value)
-    else:
-        raise TypeError(
-            "support_records_by_candidate_id must be a built-in dict or sealed mapping"
-        )
+    if type(value) is _SealedSupportCatalog:
+        return value
+    if type(value) is not dict:
+        raise TypeError("support_records_by_candidate_id must be a built-in dict")
+    snapshot = value.copy()
     for candidate_id, support_records in snapshot.items():
         if not _exact_nonblank_string(candidate_id):
             raise TypeError(
@@ -403,7 +430,7 @@ def _snapshot_support_records_by_candidate_id(
             raise ValueError(
                 "support_records_by_candidate_id key must match its support-record scope"
             )
-    return MappingProxyType(snapshot)
+    return _SealedSupportCatalog(tuple(snapshot.items()))
 
 
 @dataclass(frozen=True)

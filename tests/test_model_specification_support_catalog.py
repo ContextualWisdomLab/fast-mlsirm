@@ -89,12 +89,17 @@ def test_support_catalog_is_snapshotted_and_replace_safe() -> None:
     specification = replace(base, support_records_by_candidate_id=caller_owned)
 
     caller_owned.clear()
-    assert specification.support_records_by_candidate_id == {"candidate-a": support}
-    assert type(specification.support_records_by_candidate_id) is MappingProxyType
+    sealed = specification.support_records_by_candidate_id
+    assert sealed == {"candidate-a": support}
+    assert sealed is not caller_owned
+    assert type(sealed) is not MappingProxyType
 
-    replaced = replace(specification, dimensional_structure=DimensionalStructure("confirmatory", 3))
+    replaced = replace(
+        specification,
+        dimensional_structure=DimensionalStructure("confirmatory", 3),
+    )
     assert replaced.support_records_by_candidate_id == {"candidate-a": support}
-    assert type(replaced.support_records_by_candidate_id) is MappingProxyType
+    assert replaced.support_records_by_candidate_id is sealed
 
 
 def test_support_catalog_rejects_callback_capable_or_malformed_inputs() -> None:
@@ -103,7 +108,7 @@ def test_support_catalog_rejects_callback_capable_or_malformed_inputs() -> None:
         pass
 
     base = _base_specification()
-    with pytest.raises(TypeError, match="built-in dict or sealed mapping"):
+    with pytest.raises(TypeError, match="built-in dict"):
         replace(base, support_records_by_candidate_id=CallbackDict())
     with pytest.raises(TypeError, match="keys must be non-blank"):
         replace(base, support_records_by_candidate_id={"": _support("candidate-a")})
