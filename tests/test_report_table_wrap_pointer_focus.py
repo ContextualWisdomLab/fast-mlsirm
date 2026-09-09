@@ -64,16 +64,16 @@ def test_report_focus_contract_has_real_browser_e2e_lane():
     assert verifier.is_file()
     assert workflow.is_file()
     workflow_text = workflow.read_text(encoding="utf-8")
-    assert "python scripts/verify_report_browser_e2e.py" in workflow_text
+    assert "python -m scripts.verify_report_browser_e2e" in workflow_text
     assert "report-browser-e2e.json" in workflow_text
     assert "actions/upload-artifact@" in workflow_text
 
 
-def test_report_browser_verifier_is_directly_executable():
-    """The workflow's direct script invocation must reach argparse before browser use."""
+def test_report_browser_verifier_module_entrypoint_loads():
+    """The workflow's module invocation must reach argparse before browser use."""
     repo_root = Path(__file__).resolve().parents[1]
     completed = subprocess.run(
-        [sys.executable, "scripts/verify_report_browser_e2e.py", "--help"],
+        [sys.executable, "-m", "scripts.verify_report_browser_e2e", "--help"],
         cwd=repo_root,
         capture_output=True,
         text=True,
