@@ -11,6 +11,8 @@ on:
       - "scripts/build_release_evidence_index.py"
       - "scripts/verify_report_browser_e2e.py"
       - "tests/test_report_table_wrap_pointer_focus.py"
+      - ".jules/palette.md"
+      - ".Jules/palette.md"
       - ".github/workflows/report-browser-e2e.yml"
   workflow_dispatch:
 
