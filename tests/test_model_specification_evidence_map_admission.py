@@ -92,3 +92,22 @@ def test_compiler_accepts_exact_builtin_evidence_dict() -> None:
     )
 
     assert len(candidates) == 3
+
+
+def test_compiler_rejects_unclaimed_evidence_candidate_id() -> None:
+    """Stale full candidate IDs must fail instead of disappearing from provenance."""
+    stale_candidate_id = (
+        "2plm_logistic__lsirm_jeon_et_al_2021_extension__spec_sha256_"
+        + "0" * 64
+    )
+
+    with pytest.raises(ValueError, match="unknown candidate identities"):
+        compile_dependence_candidates(
+            _base_spec(),
+            evidence_by_candidate_id={
+                stale_candidate_id: CapabilityEvidence(
+                    generative_equation_id="stale-equation",
+                    primary_citations=("10.1007/s11336-021-09762-5",),
+                )
+            },
+        )
