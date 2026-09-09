@@ -55,3 +55,4 @@
 ## 2026-09-06 - 마우스 사용자를 위한 표 컨테이너 초점 표시 관리
 **Learning:** `tabindex="0"` 속성이 적용된 스크롤 가능한 컨테이너(`.table-wrap` 등)는 키보드 사용자를 위한 명확한 `:focus-visible` 표시가 필요합니다. 하지만 브라우저에 따라 마우스 클릭 시에도 불필요한 포커스 링이 나타날 수 있습니다. 무조건적인 `.table-wrap:focus { outline: none; }`은 키보드 접근성을 해칠 수 있으므로, `:focus-visible` 보존과 함께 마우스 포인터 상호작용 시에만 표시를 숨기는 것이 증거에 기반한 적절한 방식입니다.
 **Action:** 마우스 사용자 경험을 위해 선택적으로 포커스 표시를 숨기려면, 반드시 키보드를 위한 `.table-wrap:focus-visible` 링을 보존한 상태에서 `.table-wrap:focus:not(:focus-visible) { outline: none; }`과 같이 구체적으로 적용해야 합니다. 보편적인 포커스 금지 규칙으로 간주해서는 안 되며, 스크롤 가능성과 키보드 접근성이 유지되는지 렌더링된 출력에서 확인해야 합니다.
+**Evidence:** W3C Selectors Level 4 §9.4는 `:focus-visible`을 사용자 에이전트가 포커스 표시가 필요하다고 판단하는 상황에 대응하는 pseudo-class로 정의하며, WCAG 2.2 SC 2.4.7은 키보드 조작 가능한 UI에서 포커스 표시가 보여야 함을 요구합니다. https://www.w3.org/TR/selectors-4/#the-focus-visible-pseudo · https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html
