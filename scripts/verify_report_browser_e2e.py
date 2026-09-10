@@ -12,11 +12,16 @@ import subprocess
 import tempfile
 import time
 from http.client import HTTPConnection, HTTPException
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from scripts.build_benchmark_report import _render_report_html as render_benchmark_report
 from scripts.build_buyer_packet import _render_report_html as render_buyer_report
+from scripts.build_commercial_release import _render_html as render_release_report
+from scripts.build_figma_evidence_sync import _render_report as render_figma_report
 from scripts.build_pr_queue_governance import _render_report as render_pr_queue_report
 from scripts.build_procurement_due_diligence import _render_report as render_due_diligence_report
 from scripts.build_release_evidence_index import _render_report_html as render_release_index
@@ -126,7 +131,7 @@ class ChromeSession:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         connection = HTTPConnection("127.0.0.1", self._port, timeout=30)
         try:
-            connection.request(
+            connection.request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
                 method,
                 path,
                 body=body,
@@ -359,6 +364,26 @@ _RENDERERS: tuple[tuple[str, Callable[[dict[str, Any]], str], dict[str, Any]], .
             ],
             "dist": {"artifacts": [{"name": "fast_mlsirm.whl"}]},
             "failures": [],
+        },
+    ),
+    (
+        "commercial_release",
+        render_release_report,
+        {
+            "status": "ok",
+            "generated_at": "2026-09-09T00:00:00+00:00",
+            "source_commit": "0" * 40,
+            "stages": [{"name": "test", "status": "ok", "duration_seconds": 1.5}],
+            "artifacts": {"test": "sha256"},
+        },
+    ),
+    (
+        "figma_evidence",
+        render_figma_report,
+        {
+            "status": "ok",
+            "generated_at": "2026-09-09T00:00:00+00:00",
+            "checks": [{"name": "test", "category": "test", "ok": True, "detail": "test"}],
         },
     ),
 )
