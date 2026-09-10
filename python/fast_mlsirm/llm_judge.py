@@ -414,7 +414,7 @@ def _validate_raw_json_depth(content: str) -> None:
             depth -= 1
 
 
-def _reject_nonfinite(literal: str) -> float:
+def _reject_nonfinite(_literal: str) -> float:
     raise JudgeFormatError("judge response contains non-finite numeric value")
 
 
