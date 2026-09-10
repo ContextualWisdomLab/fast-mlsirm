@@ -51,3 +51,6 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+## 2026-08-11 - Focus Visible Styles for Table Wrappers
+**Learning:** Similar to `skip-link` targets, removing the focus outline on `.table-wrap` containers with `:focus:not(:focus-visible) { outline: none; }` is required before defining `.table-wrap:focus-visible` to ensure mouse clicks don't show focus rings while preserving keyboard accessibility.
+**Action:** When adding `:focus-visible` outlines for keyboard navigation to focusable containers, ensure the standard `:focus` outline is explicitly hidden for pointer events using `:focus:not(:focus-visible) { outline: none; }` just beforehand.

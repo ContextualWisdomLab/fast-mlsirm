@@ -21,8 +21,15 @@ _FULL_OBJECT_ID_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _GH_COMMAND_TIMEOUT_SECONDS = 60
 
 try:
-    from scripts._bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
-    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
+    from scripts._bounded_json import (
+        MAX_JSON_BYTES,
+        parse_json_bounded,
+        read_json_object,
+    )
+    from scripts._bounded_subprocess import (
+        BoundedSubprocessOutputError,
+        run_bounded_capture,
+    )
 except ModuleNotFoundError:
     from _bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
     from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
@@ -200,7 +207,9 @@ def _source_commit(repo_root: Path) -> str:
         raise RuntimeError("source commit lookup failed") from exc
     candidate = completed.stdout.strip()
     if not _FULL_OBJECT_ID_PATTERN.fullmatch(candidate):
-        raise RuntimeError("source commit is not a full lowercase SHA-1 or SHA-256 object id")
+        raise RuntimeError(
+            "source commit is not a full lowercase SHA-1 or SHA-256 object id"
+        )
     return candidate
 
 
@@ -478,6 +487,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 32px 20px 56px; }
 .metric-card span { display: block; color: #5e6f76; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
 .metric-card strong { display: block; margin-top: 8px; overflow-wrap: anywhere; }
 .table-wrap { overflow-x: auto; border: 1px solid #d8e1e3; border-radius: 8px; }
+.table-wrap:focus:not(:focus-visible) { outline: none; }
 .table-wrap:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
 caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

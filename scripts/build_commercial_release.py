@@ -18,9 +18,16 @@ GIT_METADATA_TIMEOUT_SECONDS = 5
 
 try:
     from scripts._bounded_json import parse_json_bounded, read_json_object
-    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
+    from scripts._bounded_subprocess import (
+        BoundedSubprocessOutputError,
+        run_bounded_capture,
+    )
 except ModuleNotFoundError as exc:
-    if exc.name not in {"scripts", "scripts._bounded_json", "scripts._bounded_subprocess"}:
+    if exc.name not in {
+        "scripts",
+        "scripts._bounded_json",
+        "scripts._bounded_subprocess",
+    }:
         raise
     from _bounded_json import parse_json_bounded, read_json_object
     from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
@@ -206,9 +213,9 @@ def _stage(
         "stderr_tail": _tail(completed.stderr),
     }
     if completed.returncode != 0:
-        stage["failure_kind"] = getattr(
-            completed, "failure_kind", None
-        ) or "subprocess_exit"
+        stage["failure_kind"] = (
+            getattr(completed, "failure_kind", None) or "subprocess_exit"
+        )
     if parsed is not None:
         stage["result"] = parsed
     return stage
@@ -421,6 +428,7 @@ main {
   border: 1px solid #d8e1e3;
   border-radius: 8px;
 }
+.table-wrap:focus:not(:focus-visible) { outline: none; }
 .table-wrap:focus-visible {
   outline: 3px solid #0f766e;
   outline-offset: 3px;

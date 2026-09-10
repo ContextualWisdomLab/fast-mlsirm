@@ -17,8 +17,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 try:
-    from scripts._bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
-    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
+    from scripts._bounded_json import (
+        MAX_JSON_BYTES,
+        parse_json_bounded,
+        read_json_object,
+    )
+    from scripts._bounded_subprocess import (
+        BoundedSubprocessOutputError,
+        run_bounded_capture,
+    )
 except ModuleNotFoundError:
     from _bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
     from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
@@ -80,8 +87,7 @@ _OPEN_PR_JSON_FIELDS = (
 # nested ``files``/``labels`` on ``--state all --limit 100`` routinely trips
 # GitHub GraphQL HTTP 502 for this repository (see Actions run 31374029017).
 _HISTORY_PR_JSON_FIELDS = (
-    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,"
-    "mergedAt,url"
+    "number,title,body,headRefName,headRefOid,state,updatedAt,closedAt,mergedAt,url"
 )
 _OPEN_PR_LIST_LIMIT = 100
 _HISTORY_PR_LIST_LIMIT = 100
@@ -152,7 +158,9 @@ def _source_commit(repo_root: Path) -> str:
         raise RuntimeError("source commit lookup failed") from exc
     candidate = completed.stdout.strip()
     if not _FULL_OBJECT_ID_PATTERN.fullmatch(candidate):
-        raise RuntimeError("source commit is not a full lowercase SHA-1 or SHA-256 object id")
+        raise RuntimeError(
+            "source commit is not a full lowercase SHA-1 or SHA-256 object id"
+        )
     return candidate
 
 
@@ -695,6 +703,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 56px; }
 .metric-card span { display: block; color: #5e6f76; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
 .metric-card strong { display: block; margin-top: 8px; overflow-wrap: anywhere; }
 .table-wrap { overflow-x: auto; border: 1px solid #d8e1e3; border-radius: 8px; }
+.table-wrap:focus:not(:focus-visible) { outline: none; }
 .table-wrap:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
 table { width: 100%; min-width: 920px; border-collapse: collapse; }
 caption {
