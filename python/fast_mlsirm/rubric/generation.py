@@ -31,19 +31,19 @@ MAX_SOURCE_CHARACTERS = 262_144
 MAX_SOURCES = 32
 MAX_TOTAL_SOURCE_CHARACTERS = 1_048_576
 MAX_RAW_RESPONSE_CHARACTERS = 262_144
-_ALLOWED_MEDIA_TYPES = frozenset({
-    "application/json",
-    "application/xml",
-    "text/csv",
-    "text/markdown",
-    "text/plain",
-})
+_ALLOWED_MEDIA_TYPES = frozenset(
+    {
+        "application/json",
+        "application/xml",
+        "text/csv",
+        "text/markdown",
+        "text/plain",
+    }
+)
 _DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-_CONTRACT_IDENTITY_FIELDS = frozenset({
-    "contract_id",
-    "contract_handle",
-    "contract_fingerprint",
-})
+_CONTRACT_IDENTITY_FIELDS = frozenset(
+    {"contract_id", "contract_handle", "contract_fingerprint"}
+)
 
 
 def _source_content(value: Any) -> str:
@@ -110,22 +110,23 @@ def _validate_contract_depth(content: str) -> None:
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    """Reject duplicate JSON object keys to prevent JSON smuggling."""
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate JSON object key: {key}")
-        result[key] = value
-    return result
+    d = {}
+    for k, v in pairs:
+        if k in d:
+            raise ValueError("Duplicate JSON keys are not allowed")
+        d[k] = v
+    return d
 
 
-def _reject_nonfinite_json(_literal: str) -> Any:
-    """Reject non-finite JSON constants."""
-    raise ValueError("contract_json contains a non-finite numeric value")
+def _reject_nonfinite_json(_literal: str) -> float:
+    raise ValueError("Non-finite numerical values are not allowed in JSON")
 
 
 def _contract_object(contract_json: str) -> dict[str, Any]:
-    """Parse canonical contract JSON and require a top-level object."""
+    """
+    Parse canonical contract JSON and require a top-level object.
+    Enforces strict deserialization to prevent JSON smuggling and non-finite DoS.
+    """
     if type(contract_json) is not str or not contract_json:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
@@ -135,7 +136,11 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
             object_pairs_hook=_reject_duplicate_keys,
             parse_constant=_reject_nonfinite_json,
         )
-    except (TypeError, ValueError) as exc:
+    except ValueError as exc:
+        if "Duplicate JSON keys" in str(exc) or "Non-finite" in str(exc):
+            raise
+        raise ValueError("contract_json must be valid JSON text") from exc
+    except TypeError as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
         raise ValueError("contract_json must encode a JSON object")
@@ -603,17 +608,19 @@ class GenerationExecution:
     @property
     def execution_fingerprint(self) -> str:
         """Return SHA-256 over the complete redacted execution provenance."""
-        return _sha256_hex({
-            "schema_version": self.schema_version,
-            "request_id": self.request_id,
-            "request_fingerprint": self.request_fingerprint,
-            "contract_id": self.contract_id,
-            "contract_fingerprint": self.contract_fingerprint,
-            "provider_id": self.provider_id,
-            "model_id": self.model_id,
-            "candidate_fingerprint": self.candidate.candidate_fingerprint,
-            "raw_response_digest": self.raw_response_digest,
-        })
+        return _sha256_hex(
+            {
+                "schema_version": self.schema_version,
+                "request_id": self.request_id,
+                "request_fingerprint": self.request_fingerprint,
+                "contract_id": self.contract_id,
+                "contract_fingerprint": self.contract_fingerprint,
+                "provider_id": self.provider_id,
+                "model_id": self.model_id,
+                "candidate_fingerprint": self.candidate.candidate_fingerprint,
+                "raw_response_digest": self.raw_response_digest,
+            }
+        )
 
     @property
     def execution_handle(self) -> str:

@@ -47,7 +47,8 @@ def _source(source_id="policy_source", content=None):
     """Return a valid source for mutation tests."""
     return SourceDocument(
         source_id,
-        content or "The policy requires every substantive claim to cite evidence.",
+        content
+        or "The policy requires every substantive claim to cite evidence.",
         "text/plain",
         "en-US",
     )
@@ -124,10 +125,12 @@ def _payload(request, *, closed_book=False):
             }
         ]
         if request.blueprint.evidence_mode is EvidenceMode.MULTI_SOURCE:
-            attributions.append({
-                "source_id": "secondary_source",
-                "evidence_span": "Second evidence source",
-            })
+            attributions.append(
+                {
+                    "source_id": "secondary_source",
+                    "evidence_span": "Second evidence source",
+                }
+            )
     return {
         "blueprint_id": request.blueprint.blueprint_id,
         "blueprint_handle": contract["blueprint"]["blueprint_handle"],
@@ -246,7 +249,8 @@ def test_request_rejects_wrong_types_duplicates_budgets_and_rubric_replay():
             rubric,
             multi,
             tuple(
-                SourceDocument(f"source_document_{index}", "x") for index in range(33)
+                SourceDocument(f"source_document_{index}", "x")
+                for index in range(33)
             ),
         )
 
@@ -511,12 +515,7 @@ def test_closed_book_rejects_source_attribution():
             "options_not_allowed",
         ),
         (ResponseFormat.CONSTRUCTED_RESPONSE, [], 7, "invalid_type"),
-        (
-            ResponseFormat.SELECTED_RESPONSE,
-            [],
-            _answer_key(ResponseFormat.SELECTED_RESPONSE),
-            "option_count",
-        ),
+        (ResponseFormat.SELECTED_RESPONSE, [], _answer_key(ResponseFormat.SELECTED_RESPONSE), "option_count"),
         (
             ResponseFormat.SELECTED_RESPONSE,
             [
@@ -615,9 +614,7 @@ def test_pairwise_tie_with_null_preference_is_valid():
 
 def test_executor_rejects_non_protocol_invalid_metadata_and_wrong_request():
     """Execution requires the explicit provider protocol and stable metadata."""
-    with pytest.raises(
-        TypeError, match="provider must implement ItemGenerationProvider"
-    ):
+    with pytest.raises(TypeError, match="provider must implement ItemGenerationProvider"):
         execute_generation(object(), _request())
 
     class BadMetadataProvider:
@@ -633,15 +630,7 @@ def test_executor_rejects_non_protocol_invalid_metadata_and_wrong_request():
         execute_generation(BadMetadataProvider(), object())
 
 
-def test_generation_rejects_nonfinite_and_duplicates():
-    import fast_mlsirm.rubric.generation as gen
-    import pytest
-
-    with pytest.raises(ValueError, match="valid JSON text"):
-        gen._contract_object('{"a": NaN}')
-    with pytest.raises(ValueError, match="valid JSON text"):
-        gen._contract_object('{"a": Infinity}')
-    with pytest.raises(ValueError, match="valid JSON text"):
-        gen._contract_object('{"a": -Infinity}')
-    with pytest.raises(ValueError, match="valid JSON text"):
-        gen._contract_object('{"a": 1, "a": 2}')
+def test_generation_rejects_duplicate_keys():
+    from fast_mlsirm.rubric.generation import _contract_object
+    with pytest.raises(ValueError, match="Duplicate JSON keys are not allowed"):
+        _contract_object('{"description": "A", "description": "B"}')

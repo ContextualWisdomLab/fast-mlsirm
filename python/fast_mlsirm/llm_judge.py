@@ -30,9 +30,7 @@ _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 class JudgeFormatError(ValueError):
     """Raised when a judge response is not a bounded, interpretable decision."""
 
-    def __init__(
-        self, message: str, *, evidence: Mapping[str, Any] | None = None
-    ) -> None:
+    def __init__(self, message: str, *, evidence: Mapping[str, Any] | None = None) -> None:
         super().__init__(message)
         self.evidence = dict(evidence or {})
 
@@ -51,7 +49,10 @@ def _duplicate_free_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _category_count(value: Any) -> int:
-    if type(value) is not int or not 2 <= value <= MAX_JUDGE_CATEGORIES:
+    if (
+        type(value) is not int
+        or not 2 <= value <= MAX_JUDGE_CATEGORIES
+    ):
         raise ValueError(
             f"category_count must be an integer in 2..{MAX_JUDGE_CATEGORIES}"
         )
@@ -61,16 +62,22 @@ def _category_count(value: Any) -> int:
 def _category(value: Any, name: str, category_count: int) -> int:
     """Accept JSON integer values, including mathematically integral 1.0 forms."""
     if type(value) not in (int, float):
-        raise JudgeFormatError(f"{name} must be an integer in 0..{category_count - 1}")
+        raise JudgeFormatError(
+            f"{name} must be an integer in 0..{category_count - 1}"
+        )
     try:
         normalized = float(value)
     except (OverflowError, ValueError):
         normalized = math.nan
     if not math.isfinite(normalized) or not normalized.is_integer():
-        raise JudgeFormatError(f"{name} must be an integer in 0..{category_count - 1}")
+        raise JudgeFormatError(
+            f"{name} must be an integer in 0..{category_count - 1}"
+        )
     category = int(normalized)
     if not 0 <= category < category_count:
-        raise JudgeFormatError(f"{name} must be an integer in 0..{category_count - 1}")
+        raise JudgeFormatError(
+            f"{name} must be an integer in 0..{category_count - 1}"
+        )
     return category
 
 
@@ -91,14 +98,10 @@ class JudgeCriterion:
         if type(self.description) is not str:
             raise ValueError("criterion description must be a string")
         if not self.description.strip() or len(self.description) > 2_000:
-            raise ValueError(
-                "criterion description must be non-empty and <= 2000 characters"
-            )
+            raise ValueError("criterion description must be non-empty and <= 2000 characters")
         if self.category_anchors is not None:
             if type(self.category_anchors) is not tuple:
-                raise ValueError(
-                    "criterion category_anchors must be a tuple of strings"
-                )
+                raise ValueError("criterion category_anchors must be a tuple of strings")
             if not 2 <= len(self.category_anchors) <= MAX_JUDGE_CATEGORIES:
                 raise ValueError(
                     f"criterion category_anchors must contain 2..{MAX_JUDGE_CATEGORIES} values"
@@ -125,9 +128,7 @@ class JudgeCriterion:
             "weight": self.weight,
         }
         if self.category_anchors is not None:
-            result["category_anchors"] = [
-                anchor.strip() for anchor in self.category_anchors
-            ]
+            result["category_anchors"] = [anchor.strip() for anchor in self.category_anchors]
         return result
 
 
@@ -289,9 +290,7 @@ def _bounded_text(value: Any, name: str) -> str:
     return normalized
 
 
-def _criteria(
-    values: Iterable[JudgeCriterion | Mapping[str, Any]],
-) -> tuple[JudgeCriterion, ...]:
+def _criteria(values: Iterable[JudgeCriterion | Mapping[str, Any]]) -> tuple[JudgeCriterion, ...]:
     normalized: list[JudgeCriterion] = []
     for value in values:
         if len(normalized) >= MAX_JUDGE_CRITERIA:
@@ -370,18 +369,12 @@ def _validate_category_anchors(
     if not any(provided):
         return False
     if category_count is None:
-        raise ValueError(
-            "criterion category_anchors require an explicit category_count"
-        )
+        raise ValueError("criterion category_anchors require an explicit category_count")
     if not all(provided):
-        raise ValueError(
-            "criterion category_anchors must be provided for every criterion"
-        )
+        raise ValueError("criterion category_anchors must be provided for every criterion")
     for criterion in criteria:
         if criterion.category_anchors is None:
-            raise ValueError(
-                "criterion category_anchors must be provided for every criterion"
-            )
+            raise ValueError("criterion category_anchors must be provided for every criterion")
         if len(criterion.category_anchors) != category_count:
             raise ValueError(
                 f"criterion {criterion.criterion_id} category_anchors must match category_count"
@@ -407,9 +400,7 @@ def _validate_raw_json_depth(content: str) -> None:
         elif char in "[{":
             depth += 1
             if depth > MAX_JUDGE_JSON_DEPTH:
-                raise JudgeFormatError(
-                    f"judge response JSON nesting exceeds maximum depth of {MAX_JUDGE_JSON_DEPTH}"
-                )
+                raise JudgeFormatError(f"judge response JSON nesting exceeds maximum depth of {MAX_JUDGE_JSON_DEPTH}")
         elif char in "]}":
             depth -= 1
 
@@ -428,9 +419,7 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
             parse_constant=_reject_nonfinite,
         )
     except _DuplicateJsonKeyError as exc:
-        raise JudgeFormatError(
-            "judge response contains duplicate JSON object keys"
-        ) from exc
+        raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
     except json.JSONDecodeError as exc:
         raise JudgeFormatError("judge response JSON is invalid") from exc
     if not isinstance(value, dict):
@@ -506,9 +495,7 @@ def _single_call_failure_evidence(
 class ContextualOrchestratorJudge:
     """Evaluate through a marked contextual-orchestrator adapter using adaptive routing by default."""
 
-    def __init__(
-        self, orchestrator: Any, *, mode: str = "auto", accept_threshold: float = 0.7
-    ) -> None:
+    def __init__(self, orchestrator: Any, *, mode: str = "auto", accept_threshold: float = 0.7) -> None:
         if not callable(getattr(orchestrator, "complete", None)):
             raise TypeError("orchestrator must provide complete(messages, mode=...)")
         try:
@@ -543,14 +530,10 @@ class ContextualOrchestratorJudge:
             name = "fast_mlsirm_binary_judge"
         else:
             if category_count is None and category_method != "direct":
-                raise ValueError(
-                    f"{category_method} requires an explicit category_count"
-                )
+                raise ValueError(f"{category_method} requires an explicit category_count")
             if category_method == "cumulative_threshold":
                 if category_count is None:
-                    raise ValueError(
-                        "cumulative_threshold requires an explicit category_count"
-                    )
+                    raise ValueError("cumulative_threshold requires an explicit category_count")
                 item_schema: dict[str, Any] = {
                     "type": "array",
                     "items": {"type": "boolean"},
@@ -574,9 +557,7 @@ class ContextualOrchestratorJudge:
                 "rationale": {"type": "string", "maxLength": 256},
                 field_name: {
                     "type": "object",
-                    "properties": {
-                        criterion_id: item_schema for criterion_id in criterion_ids
-                    },
+                    "properties": {criterion_id: item_schema for criterion_id in criterion_ids},
                     "required": criterion_ids,
                     "additionalProperties": False,
                 },
@@ -617,9 +598,7 @@ class ContextualOrchestratorJudge:
         reference: str,
         criteria: tuple[JudgeCriterion, ...],
         category_count: int,
-    ) -> tuple[
-        dict[str, list[bool]], list[dict[str, Any]], list[dict[str, Any]], str, str
-    ]:
+    ) -> tuple[dict[str, list[bool]], list[dict[str, Any]], list[dict[str, Any]], str, str]:
         """Judge each ordered boundary with a small binary response contract."""
         # ADR-0015: keep this calibration method opt-in and fail closed; it is
         # not a keyword, position, or silent-repair fallback.
@@ -700,7 +679,7 @@ class ContextualOrchestratorJudge:
                         "When evidence is incomplete or ambiguous, choose the lower threshold. Do not infer a "
                         "missing threshold from another threshold. Final output contract: start with { and end "
                         "with }; emit no markdown fences, labels, or explanation outside the object. Use exactly "
-                        'this shape: {"meets_threshold": true, "rationale": "brief reason"}.'
+                        "this shape: {\"meets_threshold\": true, \"rationale\": \"brief reason\"}."
                     ),
                 },
                 {
@@ -751,9 +730,7 @@ class ContextualOrchestratorJudge:
                 if record["call_status"] == "started":
                     record["call_status"] = "failed"
                 record["parse_status"] = (
-                    "failed"
-                    if record["call_status"] == "completed"
-                    else "not_attempted"
+                    "failed" if record["call_status"] == "completed" else "not_attempted"
                 )
                 record["error_type"] = type(exc).__name__
                 record["failure_code"] = "binary_boundary_call_failed"
@@ -793,9 +770,7 @@ class ContextualOrchestratorJudge:
                 if any(record["parse_status"] != "passed" for record in records)
                 else "passed",
                 "semantic_status": semantic_status,
-                "trace_step_count": sum(
-                    record["trace_step_count"] for record in records
-                ),
+                "trace_step_count": sum(record["trace_step_count"] for record in records),
                 "usage": usage,
                 "records": records,
             }
@@ -820,15 +795,7 @@ class ContextualOrchestratorJudge:
         trace: list[dict[str, Any]] = []
         rationales: list[str] = []
         orchestration_mode = self.mode
-        for (
-            criterion_id,
-            threshold_index,
-            meets_threshold,
-            raw,
-            rationale,
-            completion_trace,
-            mode,
-        ) in judgments:
+        for criterion_id, threshold_index, meets_threshold, raw, rationale, completion_trace, mode in judgments:
             thresholds[criterion_id].append(meets_threshold)
             raw_records.append({
                 "criterion_id": criterion_id,
@@ -837,9 +804,7 @@ class ContextualOrchestratorJudge:
             })
             if type(completion_trace) is list:
                 trace.extend(completion_trace)
-            rationales.append(
-                f"{criterion_id} threshold {threshold_index}: {rationale}"
-            )
+            rationales.append(f"{criterion_id} threshold {threshold_index}: {rationale}")
             orchestration_mode = mode
         for criterion_id, criterion_thresholds in thresholds.items():
             if any(
@@ -852,24 +817,17 @@ class ContextualOrchestratorJudge:
                 )
         combined_rationale = " | ".join(rationales)
         raw_output = json.dumps(raw_records, ensure_ascii=False)
-        if (
-            len(combined_rationale) > MAX_JUDGE_TEXT_CHARACTERS
-            or len(raw_output) > MAX_JUDGE_TEXT_CHARACTERS
-        ):
+        if len(combined_rationale) > MAX_JUDGE_TEXT_CHARACTERS or len(raw_output) > MAX_JUDGE_TEXT_CHARACTERS:
             raise JudgeFormatError(
                 "binary threshold judge evidence exceeds the maximum size",
-                evidence=failure_evidence(
-                    outcomes, semantic_status="evidence_oversize"
-                ),
+                evidence=failure_evidence(outcomes, semantic_status="evidence_oversize"),
             )
         return thresholds, raw_records, trace, combined_rationale, orchestration_mode
 
     def _binary_threshold_concurrency(self, call_count: int) -> int:
         """Read the injected gateway's bounded local concurrency, if exposed."""
         try:
-            configured = getattr(
-                getattr(self.orchestrator, "client", None), "local_concurrency", 1
-            )
+            configured = getattr(getattr(self.orchestrator, "client", None), "local_concurrency", 1)
         except Exception:  # noqa: BLE001 - optional capability discovery must not alter judge semantics
             return 1
         if type(configured) is not int or configured < 1:
@@ -899,21 +857,22 @@ class ContextualOrchestratorJudge:
             normalized_criteria, category_count
         )
         if category_method is None:
-            category_method = (
-                "binary_threshold" if category_count is not None else "direct"
-            )
-        elif type(category_method) is not str or category_method not in {
-            "direct",
-            "cumulative_threshold",
-            "binary_threshold",
-        }:
+            category_method = "binary_threshold" if category_count is not None else "direct"
+        elif (
+            type(category_method) is not str
+            or category_method not in {"direct", "cumulative_threshold", "binary_threshold"}
+        ):
             raise ValueError(
                 "category_method must be direct, cumulative_threshold, or binary_threshold"
             )
         if category_method == "cumulative_threshold" and category_count is None:
-            raise ValueError("cumulative_threshold requires an explicit category_count")
+            raise ValueError(
+                "cumulative_threshold requires an explicit category_count"
+            )
         if category_method == "binary_threshold" and category_count is None:
-            raise ValueError("binary_threshold requires an explicit category_count")
+            raise ValueError(
+                "binary_threshold requires an explicit category_count"
+            )
         criterion_payload = [criterion.to_dict() for criterion in normalized_criteria]
         reference_block = reference_answer or "(none supplied)"
         if category_method == "binary_threshold":
@@ -998,9 +957,7 @@ class ContextualOrchestratorJudge:
                     "score": 0.0,
                     "accepted": False,
                     "rationale": "brief evidence-based reason",
-                    "criterion_categories": {
-                        criterion_id: 0 for criterion_id in expected_ids
-                    },
+                    "criterion_categories": {criterion_id: 0 for criterion_id in expected_ids},
                 }
                 category_instruction = (
                     f" Use exactly {category_count} ordered categories indexed 0 through "
@@ -1024,9 +981,7 @@ class ContextualOrchestratorJudge:
                 "score": 0.0,
                 "accepted": False,
                 "rationale": "brief evidence-based reason",
-                "criterion_scores": {
-                    criterion_id: 0.0 for criterion_id in expected_ids
-                },
+                "criterion_scores": {criterion_id: 0.0 for criterion_id in expected_ids},
             }
             category_instruction = (
                 " Return exactly this JSON shape, replacing the example values and keeping every key: "
@@ -1177,19 +1132,13 @@ class ContextualOrchestratorJudge:
                 criterion_categories = {}
                 if category_method == "cumulative_threshold":
                     raw_thresholds = parsed.get("criterion_thresholds")
-                    if (
-                        not isinstance(raw_thresholds, Mapping)
-                        or set(raw_thresholds) != expected_id_set
-                    ):
+                    if not isinstance(raw_thresholds, Mapping) or set(raw_thresholds) != expected_id_set:
                         raise JudgeFormatError(
                             "criterion_thresholds must contain exactly the rubric criterion ids"
                         )
                     for criterion_id in sorted(expected_ids):
                         thresholds = raw_thresholds[criterion_id]
-                        if (
-                            not isinstance(thresholds, list)
-                            or len(thresholds) != category_count - 1
-                        ):
+                        if not isinstance(thresholds, list) or len(thresholds) != category_count - 1:
                             raise JudgeFormatError(
                                 "criterion thresholds must be a boolean array for every ordered boundary"
                             )
@@ -1207,10 +1156,7 @@ class ContextualOrchestratorJudge:
                         criterion_categories[criterion_id] = sum(thresholds)
                 else:
                     raw_categories = parsed.get("criterion_categories")
-                    if (
-                        not isinstance(raw_categories, Mapping)
-                        or set(raw_categories) != expected_id_set
-                    ):
+                    if not isinstance(raw_categories, Mapping) or set(raw_categories) != expected_id_set:
                         raise JudgeFormatError(
                             "criterion_categories must contain exactly the rubric criterion ids"
                         )
@@ -1221,8 +1167,7 @@ class ContextualOrchestratorJudge:
                             category_count,
                         )
                 criterion_scores = {
-                    criterion_id: criterion_categories[criterion_id]
-                    / (category_count - 1)
+                    criterion_id: criterion_categories[criterion_id] / (category_count - 1)
                     for criterion_id in sorted(expected_ids)
                 }
                 score = _weighted_average(criterion_scores, normalized_criteria)
