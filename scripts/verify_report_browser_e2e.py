@@ -12,11 +12,8 @@ import subprocess
 import tempfile
 import time
 from http.client import HTTPConnection, HTTPException
-import sys
 from pathlib import Path
 from typing import Any, Callable
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.build_benchmark_report import _render_report_html as render_benchmark_report
 from scripts.build_buyer_packet import _render_report_html as render_buyer_report
