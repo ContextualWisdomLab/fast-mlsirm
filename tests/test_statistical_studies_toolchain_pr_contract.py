@@ -69,8 +69,11 @@ def test_correlated_mirt_recovery_has_dedicated_bounded_evidence_job() -> None:
     assert f"--skip {CORR_MIRT_TEST}" in rust_ignored
     assert "    timeout-minutes: 360\n" in corr_mirt
     assert "twopl::tests::mc_corr_mirt_recovery_500" in corr_mirt
+    assert "--exact" in corr_mirt
+    assert "--test-threads=1" in corr_mirt
     assert "2>&1 | tee corr-mirt-recovery-study.log" in corr_mirt
     assert "if: always()" in corr_mirt
+    assert "if-no-files-found: error" in corr_mirt
     assert "retention-days: 90" in corr_mirt
 
 
@@ -115,8 +118,11 @@ def test_qmc_mirt_recovery_cells_have_independent_bounded_evidence_jobs() -> Non
         assert "    timeout-minutes: 360\n" in block
         assert "--test qmc_mirt_recovery_cells" in block
         assert target in block
+        assert "--exact" in block
+        assert "--test-threads=1" in block
         assert f"2>&1 | tee {log_name}" in block
         assert "if: always()" in block
+        assert "if-no-files-found: error" in block
         assert "retention-days: 90" in block
 
 
@@ -130,8 +136,11 @@ def test_gpcm_mhrm_recovery_has_dedicated_bounded_evidence_job() -> None:
     assert f"--skip {GPCM_MHRM_TEST}" in rust_ignored
     assert "    timeout-minutes: 360\n" in gpcm_mhrm
     assert "mhrm::tests::mc_gpcm_mhrm_recovery_500" in gpcm_mhrm
+    assert "--exact" in gpcm_mhrm
+    assert "--test-threads=1" in gpcm_mhrm
     assert "2>&1 | tee gpcm-mhrm-recovery-study.log" in gpcm_mhrm
     assert "if: always()" in gpcm_mhrm
+    assert "if-no-files-found: error" in gpcm_mhrm
     assert "retention-days: 90" in gpcm_mhrm
 
 
@@ -145,8 +154,11 @@ def test_mhrm_recovery_has_dedicated_bounded_evidence_job() -> None:
     assert f"--skip {MHRM_TEST}" in rust_ignored
     assert "    timeout-minutes: 360\n" in mhrm
     assert "mhrm::tests::mc_mhrm_recovery_500" in mhrm
+    assert "--exact" in mhrm
+    assert "--test-threads=1" in mhrm
     assert "2>&1 | tee mhrm-recovery-study.log" in mhrm
     assert "if: always()" in mhrm
+    assert "if-no-files-found: error" in mhrm
     assert "retention-days: 90" in mhrm
 
 
@@ -167,6 +179,9 @@ def test_testlet_recovery_conditions_have_independent_bounded_evidence_jobs() ->
     ):
         assert "    timeout-minutes: 360\n" in block
         assert target in block
+        assert "--exact" in block
+        assert "--test-threads=1" in block
         assert f"2>&1 | tee {log_name}" in block
         assert "if: always()" in block
+        assert "if-no-files-found: error" in block
         assert "retention-days: 90" in block
