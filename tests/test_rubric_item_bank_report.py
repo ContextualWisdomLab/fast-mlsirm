@@ -177,7 +177,8 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
-    assert "outline: none" not in rendered
+    assert "main:focus:not(:focus-visible){outline:none;}" in rendered
+    assert ":focus-visible{outline:3px solid currentColor;outline-offset:2px;}" in rendered
 
 
 def test_report_rejects_partial_or_forged_lifecycle_lineage() -> None:
