@@ -23,7 +23,6 @@
 ## 2025-05-19 - Intermediate allocations in distance calculations
 **Learning:** `(true_xi * true_xi).sum(axis=1)` in Euclidean distance formulas creates an unnecessary intermediate 2D array before performing the sum over the axis. This can cause performance bottlenecks across many function calls.
 **Action:** Replace `(x * x).sum(axis=1)` with `np.einsum('ij,ij->i', x, x)` when computing pairwise Euclidean distances to avoid allocating the intermediate 2D array and achieve measurable performance gains.
-
 ## 2025-05-19 - Vectorized intermediate allocations during gradients
 **Learning:** Operations like `(e * a[None, :] * theta).sum(axis=0)` and `grad_theta = (e * a[None, :]) @ idx` create full-sized N x J intermediate arrays. For larger matrices, this increases memory allocation time significantly.
 **Action:** Always factor out values from sums over axes or embed operations in pre-existing broadcast arrays. For example, replace `(e * a[None, :] * theta).sum(axis=0)` with `(e * theta).sum(axis=0) * a` and replace `(e * a[None, :]) @ idx` with embedding `a` into the indicator variable `idx[np.arange(e.shape[1]), factors] = a` directly so that `e @ idx` avoids building an intermediate N x J array.
@@ -31,11 +30,9 @@
 ## 2025-05-19 - Fast reduction of boolean masks over 3D arrays
 **Learning:** Broadcasting a 2D boolean mask `observed[:, :, None]` and performing element-wise multiplication with a 3D array (`onehot` or `prob`) followed by `.sum(axis=0)` creates a massive intermediate array of shape `(N, J, C)`. For large data sizes (e.g. `N=5000, J=100, C=5`), this memory allocation and copying dominates execution time. Furthermore, using `np.einsum` with boolean arrays directly is slow due to numpy's internal handling of boolean inputs in `einsum`.
 **Action:** When aggregating 3D data masked by a 2D boolean array across an axis, explicitly cast the boolean mask to the target numeric type (`observed.astype(prob.dtype, copy=False)`) and use `np.einsum('ij,ijk->jk', casted_mask, array)` to entirely skip the intermediate 3D array allocation, significantly improving runtime.
-
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
-
 ## 2024-07-18 - NumPy In-Place Operations for Distance Calculation
 **Learning:** In the `fast_mlsirm` distance calculation, creating multiple intermediate arrays of size `(N, J)` during arithmetic operations (addition, `np.maximum`, `np.sqrt`) is a significant bottleneck. Using `dist_sq += ...` and `out=` kwargs (e.g. `np.sqrt(dist_sq, out=dist_sq)`) reduces memory overhead and improves performance drastically for large matrices.
 **Action:** Always prefer in-place NumPy operations (like `+=`, `-=`, and `out=`) when calculating large pairwise metrics if it is safe to overwrite the array, ensuring memory efficiency and faster execution times without introducing regressions.
@@ -51,7 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-
-## 2026-09-10 - Vectorized intermediate allocations during distance computation
-**Learning:** `np.sum(diff * diff, axis=1)` creates an intermediate 2D array of size (N, K) just to sum over axis 1, which degrades performance when large datasets are utilized in calculations like those found in marginal distances.
-**Action:** Always replace `np.sum(X * X, axis=1)` with `np.einsum('ij,ij->i', X, X)` to prevent intermediate array creation and optimize distance calculations using memory-efficient matrix dot products.

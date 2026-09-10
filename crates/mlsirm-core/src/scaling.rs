@@ -368,7 +368,7 @@ fn lsr_validate(wins: &[f64], n: usize, alpha: f64) -> Result<(), String> {
 /// sum `n`, and return `(params, weights)` (choix `lsr_pairwise_dense` +
 /// `statdist` + `log_transform`).
 fn lsr_pass(wins: &[f64], n: usize, alpha: f64, w: &[f64]) -> Result<(Vec<f64>, Vec<f64>), String> {
-    let _nf = n as f64;
+    let nf = n as f64;
     // chain = alpha * ones(n, n); chain[loser][winner] += c / (w_win + w_lose).
     // choix seeds the diagonal with alpha too; that is behaviorally
     // equivalent to seeding off-diagonals only, because the subsequent

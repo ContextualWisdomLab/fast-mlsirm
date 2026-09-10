@@ -5903,7 +5903,7 @@ fn pr_elom_rowmean() {
     .unwrap();
     assert!(allna.iter().all(|v| v.is_nan()));
     // P9d: stored-NaN seat replaced by trat.
-    let _p9d = predict_rating_multi(
+    let p9d = predict_rating_multi(
         &[f64::NAN, 2200.0, 2100.0],
         &[20, 20, 20],
         &[0, 1, 2],
