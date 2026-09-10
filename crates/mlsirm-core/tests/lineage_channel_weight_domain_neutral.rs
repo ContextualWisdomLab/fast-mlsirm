@@ -1,6 +1,5 @@
 use mlsirm_core::lineage_channel_weight::{
-    LineageChannelWeightEvidence, LineageCriterionAnchorV1,
-    LINEAGE_CHANNEL_WEIGHT_EVIDENCE_SCHEMA,
+    LineageChannelWeightEvidence, LineageCriterionAnchorV1, LINEAGE_CHANNEL_WEIGHT_EVIDENCE_SCHEMA,
 };
 
 fn payload(anchor_field: &str) -> String {
