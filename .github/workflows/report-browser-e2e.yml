@@ -6,6 +6,8 @@ on:
     paths:
       - "scripts/build_benchmark_report.py"
       - "scripts/build_buyer_packet.py"
+      - "scripts/build_commercial_release.py"
+      - "scripts/build_figma_evidence_sync.py"
       - "scripts/build_pr_queue_governance.py"
       - "scripts/build_procurement_due_diligence.py"
       - "scripts/build_release_evidence_index.py"
