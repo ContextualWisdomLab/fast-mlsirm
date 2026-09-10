@@ -127,6 +127,9 @@ def test_item_bank_report_skip_link_focus_is_browser_verified(tmp_path: Path) ->
         _assert_skip_target_focus(skip_target)
         evidence["skip_target"] = skip_target
 
+        # Reacquire focus after blur so the assertion observes a pointer-acquired
+        # focus state rather than the keyboard-acquired state from the skip link.
+        session.execute("if (document.activeElement) document.activeElement.blur();")
         _pointer_click_main(session)
         pointer_target = _focus_snapshot(session)
         assert pointer_target["tag"] == "MAIN"
