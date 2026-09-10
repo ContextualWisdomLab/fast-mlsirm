@@ -38,13 +38,13 @@ fn gen_data(
     scales: &[f64],
 ) -> Vec<f64> {
     let mut state = seed.max(1);
-    let mut uniform = |state: &mut u64| -> f64 {
+    let uniform = |state: &mut u64| -> f64 {
         *state = state
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
         (*state >> 11) as f64 / (1u64 << 53) as f64
     };
-    let mut normal = |state: &mut u64| -> f64 {
+    let normal = |state: &mut u64| -> f64 {
         let u1 = uniform(state).max(1e-12);
         let u2 = uniform(state);
         (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
@@ -928,7 +928,7 @@ fn ic_error_contract() {
 #[ignore]
 fn ic_mc_500_invariance() {
     let mut state = 0x1CC5EEDu64;
-    let mut uni = |s: &mut u64| -> f64 {
+    let uni = |s: &mut u64| -> f64 {
         *s = s
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
@@ -1135,7 +1135,7 @@ fn ka_mc_500_permutation_invariance() {
     // Alpha is invariant under rater-row and subject-column permutation;
     // both sides of every comparison are crate outputs.
     let mut state = 0xCA5EEDu64;
-    let mut next = |s: &mut u64| -> u64 {
+    let next = |s: &mut u64| -> u64 {
         *s = s
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);

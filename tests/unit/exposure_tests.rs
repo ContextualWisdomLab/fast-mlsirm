@@ -2194,7 +2194,7 @@ fn flexilevel_structural_invariants_all_paths() {
 #[test]
 fn flexilevel_admin_matches_distribution_at_half() {
     let n_items = 5usize;
-    let n = 3usize;
+    let _n = 3usize;
     let n_persons = 1usize << n_items;
     let mut resp = Vec::with_capacity(n_persons * n_items);
     for pat in 0..n_persons {
@@ -2243,7 +2243,7 @@ fn flexilevel_error_paths() {
 #[ignore]
 fn flexilevel_mc_500_recovery() {
     let n_items = 21usize;
-    let n = 11usize;
+    let _n = 11usize;
     let b: Vec<f64> = (0..n_items).map(|c| -2.5 + 0.25 * c as f64).collect();
     let a = 1.2_f64;
     let picc = |theta: f64, bc: f64| 1.0 / (1.0 + (-a * (theta - bc)).exp());
