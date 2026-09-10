@@ -477,7 +477,7 @@ def render_item_bank_report_html(
         "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
         "th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
         "dt{font-weight:700;margin-top:.5rem;}dd{margin-left:0;}"
-        "code{overflow-wrap:anywhere;}"
+        "dd,th,td,code{overflow-wrap:anywhere;}"
         "</style>\n</head>\n<body>\n"
         '<a class="skip-link" href="#main-content">Skip to report</a>\n'
         '<main id="main-content" tabindex="-1">\n'
