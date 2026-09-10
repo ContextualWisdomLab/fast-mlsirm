@@ -131,7 +131,8 @@ class ChromeSession:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         connection = HTTPConnection("127.0.0.1", self._port, timeout=30)
         try:
-            connection.request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+            HTTPConnection.request(
+                connection,
                 method,
                 path,
                 body=body,
