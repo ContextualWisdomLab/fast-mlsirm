@@ -55,10 +55,12 @@ def _assert_report_shell(
     return snapshot
 
 
-def _click_body(session: ChromeSession) -> None:
-    """Establish pointer input modality without inventing a product control."""
+def _click_main(session: ChromeSession) -> None:
+    """Focus the programmatically focusable main landmark through pointer input."""
     located = session.command(
-        "POST", "/element", {"using": "css selector", "value": "body"}
+        "POST",
+        "/element",
+        {"using": "css selector", "value": "main#main-content"},
     )
     element = located.get("value", {})
     element_id = element.get(_WEBDRIVER_ELEMENT_KEY)
@@ -101,14 +103,13 @@ def test_item_bank_report_skip_link_focus_is_browser_verified(tmp_path: Path) ->
         _assert_skip_target_focus(skip_target)
         evidence["skip_target"] = skip_target
 
-        _click_body(session)
-        session.execute("document.querySelector('main#main-content').focus();")
-        pointer_programmatic_target = _focus_snapshot(session)
-        assert pointer_programmatic_target["tag"] == "MAIN"
-        assert pointer_programmatic_target["id"] == "main-content"
-        assert pointer_programmatic_target["focusVisible"] is False
-        assert pointer_programmatic_target["outlineStyle"] == "none"
-        evidence["pointer_programmatic_target"] = pointer_programmatic_target
+        _click_main(session)
+        pointer_target = _focus_snapshot(session)
+        assert pointer_target["tag"] == "MAIN"
+        assert pointer_target["id"] == "main-content"
+        assert pointer_target["focusVisible"] is False
+        assert pointer_target["outlineStyle"] == "none"
+        evidence["pointer_target"] = pointer_target
 
         layouts: list[dict[str, object]] = []
         for width, height in ((375, 800), (768, 900), (1280, 900)):
