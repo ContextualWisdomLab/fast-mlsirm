@@ -29,8 +29,7 @@ def test_rowwise_squared_distance_keeps_established_binary64_reduction() -> None
 
 def test_distance_reassociation_changes_the_live_estimator_path(monkeypatch) -> None:
     """The one-ULP reduction change must propagate through the production M-step."""
-    initial_zeta = np.array([[0.5, 0.0, 0.25]], dtype=np.float64)
-    x_grid = np.ascontiguousarray(initial_zeta + _DIFF, dtype=np.float64)
+    x_grid = np.ascontiguousarray(_DIFF, dtype=np.float64)
     x_logw = np.zeros(1, dtype=np.float64)
 
     def one_point_xi_grid(*_args, **_kwargs):
@@ -50,6 +49,7 @@ def test_distance_reassociation_changes_the_live_estimator_path(monkeypatch) -> 
         "q_xi": 7,
         "max_iter": 1,
         "m_steps": 1,
+        "init_zeta_radius": 0.0,
         "xi_rule": "qmc",
         "xi_points": 1,
         "eps_distance": float.fromhex("0x0.0000000000001p-1022"),
