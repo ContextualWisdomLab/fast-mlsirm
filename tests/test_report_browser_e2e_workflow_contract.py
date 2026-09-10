@@ -25,3 +25,11 @@ def test_report_browser_workflow_watches_every_verified_source() -> None:
 
     for source_path in _VERIFIED_SOURCES:
         assert f'- "{source_path}"' in workflow
+
+
+def test_report_browser_workflow_installs_exact_package_without_checkout_credentials() -> None:
+    """Package-owned browser tests need the native core without exposing checkout auth."""
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
+
+    assert "persist-credentials: false" in workflow
+    assert "python -m pip install --no-deps --no-build-isolation -e ." in workflow
