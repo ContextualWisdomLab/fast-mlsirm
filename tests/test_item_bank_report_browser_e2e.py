@@ -55,8 +55,8 @@ def _assert_report_shell(
     return snapshot
 
 
-def _click_main(session: ChromeSession) -> None:
-    """Focus the programmatically focusable main landmark through pointer input."""
+def _pointer_click_main(session: ChromeSession) -> None:
+    """Focus the main landmark with an explicit WebDriver mouse action sequence."""
     located = session.command(
         "POST",
         "/element",
@@ -65,7 +65,31 @@ def _click_main(session: ChromeSession) -> None:
     element = located.get("value", {})
     element_id = element.get(_WEBDRIVER_ELEMENT_KEY)
     assert element_id
-    session.command("POST", f"/element/{element_id}/click", {})
+    session.command(
+        "POST",
+        "/actions",
+        {
+            "actions": [
+                {
+                    "type": "pointer",
+                    "id": "mouse",
+                    "parameters": {"pointerType": "mouse"},
+                    "actions": [
+                        {
+                            "type": "pointerMove",
+                            "duration": 0,
+                            "origin": {_WEBDRIVER_ELEMENT_KEY: element_id},
+                            "x": 0,
+                            "y": 0,
+                        },
+                        {"type": "pointerDown", "button": 0},
+                        {"type": "pointerUp", "button": 0},
+                    ],
+                }
+            ]
+        },
+    )
+    session.command("DELETE", "/actions")
 
 
 def test_item_bank_report_skip_link_focus_is_browser_verified(tmp_path: Path) -> None:
@@ -103,7 +127,7 @@ def test_item_bank_report_skip_link_focus_is_browser_verified(tmp_path: Path) ->
         _assert_skip_target_focus(skip_target)
         evidence["skip_target"] = skip_target
 
-        _click_main(session)
+        _pointer_click_main(session)
         pointer_target = _focus_snapshot(session)
         assert pointer_target["tag"] == "MAIN"
         assert pointer_target["id"] == "main-content"
