@@ -23,6 +23,17 @@ Renumbering is an ordinary-forward repair. Preserve the decision content, tests,
 
 The protected tree itself must contain at most one material ADR per four-digit number. The repository contract test enforces that local invariant; active-reservation coordination remains a live PR/issue governance responsibility because concurrent proposals do not coexist in one checkout before integration.
 
+### Standards basis and local-policy scope
+
+ISO/IEC/IEEE 42010:2022 requires architecture descriptions to record architecture decisions considered essential to the architecture and recommends that organizations/projects establish a decision-recording and sharing strategy with rationale. Nygard's original ADR proposal uses sequentially numbered records with explicit status and preserves superseded decisions instead of rewriting their history. These sources support keeping stable decision identities, maturity, rationale, and non-destructive lineage. They do **not** prescribe GitHub PR reservation semantics or a collision winner.
+
+The rule above that preserves the earliest-created still-valid reservation and assigns later colliders the next free numbers in PR creation order is therefore a repository-local concurrency policy. It is chosen because active proposal branches cannot share one filesystem namespace before integration, while deterministic reservation order prevents two valid decisions from silently reusing one identity. Do not describe this allocation rule as mandated by ISO/IEC/IEEE 42010 or by Nygard.
+
+References:
+
+- International Organization for Standardization, International Electrotechnical Commission, & Institute of Electrical and Electronics Engineers. (2022). *ISO/IEC/IEEE 42010:2022, Software, systems and enterprise—Architecture description* (2nd ed.). https://www.iso.org/standard/74393.html
+- Nygard, M. (2011, November 15). *Documenting architecture decisions*. Cognitect. https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+
 ## Decision index
 
 | ADR | Status | Decision |
