@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -52,6 +53,23 @@ def _initialize_repo(repo_root: Path) -> str:
     ).stdout.strip()
 
 
+def _acceptance_payload(source_commit: str, artifact: Path) -> dict[str, object]:
+    """Return a source-bound acceptance fixture with its artifact digest sealed."""
+    return {
+        "status": "ok",
+        "source_commit": source_commit,
+        "steps": [
+            {
+                "command": "fit",
+                "files": {"summary": str(artifact)},
+            }
+        ],
+        "artifact_sha256": {
+            "artifacts/fit_summary.json": hashlib.sha256(artifact.read_bytes()).hexdigest()
+        },
+    }
+
+
 def test_build_packet_rejects_acceptance_from_different_source_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -70,18 +88,7 @@ def test_build_packet_rejects_acceptance_from_different_source_commit(
     artifact.write_text('{"backend":"rust"}', encoding="utf-8")
     acceptance_path = acceptance_root / "acceptance_summary.json"
     acceptance_path.write_text(
-        json.dumps(
-            {
-                "status": "ok",
-                "source_commit": "0" * 40,
-                "steps": [
-                    {
-                        "command": "fit",
-                        "files": {"summary": str(artifact)},
-                    }
-                ],
-            }
-        ),
+        json.dumps(_acceptance_payload("0" * 40, artifact)),
         encoding="utf-8",
     )
     sales_path = acceptance_root / "sales_readiness_manifest.json"
@@ -127,18 +134,7 @@ def test_build_packet_rejects_sales_readiness_from_different_source_commit(
     artifact.write_text('{"backend":"rust"}', encoding="utf-8")
     acceptance_path = acceptance_root / "acceptance_summary.json"
     acceptance_path.write_text(
-        json.dumps(
-            {
-                "status": "ok",
-                "source_commit": current_source,
-                "steps": [
-                    {
-                        "command": "fit",
-                        "files": {"summary": str(artifact)},
-                    }
-                ],
-            }
-        ),
+        json.dumps(_acceptance_payload(current_source, artifact)),
         encoding="utf-8",
     )
     sales_path = acceptance_root / "sales_readiness_manifest.json"
