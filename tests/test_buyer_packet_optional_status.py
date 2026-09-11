@@ -36,7 +36,12 @@ def _base_paths(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     repo_root.mkdir()
     acceptance_path = _write_json(
         tmp_path / "acceptance" / "acceptance_summary.json",
-        {"status": "ok", "source_commit": SOURCE_COMMIT, "steps": []},
+        {
+            "status": "ok",
+            "source_commit": SOURCE_COMMIT,
+            "steps": [],
+            "artifact_sha256": {},
+        },
     )
     sales_path = _write_json(
         tmp_path / "acceptance" / "sales_readiness_manifest.json",
