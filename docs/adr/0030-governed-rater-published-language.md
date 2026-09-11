@@ -1,4 +1,4 @@
-# ADR-0027: Governed rater published language and context ownership
+# ADR-0030: Governed rater published language and context ownership
 
 Status: **Proposed**  
 Date: 2026-08-29
