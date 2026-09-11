@@ -5,98 +5,60 @@ from __future__ import annotations
 from pathlib import Path
 
 
-_CI_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
-_APT_SOURCES = "/tmp/fast-mlsirm-ubuntu.sources"  # noqa: S108 - asserts CI contract only
+_ROOT = Path(__file__).parents[1]
+_CI_WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yml"
+_SOFTWARE_VULKAN_HELPER = _ROOT / "scripts" / "configure_software_vulkan.sh"
 
 
-def _gpu_install_script() -> str:
-    """Return the software-Vulkan provisioning shell from the CI workflow."""
+def _gpu_job() -> str:
+    """Return only the ``gpu-smoke`` job from the CI workflow."""
     text = _CI_WORKFLOW.read_text(encoding="utf-8")
-    start_marker = "      - name: Install software Vulkan adapter\n        run: |\n"
-    end_marker = "      - name: Prove Vulkan compute adapter availability\n"
-    assert start_marker in text, "gpu-smoke Vulkan provisioning step is missing"
+    start_marker = "  gpu-smoke:\n"
+    end_marker = "\n  fuzz:\n"
+    assert start_marker in text, "gpu-smoke job is missing"
     _, remainder = text.split(start_marker, 1)
-    assert end_marker in remainder, "gpu-smoke Vulkan proof step is missing"
-    script, _ = remainder.split(end_marker, 1)
-    return script
+    assert end_marker in remainder, "gpu-smoke job boundary is missing"
+    job, _ = remainder.split(end_marker, 1)
+    return job
 
 
-def _logical_shell(script: str) -> str:
-    """Join explicit shell continuations so command contracts stay readable."""
-    return script.replace("\\\n", " ")
+def test_gpu_smoke_uses_repository_owned_image_local_vulkan_helper() -> None:
+    """Required GPU evidence must not depend on a live package mirror."""
+    job = _gpu_job()
+    assert "bash scripts/configure_software_vulkan.sh" in job
+    assert "sudo apt-get" not in job
+    assert "mesa-vulkan-drivers" not in job
+    assert "vulkan-tools" not in job
 
 
-def _apt_commands() -> tuple[tuple[str, ...], ...]:
-    """Return tokenized apt commands from only the GPU provisioning step."""
-    script = _logical_shell(_gpu_install_script())
-    return tuple(
-        tuple(line.split())
-        for line in script.splitlines()
-        if "sudo apt-get" in line
-    )
+def test_software_vulkan_helper_fails_closed_and_records_exact_identity() -> None:
+    """The helper must bind the hosted image manifest to readable driver bytes."""
+    script = _SOFTWARE_VULKAN_HELPER.read_text(encoding="utf-8")
+    assert "set -euo pipefail" in script
+    assert "vk_swiftshader_icd.json" in script
+    assert "libvk_swiftshader.so" in script
+    assert "libvulkan.so.1" in script
+    assert "resolve(strict=True)" in script
+    assert "resolved_driver != expected_driver" in script
+    assert 'sha256sum "$icd_manifest" "$swiftshader_driver" "$vulkan_loader"' in script
+    assert "sudo" not in script
+    assert "apt-get" not in script
 
 
-def test_gpu_smoke_uses_isolated_canonical_ubuntu_sources() -> None:
-    """GPU provisioning must bypass runner mirrorlists that can pin dead mirrors."""
-    script = _gpu_install_script()
-    assert f"cat > {_APT_SOURCES} <<EOF" in script
-    assert "URIs: https://archive.ubuntu.com/ubuntu" in script
-    assert "URIs: https://security.ubuntu.com/ubuntu" in script
-    assert (
-        "Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates "
-        "${VERSION_CODENAME}-backports"
-    ) in script
-    assert "Suites: ${VERSION_CODENAME}-security" in script
+def test_software_vulkan_helper_exports_bounded_wgpu_evidence_environment() -> None:
+    """Only the controlled evidence lane may opt into bundled SwiftShader."""
+    script = _SOFTWARE_VULKAN_HELPER.read_text(encoding="utf-8")
+    assert "GITHUB_ENV must be provided by GitHub Actions" in script
+    assert "VK_DRIVER_FILES=%s" in script
+    assert "XDG_RUNTIME_DIR=%s" in script
+    assert "FAST_MLSIRM_ALLOW_NONCOMPLIANT_SOFTWARE_VULKAN=1" in script
+    assert "LD_LIBRARY_PATH=%s" in script
 
 
-def test_gpu_smoke_apt_network_work_has_hard_deadlines() -> None:
-    """Each apt operation must retain its exact bounded network contract."""
-    source_options = (
-        "-o",
-        f"Dir::Etc::sourcelist={_APT_SOURCES}",
-        "-o",
-        "Dir::Etc::sourceparts=-",
-    )
-    update = (
-        "timeout",
-        "120s",
-        "sudo",
-        "apt-get",
-        *source_options,
-        "-o",
-        "Acquire::Retries=2",
-        "-o",
-        "Acquire::http::Timeout=10",
-        "-o",
-        "Acquire::https::Timeout=10",
-        "-o",
-        "DPkg::Lock::Timeout=30",
-        "update",
-    )
-    install = (
-        "timeout",
-        "180s",
-        "sudo",
-        "apt-get",
-        *source_options,
-        "-o",
-        "Acquire::Retries=2",
-        "-o",
-        "Acquire::http::Timeout=10",
-        "-o",
-        "Acquire::https::Timeout=10",
-        "-o",
-        "DPkg::Lock::Timeout=30",
-        "install",
-        "--yes",
-        "mesa-vulkan-drivers",
-        "vulkan-tools",
-    )
-
-    assert _apt_commands() == (update, install)
-
-
-def test_gpu_smoke_apt_lock_wait_is_bounded() -> None:
-    """Both package-manager operations keep the exact 30-second lock bound."""
-    for command in _apt_commands():
-        assert "DPkg::Lock::Timeout=30" in command
+def test_gpu_smoke_requires_real_parity_execution_without_skip() -> None:
+    """CPU fallback must never be accepted as successful GPU evidence."""
+    job = _gpu_job()
+    assert "tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely" in job
+    assert "--junitxml=gpu-junit.xml" in job
+    assert 'skips = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)' in job
+    assert "GPU evidence contained {skips} skipped test(s)" in job
