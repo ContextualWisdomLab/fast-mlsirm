@@ -43,7 +43,7 @@ A buyer-facing packet should include the exact commit SHA, package version, runt
 
 These artifacts demonstrate the supplied evidence state only. Actual deployment, customer acceptance, contractual transfer, revenue, operational service levels, and legal authority remain independent evidence classes.
 
-## Go / No-Go
+## Go/No-Go
 
 A release is a `go` for enterprise review only when:
 
