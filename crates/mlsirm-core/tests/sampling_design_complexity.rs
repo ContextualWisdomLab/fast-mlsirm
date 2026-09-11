@@ -25,7 +25,11 @@ fn maximum_strata_census_allocation_is_bounded_and_exact() {
     assert_eq!(design.stratum_sample_sizes.len(), 100_000);
     assert!(design.stratum_sample_sizes.iter().all(|count| *count == 1));
     assert_eq!(
-        design.stratum_sample_sizes.iter().copied().sum::<usize>(),
+        design
+            .stratum_sample_sizes
+            .iter()
+            .copied()
+            .sum::<usize>(),
         design.sample_size
     );
 }

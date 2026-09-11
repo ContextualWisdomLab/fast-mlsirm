@@ -4,7 +4,14 @@ use mlsirm_core::fitstats::projected_m2;
 
 #[test]
 fn projected_m2_rejects_short_residual_without_panicking() {
-    let result = projected_m2(&[0.25], &[1.0, 0.5], vec![1.0, 0.0, 0.0, 1.0], 2, 1, 100.0);
+    let result = projected_m2(
+        &[0.25],
+        &[1.0, 0.5],
+        vec![1.0, 0.0, 0.0, 1.0],
+        2,
+        1,
+        100.0,
+    );
 
     assert!(result.is_err(), "short residual must return Err");
 }

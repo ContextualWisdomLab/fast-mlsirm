@@ -74,18 +74,39 @@ fn cluster_moment_covariance_matches_finite_cluster_correction() {
 
 #[test]
 fn moment_and_cluster_kernels_fail_closed_on_shape_and_label_errors() {
-    let moment_error =
-        factorized_multilevel_moments(&[0.5], &[1.0], &[1.0], &[1.0], 1, 1, &[0, 0], 1, &[vec![0]])
-            .expect_err("short probability grids must fail closed");
+    let moment_error = factorized_multilevel_moments(
+        &[0.5],
+        &[1.0],
+        &[1.0],
+        &[1.0],
+        1,
+        1,
+        &[0, 0],
+        1,
+        &[vec![0]],
+    )
+    .expect_err("short probability grids must fail closed");
     assert!(moment_error.contains("probability grid"));
 
-    let covariance_error =
-        cluster_moment_covariance(&[1.0, 0.0, 0.0, 1.0], &[0.5, 0.5], &[0, 3], 2, 2, 3)
-            .expect_err("non-compact cluster labels must fail closed");
+    let covariance_error = cluster_moment_covariance(
+        &[1.0, 0.0, 0.0, 1.0],
+        &[0.5, 0.5],
+        &[0, 3],
+        2,
+        2,
+        3,
+    )
+    .expect_err("non-compact cluster labels must fail closed");
     assert!(covariance_error.contains("cluster ids"));
 
-    let overflow_error =
-        cluster_moment_covariance(&[1.0, 0.0], &[0.5, 0.5], &[0], 1, 2, usize::MAX)
-            .expect_err("cluster covariance allocations must reject overflow");
+    let overflow_error = cluster_moment_covariance(
+        &[1.0, 0.0],
+        &[0.5, 0.5],
+        &[0],
+        1,
+        2,
+        usize::MAX,
+    )
+    .expect_err("cluster covariance allocations must reject overflow");
     assert!(overflow_error.contains("overflow"));
 }

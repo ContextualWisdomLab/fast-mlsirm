@@ -25,8 +25,15 @@ fn native_predictions_reject_category_count_above_fitter_limit_before_parameter_
 #[test]
 fn native_prediction_category_guard_preserves_fitter_upper_boundary() {
     let cat_params = vec![0.0; 63];
-    let prediction = polytomous_predictions(&[0.0], &[1.0], &cat_params, 1, 64, PolyModel::Gpcm)
-        .expect("fitter-supported 64-category prediction must remain accepted");
+    let prediction = polytomous_predictions(
+        &[0.0],
+        &[1.0],
+        &cat_params,
+        1,
+        64,
+        PolyModel::Gpcm,
+    )
+    .expect("fitter-supported 64-category prediction must remain accepted");
 
     assert_eq!(prediction.probabilities.len(), 64);
     assert_eq!(prediction.expected.len(), 1);
@@ -82,9 +89,7 @@ fn fitted_grm_with_empty_middle_category_stays_inside_prediction_domain() {
     .expect("a returned GRM fit must be directly accepted by prediction");
 
     for probabilities in prediction.probabilities.chunks_exact(3) {
-        assert!(probabilities
-            .iter()
-            .all(|value| value.is_finite() && *value >= 0.0));
+        assert!(probabilities.iter().all(|value| value.is_finite() && *value >= 0.0));
         assert!((probabilities.iter().sum::<f64>() - 1.0).abs() < 1e-12);
     }
 }
@@ -134,9 +139,7 @@ fn fitted_grm_with_multiple_empty_middle_categories_remains_prediction_valid_aft
     .expect("a post-M-step GRM fit must be directly accepted by prediction");
 
     for probabilities in prediction.probabilities.chunks_exact(4) {
-        assert!(probabilities
-            .iter()
-            .all(|value| value.is_finite() && *value >= 0.0));
+        assert!(probabilities.iter().all(|value| value.is_finite() && *value >= 0.0));
         assert!((probabilities.iter().sum::<f64>() - 1.0).abs() < 1e-12);
     }
 }

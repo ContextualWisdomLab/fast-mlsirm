@@ -1,7 +1,8 @@
 //! Fail-first contracts for observed-information dimension and tolerance semantics.
 
 use mlsirm_core::inference::{
-    finite_difference_hessian, second_order_test, standard_errors_from_vcov, vcov_from_hessian,
+    finite_difference_hessian, second_order_test, standard_errors_from_vcov,
+    vcov_from_hessian,
 };
 
 #[test]
@@ -52,8 +53,18 @@ fn standard_errors_reject_dimension_product_overflow() {
 
 #[test]
 fn finite_difference_rejects_dimension_product_overflow() {
-    let error = finite_difference_hessian(usize::MAX, 1.0, 0.0, &[], &[], &[], &[], &[], &[])
-        .expect_err("finite-difference dimension arithmetic must fail closed");
+    let error = finite_difference_hessian(
+        usize::MAX,
+        1.0,
+        0.0,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .expect_err("finite-difference dimension arithmetic must fail closed");
 
     assert_eq!(error, "hessian dimension exceeds supported size");
 }
