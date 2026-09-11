@@ -7,6 +7,47 @@ fn value_bits(values: &[f64]) -> (u64, bool) {
     (result.value.to_bits(), result.exact_zero)
 }
 
+fn subnormal_from_signed_coefficient(coefficient: i64) -> f64 {
+    let magnitude = coefficient.unsigned_abs();
+    assert!(magnitude < (1_u64 << 52));
+    let sign = if coefficient < 0 { 1_u64 << 63 } else { 0 };
+    f64::from_bits(sign | magnitude)
+}
+
+fn exact_subnormal_mean_oracle(coefficients: &[i64]) -> (u64, bool) {
+    assert!(!coefficients.is_empty());
+    let exact_sum: i128 = coefficients.iter().map(|&value| value as i128).sum();
+    if exact_sum == 0 {
+        return (0, true);
+    }
+
+    let negative = exact_sum < 0;
+    let magnitude = exact_sum.unsigned_abs();
+    let divisor = coefficients.len() as u128;
+    let integer = magnitude / divisor;
+    let remainder = magnitude % divisor;
+    let twice_remainder = 2 * remainder;
+    let round_up = twice_remainder > divisor
+        || (twice_remainder == divisor && integer & 1 == 1);
+    let rounded = integer + u128::from(round_up);
+    assert!(rounded < (1_u128 << 52));
+
+    let mut bits = rounded as u64;
+    if negative {
+        bits |= 1_u64 << 63;
+    }
+    (bits, false)
+}
+
+fn next_deterministic_u64(state: &mut u64) -> u64 {
+    let mut value = *state;
+    value ^= value << 13;
+    value ^= value >> 7;
+    value ^= value << 17;
+    *state = value;
+    value
+}
+
 #[test]
 fn publishes_versioned_domain_neutral_contract() {
     assert_eq!(BINARY64_MEAN_CONTRACT, "fast_mlsirm.binary64_mean@1.0.0");
@@ -34,6 +75,14 @@ fn preserves_low_order_mass_in_ordinary_mixed_sign_input() {
 }
 
 #[test]
+fn cancellation_preserves_an_ordinary_tiny_residue_before_division() {
+    assert_eq!(
+        value_bits(&[f64::MAX, 1.0e-16, -f64::MAX]),
+        (0x3c83_3721_ba90_5bd3, false)
+    );
+}
+
+#[test]
 fn distinguishes_exact_zero_from_signed_nonzero_underflow() {
     let q = f64::from_bits(1);
     assert_eq!(value_bits(&[f64::MAX, -f64::MAX]), (0, true));
@@ -55,6 +104,31 @@ fn subnormal_rounding_covers_below_half_ties_and_residue() {
         value_bits(&[f64::MAX, 2.0 * q, 2.0 * q, -f64::MAX]),
         (1, false)
     );
+}
+
+#[test]
+fn randomized_subnormal_domain_matches_exact_integer_rational_oracle() {
+    let mut state = 0xd1b5_4a32_d192_ed03_u64;
+    for case in 0..10_000 {
+        let length = (next_deterministic_u64(&mut state) % 17 + 1) as usize;
+        let coefficients: Vec<i64> = (0..length)
+            .map(|_| {
+                let raw = (next_deterministic_u64(&mut state) % 2_000_001) as i64;
+                raw - 1_000_000
+            })
+            .collect();
+        let values: Vec<f64> = coefficients
+            .iter()
+            .copied()
+            .map(subnormal_from_signed_coefficient)
+            .collect();
+
+        assert_eq!(
+            value_bits(&values),
+            exact_subnormal_mean_oracle(&coefficients),
+            "exact subnormal oracle mismatch in deterministic case {case}: {coefficients:?}"
+        );
+    }
 }
 
 #[test]
@@ -132,6 +206,10 @@ fn refuses_empty_and_nonfinite_evidence() {
     );
     assert_eq!(
         correctly_rounded_finite_mean(&[f64::INFINITY]),
+        Err(Binary64MeanError::NonFiniteValue { index: 0 })
+    );
+    assert_eq!(
+        correctly_rounded_finite_mean(&[f64::NEG_INFINITY]),
         Err(Binary64MeanError::NonFiniteValue { index: 0 })
     );
 }
