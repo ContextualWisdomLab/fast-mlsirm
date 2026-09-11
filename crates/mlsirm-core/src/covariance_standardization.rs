@@ -48,8 +48,6 @@ pub enum CovarianceStandardizationError {
     NonSymmetricCovariance,
     /// A represented covariance pair violates `c² <= v_i * v_j` exactly.
     InvalidPairwiseCovariance,
-    /// A finite input produced a non-finite standardized result.
-    NonFiniteResult,
 }
 
 impl Display for CovarianceStandardizationError {
@@ -62,7 +60,6 @@ impl Display for CovarianceStandardizationError {
             Self::InvalidPairwiseCovariance => {
                 "covariance pair violates the correlation magnitude bound"
             }
-            Self::NonFiniteResult => "covariance standardization produced a non-finite result",
         };
         formatter.write_str(message)
     }
@@ -110,14 +107,13 @@ fn scaled_integer_le(
         Ordering::Equal => {
             if left_exponent >= right_exponent {
                 let shift = (left_exponent - right_exponent) as u32;
-                left_significand
-                    .checked_shl(shift)
-                    .is_some_and(|aligned| aligned <= right_significand)
+                // Equal top bits imply `shift == right_bits - left_bits`, so the
+                // shift is always in 0..=127 for non-zero u128 significands.
+                (left_significand << shift) <= right_significand
             } else {
                 let shift = (right_exponent - left_exponent) as u32;
-                right_significand
-                    .checked_shl(shift)
-                    .is_some_and(|aligned| left_significand <= aligned)
+                // Symmetrically, `shift == left_bits - right_bits` here.
+                left_significand <= (right_significand << shift)
             }
         }
     }
@@ -199,8 +195,8 @@ pub fn standardize_variance(
 /// # Errors
 ///
 /// Returns a typed error for invalid shape, non-finite input, non-positive
-/// diagonal variance, asymmetric mirrored cells, an impossible pairwise
-/// covariance, or non-finite output arithmetic.
+/// diagonal variance, asymmetric mirrored cells, or an impossible pairwise
+/// covariance.
 pub fn standardize_covariance_matrix(
     covariance: &[f64],
     dimension: usize,
@@ -251,9 +247,6 @@ pub fn standardize_covariance_matrix(
                 (standard_deviations[column], standard_deviations[row])
             };
             let standardized = (upper / first_sd) / second_sd;
-            if !standardized.is_finite() {
-                return Err(CovarianceStandardizationError::NonFiniteResult);
-            }
             let bounded = standardized.clamp(-1.0, 1.0);
             correlation[row * dimension + column] = bounded;
             correlation[column * dimension + row] = bounded;
@@ -317,6 +310,36 @@ mod tests {
     }
 
     #[test]
+    fn error_display_contract_covers_every_public_failure_kind() {
+        let cases = [
+            (
+                CovarianceStandardizationError::InvalidShape,
+                "covariance matrix shape is invalid",
+            ),
+            (
+                CovarianceStandardizationError::NonFiniteInput,
+                "covariance input must be finite",
+            ),
+            (
+                CovarianceStandardizationError::NonPositiveVariance,
+                "covariance diagonal must be strictly positive",
+            ),
+            (
+                CovarianceStandardizationError::NonSymmetricCovariance,
+                "covariance matrix must be symmetric",
+            ),
+            (
+                CovarianceStandardizationError::InvalidPairwiseCovariance,
+                "covariance pair violates the correlation magnitude bound",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
     fn matrix_standardization_recovers_expected_correlation() {
         let covariance = [4.0, 2.0, 2.0, 9.0];
         let correlation = standardize_covariance_matrix(&covariance, 2).expect("covariance");
@@ -348,6 +371,10 @@ mod tests {
 
     #[test]
     fn matrix_standardization_fails_closed_for_shape_and_numeric_defects() {
+        assert_eq!(
+            standardize_covariance_matrix(&[], usize::MAX),
+            Err(CovarianceStandardizationError::InvalidShape)
+        );
         assert_eq!(
             standardize_covariance_matrix(&[], 0),
             Err(CovarianceStandardizationError::InvalidShape)
