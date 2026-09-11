@@ -24,6 +24,18 @@ _original_collect_files = _impl._collect_files
 _original_build_packet = _impl.build_packet
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    """Delegate public wrapper reads to the shared bounded JSON reader."""
+    return read_json_object(path)
+
+
+# The canonical implementation functions resolve ``_read_json`` through their
+# own module globals. Bind that one seam to this wrapper so callers and tests
+# can replace the shared reader at the public script boundary without creating
+# a second parser or bypassing descriptor-safe bounded JSON admission.
+_impl._read_json = _read_json
+
+
 def _validate_acceptance_artifact_digests(
     acceptance_path: Path, expected_source_commit: str | None
 ) -> None:
