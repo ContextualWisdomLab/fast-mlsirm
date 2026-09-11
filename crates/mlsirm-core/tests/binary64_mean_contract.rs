@@ -34,21 +34,36 @@ fn preserves_low_order_mass_in_ordinary_mixed_sign_input() {
 }
 
 #[test]
-fn distinguishes_exact_zero_from_nonzero_underflow() {
+fn distinguishes_exact_zero_from_signed_nonzero_underflow() {
     let q = f64::from_bits(1);
     assert_eq!(value_bits(&[f64::MAX, -f64::MAX]), (0, true));
+    assert_eq!(value_bits(&[-0.0, 0.0]), (0, true));
     assert_eq!(value_bits(&[q, 0.0]), (0, false));
+    assert_eq!(value_bits(&[-q, 0.0]), (1_u64 << 63, false));
     assert_eq!(value_bits(&[f64::MAX, q, -f64::MAX]), (0, false));
 }
 
 #[test]
-fn preserves_representable_subnormal_residue_after_extreme_cancellation() {
+fn subnormal_rounding_covers_below_half_ties_and_residue() {
     let q = f64::from_bits(1);
+    assert_eq!(value_bits(&[q, 0.0, 0.0]), (0, false));
+    assert_eq!(value_bits(&[q, 0.0]), (0, false));
+    assert_eq!(value_bits(&[q, 2.0 * q]), (2, false));
     assert_eq!(value_bits(&[q, q, 0.0]), (1, false));
     assert_eq!(value_bits(&[q, q]), (1, false));
     assert_eq!(
         value_bits(&[f64::MAX, 2.0 * q, 2.0 * q, -f64::MAX]),
         (1, false)
+    );
+}
+
+#[test]
+fn subnormal_rounding_can_carry_into_the_minimum_normal() {
+    let max_subnormal = f64::from_bits((1_u64 << 52) - 1);
+    let min_normal = f64::from_bits(1_u64 << 52);
+    assert_eq!(
+        value_bits(&[max_subnormal, min_normal]),
+        (min_normal.to_bits(), false)
     );
 }
 
@@ -68,6 +83,27 @@ fn final_division_uses_round_to_nearest_ties_to_even() {
         value_bits(&[next, next_next]),
         (next_next.to_bits(), false)
     );
+    assert_eq!(value_bits(&[one, one, next]), (one.to_bits(), false));
+    assert_eq!(value_bits(&[one, next, next]), (next.to_bits(), false));
+}
+
+#[test]
+fn rounding_covers_the_minimum_normal_binade_and_binade_carry() {
+    let min_normal = f64::from_bits(1_u64 << 52);
+    let min_next = f64::from_bits((1_u64 << 52) + 1);
+    let min_next_next = f64::from_bits((1_u64 << 52) + 2);
+    assert_eq!(
+        value_bits(&[min_normal, min_next]),
+        (min_normal.to_bits(), false)
+    );
+    assert_eq!(
+        value_bits(&[min_next, min_next_next]),
+        (min_next_next.to_bits(), false)
+    );
+
+    let two = 2.0_f64;
+    let below_two = f64::from_bits(two.to_bits() - 1);
+    assert_eq!(value_bits(&[below_two, two]), (two.to_bits(), false));
 }
 
 #[test]
