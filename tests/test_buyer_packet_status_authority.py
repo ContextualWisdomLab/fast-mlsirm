@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -58,8 +59,7 @@ def _packet_args(
         text=True,
     ).stdout.strip()
 
-    monkey_docs = []
-    module.PRODUCT_DOCS = monkey_docs
+    module.PRODUCT_DOCS = []
     module.PRODUCT_MANIFESTS = []
 
     acceptance_root = tmp_path / "acceptance"
@@ -78,12 +78,25 @@ def _packet_args(
                         "files": {"summary": str(artifact)},
                     }
                 ],
+                "artifact_sha256": {
+                    "artifacts/fit_summary.json": hashlib.sha256(
+                        artifact.read_bytes()
+                    ).hexdigest()
+                },
             }
         ),
         encoding="utf-8",
     )
     sales_path = acceptance_root / "sales_readiness_manifest.json"
-    sales_path.write_text(json.dumps({"status": sales_status}), encoding="utf-8")
+    sales_path.write_text(
+        json.dumps(
+            {
+                "status": sales_status,
+                "source_commit": source_commit,
+            }
+        ),
+        encoding="utf-8",
+    )
 
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
