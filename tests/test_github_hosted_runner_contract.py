@@ -26,6 +26,8 @@ GPU_EVIDENCE_WORKFLOWS = (
     WORKFLOW_DIRECTORY / "statistical-studies.yml",
 )
 SOFTWARE_VULKAN_SETUP = REPOSITORY_ROOT / "scripts" / "configure_software_vulkan.sh"
+GPU_INIT_SOURCE = REPOSITORY_ROOT / "crates" / "mlsirm-core" / "src" / "gpu_init.rs"
+SOFTWARE_GPU_OPT_IN = "FAST_MLSIRM_ALLOW_NONCOMPLIANT_SOFTWARE_VULKAN"
 PR_LIFECYCLE_TYPES = (
     "types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]"
 )
@@ -126,6 +128,16 @@ def test_gpu_evidence_uses_local_swiftshader_without_live_apt() -> None:
         assert "bash scripts/configure_software_vulkan.sh" in source, workflow
         assert "sudo apt-get" not in source, workflow
         assert "VK_ICD_FILENAMES" not in source, workflow
+
+
+def test_software_vulkan_evidence_explicitly_opts_into_noncompliant_driver() -> None:
+    """SwiftShader evidence must expose its Vulkan compliance opt-in explicitly."""
+    setup_source = SOFTWARE_VULKAN_SETUP.read_text(encoding="utf-8")
+    gpu_init_source = GPU_INIT_SOURCE.read_text(encoding="utf-8")
+
+    assert f"{SOFTWARE_GPU_OPT_IN}=1" in setup_source
+    assert SOFTWARE_GPU_OPT_IN in gpu_init_source
+    assert "ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER" in gpu_init_source
 
 
 def test_software_vulkan_setup_writes_modern_loader_environment(tmp_path: Path) -> None:
