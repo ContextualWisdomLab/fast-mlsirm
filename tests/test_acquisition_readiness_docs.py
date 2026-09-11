@@ -11,12 +11,18 @@ def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def _normalized_prose(text: str) -> str:
+    """Collapse Markdown line wrapping without weakening wording contracts."""
+    return " ".join(text.split())
+
+
 def test_current_release_guides_use_price_neutral_readiness() -> None:
     """Current release guidance must name evidence completeness, not a price."""
     readme = _read("README.md")
     release_guide = _read("docs/release_acceptance.md")
     commercial_guide = _read("docs/commercial_readiness.md")
     enterprise_guide = _read("docs/enterprise_sales_readiness.md")
+    release_prose = _normalized_prose(release_guide)
 
     assert "--require-acquisition-readiness" in release_guide
     assert "--require-acquisition-readiness" in commercial_guide
@@ -25,8 +31,8 @@ def test_current_release_guides_use_price_neutral_readiness() -> None:
     assert "scripts/build_acquisition_release.py" in release_guide
     assert "python scripts/build_commercial_release.py" not in readme
     assert "python scripts/build_commercial_release.py" not in release_guide
-    assert "configured evidence profile is complete and internally consistent" in release_guide
-    assert "does **not** prove a valuation" in release_guide
+    assert "configured evidence profile is complete and internally consistent" in release_prose
+    assert "does **not** prove a valuation" in release_prose
     assert "For KRW 2,000,000,000 enterprise sales review" not in release_guide
     assert "The KRW 2,000,000,000 sales-readiness standard" not in commercial_guide
     assert "For the KRW 2,000,000,000 product-readiness standard" not in enterprise_guide
