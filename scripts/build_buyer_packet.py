@@ -171,32 +171,38 @@ def _collect_files(
     release_evidence_index_path: Path | None = None,
     expected_source_commit: str | None = None,
 ) -> dict[str, Path]:
-    """Validate acceptance provenance, then delegate canonical packet collection."""
+    """Validate provenance without leaking wrapper overrides into shared module state."""
+    original_product_docs = _impl.PRODUCT_DOCS
+    original_product_manifests = _impl.PRODUCT_MANIFESTS
     _impl.PRODUCT_DOCS = PRODUCT_DOCS
     _impl.PRODUCT_MANIFESTS = PRODUCT_MANIFESTS
-    _validate_acceptance_artifact_digests(acceptance_path, expected_source_commit)
-    _validate_sales_readiness_source(sales_readiness_path, expected_source_commit)
-    _validate_optional_source_identity(
-        benchmark_report_path,
-        expected_source_commit,
-        evidence_name="benchmark",
-    )
-    _validate_optional_source_identity(
-        release_evidence_index_path,
-        expected_source_commit,
-        evidence_name="release evidence",
-    )
-    _validate_repository_evidence_source(repo_root, expected_source_commit)
-    _validate_distribution_artifacts(dist_dir)
-    return _original_collect_files(
-        repo_root=repo_root,
-        acceptance_path=acceptance_path,
-        sales_readiness_path=sales_readiness_path,
-        dist_dir=dist_dir,
-        benchmark_report_path=benchmark_report_path,
-        release_evidence_index_path=release_evidence_index_path,
-        expected_source_commit=expected_source_commit,
-    )
+    try:
+        _validate_acceptance_artifact_digests(acceptance_path, expected_source_commit)
+        _validate_sales_readiness_source(sales_readiness_path, expected_source_commit)
+        _validate_optional_source_identity(
+            benchmark_report_path,
+            expected_source_commit,
+            evidence_name="benchmark",
+        )
+        _validate_optional_source_identity(
+            release_evidence_index_path,
+            expected_source_commit,
+            evidence_name="release evidence",
+        )
+        _validate_repository_evidence_source(repo_root, expected_source_commit)
+        _validate_distribution_artifacts(dist_dir)
+        return _original_collect_files(
+            repo_root=repo_root,
+            acceptance_path=acceptance_path,
+            sales_readiness_path=sales_readiness_path,
+            dist_dir=dist_dir,
+            benchmark_report_path=benchmark_report_path,
+            release_evidence_index_path=release_evidence_index_path,
+            expected_source_commit=expected_source_commit,
+        )
+    finally:
+        _impl.PRODUCT_DOCS = original_product_docs
+        _impl.PRODUCT_MANIFESTS = original_product_manifests
 
 
 def _archive_entry_sha256(archive: zipfile.ZipFile, archive_path: str) -> str:
