@@ -23,9 +23,13 @@ use core::cmp::Ordering;
 /// Versioned public numerical contract for correctly-rounded finite means.
 pub const BINARY64_MEAN_CONTRACT: &str = "fast_mlsirm.binary64_mean@1.0.0";
 
+/// Number of 64-bit limbs needed by the proved 2,176-bit magnitude bound.
 const LIMBS: usize = 34;
+/// Binary64 fraction-field mask.
 const FRACTION_MASK: u64 = (1_u64 << 52) - 1;
+/// Implicit leading significand bit for normal binary64 values.
 const HIDDEN_BIT: u64 = 1_u64 << 52;
+/// Binary64 sign bit.
 const SIGN_BIT: u64 = 1_u64 << 63;
 
 const _: () = assert!(usize::BITS <= 64);
@@ -51,20 +55,28 @@ pub enum Binary64MeanError {
     NonFiniteValue { index: usize },
 }
 
+/// Fixed-width unsigned magnitude in exact `2^-1074` units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FixedMagnitude {
+    /// Little-endian 64-bit limbs; capacity is fixed by the module proof.
     limbs: [u64; LIMBS],
 }
 
 impl FixedMagnitude {
+    /// Construct the additive identity.
     const fn zero() -> Self {
         Self { limbs: [0; LIMBS] }
     }
 
+    /// Return whether every limb is zero.
     fn is_zero(&self) -> bool {
         self.limbs.iter().all(|&limb| limb == 0)
     }
 
+    /// Add one exact significand shifted by `shift` powers of two.
+    ///
+    /// The module capacity proof guarantees that carry propagation cannot run
+    /// beyond the final limb for any admitted materializable slice.
     fn add_shifted_significand(&mut self, significand: u64, shift: usize) {
         let limb_index = shift / 64;
         let offset = shift % 64;
@@ -88,6 +100,7 @@ impl FixedMagnitude {
         }
     }
 
+    /// Compare exact unsigned magnitudes without conversion to floating point.
     fn cmp_magnitude(&self, other: &Self) -> Ordering {
         for index in (0..LIMBS).rev() {
             match self.limbs[index].cmp(&other.limbs[index]) {
@@ -98,6 +111,7 @@ impl FixedMagnitude {
         Ordering::Equal
     }
 
+    /// Subtract `other` exactly in place when `self >= other`.
     fn subtract_assign(&mut self, other: &Self) {
         let mut borrow = 0_u128;
         for index in 0..LIMBS {
@@ -108,6 +122,7 @@ impl FixedMagnitude {
         }
     }
 
+    /// Divide the exact magnitude by a nonzero `u64`, returning quotient and remainder.
     fn div_rem_u64(&self, divisor: u64) -> (Self, u64) {
         let mut quotient = Self::zero();
         let mut remainder = 0_u128;
@@ -120,6 +135,7 @@ impl FixedMagnitude {
         (quotient, remainder as u64)
     }
 
+    /// Return the exact magnitude bit length, or zero for the additive identity.
     fn bit_len(&self) -> usize {
         self.limbs
             .iter()
@@ -129,10 +145,12 @@ impl FixedMagnitude {
             })
     }
 
+    /// Read one bit from the exact magnitude.
     fn bit(&self, index: usize) -> bool {
         (self.limbs[index / 64] & (1_u64 << (index % 64))) != 0
     }
 
+    /// Return whether any bit strictly below `index` is set.
     fn any_bits_below(&self, index: usize) -> bool {
         let whole_limbs = index / 64;
         if self.limbs[..whole_limbs].iter().any(|&limb| limb != 0) {
@@ -143,6 +161,7 @@ impl FixedMagnitude {
             && (self.limbs[whole_limbs] & ((1_u64 << partial_bits) - 1)) != 0
     }
 
+    /// Return the low 64 bits after an exact right shift by `shift`.
     fn shifted_low_u64(&self, shift: usize) -> u64 {
         let limb_index = shift / 64;
         let offset = shift % 64;
@@ -152,6 +171,7 @@ impl FixedMagnitude {
     }
 }
 
+/// Decompose one finite binary64 value into sign, significand, and exact-unit shift.
 fn split_finite_magnitude(value: f64) -> (bool, u64, usize) {
     let bits = value.to_bits();
     let negative = (bits & SIGN_BIT) != 0;
@@ -164,6 +184,7 @@ fn split_finite_magnitude(value: f64) -> (bool, u64, usize) {
     }
 }
 
+/// Decide ties-to-even rounding for an integer plus `remainder / divisor`.
 fn round_scalar_fraction_up(integer: u64, remainder: u64, divisor: u64) -> bool {
     match (2_u128 * remainder as u128).cmp(&(divisor as u128)) {
         Ordering::Less => false,
@@ -172,6 +193,7 @@ fn round_scalar_fraction_up(integer: u64, remainder: u64, divisor: u64) -> bool 
     }
 }
 
+/// Round a quotient in the subnormal range, including carry into minimum normal.
 fn round_subnormal_or_min_normal(quotient: &FixedMagnitude, remainder: u64, divisor: u64) -> u64 {
     let integer = quotient.limbs[0];
     let rounded = integer + u64::from(round_scalar_fraction_up(integer, remainder, divisor));
@@ -182,6 +204,7 @@ fn round_subnormal_or_min_normal(quotient: &FixedMagnitude, remainder: u64, divi
     }
 }
 
+/// Round a normal-range quotient to binary64 with exact sticky information.
 fn round_normal(quotient: &FixedMagnitude, remainder: u64, divisor: u64) -> u64 {
     let bit_len = quotient.bit_len();
     let mut shift = bit_len - 53;
