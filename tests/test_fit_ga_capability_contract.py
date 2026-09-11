@@ -70,6 +70,23 @@ def test_fit_capability_value_object_rejects_forged_support() -> None:
         FitCapability(model="BIFAC2PLM", estimators=("jmle", "mmle"))
 
 
+@pytest.mark.parametrize(
+    ("model", "estimators"),
+    [
+        (123, ("mmle",)),
+        ("MIRT", ["jmle", "mmle"]),
+        ("MIRT", ("jmle", 7)),
+        ("UNKNOWN", ("mmle",)),
+    ],
+)
+def test_fit_capability_value_object_rejects_noncanonical_identity_shapes(
+    model: object, estimators: object
+) -> None:
+    """Reject malformed field types and unknown model identities at the public boundary."""
+    with pytest.raises(ValueError, match="canonical model-estimator capability"):
+        FitCapability(model=model, estimators=estimators)  # type: ignore[arg-type]
+
+
 def test_fit_capabilities_do_not_expose_shared_mutable_authority() -> None:
     first = fit_capabilities()
     original_model = first[0].model
