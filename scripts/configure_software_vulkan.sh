@@ -52,6 +52,11 @@ chmod 700 "$runtime_dir"
 github_env="${GITHUB_ENV:?GITHUB_ENV must be provided by GitHub Actions}"
 printf 'VK_DRIVER_FILES=%s\n' "$icd_manifest" >> "$github_env"
 printf 'XDG_RUNTIME_DIR=%s\n' "$runtime_dir" >> "$github_env"
+# Chrome SwiftShader reports an underlying Vulkan compliance version that wgpu
+# deliberately hides by default. The evidence lane opts in explicitly; normal
+# library users retain wgpu's compliant-adapter default unless they set this
+# fast-mlsirm-specific variable themselves.
+printf 'FAST_MLSIRM_ALLOW_NONCOMPLIANT_SOFTWARE_VULKAN=1\n' >> "$github_env"
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
   printf 'LD_LIBRARY_PATH=%s:%s\n' "$chrome_root" "$LD_LIBRARY_PATH" >> "$github_env"
 else
