@@ -1,6 +1,6 @@
 # Rust registry distribution boundary doctoring
 
-Status: governed by [ADR-0027](../adr/0027-rust-registry-distribution-boundary.md)  
+Status: governed by [ADR-0031](../adr/0031-rust-registry-distribution-boundary.md)  
 Owner: `fast-mlsirm` release/package boundary
 
 ## Expected product shape

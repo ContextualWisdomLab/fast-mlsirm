@@ -20,7 +20,7 @@ For the current release architecture, Maturin/PyO3 builds the public
 `crates/fast-mlsirm-py` remains the internal PyO3 binding crate behind that
 product; neither is a separate crates.io product. Organization-level Cargo
 registry credentials do not widen this boundary; a standalone Rust registry
-product requires a successor to ADR-0027 with its own compatibility, release,
+product requires a successor to ADR-0031 with its own compatibility, release,
 security, provenance and downstream-install evidence.
 
 ## Buyer-Facing Product Standard

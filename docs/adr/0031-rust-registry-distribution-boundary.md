@@ -1,4 +1,4 @@
-# ADR-0027: Keep Rust implementation crates inside the `fast-mlsirm` release boundary
+# ADR-0031: Keep Rust implementation crates inside the `fast-mlsirm` release boundary
 
 Status: **Proposed**  
 Date: 2026-09-01  
