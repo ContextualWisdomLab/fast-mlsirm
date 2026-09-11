@@ -139,6 +139,10 @@ Meijer, R. R. (1994). The number of Guttman errors as a simple and powerful pers
 
 Meijer, R. R. (1995). A supplement to “The number of Guttman errors as a simple and powerful person-fit statistic.” *Applied Psychological Measurement, 19*(2), 166. https://research.utwente.nl/en/publications/a-supplement-to-the-number-of-guttman-errors-as-a-simple-and-powe/ [Open-access final published version directly read for the Guttman-versus-Loevinger error-definition attribution correction.]
 
+Meijer, R. R., & Sijtsma, K. (2001). Methodology review: Evaluating person fit. *Applied Psychological Measurement, 25*(2), 107–135. https://doi.org/10.1177/01466210122031957
+
+Mellenbergh, G. J. (2000). Nonparametric item response theory. *Bulletin de Méthodologie Sociologique, 68*(1), 42–43. https://doi.org/10.1177/075910630006800116
+
 Sato, T. (1975). *The construction and interpretation of S-P tables*. Meiji Tosho. [Primary equation not yet read in this doctoring lane.]
 
 Tatsuoka, K. K., & Tatsuoka, M. M. (1982). Detection of aberrant response patterns and their effect on dimensionality. *Journal of Educational Statistics, 7*(3), 215–231. https://doi.org/10.3102/10769986007003215
