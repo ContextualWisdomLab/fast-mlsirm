@@ -8,6 +8,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 ADR_DIR = ROOT / "docs" / "adr"
 ADR_INDEX = ADR_DIR / "README.md"
+ADR_TEMPLATE = "0000-template.md"
 NUMBERED_ADR_RE = re.compile(r"^(\d{4})-.+\.md$")
 
 
@@ -15,11 +16,14 @@ def test_protected_tree_has_one_material_adr_per_number() -> None:
     """A four-digit ADR identity cannot name two material decisions in one tree."""
     by_number: dict[str, list[str]] = defaultdict(list)
     for path in ADR_DIR.glob("*.md"):
+        if path.name == ADR_TEMPLATE:
+            continue
         match = NUMBERED_ADR_RE.fullmatch(path.name)
-        if match is None or match.group(1) == "0000":
+        if match is None:
             continue
         by_number[match.group(1)].append(path.name)
 
+    assert "0000" not in by_number, "ADR 0000 is reserved for the non-live template"
     duplicates = {
         number: sorted(paths)
         for number, paths in by_number.items()
