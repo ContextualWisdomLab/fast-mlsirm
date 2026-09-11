@@ -98,7 +98,7 @@ jobs:
       - name: Prove Vulkan loader availability
         run: python -c "import ctypes; ctypes.CDLL('libvulkan.so.1'); print('Vulkan loader OK')"
       - name: Prove software adapter satisfies the marginal kernel capacity contract
-        run: cargo test -p mlsirm-core --test gpu_adapter_capacity software_vulkan_adapter_meets_marginal_capacity_contract -- --exact --nocapture
+        run: cargo run -p mlsirm-core --example gpu_adapter_capacity
       - run: python -m pip install --require-hashes -r requirements/ci.txt
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - name: Run explicit GPU parity without a skip
@@ -121,7 +121,7 @@ jobs:
 
   fuzz:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    # Short, bounded coverage-guided fuzzing so PR cost stays low. The
+    # Short, bounded coverage-guided fuzzing so PR cost stays low. The full
     # property-based Hypothesis tests already run in the `python` job (via the
     # dev extra); this job adds the Atheris coverage-guided harnesses with a
     # ~60s-per-target budget. Longer campaigns can be run nightly if desired.
