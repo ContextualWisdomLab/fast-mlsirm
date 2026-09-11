@@ -13,6 +13,16 @@ Template for new material decisions: `docs/adr/0000-template.md`. The template i
 
 A conversation, issue, PR body, design note, or paper summary is not an Accepted decision by itself. Accepted ADRs must match current code/policy or explicitly describe an accepted invariant whose implementation is tracked.
 
+## Number allocation and active reservations
+
+ADR numbers are monotonic decision identities, not disposable branch-local labels. Before publishing a new numbered ADR, the writer must inventory both protected `docs/adr/` and every still-valid active PR reservation. Looking only at the highest number on protected main is insufficient because Draft and Proposed branches reserve identities before integration.
+
+When concurrent, unprotected proposals collide on one number, preserve the earliest-created still-valid proposal's reservation and assign later colliders the next free numbers in PR creation order. The free-number search includes protected ADRs and all live reservations. A stacked proposal keeps its reservation until it is protected-integrated or explicitly retired with no surviving decision delta.
+
+Renumbering is an ordinary-forward repair. Preserve the decision content, tests, citations, review history, and maturity state; update the ADR filename, in-file identity, index, traceability/doctoring/changelog references, tests, and PR authority that encode the number. Do not force-rewrite history, close valid work solely because of a number collision, recycle an identity silently, or mark a branch-only proposal Accepted merely because its number was repaired.
+
+The protected tree itself must contain at most one material ADR per four-digit number. The repository contract test enforces that local invariant; active-reservation coordination remains a live PR/issue governance responsibility because concurrent proposals do not coexist in one checkout before integration.
+
 ## Decision index
 
 | ADR | Status | Decision |
