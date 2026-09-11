@@ -35,6 +35,8 @@ def test_adr_index_requires_live_reservation_inventory_before_allocation() -> No
         "active PR reservation",
         "Looking only at the highest number on protected main is insufficient",
         "earliest-created still-valid proposal",
+        "later colliders the next free numbers in PR creation order",
+        "The free-number search includes protected ADRs and all live reservations",
         "ordinary-forward repair",
         "Do not force-rewrite history",
         "branch-only proposal Accepted",
