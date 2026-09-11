@@ -1,0 +1,9 @@
+# GPU evidence acquisition boundary
+
+Required GPU parity had a reproducible pre-execution failure on `#1710@3d86242e60210a2cc44196fbaa3dcf2a558033f1`: CI run `34587332914` failed twice while acquiring Mesa/Vulkan packages, with attempt-2 job `103226335981` reaching the workflow's 120-second `apt-get update` bound before any adapter, package, or GPU parity code ran. CPU Python, Rust, fuzz, and package jobs on the same exact head succeeded. This is infrastructure acquisition failure, not psychometric or GPU numerical evidence.
+
+RED `d9c2cf40726d046d05c644e6947088f3c6be4214` adds a repository contract that forbids live apt acquisition in required GPU evidence and requires one reusable software-Vulkan setup path for both PR parity and scheduled literature recovery.
+
+The repair consumes the software Vulkan payload already present in the pinned GitHub Ubuntu 24.04 image through Google Chrome: `vk_swiftshader_icd.json`, `libvk_swiftshader.so`, and `libvulkan.so.1`. `scripts/configure_software_vulkan.sh` validates that the manifest resolves exactly to the expected bundled driver, fails closed if any image-owned file is absent, records SHA-256 identity in the job log, exports the current `VK_DRIVER_FILES` loader override rather than deprecated `VK_ICD_FILENAMES`, and configures the job-local runtime/library paths. No package mirror, elevated install, skipped parity, relaxed timeout, or numerical fallback is introduced.
+
+Acceptance requires the ordinary PR GPU job to load Vulkan and execute `tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely` without a skip. The scheduled paper-design recovery job uses the same setup and still requires the ignored Rust GPU recovery test to execute normally. If the hosted image ever removes or redirects the Chrome SwiftShader payload, setup fails before numerical evidence is claimed.

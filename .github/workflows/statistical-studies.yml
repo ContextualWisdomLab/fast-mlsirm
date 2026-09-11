@@ -133,16 +133,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.97.1
-      - name: Install software Vulkan adapter
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
-          mkdir -p "$XDG_RUNTIME_DIR"
-          chmod 700 "$XDG_RUNTIME_DIR"
-          LVP_ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*.json' -print -quit)"
-          test -n "$LVP_ICD"
-          echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
-      - run: vulkaninfo --summary
+      - name: Configure image-local software Vulkan adapter
+        run: bash scripts/configure_software_vulkan.sh
       - name: Run paper-design GPU recovery parity
         run: >-
           cargo test --release -p mlsirm-core
