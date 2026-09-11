@@ -48,7 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-
-## 2024-05-19 - Single-pass fold for computing multiple moments in Rust
-**Learning:** In Rust, calculating multiple mathematical moments (like the sum of squares and sum of fourth powers) over the same iterator using chained `.iter().map().sum()` passes forces the program to iterate over the data multiple times, which incurs unnecessary iteration overhead.
-**Action:** Use a single `.iter().fold((0.0, 0.0), |(s2, s4), &x| ...)` pass to compute both moments simultaneously. This avoids redundant iterations and improves performance when analyzing or manipulating mathematical components.
