@@ -99,7 +99,7 @@ gate with every required acquisition artifact explicitly:
 ```bash
 python scripts/sales_readiness.py \
   --acceptance acquisition-release/release-acceptance/acceptance_summary.json \
-  --dist dist \
+  --dist acquisition-release/distribution \
   --benchmark-report acquisition-release/release-acceptance/benchmark/benchmark_report.json \
   --buyer-packet-manifest acquisition-release/buyer-evidence-packet/buyer_evidence_manifest.json \
   --release-evidence-index acquisition-release/release-evidence-index/release_evidence_index.json \
