@@ -50,3 +50,8 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
+## 2026-08-30 - [JSON Depth Bypass via Underflow]
+**Vulnerability:** 문자열 상태를 추적하여 문자열 내의 괄호를 무시하더라도, 문자열 외부에서 짝이 맞지 않는 닫는 괄호(`]` 또는 `}`)가 등장하면 구조적 `depth` 카운터가 0 미만으로 떨어질 수 있는 취약점이 있었습니다. 이로 인해 유효하지 않은 닫는 괄호들을 대량으로 포함시킨 악의적인 페이로드 앞부분이 이후에 나오는 실제 깊은 중첩 구조를 상쇄시켜, 의도된 사전 깊이 거부를 우회하고 예산 초과 페이로드가 `json.loads()`에 도달하게 할 수 있었습니다.
+**Learning:** 문자열 상태 추적과 깊이 하한선 보장은 독립적인 파서 사전 검사 불변성(invariants)입니다. 문자열 안의 괄호를 무시한다고 해서, 구조적 닫는 괄호들이 깊이 예산을 훼손하는 것을 막을 수는 없습니다.
+**Prevention:** 기존의 인용 문자열 및 이스케이프 상태 머신을 유지하되, 구조적 깊이가 0 미만으로 감소하지 않도록 해야 합니다. 또한 짝이 맞지 않는 닫는 구분 기호가 재귀적 JSON 디코더 실행 전에 설정된 예산을 넘는 중첩을 마스킹하지 못함을 증명하는 회귀 테스트가 반드시 필요합니다.
