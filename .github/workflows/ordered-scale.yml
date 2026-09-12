@@ -1,0 +1,83 @@
+name: Ordered scale installed-wheel acceptance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - python/fast_mlsirm/scale_codebook.py
+      - tests/test_scale_codebook*.py
+      - .github/workflows/ordered-scale.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordered-scale-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  installed-wheel:
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: -C target-cpu=x86-64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - run: python -m pip install --require-hashes -r requirements/ci.txt
+      - name: Build a portable native wheel from the exact source head
+        run: maturin build --release --locked --interpreter "$(command -v python)" --out wheelhouse
+      - name: Install the exact wheel without dependency resolution
+        run: python -m pip install --no-index --no-deps --force-reinstall wheelhouse/*.whl
+      - name: Test the installed artifact, not a source-tree import
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ordered-scale-tests
+          cp tests/test_scale_codebook*.py /tmp/ordered-scale-tests/
+          cd /tmp
+          python -m pytest -q -c /dev/null /tmp/ordered-scale-tests --junitxml="$GITHUB_WORKSPACE/wheelhouse/junit.xml"
+      - name: Record source and wheel identities
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import platform
+          from pathlib import Path
+          import subprocess
+          import sys
+          import numpy
+          from xml.etree import ElementTree
+
+          root = ElementTree.parse('wheelhouse/junit.xml').getroot()
+          suites = [root] if root.tag == 'testsuite' else list(root.findall('testsuite'))
+          count = sum(int(s.attrib.get('tests', 0)) for s in suites)
+          skipped = sum(int(s.attrib.get('skipped', 0)) for s in suites)
+          if count < 55 or skipped:
+              raise SystemExit('installed-wheel acceptance must execute every synthetic test')
+          manifest = {
+              'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'python': sys.version,
+              'numpy': numpy.__version__,
+              'platform': platform.platform(),
+              'tests': count,
+              'skipped': skipped,
+              'wheels': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('wheelhouse').glob('*.whl')},
+              'data_scope': 'synthetic fixtures only; no external response data',
+          }
+          Path('wheelhouse/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ordered-scale-wheel-${{ github.event.pull_request.head.sha }}
+          path: wheelhouse/
+          if-no-files-found: error
+          retention-days: 7
