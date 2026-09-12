@@ -1343,13 +1343,13 @@ fn mc_mhrm_recovery_500() {
             let mut pattern = vec![0u8; n_items * n_dims];
             let mut a_t = vec![0.0f64; n_items * n_dims];
             let per = n_items / n_dims;
-            for i in 0..per * n_dims {
-                let d = i / per;
+            let xi = n_items - 1;
+            for i in 0..xi {
+                let d = (i / per).min(n_dims - 1);
                 pattern[i * n_dims + d] = 1;
                 a_t[i * n_dims + d] = 0.9 + 0.1 * (i % 3) as f64;
             }
             // last item cross-loads dims 0 and 1 (dim0 negative)
-            let xi = n_items - 1;
             pattern[xi * n_dims] = 1;
             pattern[xi * n_dims + 1] = 1;
             a_t[xi * n_dims] = -0.8;
