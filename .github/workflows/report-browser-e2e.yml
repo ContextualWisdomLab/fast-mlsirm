@@ -1,0 +1,87 @@
+name: Report Browser E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "python/fast_mlsirm/rubric/item_bank_report.py"
+      - "scripts/build_benchmark_report.py"
+      - "scripts/build_buyer_packet.py"
+      - "scripts/build_commercial_release.py"
+      - "scripts/build_figma_evidence_sync.py"
+      - "scripts/build_pr_queue_governance.py"
+      - "scripts/build_procurement_due_diligence.py"
+      - "scripts/build_release_evidence_index.py"
+      - "scripts/verify_report_browser_e2e.py"
+      - "tests/test_item_bank_report_browser_e2e.py"
+      - "tests/test_rubric_item_bank_report.py"
+      - "tests/test_report_table_wrap_pointer_focus.py"
+      - "requirements/ci.txt"
+      - "pyproject.toml"
+      - ".jules/palette.md"
+      - ".Jules/palette.md"
+      - ".github/workflows/report-browser-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: report-browser-e2e-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  browser-e2e:
+    name: report-browser-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Install hash-locked browser-test dependencies
+        run: python -m pip install --require-hashes -r requirements/ci.txt
+      - name: Install exact package under test
+        run: python -m pip install --no-deps --no-build-isolation -e .
+      - name: Record real-browser runtime identity
+        run: |
+          google-chrome --version
+          chromedriver --version
+      - name: Verify keyboard, pointer, focus, and responsive report behavior
+        run: python -m scripts.verify_report_browser_e2e --out report-browser-e2e.json
+      - name: Verify governed item-bank skip-link behavior in real browser
+        env:
+          ITEM_BANK_BROWSER_EVIDENCE_OUT: item-bank-browser-e2e.json
+        run: python -m pytest -q tests/test_item_bank_report_browser_e2e.py
+      - name: Bind browser evidence to exact source head
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = os.environ["EXPECTED_SOURCE_COMMIT"]
+          for evidence_path in (
+              "report-browser-e2e.json",
+              "item-bank-browser-e2e.json",
+          ):
+              evidence = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+              assert evidence["status"] == "ok"
+              assert evidence["source_commit"] == expected
+          PY
+      - name: Publish browser E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: report-browser-e2e-${{ github.run_id }}
+          path: |
+            report-browser-e2e.json
+            item-bank-browser-e2e.json
+          if-no-files-found: error
+          retention-days: 90
