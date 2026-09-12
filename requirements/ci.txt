@@ -4,6 +4,11 @@
 #
 #    pip-compile --generate-hashes --output-file=requirements/ci.txt requirements/ci.in
 #
+hypothesis==6.167.1 \
+    --hash=sha256:04f807b85d425a7005e8a24498ca832bf5590f0d306737471d94c842569cecef \
+    --hash=sha256:62eefcb4d2791423626e9901c3027a6e0c5ffda2ac0b44b3c7e797ab9d2d5a4c \
+    --hash=sha256:742be00d7bb53d10634e6435e5b98f51fcdbe7ed377d473ab7387d9499c87169
+    # via -r requirements/ci.in
 iniconfig==2.3.0 \
     --hash=sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
@@ -27,7 +32,7 @@ maturin==1.14.1 \
 numpy==2.5.2 \
     --hash=sha256:0090ccdd57ec2703e9b49d0bf554767370581c1dd0a6b2bb2b2d9def317d042a \
     --hash=sha256:078f9b027b478c9379b9677babbf0f8b8f1ecfada27636d7b9a93990c638739f \
-    --hash=sha256:07d4e89f3a9ab0a9ba24264ccdb642b3dd951b2281e8883a5481a4aa79cc31a7 \
+    --hash=sha256:07d4e89f3a9b0a9ba24264ccdb642b3dd951b2281e8883a5481a4aa79cc31a7 \
     --hash=sha256:0a4035ae1129ff8777f08bfbd44f1e5d8e9c049ce0c2dd78fc0d92c13e7251c0 \
     --hash=sha256:0aadf13b60048d501e05fa699efaf7734e2494f3498a4c2a5521d822640324f3 \
     --hash=sha256:14e373cfc6387177e8409dac3c7159be8eb05cd77096cd7c950268b86f62831c \
@@ -108,3 +113,7 @@ pytest==9.1.1 \
     --hash=sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 \
     --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
     # via -r requirements/ci.in
+sortedcontainers==2.4.0 \
+    --hash=sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88 \
+    --hash=sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0
+    # via hypothesis

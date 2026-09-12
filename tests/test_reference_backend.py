@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 import inspect
 
 import numpy as np
@@ -92,7 +93,7 @@ def test_public_fit_rejects_numpy_inside_reference_scope() -> None:
 
 def test_public_plain_mmle_auto_reports_resolved_rust_backend() -> None:
     """Successful production auto resolution records the concrete Rust owner."""
-    pytest.importorskip("fast_mlsirm._core")
+    import_module("fast_mlsirm._core")
     responses = np.array(
         [
             [0.0, 0.0, 1.0, 1.0],
