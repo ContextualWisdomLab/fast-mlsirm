@@ -126,11 +126,19 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
     def _reject_nonfinite(literal):
         raise ValueError("contract_json contains non-finite numbers")
 
+    def _reject_float_nonfinite(value):
+        import math
+        f_val = float(value)
+        if not math.isfinite(f_val):
+            raise ValueError("contract_json contains non-finite numbers")
+        return f_val
+
     try:
         contract = json.loads(
             contract_json,
             object_pairs_hook=_reject_duplicates,
             parse_constant=_reject_nonfinite,
+            parse_float=_reject_float_nonfinite,
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
