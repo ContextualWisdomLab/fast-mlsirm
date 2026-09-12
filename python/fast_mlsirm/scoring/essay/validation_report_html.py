@@ -131,6 +131,10 @@ def _canonical_json(report: EssayValidationEvidenceReport) -> str:
 
 def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
     """Assemble one complete accessible and script-free evidence document."""
+    import base64
+    import hashlib
+    css = _css()
+    css_hash = base64.b64encode(hashlib.sha256(css.encode('utf-8')).digest()).decode('utf-8')
     automated = report.automated_engine
     reference = report.reference_engine
     provenance = _definition_rows(
@@ -180,9 +184,9 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" '
-            f'content="{escape(_content_security_policy(), quote=True)}">',
+            f'content="{escape(_content_security_policy(css_hash), quote=True)}">',
             f"<title>{escape(title)}</title>",
-            f"<style>{_css()}</style>",
+            f"<style>{css}</style>",
             "</head>",
             "<body>",
             '<a class="skip-link" href="#main-content">Skip to report content</a>',
