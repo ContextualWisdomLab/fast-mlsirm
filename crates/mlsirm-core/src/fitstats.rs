@@ -333,11 +333,7 @@ fn icc_nodes(
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
     let n_items = bank.b.len();
-    let (t_nodes, t_weights) = if uses_space {
-        crate::quadrature::require_gh_rule(q_theta, "quadrature size")?
-    } else {
-        crate::quadrature::require_gh_rule_unidim(q_theta, "quadrature size")?
-    };
+    let (t_nodes, t_weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
     let (x_grid, x_logw) = if uses_space {
         let nodes = build_xi_nodes(xi_rule, bank.latent_dim)?;
         (nodes.grid, nodes.logw)
