@@ -1,10 +1,10 @@
 //! Tests for the PerFit nonparametric person-fit port.
 //!
 //! Every assertion reads values RETURNED BY `person_fit_np` (crate
-//! outputs). Pinned oracle: line-by-line Python transcription of the
-//! PerFit R sources (complete-data specialization) at numpy
-//! default_rng(2033), N=12, I=8 — see files/perfit_spec.md. Mutation
-//! kills executed and logged in the spec.
+//! outputs). Package-comparator provenance for the deterministic
+//! numpy default_rng(2033), N=12, I=8 fixture is tracked in
+//! files/perfit_spec.md. Mutation-sensitive expectations are cataloged
+//! there and pinned by the executable tests below.
 
 use super::person_fit_np;
 
@@ -238,11 +238,54 @@ fn error_paths() {
     assert!(person_fit_np(&[vec![1.0, -1.0]]).is_err(), "-1 must Err");
 }
 
-/// MC-500: 2PL-conforming data plus one planted reversed respondent.
-/// The reversed respondent's U3 (crate output) must exceed the max
-/// conforming U3 in >= 95% of replications.
+#[derive(Debug, Clone, Copy)]
+struct MonteCarloDetectionEvidence {
+    rate: f64,
+    standard_error: f64,
+    wilson_95_lower: f64,
+}
+
+fn detection_rate_mc_evidence(flagged: usize, reps: usize) -> MonteCarloDetectionEvidence {
+    assert!(reps > 0, "Monte Carlo evidence requires at least one replication");
+    assert!(flagged <= reps, "flagged count cannot exceed replications");
+
+    let n = reps as f64;
+    let rate = flagged as f64 / n;
+    let standard_error = (rate * (1.0 - rate) / n).sqrt();
+    // Two-sided 95% Wilson score interval. The lower endpoint is used as
+    // the acceptance margin so a raw point estimate exactly at the target
+    // cannot pass solely because finite Monte Carlo error is ignored.
+    let z = 1.959_963_984_540_054_f64;
+    let z2 = z * z;
+    let denominator = 1.0 + z2 / n;
+    let center = rate + z2 / (2.0 * n);
+    let half_width = z * (rate * (1.0 - rate) / n + z2 / (4.0 * n * n)).sqrt();
+    let wilson_95_lower = (center - half_width) / denominator;
+
+    MonteCarloDetectionEvidence {
+        rate,
+        standard_error,
+        wilson_95_lower,
+    }
+}
+
 #[test]
-#[ignore]
+fn mc_detection_acceptance_rejects_raw_threshold_without_precision_margin() {
+    let evidence = detection_rate_mc_evidence(475, 500);
+    assert_close(evidence.rate, 0.95, "boundary detection rate");
+    assert!(
+        evidence.wilson_95_lower < 0.95,
+        "a raw 95% hit rate must not pass a 95% target without Monte Carlo uncertainty margin"
+    );
+}
+
+/// MC-500: 2PL-conforming data plus one planted reversed respondent.
+/// The reversed respondent's U3 (crate output) must exceed the maximum
+/// conforming U3 often enough that the 95% Wilson lower confidence bound
+/// for the detection probability is at least 95%. With 500 replications,
+/// the Monte Carlo SE at the 95% decision boundary is below 1 percentage
+/// point; the realized MCSE is reported in the failure diagnostic.
+#[test]
 fn mc_500_reversed_respondent_flagged_by_u3() {
     // Local LCG (crate Lcg types are module-private): splitmix-style.
     struct Rng(u64);
@@ -264,6 +307,14 @@ fn mc_500_reversed_respondent_flagged_by_u3() {
     let ni = 20usize;
     let mut flagged = 0usize;
     let reps = 500usize;
+    let target_detection_probability = 0.95_f64;
+    let decision_boundary_mcse =
+        (target_detection_probability * (1.0 - target_detection_probability) / reps as f64).sqrt();
+    assert!(
+        decision_boundary_mcse <= 0.01,
+        "500 replications must keep MCSE at the 95% decision boundary within 1 percentage point"
+    );
+
     for rep in 0..reps {
         let mut rng = Rng(0x9e37_79b9_7f4a_7c15 ^ (rep as u64).wrapping_mul(0xd128_2e5b_8f2d_3f4d));
         let b: Vec<f64> = (0..ni)
@@ -304,11 +355,16 @@ fn mc_500_reversed_respondent_flagged_by_u3() {
             flagged += 1;
         }
     }
-    let rate = flagged as f64 / reps as f64;
+
+    let evidence = detection_rate_mc_evidence(flagged, reps);
     assert!(
-        rate >= 0.95,
-        "reversed respondent flagged in only {:.1}% of {} reps",
-        rate * 100.0,
-        reps
+        evidence.wilson_95_lower >= target_detection_probability,
+        "reversed-respondent detection evidence insufficient: {}/{} ({:.2}%), MCSE={:.4}, 95% Wilson lower={:.4}, target={:.2}",
+        flagged,
+        reps,
+        evidence.rate * 100.0,
+        evidence.standard_error,
+        evidence.wilson_95_lower,
+        target_detection_probability
     );
 }
