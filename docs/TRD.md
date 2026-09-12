@@ -2,7 +2,7 @@
 
 Status: **Authoritative technical requirements baseline**  
 Repository: `ContextualWisdomLab/fast-mlsirm`  
-Last reviewed: 2026-08-09
+Last reviewed: 2026-09-04
 
 ## 1. Purpose
 
@@ -174,6 +174,8 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-ROT-005** Selection across criteria shall use common recovery/stability/theory/degeneracy evidence, not incomparable raw criterion objective values.
 
+**TRD-ROT-006** A criterion advertised as a deterministic CPU-binary64 numerical reference shall own the arithmetic route needed for that claim. Operations whose Rust precision contract is unspecified shall not be used as bitwise reproducibility evidence unless the criterion explicitly narrows the claim. Oblimax therefore uses package-owned integer-power and logarithm routes; cross-target release claims require exact-head golden-bit parity on every supported target. Formula agreement and psychometric recovery remain separate acceptance dimensions.
+
 ### 4.11 Multilevel/multiple-membership/temporal contracts
 
 **TRD-MLT-001** Context membership shall include explicit context dimension and context identity.
@@ -207,6 +209,8 @@ known-weight recovery, and uncertainty coverage before activation.
 **TRD-TEST-005** Heavy literature/recovery studies shall run on scheduled/manual/release paths when too expensive for every PR; bounded smoke/recovery sentinels remain on PRs. Scientific gates are not deleted to reduce CI latency.
 
 **TRD-TEST-006** Monte Carlo acceptance bounds shall be specified prospectively from scientific/statistical reasoning and shall not be fitted to one observed random seed's result.
+
+**TRD-TEST-007** Bitwise reproducibility, tolerance-level formula equivalence, and scientific recovery are distinct evidence claims. A deterministic numerical path shall have a package-owned golden identity and repeated-run evidence; cross-target wording is permitted only after the same exact-head contract passes on every target named by the release support policy.
 
 ### 4.13 LLM/provider tests and automation
 
@@ -263,5 +267,6 @@ A release candidate is accepted only when the exact integrated protected head pr
 - ISO/IEC/IEEE 42010:2022, architecture description.
 - ISO/IEC 25010:2023, product quality model.
 - ISO/IEC 42001:2023, AI management-system controls where AI lifecycle governance is relevant.
+- IEEE 754-2019 and ISO/IEC/IEEE 60559:2020, floating-point arithmetic and reproducibility-relevant operation semantics.
 - W3C WCAG 2.2, report/accessibility concerns.
 - Method-specific psychometric primary literature recorded in `AGENTS.md`, doctoring records, and relevant ADRs.
