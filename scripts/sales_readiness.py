@@ -1513,7 +1513,7 @@ def _validate_figma_evidence_sync(
             html_exists
             and isinstance(expected_html_sha, str)
             and expected_html_sha == actual_html_sha,
-            "Figma evidence HTML report SHA256 matches manifest",
+            "Figma evidence sync HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
         ),
