@@ -13,29 +13,34 @@ import fast_mlsirm.polytomous as polytomous
 
 
 @pytest.mark.parametrize("model_name", ["grm", "gpcm"])
-def test_dense_rule_reaches_native_fit_and_scoring(model_name: str) -> None:
-    """Fit accepts 61 nodes; missing-data scoring recovers the normal prior."""
+@pytest.mark.parametrize("quadrature_count", [61, 81])
+def test_dense_rule_reaches_native_fit_and_scoring(
+    model_name: str, quadrature_count: int
+) -> None:
+    """Fit accepts each dense theta rule; missing-data scoring recovers the normal prior."""
     response_values = np.asarray(list(product(range(3), repeat=3)), dtype=float)
     # One EM iteration is sufficient for admission, not convergence evidence.
     fitted_model = polytomous.fit_polytomous(
-        response_values, 3, model=model_name, q_theta=61, max_iter=1
+        response_values, 3, model=model_name, q_theta=quadrature_count, max_iter=1
     )
     assert np.isfinite(fitted_model.loglik)
     scored_values = polytomous.score_polytomous(
-        response_values, fitted_model, q_theta=np.int64(61)
+        response_values, fitted_model, q_theta=np.int64(quadrature_count)
     )
     for score_name in ("theta_eap", "theta_sd"):
         assert scored_values[score_name].shape == (27,)
         assert np.all(np.isfinite(scored_values[score_name]))
     assert np.all(scored_values["theta_sd"] > 0)
     prior_scores = polytomous.score_polytomous(
-        np.full((1, 3), np.nan), fitted_model, q_theta=61
+        np.full((1, 3), np.nan), fitted_model, q_theta=quadrature_count
     )
     np.testing.assert_allclose(prior_scores["theta_eap"], [0.0], atol=1e-12)
     np.testing.assert_allclose(prior_scores["theta_sd"], [1.0], atol=1e-12)
 
 
-@pytest.mark.parametrize("quadrature_count", [61, np.int64(61)])
+@pytest.mark.parametrize(
+    "quadrature_count", [61, np.int64(61), 81, np.int64(81)]
+)
 def test_dense_xi_rule_rejected_before_response_or_native_work(
     monkeypatch: pytest.MonkeyPatch, quadrature_count: int
 ) -> None:
