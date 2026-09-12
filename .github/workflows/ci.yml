@@ -25,6 +25,10 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
     name: python (${{ matrix.python-version }})
     runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: /tmp/fast-mlsirm-python-${{ matrix.python-version }}-target
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTEST_ADDOPTS: "-p no:cacheprovider"
     strategy:
       fail-fast: false
       matrix:
@@ -112,11 +116,11 @@ jobs:
           root = ElementTree.parse(Path("gpu-junit.xml")).getroot()
           suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
           tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
-          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          skips = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
           if tests < 1:
               raise SystemExit("GPU evidence did not execute a test")
-          if skipped != 0:
-              raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
+          if skips != 0:
+              raise SystemExit(f"GPU evidence contained {skips} skipped test(s)")
           PY
 
   fuzz:
