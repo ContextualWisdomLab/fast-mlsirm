@@ -1,0 +1,372 @@
+use mlsirm_core::governed_rater_contracts::{
+    ContractError, CriterionObservation, DomainReference, RaterConfigurationIdentity,
+    RaterInvocation, UncertaintyLevel, GOVERNED_RATER_OBSERVATION_CONTRACT_V1,
+};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use std::collections::HashSet;
+use std::fmt;
+
+const MAX_SCHEMA_COLLECTION_LIMIT_FOR_TEST: usize = 4096;
+
+#[derive(Deserialize)]
+struct ConformanceFixture {
+    contract_id: String,
+    reference_cases: Vec<ReferenceCase>,
+    observation_identity_cases: Vec<ObservationIdentityCase>,
+}
+
+#[derive(Deserialize)]
+struct ReferenceCase {
+    name: String,
+    value: String,
+    valid: bool,
+}
+
+#[derive(Deserialize)]
+struct ObservationIdentityCase {
+    name: String,
+    valid: bool,
+    #[serde(default)]
+    value: Option<serde_json::Value>,
+    #[serde(default)]
+    stage: Option<String>,
+    #[serde(default)]
+    json_text: Option<String>,
+}
+
+#[derive(Debug)]
+struct PublishedCollectionLimits {
+    evidence_references: usize,
+    review_signals: usize,
+    observations: usize,
+}
+
+struct UniqueJsonValue;
+
+impl<'de> Deserialize<'de> for UniqueJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(UniqueJsonVisitor)
+    }
+}
+
+struct UniqueJsonVisitor;
+
+impl<'de> Visitor<'de> for UniqueJsonVisitor {
+    type Value = UniqueJsonValue;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JSON with unique object member names at every depth")
+    }
+
+    fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_i64<E>(self, _value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_u64<E>(self, _value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_str<E>(self, _value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_string<E>(self, _value: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        while sequence.next_element::<UniqueJsonValue>()?.is_some() {}
+        Ok(UniqueJsonValue)
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut seen = HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !seen.insert(key.clone()) {
+                return Err(de::Error::custom(format!("duplicate object member: {key}")));
+            }
+            map.next_value::<UniqueJsonValue>()?;
+        }
+        Ok(UniqueJsonValue)
+    }
+}
+
+fn has_unique_object_members(raw: &str) -> bool {
+    let mut deserializer = serde_json::Deserializer::from_str(raw);
+    let result = UniqueJsonValue::deserialize(&mut deserializer);
+    result.is_ok() && deserializer.end().is_ok()
+}
+
+fn parse_conformance_fixture(raw: &str) -> Result<ConformanceFixture, String> {
+    let fixture: ConformanceFixture = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    if fixture.contract_id != GOVERNED_RATER_OBSERVATION_CONTRACT_V1 {
+        return Err(format!(
+            "unexpected conformance contract identity: {}",
+            fixture.contract_id
+        ));
+    }
+    Ok(fixture)
+}
+
+fn positive_bounded_schema_limit(
+    schema: &serde_json::Value,
+    pointer: &str,
+) -> Result<usize, String> {
+    let raw = schema
+        .pointer(pointer)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| format!("missing unsigned schema limit at {pointer}"))?;
+    let limit = usize::try_from(raw)
+        .map_err(|_| format!("schema limit at {pointer} does not fit usize"))?;
+    if limit == 0 || limit > MAX_SCHEMA_COLLECTION_LIMIT_FOR_TEST {
+        return Err(format!(
+            "schema limit at {pointer} must be within 1..={MAX_SCHEMA_COLLECTION_LIMIT_FOR_TEST}"
+        ));
+    }
+    Ok(limit)
+}
+
+fn published_collection_limits(raw: &str) -> Result<PublishedCollectionLimits, String> {
+    let schema: serde_json::Value = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    Ok(PublishedCollectionLimits {
+        evidence_references: positive_bounded_schema_limit(
+            &schema,
+            "/$defs/observed_criterion/properties/evidence_reference_ids/maxItems",
+        )?,
+        review_signals: positive_bounded_schema_limit(
+            &schema,
+            "/$defs/review_signals/maxItems",
+        )?,
+        observations: positive_bounded_schema_limit(
+            &schema,
+            "/properties/observations/maxProperties",
+        )?,
+    })
+}
+
+fn reference(value: &str) -> DomainReference {
+    DomainReference::parse("reference", value).expect("valid reference")
+}
+
+fn configuration() -> RaterConfigurationIdentity {
+    RaterConfigurationIdentity {
+        rater_family_ref: reference("rater-family"),
+        provider_ref: reference("provider"),
+        implementation_revision_ref: reference("implementation-v1"),
+        instruction_revision_ref: reference("instruction-v1"),
+        response_schema_revision_ref: reference("schema-v1"),
+        workflow_mode_ref: reference("blind-independent"),
+        modality_channel_ref: reference("text"),
+    }
+}
+
+fn observation(index: usize) -> CriterionObservation {
+    CriterionObservation::observed(
+        reference(&format!("criterion-{index}")),
+        reference("anchor"),
+        vec![reference(&format!("evidence-{index}"))],
+        UncertaintyLevel::Medium,
+        Vec::new(),
+    )
+    .expect("bounded observation")
+}
+
+#[test]
+fn shared_conformance_fixture_rejects_wrong_contract_identity() {
+    let wrong_identity = r#"{
+        "contract_id": "cwl_governed_rater_observation/v0",
+        "reference_cases": [],
+        "observation_identity_cases": []
+    }"#;
+    assert!(parse_conformance_fixture(wrong_identity).is_err());
+}
+
+#[test]
+fn references_follow_the_shared_cross_sdk_conformance_fixture() {
+    let fixture = parse_conformance_fixture(include_str!(
+        "../../../contracts/governed-rater-observation-v1.conformance.json"
+    ))
+    .expect("valid conformance fixture");
+
+    for case in fixture.reference_cases {
+        assert_eq!(
+            DomainReference::parse("reference", case.value).is_ok(),
+            case.valid,
+            "reference conformance case: {}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn duplicate_member_admission_is_gated_by_the_shared_fixture() {
+    let fixture = parse_conformance_fixture(include_str!(
+        "../../../contracts/governed-rater-observation-v1.conformance.json"
+    ))
+    .expect("valid conformance fixture");
+
+    for case in fixture.observation_identity_cases {
+        let raw = match (case.value, case.json_text) {
+            (Some(value), None) => serde_json::to_string(&value).expect("serializable fixture value"),
+            (None, Some(raw)) => raw,
+            _ => panic!("observation identity case must contain exactly one payload form"),
+        };
+        assert_eq!(
+            has_unique_object_members(&raw),
+            case.valid,
+            "observation identity case: {} ({})",
+            case.name,
+            case.stage.as_deref().unwrap_or("unique-member admission")
+        );
+    }
+}
+
+#[test]
+fn rust_collection_limits_match_the_published_schema() {
+    let limits = published_collection_limits(include_str!(
+        "../../../contracts/governed-rater-observation-v1.schema.json"
+    ))
+    .expect("published schema exposes bounded collection limits");
+
+    let max_evidence = (0..limits.evidence_references)
+        .map(|index| reference(&format!("evidence-{index}")))
+        .collect();
+    assert!(CriterionObservation::observed(
+        reference("criterion"),
+        reference("anchor"),
+        max_evidence,
+        UncertaintyLevel::Medium,
+        Vec::new(),
+    )
+    .is_ok());
+
+    let too_many_evidence = (0..=limits.evidence_references)
+        .map(|index| reference(&format!("evidence-{index}")))
+        .collect();
+    assert_eq!(
+        CriterionObservation::observed(
+            reference("criterion"),
+            reference("anchor"),
+            too_many_evidence,
+            UncertaintyLevel::Medium,
+            Vec::new(),
+        ),
+        Err(ContractError::TooManyEvidenceReferences)
+    );
+
+    let max_review_signals = (0..limits.review_signals)
+        .map(|index| reference(&format!("review-{index}")))
+        .collect::<Vec<_>>();
+    assert!(CriterionObservation::observed(
+        reference("criterion"),
+        reference("anchor"),
+        vec![reference("evidence")],
+        UncertaintyLevel::Medium,
+        max_review_signals.clone(),
+    )
+    .is_ok());
+    assert!(CriterionObservation::abstained(
+        reference("criterion"),
+        reference("reason"),
+        UncertaintyLevel::Medium,
+        max_review_signals,
+    )
+    .is_ok());
+
+    let too_many_review_signals = (0..=limits.review_signals)
+        .map(|index| reference(&format!("review-{index}")))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        CriterionObservation::observed(
+            reference("criterion"),
+            reference("anchor"),
+            vec![reference("evidence")],
+            UncertaintyLevel::Medium,
+            too_many_review_signals.clone(),
+        ),
+        Err(ContractError::TooManyReviewSignals)
+    );
+    assert_eq!(
+        CriterionObservation::abstained(
+            reference("criterion"),
+            reference("reason"),
+            UncertaintyLevel::Medium,
+            too_many_review_signals,
+        ),
+        Err(ContractError::TooManyReviewSignals)
+    );
+
+    let max_observations = (0..limits.observations).map(observation).collect();
+    assert!(RaterInvocation::new(
+        reference("invocation"),
+        configuration(),
+        reference("task-v1"),
+        reference("rubric-v1"),
+        reference("response-evidence"),
+        max_observations,
+    )
+    .is_ok());
+
+    let too_many_observations = (0..=limits.observations).map(observation).collect();
+    assert_eq!(
+        RaterInvocation::new(
+            reference("invocation"),
+            configuration(),
+            reference("task-v1"),
+            reference("rubric-v1"),
+            reference("response-evidence"),
+            too_many_observations,
+        ),
+        Err(ContractError::TooManyObservations)
+    );
+}
