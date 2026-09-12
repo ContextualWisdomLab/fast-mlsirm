@@ -416,7 +416,7 @@ def test_stubbed_acquisition_run_preserves_stage_handoffs_and_final_manifest(
     )
     manifest = build_acquisition_release.build_acquisition_release(args)
 
-    isolated_dist = out_dir / "distribution"
+    isolated_dist = out_dir / "candidate-distribution"
     assert all(Path(stage.dist) == isolated_dist for stage in observed_sales)
     assert all(stage.check_import is False for stage in observed_sales)
     assert len(observed_sales) == 3
