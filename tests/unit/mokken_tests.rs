@@ -4,7 +4,7 @@
 //! `aisp` label vector). Each test names the crate value it reads and a
 //! mutant it kills.
 
-use super::{aisp, coef_h, normal_upper_quantile};
+use super::{aisp, coef_h, normal_upper_quantile, MOKKEN_MAX_MATRIX_CELLS};
 
 /// Reads: `normal_upper_quantile` directly against published anchors
 /// Phi^-1(0.95) = 1.6448536..., Phi^-1(0.999) = 3.0902323... .
@@ -295,6 +295,19 @@ fn rejects_bad_inputs() {
     assert!(coef_h(&ok, 6, 1).is_err(), "single item");
     assert!(aisp(&ok, 6, 2, 1.2, 0.05).is_err(), "c out of range");
     assert!(aisp(&ok, 6, 2, 0.3, 0.0).is_err(), "alpha out of range");
+}
+
+/// Reads: the shared quadratic item-matrix budget from both entry points.
+/// Kills: removing the pre-allocation `n_items * n_items` guard.
+#[test]
+fn rejects_item_matrix_budget_before_allocation() {
+    let n_items = 2_001;
+    assert!(n_items * n_items > MOKKEN_MAX_MATRIX_CELLS);
+    let x = vec![0_i64; 3 * n_items];
+    let coefficient_error = coef_h(&x, 3, n_items).unwrap_err();
+    assert!(coefficient_error.contains("matrix budget"));
+    let aisp_error = aisp(&x, 3, n_items, 0.3, 0.05).unwrap_err();
+    assert!(aisp_error.contains("matrix budget"));
 }
 
 /// Reads: `aisp` labels on an exact-tie design: X0 == X3 and X1 == X2
