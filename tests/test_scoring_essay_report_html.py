@@ -173,7 +173,7 @@ def test_empty_table_renders_an_explicit_empty_state() -> None:
     )
     assert (
         rendered
-        == '<div class="empty-state" role="status">No evidence is available.</div>'
+        == '<div class="empty-state" role="status" aria-atomic="true">No evidence is available.</div>'
     )
 
 

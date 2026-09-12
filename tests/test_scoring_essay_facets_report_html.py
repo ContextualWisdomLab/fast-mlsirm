@@ -114,7 +114,7 @@ def test_renderer_shows_explicit_empty_review_state(tmp_path: Path) -> None:
     assert '<section class="review-clear"' in html
     assert "No structural trigger" in html
     assert (
-        '<div class="empty-state" role="status">'
+            '<div class="empty-state" role="status" aria-atomic="true">'
         "No structural review trigger was emitted.</div>"
     ) in html
     assert "not evidence of" in html.lower()
@@ -277,5 +277,5 @@ def test_replay_identity_mismatch_and_private_empty_renderer(
         ),
     )
     assert report_html._identifier_list((), empty_message="Nothing declared.") == (
-        '<div class="empty-state" role="status">Nothing declared.</div>'
+        '<div class="empty-state" role="status" aria-atomic="true">Nothing declared.</div>'
     )
