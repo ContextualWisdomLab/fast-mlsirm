@@ -20,8 +20,18 @@ for _name, _value in vars(_impl).items():
 
 PRODUCT_DOCS = _impl.PRODUCT_DOCS
 PRODUCT_MANIFESTS = _impl.PRODUCT_MANIFESTS
-_original_collect_files = _impl._collect_files
-_original_build_packet = _impl.build_packet
+
+# Keep stable references to the canonical implementation when this entry point
+# is loaded more than once under different module names (as isolated tests and
+# embedding callers do). Without these sentinels, each import can capture the
+# previous wrapper as its "original" and leak that wrapper's mutable globals
+# into later calls.
+if not hasattr(_impl, "_fast_mlsirm_canonical_collect_files"):
+    _impl._fast_mlsirm_canonical_collect_files = _impl._collect_files
+if not hasattr(_impl, "_fast_mlsirm_canonical_build_packet"):
+    _impl._fast_mlsirm_canonical_build_packet = _impl.build_packet
+_original_collect_files = _impl._fast_mlsirm_canonical_collect_files
+_original_build_packet = _impl._fast_mlsirm_canonical_build_packet
 
 
 def _read_json(path: Path) -> dict[str, Any]:
