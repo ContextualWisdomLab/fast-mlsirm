@@ -98,7 +98,7 @@ use mlsirm_core::factor::{
     velicer_map_data as core_velicer_map_data, MinresFaResult,
 };
 use mlsirm_core::fitstats::{
-    adjusted_chi2_pairs as core_adjusted_chi2_pairs,
+    adjusted_chi2_pairs as core_adjusted_chi2_pairs, ld_indices as core_ld_indices,
     person_fit_resampling as core_person_fit_resampling,
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
@@ -9124,6 +9124,70 @@ fn adjusted_chi2_pairs(
     Ok(out.into())
 }
 
+/// Chen-Thissen signed local-dependence indices for dichotomous item pairs.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
+))]
+fn ld_indices(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let res = core_ld_indices(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("x2_signed", res.x2_signed)?;
+    out.set_item("g2_signed", res.g2_signed)?;
+    Ok(out.into())
+}
+
 /// Fixed-estimate Monte Carlo person-fit p-values inspired by Sinharay (2016).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -9758,6 +9822,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(plausible_values, m)?)?;
     m.add_function(wrap_pyfunction!(residual_item_fit, m)?)?;
     m.add_function(wrap_pyfunction!(adjusted_chi2_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(ld_indices, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_resampling, m)?)?;
     m.add_function(wrap_pyfunction!(tcc_drift, m)?)?;
     m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;

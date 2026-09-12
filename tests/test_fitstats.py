@@ -17,6 +17,7 @@ from fast_mlsirm.fitstats import (
     _lord_wingersky,
     empirical_reliability,
     infit_outfit,
+    ld_indices,
     person_fit,
     person_fit_resampling,
     residual_item_fit,
@@ -372,6 +373,65 @@ def test_adjusted_chi2_pairs_rejects_invalid_inputs_and_preserves_undefined_max(
     assert np.isnan(sparse["ratio"]).all()
     assert np.isnan(sparse["mean_ratio"])
     assert np.isnan(sparse["max_ratio"])
+
+
+def test_ld_indices_exposes_native_pair_order_and_sparse_evidence():
+    core = fitstats_module._core_module()
+    assert core is not None and hasattr(core, "ld_indices"), (
+        "compiled Rust core with ld_indices is required integration evidence"
+    )
+    params = SimpleNamespace(
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        zeta=np.zeros((3, 1)),
+        tau=-30.0,
+    )
+    factor_id = np.zeros(3, dtype=np.int64)
+    rng = np.random.default_rng(97)
+    result = ld_indices(
+        (rng.random((40, 3)) < 0.5).astype(float),
+        factor_id,
+        params,
+        "MIRT",
+        q_theta=7,
+        q_xi=3,
+    )
+    assert result["x2_signed"].shape == (3,)
+    assert result["g2_signed"].shape == (3,)
+    sparse = ld_indices(
+        np.zeros((19, 3)), factor_id, params, "MIRT", q_theta=7, q_xi=3
+    )
+    assert np.isnan(sparse["x2_signed"]).all()
+    assert np.isnan(sparse["g2_signed"]).all()
+
+
+def test_ld_indices_rejects_incomplete_design_and_unsafe_controls(monkeypatch):
+    params = SimpleNamespace(
+        alpha=np.zeros(2), b=np.zeros(2), zeta=np.zeros((2, 1)), tau=-30.0
+    )
+    factor_id = np.zeros(2, dtype=np.int64)
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: object())
+    with pytest.raises(RuntimeError, match="compiled Rust core"):
+        ld_indices(np.zeros((20, 2)), factor_id, params, "MIRT")
+
+    class BombCore:
+        def ld_indices(self, *_args, **_kwargs):
+            raise AssertionError("invalid inputs reached the native core")
+
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="at least one person"):
+        ld_indices(np.empty((0, 2)), factor_id, params, "MIRT")
+    with pytest.raises(ValueError, match="at least two items"):
+        ld_indices(
+            np.zeros((20, 1)),
+            np.zeros(1, dtype=np.int64),
+            SimpleNamespace(
+                alpha=np.zeros(1), b=np.zeros(1), zeta=np.zeros((1, 1)), tau=-30.0
+            ),
+            "MIRT",
+        )
+    with pytest.raises(ValueError, match="q_theta must be a positive integer"):
+        ld_indices(np.zeros((20, 2)), factor_id, params, "MIRT", q_theta=True)
 
 
 def test_person_fit_resampling_rejects_invalid_inputs_before_native(monkeypatch):

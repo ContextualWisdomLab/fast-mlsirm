@@ -8,6 +8,7 @@ work remain owned by the compiled Rust fit-statistics implementation.
 from __future__ import annotations
 
 from functools import wraps
+from math import isqrt
 from types import ModuleType
 from typing import Any, Callable
 
@@ -35,9 +36,17 @@ _NUMPY_FLOAT_SCALAR_TYPES = (
     np.longdouble,
 )
 _BH_HARDENED_ATTR = "__fast_mlsirm_bh_admission_hardened__"
+_LD_HARDENED_ATTR = "__fast_mlsirm_ld_admission_hardened__"
+_LD_RESULT_KEYS = frozenset(("x2_signed", "g2_signed"))
+_MAX_RUST_USIZE = int(np.iinfo(np.uintp).max)
+_MAX_I64 = int(np.iinfo(np.int64).max)
 _MAX_PROBABILITY_TREE_DEPTH = 64
 _MAX_BH_PROBABILITY_CELLS = 20_000_000
 _MAX_BH_STRUCTURAL_NODES = 40_000_000
+_MAX_LD_PROBABILITY_CELLS = 20_000_000
+_MAX_LD_PAIR_COUNT = 5_000_000
+_MAX_LD_PAIR_PERSON_CELLS = 200_000_000
+_MAX_LD_PAIR_QUADRATURE_CELLS = 200_000_000
 
 
 def _trusted_integer(value: Any, name: str) -> int:
@@ -92,6 +101,232 @@ def _trusted_real(value: Any, name: str) -> float:
     raise ValueError(f"{name} must be a finite number")
 
 
+def _trusted_positive_real(value: Any, name: str) -> float:
+    """Return one finite positive exact real without caller conversion hooks."""
+    try:
+        normalized = _trusted_real(value, name)
+    except ValueError as error:
+        raise ValueError(f"{name} must be > 0 and finite") from error
+    if not np.isfinite(normalized) or normalized <= 0.0:
+        raise ValueError(f"{name} must be > 0 and finite")
+    return normalized
+
+
+def _trusted_quadrature(value: Any, name: str) -> int:
+    """Return one embedded quadrature size without caller-controlled coercion."""
+    normalized = _trusted_integer(value, name)
+    if normalized not in _SUPPORTED_QUADRATURE:
+        raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
+    return normalized
+
+
+def _trusted_positive_integer(value: Any, name: str) -> int:
+    """Return one positive exact integer without caller-controlled coercion."""
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
+        raise ValueError(f"{name} must be a positive integer")
+    if normalized < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return normalized
+
+
+def _trusted_positive_usize(value: Any, name: str) -> int:
+    """Return one positive integer representable by the native Rust usize."""
+    normalized = _trusted_positive_integer(value, name)
+    if normalized > _MAX_RUST_USIZE:
+        raise ValueError(f"{name} must fit Rust usize")
+    return normalized
+
+
+def _trusted_ld_theta_quadrature(value: Any) -> int:
+    """Return a positive embedded trait-grid size with LD-stable diagnostics."""
+    normalized = _trusted_positive_integer(value, "q_theta")
+    if normalized not in _SUPPORTED_QUADRATURE:
+        raise ValueError(f"q_theta must be one of {_SUPPORTED_QUADRATURE}")
+    return normalized
+
+
+def _trusted_ld_population(population: Any) -> None:
+    """Admit only the standard-normal single-population expectation contract."""
+    if population is None:
+        return
+    if type(population) is not dict:
+        raise ValueError("population must be None or {'kind': 'single'}")
+    keys = tuple(population.keys())
+    if len(keys) != 1 or type(keys[0]) is not str or keys[0] != "kind":
+        raise ValueError("population must be None or {'kind': 'single'}")
+    kind = population[keys[0]]
+    if type(kind) is not str or kind != "single":
+        raise ValueError("population currently supports only kind='single'")
+
+
+def _trusted_ld_factor_id(factor_id: Any) -> np.ndarray:
+    """Return a package-owned int64 factor vector without coercion callbacks."""
+    value_type = type(factor_id)
+    if value_type is np.ndarray:
+        if factor_id.ndim != 1 or factor_id.dtype.kind not in "iu":
+            raise ValueError("factor_id must be a 1-D integer array")
+        if factor_id.size and (
+            np.any(factor_id < 0) or np.any(factor_id > _MAX_I64)
+        ):
+            raise ValueError("factor_id values must fit non-negative int64")
+        normalized = np.array(factor_id, dtype=np.int64, copy=True, order="C")
+    elif value_type is list or value_type is tuple:
+        values: list[int] = []
+        for item in factor_id:
+            item_type = type(item)
+            if item_type is int:
+                normalized_item = item
+            elif any(
+                item_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+            ):
+                normalized_item = int(item)
+            else:
+                raise ValueError("factor_id must contain exact integer values")
+            if normalized_item < 0 or normalized_item > _MAX_I64:
+                raise ValueError("factor_id values must fit non-negative int64")
+            values.append(normalized_item)
+        normalized = np.asarray(values, dtype=np.int64)
+    else:
+        raise ValueError("factor_id must be a 1-D integer array")
+
+    if normalized.size and int(normalized.max()) >= int(normalized.size):
+        raise ValueError("factor_id values must be in 0..n_items-1")
+    return np.ascontiguousarray(normalized)
+
+
+def _ld_resource_preflight(
+    responses: Any,
+    params: Any,
+    model: Any,
+    q_theta: int,
+    q_xi: int,
+    n_items: int,
+) -> None:
+    """Bound LD probability storage and quadratic pair work before Rust dispatch."""
+    if type(responses) is not np.ndarray or responses.ndim != 2:
+        raise ValueError("responses must be a 2-D NumPy array for ld_indices")
+    if int(responses.shape[0]) == 0:
+        raise ValueError("responses must contain at least one person")
+    if int(responses.shape[1]) < 2:
+        raise ValueError("local-dependence indices need at least two items")
+    if int(responses.shape[1]) != n_items:
+        raise ValueError("factor_id length must match the number of response items")
+    if type(model) is not str:
+        raise ValueError("model must be a string")
+
+    zeta = getattr(params, "zeta", None)
+    if type(zeta) is not np.ndarray or zeta.ndim != 2 or int(zeta.shape[0]) != n_items:
+        raise ValueError("params.zeta must be a 2-D NumPy array aligned to items")
+    latent_dim = int(zeta.shape[1])
+    uses_space = model.upper() != "MIRT"
+    base_probability_cells = n_items * q_theta
+    max_n_x = _MAX_LD_PROBABILITY_CELLS // base_probability_cells
+    if uses_space:
+        if max_n_x < 1:
+            raise ValueError(
+                "ld_indices workspace exceeds the "
+                f"{_MAX_LD_PROBABILITY_CELLS:,}-probability-cell limit"
+            )
+        n_x = 1
+        if q_xi != 1:
+            for _ in range(latent_dim):
+                if q_xi > max_n_x // n_x:
+                    raise ValueError(
+                        "ld_indices workspace exceeds the "
+                        f"{_MAX_LD_PROBABILITY_CELLS:,}-probability-cell limit"
+                    )
+                n_x *= q_xi
+        probability_cells = base_probability_cells * n_x
+    else:
+        probability_cells = base_probability_cells
+    if probability_cells > _MAX_LD_PROBABILITY_CELLS:
+        raise ValueError(
+            "ld_indices workspace exceeds the "
+            f"{_MAX_LD_PROBABILITY_CELLS:,}-probability-cell limit"
+        )
+
+    pair_count = n_items * (n_items - 1) // 2
+    if pair_count > _MAX_LD_PAIR_COUNT:
+        raise ValueError(
+            f"ld_indices pair output exceeds the {_MAX_LD_PAIR_COUNT:,}-pair limit"
+        )
+    cell = probability_cells // n_items
+    if cell > _MAX_LD_PAIR_QUADRATURE_CELLS // pair_count:
+        raise ValueError(
+            "ld_indices pair-quadrature work exceeds the "
+            f"{_MAX_LD_PAIR_QUADRATURE_CELLS:,}-cell limit"
+        )
+    pair_person_cells = pair_count * int(responses.shape[0])
+    if pair_person_cells > _MAX_LD_PAIR_PERSON_CELLS:
+        raise ValueError(
+            "ld_indices pair-person work exceeds the "
+            f"{_MAX_LD_PAIR_PERSON_CELLS:,}-cell limit"
+        )
+
+
+def _validated_ld_result(
+    result: Any,
+    expected_item_count: int,
+) -> dict[str, np.ndarray]:
+    """Seal and replay the exact PyO3 LD result before conversion protocols."""
+    if type(result) is not dict:
+        raise RuntimeError("ld_indices native result must be an exact built-in dict")
+
+    result_snapshot = result.copy()
+    keys = tuple(result_snapshot)
+    if any(type(key) is not str for key in keys):
+        raise RuntimeError(
+            "ld_indices native result must contain exactly x2_signed and g2_signed"
+        )
+    key_set = frozenset(keys)
+    if not _LD_RESULT_KEYS.issubset(key_set):
+        raise RuntimeError("ld_indices native result is missing required pair evidence")
+    if len(keys) != 2 or key_set != _LD_RESULT_KEYS:
+        raise RuntimeError(
+            "ld_indices native result must contain exactly x2_signed and g2_signed"
+        )
+
+    x2_source = result_snapshot["x2_signed"]
+    g2_source = result_snapshot["g2_signed"]
+    if type(x2_source) is not list or type(g2_source) is not list:
+        raise RuntimeError("ld_indices native pair vectors must be exact built-in lists")
+
+    x2_snapshot = x2_source.copy()
+    g2_snapshot = g2_source.copy()
+    if len(x2_snapshot) != len(g2_snapshot):
+        raise RuntimeError(
+            "ld_indices native result must contain matching one-dimensional pair vectors"
+        )
+    if any(type(value) is not float for value in x2_snapshot) or any(
+        type(value) is not float for value in g2_snapshot
+    ):
+        raise RuntimeError(
+            "ld_indices native result must contain matching one-dimensional pair vectors"
+        )
+
+    pair_count = len(x2_snapshot)
+    discriminant = 1 + 8 * pair_count
+    root = isqrt(discriminant)
+    if pair_count < 1 or root * root != discriminant:
+        raise RuntimeError("ld_indices native result must have a triangular pair count")
+    expected_pairs = expected_item_count * (expected_item_count - 1) // 2
+    if pair_count != expected_pairs:
+        raise RuntimeError(
+            "ld_indices native pair count must match the admitted item count"
+        )
+
+    x2_signed = np.array(x2_snapshot, dtype=np.float64, copy=True, order="C")
+    g2_signed = np.array(g2_snapshot, dtype=np.float64, copy=True, order="C")
+    if np.any(np.isinf(x2_signed)) or np.any(np.isinf(g2_signed)):
+        raise RuntimeError("ld_indices native statistics must be finite or NaN")
+    return {"x2_signed": x2_signed, "g2_signed": g2_signed}
+
+
 def _validate_sx2_controls(
     q_theta: Any,
     q_xi: Any,
@@ -100,12 +335,10 @@ def _validate_sx2_controls(
     min_effect: Any,
 ) -> tuple[int, int, float, float, float]:
     """Validate S-X² scalar controls without executing caller callbacks."""
-    quadrature = []
-    for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
-        normalized = _trusted_integer(value, name)
-        if normalized not in _SUPPORTED_QUADRATURE:
-            raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
-        quadrature.append(normalized)
+    quadrature = [
+        _trusted_quadrature(q_theta, "q_theta"),
+        _trusted_quadrature(q_xi, "q_xi"),
+    ]
 
     numeric = []
     for name, value in (
@@ -279,28 +512,125 @@ def _bind_legacy_bh(function: Callable[..., Any]) -> None:
         _legacy_init.benjamini_hochberg = function
 
 
+def _bind_legacy_ld(function: Callable[..., Any]) -> None:
+    """Rebind the package-root compatibility export to hardened LD admission."""
+    from . import _legacy_init
+
+    if hasattr(_legacy_init, "ld_indices"):
+        _legacy_init.ld_indices = function
+
+
 def install(fitstats_module: ModuleType) -> None:
-    """Install callback-free S-X² controls and BH evidence admission."""
+    """Install callback-free fit-statistics control and BH evidence admission."""
     fitstats_module._validate_sx2_controls = _validate_sx2_controls
 
     current_bh: Callable[..., Any] = fitstats_module.benjamini_hochberg
     if getattr(current_bh, _BH_HARDENED_ATTR, False):
         _bind_legacy_bh(current_bh)
+    else:
+        original_bh = current_bh
+
+        @wraps(original_bh)
+        def safe_benjamini_hochberg(p_values: Any, q: Any = 0.05) -> np.ndarray:
+            """Validate BH threshold and probability evidence before Rust discovery."""
+            q_value = _trusted_real(q, "q")
+            if not np.isfinite(q_value) or not 0.0 < q_value <= 1.0:
+                raise ValueError("q must be in (0, 1]")
+            probabilities = _trusted_probability_array(p_values)
+            output_shape = probabilities.shape
+            flat_probabilities = np.ascontiguousarray(probabilities.ravel())
+            result = original_bh(flat_probabilities, q_value)
+            return np.asarray(result, dtype=bool).reshape(output_shape)
+
+        setattr(safe_benjamini_hochberg, _BH_HARDENED_ATTR, True)
+        fitstats_module.benjamini_hochberg = safe_benjamini_hochberg
+        _bind_legacy_bh(safe_benjamini_hochberg)
+
+    current_ld = getattr(fitstats_module, "ld_indices", None)
+    if current_ld is None:
         return
-    original_bh = current_bh
+    if getattr(current_ld, _LD_HARDENED_ATTR, False):
+        _bind_legacy_ld(current_ld)
+        return
+    original_ld = current_ld
 
-    @wraps(original_bh)
-    def safe_benjamini_hochberg(p_values: Any, q: Any = 0.05) -> np.ndarray:
-        """Validate BH threshold and probability evidence before Rust discovery."""
-        q_value = _trusted_real(q, "q")
-        if not np.isfinite(q_value) or not 0.0 < q_value <= 1.0:
-            raise ValueError("q must be in (0, 1]")
-        probabilities = _trusted_probability_array(p_values)
-        output_shape = probabilities.shape
-        flat_probabilities = np.ascontiguousarray(probabilities.ravel())
-        result = original_bh(flat_probabilities, q_value)
-        return np.asarray(result, dtype=bool).reshape(output_shape)
+    def safe_ld_indices(
+        responses: Any,
+        factor_id: Any,
+        params: Any,
+        model: Any,
+        mask: Any = None,
+        q_theta: Any = 21,
+        q_xi: Any = 11,
+        eps_distance: Any = 1e-8,
+        population: Any = None,
+    ) -> dict:
+        """Compute LD indices for an explicit standard-normal single population.
 
-    setattr(safe_benjamini_hochberg, _BH_HARDENED_ATTR, True)
-    fitstats_module.benjamini_hochberg = safe_benjamini_hochberg
-    _bind_legacy_bh(safe_benjamini_hochberg)
+        ``population=None`` is the backwards-compatible spelling of the
+        standard-normal single-population contract. Supplying population
+        metadata is recommended for fitted marginal models; any non-single
+        population fails closed until its fitted trait distribution is wired
+        into the Rust LD expectation kernel.
+        """
+        q_theta_value = _trusted_ld_theta_quadrature(q_theta)
+        q_xi_value = _trusted_positive_usize(q_xi, "q_xi")
+        eps_distance_value = _trusted_positive_real(eps_distance, "eps_distance")
+        _trusted_ld_population(population)
+        factor_id_value = _trusted_ld_factor_id(factor_id)
+        if factor_id_value.size and np.any(factor_id_value != 0):
+            raise ValueError(
+                "ld_indices currently supports one trait dimension (factor_id == 0)"
+            )
+        expected_item_count = int(factor_id_value.size)
+        _ld_resource_preflight(
+            responses,
+            params,
+            model,
+            q_theta_value,
+            q_xi_value,
+            expected_item_count,
+        )
+
+        core = fitstats_module._core_module()
+        if core is None or not hasattr(core, "ld_indices"):
+            raise RuntimeError("ld_indices requires the compiled Rust core")
+        y, observed, d_of_i = fitstats_module._prepare_dichotomous_diagnostic_inputs(
+            responses, factor_id_value, mask
+        )
+        n_persons, n_items = y.shape
+        if n_persons == 0:
+            raise ValueError("responses must contain at least one person")
+        if n_items < 2:
+            raise ValueError("local-dependence indices need at least two items")
+        n_dims = int(d_of_i.max()) + 1
+        bank = fitstats_module._bank_args(
+            params, d_of_i, model, n_dims, eps_distance_value
+        )
+        result = core.ld_indices(
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            np.zeros(n_dims),
+            np.ones(n_dims),
+            q_theta=q_theta_value,
+            xi_rule="gh",
+            q_xi=q_xi_value,
+        )
+        return _validated_ld_result(result, expected_item_count)
+
+    safe_ld_indices.__name__ = getattr(original_ld, "__name__", "ld_indices")
+    safe_ld_indices.__qualname__ = getattr(original_ld, "__qualname__", "ld_indices")
+    safe_ld_indices.__module__ = getattr(original_ld, "__module__", fitstats_module.__name__)
+    setattr(safe_ld_indices, _LD_HARDENED_ATTR, True)
+    fitstats_module.ld_indices = safe_ld_indices
+    _bind_legacy_ld(safe_ld_indices)

@@ -43,7 +43,10 @@ pub enum XiRule {
     MonteCarlo { n: usize, seed: u64 },
 }
 
-pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String> {
+/// Validate a latent-space rule and return its exact node cardinality without
+/// allocating the node grid. Resource preflights use this same native owner so
+/// rule support and model-work accounting cannot drift from node construction.
+pub(crate) fn xi_node_count(rule: XiRule, latent_dim: usize) -> Result<usize, String> {
     if !(1..=MAX_XI_LATENT_DIM).contains(&latent_dim) {
         return Err(format!(
             "latent_dim must be in 1..={MAX_XI_LATENT_DIM} for latent-space nodes"
@@ -51,16 +54,39 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
     }
     match rule {
         XiRule::GaussHermite { q_xi } => {
-            let (nodes, weights) =
-                gh_rule(q_xi).ok_or_else(|| format!("unsupported quadrature size {q_xi}"))?;
+            gh_rule(q_xi).ok_or_else(|| format!("unsupported quadrature size {q_xi}"))?;
             if latent_dim > 3 {
                 return Err(
                     "tensor Gauss-Hermite supports latent_dim <= 3; use Halton/MonteCarlo".into(),
                 );
             }
-            let n = q_xi
+            q_xi
                 .checked_pow(latent_dim as u32)
-                .ok_or("Gauss-Hermite node count overflows usize")?;
+                .ok_or_else(|| "Gauss-Hermite node count overflows usize".to_string())
+        }
+        XiRule::Halton { n, .. } => {
+            validate_stochastic_node_count("Halton", n)?;
+            if latent_dim > HALTON_PRIMES.len() {
+                return Err(format!(
+                    "Halton rule supports latent_dim <= {}",
+                    HALTON_PRIMES.len()
+                ));
+            }
+            Ok(n)
+        }
+        XiRule::MonteCarlo { n, .. } => {
+            validate_stochastic_node_count("MonteCarlo", n)?;
+            Ok(n)
+        }
+    }
+}
+
+pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String> {
+    let n = xi_node_count(rule, latent_dim)?;
+    match rule {
+        XiRule::GaussHermite { q_xi } => {
+            let (nodes, weights) =
+                gh_rule(q_xi).ok_or_else(|| format!("unsupported quadrature size {q_xi}"))?;
             let grid_len = n
                 .checked_mul(latent_dim)
                 .ok_or("Gauss-Hermite grid length overflows usize")?;
@@ -78,13 +104,9 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
             Ok(XiNodes { grid, logw })
         }
         XiRule::Halton { n, shift_seed } => {
-            let grid_len = checked_stochastic_grid_len("Halton", n, latent_dim)?;
-            if latent_dim > HALTON_PRIMES.len() {
-                return Err(format!(
-                    "Halton rule supports latent_dim <= {}",
-                    HALTON_PRIMES.len()
-                ));
-            }
+            let grid_len = n
+                .checked_mul(latent_dim)
+                .ok_or("Halton grid length overflows usize")?;
             let mut shift = vec![0.0_f64; latent_dim];
             if shift_seed != 0 {
                 let mut state = shift_seed;
@@ -109,7 +131,9 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
             })
         }
         XiRule::MonteCarlo { n, seed } => {
-            let grid_len = checked_stochastic_grid_len("MonteCarlo", n, latent_dim)?;
+            let grid_len = n
+                .checked_mul(latent_dim)
+                .ok_or("MonteCarlo grid length overflows usize")?;
             let mut state = seed.max(1);
             let mut grid = vec![0.0_f64; grid_len];
             for v in grid.iter_mut() {
@@ -124,7 +148,8 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
     }
 }
 
-fn checked_stochastic_grid_len(rule: &str, n: usize, latent_dim: usize) -> Result<usize, String> {
+/// Validate stochastic node cardinality without allocating its grid.
+fn validate_stochastic_node_count(rule: &str, n: usize) -> Result<(), String> {
     if n == 0 {
         return Err(format!("{rule} rule needs n >= 1"));
     }
@@ -133,8 +158,7 @@ fn checked_stochastic_grid_len(rule: &str, n: usize, latent_dim: usize) -> Resul
             "{rule} rule supports at most {MAX_XI_POINTS} points; got {n}"
         ));
     }
-    n.checked_mul(latent_dim)
-        .ok_or_else(|| format!("{rule} grid length overflows usize"))
+    Ok(())
 }
 
 const HALTON_PRIMES: [u64; 6] = [2, 3, 5, 7, 11, 13];

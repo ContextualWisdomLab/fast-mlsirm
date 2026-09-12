@@ -84,7 +84,14 @@ fn invalid_rules_rejected() {
 
 #[test]
 fn node_rules_reject_overflow_without_panicking() {
-    assert!(checked_stochastic_grid_len("test", 2, usize::MAX).is_err());
+    assert!(xi_node_count(
+        XiRule::Halton {
+            n: usize::MAX,
+            shift_seed: 0,
+        },
+        2,
+    )
+    .is_err());
     for rule in [
         XiRule::Halton {
             n: usize::MAX,
