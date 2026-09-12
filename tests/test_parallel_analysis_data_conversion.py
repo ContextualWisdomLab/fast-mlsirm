@@ -87,9 +87,10 @@ def test_over_rank_builtin_tree_is_rejected_without_recursive_preflight(
 ) -> None:
     """Known 2-D evidence must not recurse through arbitrarily deep containers."""
     core_calls = _forbid_native_discovery(monkeypatch)
-    data: object = 0.0
+    nested: object = 0.0
     for _ in range(1500):
-        data = [data]
+        nested = [nested]
+    data = [[nested, nested], [nested, nested], [nested, nested]]
 
     with pytest.raises(ValueError, match="data must be a 2-D persons x items array"):
         parallel_analysis(data, n_iterations=1)
@@ -102,7 +103,7 @@ def test_lossy_integer_matrix_is_rejected_before_native_discovery(
 ) -> None:
     """Observed integer identities cannot change during Rust-f64 marshalling."""
     core_calls = _forbid_native_discovery(monkeypatch)
-    data = np.array([[2**53 + 1, 0], [0, 1]], dtype=np.int64)
+    data = np.array([[2**53 + 1, 0], [0, 1], [1, 0]], dtype=np.int64)
 
     with pytest.raises(ValueError, match="data must be exactly representable as float64"):
         parallel_analysis(data, n_iterations=1)
@@ -120,7 +121,10 @@ def test_lossy_longdouble_matrix_is_rejected_before_native_discovery(
     core_calls = _forbid_native_discovery(monkeypatch)
     wider = np.nextafter(np.longdouble(1.0), np.longdouble(2.0))
     assert np.longdouble(float(wider)) != wider
-    data = np.array([[wider, np.longdouble(0.0)], [0.0, 1.0]], dtype=np.longdouble)
+    data = np.array(
+        [[wider, np.longdouble(0.0)], [0.0, 1.0], [1.0, 0.0]],
+        dtype=np.longdouble,
+    )
 
     with pytest.raises(ValueError, match="data must be exactly representable as float64"):
         parallel_analysis(data, n_iterations=1)
@@ -136,6 +140,7 @@ def test_mixed_builtin_matrix_rejects_lossy_scalar_before_numpy_promotion(
     data = [
         [np.uint64(2**53 + 1), np.float64(0.0)],
         [np.int16(0), np.float64(1.0)],
+        [np.int16(1), np.float64(0.0)],
     ]
 
     with pytest.raises(ValueError, match="data must be exactly representable as float64"):
@@ -175,17 +180,19 @@ def test_builtin_matrix_with_numpy_scalars_reaches_rust_as_float64(
     data = [
         [np.float32(1.0), np.int16(0)],
         [np.uint8(0), np.float64(1.0)],
+        [np.int8(1), np.float32(0.0)],
     ]
 
     result = parallel_analysis(data, n_iterations=np.int16(1), seed=np.uint8(2))
 
     assert result.retained == 1
-    assert captured["shape"] == (2, 2)
+    assert captured["shape"] == (3, 2)
     assert captured["controls"] == (1, 0, 2)
     assert isinstance(captured["data"], np.ndarray)
     assert captured["data"].dtype == np.float64
     np.testing.assert_array_equal(
-        captured["data"], np.array([1.0, 0.0, 0.0, 1.0], dtype=np.float64)
+        captured["data"],
+        np.array([1.0, 0.0, 0.0, 1.0, 1.0, 0.0], dtype=np.float64),
     )
 
 
@@ -194,7 +201,10 @@ def test_non_numeric_data_conversion_fails_before_native_discovery(
 ) -> None:
     """Normalize invalid storage to a package ValueError before Rust lookup."""
     core_calls = _forbid_native_discovery(monkeypatch)
-    data = np.array([[object()]], dtype=object)
+    data = np.array(
+        [[object(), object()], [object(), object()], [object(), object()]],
+        dtype=object,
+    )
 
     with pytest.raises(ValueError, match="data must be numeric and convertible to float64"):
         parallel_analysis(data, n_iterations=1)
@@ -207,7 +217,10 @@ def test_complex_data_is_rejected_before_lossy_projection_or_native_discovery(
 ) -> None:
     """Do not discard imaginary observed evidence before Horn retention."""
     core_calls = _forbid_native_discovery(monkeypatch)
-    data = np.array([[1.0 + 2.0j, 0.0], [0.0, 1.0]], dtype=np.complex128)
+    data = np.array(
+        [[1.0 + 2.0j, 0.0], [0.0, 1.0], [1.0 + 0.0j, 0.0]],
+        dtype=np.complex128,
+    )
 
     with pytest.raises(ValueError, match="data must be real-valued"):
         parallel_analysis(data, n_iterations=1)
@@ -221,7 +234,10 @@ def test_object_storage_is_rejected_without_element_numeric_conversion(
     """Reject object storage before caller-defined ``__float__`` can execute."""
     core_calls = _forbid_native_discovery(monkeypatch)
     bomb = _FloatBomb()
-    data = np.array([[bomb, bomb], [bomb, bomb]], dtype=object)
+    data = np.array(
+        [[bomb, bomb], [bomb, bomb], [bomb, bomb]],
+        dtype=object,
+    )
 
     with pytest.raises(ValueError, match="data must be numeric and convertible to float64"):
         parallel_analysis(data, n_iterations=1)
