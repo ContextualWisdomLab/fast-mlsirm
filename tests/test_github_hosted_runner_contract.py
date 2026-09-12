@@ -51,8 +51,12 @@ def test_required_pr_workflows_use_explicit_ubuntu_2404() -> None:
     """Require every Linux runner in the repository-owned PR gates to be pinned."""
     for workflow in PR_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
-        assert FLOATING_RUNNER_ASSIGNMENT.search(source) is None, workflow
-        assert "runs-on: ubuntu-24.04" in source, workflow
+        runners = re.findall(
+            r"(?m)^\s*runs-on:\s*(ubuntu-[^\s#]+)",
+            source,
+        )
+        assert runners, workflow
+        assert set(runners) == {"ubuntu-24.04"}, (workflow, runners)
 
 
 def test_workflow_inventory_includes_yml_and_yaml(tmp_path: Path) -> None:
