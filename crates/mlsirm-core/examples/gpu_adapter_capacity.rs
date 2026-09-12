@@ -1,6 +1,6 @@
 use wgpu::{Backends, InstanceDescriptor, InstanceFlags, RequestAdapterOptions};
 
-const REQUIRED_STORAGE_BUFFERS_PER_STAGE: u32 = 18;
+const REQUIRED_STORAGE_BUFFERS_PER_STAGE: u32 = 8;
 const REQUIRED_UNIFORM_BUFFERS_PER_STAGE: u32 = 1;
 const REQUIRED_BUFFERS_PER_STAGE: u32 =
     REQUIRED_STORAGE_BUFFERS_PER_STAGE + REQUIRED_UNIFORM_BUFFERS_PER_STAGE;
@@ -37,19 +37,19 @@ fn main() {
 
     assert!(
         limits.max_storage_buffers_per_shader_stage >= REQUIRED_STORAGE_BUFFERS_PER_STAGE,
-        "marginal GPU requires at least {REQUIRED_STORAGE_BUFFERS_PER_STAGE} storage buffers per shader stage; adapter {:?} exposes {}",
+        "packed marginal GPU requires at least {REQUIRED_STORAGE_BUFFERS_PER_STAGE} storage buffers per shader stage; adapter {:?} exposes {}",
         info.name,
         limits.max_storage_buffers_per_shader_stage,
     );
     assert!(
         limits.max_uniform_buffers_per_shader_stage >= REQUIRED_UNIFORM_BUFFERS_PER_STAGE,
-        "marginal GPU requires at least {REQUIRED_UNIFORM_BUFFERS_PER_STAGE} uniform buffer per shader stage; adapter {:?} exposes {}",
+        "packed marginal GPU requires at least {REQUIRED_UNIFORM_BUFFERS_PER_STAGE} uniform buffer per shader stage; adapter {:?} exposes {}",
         info.name,
         limits.max_uniform_buffers_per_shader_stage,
     );
     assert!(
         limits.max_buffers_and_acceleration_structures_per_shader_stage >= REQUIRED_BUFFERS_PER_STAGE,
-        "marginal GPU requires at least {REQUIRED_BUFFERS_PER_STAGE} combined buffer/acceleration-structure bindings per shader stage; adapter {:?} exposes {}",
+        "packed marginal GPU requires at least {REQUIRED_BUFFERS_PER_STAGE} combined buffer/acceleration-structure bindings per shader stage; adapter {:?} exposes {}",
         info.name,
         limits.max_buffers_and_acceleration_structures_per_shader_stage,
     );
