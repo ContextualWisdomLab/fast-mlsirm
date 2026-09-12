@@ -23,6 +23,8 @@ def test_current_release_guides_use_price_neutral_readiness() -> None:
     commercial_guide = _read("docs/commercial_readiness.md")
     enterprise_guide = _read("docs/enterprise_sales_readiness.md")
     release_prose = _normalized_prose(release_guide)
+    commercial_prose = _normalized_prose(commercial_guide)
+    enterprise_prose = _normalized_prose(enterprise_guide)
 
     assert "--require-acquisition-readiness" in release_guide
     assert "--require-acquisition-readiness" in commercial_guide
@@ -33,6 +35,10 @@ def test_current_release_guides_use_price_neutral_readiness() -> None:
     assert "python scripts/build_commercial_release.py" not in release_guide
     assert "configured evidence profile is complete and internally consistent" in release_prose
     assert "does **not** prove a valuation" in release_prose
+    assert "current gate is **evidence completeness**, not a monetary target" in commercial_prose
+    assert "transaction metadata rather than a product-quality threshold" in commercial_prose
+    assert "price-neutral acquisition orchestrator" in enterprise_prose
+    assert "evidence metadata, not a quality threshold" in enterprise_prose
     assert "For KRW 2,000,000,000 enterprise sales review" not in release_guide
     assert "The KRW 2,000,000,000 sales-readiness standard" not in commercial_guide
     assert "For the KRW 2,000,000,000 product-readiness standard" not in enterprise_guide
