@@ -151,38 +151,76 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+import base64
+import hashlib
+
 def _content_security_policy() -> str:
     """Return the restrictive policy used by the self-contained HTML report."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    css_bytes = _report_css().encode("utf-8")
+    css_hash = base64.b64encode(hashlib.sha256(css_bytes).digest()).decode("ascii")
+    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'"
 
 
 def _report_css() -> str:
     """Return the small inline stylesheet used by the Figma evidence report."""
     return """
-:root { color: #172026; background: #f5f7f8; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+:root {
+  --text: #172026; --bg: #f5f7f8;
+  --hero-bg: #12343b; --hero-text: #fff;
+  --hero-accent1: #b7d7d0; --hero-accent2: #dce8e5;
+  --card-bg: #fff; --border: #d8e1e3;
+  --meta-text: #5e6f76;
+  --focus-ring: #0f766e;
+  --table-border: #e8edef; --hover-bg: #fbfcfa;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text); background: var(--bg);
+}
+@media screen and (prefers-color-scheme: dark) {
+  :root {
+    --text: #e2e8f0; --bg: #0f172a;
+    --hero-bg: #1e293b; --hero-text: #f8fafc;
+    --hero-accent1: #94a3b8; --hero-accent2: #cbd5e1;
+    --card-bg: #1e293b; --border: #334155;
+    --meta-text: #94a3b8;
+    --focus-ring: #2dd4bf;
+    --table-border: #334155; --hover-bg: #334155;
+  }
+}
+
+@media print {
+  :root {
+    --text: #172026; --bg: #f5f7f8;
+    --hero-bg: #12343b; --hero-text: #fff;
+    --hero-accent1: #b7d7d0; --hero-accent2: #dce8e5;
+    --card-bg: #fff; --border: #d8e1e3;
+    --meta-text: #5e6f76;
+    --focus-ring: #0f766e;
+    --table-border: #e8edef; --hover-bg: #fbfcfa;
+  }
+}
 * { box-sizing: border-box; }
 body { margin: 0; }
 main { max-width: 1120px; margin: 0 auto; padding: 32px 20px 56px; }
-.hero { background: #12343b; color: #fff; border-radius: 8px; padding: 28px; }
+.hero { background: var(--hero-bg); color: var(--hero-text); border-radius: 8px; padding: 28px; }
 .hero p, .hero h1 { margin: 0; }
-.hero p { color: #b7d7d0; font-size: 0.86rem; font-weight: 700; text-transform: uppercase; }
+.hero p { color: var(--hero-accent1); font-size: 0.86rem; font-weight: 700; text-transform: uppercase; }
 .hero h1 { margin-top: 8px; font-size: 2rem; }
-.hero span { display: inline-block; margin-top: 14px; color: #dce8e5; }
-.report-section { margin-top: 22px; background: #fff; border: 1px solid #d8e1e3; border-radius: 8px; padding: 22px; }
+.hero span { display: inline-block; margin-top: 14px; color: var(--hero-accent2); }
+.report-section { margin-top: 22px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 22px; }
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-.metric-card { border: 1px solid #d8e1e3; border-radius: 8px; padding: 14px; }
-.metric-card span { display: block; color: #5e6f76; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
+.metric-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.metric-card span { display: block; color: var(--meta-text); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
 .metric-card strong { display: block; margin-top: 8px; overflow-wrap: anywhere; }
-.table-wrap { overflow-x: auto; border: 1px solid #d8e1e3; border-radius: 8px; }
-.table-wrap:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.table-wrap:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
 caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-th, td { padding: 10px 12px; border-bottom: 1px solid #e8edef; text-align: left; vertical-align: top;
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--table-border); text-align: left; vertical-align: top;
   font-variant-numeric: tabular-nums; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
-tbody tr:hover { background: #fbfcfa; }
+tbody tr:hover { background: var(--hover-bg); }
 code { overflow-wrap: anywhere; }
-.note { color: #5e6f76; margin-bottom: 0; }
+.note { color: var(--meta-text); margin-bottom: 0; }
 
 /* Non-zero durations keep transitionend/animationend events firing. */
 @media (prefers-reduced-motion: reduce) {
@@ -260,9 +298,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
             "<title>fast-mlsirm Figma Evidence Sync</title>",
-            "<style>",
-            _report_css(),
-            "</style>",
+            f"<style>{_report_css()}</style>",
             "</head>",
             "<body><main>",
             '<section class="hero"><p>fast-mlsirm design evidence</p><h1>Figma Evidence Sync</h1>',
