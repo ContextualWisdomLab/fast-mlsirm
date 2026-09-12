@@ -100,10 +100,10 @@ class _FakeCore:
         """Record controls and return the smallest valid fit result."""
         self.controls = (n_cat, q_theta, max_iter, tol)
         return {
-            "item_location": np.zeros(n_items),
-            "thresholds": np.zeros(n_cat - 1),
-            "theta": np.zeros(n_persons),
-            "loglik_trace": np.zeros(1),
+            "item_location": [0.0] * n_items,
+            "thresholds": [0.0] * (n_cat - 1),
+            "theta": [0.0] * n_persons,
+            "loglik_trace": [0.0],
             "n_iter": 1,
             "converged": True,
             "n_parameters": n_items + n_cat - 2,
