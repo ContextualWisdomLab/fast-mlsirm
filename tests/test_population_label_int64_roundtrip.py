@@ -2,12 +2,118 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import warnings
 
 import numpy as np
 import pytest
 
 from fast_mlsirm.fit import _compact_population_labels
+
+
+def test_population_labels_reject_top_level_array_provider_without_callback() -> None:
+    """Population membership must not be synthesized through caller ``__array__``."""
+
+    class ArrayProvider:
+        calls = 0
+
+        def __array__(self, dtype=None):
+            type(self).calls += 1
+            return np.array([0, 1], dtype=np.int64)
+
+    provider = ArrayProvider()
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(provider, 2, "group_id")
+
+    assert ArrayProvider.calls == 0
+
+
+def test_population_labels_reject_object_array_float_provider_without_callback() -> None:
+    """Object-array elements must not gain authority through caller ``__float__``."""
+
+    class FloatProvider:
+        calls = 0
+
+        def __float__(self):
+            type(self).calls += 1
+            return 0.0
+
+    labels = np.array([FloatProvider(), 1], dtype=object)
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(labels, 2, "group_id")
+
+    assert FloatProvider.calls == 0
+
+
+def test_population_labels_preserve_callback_free_scalar_sequence() -> None:
+    """Concrete Python/NumPy scalar sequences keep sorted-unique compaction."""
+
+    labels = [np.int32(4), np.float32(2.0), True, 4]
+    ids, n_populations = _compact_population_labels(labels, 4, "group_id")
+
+    assert n_populations == 3
+    assert ids.tolist() == [2, 1, 0, 2]
+
+
+def test_population_labels_reject_wrong_length_builtin_before_scalar_validation() -> None:
+    """Known built-in length mismatches fail before scalar traversal/normalization."""
+
+    labels = [object()]
+    with pytest.raises(
+        ValueError,
+        match=r"group_id must be a 1-D array of length n_persons \(2\)",
+    ):
+        _compact_population_labels(labels, 2, "group_id")
+
+
+def test_population_labels_reject_ndarray_subclass_before_array_protocol() -> None:
+    """Container subclasses cannot replace the trusted ndarray carrier."""
+
+    class ArraySubclass(np.ndarray):
+        calls = 0
+
+        def __array__(self, dtype=None, copy=None):
+            del dtype, copy
+            type(self).calls += 1
+            return np.array([0, 1], dtype=np.int64)
+
+    labels = np.array([0, 1], dtype=np.int64).view(ArraySubclass)
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(labels, 2, "group_id")
+
+    assert ArraySubclass.calls == 0
+
+
+def test_population_labels_reject_container_and_scalar_subclasses() -> None:
+    """Exact built-in containers and numeric scalars are the only sequences."""
+
+    class ListSubclass(list):
+        pass
+
+    class IntSubclass(int):
+        calls = 0
+
+        def __int__(self):
+            type(self).calls += 1
+            return super().__int__()
+
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(ListSubclass([0, 1]), 2, "group_id")
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels([IntSubclass(0), 1], 2, "group_id")
+
+    assert IntSubclass.calls == 0
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [np.array(["0", "1"]), np.array([object(), object()], dtype=object)],
+)
+def test_population_labels_reject_string_and_object_storage(labels: np.ndarray) -> None:
+    """Non-numeric ndarray storage is rejected without element coercion."""
+    with pytest.raises(ValueError, match="group_id"):
+        _compact_population_labels(labels, 2, "group_id")
 
 
 def test_population_labels_reject_unsigned_int64_narrowing_overflow() -> None:
@@ -36,6 +142,14 @@ def test_population_labels_reject_integer_sequence_at_signed_boundary() -> None:
         _compact_population_labels(labels, 2, "group_id")
 
 
+def test_population_labels_reject_integer_sequence_below_signed_boundary() -> None:
+    """A Python sequence below INT64_MIN must keep the signed-range diagnostic."""
+    labels = [0, -(2**63) - 1]
+
+    with pytest.raises(ValueError, match="signed 64-bit"):
+        _compact_population_labels(labels, 2, "group_id")
+
+
 def test_population_labels_preserve_signed_int64_upper_boundary() -> None:
     """The largest valid signed label remains admissible and order preserving."""
     labels = np.array([0, np.iinfo(np.int64).max], dtype=np.int64)
@@ -49,7 +163,7 @@ def test_population_labels_preserve_signed_int64_upper_boundary() -> None:
 def test_population_labels_preserve_extended_precision_int64_upper_boundary() -> None:
     """A wider real dtype must preserve an exactly representable INT64_MAX label."""
     if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
-        pytest.skip("np.longdouble has no additional precision on this platform")
+        pytest.fail("np.longdouble has no additional precision on this platform")
 
     labels = np.array(
         [np.longdouble(0), np.longdouble(np.iinfo(np.int64).max)],
@@ -72,3 +186,21 @@ def test_population_labels_preserve_float16_without_boundary_warning() -> None:
 
     assert n_populations == 2
     assert ids.tolist() == [0, 1]
+
+
+def test_population_labels_preserve_mixed_sequence_identity_before_numpy_promotion() -> None:
+    """Heterogeneous exact labels must not collapse through float64 promotion."""
+    labels = [2**53 + 1, float(2**53)]
+
+    ids, n_populations = _compact_population_labels(labels, 2, "group_id")
+
+    assert n_populations == 2
+    assert ids.tolist() == [1, 0]
+
+
+def test_public_fit_keeps_executable_paths_in_coverage_denominator() -> None:
+    """The public fit orchestration must not hide executable paths from coverage."""
+    fit_module = importlib.import_module("fast_mlsirm.fit")
+    source = inspect.getsource(fit_module.fit)
+
+    assert "# pragma: no cover" not in source
