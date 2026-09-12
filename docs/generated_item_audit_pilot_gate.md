@@ -13,6 +13,7 @@ generation contract
   -> strict provider-output parser
   -> immutable GeneratedItemCandidate
   -> deterministic CandidateAuditReport
+  -> CandidateScreeningResult
   -> replay-verified pilot admission
   -> factory-sealed PilotCandidateRecord
 ```
@@ -25,8 +26,9 @@ Generated content may occupy only these states in this slice:
    finding;
 2. `audited`: deterministic screening has no unresolved blocking or
    review-required finding; and
-3. `pilot`: an unchanged audited candidate is admitted through an exact
-   candidate/audit fingerprint binding.
+3. `pilot`: an unchanged audited candidate is admitted only after a complete,
+   pilot-eligible `CandidateScreeningResult` is bound to the exact
+   candidate/audit fingerprints.
 
 An audit report cannot assign `pilot` directly. `build_pilot_candidate_record`
 rejects a stale report, a changed candidate, any report that remains in
@@ -34,11 +36,26 @@ rejects a stale report, a changed candidate, any report that remains in
 installed package. Before admission, it reruns the named package policy over
 the exact candidate and requires the complete report fingerprint to match.
 This prevents callers from constructing a clean-looking report that hides real
-findings. The public `PilotCandidateRecord` also rejects ordinary direct
+findings. It then requires a factory-created screening result with exactly one
+decision for every governed semantic dimension, rejects review-required or
+blocking screening decisions, and binds that result fingerprint into the
+pilot record. The public `PilotCandidateRecord` also rejects ordinary direct
 construction, so supported callers must pass through the replay-verified
 factory. The pilot record requires descriptive nonnumeric identifiers for the
 pilot study, query/testlet, generator family, judge policy, occasion, item,
-blueprint, and rubric.
+blueprint, and rubric, plus the exact screening-result identity.
+
+The screening-bound pilot record is a distinct serialized contract:
+`schema_version="2.0"` and the public admission/audit policy is
+`AUDIT_POLICY_VERSION="2.0.0"`. The shared rubric/blueprint schema remains at
+its own version; pilot admission does not silently re-version unrelated rubric
+contracts. Legacy pilot-record payloads advertising `schema_version="1.0"`
+lack the mandatory screening-result binding and are rejected explicitly rather
+than being interpreted as current records. This package does not expose a
+pilot-record deserializer/migration API, so callers that retain legacy payloads
+must preserve them as historical evidence and create a new current admission
+through the verified screening-and-audit path when a current pilot record is
+required.
 
 The factory seal is an API-governance boundary, not a cryptographic capability
 inside a hostile Python process. Downstream services must verify the complete
@@ -67,15 +84,15 @@ implemented logic.
 
 ## Scientific and product boundary
 
-These lexical and structural checks are governance signals, not semantic
-validity evidence. A clean report does **not** claim that the item is
-answerable, construct-relevant, unbiased, calibrated, scoreable, or suitable
-for high-stakes use. Human review, pilot response collection, Rust-backed
-measurement, DIF/fairness analysis, recovery studies, and validity evidence
-remain mandatory downstream gates.
+These lexical, structural, and semantic-screening records are governance
+signals, not psychometric validity evidence. A pilot-eligible screening result
+does **not** claim that the item is calibrated, scoreable, unbiased, or
+suitable for high-stakes use. Human review, pilot response collection,
+Rust-backed measurement, DIF/fairness analysis, recovery studies, and validity
+evidence remain mandatory downstream gates.
 
 The next issue #407 slices should add immutable audit-resolution evidence,
-semantic duplicate and answerability protocols with offline fixtures, and a
-deterministic conversion from admitted candidates into the existing
-respondent/item/rater observation contracts used by facet, MIRT, testlet,
-DIF, and G-theory APIs.
+provider-neutral evaluator adapters and offline fixtures for semantic duplicate
+and answerability protocols, and a deterministic conversion from admitted
+candidates into the existing respondent/item/rater observation contracts used
+by facet, MIRT, testlet, DIF, and G-theory APIs.

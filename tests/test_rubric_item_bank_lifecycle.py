@@ -36,6 +36,7 @@ def _pilot_record() -> PilotCandidateRecord:
     return build_pilot_candidate_record(
         candidate,
         report,
+        screening_result=_AUDIT_FIXTURES["_screening_result"](candidate, report),
         **_AUDIT_FIXTURES["_pilot_kwargs"](),
     )
 

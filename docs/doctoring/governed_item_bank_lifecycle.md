@@ -9,6 +9,7 @@ The existing rubric, generated-candidate audit, and verified pilot-admission con
 ```text
 GeneratedItemCandidate
   -> CandidateAuditReport
+  -> CandidateScreeningResult
   -> PilotCandidateRecord
   -> ItemBankLifecycleRecord(piloting)
 ```

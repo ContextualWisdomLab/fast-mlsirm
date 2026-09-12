@@ -55,6 +55,7 @@ def _lifecycle(*, include_linking: bool = False):
     pilot_candidate = build_pilot_candidate_record(
         candidate,
         audit_report,
+        screening_result=_AUDIT_FIXTURES["_screening_result"](candidate, audit_report),
         **_AUDIT_FIXTURES["_pilot_kwargs"](),
     )
     pilot = build_item_bank_pilot_record(
