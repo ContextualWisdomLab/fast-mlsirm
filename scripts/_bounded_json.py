@@ -2,13 +2,15 @@
 
 The module opens the requested leaf without following symbolic links where the
 platform supports that flag, validates the opened descriptor as a stable regular
-file, performs one bounded read, validates structural depth without recursion,
-then delegates syntax and value construction to :mod:`json`.
+file, performs a bounded read, verifies mutation-sensitive descriptor metadata,
+then re-reads the same descriptor and requires identical bytes before validating
+structural depth and delegating syntax/value construction to :mod:`json`.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import stat
 from pathlib import Path
@@ -21,6 +23,7 @@ _SAFE_OPEN_ERROR = "JSON input could not be opened as a stable regular file"
 _UNSTABLE_PATH_ERROR = "JSON input path changed during the bounded read"
 _DUPLICATE_MEMBER_ERROR = "JSON input contains a duplicate JSON object member"
 _NONFINITE_NUMBER_ERROR = "JSON input contains a non-finite JSON numeric value"
+_INTEGER_CONVERSION_ERROR = "JSON input exceeds decoder integer conversion capacity"
 
 
 def _positive_limit(value: object, field_name: str) -> int:
@@ -43,6 +46,19 @@ def _open_flags() -> int:
 def _descriptor_identity(file_status: os.stat_result) -> tuple[int, int]:
     """Return the device and inode identity for one stat result."""
     return file_status.st_dev, file_status.st_ino
+
+
+def _descriptor_snapshot(
+    file_status: os.stat_result,
+) -> tuple[int, int, int, int, int]:
+    """Return identity plus mutation-sensitive metadata for one descriptor."""
+    return (
+        file_status.st_dev,
+        file_status.st_ino,
+        file_status.st_size,
+        file_status.st_mtime_ns,
+        file_status.st_ctime_ns,
+    )
 
 
 def _validate_path_identity(path: Path, descriptor_status: os.stat_result) -> None:
@@ -73,6 +89,14 @@ def _read_bounded_descriptor(file_descriptor: int, *, byte_limit: int) -> bytes:
     return content
 
 
+def _rewind_descriptor(file_descriptor: int) -> None:
+    """Rewind an admitted regular descriptor for content confirmation."""
+    try:
+        os.lseek(file_descriptor, 0, os.SEEK_SET)
+    except OSError:
+        raise ValueError(_UNSTABLE_PATH_ERROR) from None
+
+
 def _read_stable_regular_file(path: Path, *, byte_limit: int) -> bytes:
     """Open, identify, and bounded-read one stable regular file."""
     try:
@@ -85,7 +109,27 @@ def _read_stable_regular_file(path: Path, *, byte_limit: int) -> bytes:
             raise ValueError(_SAFE_OPEN_ERROR)
         _validate_path_identity(path, descriptor_status)
         content = _read_bounded_descriptor(file_descriptor, byte_limit=byte_limit)
-        _validate_path_identity(path, descriptor_status)
+        post_read_status = os.fstat(file_descriptor)
+        if _descriptor_snapshot(post_read_status) != _descriptor_snapshot(
+            descriptor_status
+        ):
+            raise ValueError(_UNSTABLE_PATH_ERROR)
+
+        _rewind_descriptor(file_descriptor)
+        try:
+            confirmed_content = _read_bounded_descriptor(
+                file_descriptor, byte_limit=byte_limit
+            )
+        except ValueError:
+            raise ValueError(_UNSTABLE_PATH_ERROR) from None
+        final_descriptor_status = os.fstat(file_descriptor)
+        if (
+            _descriptor_snapshot(final_descriptor_status)
+            != _descriptor_snapshot(descriptor_status)
+            or confirmed_content != content
+        ):
+            raise ValueError(_UNSTABLE_PATH_ERROR)
+        _validate_path_identity(path, final_descriptor_status)
         return content
     finally:
         os.close(file_descriptor)
@@ -122,6 +166,22 @@ def _reject_nonfinite_constant(_: str) -> None:
     raise ValueError(_NONFINITE_NUMBER_ERROR)
 
 
+def _parse_finite_float(value: str) -> float:
+    """Parse one JSON float token while rejecting exponent overflow to infinity."""
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError(_NONFINITE_NUMBER_ERROR)
+    return parsed
+
+
+def _parse_bounded_integer(value: str) -> int:
+    """Parse one JSON integer while preserving CPython's conversion safety limit."""
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(_INTEGER_CONVERSION_ERROR) from None
+
+
 def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     """Build one JSON object while rejecting repeated member names."""
     result: dict[str, Any] = {}
@@ -138,6 +198,8 @@ def _loads_interoperable_json(content: str) -> Any:
         content,
         object_pairs_hook=_reject_duplicate_members,
         parse_constant=_reject_nonfinite_constant,
+        parse_float=_parse_finite_float,
+        parse_int=_parse_bounded_integer,
     )
 
 
@@ -198,15 +260,21 @@ def parse_json_bounded(
 
     Raises:
         TypeError: If ``content`` is not an exact built-in string.
-        ValueError: If limits are invalid or exceeded, JSON syntax is invalid,
-            or decoder recursion fails.
+        ValueError: If limits are invalid or exceeded, input is not encodable
+            as UTF-8, JSON syntax is invalid, or decoder recursion fails.
     """
     byte_limit = _positive_limit(max_bytes, "max_bytes")
     depth_limit = _positive_limit(max_depth, "max_depth")
     if type(content) is not str:
         raise TypeError("content must be str")
 
-    encoded = content.encode("utf-8")
+    if len(content) > byte_limit:
+        raise ValueError(f"JSON input exceeds maximum allowed size {byte_limit} bytes")
+
+    try:
+        encoded = content.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("JSON input is not valid UTF-8") from None
     if len(encoded) > byte_limit:
         raise ValueError(f"JSON input exceeds maximum allowed size {byte_limit} bytes")
 
