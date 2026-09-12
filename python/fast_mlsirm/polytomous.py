@@ -557,6 +557,7 @@ def fit_lsirm_polytomous(
         validated_q_xi = _fit_xi_quadrature_points(q_xi)
     except ValueError as exc:
         raise ValueError(
+            "q_theta/q_xi must be one of the supported rules; "
             "q_theta must be one of 7, 11, 15, 21, 31, 41, 61; "
             "q_xi must be one of 7, 11, 15, 21, 31, 41"
         ) from exc
