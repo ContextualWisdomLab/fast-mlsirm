@@ -11,7 +11,6 @@ import pytest
 from fast_mlsirm import CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
-    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     MAX_BINARY_THRESHOLD_CALLS,
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -1128,3 +1127,31 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+
+def test_judge_rejects_nonfinite_constants():
+    from fast_mlsirm.llm_judge import _response_object
+    from fast_mlsirm.llm_judge import JudgeFormatError
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numeric value"):
+        _response_object('{"score": NaN}', required_fields={"score"})
+
+def test_judge_rejects_duplicate_keys():
+    from fast_mlsirm.llm_judge import _response_object
+    from fast_mlsirm.llm_judge import JudgeFormatError
+    with pytest.raises(JudgeFormatError, match="judge response contains duplicate JSON object keys"):
+        _response_object('{"score": 1, "score": 2}', required_fields={"score"})
+
+def test_judge_rejects_negative_infinity():
+    from fast_mlsirm.llm_judge import _response_object, JudgeFormatError
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numeric value"):
+        _response_object('{"score": -Infinity}', required_fields={"score"})
+
+def test_judge_rejects_infinity():
+    from fast_mlsirm.llm_judge import _response_object, JudgeFormatError
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numeric value"):
+        _response_object('{"score": Infinity}', required_fields={"score"})
+
+def test_judge_rejects_nan():
+    from fast_mlsirm.llm_judge import _response_object, JudgeFormatError
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numeric value"):
+        _response_object('{"score": NaN}', required_fields={"score"})

@@ -12,7 +12,6 @@ from fast_mlsirm.rubric import (
     CandidateValidationError,
     DifficultyBand,
     EvidenceMode,
-    GenerationRequest,
     ResponseFormat,
     RubricLevel,
     RubricSpecification,
@@ -629,3 +628,9 @@ def test_executor_rejects_non_protocol_invalid_metadata_and_wrong_request():
         execute_generation(BadMetadataProvider(), _request())
     with pytest.raises(TypeError, match="request must be a GenerationRequest"):
         execute_generation(BadMetadataProvider(), object())
+
+
+def test_generation_rejects_duplicate_keys():
+    from fast_mlsirm.rubric.generation import _contract_object
+    with pytest.raises(ValueError, match="Duplicate JSON keys are not allowed"):
+        _contract_object('{"description": "A", "description": "B"}')

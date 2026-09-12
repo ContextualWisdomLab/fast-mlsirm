@@ -109,14 +109,38 @@ def _validate_contract_depth(content: str) -> None:
             depth -= 1
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    d = {}
+    for k, v in pairs:
+        if k in d:
+            raise ValueError("Duplicate JSON keys are not allowed")
+        d[k] = v
+    return d
+
+
+def _reject_nonfinite_json(_literal: str) -> float:
+    raise ValueError("Non-finite numerical values are not allowed in JSON")
+
+
 def _contract_object(contract_json: str) -> dict[str, Any]:
-    """Parse canonical contract JSON and require a top-level object."""
+    """
+    Parse canonical contract JSON and require a top-level object.
+    Enforces strict deserialization to prevent JSON smuggling and non-finite DoS.
+    """
     if type(contract_json) is not str or not contract_json:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
     try:
-        contract = json.loads(contract_json)
-    except (TypeError, ValueError) as exc:
+        contract = json.loads(
+            contract_json,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_nonfinite_json,
+        )
+    except ValueError as exc:
+        if "Duplicate JSON keys" in str(exc) or "Non-finite" in str(exc):
+            raise
+        raise ValueError("contract_json must be valid JSON text") from exc
+    except TypeError as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
         raise ValueError("contract_json must encode a JSON object")
