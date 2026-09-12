@@ -36,6 +36,7 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 from ._serving_export_safety import install as _install_serving_export_safety
 from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
 from .interaction_map import residual_interaction_map as residual_interaction_map
+from .metering import CanonicalComputeUsageSink
 from .sampling_design import (
     ACHIEVED_PROPORTION_SCHEMA_VERSION as ACHIEVED_PROPORTION_SCHEMA_VERSION,
 )
@@ -263,6 +264,7 @@ __all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
+    "CanonicalComputeUsageSink",
     "RotationCriterionInfo",
     "RotationSolution",
     "available_rotation_criteria",
