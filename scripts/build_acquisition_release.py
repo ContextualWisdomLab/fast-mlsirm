@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -321,6 +322,20 @@ def _require_candidate_sources_unchanged(
             raise RuntimeError(f"candidate artifact changed after staging: {path}")
 
 
+def _staging_path_without_symlinks(staging_dir: Path) -> Path:
+    """Return a lexical absolute staging path only when no existing component is a symlink."""
+    staging_dir = Path(os.path.abspath(os.fspath(staging_dir)))
+    current = staging_dir
+    while True:
+        if current.is_symlink():
+            raise RuntimeError("candidate staging path must not contain symlinks")
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return staging_dir
+
+
 def _stage_candidate_artifacts(
     *,
     wheel: Path,
@@ -331,14 +346,16 @@ def _stage_candidate_artifacts(
     wheel = wheel.resolve()
     sdist = sdist.resolve()
     source_states = (_candidate_source_state(wheel), _candidate_source_state(sdist))
-    staging_dir = staging_dir.resolve()
+    staging_dir = _staging_path_without_symlinks(staging_dir)
     if staging_dir in {wheel.parent, sdist.parent}:
         raise RuntimeError("candidate staging directory must differ from the source directory")
     if staging_dir.exists():
-        if staging_dir.is_symlink() or not staging_dir.is_dir():
+        if not staging_dir.is_dir():
             raise RuntimeError("candidate staging path must be a real directory when it exists")
         shutil.rmtree(staging_dir)
     staging_dir.mkdir(parents=True, exist_ok=False)
+    if staging_dir.resolve() != staging_dir:
+        raise RuntimeError("candidate staging path changed through a symlink during creation")
 
     staged_wheel = staging_dir / wheel.name
     staged_sdist = staging_dir / sdist.name
