@@ -1513,7 +1513,7 @@ def _validate_figma_evidence_sync(
             html_exists
             and isinstance(expected_html_sha, str)
             and expected_html_sha == actual_html_sha,
-            "Figma evidence sync HTML report SHA256 matches manifest",
+            "Figma evidence HTML report SHA256 matches manifest",
             expected=expected_html_sha,
             actual=actual_html_sha,
         ),
@@ -1580,8 +1580,10 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     """
     repo_root = Path(args.repo_root).resolve()
     acceptance_path = Path(args.acceptance).resolve()
-    acceptance = _read_json(acceptance_path)
-    source_commit = acceptance.get("source_commit")
+    source_commit = None
+    if acceptance_path.exists():
+        acceptance = _read_json(acceptance_path)
+        source_commit = acceptance.get("source_commit")
     if source_commit is not None and (
         not isinstance(source_commit, str)
         or len(source_commit) not in {40, 64}
