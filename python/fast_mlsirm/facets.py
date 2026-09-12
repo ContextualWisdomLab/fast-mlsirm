@@ -50,12 +50,88 @@ def _real_control(value: object, name: str) -> float:
             return float(value)
         except OverflowError:
             raise ValueError(f"{name} must be finite and > 0") from None
-    if any(
-        value_type is trusted_type
-        for trusted_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
-    ):
+    if any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return float(value)
+    if any(value_type is trusted_type for trusted_type in _NUMPY_FLOAT_SCALAR_TYPES):
+        normalized = float(value)
+        if value_type is np.longdouble and np.longdouble(normalized) != value:
+            raise ValueError(f"{name} must be finite and > 0")
+        return normalized
     raise ValueError(f"{name} must be a real number")
+
+
+def _snapshot_builtin_response_tree(
+    value: list[object] | tuple[object, ...],
+    *,
+    n_persons: int,
+    n_items: int,
+    n_raters: int,
+) -> np.ndarray:
+    """Copy an admitted built-in response tree into one bounded dense array."""
+
+    dimension_error = "responses must be a 3-D persons x items x raters array"
+    numeric_error = "responses must be a numeric array"
+    if len(value) != n_persons:
+        raise ValueError(dimension_error)
+
+    snapshot = np.empty((n_persons, n_items, n_raters), dtype=np.float64)
+    for person_index in range(n_persons):
+        try:
+            person = value[person_index]
+        except IndexError:
+            raise ValueError(dimension_error) from None
+        person_type = type(person)
+        if person_type is not list and person_type is not tuple:
+            raise ValueError(dimension_error)
+        if len(person) != n_items:
+            raise ValueError(dimension_error)
+
+        for item_index in range(n_items):
+            try:
+                item = person[item_index]
+            except IndexError:
+                raise ValueError(dimension_error) from None
+            item_type = type(item)
+            if item_type is not list and item_type is not tuple:
+                raise ValueError(dimension_error)
+            if len(item) != n_raters:
+                raise ValueError(dimension_error)
+
+            item_snapshot = item
+            if item_type is list:
+                item_snapshot = tuple(item[: n_raters + 1])
+                if len(item_snapshot) != n_raters:
+                    raise ValueError(dimension_error)
+
+            for rater_index, entry in enumerate(item_snapshot):
+                entry_type = type(entry)
+                trusted_entry = (
+                    entry_type is bool
+                    or entry_type is np.bool_
+                    or entry_type is int
+                    or entry_type is float
+                    or any(
+                        entry_type is trusted_type
+                        for trusted_type in (
+                            *_NUMPY_INTEGER_SCALAR_TYPES,
+                            *_NUMPY_FLOAT_SCALAR_TYPES,
+                        )
+                    )
+                )
+                if not trusted_entry:
+                    raise ValueError(numeric_error)
+                try:
+                    snapshot[person_index, item_index, rater_index] = entry
+                except (TypeError, ValueError, OverflowError):
+                    raise ValueError(numeric_error) from None
+
+            if len(item) != n_raters:
+                raise ValueError(dimension_error)
+        if len(person) != n_items:
+            raise ValueError(dimension_error)
+    if len(value) != n_persons:
+        raise ValueError(dimension_error)
+    return snapshot
 
 
 def _response_array(value: object) -> np.ndarray:
@@ -70,11 +146,27 @@ def _response_array(value: object) -> np.ndarray:
     )
     value_type = type(value)
     if value_type is np.ndarray:
-        if value.size > _MAX_FACETS_RESPONSE_CELLS:
+        admitted_shape = value.shape
+        admitted_size = int(value.size)
+        if admitted_size > _MAX_FACETS_RESPONSE_CELLS:
             raise ValueError(resource_error)
-        response_array = value
+        if np.iscomplexobj(value):
+            raise ValueError("responses must be real-valued")
+        if value.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError("responses must be a numeric array")
+        if len(admitted_shape) != 3:
+            raise ValueError(dimension_error)
+        if any(axis < 1 for axis in admitted_shape):
+            raise ValueError(nonempty_error)
+        response_array = np.array(value, copy=True)
+        snapshot_size = int(response_array.size)
+        if snapshot_size > _MAX_FACETS_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        if response_array.shape != admitted_shape or snapshot_size != admitted_size:
+            raise ValueError(dimension_error)
     elif value_type is list or value_type is tuple:
-        if len(value) == 0:
+        admitted_persons = len(value)
+        if admitted_persons == 0:
             raise ValueError(nonempty_error)
 
         # A valid non-empty 3-D built-in tree with N scalar cells visits at most
@@ -172,10 +264,16 @@ def _response_array(value: object) -> np.ndarray:
         ):
             raise ValueError(nonempty_error)
 
-        try:
-            response_array = np.asarray(value)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError("responses must be a numeric array") from exc
+        # The preflight bounds both dimensions and logical work. Build exactly
+        # one dense float64 owner and replay each exact built-in container while
+        # copying trusted scalar leaves. This avoids a second O(cells) graph of
+        # Python tuple/list objects for large or heavily shared response trees.
+        response_array = _snapshot_builtin_response_tree(
+            value,
+            n_persons=admitted_persons,
+            n_items=expected_items,
+            n_raters=expected_raters,
+        )
     else:
         raise ValueError("responses must be a numeric array")
 
@@ -184,6 +282,227 @@ def _response_array(value: object) -> np.ndarray:
     if response_array.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("responses must be a numeric array")
     return response_array
+
+
+def _native_result_error(detail: str) -> ValueError:
+    """Build one stable package-owned error for an invalid Rust result envelope."""
+
+    return ValueError(f"native fit_facets result {detail}")
+
+
+def _native_float_vector(
+    result: dict[str, object],
+    key: str,
+    *,
+    exact_length: int | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+) -> np.ndarray:
+    """Validate one inert native real vector and return an owned float64 copy."""
+
+    value = result[key]
+    value_type = type(value)
+    if value_type is np.ndarray:
+        array = value
+    elif value_type is list or value_type is tuple:
+        admitted_length = len(value)
+        if exact_length is not None and admitted_length != exact_length:
+            raise _native_result_error(f"{key} must have length {exact_length}")
+        if min_length is not None and admitted_length < min_length:
+            raise _native_result_error(f"{key} must contain at least {min_length} value")
+        if max_length is not None and admitted_length > max_length:
+            raise _native_result_error(f"{key} exceeds length limit {max_length}")
+
+        sequence = value
+        if value_type is list:
+            snapshot_limit = (
+                exact_length
+                if exact_length is not None
+                else max_length
+                if max_length is not None
+                else admitted_length
+            )
+            sequence = tuple(value[: snapshot_limit + 1])
+            if len(sequence) != admitted_length:
+                raise _native_result_error(f"{key} changed during validation")
+
+        for entry in sequence:
+            entry_type = type(entry)
+            integer_entry = entry_type is int or any(
+                entry_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+            )
+            trusted = integer_entry or entry_type is float or any(
+                entry_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
+            )
+            if not trusted:
+                raise _native_result_error(f"{key} must be a real numeric vector")
+            if integer_entry:
+                integer_value = int(entry)
+                try:
+                    float_value = float(integer_value)
+                except OverflowError:
+                    raise _native_result_error(
+                        f"{key} integer values must be exactly representable as float64"
+                    ) from None
+                if not math.isfinite(float_value) or int(float_value) != integer_value:
+                    raise _native_result_error(
+                        f"{key} integer values must be exactly representable as float64"
+                    )
+        array = np.asarray(sequence)
+    else:
+        raise _native_result_error(f"{key} must be a real numeric vector")
+
+    if array.ndim != 1 or np.iscomplexobj(array) or array.dtype.kind not in ("i", "u", "f"):
+        raise _native_result_error(f"{key} must be a real numeric 1-D vector")
+    length = int(array.size)
+    if exact_length is not None and length != exact_length:
+        raise _native_result_error(f"{key} must have length {exact_length}")
+    if min_length is not None and length < min_length:
+        raise _native_result_error(f"{key} must contain at least {min_length} value")
+    if max_length is not None and length > max_length:
+        raise _native_result_error(f"{key} exceeds length limit {max_length}")
+
+    # Copy without coercion first. A retained native ndarray may change after
+    # the inert preflight above; only the package-owned raw snapshot can become
+    # authoritative evidence, and its representation/cardinality must be
+    # replayed before any float64 narrowing can erase an invalid source state.
+    snapshot = np.array(array, copy=True)
+    if (
+        snapshot.ndim != 1
+        or np.iscomplexobj(snapshot)
+        or snapshot.dtype.kind not in ("i", "u", "f")
+    ):
+        raise _native_result_error(f"{key} must be a real numeric 1-D vector")
+    snapshot_length = int(snapshot.size)
+    if exact_length is not None and snapshot_length != exact_length:
+        raise _native_result_error(f"{key} must have length {exact_length}")
+    if min_length is not None and snapshot_length < min_length:
+        raise _native_result_error(f"{key} must contain at least {min_length} value")
+    if max_length is not None and snapshot_length > max_length:
+        raise _native_result_error(f"{key} exceeds length limit {max_length}")
+    if not np.all(np.isfinite(snapshot)):
+        raise _native_result_error(f"{key} must contain only finite values")
+
+    owned = snapshot.astype(np.float64, copy=False)
+    if snapshot.dtype.kind in ("i", "u"):
+        # Public result arrays are float64. Preserve the raw integer snapshot as
+        # authority while proving that narrowing is value-preserving. A simple
+        # magnitude cutoff would wrongly reject exactly representable powers of
+        # two above 2**53, so require an exact float64 -> native-integer roundtrip.
+        # Extremal int64/uint64 values can round outside the source dtype range;
+        # NumPy reports that as an invalid cast, which is expected evidence of a
+        # lossy conversion and is handled by the equality check below.
+        with np.errstate(invalid="ignore", over="ignore"):
+            recovered = owned.astype(snapshot.dtype, copy=False)
+        if not np.array_equal(recovered, snapshot):
+            raise _native_result_error(
+                f"{key} integer values must be exactly representable as float64"
+            )
+    elif (
+        snapshot.dtype.kind == "f"
+        and snapshot.dtype.itemsize > np.dtype(np.float64).itemsize
+    ):
+        recovered = owned.astype(snapshot.dtype, copy=False)
+        if not np.array_equal(recovered, snapshot):
+            raise _native_result_error(
+                f"{key} floating values must be exactly representable as float64"
+            )
+    if not np.all(np.isfinite(owned)):
+        raise _native_result_error(f"{key} must contain only finite values")
+    return owned
+
+
+def _validate_native_fit_result(
+    value: object,
+    *,
+    n_persons: int,
+    n_items: int,
+    n_raters: int,
+    n_cat: int,
+    max_iter: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool, bool, int]:
+    """Validate the package-owned PyO3 result envelope without numerical work."""
+
+    if type(value) is not dict:
+        raise _native_result_error("must be a built-in dict")
+    required_keys = (
+        "item_difficulty",
+        "rater_severity",
+        "thresholds",
+        "theta",
+        "loglik_trace",
+        "n_iter",
+        "converged",
+        "connected",
+        "n_parameters",
+    )
+    if len(value) != len(required_keys):
+        raise _native_result_error(f"must contain exactly {len(required_keys)} keys")
+    if any(type(key) is not str for key in value):
+        raise _native_result_error("keys must be exact strings")
+
+    # Freeze the exact built-in root before any value traversal.  The PyO3/native
+    # provider may still retain its returned dict; later root rebinding must not
+    # mix evidence observed at different times into one public fit record.
+    result = value.copy()
+    if len(result) != len(required_keys):
+        raise _native_result_error(f"must contain exactly {len(required_keys)} keys")
+    if any(type(key) is not str for key in result):
+        raise _native_result_error("keys must be exact strings")
+    missing_keys = [key for key in required_keys if key not in result]
+    if missing_keys:
+        raise _native_result_error(f"is missing required key {missing_keys[0]!r}")
+
+    item_difficulty = _native_float_vector(
+        result, "item_difficulty", exact_length=n_items
+    )
+    rater_severity = _native_float_vector(
+        result, "rater_severity", exact_length=n_raters
+    )
+    thresholds = _native_float_vector(
+        result, "thresholds", exact_length=n_cat - 1
+    )
+    theta = _native_float_vector(result, "theta", exact_length=n_persons)
+    loglik_trace = _native_float_vector(
+        result,
+        "loglik_trace",
+        min_length=1,
+        max_length=max_iter + 1,
+    )
+
+    n_iter = result["n_iter"]
+    if type(n_iter) is not int or not (1 <= n_iter <= max_iter):
+        raise _native_result_error(f"n_iter must be an integer in 1..{max_iter}")
+    converged = result["converged"]
+    if type(converged) is not bool:
+        raise _native_result_error("converged must be a boolean")
+    valid_trace_lengths = {n_iter}
+    if not converged:
+        valid_trace_lengths.add(n_iter + 1)
+    if int(loglik_trace.size) not in valid_trace_lengths:
+        raise _native_result_error(
+            "loglik_trace length must equal n_iter, or n_iter + 1 for a "
+            "nonconverged terminal evaluation"
+        )
+    connected = result["connected"]
+    if type(connected) is not bool:
+        raise _native_result_error("connected must be a boolean")
+    expected_parameters = n_items + (n_raters - 1) + (n_cat - 2)
+    n_parameters = result["n_parameters"]
+    if type(n_parameters) is not int or n_parameters != expected_parameters:
+        raise _native_result_error(f"n_parameters must equal {expected_parameters}")
+
+    return (
+        item_difficulty,
+        rater_severity,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        connected,
+        n_parameters,
+    )
 
 
 @dataclass
@@ -226,7 +545,7 @@ def fit_facets(
     ``ln[P(Y=k)/P(Y=k-1)] = theta_p - d_i - c_j - f_k``, where ``d_i`` is item
     difficulty, ``c_j`` rater severity, and ``f_k`` the category thresholds
     shared across items and raters. ``theta ~ N(0,1)`` fixes the scale;
-    severities and thresholds are centered to sum to zero. Estimation is
+    severities and thresholds are centered to sum zero. Estimation is
     marginal-ML EM (Bock & Aitkin, 1981) on a Gauss-Hermite trait grid — not
     Linacre's JMLE, so estimates match Facets output only up to the JMLE-vs-MMLE
     difference.
@@ -310,7 +629,7 @@ def fit_facets(
     core = _core_module()
     if core is None or not hasattr(core, "fit_facets"):
         raise RuntimeError("fit_facets requires the compiled Rust core")
-    res = core.fit_facets(
+    raw_result = core.fit_facets(
         yy,
         observed.reshape(-1),
         int(n_persons),
@@ -321,14 +640,32 @@ def fit_facets(
         int(max_iter),
         float(tol),
     )
+    (
+        item_difficulty,
+        rater_severity,
+        thresholds,
+        theta,
+        loglik_trace,
+        n_iter,
+        converged,
+        connected,
+        n_parameters,
+    ) = _validate_native_fit_result(
+        raw_result,
+        n_persons=n_persons,
+        n_items=n_items,
+        n_raters=n_raters,
+        n_cat=n_cat,
+        max_iter=max_iter,
+    )
     return FacetsFit(
-        item_difficulty=np.asarray(res["item_difficulty"], dtype=np.float64),
-        rater_severity=np.asarray(res["rater_severity"], dtype=np.float64),
-        thresholds=np.asarray(res["thresholds"], dtype=np.float64),
-        theta=np.asarray(res["theta"], dtype=np.float64),
-        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
-        n_iter=int(res["n_iter"]),
-        converged=bool(res["converged"]),
-        connected=bool(res["connected"]),
-        n_parameters=int(res["n_parameters"]),
+        item_difficulty=item_difficulty,
+        rater_severity=rater_severity,
+        thresholds=thresholds,
+        theta=theta,
+        loglik_trace=loglik_trace,
+        n_iter=n_iter,
+        converged=converged,
+        connected=connected,
+        n_parameters=n_parameters,
     )
