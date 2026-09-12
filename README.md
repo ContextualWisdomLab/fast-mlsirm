@@ -2,482 +2,227 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/fast-mlsirm)
 
+**Rust-first psychometric measurement, simulation, fitting, diagnostics, and recovery evidence behind a Python API.**
 
-`fast-mlsirm` is an early high-performance toolkit for Multidimensional
-Latent Space Item Response Models, focused on MLS2PLM simulation, regularized
-point estimation, and true-parameter recovery checks.
+`fast-mlsirm` is a reusable measurement core for teams that need explicit model assumptions, reproducible estimation, true-parameter recovery checks, and evidence-bound diagnostics without moving production numerical work into a hosted application.
 
-The implemented simple-structure MLSIRM/MLS2PLM path follows Jeon, Jin,
-Schweinberger, and Baugh (2021), Kang and Jeon (2025), and Molenaar and Jeon
-(2026). Adjacent shipped screens include Angoff delta-plot DIF
-([`docs/delta_plot_dif.md`](docs/delta_plot_dif.md)) and Bradley–Terry MM
-ranking ([`docs/bradley_terry_mm.md`](docs/bradley_terry_mm.md)). Primary
-citations and decision records live in
-[`docs/traceability/research-basis.md`](docs/traceability/research-basis.md)
-and [`docs/adr/README.md`](docs/adr/README.md). Score interpretation and
-fairness remain governed by AERA, APA, and NCME (2014); those methods are not
-CWE/OWASP/NIST controls.
+The package is centered on multidimensional latent-space item-response modeling, with additional bounded measurement, calibration, linking, diagnostic, and evaluation contracts. Performance- and result-critical numerical paths are owned by Rust/PyO3; Python provides the public package surface, validation, orchestration, and reference/parity support.
 
-The first implementation keeps the public API small:
+## Why it exists
 
-```python
-import numpy as np
+A psychometric library is useful only when callers can tell **what was estimated, by which model and backend, from which evidence, under which assumptions, and with what validation**. `fast-mlsirm` treats those questions as product contracts rather than leaving them to notebook convention.
 
-from fast_mlsirm import MLS2PLMConfig, FitConfig, fixed_item_calibration_diagnostics, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, render_diagnostics_report, response_process_dimensionality_diagnostics, response_process_fit_diagnostics
+| Need | What `fast-mlsirm` provides |
+| --- | --- |
+| High-performance measurement | Rust-backed estimation and numerical kernels exposed through PyO3 |
+| Reproducible research | Deterministic simulation, explicit configuration, and true-parameter recovery workflows |
+| Model diagnostics | Fit, dimensionality, response-process, calibration, and stability evidence |
+| Governed measurement inputs | Explicit response/evidence contracts with bounded, fail-closed validation |
+| Integration | A standalone Python package that downstream products can consume through versioned artifacts |
+| Scientific traceability | Model equations, research basis, ADRs, and executable validation kept alongside source |
 
-data = simulate(MLS2PLMConfig(seed=20260101))
-result = fit(
-    responses=data.Y,
-    factor_id=data.factor_id,
-    config=FitConfig(model="MLS2PLM", optimizer="adam_lbfgs", max_iter=100, backend="auto"),
-)
-report = recovery_report(data.truth, result.params)
-diagnostics = fit_diagnostics(data.Y, result.params, data.factor_id, model=result.model)
-dimensions = dimensionality_diagnostics(
-    data.Y,
-    data.factor_id,
-    latent_dims=[1, 2, 3],
-    config=FitConfig(model="MLS2PLM", optimizer="adam", max_iter=10, n_restarts=1),
-)
+## Product boundary
 
-print(report.summary)
-print(diagnostics.model_fit)
-print(dimensions.best)
+`fast-mlsirm` owns **domain-neutral psychometric computation and reusable measurement contracts**. It does not own the surrounding participant or assessment lifecycle.
 
-category_probs = np.stack([1.0 - data.probabilities, data.probabilities], axis=2)
-process_fit = response_process_fit_diagnostics(
-    data.Y,
-    category_probs,
-    item_type="dichotomous",
-    response_process="cumulative",
-    group_id=np.arange(data.Y.shape[0]) % 2,
-)
-print(process_fit.itemfit["outfit_mnsq"])
-
-process_dimensions = response_process_dimensionality_diagnostics(
-    data.Y,
-    {"dim2": category_probs},
-    item_type="dichotomous",
-    response_process="cumulative",
-)
-print(process_dimensions.best)
-
-fixed_item_calibration = fixed_item_calibration_diagnostics(
-    data.Y,
-    {"dim2": category_probs},
-    fixed_items=np.arange(min(4, data.Y.shape[1])),
-    item_type="dichotomous",
-    response_process="cumulative",
-)
-print(fixed_item_calibration.best)
+```text
+assessment / research evidence
+            │
+            ▼
+┌───────────────────────────────┐
+│          fast-mlsirm          │
+│ reusable measurement core     │
+├───────────────────────────────┤
+│ input / evidence validation   │
+│ simulation                    │
+│ Rust numerical estimation     │
+│ scoring / diagnostics         │
+│ recovery / comparison         │
+│ versioned result evidence     │
+└───────────────┬───────────────┘
+                │
+       versioned handoff
+                ▼
+ hosted products / research workflows
 ```
 
-## What Works Now
+A downstream product such as `psychometrics-commons` owns, when applicable, accounts and authorization, participants and sessions, consent and data rights, hosted persistence, restricted item content, operational workflows, billing, human decisions, and deployment-specific regulatory controls.
 
-- Canonical MLS2PLM binary response simulation.
-- `gamma=0` no-CD simulation.
-- Regularized JML/MAP-style fitting for `MIRT`, `MLSRM`, `MLS2PLM`,
-  `ULSRM`, and `ULS2PLM` constraints.
-- Missing response exclusion via `NaN`, `-1`, or an explicit mask, including
-  missing-by-design rows or items when at least one response is observed.
-- Adam and small L-BFGS-style optimizers without SciPy.
-- Procrustes alignment and distance-based recovery metrics.
-- Point-estimate item, person, and model fit diagnostics for fitted models.
-- K-fold held-out likelihood diagnostics for latent-space dimensionality.
-- Shared dichotomous/polytomous response-process diagnostics from category
-  probabilities.
-- Multigroup and multilevel-context fit summaries from person-level group or
-  cluster IDs.
-- Response-process probability candidate comparisons for external dimensionality
-  checks.
-- True-parameter reproduction, observed-information Hessian, vcov, standard
-  error, and second-order stability helpers.
-- Fixed item parameter linking, CAT item-information selection, and greedy ATA
-  form assembly with content min/max constraints.
-- Fixed-item calibration diagnostics that select candidate probability tensors
-  using fixed evaluation-item likelihood and an item-fit penalty.
-- Rubric-centered schemas, deterministic bounded item-blueprint compilation,
-  and canonical provider-neutral generation contracts. See
-  [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
-- Provider-neutral contextual-orchestrator LLM-as-a-Judge integration with
-  strict structured parsing. A judge result becomes an IRT row only through
-  LLMJudgeResult.to_irt_row() with at least two criteria, followed by
-  validate_irt_response_matrix() for a multi-item dichotomous or explicitly
-  categorized polytomous matrix. When `category_count` is supplied without an
-  explicit method, the adapter defaults to `category_method="binary_threshold"`:
-  each ordered boundary is a bounded Boolean call, and malformed or
-  non-monotone evidence fails closed. Equal-width direct K-way projection is
-  calibration-only and requires explicit `category_method="direct"`;
-  `category_method="cumulative_threshold"` remains an explicit alternative
-  that asks for one strict Boolean vector. Binary threshold judging has a
-  maximum of 64 calls per result.
-  When the injected contextual-orchestrator exposes its bounded
-  `client.local_concurrency`, those independent boundary calls reuse that limit;
-  generic injected orchestrators remain sequential by default.
-  `ContextualOrchestratorJudge` accepts only an adapter declaring
-  `contextual_orchestrator_contract == "contextual-orchestrator-contract-v1"`;
-  an arbitrary direct provider transport fails at construction. This is an
-  architectural provenance marker, not a security credential; production
-  adapters must still route, trace, and validate through contextual-orchestrator.
-  A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
-  containing call/parse status, partial trace-step counts, usage, and ordered
-  boundary records; callers must retain that failure in calibration results.
-  For semantically interpretable polytomous calibration, callers may provide a
-  `category_anchors` tuple of exactly K definitions on every `JudgeCriterion`;
-  those definitions are carried as rubric data to each binary boundary. Mixed,
-  incomplete, or mismatched anchor sets are rejected. Omitted anchors remain a
-  backwards-compatible exploratory mode and must not be treated as gold
-  calibration evidence. Each binary prompt asks whether the answer meets at
-  least the requested boundary (not exactly that category), requires
-  criterion/task relevance, and rejects generic intent, unrelated detail,
-  missing-control admissions, or rubric repetition as evidence.
-  Category-count and prompt-perturbation calibration remain required for all
-  methods. See
-  [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),
-  [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md), and
-  [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0008-fast-judge-review-hardening.md).
-  Production and benchmark IRT readiness additionally requires every declared
-  polytomous category to be observed at least once for every item; low-level
-  diagnostic fitters remain available for partial-occupancy fixtures.
-  `build_multiple_choice_calibration_cases()` and
-  `evaluate_paired_calibration()` provide bounded paired controls for
-  baseline, option-only/no-question, shuffled-option, and
-  distractor-replacement variants. They accept an existing
-  `ContextualOrchestratorJudge`, so every calibration call uses the
-  contextual-orchestrator route; provider, parse, semantic, and IRT failures
-  remain in the denominator, with no retry, repair, keyword matching, or
-  positional category inference. Gold categories and contamination status are
-  caller-supplied, and every successful result must project to multiple
-  criterion columns before it can be used as a polytomous row. Paired score
-  deltas are diagnostic sensitivity evidence, not a causal positive-option-
-  count law or a claim of judge debiasing. When a binary judge raises a
-  `JudgeFormatError`, the report retains its bounded `.evidence` (boundary
-  statuses, parse state, trace counts, and usage) while excluding source text
-  and raw model output.
-  Cross-repository exact-head review, structured Strix evidence, and merge
-  policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0004-pr-review-merge-loop.md) and
-  [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
-- Standalone HTML reports for saved fit or dimensionality diagnostics.
-- Automated benchmark evidence reports from release-acceptance timing.
-- Release evidence index reports that tie dist artifact hashes, acceptance,
-  benchmark, sales-readiness, and buyer-packet evidence to one commit.
-- Single-command commercial release evidence builder for dist, acceptance,
-  benchmark, sales-readiness, buyer packet, release index, and final gate
-  output.
-- Procurement due-diligence evidence reports for distribution metadata,
-  policy files, commercial-release integrity, GitHub snapshot state, and
-  SHA256-verified HTML review output.
-- PR queue governance evidence reports for open PR review state, stale and
-  changes-requested risk counts, release-scope conflict classification, and
-  SHA256-verified HTML review output.
-- Figma evidence sync reports that verify the static buyer-review design packet
-  still references buyer packet, release evidence index, procurement due
-  diligence, and PR queue governance evidence while Code Connect stays disabled.
-- CLI commands for simulation and fitting.
-- Rust-backed fitting objective (neg-loglik, gradients, and distance kernels)
-  via PyO3/maturin as the primary numeric path, with a numerically-identical
-  NumPy reference backend kept for parity testing. `auto` fails closed when
-  the compiled Rust core is unavailable.
+Temporal/event semantics belong to [`TEPP`](https://github.com/ContextualWisdomLab/TEPP); provider/model orchestration belongs to [`contextual-orchestrator`](https://github.com/ContextualWisdomLab/contextual-orchestrator). `fast-mlsirm` remains independently installable and does not require either service to execute its ordinary package-owned numerical work.
 
-## Install
+## Supported foundations
 
-For local development:
+The implemented simple-structure MLSIRM/MLS2PLM line is grounded in the repository's cited research, including Jeon, Jin, Schweinberger, and Baugh (2021), Kang and Jeon (2025), and Molenaar and Jeon (2026). The canonical research map is [`docs/traceability/research-basis.md`](docs/traceability/research-basis.md); architecture decisions are indexed in [`docs/adr/README.md`](docs/adr/README.md).
+
+Current source also includes bounded capabilities around areas such as:
+
+- MLSIRM/MLS2PLM and related constrained item-response fitting;
+- simulation and true-parameter recovery;
+- item, person, model, and dimensionality diagnostics;
+- response-process and fixed-item calibration diagnostics;
+- linking and selected CAT/ATA utilities;
+- explicit missing/nonresponse and measurement-state contracts;
+- evidence-bound rater, rubric, and evaluation contracts;
+- source-free HTML/evidence reports for review and release workflows.
+
+Not every research candidate or open-PR model is part of a stable support promise. Protected source, immutable releases, the model-specific evidence record, and the versioned capability contracts remain authoritative.
+
+## Quick start
+
+The current source tree declares `fast-mlsirm` **0.9.1**, Python **3.12+**, and a Maturin/PyO3 build. Building from source therefore requires a working Rust toolchain.
 
 ```bash
 python -m pip install -e .
 ```
 
-The default runtime backend is `"auto"`. It uses the compiled Rust core
-(`fast_mlsirm._core`) and fails closed when that extension is unavailable.
-Automatic resolution never silently selects NumPy. Source and editable installs
-use maturin to build the extension, so they require a working Rust toolchain;
-installed wheels ship the compiled core. Pass `backend="numpy"` only when you
-want the explicit pure-Python reference used for parity testing.
-The core Rust workspace can be tested with:
+A compact simulation → fit → recovery workflow:
 
-```bash
-cargo test --workspace
+```python
+from fast_mlsirm import FitConfig, MLS2PLMConfig, fit, recovery_report, simulate
+
+sample = simulate(MLS2PLMConfig(seed=20260101))
+
+result = fit(
+    responses=sample.Y,
+    factor_id=sample.factor_id,
+    config=FitConfig(
+        model="MLS2PLM",
+        optimizer="adam_lbfgs",
+        max_iter=100,
+        backend="auto",
+    ),
+)
+
+recovery = recovery_report(sample.truth, result.params)
+print(recovery.summary)
 ```
 
-The PyO3 extension crate is built by maturin and exercised by the Python backend
-parity tests.
+The default extension is the **PyO3 binding for the compiled Rust backend**. `backend="auto"` uses that compiled Rust core and **fails closed when that extension is unavailable**. Automatic resolution never silently selects NumPy; it **fails closed otherwise**. The NumPy backend is an explicit reference/parity path and must be requested explicitly.
 
-## Commercial Readiness
+## Common workflows
 
-The current release is supportable as a commercial beta for technical teams that need
-local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
-generation. It is not a regulated decision product, hosted assessment platform,
-or Bayesian posterior inference engine. See:
+### Diagnose a fitted model
 
-- [Commercial readiness gate](docs/commercial_readiness.md)
-- [Enterprise sales readiness gate](docs/enterprise_sales_readiness.md)
-- [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
-- [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
-- [Figma product design packet](docs/figma_product_design_packet.md)
-- [IRT stability product design and equation contract](docs/irt_stability_product_design.md)
-- [ROI evidence model](docs/roi_evidence_model.md)
-- [Release acceptance guide](docs/release_acceptance.md)
-- [Security policy](SECURITY.md)
-- [Support policy](SUPPORT.md)
-- [Changelog](CHANGELOG.md)
+```python
+from fast_mlsirm import fit_diagnostics
 
-Sales readiness verification uses:
+diagnostics = fit_diagnostics(
+    sample.Y,
+    result.params,
+    sample.factor_id,
+    model=result.model,
+)
+
+print(diagnostics.model_fit)
+```
+
+### Compare candidate dimensionalities
+
+```python
+from fast_mlsirm import dimensionality_diagnostics
+
+comparison = dimensionality_diagnostics(
+    sample.Y,
+    sample.factor_id,
+    latent_dims=[1, 2, 3],
+    config=FitConfig(
+        model="MLS2PLM",
+        optimizer="adam",
+        max_iter=10,
+        n_restarts=1,
+    ),
+)
+
+print(comparison.best)
+```
+
+For specialized workflows—DIF, Bradley–Terry ranking, response-process diagnostics, fixed-item calibration, item generation/evaluation, scoring, linking, CAT/ATA, sampling design, and commercial/release evidence—use the documentation map below rather than treating one README example as the full API contract.
+
+## Numerical ownership and safety
+
+Production result-affecting mathematical and psychometric computation is Rust-first. Python is used for package-facing validation, marshalling, orchestration, and explicit reference/parity paths.
+
+The repository uses fail-closed contracts around input representation, missingness, resource bounds, result envelopes, provenance, and backend selection. These controls are intended to prevent malformed or stale evidence from silently becoming a plausible-looking estimate; they do not convert a statistical result into a validity, fairness, causal, or high-stakes decision claim.
+
+## Scientific interpretation
+
+A technically correct estimate is not automatically a validated score use.
+
+`fast-mlsirm` separates:
+
+- numerical correctness and parameter recovery;
+- construct and response-process evidence;
+- model fit and dimensionality evidence;
+- transportability and fairness evidence;
+- downstream decision utility and policy.
+
+Score interpretation and fairness guidance follows the measurement standards cited by the repository, including AERA, APA, and NCME (2014). Security standards and controls are tracked separately; they are not substitutes for psychometric validity evidence.
+
+## Current maturity
+
+The package metadata declares **Development Status :: 3 - Alpha**. The repository contains a substantial reusable measurement core and extensive verification/release evidence machinery, but it does not claim universal technical GA, universal fairness/validity, a hosted assessment platform, or approval for regulated/high-stakes decisions.
+
+A bounded capability can mature independently when its exact numerical owner, public contract, recovery/conformance evidence, compatibility matrix, security/provenance evidence, and release support are all established. See [`docs/product-technical-gap-baseline.md`](docs/product-technical-gap-baseline.md) for the current completion model and remaining evidence gaps.
+
+## Verification
+
+For source development, install the development dependencies and run the repository-owned checks rather than relying on an import smoke test alone:
 
 ```bash
-python scripts/build_commercial_release.py \
-  --out commercial-release \
+python -m pip install -e '.[dev]'
+python -m pytest
+cargo test --workspace
+cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
+```
+
+The PyO3 crate is intentionally excluded from the root Cargo workspace, so its binding tests must be run through its manifest in addition to `cargo test --workspace`.
+
+The protected CI surface adds package, Rust/PyO3, coverage, fuzz/security/static-analysis, artifact, and release-contract checks. Exact current workflow evidence is authoritative; results from a predecessor source head do not transfer after a change.
+
+For a release-oriented local buyer-evidence build, use the price-neutral acquisition orchestrator:
+
+```bash
+python scripts/build_acquisition_release.py \
+  --out acquisition-release \
   --require-rust \
   --check-import
 ```
 
-The commercial release builder writes `commercial_release_manifest.json` and
-`commercial_release_report.html` while keeping the underlying stage artifacts
-under the same output directory. The equivalent manual sequence is:
+The generic builder leaves transaction value unset unless `--contract-value-krw` is supplied explicitly and finishes by requiring the complete `--require-acquisition-readiness` evidence profile. Its output is review evidence; it does not by itself prove deployment, customer adoption, regulatory approval, commercial transfer, valuation, or suitability for a specific high-stakes use.
 
-```bash
-python scripts/release_acceptance.py --out acceptance_check --require-rust
-python scripts/build_benchmark_report.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --out acceptance_check/benchmark
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --check-import \
-  --out acceptance_check/sales_readiness_manifest.json
-python scripts/build_buyer_packet.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --sales-readiness acceptance_check/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --out buyer-evidence-packet
-python scripts/build_release_evidence_index.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --sales-readiness acceptance_check/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --out release-evidence-index
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --require-buyer-packet \
-  --release-evidence-index release-evidence-index/release_evidence_index.json \
-  --require-release-evidence-index \
-  --check-import \
-  --out acceptance_check/final_sales_readiness_manifest.json
-python scripts/build_procurement_due_diligence.py \
-  --dist dist \
-  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
-  --out procurement-due-diligence
-python scripts/build_pr_queue_governance.py \
-  --out pr-queue-governance
-python scripts/build_figma_evidence_sync.py \
-  --out figma-evidence-sync
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --require-buyer-packet \
-  --release-evidence-index release-evidence-index/release_evidence_index.json \
-  --require-release-evidence-index \
-  --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json \
-  --require-procurement-due-diligence \
-  --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json \
-  --require-pr-queue-governance \
-  --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json \
-  --require-figma-evidence-sync \
-  --check-import \
-  --out acceptance_check/final_procurement_sales_readiness_manifest.json
-```
+## Acquisition/commercial readiness
 
-Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
-the release acceptance and sales-readiness commands to pass on the exact
-release artifact. The 20B product gate adds
-Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
-synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
-command produces a portable zip, `buyer_evidence_manifest.json`, and
-`buyer_evidence_report.html` for procurement review. The benchmark command
-produces `benchmark_report.json` and `benchmark_report.html` from the same
-release-acceptance timing evidence. The release evidence index command produces
-`release_evidence_index.json` and `release_evidence_index.html` as a compact
-digest map over the candidate wheel, source distribution, release acceptance,
-benchmark report, sales-readiness manifest, and buyer packet.
-The commercial release builder produces the same evidence as a single buyer
-review entrypoint and records the failed stage when the gate does not pass.
-It now also invokes `scripts/build_procurement_due_diligence.py` by default and
-emits `procurement_due_diligence_manifest.json` plus
-`procurement_due_diligence_report.html` under the commercial release output.
-It also invokes `scripts/build_pr_queue_governance.py` by default and emits
-`pr_queue_governance_manifest.json` plus `pr_queue_governance_report.html` so
-open GitHub PRs are inventoried as managed queue evidence rather than treated
-as an unexamined release risk. It then invokes
-`scripts/build_figma_evidence_sync.py` by default and emits
-`figma_evidence_sync_manifest.json` plus `figma_evidence_sync_report.html` so
-the static Figma procurement frame is checked against the same repo-local
-buyer evidence packet without using Figma Code Connect.
+**Enterprise Sales Readiness** is an evidence gate, not a sales, valuation, certification, or customer claim. The canonical **Commercial Readiness** gate is [`scripts/sales_readiness.py`](scripts/sales_readiness.py), driven by release evidence from [`scripts/release_acceptance.py`](scripts/release_acceptance.py). [`scripts/build_acquisition_release.py`](scripts/build_acquisition_release.py) assembles the price-neutral buyer-review bundle and keeps any explicitly supplied transaction scenario separate from generic product-quality evidence.
 
-## CLI
+The historical [`scripts/build_commercial_release.py`](scripts/build_commercial_release.py) remains a legacy 20B compatibility orchestrator on this revision and is not the generic acquisition gate. Lower-level evidence builders remain available when maintainers need to inspect or reproduce an individual stage: [`scripts/build_release_evidence_index.py`](scripts/build_release_evidence_index.py), [`scripts/build_procurement_due_diligence.py`](scripts/build_procurement_due_diligence.py), [`scripts/build_pr_queue_governance.py`](scripts/build_pr_queue_governance.py), and [`scripts/build_figma_evidence_sync.py`](scripts/build_figma_evidence_sync.py).
 
-```bash
-fast-mlsirm simulate \
-  --persons 500 \
-  --dims 2 \
-  --items-per-dim 8 \
-  --latent-dim 2 \
-  --phi 0.3 \
-  --gamma 1.5 \
-  --seed 20260101 \
-  --out runs/sim_001
+These tools keep technical evidence distinct from actual customer acceptance, deployment, transfer, revenue, or legal authority. See [`docs/release_acceptance.md`](docs/release_acceptance.md), [`docs/commercial_readiness.md`](docs/commercial_readiness.md), and [`docs/enterprise_sales_readiness.md`](docs/enterprise_sales_readiness.md) for the bounded evidence contract.
 
-fast-mlsirm fit \
-  --responses runs/sim_001/responses.npy \
-  --factors runs/sim_001/item_factor.csv \
-  --model MLS2PLM \
-  --backend auto \
-  --latent-dim 2 \
-  --optimizer adam_lbfgs \
-  --max-iter 100 \
-  --out runs/fit_001
+## Documentation map
 
-fast-mlsirm diagnose-fit \
-  --responses runs/sim_001/responses.npy \
-  --factors runs/sim_001/item_factor.csv \
-  --params runs/fit_001/params.npz \
-  --model MLS2PLM \
-  --out runs/diagnostics_001
+| Goal | Start here |
+| --- | --- |
+| Documentation home | [`docs/README.md`](docs/README.md) |
+| Public documentation landing | [`docs/index.md`](docs/index.md) |
+| Product requirements | [`docs/PRD.md`](docs/PRD.md) |
+| Technical requirements | [`docs/TRD.md`](docs/TRD.md) |
+| Architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| Architecture decisions | [`docs/adr/README.md`](docs/adr/README.md) |
+| Research basis | [`docs/traceability/research-basis.md`](docs/traceability/research-basis.md) |
+| MLS2PLM canonical equations | [`docs/papers/mls2plm-canonical-equations.md`](docs/papers/mls2plm-canonical-equations.md) |
+| DIF | [`docs/delta_plot_dif.md`](docs/delta_plot_dif.md) |
+| Bradley–Terry ranking | [`docs/bradley_terry_mm.md`](docs/bradley_terry_mm.md) |
+| Rubric-centered generation | [`docs/rubric_item_generation.md`](docs/rubric_item_generation.md) |
+| Current product/technical gaps | [`docs/product-technical-gap-baseline.md`](docs/product-technical-gap-baseline.md) |
+| Release acceptance | [`docs/release_acceptance.md`](docs/release_acceptance.md) |
+| Security | [`SECURITY.md`](SECURITY.md) |
+| Support | [`SUPPORT.md`](SUPPORT.md) |
+| Changelog | [`CHANGELOG.md`](CHANGELOG.md) |
 
-fast-mlsirm diagnose-dimensions \
-  --responses runs/sim_001/responses.npy \
-  --factors runs/sim_001/item_factor.csv \
-  --latent-dims 1,2,3 \
-  --folds 5 \
-  --model MLS2PLM \
-  --max-iter 100 \
-  --out runs/dimensions_001
+## Contributing
 
-fast-mlsirm diagnose-response-process \
-  --responses runs/sim_001/responses.npy \
-  --probabilities runs/model_probabilities.npy \
-  --item-type polytomous \
-  --response-process cumulative \
-  --group-id runs/group_id.npy \
-  --cluster-id runs/school_id.npy \
-  --out runs/process_fit_001
+Before changing a model, numerical path, public contract, or scientific claim, read the repository guidance, applicable PRD/TRD/ADR, canonical equations, and research traceability. Keep production numerical ownership in Rust, add or update recovery/conformance evidence with behavior changes, and update public documentation together with the contract it describes.
 
-fast-mlsirm diagnose-response-candidates \
-  --responses runs/sim_001/responses.npy \
-  --candidate dim1=runs/prob_dim1.npy \
-  --candidate dim2=runs/prob_dim2.npy \
-  --item-type dichotomous \
-  --response-process ideal_point \
-  --out runs/process_dimensions_001
+## License
 
-fast-mlsirm diagnose-fixed-item-calibration \
-  --responses runs/sim_001/responses.npy \
-  --candidate dim1=runs/prob_dim1.npy \
-  --candidate dim2=runs/prob_dim2.npy \
-  --fixed-items runs/fixed_items.npy \
-  --item-type dichotomous \
-  --response-process ideal_point \
-  --itemfit-penalty-weight 1.0 \
-  --out runs/fixed_item_calibration_001
-
-fast-mlsirm render-report \
-  --diagnostics runs/diagnostics_001/fit_diagnostics.json \
-  --out runs/diagnostics_001/report.html
-```
-
-For automation, every CLI command also accepts `--json`. In JSON mode,
-progress text is suppressed and stdout contains one status object with the
-output directory, key metrics, and generated file paths:
-
-```bash
-fast-mlsirm simulate \
-  --persons 500 \
-  --dims 2 \
-  --items-per-dim 8 \
-  --out runs/sim_001 \
-  --json
-
-fast-mlsirm fit \
-  --responses runs/sim_001/responses.npy \
-  --factors runs/sim_001/item_factor.csv \
-  --out runs/fit_001 \
-  --json
-```
-
-`fit`, `diagnose-fit`, and `diagnose-dimensions` validate that `responses.npy`
-is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
-factor id per item before running optimization or diagnostics.
-`diagnose-fixed-item-calibration` writes `dimension_diagnostics.json` with
-`best_candidate`, `calibration_score`, fixed-item coverage counts, and
-item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
-mask or item-index vector; when omitted, all items are treated as the fixed
-calibration set.
-
-The explicit NumPy reference objective runs through `fast_mlsirm.fit_reference`
-(Python) or the CLI's `fast-mlsirm fit --reference` flag; production `--backend`
-choices are `{rust, auto}`. `fit --backend rust`
-requires the installed `fast_mlsirm._core` extension and fails clearly if it is
-unavailable. `fit --backend auto` uses the Rust objective when the compiled
-core is available and fails closed otherwise. Automatic resolution never
-silently selects NumPy.
-
-The backend axis stays `{numpy, rust, auto}`. GPU acceleration is a *device*
-sub-option of the Rust backend rather than a separate backend, selected with
-`fit --backend rust --rust-device {auto,cpu,gpu}` (or `FitConfig(backend="rust",
-rust_device=...)`). The Rust core carries a [wgpu](https://github.com/gfx-rs/wgpu)
-(MIT/Apache-2.0) GPGPU implementation of the negative-log-likelihood and gradient
-hot path in `crates/mlsirm-core/src/gpu.rs`:
-
-- `auto` (default) runs the GPGPU kernels when a compatible GPU adapter is
-  present and otherwise falls back to the identical CPU path — no GPU required.
-- `gpu` prefers the GPU and still falls back to CPU (with a warning) when none
-  is available, so CI and GPU-less machines pass unchanged.
-- `cpu` always uses the scalar CPU reference.
-
-The GPU kernels run in single precision (WGSL has no `f64`); the CPU path is the
-`f64` reference the numerical-parity tests assert against. The requested Rust
-device is recorded on `FitResult.rust_device` and in `fit_summary.json`; when
-`gpu` is explicitly requested on a machine without a compatible adapter, the
-runtime prints a warning and falls back to the CPU implementation.
-
-`render-report` turns `fit_diagnostics.json` or `dimension_diagnostics.json`
-into a standalone HTML report with model summary cards, compact tables, and
-small bar views when chartable diagnostic metrics are present. Optional fit
-tables, dimensionality candidate comparisons, or metric summaries without
-values are summarized in a diagnostics coverage block instead of rendering as
-repeated blank-looking report sections or placeholder-only columns.
-
-## Repository Layout
-
-```text
-python/fast_mlsirm/       Python public API and reference backend
-crates/mlsirm-core/       Rust likelihood and gradient core
-crates/fast-mlsirm-py/    PyO3 binding for the compiled Rust backend
-tests/                    Python smoke and numerical tests
-docs/                     PRD/TRD summary and roadmap
-examples/enterprise_demo/ Synthetic procurement evidence manifests
-```
-
-## MVP Boundary
-
-This is not a Bayesian sampler. The package intentionally starts with fast
-simulation, regularized point estimation, and recovery diagnostics. The current
-Rust backend keeps the same point-estimate formula contract as the NumPy
-reference path. Block-mode Rust execution, sparse response storage, benchmark
-automation, posterior predictive checking, and new ordinal response estimators
-remain future work.
+`fast-mlsirm` is licensed under the [MIT License](LICENSE). Third-party dependencies retain their own license terms and must remain compatible with the repository's commercial-use and attribution policy.
