@@ -280,6 +280,82 @@ def _select_candidate_artifacts(dist_dir: Path) -> tuple[Path, Path]:
     return wheels[0], sdists[0]
 
 
+def _candidate_source_state(path: Path) -> dict[str, Any]:
+    """Seal one selected candidate path before any downstream consumer can use it."""
+    path = path.resolve()
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("candidate artifact must be a regular file before staging")
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "size_bytes": stat.st_size,
+        "sha256": _sha256(path),
+        "device": stat.st_dev,
+        "inode": stat.st_ino,
+        "mtime_ns": stat.st_mtime_ns,
+        "ctime_ns": stat.st_ctime_ns,
+    }
+
+
+def _require_candidate_sources_unchanged(
+    source_states: tuple[dict[str, Any], ...],
+) -> None:
+    """Fail closed if any original selected candidate changes after staging."""
+    for expected in source_states:
+        raw_path = expected.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise RuntimeError("candidate staging state is malformed")
+        path = Path(raw_path)
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError(f"candidate artifact changed after staging: {path}")
+        stat = path.stat()
+        observed = {
+            "size_bytes": stat.st_size,
+            "sha256": _sha256(path),
+            "device": stat.st_dev,
+            "inode": stat.st_ino,
+            "mtime_ns": stat.st_mtime_ns,
+            "ctime_ns": stat.st_ctime_ns,
+        }
+        if any(observed[field] != expected.get(field) for field in observed):
+            raise RuntimeError(f"candidate artifact changed after staging: {path}")
+
+
+def _stage_candidate_artifacts(
+    *,
+    wheel: Path,
+    sdist: Path,
+    staging_dir: Path,
+) -> tuple[Path, Path, tuple[dict[str, Any], ...]]:
+    """Copy selected artifacts into a sealed run-local directory and bind their origins."""
+    wheel = wheel.resolve()
+    sdist = sdist.resolve()
+    source_states = (_candidate_source_state(wheel), _candidate_source_state(sdist))
+    staging_dir = staging_dir.resolve()
+    if staging_dir in {wheel.parent, sdist.parent}:
+        raise RuntimeError("candidate staging directory must differ from the source directory")
+    if staging_dir.exists():
+        if staging_dir.is_symlink() or not staging_dir.is_dir():
+            raise RuntimeError("candidate staging path must be a real directory when it exists")
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True, exist_ok=False)
+
+    staged_wheel = staging_dir / wheel.name
+    staged_sdist = staging_dir / sdist.name
+    for source, destination, expected in (
+        (wheel, staged_wheel, source_states[0]),
+        (sdist, staged_sdist, source_states[1]),
+    ):
+        shutil.copyfile(source, destination, follow_symlinks=False)
+        if destination.is_symlink() or not destination.is_file():
+            raise RuntimeError("staged candidate artifact must be a regular file")
+        if destination.stat().st_size != expected["size_bytes"] or _sha256(destination) != expected["sha256"]:
+            raise RuntimeError("staged candidate artifact does not match the selected source bytes")
+
+    _require_candidate_sources_unchanged(source_states)
+    return staged_wheel, staged_sdist, source_states
+
+
 def _prepare_candidate_environment(*, wheel: Path, out_dir: Path, python: str) -> Path:
     """Install the selected wheel into the interpreter used by release acceptance.
 
@@ -551,11 +627,18 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     _assert_source_unchanged(
         repo_root, source_commit, allowed_untracked_root=out_dir
     )
-    wheel, sdist = _select_candidate_artifacts(dist_dir)
+    source_wheel, source_sdist = _select_candidate_artifacts(dist_dir)
+    candidate_dist_dir = out_dir / "candidate-distribution"
+    wheel, sdist, candidate_source_states = _stage_candidate_artifacts(
+        wheel=source_wheel,
+        sdist=source_sdist,
+        staging_dir=candidate_dist_dir,
+    )
 
     candidate_python = _prepare_candidate_environment(
         wheel=wheel, out_dir=out_dir, python=args.python
     )
+    _require_candidate_sources_unchanged(candidate_source_states)
     _assert_source_unchanged(
         repo_root, source_commit, allowed_untracked_root=out_dir
     )
@@ -576,6 +659,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         _require_manifest_source_identity(
             "candidate_import", candidate_import_path, source_commit
         )
+        _require_candidate_sources_unchanged(candidate_source_states)
         _assert_source_unchanged(
             repo_root, source_commit, allowed_untracked_root=out_dir
         )
@@ -587,7 +671,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "--out",
         str(acceptance_dir),
         "--distribution-root",
-        str(dist_dir),
+        str(candidate_dist_dir),
     ]
     if args.require_rust:
         acceptance_command.append("--require-rust")
@@ -596,6 +680,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     _require_manifest_source_identity(
         "release_acceptance", acceptance_path, source_commit, required=False
     )
+    _require_candidate_sources_unchanged(candidate_source_states)
     _assert_source_unchanged(
         repo_root, source_commit, allowed_untracked_root=out_dir
     )
@@ -627,7 +712,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         _sales_args(
             repo_root=repo_root,
             acceptance=acceptance_path,
-            dist=dist_dir,
+            dist=candidate_dist_dir,
             out=initial_sales_path,
             benchmark=benchmark_path,
             require_rust=args.require_rust,
@@ -655,7 +740,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             "--sales-readiness",
             str(initial_sales_path),
             "--dist",
-            str(dist_dir),
+            str(candidate_dist_dir),
             "--benchmark-report",
             str(benchmark_path),
             "--out",
@@ -686,7 +771,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
             "--sales-readiness",
             str(initial_sales_path),
             "--dist",
-            str(dist_dir),
+            str(candidate_dist_dir),
             "--benchmark-report",
             str(benchmark_path),
             "--buyer-packet-manifest",
@@ -712,7 +797,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         _sales_args(
             repo_root=repo_root,
             acceptance=acceptance_path,
-            dist=dist_dir,
+            dist=candidate_dist_dir,
             out=preproc_sales_path,
             benchmark=benchmark_path,
             buyer_packet=packet_path,
@@ -748,6 +833,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "contract_value_krw": args.contract_value_krw,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "source_commit": source_commit,
+        "candidate_sources": [dict(state) for state in candidate_source_states],
         "acceptance_runtime": {
             "python": str(candidate_python),
             "wheel": str(wheel),
@@ -757,6 +843,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
     }
     if not all(item["exists"] for item in candidate_artifacts.values()):
         raise RuntimeError("candidate release is missing a required distribution/readiness artifact")
+    _require_candidate_sources_unchanged(candidate_source_states)
     _write_json(candidate_manifest_path, candidate_manifest)
     _require_manifest_source_identity(
         "acquisition_candidate", candidate_manifest_path, source_commit
@@ -770,7 +857,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "--repo-root",
         str(repo_root),
         "--dist",
-        str(dist_dir),
+        str(candidate_dist_dir),
         "--commercial-release-manifest",
         str(candidate_manifest_path),
         "--out",
@@ -854,7 +941,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         _sales_args(
             repo_root=repo_root,
             acceptance=acceptance_path,
-            dist=dist_dir,
+            dist=candidate_dist_dir,
             out=final_sales_path,
             benchmark=benchmark_path,
             buyer_packet=packet_path,
@@ -877,6 +964,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         allowed_untracked_root=out_dir,
     )
 
+    _require_candidate_sources_unchanged(candidate_source_states)
     _assert_source_unchanged(
         repo_root, source_commit, allowed_untracked_root=out_dir
     )
@@ -910,6 +998,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         "source_commit": source_commit,
         "repo_root": str(repo_root),
         "out": str(out_dir),
+        "candidate_sources": [dict(state) for state in candidate_source_states],
         "acceptance_runtime": {
             "python": str(candidate_python),
             "wheel": str(wheel),
@@ -921,6 +1010,7 @@ def build_acquisition_release(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("final acquisition bundle is missing required evidence")
     _write_json(manifest_path, manifest)
     _require_manifest_source_identity("acquisition_release", manifest_path, source_commit)
+    _require_candidate_sources_unchanged(candidate_source_states)
     _assert_source_unchanged(
         repo_root, source_commit, allowed_untracked_root=out_dir
     )
