@@ -50,3 +50,11 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+## 2026-09-12 - Fix insecure deserialization in _contract_object
+**Vulnerability:** Untrusted JSON input deserialization in `_contract_object` lacked hooks to reject duplicate object keys and non-finite constant numbers (`NaN`, `Infinity`).
+**Learning:** Python's `json.loads` is overly permissive by default. Without explicit `object_pairs_hook` and `parse_constant`, it can lead to JSON smuggling, logic bugs, or unintended decoder extensions, violating strict interoperable JSON expectations.
+**Prevention:** When using `json.loads` to deserialize untrusted JSON in Python, always explicitly provide an `object_pairs_hook` to reject duplicate keys and a `parse_constant` hook to reject non-finite numbers.
+## 2026-09-12 - Reject Numeric Overflow During JSON Deserialization
+**Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
+**Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
+**Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.

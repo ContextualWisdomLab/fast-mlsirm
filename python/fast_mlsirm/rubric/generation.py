@@ -31,19 +31,19 @@ MAX_SOURCE_CHARACTERS = 262_144
 MAX_SOURCES = 32
 MAX_TOTAL_SOURCE_CHARACTERS = 1_048_576
 MAX_RAW_RESPONSE_CHARACTERS = 262_144
-_ALLOWED_MEDIA_TYPES = frozenset(
-    {
-        "application/json",
-        "application/xml",
-        "text/csv",
-        "text/markdown",
-        "text/plain",
-    }
-)
+_ALLOWED_MEDIA_TYPES = frozenset({
+    "application/json",
+    "application/xml",
+    "text/csv",
+    "text/markdown",
+    "text/plain",
+})
 _DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-_CONTRACT_IDENTITY_FIELDS = frozenset(
-    {"contract_id", "contract_handle", "contract_fingerprint"}
-)
+_CONTRACT_IDENTITY_FIELDS = frozenset({
+    "contract_id",
+    "contract_handle",
+    "contract_fingerprint",
+})
 
 
 def _source_content(value: Any) -> str:
@@ -83,6 +83,21 @@ def _digest(value: Any, name: str) -> str:
     return normalized
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build one JSON object while rejecting duplicate member names."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"contract JSON contains a duplicate object key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> object:
+    """Reject non-finite JSON extensions unsupported by the manifest contract."""
+    raise ValueError(f"contract JSON contains unsupported constant: {value}")
+
+
 def _validate_contract_depth(content: str) -> None:
     """Reject contract JSON strings whose nesting depth exceeds the maximum budget."""
     depth = 0
@@ -114,8 +129,33 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
     if type(contract_json) is not str or not contract_json:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
+
+    def _reject_duplicates(pairs):
+        result = {}
+        for k, v in pairs:
+            if k in result:
+                raise ValueError("contract_json contains duplicate keys")
+            result[k] = v
+        return result
+
+    def _reject_nonfinite(literal):
+        raise ValueError("contract_json contains non-finite numbers")
+
+    def _reject_float_nonfinite(value):
+        import math
+
+        f_val = float(value)
+        if not math.isfinite(f_val):
+            raise ValueError("contract_json contains non-finite numbers")
+        return f_val
+
     try:
-        contract = json.loads(contract_json)
+        contract = json.loads(
+            contract_json,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_json_constant,
+            parse_float=_reject_float_nonfinite,
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
@@ -584,19 +624,17 @@ class GenerationExecution:
     @property
     def execution_fingerprint(self) -> str:
         """Return SHA-256 over the complete redacted execution provenance."""
-        return _sha256_hex(
-            {
-                "schema_version": self.schema_version,
-                "request_id": self.request_id,
-                "request_fingerprint": self.request_fingerprint,
-                "contract_id": self.contract_id,
-                "contract_fingerprint": self.contract_fingerprint,
-                "provider_id": self.provider_id,
-                "model_id": self.model_id,
-                "candidate_fingerprint": self.candidate.candidate_fingerprint,
-                "raw_response_digest": self.raw_response_digest,
-            }
-        )
+        return _sha256_hex({
+            "schema_version": self.schema_version,
+            "request_id": self.request_id,
+            "request_fingerprint": self.request_fingerprint,
+            "contract_id": self.contract_id,
+            "contract_fingerprint": self.contract_fingerprint,
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "candidate_fingerprint": self.candidate.candidate_fingerprint,
+            "raw_response_digest": self.raw_response_digest,
+        })
 
     @property
     def execution_handle(self) -> str:
