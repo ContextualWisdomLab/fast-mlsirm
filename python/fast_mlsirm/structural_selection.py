@@ -44,20 +44,22 @@ class StructuralSelectionDecision(str, Enum):
     SCORE_INTERPRETATION_NOT_SUPPORTED = "score_interpretation_not_supported"
 
 
-def _require_candidate_id(value: object, name: str) -> str:
+def _require_candidate_id(candidate_value: object, candidate_role_name: str) -> str:
     """Return one exact built-in candidate identifier without caller callbacks."""
-    if type(value) is not str:
-        raise ValueError(f"{name} candidate_id must be an exact built-in string")
-    if not value.strip():
-        raise ValueError(f"{name} candidate_id must be non-empty")
-    return value
+    if type(candidate_value) is not str:
+        raise ValueError(
+            f"{candidate_role_name} candidate_id must be an exact built-in string"
+        )
+    if not candidate_value.strip():
+        raise ValueError(f"{candidate_role_name} candidate_id must be non-empty")
+    return candidate_value
 
 
-def _require_exact_bool(value: object, name: str) -> bool:
+def _require_exact_bool(policy_value: object, policy_fact_name: str) -> bool:
     """Return one policy fact after rejecting integer truthiness substitutes."""
-    if type(value) is not bool:
-        raise TypeError(f"{name} must be bool")
-    return value
+    if type(policy_value) is not bool:
+        raise TypeError(f"{policy_fact_name} must be bool")
+    return policy_value
 
 
 @dataclass(frozen=True, slots=True)
