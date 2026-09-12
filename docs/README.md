@@ -7,6 +7,7 @@ This index distinguishes governing product/architecture documents from implement
 | Document | Governing purpose |
 |---|---|
 | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) | System of interest, bounded contexts, dependency direction, component/data/deployment/scientific views |
+| [`context-map.md`](context-map.md) | DDD bounded-context ownership, dependency direction, and foreign-context relationship contracts |
 | [`PRD.md`](PRD.md) | Product requirements, users, workflows, non-goals, acceptance boundaries |
 | [`TRD.md`](TRD.md) | Technical realization, numerical/runtime/security/resource/release requirements |
 | [`adr/README.md`](adr/README.md) | Durable architecture/scientific decision log and status history |
