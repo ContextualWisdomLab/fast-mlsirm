@@ -4,17 +4,17 @@ from dataclasses import replace
 import pytest
 
 from test_rubric_generation import _request
-import fast_mlsirm.rubric.generation as generation
+import fast_mlsirm.rubric.generation as generation_contracts
 
 
 def test_public_generation_request_rejects_float_overflow() -> None:
-    request = _request()
-    assert request.to_provider_dict()["contract_id"] == request.contract_id
+    generation_request = _request()
+    assert generation_request.to_provider_dict()["contract_id"] == generation_request.contract_id
 
-    contract_values = json.loads(request.contract_json)
+    contract_values = json.loads(generation_request.contract_json)
     contract_values["extra"] = float("inf")
-    contract_fingerprint = generation._sha256_hex(
-        generation._contract_body(contract_values)
+    contract_fingerprint = generation_contracts._sha256_hex(
+        generation_contracts._contract_body(contract_values)
     )
     contract_values.update(
         contract_fingerprint=contract_fingerprint,
@@ -27,18 +27,18 @@ def test_public_generation_request_rejects_float_overflow() -> None:
         '"extra":Infinity', '"extra":1e999'
     )
     assert '"extra":1e999' in contract_json
-    identity = generation._request_identity_payload(
+    request_identity_payload = generation_contracts._request_identity_payload(
         contract_values,
-        request.blueprint,
-        request.sources,
-        request.generation_seed,
-        request.schema_version,
+        generation_request.blueprint,
+        generation_request.sources,
+        generation_request.generation_seed,
+        generation_request.schema_version,
     )
-    request_identity = generation._sha256_hex(identity)
+    request_identity = generation_contracts._sha256_hex(request_identity_payload)
     request_id = f"generation_request_{request_identity[:16]}"
     with pytest.raises(ValueError, match="valid JSON text"):
         replace(
-            request,
+            generation_request,
             request_id=request_id,
             contract_id=contract_values["contract_id"],
             contract_json=contract_json,
