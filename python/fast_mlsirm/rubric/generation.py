@@ -114,8 +114,24 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
     if type(contract_json) is not str or not contract_json:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
+
+    def _reject_duplicates(pairs):
+        result = {}
+        for k, v in pairs:
+            if k in result:
+                raise ValueError("contract_json contains duplicate keys")
+            result[k] = v
+        return result
+
+    def _reject_nonfinite(literal):
+        raise ValueError("contract_json contains non-finite numbers")
+
     try:
-        contract = json.loads(contract_json)
+        contract = json.loads(
+            contract_json,
+            object_pairs_hook=_reject_duplicates,
+            parse_constant=_reject_nonfinite,
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
