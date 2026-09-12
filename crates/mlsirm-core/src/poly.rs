@@ -523,7 +523,7 @@ pub fn fit_poly_unidim(
     }
     validate_observed_categories(y, observed, n_cat)?;
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
 
@@ -828,7 +828,7 @@ pub fn fit_nominal(
             return Err(format!("item {i} has no observed responses"));
         }
     }
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
 
@@ -1401,7 +1401,7 @@ pub fn fit_poly_multigroup(
         }
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
 
@@ -2209,7 +2209,7 @@ pub fn score_poly_eap(
         }
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
     let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
@@ -2353,7 +2353,7 @@ pub fn poly_s_x2(
 
     let z = n_cat - 1; // highest category score Z
     let f_max = n_items * z; // perfect summed score F
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let qn = nodes.len();
 
     // per-item category probabilities at each node: probs[(i*qn + t)*n_cat + zc]
