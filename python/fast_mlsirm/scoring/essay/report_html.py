@@ -111,7 +111,7 @@ def _table(
     ):
         raise ValueError("row_header_column must identify an existing table header")
     if not rows:
-        return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
+        return f'<div class="empty-state" role="status" aria-atomic="true">{escape(empty_message)}</div>'
     if not headers:
         raise ValueError("table headers must not be empty when rows are present")
     if any(len(row) != len(headers) for row in rows):
@@ -177,7 +177,7 @@ def _evidence_rows(report: EssayScoreReport) -> tuple[tuple[object | None, ...],
 def _trigger_section(report: EssayScoreReport) -> str:
     """Render every transparent review trigger or an explicit empty state."""
     if not report.review_trigger_ids:
-        return '<div class="empty-state" role="status">No structural review trigger was emitted.</div>'
+        return '<div class="empty-state" role="status" aria-atomic="true">No structural review trigger was emitted.</div>'
     items = "".join(
         f"<li><code>{escape(trigger_id)}</code></li>"
         for trigger_id in report.review_trigger_ids
