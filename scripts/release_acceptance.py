@@ -113,11 +113,18 @@ def _require_clean_source(
 
     The acceptance output root may contain arbitrary generated acceptance files.
     A separately admitted distribution root may contain only concrete, non-symlink
-    wheel/sdist outputs. Tracked/staged changes and every other untracked file
-    remain fatal.
+    wheel/sdist outputs. Tracked/staged changes and every other untracked or ignored
+    file remain fatal.
     """
     completed = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--ignored",
+        ],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -139,7 +146,7 @@ def _require_clean_source(
             continue
         status = record[:2]
         relative_path = record[3:]
-        if status != "??":
+        if status not in {"??", "!!"}:
             violations.append(record)
             continue
         raw_candidate = repo_root / relative_path
