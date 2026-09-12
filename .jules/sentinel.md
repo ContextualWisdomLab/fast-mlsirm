@@ -50,3 +50,8 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
+## 2026-09-11 - [JSON Depth Validation Underflow (RecursionError DoS)]
+**Vulnerability:** `fast_mlsirm.io._load_json_bounded`에서 JSON 중첩 깊이를 검사할 때, 닫는 괄호(`]`, `}`)를 만날 때 깊이 카운터를 무조건 감소시켰습니다. 악의적인 사용자가 닫는 괄호를 다수 포함한 페이로드(`]}` 등)를 보내면 카운터가 음수로 언더플로우되어, 이후에 오는 매우 깊은 중첩 구조(`[{` 등)가 최대 깊이 제한(`MAX_JSON_NESTING_DEPTH`)을 우회하게 만들 수 있습니다. 이는 최종적으로 `json.loads` 호출 시 `RecursionError`를 유발하여 프로세스를 크래시(DoS) 시킬 수 있습니다.
+**Learning:** 최대 깊이를 추적하는 상태 기계(state machine) 패턴에서는 카운터가 0 미만으로 떨어지지 않도록 보장해야 합니다. 닫는 기호는 이전에 열린 괄호가 있을 때만 카운터를 감소시켜야 하며, 그렇지 않으면 카운터가 인위적으로 줄어들어 제한 검증 로직이 무력화될 수 있습니다.
+**Prevention:** JSON 파싱이나 깊이 제한 검사에서 닫는 괄호를 처리할 때, 항상 `depth > 0`인지 확인한 후 카운터를 감소시켜야 합니다 (예: `elif char in "]}" and depth > 0: depth -= 1`).
