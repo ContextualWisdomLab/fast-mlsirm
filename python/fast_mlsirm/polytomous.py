@@ -41,7 +41,7 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
-_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41, 61)
+_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41, 61, 81)
 _SUPPORTED_XI_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
@@ -94,9 +94,9 @@ def _fit_quadrature_points(value) -> int:
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61")
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
     if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61")
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
     return validated
 
 
@@ -558,7 +558,7 @@ def fit_lsirm_polytomous(
     except ValueError as exc:
         raise ValueError(
             "q_theta/q_xi must be one of the supported rules; "
-            "q_theta must be one of 7, 11, 15, 21, 31, 41, 61; "
+            "q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81; "
             "q_xi must be one of 7, 11, 15, 21, 31, 41"
         ) from exc
     validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
