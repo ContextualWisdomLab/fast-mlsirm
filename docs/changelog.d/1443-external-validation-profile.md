@@ -1,5 +1,0 @@
-# Preregistered external-validation evidence profiles
-
-## Added
-
-- Added a domain-neutral, source-text-free `fast_mlsirm.validation_profile` contract for preregistered external evidence. Profiles preserve technical, construct, transportability, fairness, and decision-utility evidence as distinct classes with explicit `passed`, `failed`, `indeterminate`, `not_executed`, and `not_applicable` states; bind exact assessment/rubric/item-bank/model/protocol provenance; reject future-available evidence beyond the analysis cutoff; normalize callback-free fixed-offset timestamps to UTC; bound evidence and limitation collections before iteration; replay profile and nested-evidence invariants before granting public serialization or fingerprint authority after post-construction mutation; and expose a deterministic SHA-256 profile fingerprint without aggregating away failed or unavailable evidence. The slice performs validation, serialization, and provenance only; future statistical validity, transportability, fairness, and utility arithmetic remains Rust-owned.
