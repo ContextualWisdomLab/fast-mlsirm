@@ -46,6 +46,22 @@ def _read_json(path: Path) -> dict[str, Any]:
 _impl._read_json = _read_json
 
 
+def _require_matching_source_commit(
+    payload: dict[str, Any],
+    expected_source_commit: str,
+    *,
+    evidence_name: str,
+) -> None:
+    """Require one buyer-evidence manifest to carry the exact sealed revision."""
+    actual = payload.get("source_commit")
+    if actual is None:
+        raise RuntimeError(f"{evidence_name} source commit is missing")
+    if actual != expected_source_commit:
+        raise RuntimeError(
+            f"{evidence_name} source commit does not match buyer packet source"
+        )
+
+
 def _validate_acceptance_artifact_digests(
     acceptance_path: Path, expected_source_commit: str | None
 ) -> None:
@@ -53,6 +69,11 @@ def _validate_acceptance_artifact_digests(
     if expected_source_commit is None:
         return
     acceptance = _impl._read_json(acceptance_path)
+    _require_matching_source_commit(
+        acceptance,
+        expected_source_commit,
+        evidence_name="acceptance",
+    )
     digest_map = acceptance.get("artifact_sha256")
     if not isinstance(digest_map, dict):
         raise RuntimeError("acceptance artifact SHA256 manifest is missing")
@@ -91,8 +112,11 @@ def _validate_sales_readiness_source(
     if expected_source_commit is None:
         return
     sales_readiness = _impl._read_json(sales_readiness_path)
-    if sales_readiness.get("source_commit") is None:
-        raise RuntimeError("sales readiness source commit is missing")
+    _require_matching_source_commit(
+        sales_readiness,
+        expected_source_commit,
+        evidence_name="sales readiness",
+    )
 
 
 def _validate_optional_source_identity(
@@ -105,8 +129,11 @@ def _validate_optional_source_identity(
     if evidence_path is None or expected_source_commit is None:
         return
     evidence = _impl._read_json(evidence_path)
-    if evidence.get("source_commit") is None:
-        raise RuntimeError(f"{evidence_name} source commit is missing")
+    _require_matching_source_commit(
+        evidence,
+        expected_source_commit,
+        evidence_name=evidence_name,
+    )
 
 
 def _validate_repository_evidence_source(
