@@ -448,7 +448,7 @@ pub(crate) const GH_WEIGHTS_81: [f64; 81] = [
 use std::sync::OnceLock;
 
 // The dense rule is intentionally separate: multidimensional tensor grids keep
-// the legacy supported set so q=61 cannot create an accidental 61^D workload.
+// the legacy supported set so q in {61, 81} cannot create an accidental dense tensor grid.
 //
 // Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature rules.
 // Mathematics of Computation, 23(106), 221–230.
@@ -456,10 +456,10 @@ use std::sync::OnceLock;
 // exact for weighted polynomials through degree 2n-1. Bock, R. D., & Aitkin,
 // M. (1981). Marginal maximum likelihood estimation of item parameters:
 // Application of an EM algorithm. Psychometrika, 46(4), 443–459.
-// https://doi.org/10.1007/BF02293801. Together these sources support q=61 as a
-// denser fixed approximation to the existing unidimensional standard-normal
-// expectations used by calibration and diagnostics, not as an adaptive error
-// guarantee or a multidimensional tensor-grid rule.
+// https://doi.org/10.1007/BF02293801. Together these sources support q in
+// {61, 81} as denser fixed approximations to the existing unidimensional
+// standard-normal expectations used by calibration and diagnostics, not as
+// adaptive error guarantees or multidimensional tensor-grid rules.
 
 static GH_61: OnceLock<(Vec<f64>, Vec<f64>)> = OnceLock::new();
 
