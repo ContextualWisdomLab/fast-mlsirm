@@ -278,7 +278,101 @@ pub(crate) const GH_WEIGHTS_41: [f64; 41] = [
     2.2578639565831077e-30,
 ];
 
-/// Look up the embedded rule for `q` nodes; `None` when unsupported.
+use std::sync::OnceLock;
+
+// The dense rule is intentionally separate: multidimensional tensor grids keep
+// the legacy supported set so q=61 cannot create an accidental 61^D workload.
+
+static GH_61: OnceLock<(Vec<f64>, Vec<f64>)> = OnceLock::new();
+
+fn gh_rule_61() -> (&'static [f64], &'static [f64]) {
+    let (nodes, weights) = GH_61.get_or_init(|| {
+        // Generated from numpy.polynomial.hermite_e.hermegauss(61), normalized.
+        let positive = [
+            0.0,
+            0.40063821105995046,
+            0.80153826303172659,
+            1.2029642303011723,
+            1.6051847101182257,
+            2.008475226640472,
+            2.4131208142506848,
+            2.8194188542255731,
+            3.2276822527149105,
+            3.638243067606806,
+            4.0514567191649027,
+            4.4677069572407992,
+            4.8874118107487146,
+            5.3110308195370264,
+            5.7390739549506931,
+            6.1721127891630712,
+            6.6107947002797749,
+            7.055861242232579,
+            7.5081723365509907,
+            7.9687387811758628,
+            8.4387669441217881,
+            8.9197218412129384,
+            9.4134189285095022,
+            9.9221626372550862,
+            10.448964909729462,
+            10.997909441340786,
+            11.574803203521677,
+            12.188457192776552,
+            12.853564295912951,
+            13.598659156615788,
+            14.498533915900149,
+        ];
+        let positive_weights = [
+            0.1598141411777855,
+            0.14753749310915876,
+            0.11605765134525153,
+            0.077742307060467822,
+            0.044299190141556276,
+            0.021440700089215427,
+            0.0087970077780564638,
+            0.0030522259632903151,
+            0.00089286291334885349,
+            0.00021942509449102729,
+            4.5111525791571688e-05,
+            7.7204093582151049e-06,
+            1.0935537165661111e-06,
+            1.2734244397327087e-07,
+            1.209624282534318e-08,
+            9.2880342218154687e-10,
+            5.7039803251286501e-11,
+            2.7668880796351234e-12,
+            1.0446062071534655e-13,
+            3.015866131841913e-15,
+            6.5184766419075028e-17,
+            1.0277368048053688e-18,
+            1.1444908106729494e-20,
+            8.6411169244947458e-23,
+            4.193948417922687e-25,
+            1.2179530564067127e-27,
+            1.9132142558327285e-30,
+            1.3977653698327285e-33,
+            3.7088060732095731e-37,
+            2.2364824894989637e-41,
+            9.3712287678837323e-47,
+        ];
+        let mut nodes = positive
+            .iter()
+            .skip(1)
+            .rev()
+            .map(|x| -*x)
+            .collect::<Vec<_>>();
+        nodes.extend_from_slice(&positive);
+        let mut weights = positive_weights
+            .iter()
+            .skip(1)
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
+        weights.extend_from_slice(&positive_weights);
+        (nodes, weights)
+    });
+    (nodes, weights)
+}
+
 pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
     match q {
         7 => Some((&GH_NODES_7, &GH_WEIGHTS_7)),
@@ -291,12 +385,30 @@ pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
     }
 }
 
+pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    if q == 61 {
+        Some(gh_rule_61())
+    } else {
+        gh_rule(q)
+    }
+}
+
 /// Resolve an embedded rule with a consistent public-validation error.
 pub(crate) fn require_gh_rule(
     q: usize,
     name: &str,
 ) -> Result<(&'static [f64], &'static [f64]), String> {
     match gh_rule(q) {
+        Some(rule) => Ok(rule),
+        None => Err(format!("unsupported {name} {q}")),
+    }
+}
+
+pub(crate) fn require_gh_rule_unidim(
+    q: usize,
+    name: &str,
+) -> Result<(&'static [f64], &'static [f64]), String> {
+    match gh_rule_unidim(q) {
         Some(rule) => Ok(rule),
         None => Err(format!("unsupported {name} {q}")),
     }

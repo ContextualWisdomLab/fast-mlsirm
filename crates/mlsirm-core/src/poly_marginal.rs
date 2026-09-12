@@ -249,7 +249,7 @@ pub fn fit_poly_lsirm(
             }
         }
     }
-    let (theta, t_w) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
+    let (theta, t_w) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let t_logw: Vec<f64> = t_w.iter().map(|w| w.ln()).collect();
     let (xi_grid, x_logw) = xi_tensor_grid(q_xi, latent_dim)?;
     let n_xi = x_logw.len();

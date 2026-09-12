@@ -41,7 +41,8 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
-_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
+_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41, 61)
+_SUPPORTED_XI_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -81,8 +82,8 @@ def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
 
 
 def _quadrature_points(value) -> int:
-    """Validate and return the Gauss-Hermite quadrature node count ``q_theta``."""
-    return _bounded_integer(value, "q_theta", 1, MAX_POLY_QUADRATURE_POINTS)
+    """Backward-compatible alias for the supported unidimensional rule set."""
+    return _fit_quadrature_points(value)
 
 
 def _fit_quadrature_points(value) -> int:
@@ -93,9 +94,23 @@ def _fit_quadrature_points(value) -> int:
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61")
     if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61")
+    return validated
+
+
+def _fit_xi_quadrature_points(value) -> int:
+    """Validate the bounded tensor-grid node count for latent-space ``xi``."""
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
+        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
+    if validated not in _SUPPORTED_XI_QUADRATURE_POINTS:
+        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
     return validated
 
 
@@ -539,9 +554,12 @@ def fit_lsirm_polytomous(
         raise ValueError("latent_dim must be an integer in 1..3") from exc
     try:
         validated_q_theta = _fit_quadrature_points(q_theta)
-        validated_q_xi = _fit_quadrature_points(q_xi)
+        validated_q_xi = _fit_xi_quadrature_points(q_xi)
     except ValueError as exc:
-        raise ValueError("q_theta/q_xi must be one of 7, 11, 15, 21, 31, 41") from exc
+        raise ValueError(
+            "q_theta must be one of 7, 11, 15, 21, 31, 41, 61; "
+            "q_xi must be one of 7, 11, 15, 21, 31, 41"
+        ) from exc
     validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
     validated_tol = _positive_real(tol, "tol")
 
@@ -671,7 +689,7 @@ def item_fit_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
-    q_theta = _quadrature_points(q_theta)
+    q_theta = _fit_quadrature_points(q_theta)
     if not np.isfinite(min_expected) or min_expected <= 0:
         raise ValueError("min_expected must be positive")
     y_int, observed = _poly_int_and_mask(responses, n_cat)
@@ -732,7 +750,7 @@ def m2_polytomous(
             categorical data analysis. *Multivariate Behavioral Research,
             49*(4), 305-328. https://doi.org/10.1080/00273171.2014.911075
     """
-    q_theta = _quadrature_points(q_theta)
+    q_theta = _fit_quadrature_points(q_theta)
     if hasattr(fit, "converged") and not bool(fit.converged):
         reason = getattr(fit, "termination_reason", "unknown")
         n_iter = getattr(fit, "n_iter", "unknown")
@@ -801,7 +819,7 @@ def local_dependence_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
-    q_theta = _quadrature_points(q_theta)
+    q_theta = _fit_quadrature_points(q_theta)
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     if y_int.shape[1] != n_items:
         raise ValueError("responses column count must match the fitted item count")
@@ -960,7 +978,7 @@ def person_fit_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
-    q_theta = _quadrature_points(q_theta)
+    q_theta = _fit_quadrature_points(q_theta)
     if not np.isfinite(prior_mean):
         raise ValueError("prior_mean must be finite")
     if not np.isfinite(prior_sd) or prior_sd <= 0:
@@ -1030,7 +1048,7 @@ def cat_simulate_polytomous(
     tt = np.asarray(true_theta, dtype=np.float64).ravel()
     if tt.size == 0 or not np.all(np.isfinite(tt)):
         raise ValueError("true_theta must be a non-empty finite 1-D array")
-    q_theta = _quadrature_points(q_theta)
+    q_theta = _fit_quadrature_points(q_theta)
     min_items = _bounded_integer(min_items, "min_items", 1, MAX_POLY_CAT_ITEMS)
     max_items = _bounded_integer(max_items, "max_items", min_items, MAX_POLY_CAT_ITEMS)
     effective_max_items = min(max_items, n_items)
