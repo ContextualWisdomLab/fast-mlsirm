@@ -50,3 +50,10 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+## 2026-09-05 - [CSP inline-style admission and exact hash binding]
+**Vulnerability:** The standalone HTML report renderers in `report.py` and `scoring/essay/report_html.py` authorized every inline style through `style-src 'unsafe-inline'`. That weakens CSP containment for injected CSS. It does not, by itself, authorize JavaScript execution; script execution remains governed separately by `script-src` or the applicable `default-src` fallback.
+**Learning:** A CSP hash-source can authorize only the intended inline `<style>` block. The browser hashes the element's exact text content, so the policy hash and emitted CSS bytes must match exactly. Changing helper signatures also requires replaying every production renderer that imports the shared CSP helper; otherwise a security hardening change can introduce a runtime failure in validation or calibration report generation.
+**Prevention:**
+- Replace broad `style-src 'unsafe-inline'` admission with a SHA-256 hash-source for the exact emitted inline stylesheet when a self-contained report must keep inline CSS.
+- Compute the hash from the same `_css()` value placed inside `<style>...</style>` and keep whitespace deterministic.
+- Cover shared validation and calibration renderers with a regression contract whenever the CSP helper signature changes.
