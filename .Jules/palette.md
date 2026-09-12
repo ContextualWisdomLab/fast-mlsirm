@@ -51,3 +51,11 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-08-11 - Replace Hardcoded System Colors with CSS Variables
+**Learning:** Hardcoding system colors like `GrayText` in HTML reports bypasses the project's contrast-managed CSS variables, leading to inconsistent UI styling and potential contrast issues across light and dark themes.
+**Action:** When defining border or text colors for elements like `.empty-state`, `<pre>`, or `<table>`, always use defined CSS variables such as `var(--muted)` for text and `var(--line)` for borders. Ensure these variables are declared in both the default `:root` and dark mode `@media` contexts.
+
+## 2026-08-11 - Enforcing Contrast and High-Contrast Mode for CSS Variables
+**Learning:** When defining palette tokens like `--muted` (for text) and `--line` (for borders), arbitrary hex codes may fail strict contrast tests (e.g., 4.5:1 for text, 3:1 for meaningful non-text boundaries). Author-defined RGB values can also defeat the user's high-contrast palette unless forced-colors behavior is explicitly delegated.
+**Action:** Measure authored tokens against the actual authored foreground/background pairs used by each normal theme. Pure white (`#ffffff`) and black (`#000000`) are valid controlled baselines only when they represent the tested theme; they are not substitutes for browser evidence when the report uses system colors such as `Canvas`. Add an `@media (forced-colors: active)` path that delegates relevant tokens to semantic system colors, and verify rendered light/dark plus forced-colors behavior before claiming accessibility conformance.
