@@ -12,6 +12,7 @@ import pytest
 import fast_mlsirm
 import fast_mlsirm._ata_core_loader as ata_loader
 import fast_mlsirm._bifactor_core_loader as bifactor_loader
+import fast_mlsirm._interaction_map_core_loader as interaction_map_loader
 import fast_mlsirm._multilevel_core_loader as multilevel_loader
 import fast_mlsirm._rating_range_core_loader as rating_range_loader
 import fast_mlsirm._rotation_core_loader as rotation_loader
@@ -22,6 +23,7 @@ import fast_mlsirm._rotation_core_loader as rotation_loader
     [
         (ata_loader, "ata_core"),
         (bifactor_loader, "bifactor_core"),
+        (interaction_map_loader, "interaction_map_core"),
         (multilevel_loader, "multilevel_core"),
         (rating_range_loader, "rating_range_core"),
         (rotation_loader, "rotation_core"),
