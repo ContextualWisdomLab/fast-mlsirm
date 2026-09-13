@@ -6,7 +6,8 @@ from typing import Any
 
 import numpy as np
 
-from .config import FitConfig
+from .config import FitConfig, _trusted_integer
+from .irt_contract import fit_irt_experiment, validate_irt_experiment_readiness
 from .math import sigmoid, standardize
 from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
 from .types import (
@@ -140,7 +141,15 @@ def fit_diagnostics(
     Clustered data use a between-cluster covariance rather than an iid M2.
     When the calibration convergence status is available, pass it so
     inferential fit indices cannot be computed from an unfinished fit.
+    ``parameter_count`` and the M2 quadrature sizes are marshalling-trusted to
+    built-in integers before AIC/BIC arithmetic or ``int(q_*)`` can dispatch
+    caller ``__index__`` hooks or wrap a narrow NumPy scalar.
     """
+    if parameter_count is not None:
+        parameter_count = _trusted_integer(parameter_count, "parameter_count")
+    m2_q_theta = _trusted_integer(m2_q_theta, "m2_q_theta")
+    m2_q_u = _trusted_integer(m2_q_u, "m2_q_u")
+    m2_q_xi = _trusted_integer(m2_q_xi, "m2_q_xi")
     if include_m2 and estimator is None:
         raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
     if include_m2 and convergence_status is not None:
@@ -174,7 +183,7 @@ def fit_diagnostics(
     residual = (y - prob) * observed
     pearson_sq = np.where(observed, residual * residual / variance, 0.0)
     n_parameters = (
-        int(parameter_count)
+        parameter_count
         if parameter_count is not None
         else _parameter_count(params, model)
     )
@@ -332,6 +341,7 @@ def dimensionality_diagnostics(
     k_folds: int = 5,
     seed: int = 1,
     eps: float = 1e-12,
+    require_experiment_readiness: bool = False,
 ) -> DimensionalityDiagnostics:
     """Choose a latent-space dimension by k-fold cross-validated held-out fit.
 
@@ -339,11 +349,26 @@ def dimensionality_diagnostics(
     entry-wise validation masks; the model is fit on the training entries and
     scored on the held-out entries (held-out log-likelihood, RMSE, mean
     absolute residual). The candidate with the best held-out log-likelihood is
-    reported as ``best``.
+    reported as ``best``. ``k_folds``, ``seed``, and each ``latent_dims``
+    value are marshalling-trusted to built-in integers before the diagnostic
+    fit-budget product or ``seed + fold_idx`` offsets are computed. When
+    ``require_experiment_readiness`` is true, the original matrix and every
+    training fold must pass the production experiment-readiness gate before
+    fitting; the default false preserves this function's low-level diagnostic
+    use for small fixtures.
     """
     from .fit import fit
 
+    k_folds = _trusted_integer(k_folds, "k_folds")
+    seed = _trusted_integer(seed, "seed")
     y, observed = prepare_response(responses, mask)
+    if require_experiment_readiness:
+        validation_y = np.where(observed, y, np.nan)
+        validate_irt_experiment_readiness(
+            validation_y,
+            "dichotomous",
+            factor_ids=factor_id,
+        )
     dims = _validated_latent_dims(latent_dims)
     folds = _validation_folds(observed, k_folds, seed)
     if len(dims) * k_folds > MAX_DIM_DIAGNOSTIC_FITS:
@@ -357,14 +382,21 @@ def dimensionality_diagnostics(
         totals = {"loglik": 0.0, "abs_residual": 0.0, "sq_residual": 0.0, "n": 0.0}
         for fold_idx, validation_mask in enumerate(folds):
             train_mask = observed & ~validation_mask
-            fitted = fit(
-                y,
-                factor_id,
-                config=replace(
-                    base, model=model, latent_dim=latent_dim, seed=seed + fold_idx
-                ),
-                mask=train_mask,
+            fit_config = replace(
+                base, model=model, latent_dim=latent_dim, seed=seed + fold_idx
             )
+            if require_experiment_readiness:
+                fitted = fit_irt_experiment(
+                    fit,
+                    np.where(train_mask, y, np.nan),
+                    "dichotomous",
+                    factor_ids=factor_id,
+                    factor_id=factor_id,
+                    config=fit_config,
+                    mask=train_mask,
+                )
+            else:
+                fitted = fit(y, factor_id, config=fit_config, mask=train_mask)
             prob = np.clip(
                 predict_proba(fitted.params, factor_id, model=fitted.model),
                 eps,
@@ -1175,8 +1207,10 @@ def _parameter_count(params: MLSIRMParams, model: str) -> int:
 
 
 def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
-    """Deduplicate and bounds-check the candidate latent dimensions."""
-    dims = list(dict.fromkeys(int(value) for value in latent_dims))
+    """Deduplicate and bounds-check trusted built-in candidate latent dimensions."""
+    dims = list(
+        dict.fromkeys(_trusted_integer(value, "latent_dims") for value in latent_dims)
+    )
     if not dims:
         raise ValueError("latent_dims must not be empty")
     if any(value < 1 for value in dims):
@@ -1195,17 +1229,17 @@ def _validation_folds(
 
     Randomly partitions the eligible observed cells (those whose row and column
     keep more than one observation) into fold masks, dropping any fold entry
-    that would empty a training row or column.
+    that would empty a training row or column. ``k_folds`` and ``seed`` are
+    marshalling-trusted to built-in integers before the mask-budget product
+    or RNG construction.
     """
-    if (
-        not isinstance(k_folds, (int, np.integer))
-        or isinstance(k_folds, (bool, np.bool_))
-        or not 2 <= int(k_folds) <= MAX_DIM_DIAGNOSTIC_FOLDS
-    ):
+    k_folds = _trusted_integer(k_folds, "k_folds")
+    seed = _trusted_integer(seed, "seed")
+    if not 2 <= k_folds <= MAX_DIM_DIAGNOSTIC_FOLDS:
         raise ValueError(
             f"k_folds must be an integer between 2 and {MAX_DIM_DIAGNOSTIC_FOLDS}"
         )
-    if observed.size * int(k_folds) > MAX_DIM_DIAGNOSTIC_MASK_CELLS:
+    if observed.size * k_folds > MAX_DIM_DIAGNOSTIC_MASK_CELLS:
         raise ValueError("k-fold validation masks exceed the aggregate size limit")
 
     row_counts = observed.sum(axis=1)

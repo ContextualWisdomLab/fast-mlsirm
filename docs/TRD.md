@@ -40,7 +40,7 @@ These belong to downstream bounded contexts such as `ContextualWisdomLab/psychom
 
 ```text
 python/fast_mlsirm/       Public Python API, validation/orchestration, reports,
-                          transparent reference/fallback paths
+                          governed reference/parity paths
 crates/mlsirm-core/       Rust psychometric/numerical source of truth
 crates/fast-mlsirm-py/    PyO3 bindings and Python transport
 scripts/                  Release, evidence, governance, study runners
@@ -182,9 +182,17 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-MLT-003** Cross-classified designs shall maintain dimension-qualified identities.
 
-**TRD-MLT-004** Temporal occasions shall retain ordering/time provenance and explicitly separate discrete occasion-step AR effects from continuous-time parameterizations.
+**TRD-MLT-004** Temporal occasions shall retain ordering/time provenance and explicitly separate discrete occasion-step AR effects from continuous-time parameterizations. OLS may use exact day-scaled offsets as regression covariates; discrete AR uses sequence gaps. Only the hierarchical CT-AR Rasch slice estimates elapsed-day Ornstein–Uhlenbeck transitions.
 
-**TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies.
+**TRD-MLT-005** Numerical multilevel/longitudinal estimators shall remain proposed until Rust implementations pass identification and true-parameter recovery studies. The hierarchical CT-AR Rasch slice reports multi-seed state RMSE/coverage as joint MAP evidence, not as Fox–Glas Gibbs or estimated MMMC recovery.
+
+**TRD-MLT-006** Rust shall validate the continuous Event Lineage channel matrix
+and exact TEPP v1 accepted-anchor identity without dichotomizing scores or
+estimating weights. Because v1 contains no independent pair-level criterion
+observations, estimation returns
+`IndependentCriterionObservationsUnavailable`. A future estimator requires a
+producer successor, Rust CPU/GPU same-objective parity, true-parameter and
+known-weight recovery, and uncertainty coverage before activation.
 
 ### 4.12 Testing and scientific evidence
 

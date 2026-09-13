@@ -17,15 +17,49 @@ from typing import Any, Callable
 GIT_METADATA_TIMEOUT_SECONDS = 5
 
 try:
-    from scripts._bounded_json import read_json_object
-except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    from scripts._bounded_json import parse_json_bounded, read_json_object
+    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts._bounded_json", "scripts._bounded_subprocess"}:
+        raise
+    from _bounded_json import parse_json_bounded, read_json_object
+    from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
+
+try:
+    from scripts.release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts.release_acceptance"}:
+        raise
+    from release_acceptance import (
+        RELEASE_ACCEPTANCE_TIMEOUT_SECONDS as _INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS,
+    )
 
 
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
 
 
+class _ReleaseCompletedProcess(subprocess.CompletedProcess[str]):
+    """Completed process carrying a stable commercial-release failure category."""
+
+    failure_kind: str | None
+
+    def __init__(
+        self,
+        args: list[str],
+        returncode: int,
+        stdout: str,
+        stderr: str,
+        *,
+        failure_kind: str | None = None,
+    ) -> None:
+        super().__init__(args=args, returncode=returncode, stdout=stdout, stderr=stderr)
+        self.failure_kind = failure_kind
+
+
 def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest of one release artifact."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -34,7 +68,7 @@ def _sha256(path: Path) -> str:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return HEAD SHA, failing closed when Git metadata lookup times out."""
+    """Return the exact HEAD SHA, failing closed when Git provenance is unavailable."""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -46,9 +80,15 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except Exception:
-        return "unknown"
-    return completed.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("source commit lookup failed") from exc
+
+    source_commit = completed.stdout.strip()
+    if len(source_commit) not in {40, 64} or any(
+        character not in "0123456789abcdef" for character in source_commit
+    ):
+        raise RuntimeError("source commit lookup returned invalid identity")
+    return source_commit
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -57,6 +97,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
+    """Resolve a path relative to the repository root when it is not absolute."""
     path = Path(value)
     if path.is_absolute():
         return path
@@ -64,20 +105,71 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 
 def _content_security_policy() -> str:
+    """Return the restrictive policy used by the self-contained release report."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
+_DEFAULT_STAGE_TIMEOUT_SECONDS = 300.0
+_BUILD_DIST_TIMEOUT_SECONDS = 900.0
+_RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS = 60.0
+_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS = (
+    sum(_INNER_RELEASE_ACCEPTANCE_TIMEOUT_SECONDS.values())
+    + _RELEASE_ACCEPTANCE_ORCHESTRATION_MARGIN_SECONDS
+)
+
+
+def _is_build_dist_command(command: list[str]) -> bool:
+    """Return True for the `python -m build` dist-packaging stage command."""
+    return len(command) >= 3 and command[1:3] == ["-m", "build"]
+
+
+def _is_release_acceptance_command(command: list[str]) -> bool:
+    """Return True if the command is running release_acceptance.py."""
+    return len(command) >= 2 and Path(command[1]).name == "release_acceptance.py"
+
+
 def _run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    """Run one release-stage command and capture its text output."""
+    timeout_seconds = _DEFAULT_STAGE_TIMEOUT_SECONDS
+    if _is_build_dist_command(command):
+        timeout_seconds = _BUILD_DIST_TIMEOUT_SECONDS
+    elif _is_release_acceptance_command(command):
+        timeout_seconds = _RELEASE_ACCEPTANCE_TIMEOUT_SECONDS
+
+    try:
+        return run_bounded_capture(
+            command,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            max_stdout_bytes=10 * 1024 * 1024,
+            max_stderr_bytes=10 * 1024 * 1024,
+        )
+    except BoundedSubprocessOutputError as exc:
+        return _ReleaseCompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr=str(exc),
+            failure_kind="output_limit",
+        )
+    except subprocess.TimeoutExpired as exc:
+        return _ReleaseCompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr=str(exc),
+            failure_kind="timeout",
+        )
 
 
 def _parse_last_json_line(stdout: str) -> dict[str, Any] | None:
+    """Parse the final JSON object emitted by a release-stage command."""
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     for index in range(len(lines)):
         candidate = "\n".join(lines[index:])
         try:
-            payload = json.loads(candidate)
-        except json.JSONDecodeError:
+            payload = parse_json_bounded(candidate)
+        except ValueError:
             continue
         if isinstance(payload, dict):
             return payload
@@ -85,6 +177,7 @@ def _parse_last_json_line(stdout: str) -> dict[str, Any] | None:
 
 
 def _tail(text: str, limit: int = 1200) -> str:
+    """Return a bounded suffix suitable for release-stage diagnostics."""
     text = text.strip()
     if len(text) <= limit:
         return text
@@ -98,6 +191,7 @@ def _stage(
     repo_root: Path,
     runner: Runner,
 ) -> dict[str, Any]:
+    """Execute one release stage and return stable status and diagnostics."""
     started = time.perf_counter()
     completed = runner(command, repo_root)
     duration = round(time.perf_counter() - started, 6)
@@ -111,12 +205,17 @@ def _stage(
         "stdout_tail": _tail(completed.stdout),
         "stderr_tail": _tail(completed.stderr),
     }
+    if completed.returncode != 0:
+        stage["failure_kind"] = getattr(
+            completed, "failure_kind", None
+        ) or "subprocess_exit"
     if parsed is not None:
         stage["result"] = parsed
     return stage
 
 
 def _artifact(path: Path) -> dict[str, Any]:
+    """Describe one optional release artifact with existence and digest metadata."""
     return {
         "path": str(path),
         "name": path.name,
@@ -127,6 +226,7 @@ def _artifact(path: Path) -> dict[str, Any]:
 
 
 def _render_html(manifest: dict[str, Any]) -> str:
+    """Render the commercial release manifest as a portable HTML report."""
     rows = []
     for stage in manifest.get("stages", []):
         if not isinstance(stage, dict):
@@ -240,6 +340,7 @@ def _render_html(manifest: dict[str, Any]) -> str:
 
 
 def _report_css() -> str:
+    """Return the small inline stylesheet used by the release report."""
     return """
 :root {
   color: #172026;
@@ -395,6 +496,7 @@ code {
 def _commands(
     args: argparse.Namespace, repo_root: Path, out_dir: Path
 ) -> list[tuple[str, list[str]]]:
+    """Build the ordered core release command stages from CLI options."""
     python = args.python
     scripts = repo_root / "scripts"
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
@@ -524,6 +626,7 @@ def _commands(
 def _procurement_command(
     args: argparse.Namespace, repo_root: Path, out_dir: Path
 ) -> list[str]:
+    """Build the optional procurement due-diligence command."""
     command = [
         args.python,
         str(repo_root / "scripts" / "build_procurement_due_diligence.py"),
@@ -548,6 +651,7 @@ def _procurement_command(
 def _pr_queue_command(
     args: argparse.Namespace, repo_root: Path, out_dir: Path
 ) -> list[str]:
+    """Build the optional PR queue governance command."""
     command = [
         args.python,
         str(repo_root / "scripts" / "build_pr_queue_governance.py"),
@@ -576,6 +680,7 @@ def _pr_queue_command(
 def _figma_sync_command(
     args: argparse.Namespace, repo_root: Path, out_dir: Path
 ) -> list[str]:
+    """Build the optional Figma evidence synchronization command."""
     command = [
         args.python,
         str(repo_root / "scripts" / "build_figma_evidence_sync.py"),
@@ -604,6 +709,7 @@ def _figma_sync_command(
 
 
 def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, Any]]:
+    """Collect known release artifact paths and their current digests."""
     acceptance_dir = out_dir / "release-acceptance"
     repo_root = Path(args.repo_root).resolve()
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
@@ -668,6 +774,7 @@ def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, A
 def _write_outputs(
     manifest: dict[str, Any], manifest_path: Path, html_path: Path
 ) -> None:
+    """Write the release manifest and its digest-bearing HTML report."""
     html_path.write_text(_render_html(manifest), encoding="utf-8")
     manifest["html_report_sha256"] = _sha256(html_path)
     manifest_path.write_text(
@@ -678,6 +785,7 @@ def _write_outputs(
 def build_commercial_release(
     args: argparse.Namespace, *, runner: Runner = _run_command
 ) -> dict[str, Any]:
+    """Run commercial release stages and return the final evidence manifest."""
     repo_root = Path(args.repo_root).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
@@ -772,6 +880,7 @@ def build_commercial_release(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Create the command-line parser for commercial release generation."""
     parser = argparse.ArgumentParser(
         description="Build the full fast-mlsirm commercial release evidence bundle."
     )
@@ -860,6 +969,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run commercial release generation and print a machine-readable summary."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

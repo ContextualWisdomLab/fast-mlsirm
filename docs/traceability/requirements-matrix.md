@@ -1,7 +1,7 @@
 # Requirements, decisions, implementation and evidence matrix
 
 Status: **Authoritative traceability baseline**  
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-16
 
 This matrix makes the major product requirements discoverable without reconstructing decisions from chat history or PR bodies. It deliberately distinguishes **protected-main implementation**, **active/open work**, **future research**, and **downstream ownership**.
 
@@ -20,12 +20,17 @@ This matrix makes the major product requirements discoverable without reconstruc
 | Model relation/comparison | PRD-FR-040..043, TRD-MOD | ADR-0006 | relation-safe comparison primitives and diagnostics where merged; formal family-wide distinguishability remains work in progress | Partial |
 | Bifactor scoreability | PRD-FR-044, TRD-BIF | ADR-0006 | protected-main package exposes bifactor scoreability surfaces; interpretation still depends on the evidence contract and model relation | Accepted bounded capability / evolving evidence |
 | Factor retention | PRD-FR-040/050, TRD-MOD-001 | ADR-0006 | dimensionality diagnostics exist; unified retention + structural-selection evidence workflow remains a product gap tracked by issue #608 | Partial / planned integration |
-| Latent-space residual interaction | PRD-FR-040..052, TRD-MOD | ADR-0006 | MLSIRM family on protected main | Accepted only after substantive dimension/testlet/facet diagnosis; not a substitute for omitted structure |
+| Latent-space residual interaction | PRD-FR-040..052, TRD-MOD | ADR-0001, ADR-0006 | MLSIRM family on protected main | Accepted only after substantive dimension/testlet/facet diagnosis; not a substitute for omitted structure |
+| Observed-score DIF screens | PRD-FR-021/043, fairness/invariance | ADR-0018 | `fast_mlsirm.delta_plot` (Angoff / Magis–Facon) plus MH/logistic/SIBTEST; method page `docs/delta_plot_dif.md` | Accepted screens; flags are review candidates, not fairness determinations |
+| Pairwise ranking (Bradley–Terry MM) | TRD-NUM-001 scoring/ranking | ADR-0017 | `fast_mlsirm.bradley_terry_mm`, `fast_mlsirm.bratt_mm`; method page `docs/bradley_terry_mm.md` | Accepted BT/Hunter MM and additive-ties BRATT only; Rao–Kupper/Davidson not implemented |
 | Adaptive rotation | PRD-FR-051/052, TRD-ROT | ADR-0009 | protected main contains `crates/mlsirm-core/src/rotation/`, PyO3 bindings, `python/fast_mlsirm/rotation.py`, `rotation_selection.py`, package-root exports, criterion-neutral selection and rotation regression/doctoring evidence | Accepted CPU baseline / planned GPU and broader recovery extensions |
 | True-parameter recovery | PRD-PRN-003, TRD-TEST-003..006 | ADR-0008 | simulation/recovery reports, Rust/NumPy parity, scheduled statistical studies/recovery contracts | Accepted |
 | Correlation vs recovery/agreement | PRD-PRN-003, scoring validity requirements | ADR-0008, ADR-0005 | recovery/simulation, agreement/QWK/facets evidence | Accepted: correlation is supplementary association evidence, never sole proof of parameter recovery or interchangeability |
-| Multilevel/multiple-membership/temporal | PRD-FR-060..062, TRD-MLT | ADR-0007 | contextual summaries exist; full reusable contract PR remains open and Rust estimator recovery is future work | Proposed/partial / active PR |
+| Multilevel/multiple-membership/temporal | PRD-FR-060..062, TRD-MLT | ADR-0007, ADR-0019, ADR-0020 | contracts plus OLS/AR state layer and a separate joint MAP hierarchical CT-AR Rasch slice exist on the stacked longitudinal PRs; estimated MMMC `u_h` and GPU parity remain excluded | Proposed/partial / active PR |
+| Crossed / multiple-membership person effects | PRD-FR-060..062, TRD-MLT | ADR-0007 | protected main has Rust MAP recovery with RMSE evidence; OLS/AR and continuous-time claims remain separate slices | Implemented / partial |
+| TEPP-anchored Event Lineage channel weights | PRD-FR-063, TRD-MLT-006 | ADR-0023 | Active PR #1423 admits continuous pair/channel evidence and exact accepted TEPP v1 identity in Rust, then returns `IndependentCriterionObservationsUnavailable`; no floor, Python fit, or local normalization. This is not protected-main evidence until exact-head integration. | Proposed / active PR; pair-level producer evidence missing |
 | Accessible standalone reports | PRD-FR-070..072, NFR-004 | ADR-0005 | report renderers, exact-value exports, WCAG-focused regression/doctoring | Accepted/evolving |
+| Finite-population proportion inference | PRD-FR-045/046, NFR-008 | ADR-0022, ADR-0025 | Rust sampling design and achieved SRSWOR estimator/variance/exact interval, PyO3/Python contracts, exhaustive coverage and published-table tests, doctoring evidence | Proposed |
 | Sensitive data / PII utility | privacy/security requirements | ADR-0012 | source-free/digest/opaque-id provenance where implemented; provider error redaction; hosted identity/retention downstream | Accepted reusable policy / Downstream operations |
 | Continuous execution / documentation governance | TRD-DOC-002 / work-conserving automation | ADR-0013 | single-writer exact branch head; work-conserving when blocked; feasibility-first prioritization | Accepted governance |
 | Reusable-core threat model | security/release requirements | ADR-0001/0002/0003/0005/0010/0012 | `docs/security/threat-model.md`, Security Scan/SAST/fuzz/resource tests | Accepted documentation baseline; feature-specific controls evolve |

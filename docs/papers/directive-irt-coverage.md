@@ -141,12 +141,15 @@ the Rust core and `serving.py`).
    patterns); Bayesian EAP/MAP with a proper prior is always finite. Assertion:
    all-0/all-1 vectors return finite `θ̂` and defined SE; MLE is flagged/undefined.
 
-## Open-access full-text availability (for future PDF preservation)
+## Open-access full-text availability
 
-Preserve these OA copies under `docs/papers/papers/` if/when full-text archiving is
-performed (no Git LFS; direct PDF or a citation-only stub per repository policy):
+The repository preserves only OA originals with an explicit redistribution basis
+in `docs/papers/papers/` (no Git LFS). Other accessible copies remain stable
+citation-only links; an OA label does not by itself grant this repository a right
+to redistribute a PDF:
 
-- Chalmers (2012) — fully OA: <https://www.jstatsoft.org/v48/i06/>
+- Chalmers (2012) — fully OA: <https://www.jstatsoft.org/v48/i06/> (not yet
+  vendored; confirm the journal's redistribution terms before adding a binary)
 - Bock & Aitkin (1981) — OA scan (UC Merced course reserves)
 - Bock, Gibbons & Muraki (1988) — OA (U. Minnesota Conservancy)
 - Bock & Mislevy (1982) — OA (U. Minnesota Conservancy)

@@ -175,7 +175,9 @@ def test_fit_marginal_rejects_anchor_non_finite():
 def test_fit_marginal_uses_custom_penalty_config():
     """A non-default penalty config replaces the LSIRM priors (line 345)."""
     data = simulate(MLS2PLMConfig(n_persons=20, n_dims=1, items_per_dim=4, latent_dim=1, seed=2))
-    res = fit(
+    from fast_mlsirm.reference import fit_reference
+
+    res = fit_reference(
         data.Y,
         data.factor_id,
         config=FitConfig(

@@ -47,3 +47,37 @@ def test_fit_cli_timeout_is_bounded_and_fails_closed_without_reflection(monkeypa
     assert message == "fit_auto timed out"
     assert "RELEASE_ACCEPTANCE_SECRET" not in message
     assert "release-acceptance-secret-command" not in message
+
+
+def test_auto_fit_acceptance_rejects_numpy_as_resolved_owner() -> None:
+    """A purchaser auto-fit must not pass release acceptance with a NumPy owner."""
+    module = _load_release_acceptance()
+
+    with pytest.raises(RuntimeError, match="fit auto backend must resolve to rust"):
+        module._require_auto_fit_resolved_to_rust(
+            {"backend": "numpy"},
+            {"backend": "numpy"},
+        )
+
+
+def test_auto_fit_acceptance_rejects_mismatched_rust_payload() -> None:
+    """Summary and CLI payload must agree that auto resolved to Rust."""
+    module = _load_release_acceptance()
+
+    with pytest.raises(
+        RuntimeError, match="fit_payload backend does not match fit_summary backend"
+    ):
+        module._require_auto_fit_resolved_to_rust(
+            {"backend": "rust"},
+            {"backend": "numpy"},
+        )
+
+
+def test_auto_fit_acceptance_accepts_rust_owner() -> None:
+    """The auto path is accepted only when both records name Rust."""
+    module = _load_release_acceptance()
+
+    module._require_auto_fit_resolved_to_rust(
+        {"backend": "rust"},
+        {"backend": "rust"},
+    )

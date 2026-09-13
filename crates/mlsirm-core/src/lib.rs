@@ -16,14 +16,18 @@ pub mod gpcm;
 pub mod grm;
 pub mod gtheory;
 pub mod ksirt;
+pub mod lineage_channel_weight;
 pub mod linking;
 pub mod lltm;
+pub mod longitudinal;
+pub mod longitudinal_irt;
 pub mod marginal;
 pub mod mhrm;
 pub mod mixed;
 pub mod mixture;
 pub mod mmle;
 pub mod mokken;
+pub mod multilevel;
 pub mod nodes;
 pub mod nominal;
 pub mod oakes;
@@ -84,6 +88,8 @@ pub(crate) mod gpu_marginal;
 pub(crate) mod gpu_plausible;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_scoring;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_multilevel;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Mirt,

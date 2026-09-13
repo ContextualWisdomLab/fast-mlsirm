@@ -9,6 +9,13 @@ from pathlib import Path
 import pytest
 
 
+VALID_SHA1 = "0123456789abcdef0123456789abcdef01234567"
+VALID_SHA256 = (
+    "0123456789abcdef0123456789abcdef"
+    "0123456789abcdef0123456789abcdef"
+)
+
+
 def _load_figma_evidence_sync():
     """Load the Figma evidence sync builder as a standalone script module."""
     script = Path(__file__).resolve().parents[1] / "scripts" / "build_figma_evidence_sync.py"
@@ -44,30 +51,73 @@ def test_source_commit_timeout_is_bounded_and_fails_closed(monkeypatch, tmp_path
     assert 0 < timeout <= 30
 
 
-def test_source_commit_forwards_bounded_deadline_on_success(monkeypatch, tmp_path):
-    """Successful Git metadata lookup uses the same package-owned deadline."""
+@pytest.mark.parametrize("source_commit", [VALID_SHA1, VALID_SHA256])
+def test_source_commit_accepts_canonical_full_object_ids(
+    monkeypatch, tmp_path, source_commit
+):
+    """Canonical full SHA-1 and SHA-256 object identities remain supported."""
     module = _load_figma_evidence_sync()
     seen: dict[str, object] = {}
 
     def fake_run(*args, **kwargs):
         seen.update(kwargs)
-        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="abc123\n")
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout=f"{source_commit}\n"
+        )
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
 
-    assert module._source_commit(tmp_path) == "abc123"
+    assert module._source_commit(tmp_path) == source_commit
     timeout = seen.get("timeout")
     assert isinstance(timeout, (int, float)) and not isinstance(timeout, bool)
     assert 0 < timeout <= 30
 
 
-def test_source_commit_keeps_non_timeout_unknown_fallback(monkeypatch, tmp_path):
-    """Ordinary non-timeout Git failures retain the historical unknown fallback."""
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "",
+        "abc123\n",
+        f"{'A' * 40}\n",
+        f"{'g' * 40}\n",
+        f"{'a' * 39}\n",
+        f"{'a' * 41}\n",
+        f"{'a' * 65}\n",
+    ],
+)
+def test_source_commit_rejects_noncanonical_object_ids(monkeypatch, tmp_path, stdout):
+    """Malformed, abbreviated, uppercase, and oversized object IDs fail closed."""
     module = _load_figma_evidence_sync()
 
     def fake_run(*args, **kwargs):
-        raise subprocess.CalledProcessError(returncode=128, cmd=args[0])
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout=stdout)
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
 
-    assert module._source_commit(tmp_path) == "unknown"
+    with pytest.raises(
+        RuntimeError, match=r"^source commit lookup returned invalid object id$"
+    ):
+        module._source_commit(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.CalledProcessError(
+            returncode=128, cmd=["git", "rev-parse", "HEAD"]
+        ),
+        FileNotFoundError("git is unavailable"),
+        OSError("git metadata unavailable"),
+    ],
+)
+def test_source_commit_non_timeout_failures_fail_closed(monkeypatch, tmp_path, failure):
+    """Git command and operating-system failures cannot degrade to unknown provenance."""
+    module = _load_figma_evidence_sync()
+
+    def fake_run(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match=r"^source commit lookup failed$"):
+        module._source_commit(tmp_path)

@@ -31,6 +31,43 @@ _MAX_EVIDENCE_REFERENCES = 64
 _MAX_ERROR_MESSAGE_CHARACTERS = 512
 _LIFECYCLE_PATH_PATTERN = re.compile(r"^\$(?:\.[a-z][a-z0-9_]*|\[[0-9]+\])*$")
 _RECORD_CREATION_TOKEN = object()
+_RECORD_INSTANCE_FIELDS = frozenset(
+    {
+        "item_id",
+        "item_version",
+        "candidate_fingerprint",
+        "pilot_record_fingerprint",
+        "audit_report_fingerprint",
+        "blueprint_id",
+        "rubric_id",
+        "rubric_version",
+        "lifecycle_state",
+        "policy_criticality",
+        "approved_use_ids",
+        "evidence_references",
+        "previous_record_fingerprint",
+        "transition_reason_id",
+        "suspension_concern_kinds",
+        "schema_version",
+        "_record_fingerprint",
+    }
+)
+_EVIDENCE_REFERENCE_INSTANCE_FIELDS = frozenset(
+    {"evidence_kind", "evidence_id", "evidence_fingerprint"}
+)
+_RECORD_STRING_FIELDS = (
+    "item_id",
+    "item_version",
+    "candidate_fingerprint",
+    "pilot_record_fingerprint",
+    "audit_report_fingerprint",
+    "blueprint_id",
+    "rubric_id",
+    "rubric_version",
+    "transition_reason_id",
+    "schema_version",
+    "_record_fingerprint",
+)
 
 
 class ItemBankLifecycleState(str, Enum):
@@ -50,13 +87,30 @@ class ItemBankEvidenceKind(str, Enum):
     CALIBRATION = "calibration"
     ITEM_FIT = "item_fit"
     DIF = "dif"
+    DIF_NOT_APPLICABLE = "dif_not_applicable"
     ITEM_INFORMATION = "item_information"
     LINKING = "linking"
     EXPOSURE = "exposure"
     DRIFT = "drift"
+    EVIDENCE_VALIDITY = "evidence_validity"
+    CONTENT_VALIDITY = "content_validity"
+    SECURITY_PRIVACY = "security_privacy"
     APPROVAL = "approval"
     SUSPENSION = "suspension"
     RETIREMENT = "retirement"
+
+
+_SUSPENSION_CONCERN_EVIDENCE_KINDS = frozenset(
+    {
+        ItemBankEvidenceKind.DIF,
+        ItemBankEvidenceKind.DRIFT,
+        ItemBankEvidenceKind.EXPOSURE,
+        ItemBankEvidenceKind.LINKING,
+        ItemBankEvidenceKind.EVIDENCE_VALIDITY,
+        ItemBankEvidenceKind.CONTENT_VALIDITY,
+        ItemBankEvidenceKind.SECURITY_PRIVACY,
+    }
+)
 
 
 class PolicyCriticality(str, Enum):
@@ -100,12 +154,14 @@ def _fingerprint(value: Any, name: str) -> str:
 
 def _enum_value(value: Any, enum_type: type[Enum], name: str) -> Enum:
     """Normalize an exact enum member or its serialized value."""
-    if isinstance(value, enum_type):
+    choices = [member.value for member in enum_type]
+    if type(value) is enum_type:
         return value
+    if type(value) is not str:
+        raise ValueError(f"{name} must be one of {choices}")
     try:
         return enum_type(value)
     except (TypeError, ValueError) as exc:
-        choices = [member.value for member in enum_type]
         raise ValueError(f"{name} must be one of {choices}") from exc
 
 
@@ -157,7 +213,7 @@ def _normalize_evidence_references(
             minimum=0,
             maximum=_MAX_EVIDENCE_REFERENCES,
         )
-    except ValueError as exc:
+    except ValueError:
         if error_type is ItemBankLifecycleError:
             raise ItemBankLifecycleError(
                 "invalid_evidence_references",
@@ -240,6 +296,7 @@ class ItemBankLifecycleRecord:
     evidence_references: tuple[ItemBankEvidenceReference, ...]
     previous_record_fingerprint: str | None
     transition_reason_id: str
+    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...] = ()
     schema_version: str = SCHEMA_VERSION
     _creation_token: InitVar[object | None] = None
     _record_fingerprint: str = field(init=False, repr=False)
@@ -306,6 +363,27 @@ class ItemBankLifecycleRecord:
             "evidence_references",
             _normalize_evidence_references(self.evidence_references),
         )
+        normalized_concerns = tuple(
+            sorted(
+                {
+                    _enum_value(
+                        kind,
+                        ItemBankEvidenceKind,
+                        "suspension_concern_kinds",
+                    )
+                    for kind in self.suspension_concern_kinds
+                },
+                key=lambda kind: kind.value,
+            )
+        )
+        if any(
+            kind not in _SUSPENSION_CONCERN_EVIDENCE_KINDS
+            for kind in normalized_concerns
+        ):
+            raise ValueError(
+                "suspension_concern_kinds must contain only governed concern evidence kinds"
+            )
+        object.__setattr__(self, "suspension_concern_kinds", normalized_concerns)
         if self.previous_record_fingerprint is not None:
             object.__setattr__(
                 self,
@@ -329,6 +407,11 @@ class ItemBankLifecycleRecord:
         else:
             if self.previous_record_fingerprint is None:
                 raise ValueError("post-pilot records require a previous record fingerprint")
+        if self.lifecycle_state is ItemBankLifecycleState.SUSPENDED:
+            if not self.suspension_concern_kinds:
+                raise ValueError("suspended records require suspension concern kinds")
+        elif self.suspension_concern_kinds:
+            raise ValueError("only suspended records may retain suspension concern kinds")
         if self.lifecycle_state in {
             ItemBankLifecycleState.APPROVED,
             ItemBankLifecycleState.ACTIVE,
@@ -359,25 +442,93 @@ class ItemBankLifecycleRecord:
             ],
             "previous_record_fingerprint": self.previous_record_fingerprint,
             "transition_reason_id": self.transition_reason_id,
+            "suspension_concern_kinds": [
+                kind.value for kind in self.suspension_concern_kinds
+            ],
         }
 
     @property
     def record_fingerprint(self) -> str:
-        """Return the creation-time complete SHA-256 identity of this record."""
-        return self._record_fingerprint
+        """Return the replay-verified creation-time SHA-256 identity of this record."""
+        verified = _verify_current_record(self)
+        return verified._record_fingerprint
 
     @property
     def record_id(self) -> str:
-        """Return a descriptive 128-bit public lifecycle-record handle."""
+        """Return a replay-verified descriptive 128-bit public lifecycle handle."""
         return f"item_bank_record_{self.record_fingerprint[:32]}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return canonical content and deterministic public identities."""
+        """Return canonical content and public identities after invariant replay."""
+        verified = _verify_current_record(self)
+        fingerprint = verified._record_fingerprint
         return {
-            **self._content_dict(),
-            "record_id": self.record_id,
-            "record_fingerprint": self.record_fingerprint,
+            **ItemBankLifecycleRecord._content_dict(verified),
+            "record_id": f"item_bank_record_{fingerprint[:32]}",
+            "record_fingerprint": fingerprint,
         }
+
+
+def _has_exact_instance_fields(value: object, expected: frozenset[str]) -> bool:
+    """Return whether a package object retains only its declared state fields."""
+    field_names = tuple(vars(value))
+    if any(type(name) is not str for name in field_names):
+        return False
+    return frozenset(field_names) == expected
+
+
+def _record_replay_state_is_inert(record: ItemBankLifecycleRecord) -> bool:
+    """Validate creation-normalized record state without caller callback dispatch."""
+    if not _has_exact_instance_fields(record, _RECORD_INSTANCE_FIELDS):
+        return False
+    state = vars(record)
+    if any(type(state[name]) is not str for name in _RECORD_STRING_FIELDS):
+        return False
+    if type(state["lifecycle_state"]) is not ItemBankLifecycleState:
+        return False
+    if type(state["policy_criticality"]) is not PolicyCriticality:
+        return False
+    previous = state["previous_record_fingerprint"]
+    if previous is not None and type(previous) is not str:
+        return False
+    approved_use_ids = state["approved_use_ids"]
+    if type(approved_use_ids) is not tuple:
+        return False
+    if any(type(value) is not str for value in approved_use_ids):
+        return False
+    evidence_references = state["evidence_references"]
+    if type(evidence_references) is not tuple:
+        return False
+    for reference in evidence_references:
+        if type(reference) is not ItemBankEvidenceReference:
+            return False
+        if not _has_exact_instance_fields(
+            reference,
+            _EVIDENCE_REFERENCE_INSTANCE_FIELDS,
+        ):
+            return False
+        reference_state = vars(reference)
+        if type(reference_state["evidence_kind"]) is not ItemBankEvidenceKind:
+            return False
+        if type(reference_state["evidence_id"]) is not str:
+            return False
+        if type(reference_state["evidence_fingerprint"]) is not str:
+            return False
+    suspension_concern_kinds = state["suspension_concern_kinds"]
+    if type(suspension_concern_kinds) is not tuple:
+        return False
+    return all(
+        type(kind) is ItemBankEvidenceKind for kind in suspension_concern_kinds
+    )
+
+
+def _raise_lifecycle_replay_mismatch() -> None:
+    """Raise the stable source-text-free current-record replay failure."""
+    raise ItemBankLifecycleError(
+        "lifecycle_record_replay_mismatch",
+        "$.current_record",
+        "current lifecycle record no longer matches its creation-time identity",
+    )
 
 
 def _verify_current_record(record: Any) -> ItemBankLifecycleRecord:
@@ -388,12 +539,14 @@ def _verify_current_record(record: Any) -> ItemBankLifecycleRecord:
             "$.current_record",
             "current record must be an exact ItemBankLifecycleRecord",
         )
-    if _sha256_hex(record._content_dict()) != record.record_fingerprint:
-        raise ItemBankLifecycleError(
-            "lifecycle_record_replay_mismatch",
-            "$.current_record",
-            "current lifecycle record no longer matches its creation-time identity",
-        )
+    if not _record_replay_state_is_inert(record):
+        _raise_lifecycle_replay_mismatch()
+    state = vars(record)
+    if (
+        _sha256_hex(ItemBankLifecycleRecord._content_dict(record))
+        != state["_record_fingerprint"]
+    ):
+        _raise_lifecycle_replay_mismatch()
     return record
 
 
@@ -413,6 +566,7 @@ def _create_record(
     evidence_references: tuple[ItemBankEvidenceReference, ...],
     previous_record_fingerprint: str | None,
     transition_reason_id: str,
+    suspension_concern_kinds: tuple[ItemBankEvidenceKind, ...],
 ) -> ItemBankLifecycleRecord:
     """Create one sealed normalized lifecycle record through a private token."""
     return ItemBankLifecycleRecord(
@@ -430,6 +584,7 @@ def _create_record(
         evidence_references=evidence_references,
         previous_record_fingerprint=previous_record_fingerprint,
         transition_reason_id=transition_reason_id,
+        suspension_concern_kinds=suspension_concern_kinds,
         _creation_token=_RECORD_CREATION_TOKEN,
     )
 
@@ -468,6 +623,7 @@ def build_item_bank_pilot_record(
         evidence_references=(),
         previous_record_fingerprint=None,
         transition_reason_id="pilot_admission",
+        suspension_concern_kinds=(),
     )
 
 
@@ -498,28 +654,43 @@ def _missing_required_kinds(
     current_state: ItemBankLifecycleState,
     target_state: ItemBankLifecycleState,
     supplied_kinds: set[ItemBankEvidenceKind],
+    *,
+    suspension_concern_kinds: frozenset[ItemBankEvidenceKind] = frozenset(),
 ) -> tuple[str, ...]:
     """Return missing newly supplied evidence kinds for one allowed transition."""
     if target_state is ItemBankLifecycleState.CALIBRATED:
         required = {
             ItemBankEvidenceKind.CALIBRATION,
             ItemBankEvidenceKind.ITEM_FIT,
-            ItemBankEvidenceKind.DIF,
             ItemBankEvidenceKind.ITEM_INFORMATION,
         }
-    elif target_state is ItemBankLifecycleState.APPROVED:
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not supplied_kinds.intersection(
+            {ItemBankEvidenceKind.DIF, ItemBankEvidenceKind.DIF_NOT_APPLICABLE}
+        ):
+            missing.append("dif_or_dif_not_applicable")
+        return tuple(sorted(missing))
+    if target_state is ItemBankLifecycleState.APPROVED:
         required = {ItemBankEvidenceKind.APPROVAL}
     elif (
         current_state is ItemBankLifecycleState.SUSPENDED
         and target_state is ItemBankLifecycleState.ACTIVE
     ):
-        required = {ItemBankEvidenceKind.APPROVAL, ItemBankEvidenceKind.DRIFT}
+        required = {ItemBankEvidenceKind.APPROVAL}
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not suspension_concern_kinds:
+            missing.append("suspension_resolution_evidence")
+        else:
+            missing.extend(
+                kind.value for kind in suspension_concern_kinds - supplied_kinds
+            )
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.SUSPENDED:
         required = {ItemBankEvidenceKind.SUSPENSION}
-        if not supplied_kinds.intersection(
-            {ItemBankEvidenceKind.DIF, ItemBankEvidenceKind.DRIFT}
-        ):
-            return ("dif_or_drift",)
+        missing = [kind.value for kind in required - supplied_kinds]
+        if not supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS):
+            missing.append("suspension_concern_evidence")
+        return tuple(sorted(missing))
     elif target_state is ItemBankLifecycleState.RETIRED:
         required = {ItemBankEvidenceKind.RETIREMENT}
     else:
@@ -539,7 +710,7 @@ def transition_item_bank_record(
     current = _verify_current_record(current_record)
     try:
         target = _enum_value(target_state, ItemBankLifecycleState, "target_state")
-    except ValueError as exc:
+    except ValueError:
         raise ItemBankLifecycleError(
             "invalid_target_state",
             "$.target_state",
@@ -561,10 +732,22 @@ def transition_item_bank_record(
         error_type=ItemBankLifecycleError,
     )
     supplied_kinds = {reference.evidence_kind for reference in additions}
+    if (
+        target is ItemBankLifecycleState.CALIBRATED
+        and ItemBankEvidenceKind.DIF in supplied_kinds
+        and ItemBankEvidenceKind.DIF_NOT_APPLICABLE in supplied_kinds
+    ):
+        raise ItemBankLifecycleError(
+            "conflicting_dif_applicability",
+            "$.evidence_references",
+            "calibration requires exactly one DIF applicability evidence class",
+        )
+    current_suspension_concerns = frozenset(current.suspension_concern_kinds)
     missing = _missing_required_kinds(
         current.lifecycle_state,
         target,
         supplied_kinds,
+        suspension_concern_kinds=current_suspension_concerns,
     )
     if missing:
         raise ItemBankLifecycleError(
@@ -587,7 +770,7 @@ def transition_item_bank_record(
                     )
                 )
             )
-        except ValueError as exc:
+        except ValueError:
             raise ItemBankLifecycleError(
                 "invalid_approved_use",
                 "$.approved_use_ids",
@@ -616,13 +799,23 @@ def transition_item_bank_record(
             transition_reason_id,
             "transition_reason_id",
         )
-    except ValueError as exc:
+    except ValueError:
         raise ItemBankLifecycleError(
             "invalid_transition_reason",
             "$.transition_reason_id",
             "transition reason must be a descriptive identifier",
         ) from None
 
+    target_suspension_concerns = (
+        tuple(
+            sorted(
+                supplied_kinds.intersection(_SUSPENSION_CONCERN_EVIDENCE_KINDS),
+                key=lambda kind: kind.value,
+            )
+        )
+        if target is ItemBankLifecycleState.SUSPENDED
+        else ()
+    )
     return _create_record(
         item_id=current.item_id,
         item_version=current.item_version,
@@ -638,6 +831,7 @@ def transition_item_bank_record(
         evidence_references=combined,
         previous_record_fingerprint=current.record_fingerprint,
         transition_reason_id=normalized_reason,
+        suspension_concern_kinds=target_suspension_concerns,
     )
 
 

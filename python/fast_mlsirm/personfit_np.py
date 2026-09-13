@@ -7,6 +7,27 @@ from dataclasses import dataclass
 
 import numpy as np
 
+_TRUSTED_PERSONFIT_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+
 
 @dataclass
 class PersonFitNpResult:
@@ -28,6 +49,44 @@ class PersonFitNpResult:
     zu3: np.ndarray
     c_sato: np.ndarray
     cstar: np.ndarray
+
+
+def _trusted_response_matrix(x) -> np.ndarray:
+    """Marshal inert real response storage without caller numeric callbacks."""
+    if type(x) is np.ndarray:
+        xa = x
+    elif type(x) in (list, tuple):
+        stack = list(x)
+        while stack:
+            current = stack.pop()
+            if type(current) in (list, tuple):
+                stack.extend(current)
+                continue
+            if type(current) is np.ndarray:
+                if current.dtype.kind not in {"b", "i", "u", "f"}:
+                    raise ValueError("x must be a numeric array")
+                continue
+            if type(current) not in _TRUSTED_PERSONFIT_SCALAR_TYPES:
+                raise ValueError("x must be a numeric array")
+        try:
+            xa = np.asarray(x)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("x must be a numeric array") from exc
+    else:
+        raise ValueError("x must be a numeric 2-D array")
+
+    if xa.ndim != 2:
+        raise ValueError("x must be a 2-D person-by-item matrix")
+    if np.iscomplexobj(xa):
+        raise ValueError("x must be real-valued")
+    if xa.dtype.kind == "b":
+        xa = xa.astype(np.float64)
+    if xa.dtype.kind not in ("i", "u", "f"):
+        raise ValueError("x must be a numeric array")
+    try:
+        return np.ascontiguousarray(xa, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("x must be a numeric array") from exc
 
 
 def person_fit_np(x) -> PersonFitNpResult:
@@ -59,21 +118,12 @@ def person_fit_np(x) -> PersonFitNpResult:
     https://doi.org/10.18637/jss.v074.i05 (package paper; the R sources
     listed above were READ and ported.)
     """
-    xa = np.asarray(x)
-    if xa.ndim != 2:
-        raise ValueError("x must be a 2-D person-by-item matrix")
-    n, ni = xa.shape
+    xf = _trusted_response_matrix(x)
+    n, ni = xf.shape
     if n < 1:
         raise ValueError("x must have at least 1 person")
     if ni < 2:
         raise ValueError("x must have at least 2 items")
-    if np.iscomplexobj(xa):
-        raise ValueError("x must be real-valued")
-    if xa.dtype.kind == "b":
-        xa = xa.astype(np.float64)
-    if xa.dtype.kind not in ("i", "u", "f"):
-        raise ValueError("x must be a numeric array")
-    xf = np.ascontiguousarray(xa, dtype=np.float64)
     bad = ~((xf == 0.0) | (xf == 1.0))
     if bad.any():
         p, i = np.argwhere(bad)[0]

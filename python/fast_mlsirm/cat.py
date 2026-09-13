@@ -71,6 +71,8 @@ __all__ = [
 
 _PROB_EPS = 1e-12
 _CAT_EPS_DISTANCE = 1e-8
+_INT64_MIN = np.iinfo(np.int64).min
+_INT64_MAX = np.iinfo(np.int64).max
 
 
 @dataclass
@@ -170,6 +172,105 @@ def _query_params(bank: MLSIRMParams, theta_rows: np.ndarray) -> MLSIRMParams:
     )
 
 
+def _trusted_numeric_vector(
+    values: object,
+    *,
+    error: str,
+    allow_bool: bool,
+) -> np.ndarray:
+    """Materialize a one-dimensional numeric vector only after inert admission.
+
+    Exact NumPy arrays are safe to inspect through dtype metadata without
+    invoking caller protocols. Exact built-in lists/tuples are traversed only
+    after their container identity is established; every leaf must be an exact
+    built-in numeric scalar or the canonical concrete NumPy scalar type for its
+    dtype. This keeps caller-defined ``__array__``/numeric conversion methods
+    outside the CAT evidence boundary.
+    """
+
+    allowed_kinds = {"i", "u", "f"}
+    if allow_bool:
+        allowed_kinds.add("b")
+
+    if type(values) is np.ndarray:
+        raw = values
+        if raw.dtype.kind not in allowed_kinds:
+            raise ValueError(error)
+        return raw
+    if type(values) not in (list, tuple):
+        raise ValueError(error)
+
+    for value in values:
+        value_type = type(value)
+        if value_type is bool:
+            kind = "b"
+        elif value_type is int:
+            kind = "i"
+        elif value_type is float:
+            kind = "f"
+        else:
+            try:
+                dtype = np.dtype(value_type)
+            except (TypeError, ValueError):
+                raise ValueError(error) from None
+            if dtype.type is not value_type:
+                raise ValueError(error)
+            kind = dtype.kind
+        if kind not in allowed_kinds:
+            raise ValueError(error)
+
+    try:
+        return np.asarray(values)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(error) from exc
+
+
+def _lossless_signed_int64_indices(values: np.ndarray) -> np.ndarray:
+    """Normalize item indices without allowing callbacks or signed-64 wrap."""
+
+    raw = _trusted_numeric_vector(
+        values,
+        error="administered item indices must be integers",
+        allow_bool=False,
+    )
+    kind = raw.dtype.kind
+    if kind == "u":
+        if raw.size and np.any(raw > _INT64_MAX):
+            raise ValueError("administered item indices must fit in signed 64-bit integers")
+    elif kind == "i":
+        if raw.dtype.itemsize > np.dtype(np.int64).itemsize and raw.size:
+            if np.any(raw < _INT64_MIN) or np.any(raw > _INT64_MAX):
+                raise ValueError("administered item indices must fit in signed 64-bit integers")
+    elif kind == "f":
+        if raw.size and (
+            np.any(~np.isfinite(raw))
+            or np.any(raw != np.floor(raw))
+            or np.any(raw < -(2**63))
+            or np.any(raw >= 2**63)
+        ):
+            raise ValueError("administered item indices must fit in signed 64-bit integers")
+    else:
+        raise ValueError("administered item indices must be integers")
+    try:
+        return np.asarray(raw, dtype=np.int64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError("administered item indices must fit in signed 64-bit integers") from exc
+
+
+def _real_response_array(responses: np.ndarray) -> np.ndarray:
+    """Normalize response data after proving it is inert real-numeric evidence."""
+
+    raw = _trusted_numeric_vector(
+        responses,
+        error="responses must be real-valued",
+        allow_bool=True,
+    )
+    try:
+        return np.asarray(raw, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError("responses must be real-valued") from exc
+
+
 def _validate_administration(
     bank: MLSIRMParams,
     factor_id: np.ndarray,
@@ -183,8 +284,8 @@ def _validate_administration(
     """
     n_items = int(np.asarray(bank.b).shape[0])
     fid = validate_factor_id(factor_id, n_items, _bank_dims(bank))
-    adm = np.asarray(administered, dtype=np.int64)
-    resp = np.asarray(responses, dtype=np.float64)
+    adm = _lossless_signed_int64_indices(administered)
+    resp = _real_response_array(responses)
     if adm.ndim != 1 or resp.ndim != 1 or adm.shape != resp.shape:
         raise ValueError("administered and responses must be 1D arrays of equal length")
     if adm.size and (np.any(adm < 0) or np.any(adm >= n_items)):
@@ -329,7 +430,7 @@ def ability_standard_error(
     if administered is None:
         adm = None
     else:
-        adm = np.asarray(administered, dtype=np.int64)
+        adm = _lossless_signed_int64_indices(administered)
         if adm.size and (np.any(adm < 0) or np.any(adm >= fid.size)):
             raise ValueError("administered item index out of range")
         # Rust rejects duplicate indices; duplicate administration has the

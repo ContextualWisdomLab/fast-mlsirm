@@ -92,9 +92,11 @@ def _xlogx_over_y(x: float, y: float) -> float:
 
 
 def _core_module():
-    """The compiled Rust core, when built — the compute path for every
-    statistic here (the NumPy bodies below are the parity reference and
-    fallback)."""
+    """Return the compiled Rust core used by public numerical paths.
+
+    NumPy implementations below are explicit parity/reference helpers. They
+    are never selected implicitly by public dispatch.
+    """
     try:
         from . import _core  # type: ignore
 
@@ -144,13 +146,13 @@ def _prepare_dichotomous_diagnostic_inputs(responses, factor_id, mask):
 
 def _bank_args(params, factor_id, model, n_dims, eps_distance):
     """Assemble the item-bank keyword arguments the Rust ICC kernels expect."""
-    zeta = np.asarray(params.zeta, dtype=np.float64)
+    zeta = np.ascontiguousarray(params.zeta, dtype=np.float64)
     return dict(
-        alpha=np.asarray(params.alpha, dtype=np.float64),
-        b=np.asarray(params.b, dtype=np.float64),
-        zeta=zeta.ravel(),
+        alpha=np.ascontiguousarray(params.alpha, dtype=np.float64),
+        b=np.ascontiguousarray(params.b, dtype=np.float64),
+        zeta=np.ascontiguousarray(zeta.ravel()),
         tau=float(params.tau),
-        factor_id=np.asarray(factor_id, dtype=np.int64),
+        factor_id=np.ascontiguousarray(factor_id, dtype=np.int64),
         model=model,
         n_dims=int(n_dims),
         latent_dim=int(zeta.shape[1]),
@@ -375,6 +377,68 @@ def _factorized_multilevel_moments(
         ]
     )
     return np.asarray(cluster_weights, dtype=float) @ conditional
+
+
+def _encode_m2_item_sets(item_sets: list[list[int]]) -> tuple[np.ndarray, np.ndarray]:
+    """Encode variable-length item sets for the Rust M2 moment boundary."""
+    values: list[int] = []
+    offsets = [0]
+    for item_set in item_sets:
+        values.extend(int(item) for item in item_set)
+        offsets.append(len(values))
+    return (
+        np.ascontiguousarray(values, dtype=np.int64),
+        np.ascontiguousarray(offsets, dtype=np.int64),
+    )
+
+
+def _rust_factorized_m2_moments(
+    probs: np.ndarray,
+    trait_weights: np.ndarray,
+    space_weights: np.ndarray,
+    factor_id: np.ndarray,
+    item_sets: list[list[int]],
+    cluster_weights: np.ndarray | None = None,
+) -> np.ndarray:
+    """Delegate population moment integration to the compiled Rust core."""
+    core = _core_module()
+    values, offsets = _encode_m2_item_sets(item_sets)
+    common = (
+        np.ascontiguousarray(trait_weights, dtype=np.float64),
+        np.ascontiguousarray(space_weights, dtype=np.float64),
+        np.ascontiguousarray(factor_id, dtype=np.int64),
+        values,
+        offsets,
+    )
+    if probs.ndim == 3 and core is not None and hasattr(core, "factorized_trait_moments_stat"):
+        result = core.factorized_trait_moments_stat(
+            np.ascontiguousarray(probs, dtype=np.float64).ravel(),
+            common[0],
+            common[1],
+            int(probs.shape[1]),
+            common[2],
+            common[3],
+            common[4],
+        )
+    elif probs.ndim == 4 and core is not None and hasattr(
+        core, "factorized_multilevel_moments_stat"
+    ):
+        if cluster_weights is None:
+            raise ValueError("multilevel moment grids require cluster weights")
+        result = core.factorized_multilevel_moments_stat(
+            np.ascontiguousarray(probs, dtype=np.float64).ravel(),
+            np.ascontiguousarray(cluster_weights, dtype=np.float64),
+            common[0],
+            common[1],
+            int(probs.shape[0]),
+            int(probs.shape[2]),
+            common[2],
+            common[3],
+            common[4],
+        )
+    else:
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    return np.asarray(result, dtype=float)
 
 
 def _lord_wingersky(probs: np.ndarray) -> np.ndarray:
@@ -635,61 +699,39 @@ def infit_outfit(
     mask: np.ndarray | None = None,
     eps_distance: float = 1e-8,
 ) -> dict[str, np.ndarray]:
-    """Per-item infit/outfit mean squares at the EAP estimates."""
+    """Per-item infit/outfit mean squares at the EAP estimates.
+
+    Production numerical ownership is the compiled Rust core
+    (``infit_outfit_stat``). Missing or incomplete cores fail closed.
+    """
     model = model.upper()
-    free_alpha = model not in {"MLSRM", "ULSRM"}
-    uses_space = model != "MIRT"
     y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
         responses, factor_id, mask
     )
     core = _core_module()
-    if core is not None and hasattr(core, "infit_outfit_stat"):
-        n_persons = y.shape[0]
-        n_dims = int(d_of_i.max()) + 1
-        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.infit_outfit_stat(
-            y.ravel(),
-            observed.ravel(),
-            int(n_persons),
-            bank["alpha"],
-            bank["b"],
-            bank["zeta"],
-            bank["tau"],
-            bank["factor_id"],
-            bank["model"],
-            bank["n_dims"],
-            bank["latent_dim"],
-            bank["eps_distance"],
-            np.asarray(params.theta, dtype=np.float64).ravel(),
-            np.asarray(params.xi, dtype=np.float64).ravel(),
-        )
-        return {"infit": np.asarray(res["infit"]), "outfit": np.asarray(res["outfit"])}
-    a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
-    eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
-    if uses_space:
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi = np.asarray(params.xi)
-        zeta = np.asarray(params.zeta)
-        x_sq = np.einsum("ij,ij->i", xi, xi)
-        z_sq = np.einsum("ij,ij->i", zeta, zeta)
-        dist_sq = x_sq[:, None] + z_sq[None, :] - 2 * np.dot(xi, zeta.T)
-        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
-        eta = eta - math.exp(params.tau) * dist
-    p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
-    v = p * (1.0 - p)
-    resid2 = np.subtract(y, p)
-    np.square(resid2, out=resid2)
-    np.multiply(resid2, observed, out=resid2)
-    n_obs = np.maximum(observed.sum(axis=0), 1)
+    if core is None or not hasattr(core, "infit_outfit_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    n_persons = y.shape[0]
+    n_dims = int(d_of_i.max()) + 1
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.infit_outfit_stat(
+        y.ravel(),
+        observed.ravel(),
+        int(n_persons),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        np.asarray(params.theta, dtype=np.float64).ravel(),
+        np.asarray(params.xi, dtype=np.float64).ravel(),
+    )
+    return {"infit": np.asarray(res["infit"]), "outfit": np.asarray(res["outfit"])}
 
-    # Preserve the masked squared-residual numerator, then reuse its owned
-    # float64 buffer for the outfit division without a numeric mask copy.
-    resid2_sum = resid2.sum(axis=0)
-    infit_denominator = np.sum(v, axis=0, where=observed)
-    np.divide(resid2, v, out=resid2)
-    outfit = resid2.sum(axis=0) / n_obs
-    infit = resid2_sum / np.maximum(infit_denominator, 1e-12)
-    return {"infit": infit, "outfit": outfit}
 
 
 # --------------------------------------------------------------------------
@@ -1814,8 +1856,8 @@ def m2(
             prior_sd = np.std(theta, axis=0, ddof=1)
         else:
             prior_sd = np.ones(n_dims)
-    prior_mean = np.asarray(prior_mean, dtype=float)
-    prior_sd = np.asarray(prior_sd, dtype=float)
+    prior_mean = np.ascontiguousarray(prior_mean, dtype=float)
+    prior_sd = np.ascontiguousarray(prior_sd, dtype=float)
     if prior_mean.shape != (n_dims,) or prior_sd.shape != (n_dims,):
         raise ValueError(f"prior_mean/prior_sd must both have shape ({n_dims},)")
     if np.any(~np.isfinite(prior_mean)) or np.any(~np.isfinite(prior_sd)):
@@ -1834,26 +1876,21 @@ def m2(
         return m2_cmle_rasch(y0, np.asarray(params.b, dtype=float), observed0)
 
     if estimate_population or fixed_items is not None or tau_fixed:
-        return _m2_single_population(
-            y0,
-            observed0,
-            d_of_i,
-            params,
-            model,
-            q_theta,
-            q_xi,
-            eps_distance,
-            prior_mean,
-            prior_sd,
-            estimate_population=estimate_population,
-            fixed_items=fixed_items,
-            tau_fixed=tau_fixed,
-        )
-
-    core = _core_module()
-    if core is not None and hasattr(core, "m2_stat"):
+        fixed = None
+        if fixed_items is not None:
+            fixed_raw = np.asarray(fixed_items)
+            if fixed_raw.shape != (y0.shape[1],):
+                raise ValueError(f"fixed_items must have shape ({y0.shape[1]},)")
+            if not np.all((fixed_raw == 0) | (fixed_raw == 1)):
+                raise ValueError("fixed_items must contain only boolean values")
+            fixed = np.ascontiguousarray(fixed_raw.astype(bool))
+        core = _core_module()
+        if core is None or not hasattr(core, "m2_structured_stat"):
+            raise RuntimeError(
+                "structured fit statistics require the compiled Rust core"
+            )
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
-        res = core.m2_stat(
+        res = core.m2_structured_stat(
             np.where(observed0, y0, 0.0).ravel(),
             observed0.ravel(),
             int(y0.shape[0]),
@@ -1871,8 +1908,11 @@ def m2(
             q_theta=int(q_theta),
             xi_rule="gh",
             q_xi=int(q_xi),
+            fixed_items=fixed,
+            estimate_population=bool(estimate_population),
+            tau_fixed=bool(tau_fixed),
         )
-        result = M2Result(
+        return M2Result(
             m2=float(res["m2"]),
             df=float(res["df"]),
             p_value=float(res["p_value"]),
@@ -1887,20 +1927,52 @@ def m2(
             n_moments=int(res["n_moments"]),
             n_parameters=int(res["n_parameters"]),
             n_complete=int(res["n_complete"]),
+            inference_note=(
+                "single-population MMLE M2 with estimated mean/SD nuisance columns"
+                if estimate_population
+                else "single-population MMLE M2 with fixed calibration columns excluded"
+            ),
         )
-    else:
-        result = _m2_numpy(
-            y0,
-            observed0,
-            d_of_i,
-            params,
-            model,
-            q_theta,
-            q_xi,
-            eps_distance,
-            prior_mean,
-            prior_sd,
-        )
+
+    core = _core_module()
+    if core is None or not hasattr(core, "m2_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = core.m2_stat(
+        np.where(observed0, y0, 0.0).ravel(),
+        observed0.ravel(),
+        int(y0.shape[0]),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        prior_mean,
+        prior_sd,
+        q_theta=int(q_theta),
+        xi_rule="gh",
+        q_xi=int(q_xi),
+    )
+    result = M2Result(
+        m2=float(res["m2"]),
+        df=float(res["df"]),
+        p_value=float(res["p_value"]),
+        rmsea2=float(res["rmsea2"]),
+        rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
+        rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
+        srmsr=float(res["srmsr"]),
+        null_m2=float(res["null_m2"]),
+        null_df=float(res["null_df"]),
+        cfi=float(res["cfi"]),
+        tli=float(res["tli"]),
+        n_moments=int(res["n_moments"]),
+        n_parameters=int(res["n_parameters"]),
+        n_complete=int(res["n_complete"]),
+    )
     if estimator == "mmle":
         return result
     result.estimator = estimator
@@ -1988,118 +2060,46 @@ def m2_cmle_rasch(
     observed = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
     if observed.shape != y0.shape:
         raise ValueError("mask must match responses")
-    complete = np.all(observed, axis=1)
-    y = y0[complete]
-    if y.shape[0] == 0 or np.any((y != 0.0) & (y != 1.0)):
-        raise ValueError("CMLE M2 needs complete binary response rows")
     b = np.asarray(item_easiness, dtype=float)
-    n_items = y.shape[1]
-    if b.shape != (n_items,) or np.any(~np.isfinite(b)):
-        raise ValueError(f"item_easiness must be a finite vector of length {n_items}")
-    if n_items < 5:
+    if b.ndim != 1 or b.shape[0] != y0.shape[1]:
         raise ValueError(
-            "CMLE M2 needs at least 5 items for positive degrees of freedom"
+            f"item_easiness must be a finite vector of length {y0.shape[1]}"
+        )
+    if np.any(~np.isfinite(b)):
+        raise ValueError(
+            f"item_easiness must be a finite vector of length {y0.shape[1]}"
         )
 
-    scores = y.sum(axis=1).astype(np.int64)
-    score_counts = np.bincount(scores, minlength=n_items + 1)
-    if np.any(score_counts == 0):
-        missing = np.flatnonzero(score_counts == 0).tolist()
-        raise ValueError(
-            "CMLE M2 needs every raw-score category represented; missing scores "
-            f"{missing}"
-        )
-    n = y.shape[0]
-    score_prob = score_counts.astype(float) / n
-    pairs = [(i, j) for i in range(n_items) for j in range(i + 1, n_items)]
-    moment_items = [[i] for i in range(n_items)] + [[i, j] for i, j in pairs]
-    s = len(moment_items)
-    z_rows = np.empty((n, s), dtype=float)
-    z_rows[:, :n_items] = y
-    for index, (i, j) in enumerate(pairs):
-        z_rows[:, n_items + index] = y[:, i] * y[:, j]
-    p_obs = z_rows.mean(axis=0)
-
-    conditional = _rasch_conditional_set_probabilities(b, moment_items)
-    model_moments = score_prob @ conditional
-    p_item = n_items - 1
-    p_score = n_items
-    delta = np.zeros((s, p_item + p_score), dtype=float)
-    for col in range(p_item):
-        h = 1e-4 * (1.0 + abs(b[col]) + abs(b[-1]))
-        plus, minus = b.copy(), b.copy()
-        plus[col] += h
-        plus[-1] -= h
-        minus[col] -= h
-        minus[-1] += h
-        delta[:, col] = (
-            score_prob @ _rasch_conditional_set_probabilities(plus, moment_items)
-            - score_prob @ _rasch_conditional_set_probabilities(minus, moment_items)
-        ) * (0.5 / h)
-    reference_score = n_items
-    for score in range(n_items):
-        delta[:, p_item + score] = conditional[score] - conditional[reference_score]
-
-    cache: dict[tuple[int, ...], float] = {}
-
-    def set_probability(item_set):
-        """Return the (cached) score-marginal joint pass probability for an item set."""
-        key = tuple(sorted(item_set))
-        if key not in cache:
-            values = _rasch_conditional_set_probabilities(b, [list(key)])[:, 0]
-            cache[key] = float(score_prob @ values)
-        return cache[key]
-
-    xi = np.empty((s, s), dtype=float)
-    for a_i in range(s):
-        for b_i in range(a_i, s):
-            union = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
-            cov = set_probability(union) - model_moments[a_i] * model_moments[b_i]
-            xi[a_i, b_i] = xi[b_i, a_i] = cov
-    p = delta.shape[1]
-    if s <= p or n < p + 2:
-        raise ValueError(
-            f"CMLE M2 needs more moments/cases than parameters ({s}, {n}, {p})"
-        )
-    m2_value = _projected_m2_numpy(p_obs - model_moments, delta, xi, float(n))
-
-    null_mom, null_delta, null_xi = _m2_null_components(p_obs, moment_items)
-    null_m2 = _projected_m2_numpy(p_obs - null_mom, null_delta, null_xi, float(n))
-    df = float(s - p)
-    null_df = float(s - n_items)
-    p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
-        m2_value, df, null_m2, null_df, n
+    core = _core_module()
+    if core is None or not hasattr(core, "m2_cmle_rasch_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    y_flat = np.ascontiguousarray(np.where(observed, y0, 0.0), dtype=np.float64).ravel()
+    observed_flat = np.ascontiguousarray(observed.astype(bool)).ravel()
+    res = core.m2_cmle_rasch_stat(
+        y_flat,
+        observed_flat,
+        int(y0.shape[0]),
+        np.ascontiguousarray(b, dtype=np.float64),
     )
-    ss = 0.0
-    count = 0
-    for index, (i, j) in enumerate(pairs):
-        pi, pj, pij = p_obs[i], p_obs[j], p_obs[n_items + index]
-        mi, mj, mij = model_moments[i], model_moments[j], model_moments[n_items + index]
-        dobs = pi * (1.0 - pi) * pj * (1.0 - pj)
-        dmod = mi * (1.0 - mi) * mj * (1.0 - mj)
-        if dobs > 1e-12 and dmod > 1e-12:
-            ss += (
-                (pij - pi * pj) / math.sqrt(dobs) - (mij - mi * mj) / math.sqrt(dmod)
-            ) ** 2
-            count += 1
     return M2Result(
-        m2=m2_value,
-        df=df,
-        p_value=p_value,
-        rmsea2=rmsea,
-        rmsea2_ci_lower=ci_lower,
-        rmsea2_ci_upper=ci_upper,
-        srmsr=math.sqrt(ss / count) if count else float("nan"),
-        null_m2=null_m2,
-        null_df=null_df,
-        cfi=cfi,
-        tli=tli,
-        n_moments=s,
-        n_parameters=p,
-        n_complete=n,
+        m2=float(res["m2"]),
+        df=float(res["df"]),
+        p_value=float(res["p_value"]),
+        rmsea2=float(res["rmsea2"]),
+        rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
+        rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
+        srmsr=float(res["srmsr"]),
+        null_m2=float(res["null_m2"]),
+        null_df=float(res["null_df"]),
+        cfi=float(res["cfi"]),
+        tli=float(res["tli"]),
+        n_moments=int(res["n_moments"]),
+        n_parameters=int(res["n_parameters"]),
+        n_complete=int(res["n_complete"]),
         estimator="cmle",
         inference_note="conditional Rasch M2 with empirical raw-score nuisance distribution",
     )
+
 
 
 def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
@@ -2490,17 +2490,13 @@ def _m2_group_components(
 
     def moments(probs, item_sets=moment_items):
         """Return model-implied moments over ``item_sets``, single- or multilevel."""
-        if cluster_weights is None:
-            return _factorized_trait_moments(
-                probs, trait_weights, space_weights, d_of_i, item_sets
-            )
-        return _factorized_multilevel_moments(
+        return _rust_factorized_m2_moments(
             probs,
-            cluster_weights,
             trait_weights,
             space_weights,
             d_of_i,
             item_sets,
+            cluster_weights,
         )
 
     mom0 = moments(probs0)
@@ -2843,9 +2839,24 @@ def m2_multigroup(
         null_delta[rows, cols] = root_n * null_d
         null_xi_blocks.append(null_xi)
 
-    m2_value = _projected_m2_numpy(residual, delta, _block_diag(xi_blocks), 1.0)
-    null_m2 = _projected_m2_numpy(
-        null_residual, null_delta, _block_diag(null_xi_blocks), 1.0
+    core = _core_module()
+    if core is None or not hasattr(core, "projected_m2"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    m2_value = float(
+        core.projected_m2(
+            np.ascontiguousarray(residual, dtype=np.float64),
+            np.ascontiguousarray(delta, dtype=np.float64),
+            np.ascontiguousarray(_block_diag(xi_blocks), dtype=np.float64),
+            1.0,
+        )
+    )
+    null_m2 = float(
+        core.projected_m2(
+            np.ascontiguousarray(null_residual, dtype=np.float64),
+            np.ascontiguousarray(null_delta, dtype=np.float64),
+            np.ascontiguousarray(_block_diag(null_xi_blocks), dtype=np.float64),
+            1.0,
+        )
     )
     df = float(n_groups * s - p)
     null_df = float(n_groups * s - n_groups * y0.shape[1])
@@ -2877,23 +2888,28 @@ def m2_multigroup(
 
 
 def _cluster_moment_covariance(z_rows, model_moments, cluster_id):
-    """Between-cluster covariance estimate of sqrt(N) marginal proportions."""
-    labels = np.asarray(cluster_id)
+    """Delegate between-cluster moment covariance construction to Rust."""
+    rows = np.asarray(z_rows, dtype=float)
+    moments = np.asarray(model_moments, dtype=float)
+    labels = np.asarray(cluster_id, dtype=np.int64)
+    if rows.ndim != 2 or moments.ndim != 1 or labels.ndim != 1:
+        raise ValueError("cluster covariance inputs must be one- or two-dimensional")
+    if rows.shape[0] != labels.size or rows.shape[1] != moments.size:
+        raise ValueError("cluster covariance inputs have inconsistent lengths")
     _, compact = np.unique(labels, return_inverse=True)
-    n_clusters = int(compact.max()) + 1
-    s = z_rows.shape[1]
-    if n_clusters <= s:
-        raise ValueError(
-            f"cluster-robust M2 needs more clusters than moments ({n_clusters} <= {s})"
-        )
-    totals = np.zeros((n_clusters, s), dtype=float)
-    residual_rows = z_rows - np.asarray(model_moments, dtype=float)
-    np.add.at(totals, compact, residual_rows)
-    centered = totals - totals.mean(axis=0)
-    return (
-        (n_clusters / (n_clusters - 1.0)) * (centered.T @ centered) / z_rows.shape[0],
+    n_clusters = int(compact.max()) + 1 if compact.size else 0
+    core = _core_module()
+    if core is None or not hasattr(core, "cluster_moment_covariance_stat"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
+    covariance = core.cluster_moment_covariance_stat(
+        np.ascontiguousarray(rows, dtype=np.float64).ravel(),
+        np.ascontiguousarray(moments, dtype=np.float64),
+        np.ascontiguousarray(compact, dtype=np.int64),
+        int(rows.shape[0]),
+        int(rows.shape[1]),
         n_clusters,
     )
+    return np.asarray(covariance, dtype=float).reshape(rows.shape[1], rows.shape[1]), n_clusters
 
 
 def m2_multilevel(
@@ -2964,6 +2980,9 @@ def m2_multilevel(
         shared_sigma_u=sigma_u,
         q_u=q_u,
     )
+    core = _core_module()
+    if core is None or not hasattr(core, "projected_m2"):
+        raise RuntimeError("fit statistics require the compiled Rust core")
     complete_clusters = clusters[component["idx"]]
     target_xi, n_clusters = _cluster_moment_covariance(
         component["z_rows"], component["mom"], complete_clusters
@@ -2973,8 +2992,13 @@ def m2_multilevel(
     s = component["residual"].size
     if s <= p:
         raise ValueError(f"multilevel M2 df non-positive: {s} <= {p}")
-    m2_value = _projected_m2_numpy(
-        component["residual"], delta, target_xi, float(component["n"])
+    m2_value = float(
+        core.projected_m2(
+            np.ascontiguousarray(component["residual"], dtype=np.float64),
+            np.ascontiguousarray(delta, dtype=np.float64),
+            np.ascontiguousarray(target_xi, dtype=np.float64),
+            float(component["n"]),
+        )
     )
 
     null_mom, null_delta, _ = _m2_null_components(
@@ -2983,11 +3007,13 @@ def m2_multilevel(
     null_xi, _ = _cluster_moment_covariance(
         component["z_rows"], null_mom, complete_clusters
     )
-    null_m2 = _projected_m2_numpy(
-        component["p_obs"] - null_mom,
-        null_delta,
-        null_xi,
-        float(component["n"]),
+    null_m2 = float(
+        core.projected_m2(
+            np.ascontiguousarray(component["p_obs"] - null_mom, dtype=np.float64),
+            np.ascontiguousarray(null_delta, dtype=np.float64),
+            np.ascontiguousarray(null_xi, dtype=np.float64),
+            float(component["n"]),
+        )
     )
     df = float(s - p)
     null_df = float(s - component["n_items"])

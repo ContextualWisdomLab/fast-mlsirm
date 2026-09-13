@@ -17,9 +17,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 try:
-    from scripts._bounded_json import read_json_object
+    from scripts._bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
+    from scripts._bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 except ModuleNotFoundError:
-    from _bounded_json import read_json_object
+    from _bounded_json import MAX_JSON_BYTES, parse_json_bounded, read_json_object
+    from _bounded_subprocess import BoundedSubprocessOutputError, run_bounded_capture
 
 
 RISK_COUNT_KEYS = [
@@ -86,7 +88,11 @@ _HISTORY_PR_LIST_LIMIT = 100
 _GH_TRANSIENT_STATUS_RE = re.compile(r"\bHTTP (?:502|503|504)\b", re.IGNORECASE)
 _GH_JSON_MAX_ATTEMPTS = 3
 _GH_JSON_RETRY_SLEEP_SECONDS = 0.5
+_GH_COMMAND_TIMEOUT_SECONDS = 60
+_GH_STDOUT_MAX_BYTES = MAX_JSON_BYTES
+_GH_STDERR_MAX_BYTES = 1024 * 1024
 GIT_METADATA_TIMEOUT_SECONDS = 5
+_FULL_OBJECT_ID_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -123,7 +129,14 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 
 def _source_commit(repo_root: Path) -> str:
-    """Return the checked-out commit SHA, failing closed on a hung Git child."""
+    """Return the canonical full commit SHA for the checked-out HEAD.
+
+    The value must reconstruct the exact governance-evidence source, so every
+    failure mode fails closed: timeouts, missing executables, non-zero exits,
+    empty output, and any identity that is not a full lowercase SHA-1 or
+    SHA-256 object name raise :class:`RuntimeError` instead of degrading to an
+    unreconstructable placeholder.
+    """
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -135,9 +148,12 @@ def _source_commit(repo_root: Path) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("source commit lookup timed out") from exc
-    except Exception:
-        return "unknown"
-    return completed.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("source commit lookup failed") from exc
+    candidate = completed.stdout.strip()
+    if not _FULL_OBJECT_ID_PATTERN.fullmatch(candidate):
+        raise RuntimeError("source commit is not a full lowercase SHA-1 or SHA-256 object id")
+    return candidate
 
 
 def _check(
@@ -159,10 +175,10 @@ def _check(
 
 
 def _json_from_completed(completed: subprocess.CompletedProcess[str]) -> Any:
-    """Decode command stdout when the command succeeded and emitted JSON."""
+    """Decode bounded command stdout when the command succeeded and emitted JSON."""
     if completed.returncode != 0 or not completed.stdout.strip():
         return None
-    return json.loads(completed.stdout)
+    return parse_json_bounded(completed.stdout, max_bytes=_GH_STDOUT_MAX_BYTES)
 
 
 def _is_transient_gh_stderr(stderr: str) -> bool:
@@ -178,14 +194,43 @@ def _run_gh_json(
 ) -> tuple[Any, dict[str, Any] | None]:
     """Execute a GitHub CLI JSON command and return payload plus redacted error.
 
-    Retries only on HTTP 502/503/504. Non-transient failures fail closed on the
-    first response so real auth/query defects are not masked.
+    Retries only on HTTP 502/503/504. Non-transient, bounded-output, and JSON
+    decoding failures fail closed on the first response so real defects are not
+    masked and untrusted command output cannot grow without bound in memory.
     """
     attempts = max(1, int(max_attempts))
     last_error: dict[str, Any] | None = None
     for attempt in range(1, attempts + 1):
-        completed = subprocess.run(command, capture_output=True, text=True)
-        payload = _json_from_completed(completed)
+        try:
+            completed = run_bounded_capture(
+                command,
+                timeout_seconds=_GH_COMMAND_TIMEOUT_SECONDS,
+                max_stdout_bytes=_GH_STDOUT_MAX_BYTES,
+                max_stderr_bytes=_GH_STDERR_MAX_BYTES,
+            )
+        except subprocess.TimeoutExpired:
+            last_error = {
+                "command": command[1:3],
+                "stderr": f"command timed out after {_GH_COMMAND_TIMEOUT_SECONDS} seconds",
+                "returncode": 124,
+            }
+            break
+        except BoundedSubprocessOutputError as exc:
+            last_error = {
+                "command": command[1:3],
+                "stderr": str(exc),
+                "returncode": 75,
+            }
+            break
+        try:
+            payload = _json_from_completed(completed)
+        except ValueError as exc:
+            last_error = {
+                "command": command[1:3],
+                "stderr": str(exc),
+                "returncode": 65,
+            }
+            break
         if completed.returncode == 0:
             return payload, None
         stderr = completed.stderr.strip()

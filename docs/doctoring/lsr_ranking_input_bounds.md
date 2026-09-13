@@ -15,7 +15,11 @@ Caller-controlled ranking iterables can be infinite or oversized. Before the Rus
 3. redact ordinary iteration failures so hostile payloads never appear in public errors;
 4. preserve process-control exceptions.
 
-Numerical Plackett–Luce / LSR arithmetic remains Rust-owned.
+Numerical Plackett–Luce / LSR arithmetic remains Rust-owned. Bradley–Terry MM
+and the additive-ties BRATT variant are separate ranking estimators; see
+[`../bradley_terry_mm.md`](../bradley_terry_mm.md) and
+[`../adr/0017-bradley-terry-mm.md`](../adr/0017-bradley-terry-mm.md). This
+page does not make a Bradley–Terry product claim.
 
 ## Implementation
 

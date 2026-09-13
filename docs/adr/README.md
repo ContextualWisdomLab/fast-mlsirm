@@ -18,7 +18,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](0001-domain-neutral-measurement-boundary.md) | Accepted | `fast-mlsirm` owns reusable measurement/psychometric contracts and kernels; hosted runtime belongs downstream. |
-| [0002](0002-rust-first-numerical-ownership.md) | Accepted | Rust owns production psychometric arithmetic; Python validates/orchestrates/reports and retains governed reference/fallback paths. |
+| [0002](0002-rust-first-numerical-ownership.md) | Accepted | Rust owns production psychometric arithmetic; Python validates/orchestrates/reports and retains governed reference/parity paths. `auto` fails closed without the compiled Rust core. |
 | [0003](0003-content-addressed-measurement-contracts.md) | Accepted | Assessment/rubric/scoring artifacts use canonical versioned, content-addressed provenance and replay verification. |
 | [0004](0004-governed-rubric-item-bank-lifecycle.md) | Proposed | Build candidate-blind evidence-grounded rubric/item generation into a governed psychometric item-bank lifecycle. |
 | [0005](0005-automated-scoring-raters.md) | Accepted | Human and automated scorers are fallible raters; calibration/validation must model rater effects and preserve terminal states. |
@@ -30,6 +30,20 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0011](0011-canonical-pyo3-public-export-registry.md) | Proposed | Future Rust-backed features converge on one reviewed PyO3/public-export registry instead of competing extension initializers/import rewrites. |
 | [0012](0012-purpose-limited-sensitive-data.md) | Accepted | Preserve valid measurement linkage through purpose-limited sensitive-data handling rather than blanket masking or raw-data proliferation. |
 | [0013](0013-continuous-execution-and-documentation-governance.md) | Proposed | Keep autonomous work work-conserving and enforce one canonical cross-cutting documentation writer with explicit maturity states. |
+| [0014](0014-bounded-llm-judge-category-inputs.md) | Proposed | Bound LLM-judge category inputs to exact built-in scalars and keep model/provider security evidence fail-closed and independently verifiable. |
+| [0015](0015-multi-item-irt-fit-boundary.md) | Proposed | Enforce the multi-item dichotomous/polytomous contract at public IRT fitters and require explicit readiness evidence before interpreting estimates. |
+| [0016](0016-figma-buyer-evidence-design-boundary.md) | Accepted | Bind the buyer-review Figma file ID to repository-local packet validation while keeping Code Connect and hosted UI ownership downstream. |
+| [0017](0017-bradley-terry-mm.md) | Accepted | Adopt Bradley–Terry fitted by Hunter MM, plus the implemented additive-ties BRATT variant; do not claim Rao–Kupper/Davidson. |
+| [0018](0018-angoff-delta-plot-dif.md) | Accepted | Adopt Angoff delta-plot (Magis & Facon threshold) as the small-sample observed-score DIF screen; distinct from MH/logistic/SIBTEST. |
+| [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
+| [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
+| [0021](0021-residual-interaction-map-boundary.md) | Accepted | Rust owns residual interaction-map arithmetic and provenance-bearing diagnostics. |
+| [0022](0022-finite-population-proportion-sampling-design.md) | Proposed | Rust owns the versioned NIST proportion sample-size/FPC and ABS proportional/Neyman allocation artifact; every prevalence and policy input is caller evidence. |
+| [0023](0023-tepp-anchored-lineage-channel-weight-boundary.md) | Proposed | Admit continuous channel evidence and exact accepted TEPP v1 identity, while estimation fails closed until pair-level independent criterion evidence exists. |
+| [0024](0024-macos-native-rust-mlx-metal-consumer-boundary.md) | Accepted | Consume macOS-native Rust-owned MLX Metal through authenticated host transport with exact backend/parity receipts; Linux never claims Metal. |
+| [0025](0025-finite-population-achieved-proportion.md) | Proposed | Rust terminates a complete one-stratum SRSWOR design with the achieved proportion, design variance, and Wang/Konijn exact interval. |
+| [0026](0026-public-polytomous-prediction-boundary.md) | Proposed | Expose Rust-owned GRM/GPCM category probabilities and expected responses through the public Python boundary. |
+| [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule
 

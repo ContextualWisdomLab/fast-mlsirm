@@ -7,6 +7,17 @@
 Latent Space Item Response Models, focused on MLS2PLM simulation, regularized
 point estimation, and true-parameter recovery checks.
 
+The implemented simple-structure MLSIRM/MLS2PLM path follows Jeon, Jin,
+Schweinberger, and Baugh (2021), Kang and Jeon (2025), and Molenaar and Jeon
+(2026). Adjacent shipped screens include Angoff delta-plot DIF
+([`docs/delta_plot_dif.md`](docs/delta_plot_dif.md)) and Bradley–Terry MM
+ranking ([`docs/bradley_terry_mm.md`](docs/bradley_terry_mm.md)). Primary
+citations and decision records live in
+[`docs/traceability/research-basis.md`](docs/traceability/research-basis.md)
+and [`docs/adr/README.md`](docs/adr/README.md). Score interpretation and
+fairness remain governed by AERA, APA, and NCME (2014); those methods are not
+CWE/OWASP/NIST controls.
+
 The first implementation keeps the public API small:
 
 ```python
@@ -83,9 +94,8 @@ print(fixed_item_calibration.best)
   error, and second-order stability helpers.
 - Fixed item parameter linking, CAT item-information selection, and greedy ATA
   form assembly with content min/max constraints.
-- aFIPC-style fixed-item calibration diagnostics that select candidate
-  probability tensors using fixed evaluation-item likelihood and kaefa-style
-  item-fit penalty.
+- Fixed-item calibration diagnostics that select candidate probability tensors
+  using fixed evaluation-item likelihood and an item-fit penalty.
 - Rubric-centered schemas, deterministic bounded item-blueprint compilation,
   and canonical provider-neutral generation contracts. See
   [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
@@ -93,14 +103,60 @@ print(fixed_item_calibration.best)
   strict structured parsing. A judge result becomes an IRT row only through
   LLMJudgeResult.to_irt_row() with at least two criteria, followed by
   validate_irt_response_matrix() for a multi-item dichotomous or explicitly
-  categorized polytomous matrix. Equal-width score projection is experimental;
-  category-count and prompt-perturbation calibration are required. See
-  [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0005-irt-response-matrix-contract.md) and
-  [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/89bd5bf73319dd21f2be1f094eb2639bb8ead8f3/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md) and
-  [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/2b65d5c0f3d6bd64a9e05818f1f9286e98c334c1/docs/planning/adrs/0008-fast-judge-review-hardening.md).
+  categorized polytomous matrix. When `category_count` is supplied without an
+  explicit method, the adapter defaults to `category_method="binary_threshold"`:
+  each ordered boundary is a bounded Boolean call, and malformed or
+  non-monotone evidence fails closed. Equal-width direct K-way projection is
+  calibration-only and requires explicit `category_method="direct"`;
+  `category_method="cumulative_threshold"` remains an explicit alternative
+  that asks for one strict Boolean vector. Binary threshold judging has a
+  maximum of 64 calls per result.
+  When the injected contextual-orchestrator exposes its bounded
+  `client.local_concurrency`, those independent boundary calls reuse that limit;
+  generic injected orchestrators remain sequential by default.
+  `ContextualOrchestratorJudge` accepts only an adapter declaring
+  `contextual_orchestrator_contract == "contextual-orchestrator-contract-v1"`;
+  an arbitrary direct provider transport fails at construction. This is an
+  architectural provenance marker, not a security credential; production
+  adapters must still route, trace, and validate through contextual-orchestrator.
+  A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
+  containing call/parse status, partial trace-step counts, usage, and ordered
+  boundary records; callers must retain that failure in calibration results.
+  For semantically interpretable polytomous calibration, callers may provide a
+  `category_anchors` tuple of exactly K definitions on every `JudgeCriterion`;
+  those definitions are carried as rubric data to each binary boundary. Mixed,
+  incomplete, or mismatched anchor sets are rejected. Omitted anchors remain a
+  backwards-compatible exploratory mode and must not be treated as gold
+  calibration evidence. Each binary prompt asks whether the answer meets at
+  least the requested boundary (not exactly that category), requires
+  criterion/task relevance, and rejects generic intent, unrelated detail,
+  missing-control admissions, or rubric repetition as evidence.
+  Category-count and prompt-perturbation calibration remain required for all
+  methods. See
+  [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),
+  [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md), and
+  [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0008-fast-judge-review-hardening.md).
+  Production and benchmark IRT readiness additionally requires every declared
+  polytomous category to be observed at least once for every item; low-level
+  diagnostic fitters remain available for partial-occupancy fixtures.
+  `build_multiple_choice_calibration_cases()` and
+  `evaluate_paired_calibration()` provide bounded paired controls for
+  baseline, option-only/no-question, shuffled-option, and
+  distractor-replacement variants. They accept an existing
+  `ContextualOrchestratorJudge`, so every calibration call uses the
+  contextual-orchestrator route; provider, parse, semantic, and IRT failures
+  remain in the denominator, with no retry, repair, keyword matching, or
+  positional category inference. Gold categories and contamination status are
+  caller-supplied, and every successful result must project to multiple
+  criterion columns before it can be used as a polytomous row. Paired score
+  deltas are diagnostic sensitivity evidence, not a causal positive-option-
+  count law or a claim of judge debiasing. When a binary judge raises a
+  `JudgeFormatError`, the report retains its bounded `.evidence` (boundary
+  statuses, parse state, trace counts, and usage) while excluding source text
+  and raw model output.
   Cross-repository exact-head review, structured Strix evidence, and merge
-  policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/befa094784e37947841948fb42016de7e6b965ab/docs/planning/adrs/0004-pr-review-merge-loop.md) and
-  [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/befa094784e37947841948fb42016de7e6b965ab/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
+  policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0004-pr-review-merge-loop.md) and
+  [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
@@ -120,7 +176,8 @@ print(fixed_item_calibration.best)
 - CLI commands for simulation and fitting.
 - Rust-backed fitting objective (neg-loglik, gradients, and distance kernels)
   via PyO3/maturin as the primary numeric path, with a numerically-identical
-  NumPy reference backend kept for parity testing and fallback.
+  NumPy reference backend kept for parity testing. `auto` fails closed when
+  the compiled Rust core is unavailable.
 
 ## Install
 
@@ -130,12 +187,12 @@ For local development:
 python -m pip install -e .
 ```
 
-The default runtime backend is `"auto"`, which uses the compiled Rust core
-(`fast_mlsirm._core`) as the primary numeric path and transparently falls back
-to the NumPy reference implementation when the extension is unavailable. Source
-and editable installs use maturin to build the extension, so they require a
-working Rust toolchain; installed wheels ship the compiled core. Pass
-`backend="numpy"` to force the pure-Python reference (used for parity testing).
+The default runtime backend is `"auto"`. It uses the compiled Rust core
+(`fast_mlsirm._core`) and fails closed when that extension is unavailable.
+Automatic resolution never silently selects NumPy. Source and editable installs
+use maturin to build the extension, so they require a working Rust toolchain;
+installed wheels ship the compiled core. Pass `backend="numpy"` only when you
+want the explicit pure-Python reference used for parity testing.
 The core Rust workspace can be tested with:
 
 ```bash
@@ -367,14 +424,17 @@ is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
 factor id per item before running optimization or diagnostics.
 `diagnose-fixed-item-calibration` writes `dimension_diagnostics.json` with
 `best_candidate`, `calibration_score`, fixed-item coverage counts, and
-kaefa-style item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
+item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
 mask or item-index vector; when omitted, all items are treated as the fixed
 calibration set.
 
-`fit --backend numpy` uses the Python reference objective. `fit --backend rust`
+The explicit NumPy reference objective runs through `fast_mlsirm.fit_reference`
+(Python) or the CLI's `fast-mlsirm fit --reference` flag; production `--backend`
+choices are `{rust, auto}`. `fit --backend rust`
 requires the installed `fast_mlsirm._core` extension and fails clearly if it is
-unavailable. `fit --backend auto` uses the Rust objective when available and
-falls back to NumPy otherwise.
+unavailable. `fit --backend auto` uses the Rust objective when the compiled
+core is available and fails closed otherwise. Automatic resolution never
+silently selects NumPy.
 
 The backend axis stays `{numpy, rust, auto}`. GPU acceleration is a *device*
 sub-option of the Rust backend rather than a separate backend, selected with
@@ -407,7 +467,7 @@ repeated blank-looking report sections or placeholder-only columns.
 ```text
 python/fast_mlsirm/       Python public API and reference backend
 crates/mlsirm-core/       Rust likelihood and gradient core
-crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
+crates/fast-mlsirm-py/    PyO3 binding for the compiled Rust backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
 examples/enterprise_demo/ Synthetic procurement evidence manifests

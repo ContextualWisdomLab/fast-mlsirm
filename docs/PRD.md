@@ -53,7 +53,7 @@ Raw scores, RAGAS values, LLM judgments, or human ratings are observations, not 
 
 ### PRD-PRN-002 Rust owns production psychometric arithmetic
 
-Likelihoods, gradients, Hessians, optimization, information, psychometric scoring/ranking, and other production mathematical kernels are Rust-owned. Python may orchestrate, validate, marshal, report, and retain transparent reference implementations for parity/fallback where explicitly governed.
+Likelihoods, gradients, Hessians, optimization, information, psychometric scoring/ranking, and other production mathematical kernels are Rust-owned. Python may orchestrate, validate, marshal, report, and retain explicit reference implementations for parity testing where governed.
 
 ### PRD-PRN-003 Correlation is not accuracy
 
@@ -80,7 +80,8 @@ The package shall expose stable versioned interfaces usable independently and by
 The following are implemented on protected `main` as of this baseline unless explicitly marked otherwise:
 
 - MLS2PLM-family binary simulation and point estimation, including `MIRT`, `MLSRM`, `MLS2PLM`, `ULSRM`, and `ULS2PLM` constraints.
-- Rust-backed likelihood/gradient/distance kernels through PyO3/maturin, with NumPy reference/fallback paths and parity tests.
+- Rust-backed likelihood/gradient/distance kernels through PyO3/maturin, with
+  an explicit NumPy reference/parity path and parity tests; `auto` fails closed without the compiled Rust core.
 - Missing-response handling, optimization, recovery, fit and dimensionality diagnostics.
 - Fixed-item calibration/linking, CAT item-information selection, ATA form assembly.
 - Response-process diagnostics, model-fit summaries, multigroup/multilevel-context summaries exposed by current APIs.
@@ -150,6 +151,13 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-044** Bifactor model fit shall not imply general or specific-score interpretability. Scoreability evidence shall be reported separately.
 
+**PRD-FR-046** Finite-population proportion artifacts shall separate sampling design from achieved inference. A terminal population claim requires a complete design-bound sample, Rust-owned estimator and design variance, and an interval whose finite-population coverage is verified; incomplete samples and unsupported stratified estimands fail closed.
+
+**PRD-FR-045** Reusable finite-population proportion sampling designs shall
+expose a versioned Rust-owned sample-size, FPC, and stratified-allocation
+artifact. Prior/pilot proportions, confidence, precision, costs, design effects,
+and response assumptions shall never be invented or hidden in Python.
+
 ### 6.6 Factor retention and rotation
 
 **PRD-FR-050** Factor retention shall be a separate decision from structural model selection.
@@ -162,9 +170,15 @@ Open PRs and issues may contain additional capabilities. They are **not** consid
 
 **PRD-FR-060** Reusable contracts shall represent explicit context dimensions, context identities, membership weights, repeated occasions, and temporal state specifications without inferring random-effect families from labels.
 
-**PRD-FR-061** Multiple-membership weights and temporal ordering shall be provenance-bound. Elapsed-time effects shall not be claimed unless the fitted model actually parameterizes elapsed-time transitions.
+**PRD-FR-061** Multiple-membership weights and temporal ordering shall be provenance-bound. Elapsed-time effects shall not be claimed unless the fitted model actually parameterizes elapsed-time transitions. OLS may use exact day-scaled offsets as regression covariates, while only the joint MAP hierarchical CT-AR Rasch slice parameterizes elapsed-day transitions; the caller-supplied discrete AR layer uses sequence gaps.
 
 **PRD-FR-062** Future Rust estimators for these contracts shall establish identification and true-parameter recovery before release as production estimators.
+
+**PRD-FR-063** Event Lineage channel weights shall require an independently
+produced, pair-identity-bound TEPP criterion. An accepted run-level decision
+without pair-level criterion observations shall remain explicitly unavailable
+for estimation; channel score floors, internal covariance, ranks, equal shares,
+and Python numerical kernels are prohibited substitutes.
 
 ### 6.8 Reporting and evidence
 

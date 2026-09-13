@@ -6,6 +6,11 @@ stable internal import surface for the package namespace and future scoring
 components.
 """
 
+from . import execution as _execution
+from ._execution_integer_safety import install as _install_execution_integer_safety
+
+_install_execution_integer_safety(_execution)
+
 from ._contract_safety import artifact_digest as artifact_digest
 from ._contract_safety import canonical_json as canonical_json
 from ._validation import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION

@@ -427,7 +427,7 @@ def test_objective_model_requires_one_trait():
                 np.zeros((2, 2)),
                 np.zeros(2, dtype=int),
                 params,
-                config=FitConfig(model="BIFAC2PLM"),
+                config=FitConfig(model="BIFAC2PLM", estimator="mmle"),
                 backend=backend,
             )
 

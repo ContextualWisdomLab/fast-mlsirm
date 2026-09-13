@@ -1,6 +1,6 @@
 //! Item- and person-fit statistics on the Rust core (the compute path; the
-//! NumPy implementations in `python/fast_mlsirm/fitstats.py` are the parity
-//! reference and fallback).
+//! NumPy implementations in `python/fast_mlsirm/fitstats.py` are explicit
+//! parity/reference helpers, never an implicit production fallback).
 //!
 //! - S-X² (Orlando & Thissen 2000) and S-G² (Sinharay & Lu 2008) with the
 //!   Lord-Wingersky recursion on the joint `(theta, xi)` node set, per trait
@@ -15,6 +15,8 @@
 //! - Infit/outfit mean squares at the EAP estimates.
 //! - Chi-square upper tail via the regularized upper incomplete gamma
 //!   (no external dependencies).
+
+use std::collections::HashMap;
 
 use crate::model_exec_flags;
 use crate::nodes::{build_xi_nodes, XiRule};
@@ -1762,8 +1764,19 @@ enum M2Param {
     Alpha(usize),
     Zeta(usize, usize),
     Tau,
+    PopulationMean(usize),
+    PopulationSd(usize),
 }
 
+/// Optional structured-M2 controls that change only the Delta parameter map.
+#[derive(Clone, Copy, Default)]
+struct M2StructuredControls<'a> {
+    fixed_items: Option<&'a [bool]>,
+    estimate_population: bool,
+    tau_fixed: bool,
+}
+
+#[cfg(test)]
 fn m2_parameters(
     n_items: usize,
     free_alpha: bool,
@@ -1771,8 +1784,31 @@ fn m2_parameters(
     latent_dim: usize,
     tau_free: bool,
 ) -> Vec<M2Param> {
+    m2_parameters_with_controls(
+        n_items,
+        free_alpha,
+        uses_space,
+        latent_dim,
+        latent_dim,
+        tau_free,
+        M2StructuredControls::default(),
+    )
+}
+
+fn m2_parameters_with_controls(
+    n_items: usize,
+    free_alpha: bool,
+    uses_space: bool,
+    latent_dim: usize,
+    population_dims: usize,
+    tau_free: bool,
+    controls: M2StructuredControls<'_>,
+) -> Vec<M2Param> {
     let mut params = Vec::new();
     for i in 0..n_items {
+        if controls.fixed_items.is_some_and(|fixed| fixed[i]) {
+            continue;
+        }
         params.push(M2Param::B(i));
         if free_alpha {
             params.push(M2Param::Alpha(i));
@@ -1783,8 +1819,16 @@ fn m2_parameters(
             }
         }
     }
-    if tau_free {
+    if tau_free && !controls.tau_fixed {
         params.push(M2Param::Tau);
+    }
+    if controls.estimate_population {
+        for d in 0..population_dims.max(1) {
+            params.push(M2Param::PopulationMean(d));
+        }
+        for d in 0..population_dims.max(1) {
+            params.push(M2Param::PopulationSd(d));
+        }
     }
     params
 }
@@ -1802,6 +1846,26 @@ fn m2_param_value(
         M2Param::Alpha(i) => alpha[i],
         M2Param::Zeta(i, k) => zeta[i * latent_dim + k],
         M2Param::Tau => tau,
+        M2Param::PopulationMean(_) | M2Param::PopulationSd(_) => {
+            unreachable!("population parameters require prior values")
+        }
+    }
+}
+
+fn m2_structured_param_value(
+    param: M2Param,
+    alpha: &[f64],
+    b: &[f64],
+    zeta: &[f64],
+    tau: f64,
+    latent_dim: usize,
+    prior_mean: &[f64],
+    prior_sd: &[f64],
+) -> f64 {
+    match param {
+        M2Param::PopulationMean(d) => prior_mean[d],
+        M2Param::PopulationSd(d) => prior_sd[d],
+        _ => m2_param_value(param, alpha, b, zeta, tau, latent_dim),
     }
 }
 
@@ -1819,6 +1883,27 @@ fn set_m2_param(
         M2Param::Alpha(i) => alpha[i] = value,
         M2Param::Zeta(i, k) => zeta[i * latent_dim + k] = value,
         M2Param::Tau => *tau = value,
+        M2Param::PopulationMean(_) | M2Param::PopulationSd(_) => {
+            unreachable!("population parameters require prior values")
+        }
+    }
+}
+
+fn set_m2_structured_param(
+    param: M2Param,
+    value: f64,
+    alpha: &mut [f64],
+    b: &mut [f64],
+    zeta: &mut [f64],
+    tau: &mut f64,
+    latent_dim: usize,
+    prior_mean: &mut [f64],
+    prior_sd: &mut [f64],
+) {
+    match param {
+        M2Param::PopulationMean(d) => prior_mean[d] = value,
+        M2Param::PopulationSd(d) => prior_sd[d] = value,
+        _ => set_m2_param(param, value, alpha, b, zeta, tau, latent_dim),
     }
 }
 
@@ -1914,8 +1999,48 @@ fn chol_solve(l: &[f64], n: usize, b: &[f64]) -> Vec<f64> {
     x
 }
 
+/// Maximum supported dense workspace for projected M2, in `f64` elements.
+pub const PROJECTED_M2_MAX_WORKSPACE_ELEMENTS: usize = 4_000_000;
+
+/// Return the peak dense element budget required by projected M2.
+pub fn projected_m2_workspace_elements(
+    n_moments: usize,
+    n_parameters: usize,
+) -> Result<usize, String> {
+    let xi_elements = n_moments
+        .checked_mul(n_moments)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+    let delta_elements = n_moments
+        .checked_mul(n_parameters)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+    let parameter_elements = n_parameters
+        .checked_mul(n_parameters)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+    let two_moments = n_moments
+        .checked_mul(2)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+    let two_parameters = n_parameters
+        .checked_mul(2)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+
+    [
+        xi_elements,
+        delta_elements,
+        delta_elements,
+        parameter_elements,
+        two_moments,
+        two_parameters,
+    ]
+    .into_iter()
+    .try_fold(0_usize, |total, elements| {
+        total
+            .checked_add(elements)
+            .ok_or_else(|| "projected M2 dimensions overflow".to_string())
+    })
+}
+
 /// Evaluate the M2 projected quadratic form without forming either inverse.
-fn projected_m2(
+pub fn projected_m2(
     e: &[f64],
     delta: &[f64],
     mut xi: Vec<f64>,
@@ -1925,6 +2050,42 @@ fn projected_m2(
 ) -> Result<f64, String> {
     let s = n_moments;
     let p = n_parameters;
+    let delta_elements = s
+        .checked_mul(p)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+    let xi_elements = s
+        .checked_mul(s)
+        .ok_or_else(|| "projected M2 dimensions overflow".to_string())?;
+    let workspace_elements = projected_m2_workspace_elements(s, p)?;
+    if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
+        return Err(
+            "projected M2 workspace exceeds supported element budget".to_string(),
+        );
+    }
+    if e.len() != s {
+        return Err("residual length must match n_moments".to_string());
+    }
+    if delta.len() != delta_elements {
+        return Err("delta length must equal n_moments * n_parameters".to_string());
+    }
+    if xi.len() != xi_elements {
+        return Err("xi length must equal n_moments * n_moments".to_string());
+    }
+    if !n.is_finite() {
+        return Err("n must be finite".to_string());
+    }
+    if n <= 0.0 {
+        return Err("n must be positive".to_string());
+    }
+    if e.iter().any(|value| !value.is_finite()) {
+        return Err("residual values must be finite".to_string());
+    }
+    if delta.iter().any(|value| !value.is_finite()) {
+        return Err("delta values must be finite".to_string());
+    }
+    if xi.iter().any(|value| !value.is_finite()) {
+        return Err("xi values must be finite".to_string());
+    }
     cholesky_lower(&mut xi, s)?;
     let u = chol_solve(&xi, s, e); // Xi^-1 e
     let mut w = vec![0.0_f64; s * p]; // Xi^-1 Delta
@@ -2060,30 +2221,23 @@ fn solve_decreasing_root(
     0.5 * (lo + hi)
 }
 
-/// Integrate simple-structure item-set margins over independent trait
-/// dimensions conditional on the common latent-space node. `icc_nodes` stores
-/// one trait axis because each item loads on one factor; products spanning
-/// distinct factors must therefore be integrated separately, not evaluated at
-/// the same trait node.
-fn factorized_trait_moments(
+/// Evaluate simple-structure item-set margins from a probability grid.
+///
+/// The probability tensor is row-major `(item, trait_node, space_node)`.
+/// Products spanning distinct factors are integrated over independent trait
+/// nodes and then over the shared latent-space node. This is the numerical
+/// ownership boundary used by the multigroup and multilevel M2 paths.
+fn factorized_trait_moments_weighted_impl(
     probs: &[f64],
-    weights: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
     q_theta: usize,
     factor_id: &[usize],
     n_dims: usize,
     item_sets: &[Vec<usize>],
 ) -> Vec<f64> {
-    let n_x = weights.len() / q_theta;
-    let cell = weights.len();
-    let mut trait_weights = vec![0.0_f64; q_theta];
-    let mut space_weights = vec![0.0_f64; n_x];
-    for t in 0..q_theta {
-        for x in 0..n_x {
-            let weight = weights[t * n_x + x];
-            trait_weights[t] += weight;
-            space_weights[x] += weight;
-        }
-    }
+    let n_x = space_weights.len();
+    let cell = q_theta * n_x;
     item_sets
         .iter()
         .map(|set| {
@@ -2113,6 +2267,255 @@ fn factorized_trait_moments(
         .collect()
 }
 
+fn factorized_trait_moments_joint(
+    probs: &[f64],
+    weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Vec<f64> {
+    let n_x = weights.len() / q_theta;
+    let mut trait_weights = vec![0.0_f64; q_theta];
+    let mut space_weights = vec![0.0_f64; n_x];
+    for t in 0..q_theta {
+        for x in 0..n_x {
+            let weight = weights[t * n_x + x];
+            trait_weights[t] += weight;
+            space_weights[x] += weight;
+        }
+    }
+    factorized_trait_moments_weighted_impl(
+        probs,
+        &trait_weights,
+        &space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    )
+}
+
+fn validate_factorized_moment_inputs(
+    probs: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Result<usize, String> {
+    if q_theta == 0 || trait_weights.len() != q_theta {
+        return Err("trait weights must have positive length q_theta".into());
+    }
+    if space_weights.is_empty() {
+        return Err("space weights must be non-empty".into());
+    }
+    if n_dims == 0 || factor_id.is_empty() {
+        return Err("factor dimensions and item ids must be non-empty".into());
+    }
+    let n_x = space_weights.len();
+    let cell = q_theta
+        .checked_mul(n_x)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    let expected = factor_id
+        .len()
+        .checked_mul(cell)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    if probs.len() != expected {
+        return Err("probability grid length does not match item and node dimensions".into());
+    }
+    if !trait_weights
+        .iter()
+        .chain(space_weights)
+        .chain(probs)
+        .all(|value| value.is_finite())
+    {
+        return Err("factorized moment inputs must be finite".into());
+    }
+    if factor_id.iter().any(|&dimension| dimension >= n_dims) {
+        return Err("factor_id values must be in 0..n_dims-1".into());
+    }
+    for set in item_sets {
+        if set.iter().any(|&item| item >= factor_id.len()) {
+            return Err("item-set indices must be within the item bank".into());
+        }
+    }
+    Ok(n_x)
+}
+
+/// Integrate simple-structure item-set margins over independent trait
+/// dimensions conditional on one shared latent-space node.
+pub fn factorized_trait_moments(
+    probs: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Result<Vec<f64>, String> {
+    validate_factorized_moment_inputs(
+        probs,
+        trait_weights,
+        space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    )?;
+    Ok(factorized_trait_moments_weighted_impl(
+        probs,
+        trait_weights,
+        space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    ))
+}
+
+/// Integrate simple-structure item-set margins over a shared cluster
+/// intercept and independent residual trait dimensions.
+pub fn factorized_multilevel_moments(
+    probs: &[f64],
+    cluster_weights: &[f64],
+    trait_weights: &[f64],
+    space_weights: &[f64],
+    q_u: usize,
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Result<Vec<f64>, String> {
+    if q_u == 0 || cluster_weights.len() != q_u {
+        return Err("cluster weights must have positive length q_u".into());
+    }
+    if !cluster_weights.iter().all(|value| value.is_finite()) {
+        return Err("cluster weights must be finite".into());
+    }
+    let n_x = space_weights.len();
+    if n_x == 0 {
+        return Err("space weights must be non-empty".into());
+    }
+    let cell = q_theta
+        .checked_mul(n_x)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    let per_cluster = factor_id
+        .len()
+        .checked_mul(cell)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    let expected = q_u
+        .checked_mul(per_cluster)
+        .ok_or_else(|| "factorized moment dimensions overflow".to_string())?;
+    if probs.len() != expected {
+        return Err("multilevel probability grid length does not match node dimensions".into());
+    }
+    validate_factorized_moment_inputs(
+        &probs[..per_cluster],
+        trait_weights,
+        space_weights,
+        q_theta,
+        factor_id,
+        n_dims,
+        item_sets,
+    )?;
+    let mut result = vec![0.0_f64; item_sets.len()];
+    for cluster in 0..q_u {
+        let start = cluster * per_cluster;
+        let moments = factorized_trait_moments_weighted_impl(
+            &probs[start..start + per_cluster],
+            trait_weights,
+            space_weights,
+            q_theta,
+            factor_id,
+            n_dims,
+            item_sets,
+        );
+        for (result_value, moment) in result.iter_mut().zip(moments) {
+            *result_value += cluster_weights[cluster] * moment;
+        }
+    }
+    if !result.iter().all(|value| value.is_finite()) {
+        return Err("multilevel moments must be finite".into());
+    }
+    Ok(result)
+}
+
+/// Estimate the covariance of cluster totals for first- and second-order
+/// observed moments. The denominator and finite-sample correction match the
+/// existing Python cluster-robust M2 implementation.
+pub fn cluster_moment_covariance(
+    z_rows: &[f64],
+    model_moments: &[f64],
+    cluster_id: &[usize],
+    n_rows: usize,
+    n_moments: usize,
+    n_clusters: usize,
+) -> Result<Vec<f64>, String> {
+    let row_elements = n_rows
+        .checked_mul(n_moments)
+        .ok_or_else(|| "cluster covariance dimensions overflow".to_string())?;
+    if n_rows == 0 || n_moments == 0 || z_rows.len() != row_elements {
+        return Err("cluster covariance row dimensions are inconsistent".into());
+    }
+    if model_moments.len() != n_moments || cluster_id.len() != n_rows {
+        return Err("cluster covariance inputs have inconsistent lengths".into());
+    }
+    if n_clusters <= n_moments || n_clusters < 2 {
+        return Err(format!(
+            "cluster-robust M2 needs more clusters than moments ({n_clusters} <= {n_moments})"
+        ));
+    }
+    if !z_rows
+        .iter()
+        .chain(model_moments)
+        .all(|value| value.is_finite())
+    {
+        return Err("cluster covariance inputs must be finite".into());
+    }
+    if cluster_id.iter().any(|&cluster| cluster >= n_clusters) {
+        return Err("cluster ids must be within the compact cluster range".into());
+    }
+    let total_elements = n_clusters
+        .checked_mul(n_moments)
+        .ok_or_else(|| "cluster covariance dimensions overflow".to_string())?;
+    let covariance_elements = n_moments
+        .checked_mul(n_moments)
+        .ok_or_else(|| "cluster covariance dimensions overflow".to_string())?;
+    let mut totals = vec![0.0_f64; total_elements];
+    for row in 0..n_rows {
+        let cluster = cluster_id[row];
+        for moment in 0..n_moments {
+            totals[cluster * n_moments + moment] +=
+                z_rows[row * n_moments + moment] - model_moments[moment];
+        }
+    }
+    let mut means = vec![0.0_f64; n_moments];
+    for cluster in 0..n_clusters {
+        for moment in 0..n_moments {
+            means[moment] += totals[cluster * n_moments + moment];
+        }
+    }
+    for mean in &mut means {
+        *mean /= n_clusters as f64;
+    }
+    let scale = n_clusters as f64 / ((n_clusters - 1) as f64 * n_rows as f64);
+    let mut covariance = vec![0.0_f64; covariance_elements];
+    for left in 0..n_moments {
+        for right in 0..n_moments {
+            let mut value = 0.0_f64;
+            for cluster in 0..n_clusters {
+                let base = cluster * n_moments;
+                value += (totals[base + left] - means[left])
+                    * (totals[base + right] - means[right]);
+            }
+            covariance[left * n_moments + right] = scale * value;
+        }
+    }
+    Ok(covariance)
+}
+
 /// M2 statistic (order-2 residuals), df, p-value, RMSEA2 (+ 90% CI), and the
 /// bivariate SRMSR for a fitted dichotomous item bank on the `(theta, xi)`
 /// node set. Complete cases only (M2 assumes a single sample size N).
@@ -2129,12 +2532,76 @@ pub fn m2_rmsea2(
     q_theta: usize,
     xi_rule: XiRule,
 ) -> Result<M2Result, String> {
+    m2_rmsea2_impl(
+        bank,
+        y,
+        observed,
+        n_persons,
+        prior,
+        q_theta,
+        xi_rule,
+        M2StructuredControls::default(),
+    )
+}
+
+/// Structured single-population M2 with Rust-owned calibration metadata.
+///
+/// `fixed_items` removes every calibration column for an anchored item.
+/// `estimate_population` adds the prior mean/SD nuisance columns, and
+/// `tau_fixed` removes the spatial-distance coefficient column. The numerical
+/// construction stays identical to [`m2_rmsea2`]; only the tangent-space
+/// parameter bookkeeping changes.
+pub fn m2_rmsea2_structured(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    fixed_items: Option<&[bool]>,
+    estimate_population: bool,
+    tau_fixed: bool,
+) -> Result<M2Result, String> {
+    m2_rmsea2_impl(
+        bank,
+        y,
+        observed,
+        n_persons,
+        prior,
+        q_theta,
+        xi_rule,
+        M2StructuredControls {
+            fixed_items,
+            estimate_population,
+            tau_fixed,
+        },
+    )
+}
+
+fn m2_rmsea2_impl(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    controls: M2StructuredControls<'_>,
+) -> Result<M2Result, String> {
     let n_items = bank.b.len();
     if n_items < 3 {
         return Err("M2 needs at least 3 items".into());
     }
+    validate_prior(prior, bank.n_dims)?;
     if y.len() != n_persons * n_items || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if controls
+        .fixed_items
+        .is_some_and(|fixed| fixed.len() != n_items)
+    {
+        return Err("fixed_items must have length n_items".into());
     }
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
@@ -2152,7 +2619,15 @@ pub fn m2_rmsea2(
 
     // free item parameters (Delta columns), matching the estimator's count
     let tau_free = kind == crate::InteractionKind::Distance && uses_space;
-    let params = m2_parameters(n_items, free_alpha, uses_space, bank.latent_dim, tau_free);
+    let params = m2_parameters_with_controls(
+        n_items,
+        free_alpha,
+        uses_space,
+        bank.latent_dim,
+        bank.n_dims,
+        tau_free,
+        controls,
+    );
     let p = params.len();
     if s <= p {
         return Err(format!(
@@ -2169,6 +2644,11 @@ pub fn m2_rmsea2(
     }
     let n_c = complete.len();
     if n_c < p + 2 {
+        if (controls.fixed_items.is_some() || controls.estimate_population || controls.tau_fixed)
+            && n_c < 2
+        {
+            return Err("each population needs at least two complete cases for M2".into());
+        }
         return Err(format!("too few complete cases for M2: {n_c}"));
     }
     let n_f = n_c as f64;
@@ -2192,7 +2672,7 @@ pub fn m2_rmsea2(
     // node probabilities at the fitted parameters + node weights
     let (probs0, weights, _theta, _cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
     let model_moments = |probs: &[f64]| -> Vec<f64> {
-        factorized_trait_moments(
+        factorized_trait_moments_joint(
             probs,
             &weights,
             q_theta,
@@ -2202,7 +2682,7 @@ pub fn m2_rmsea2(
         )
     };
     let pi_set = |probs: &[f64], set: &[usize]| -> f64 {
-        factorized_trait_moments(
+        factorized_trait_moments_joint(
             probs,
             &weights,
             q_theta,
@@ -2220,7 +2700,12 @@ pub fn m2_rmsea2(
     let zeta0 = bank.zeta.to_vec();
     let tau0 = bank.tau;
     let probs_for =
-        |alpha: &[f64], b: &[f64], zeta: &[f64], tau: f64| -> Result<Vec<f64>, String> {
+        |alpha: &[f64],
+         b: &[f64],
+         zeta: &[f64],
+         tau: f64,
+         prior_for: &PriorSpec|
+         -> Result<Vec<f64>, String> {
             let tb = ItemBank {
                 alpha,
                 b,
@@ -2232,22 +2717,58 @@ pub fn m2_rmsea2(
                 latent_dim: bank.latent_dim,
                 eps_distance: bank.eps_distance,
             };
-            let (pr, _w, _t, _c) = icc_nodes(&tb, prior, q_theta, xi_rule)?;
+            let (pr, _w, _t, _c) = icc_nodes(&tb, prior_for, q_theta, xi_rule)?;
             Ok(pr)
         };
     let mut delta = vec![0.0_f64; s * p];
     let ld = bank.latent_dim;
     for (col, param) in params.iter().enumerate() {
-        let base = m2_param_value(*param, &alpha0, &b0, &zeta0, tau0, ld);
-        let h = 1e-4 * (1.0 + base.abs());
+        let base = m2_structured_param_value(
+            *param,
+            &alpha0,
+            &b0,
+            &zeta0,
+            tau0,
+            ld,
+            &prior.mean,
+            &prior.sd,
+        );
+        let h = match param {
+            M2Param::PopulationSd(d) => {
+                (1e-4 * (1.0 + base.abs())).min(0.25 * prior.sd[*d])
+            }
+            _ => 1e-4 * (1.0 + base.abs()),
+        };
         let mut a = alpha0.clone();
         let mut b = b0.clone();
         let mut z = zeta0.clone();
         let mut t = tau0;
-        set_m2_param(*param, base + h, &mut a, &mut b, &mut z, &mut t, ld);
-        let mom_plus = model_moments(&probs_for(&a, &b, &z, t)?);
-        set_m2_param(*param, base - h, &mut a, &mut b, &mut z, &mut t, ld);
-        let mom_minus = model_moments(&probs_for(&a, &b, &z, t)?);
+        let mut prior_plus = prior.clone();
+        let mut prior_minus = prior.clone();
+        set_m2_structured_param(
+            *param,
+            base + h,
+            &mut a,
+            &mut b,
+            &mut z,
+            &mut t,
+            ld,
+            &mut prior_plus.mean,
+            &mut prior_plus.sd,
+        );
+        let mom_plus = model_moments(&probs_for(&a, &b, &z, t, &prior_plus)?);
+        set_m2_structured_param(
+            *param,
+            base - h,
+            &mut a,
+            &mut b,
+            &mut z,
+            &mut t,
+            ld,
+            &mut prior_minus.mean,
+            &mut prior_minus.sd,
+        );
+        let mom_minus = model_moments(&probs_for(&a, &b, &z, t, &prior_minus)?);
         let inv = 0.5 / h;
         for row in 0..s {
             delta[row * p + col] = (mom_plus[row] - mom_minus[row]) * inv;
@@ -2457,7 +2978,7 @@ pub fn poly_local_dependence(
     let z = n_cat - 1;
 
     // per-item, per-node category probabilities P_i(a | theta_t)
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "quadrature size")?;
     let qn = nodes.len();
     let mut probs = vec![0.0_f64; n_items * qn * n_cat];
     for i in 0..n_items {
@@ -2556,6 +3077,334 @@ pub fn poly_local_dependence(
             out.p_value.push(chi2_sf(x2, df));
             out.cramers_v.push((x2 / (nf * z as f64)).sqrt());
             out.max_abs_std_resid.push(maxr);
+        }
+    }
+    Ok(out)
+}
+
+
+/// Conditional-Rasch M2 (CMLE): moments and nuisance distribution conditioned on
+/// each person's raw score. Item easiness is identified through `I - 1`
+/// contrasts; the empirical raw-score distribution supplies `I` free
+/// probabilities in the projected derivative matrix.
+///
+/// Haberman (2004) supports the conditional estimation / identifiability pieces;
+/// combining that nuisance parameterization with the Maydeu-Olivares–Joe
+/// tangent-space M2 projection is this repository's implementation.
+pub fn m2_cmle_rasch(
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    item_easiness: &[f64],
+) -> Result<M2Result, String> {
+    let n_items = item_easiness.len();
+    if n_items < 5 {
+        return Err(
+            "CMLE M2 needs at least 5 items for positive degrees of freedom".into(),
+        );
+    }
+    if y.len() != n_persons * n_items || observed.len() != y.len() {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if item_easiness.iter().any(|v| !v.is_finite()) {
+        return Err(format!(
+            "item_easiness must be a finite vector of length {n_items}"
+        ));
+    }
+
+    // Complete binary rows only.
+    let mut complete_rows: Vec<Vec<f64>> = Vec::new();
+    for person in 0..n_persons {
+        let base = person * n_items;
+        if !(0..n_items).all(|item| observed[base + item]) {
+            continue;
+        }
+        let mut row = Vec::with_capacity(n_items);
+        for item in 0..n_items {
+            let value = y[base + item];
+            if value != 0.0 && value != 1.0 {
+                return Err("CMLE M2 needs complete binary response rows".into());
+            }
+            row.push(value);
+        }
+        complete_rows.push(row);
+    }
+    let n = complete_rows.len();
+    if n == 0 {
+        return Err("CMLE M2 needs complete binary response rows".into());
+    }
+
+    let mut scores = vec![0usize; n];
+    let mut score_counts = vec![0usize; n_items + 1];
+    for (person, row) in complete_rows.iter().enumerate() {
+        let score = row.iter().map(|v| *v as usize).sum::<usize>();
+        scores[person] = score;
+        score_counts[score] += 1;
+    }
+    if score_counts.iter().any(|&c| c == 0) {
+        let missing: Vec<usize> = score_counts
+            .iter()
+            .enumerate()
+            .filter_map(|(score, &count)| if count == 0 { Some(score) } else { None })
+            .collect();
+        return Err(format!(
+            "CMLE M2 needs every raw-score category represented; missing scores {missing:?}"
+        ));
+    }
+    let n_f = n as f64;
+    let score_prob: Vec<f64> = score_counts.iter().map(|&c| c as f64 / n_f).collect();
+
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    let mut moment_items: Vec<Vec<usize>> = (0..n_items).map(|i| vec![i]).collect();
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            pairs.push((i, j));
+            moment_items.push(vec![i, j]);
+        }
+    }
+    let s = moment_items.len();
+
+    let mut p_obs = vec![0.0_f64; s];
+    for row in &complete_rows {
+        for item in 0..n_items {
+            p_obs[item] += row[item];
+        }
+        for (idx, &(i, j)) in pairs.iter().enumerate() {
+            p_obs[n_items + idx] += row[i] * row[j];
+        }
+    }
+    for value in &mut p_obs {
+        *value /= n_f;
+    }
+
+    let conditional = rasch_conditional_set_probabilities(item_easiness, &moment_items)?;
+    // conditional is (n_items+1) x s row-major
+    let mut model_moments = vec![0.0_f64; s];
+    for score in 0..=n_items {
+        let weight = score_prob[score];
+        for col in 0..s {
+            model_moments[col] += weight * conditional[score * s + col];
+        }
+    }
+
+    let p_item = n_items - 1;
+    let p_score = n_items;
+    let p = p_item + p_score;
+    let mut delta = vec![0.0_f64; s * p];
+    for col in 0..p_item {
+        let h = 1e-4 * (1.0 + item_easiness[col].abs() + item_easiness[n_items - 1].abs());
+        let mut plus = item_easiness.to_vec();
+        let mut minus = item_easiness.to_vec();
+        plus[col] += h;
+        plus[n_items - 1] -= h;
+        minus[col] -= h;
+        minus[n_items - 1] += h;
+        let plus_cond = rasch_conditional_set_probabilities(&plus, &moment_items)?;
+        let minus_cond = rasch_conditional_set_probabilities(&minus, &moment_items)?;
+        for row in 0..s {
+            let mut plus_m = 0.0;
+            let mut minus_m = 0.0;
+            for score in 0..=n_items {
+                plus_m += score_prob[score] * plus_cond[score * s + row];
+                minus_m += score_prob[score] * minus_cond[score * s + row];
+            }
+            delta[row * p + col] = (plus_m - minus_m) * (0.5 / h);
+        }
+    }
+    let reference_score = n_items;
+    for score in 0..n_items {
+        for row in 0..s {
+            delta[row * p + p_item + score] =
+                conditional[score * s + row] - conditional[reference_score * s + row];
+        }
+    }
+
+    // Cache score-marginal joint pass probabilities for set unions.
+    let mut cache: HashMap<Vec<usize>, f64> = HashMap::new();
+    let mut xi = vec![0.0_f64; s * s];
+    for a in 0..s {
+        for b in a..s {
+            let mut union = moment_items[a].clone();
+            for &item in &moment_items[b] {
+                if !union.contains(&item) {
+                    union.push(item);
+                }
+            }
+            let mut key = union.clone();
+            key.sort_unstable();
+            let joint = if let Some(&value) = cache.get(&key) {
+                value
+            } else {
+                let values =
+                    rasch_conditional_set_probabilities(item_easiness, &[key.clone()])?;
+                let mut total = 0.0;
+                for score in 0..=n_items {
+                    total += score_prob[score] * values[score];
+                }
+                cache.insert(key, total);
+                total
+            };
+            let cov = joint - model_moments[a] * model_moments[b];
+            xi[a * s + b] = cov;
+            xi[b * s + a] = cov;
+        }
+    }
+
+    if s <= p || n < p + 2 {
+        return Err(format!(
+            "CMLE M2 needs more moments/cases than parameters ({s}, {n}, {p})"
+        ));
+    }
+
+    let residual: Vec<f64> = (0..s).map(|i| p_obs[i] - model_moments[i]).collect();
+    let m2 = projected_m2(&residual, &delta, xi, s, p, n_f)?;
+    let df = (s - p) as f64;
+
+    // Complete-independence null model (same construction as m2_rmsea2).
+    let null_p = n_items;
+    let null_mom: Vec<f64> = moment_items
+        .iter()
+        .map(|set| set.iter().map(|&i| p_obs[i]).product())
+        .collect();
+    let null_e: Vec<f64> = (0..s).map(|a| p_obs[a] - null_mom[a]).collect();
+    let mut null_delta = vec![0.0_f64; s * null_p];
+    for (row, set) in moment_items.iter().enumerate() {
+        for &col in set {
+            let derivative: f64 = set
+                .iter()
+                .filter(|&&i| i != col)
+                .map(|&i| p_obs[i])
+                .product();
+            null_delta[row * null_p + col] = derivative;
+        }
+    }
+    let mut null_xi = vec![0.0_f64; s * s];
+    for a in 0..s {
+        for b in a..s {
+            let mut union = moment_items[a].clone();
+            for &item in &moment_items[b] {
+                if !union.contains(&item) {
+                    union.push(item);
+                }
+            }
+            let union_moment: f64 = union.iter().map(|&i| p_obs[i]).product();
+            let cov = union_moment - null_mom[a] * null_mom[b];
+            null_xi[a * s + b] = cov;
+            null_xi[b * s + a] = cov;
+        }
+    }
+    let null_m2 = projected_m2(&null_e, &null_delta, null_xi, s, null_p, n_f)?;
+    let null_df = (s - null_p) as f64;
+
+    let p_value = chi2_sf(m2, df);
+    let denom = df * (n_f - 1.0);
+    let rmsea2 = ((m2 - df).max(0.0) / denom).sqrt();
+    let rmsea2_ci_lower = (nc_lambda_for(m2, df, 0.95) / denom).sqrt();
+    let rmsea2_ci_upper = (nc_lambda_for(m2, df, 0.05) / denom).sqrt();
+    let (cfi, tli) = comparative_fit_metrics(m2, df, null_m2, null_df);
+
+    let mut ssum = 0.0_f64;
+    let mut cnt = 0usize;
+    for (idx, &(i, j)) in pairs.iter().enumerate() {
+        let (pi, pj, pij) = (p_obs[i], p_obs[j], p_obs[n_items + idx]);
+        let (mi, mj, mij) = (
+            model_moments[i],
+            model_moments[j],
+            model_moments[n_items + idx],
+        );
+        let dobs = pi * (1.0 - pi) * pj * (1.0 - pj);
+        let dmod = mi * (1.0 - mi) * mj * (1.0 - mj);
+        if dobs > 1e-12 && dmod > 1e-12 {
+            let robs = (pij - pi * pj) / dobs.sqrt();
+            let rmod = (mij - mi * mj) / dmod.sqrt();
+            ssum += (robs - rmod) * (robs - rmod);
+            cnt += 1;
+        }
+    }
+    let srmsr = srmsr_from_sum(ssum, cnt);
+
+    Ok(M2Result {
+        m2,
+        df,
+        p_value,
+        rmsea2,
+        rmsea2_ci_lower,
+        rmsea2_ci_upper,
+        srmsr,
+        null_m2,
+        null_df,
+        cfi,
+        tli,
+        n_moments: s,
+        n_parameters: p,
+        n_complete: n,
+    })
+}
+
+/// Log elementary-symmetric polynomials of all orders via the log-sum-exp form.
+fn log_elementary_symmetric(log_weights: &[f64]) -> Vec<f64> {
+    let mut out = vec![f64::NEG_INFINITY; log_weights.len() + 1];
+    out[0] = 0.0;
+    let mut used = 0usize;
+    for &log_weight in log_weights {
+        used += 1;
+        for order in (1..=used).rev() {
+            out[order] = log_addexp(out[order], log_weight + out[order - 1]);
+        }
+    }
+    out
+}
+
+#[inline]
+fn log_addexp(a: f64, b: f64) -> f64 {
+    if a.is_infinite() && a.is_sign_negative() {
+        return b;
+    }
+    if b.is_infinite() && b.is_sign_negative() {
+        return a;
+    }
+    let m = a.max(b);
+    m + ((a - m).exp() + (b - m).exp()).ln()
+}
+
+/// P(all items in each set are 1 | raw score) under the Rasch model.
+/// Returns a dense `(n_items + 1) * n_sets` row-major matrix.
+fn rasch_conditional_set_probabilities(
+    item_easiness: &[f64],
+    item_sets: &[Vec<usize>],
+) -> Result<Vec<f64>, String> {
+    let n_items = item_easiness.len();
+    if n_items == 0 {
+        return Err("item_easiness must be non-empty".into());
+    }
+    let mean = item_easiness.iter().sum::<f64>() / n_items as f64;
+    let b: Vec<f64> = item_easiness.iter().map(|v| v - mean).collect();
+    let denominator = log_elementary_symmetric(&b);
+    let mut out = vec![0.0_f64; (n_items + 1) * item_sets.len()];
+    for (col, item_set) in item_sets.iter().enumerate() {
+        if item_set.iter().any(|&i| i >= n_items) {
+            return Err("item set contains out-of-range item index".into());
+        }
+        let mut keep = vec![true; n_items];
+        for &item in item_set {
+            keep[item] = false;
+        }
+        let remaining: Vec<f64> = b
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &w)| if keep[i] { Some(w) } else { None })
+            .collect();
+        let numerator = log_elementary_symmetric(&remaining);
+        let selected_log_weight: f64 = item_set.iter().map(|&i| b[i]).sum();
+        let order = item_set.len();
+        for score in order..=n_items {
+            let remaining_score = score - order;
+            if remaining_score < numerator.len() && denominator[score].is_finite() {
+                out[score * item_sets.len() + col] = (selected_log_weight
+                    + numerator[remaining_score]
+                    - denominator[score])
+                    .exp();
+            }
         }
     }
     Ok(out)
@@ -2678,7 +3527,7 @@ pub fn poly_m2(
     }
 
     // cumulative-probability tensor S[(i*qn+t)*z + (c-1)] = P(Y_i >= c | theta_t)
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "quadrature size")?;
     let qn = nodes.len();
     let build_cum = |slope: &[f64], cat_params: &[f64]| -> Vec<f64> {
         let mut sc = vec![0.0_f64; n_items * qn * z];

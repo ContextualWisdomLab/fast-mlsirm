@@ -13,19 +13,16 @@ def test_fit_config_model_estimator_compatibility_matrix(
     model: str, estimator: str
 ) -> None:
     """Every advertised model-estimator pair must match executable fit support."""
-    config = FitConfig(model=model, estimator=estimator)
-
     if model == "BIFAC2PLM" and estimator == "jmle":
-        with pytest.raises(ValueError, match="BIFAC2PLM.*mmle"):
-            config.validate()
+        with pytest.raises(ValueError, match=r"BIFAC2PLM.*mmle"):
+            FitConfig(model=model, estimator=estimator)
         return
 
+    config = FitConfig(model=model, estimator=estimator)
     config.validate()
 
 
 def test_bifactor_jmle_fails_during_configuration_validation() -> None:
     """Bifactor JMLE must fail before response preparation or fitting work."""
-    config = FitConfig(model="BIFAC2PLM", estimator="jmle")
-
-    with pytest.raises(ValueError, match="BIFAC2PLM.*mmle"):
-        config.validate()
+    with pytest.raises(ValueError, match=r"BIFAC2PLM.*mmle"):
+        FitConfig(model="BIFAC2PLM", estimator="jmle")

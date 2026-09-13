@@ -4,12 +4,21 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import normalize_device, resolve_backend
+from .backend import (
+    _REFERENCE_BACKEND_ACTIVE,
+    _resolve_scoped_reference_backend,
+    normalize_device,
+    resolve_backend,
+)
 from .config import FitConfig, PenaltyConfig
+from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
 from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
                         validate_factor_id)
 from .types import FitResult, MLSIRMParams
+
+
+_MARGINAL_CAPABILITY_VERSION = 1
 
 
 def _compact_population_labels(raw, n_persons: int, name: str):
@@ -24,12 +33,32 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     arr = _np.asarray(raw)
     if arr.ndim != 1 or arr.shape[0] != n_persons:
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
-    fl = arr.astype(_np.float64)
-    if not _np.all(_np.isfinite(fl)):
+    validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
+    if not _np.all(_np.isfinite(validated)):
         raise ValueError(f"{name} must be finite")
-    if _np.any(fl < 0) or _np.any(fl != _np.floor(fl)):
+    if _np.any(validated < 0) or _np.any(validated != _np.floor(validated)):
         raise ValueError(f"{name} must be non-negative integers")
-    uniq, remapped = _np.unique(arr.astype(_np.int64), return_inverse=True)
+    int64_max = _np.iinfo(_np.int64).max
+    if arr.dtype.kind == "u" and _np.any(arr > _np.uint64(int64_max)):
+        raise ValueError(f"{name} must fit in signed 64-bit integers")
+    if arr.dtype.kind == "f" and _np.finfo(arr.dtype).maxexp > 63:
+        signed_boundary = _np.array(2**63, dtype=arr.dtype)
+        if _np.any(arr >= signed_boundary):
+            raise ValueError(f"{name} must fit in signed 64-bit integers")
+    try:
+        with _np.errstate(invalid="ignore", over="ignore"):
+            int_labels = arr.astype(_np.int64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must fit in signed 64-bit integers") from exc
+    if arr.dtype.kind == "f":
+        roundtrip = int_labels.astype(arr.dtype)
+        expected = arr
+    else:
+        roundtrip = int_labels.astype(_np.float64)
+        expected = validated
+    if not _np.array_equal(roundtrip, expected):
+        raise ValueError(f"{name} must fit in signed 64-bit integers")
+    uniq, remapped = _np.unique(int_labels, return_inverse=True)
     return remapped.astype(_np.int64), int(uniq.size)
 
 
@@ -99,8 +128,12 @@ def fit(
     """
     config = config or FitConfig()
     config.validate()
-    backend = resolve_backend(config.backend)
-    # The device is a sub-option of the rust backend; the numpy path ignores it.
+    backend = (
+        _resolve_scoped_reference_backend(config.backend)
+        if _REFERENCE_BACKEND_ACTIVE.get()
+        else resolve_backend(config.backend)
+    )
+    # The device is a sub-option of the Rust backend; the reference path ignores it.
     device = normalize_device(config.rust_device) if backend == "rust" else "cpu"
     model = config.normalized_model()
 
@@ -111,6 +144,8 @@ def fit(
         raise ValueError("factor_id length must match number of items")
     if factors.dtype.kind not in {"i", "u"}:
         raise ValueError("factor_id must contain integer values")
+    validation_y = np.where(observed, y, np.nan)
+    validate_irt_response_matrix(validation_y, "dichotomous")
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")
@@ -118,7 +153,6 @@ def fit(
     if model in {"ULS2PLM", "ULSRM"}:
         factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
-
     if group_id is not None and cluster_id is not None:
         raise ValueError("group_id and cluster_id are mutually exclusive")
     if (group_id is not None or cluster_id is not None) and config.estimator != "mmle":
@@ -152,7 +186,12 @@ def fit(
             # space is not estimated — unchanged public behavior). Use the
             # spatial models or a population structure for the full marginal
             # latent-space fit.
-            return _fit_mmle(y, observed, model, config)
+            if backend == "numpy":
+                raise RuntimeError(
+                    "NumPy reference is unavailable for plain unidimensional MMLE; "
+                    "use the production Rust fit"
+                )
+            return _fit_mmle(y, observed, model, config, backend)
         return _fit_mmle_marginal(
             y, observed, factors, n_dims, model, config, backend, device,
             group_id=group_id, cluster_id=cluster_id, anchors=anchors,
@@ -171,7 +210,6 @@ def fit(
         )
         if best is None or candidate.objective < best.objective:
             best = candidate
-
     if best is None:
         raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
@@ -182,6 +220,7 @@ def _fit_mmle(
     observed: np.ndarray,
     model: str,
     config: FitConfig,
+    backend: str,
 ) -> FitResult:
     """Marginal MLE (EM) — robust to missing data. Unidimensional 2PL measurement.
 
@@ -228,7 +267,7 @@ def _fit_mmle(
         params=params,
         model=model,
         optimizer="mmle_em/rust",
-        backend=config.backend,
+        backend=backend,
         rust_device=config.rust_device,
         objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
         loglik_trace=[float(v) for v in loglik_trace],
@@ -252,11 +291,24 @@ def _fit_mmle_marginal(
     anchors: dict | None = None,
     covariate: dict | None = None,
 ) -> FitResult:
-    """Marginal EM for the latent-space family (Rust core, NumPy fallback).
+    """Marginal EM for the latent-space family with explicit backend ownership.
 
     Person latents are integrated out by Gauss-Hermite quadrature; item-side
     parameters carry the LSIRM priors of Jeon et al. (2021) as MAP penalties
     (see ``estimators/marginal.py`` / ``mlsirm-core/src/marginal.rs``).
+
+    ``backend="rust"`` (and ``auto`` once it resolves to rust) requires a
+    compiled ``fit_marginal`` whose ``MARGINAL_CAPABILITY_VERSION`` matches
+    this package. Missing, stale, or keyword-incompatible native entrypoints
+    raise ``RuntimeError`` and never fall back to NumPy production arithmetic.
+    Use :func:`fast_mlsirm.fit_reference` for explicit reference or parity runs;
+    ordinary production fitting never selects the NumPy owner.
+
+    References (APA 7th ed.):
+        Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
+            unobserved item-respondent interactions: A latent space item
+            response model with interaction map. *Psychometrika, 86*(2),
+            378-403. https://doi.org/10.1007/s11336-021-09762-5
     """
     from .estimators.marginal import LSIRM_PRIOR, fit_marginal_numpy
 
@@ -345,10 +397,24 @@ def _fit_mmle_marginal(
     if backend == "rust":
         try:  # pragma: no cover - depends on the compiled extension
             from . import _core  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "compiled Rust core marginal estimator is required for marginal MMLE"
+            ) from exc
 
-            rust = getattr(_core, "fit_marginal", None)
-        except Exception:  # pragma: no cover
-            rust = None
+        capability = getattr(_core, "MARGINAL_CAPABILITY_VERSION", None)
+        if (
+            type(capability) is not int
+            or capability != _MARGINAL_CAPABILITY_VERSION
+        ):
+            raise RuntimeError(
+                "compiled Rust core marginal ABI capability is missing or unsupported"
+            )
+        rust = getattr(_core, "fit_marginal", None)
+        if not callable(rust):
+            raise RuntimeError(
+                "compiled Rust core marginal estimator is required for marginal MMLE"
+            )
 
     y_filled = np.where(observed, y, 0.0).astype(np.float64)
     if rust is not None:  # pragma: no cover - exercised only with the extension
@@ -388,6 +454,10 @@ def _fit_mmle_marginal(
             )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
+        except TypeError as exc:
+            raise RuntimeError(
+                "compiled Rust core marginal ABI capability is missing or unsupported"
+            ) from exc
         alpha = np.asarray(res["alpha"], dtype=np.float64)
         b = np.asarray(res["b"], dtype=np.float64)
         zeta = np.asarray(res["zeta"], dtype=np.float64).reshape(
@@ -737,12 +807,18 @@ def _rust_optimize(
         from . import _core as core
     except Exception as exc:  # pragma: no cover - import path exercised in CI
         raise RuntimeError(
-            "Rust backend requested but fast_mlsirm._core is unavailable"
+            "Rust backend requested but fast_mlsirm._core is unavailable; "
+            "install a wheel or editable build of this package that provides "
+            "the compiled Rust extension, or rerun through the explicit NumPy "
+            "reference path (fast_mlsirm.fit_reference, or --reference on the CLI)"
         ) from exc
     optimize = getattr(core, "jmle_optimize", None)
     if optimize is None:
         raise RuntimeError(
-            "Rust backend requested but core.jmle_optimize is unavailable"
+            "Rust backend requested but core.jmle_optimize is unavailable; "
+            "reinstall this package so the compiled extension matches the "
+            "installed Python package, or rerun through the explicit NumPy "
+            "reference path (fast_mlsirm.fit_reference, or --reference on the CLI)"
         )
 
     def _py_objective(x_arr: object) -> tuple[float, list[float], float]:

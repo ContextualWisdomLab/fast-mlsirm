@@ -10,6 +10,159 @@ import numpy as np
 from .config import MAX_MAX_ITER
 
 
+_SUPPORTED_Q_THETA = (7, 11, 15, 21, 31, 41)
+_MAX_CRM_RESPONSE_CELLS = 20_000_000
+_MAX_CRM_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_CRM_RESPONSE_CELLS
+_NUMPY_INTEGER_TYPES = tuple(
+    np.dtype(name).type
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
+)
+_NUMPY_FLOAT_TYPES = tuple(
+    np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
+)
+_NUMPY_COMPLEX_TYPES = tuple(
+    np.dtype(name).type for name in ("complex64", "complex128", "clongdouble")
+)
+_TRUSTED_RESPONSE_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    complex,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+    *_NUMPY_COMPLEX_TYPES,
+)
+_TRUSTED_RESPONSE_ARRAY_KINDS = ("b", "i", "u", "f", "c")
+
+
+def _is_exact_type(value_type: type, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value_type`` is one trusted scalar type without callbacks."""
+
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _trusted_integer(value: object, name: str) -> int:
+    """Normalize an exact built-in or genuine NumPy integer scalar."""
+
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if _is_exact_type(value_type, _NUMPY_INTEGER_TYPES):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def _positive_real(value: object, name: str) -> float:
+    """Normalize a trusted finite positive numeric scalar without subclass hooks."""
+
+    value_type = type(value)
+    trusted = (
+        value_type is int
+        or value_type is float
+        or _is_exact_type(value_type, _NUMPY_INTEGER_TYPES)
+        or _is_exact_type(value_type, _NUMPY_FLOAT_TYPES)
+    )
+    if not trusted:
+        raise ValueError(f"{name} must be finite and positive")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{name} must be finite and positive") from exc
+    if not np.isfinite(result) or result <= 0.0:
+        raise ValueError(f"{name} must be finite and positive")
+    return result
+
+
+def _trusted_response_array(responses: object) -> np.ndarray:
+    """Materialize CRM evidence only after callback-free trust/resource preflight."""
+
+    resource_error = (
+        f"responses must contain at most {_MAX_CRM_RESPONSE_CELLS:,} logical cells"
+    )
+    structural_error = "responses exceed structural traversal budget"
+    if type(responses) is np.ndarray:
+        if responses.size > _MAX_CRM_RESPONSE_CELLS:
+            raise ValueError(resource_error)
+        return responses
+
+    error = "responses must be a trusted NumPy array or built-in response matrix"
+    if type(responses) is not list and type(responses) is not tuple:
+        raise ValueError(error)
+
+    # Every valid non-empty two-dimensional built-in matrix with N scalar cells
+    # visits at most N row entries plus N scalar entries. Keep a separate budget
+    # so malformed zero-cell/deep fan-out cannot evade the logical-cell ceiling.
+    structural_nodes = 0
+
+    # Each frame is [exact built-in container, next child index, logical-cell subtotal].
+    # Memoized subtotals let repeated/shared acyclic subtrees count by logical
+    # occurrence without re-traversing their descendants exponentially.
+    frames: list[list[object]] = [[responses, 0, 0]]
+    active_container_ids: set[int] = {id(responses)}
+    subtree_cells: dict[int, int] = {}
+
+    while frames:
+        frame = frames[-1]
+        item = frame[0]
+        child_index = int(frame[1])
+
+        if child_index >= len(item):
+            subtotal = int(frame[2])
+            item_id = id(item)
+            active_container_ids.remove(item_id)
+            subtree_cells[item_id] = subtotal
+            frames.pop()
+            if frames:
+                parent_total = int(frames[-1][2]) + subtotal
+                if parent_total > _MAX_CRM_RESPONSE_CELLS:
+                    raise ValueError(resource_error)
+                frames[-1][2] = parent_total
+            continue
+
+        frame[1] = child_index + 1
+        child = item[child_index]
+        structural_nodes += 1
+        if structural_nodes > _MAX_CRM_RESPONSE_STRUCTURAL_NODES:
+            raise ValueError(structural_error)
+        child_type = type(child)
+
+        if _is_exact_type(child_type, _TRUSTED_RESPONSE_SCALAR_TYPES):
+            subtotal = int(frame[2]) + 1
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type is np.ndarray:
+            if child.dtype.kind not in _TRUSTED_RESPONSE_ARRAY_KINDS:
+                raise ValueError(error)
+            subtotal = int(frame[2]) + int(child.size)
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        if child_type is not list and child_type is not tuple:
+            raise ValueError(error)
+
+        child_id = id(child)
+        if child_id in active_container_ids:
+            raise ValueError(error)
+        cached_cells = subtree_cells.get(child_id)
+        if cached_cells is not None:
+            subtotal = int(frame[2]) + cached_cells
+            if subtotal > _MAX_CRM_RESPONSE_CELLS:
+                raise ValueError(resource_error)
+            frame[2] = subtotal
+            continue
+
+        active_container_ids.add(child_id)
+        frames.append([child, 0, 0])
+
+    return np.asarray(responses)
+
+
 @dataclass
 class CrmFit:
     """Fitted continuous response model (Samejima, 1973).
@@ -79,31 +232,43 @@ def fit_crm(
     """
     from .fitstats import _core_module
 
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_crm"):
-        raise RuntimeError("fit_crm requires the compiled Rust core")
+    q_theta_value = _trusted_integer(q_theta, "q_theta")
+    if q_theta_value not in _SUPPORTED_Q_THETA:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, or 41")
+    max_iter_value = _trusted_integer(max_iter, "max_iter")
+    if not 1 <= max_iter_value <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
+    tol_value = _positive_real(tol, "tol")
 
-    y = np.asarray(responses, dtype=np.float64)
+    raw = _trusted_response_array(responses)
+    if np.iscomplexobj(raw) or raw.dtype == object:
+        raise ValueError("responses must be real-valued")
+    if raw.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a real numeric array")
+    y = raw.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
-    if not 1 <= max_iter <= MAX_MAX_ITER:
-        raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
-    if not np.isfinite(tol) or tol <= 0.0:
-        raise ValueError("tol must be finite and positive")
+    if np.any(np.isinf(y)):
+        raise ValueError("responses may only use NaN for missing values")
 
-    observed = np.isfinite(y)
+    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.5).reshape(-1)
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_crm"):
+        raise RuntimeError("fit_crm requires the compiled Rust core")
+
     res = core.fit_crm(
         yy,
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(q_theta),
-        int(max_iter),
-        float(tol),
+        q_theta_value,
+        max_iter_value,
+        tol_value,
     )
     return CrmFit(
         slope=np.asarray(res["slope"], dtype=np.float64),

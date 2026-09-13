@@ -10,6 +10,8 @@ import operator
 import re
 from typing import Any, Iterable, TypeVar
 
+import numpy as np
+
 SCHEMA_VERSION = "1.0"
 MAX_TEXT_LENGTH = 8_192
 MAX_COLLECTION_VALUES = 32
@@ -27,6 +29,9 @@ _SEMANTIC_VERSION_PATTERN = re.compile(
 )
 
 EnumValue = TypeVar("EnumValue", bound=Enum)
+_TRUSTED_NUMPY_INTEGER_TYPES = tuple(
+    np.dtype(code).type for code in np.typecodes["AllInteger"]
+)
 
 
 class ResponseFormat(str, Enum):
@@ -59,7 +64,7 @@ class EvidenceMode(str, Enum):
 
 def _text(value: Any, name: str, *, maximum: int = MAX_TEXT_LENGTH) -> str:
     """Normalize bounded non-empty text or raise a field-specific error."""
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise ValueError(f"{name} must be a string")
     normalized = value.strip()
     if not normalized:
@@ -89,10 +94,20 @@ def _bounded_values(
         raise ValueError(f"{name} must be a collection")
     try:
         iterator = iter(values)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be a collection") from exc
+    except MemoryError:
+        raise
+    except Exception:
+        raise ValueError(f"{name} must be a collection") from None
     materialized: list[Any] = []
-    for index, value in enumerate(iterator):
+    for index in range(maximum + 1):
+        try:
+            value = next(iterator)
+        except StopIteration:
+            break
+        except MemoryError:
+            raise
+        except Exception:
+            raise ValueError(f"{name} iteration failed") from None
         if index >= maximum:
             raise ValueError(f"{name} must contain at most {maximum} values")
         materialized.append(value)
@@ -137,13 +152,15 @@ def _identifier_tuple(
 
 
 def _enum_value(value: Any, enum_type: type[EnumValue], name: str) -> EnumValue:
-    """Normalize an enum instance or its exact string value."""
+    """Normalize an enum instance or its exact built-in string value."""
     if isinstance(value, enum_type):
         return value
+    choices = [member.value for member in enum_type]
+    if type(value) is not str:
+        raise ValueError(f"{name} must be one of {choices}")
     try:
         return enum_type(value)
     except (TypeError, ValueError) as exc:
-        choices = [member.value for member in enum_type]
         raise ValueError(f"{name} must be one of {choices}") from exc
 
 
@@ -165,13 +182,15 @@ def _enum_tuple(
 
 
 def _integer(value: Any, name: str) -> int:
-    """Normalize an integer while rejecting booleans and fractional values."""
-    if isinstance(value, bool):
+    """Normalize only exact package-trusted integer scalar identities."""
+    value_type = type(value)
+    if value_type is bool:
         raise ValueError(f"{name} must be an integer")
-    try:
-        return operator.index(value)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be an integer") from exc
+    if value_type is int:
+        return value
+    if not any(value_type is trusted_type for trusted_type in _TRUSTED_NUMPY_INTEGER_TYPES):
+        raise ValueError(f"{name} must be an integer")
+    return operator.index(value)
 
 
 def _unsigned_integer(value: Any, name: str) -> int:

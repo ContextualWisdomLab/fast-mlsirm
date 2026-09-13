@@ -17,6 +17,9 @@ This index distinguishes governing product/architecture documents from implement
 | [`erd/domain-model.puml`](erd/domain-model.puml) | Logical reusable-domain artifact relationships; **not** a hosted ORM schema |
 | [`traceability/requirements-matrix.md`](traceability/requirements-matrix.md) | PRD/TRD/ADR -> protected-main implementation/evidence maturity |
 | [`traceability/research-basis.md`](traceability/research-basis.md) | Scientific/standards evidence and APA 7 reference mapping |
+| [`papers/implemented-literature-map.md`](papers/implemented-literature-map.md) | Paper-to-kernel map for implemented methods |
+| [`delta_plot_dif.md`](delta_plot_dif.md) | Angoff TID / delta-plot observed-score DIF screen (not a security control) |
+| [`bradley_terry_mm.md`](bradley_terry_mm.md) | Bradley–Terry / Hunter MM pairwise ranking and additive-ties BRATT |
 | [`documentation_coverage.md`](documentation_coverage.md) | Documentation completeness states, remaining P0/P1/P2 gaps and maintenance gate |
 | [`security/threat-model.md`](security/threat-model.md) | Reusable-core trust/threat model; hosted product threats remain downstream |
 | [`doctoring/`](doctoring/) | Method/security/interoperability evidence and conservative implementation boundaries |

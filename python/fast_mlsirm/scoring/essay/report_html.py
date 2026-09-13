@@ -111,7 +111,7 @@ def _table(
     ):
         raise ValueError("row_header_column must identify an existing table header")
     if not rows:
-        return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
+        return f'<div class="empty-state" role="status" aria-atomic="true">{escape(empty_message)}</div>'
     if not headers:
         raise ValueError("table headers must not be empty when rows are present")
     if any(len(row) != len(headers) for row in rows):
@@ -177,7 +177,7 @@ def _evidence_rows(report: EssayScoreReport) -> tuple[tuple[object | None, ...],
 def _trigger_section(report: EssayScoreReport) -> str:
     """Render every transparent review trigger or an explicit empty state."""
     if not report.review_trigger_ids:
-        return '<div class="empty-state" role="status">No structural review trigger was emitted.</div>'
+        return '<div class="empty-state" role="status" aria-atomic="true">No structural review trigger was emitted.</div>'
     items = "".join(
         f"<li><code>{escape(trigger_id)}</code></li>"
         for trigger_id in report.review_trigger_ids
@@ -200,10 +200,11 @@ def _canonical_json(report: EssayScoreReport) -> str:
 def _css() -> str:
     """Return compact accessible styling without external resources."""
     return """
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; --review-required: #9c2f1f; --review-clear: #357a38; --line: #d9ded6; --muted: #60656f; }
 * { box-sizing: border-box; }
 body { margin: 0; background: Canvas; color: CanvasText; }
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto 48px; }
+main:focus:not(:focus-visible) { outline: none; }
 main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 .skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }
 .skip-link:focus { top: 8px; }
@@ -211,7 +212,7 @@ main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 .hero { padding: 48px 0 24px; }
 h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); }
 .subtitle { margin: 0; max-width: 78ch; }
-section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-radius: 10px; }
+section { margin-top: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
 .review-required { border-inline-start: 8px solid var(--review-required); }
 .review-clear { border-inline-start: 8px solid var(--review-clear); }
 .notice { padding: 14px; border: 2px solid currentColor; font-weight: 650; }
@@ -219,16 +220,17 @@ section { margin-top: 20px; padding: 20px; border: 1px solid GrayText; border-ra
 .details-grid dt { font-weight: 700; }
 .details-grid dd { margin: 0; overflow-wrap: anywhere; }
 .table-scroll { overflow-x: auto; }
+.table-scroll:focus:not(:focus-visible), pre:focus:not(:focus-visible) { outline: none; }
 .table-scroll:focus-visible, pre:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; font-weight: 700; margin-bottom: 8px; }
-thead th, tbody th, td { padding: 10px; border: 1px solid GrayText; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+thead th, tbody th, td { padding: 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
-pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
-.empty-state { font-style: italic; }
+pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty-state { font-style: italic; color: var(--muted); }
 @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } .details-grid dd { margin-bottom: 8px; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -242,12 +244,16 @@ pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid GrayTe
   :root {
     --review-required: #e57373;
     --review-clear: #81c784;
+    --line: #333333;
+    --muted: #9e9e9e;
   }
 }
 @media print {
   body { background: white; color: black; }
   .skip-link { display: none !important; }
   section, .table-scroll { break-inside: avoid; }
+  .table-scroll, pre { overflow: visible; }
+  pre { max-height: none; }
 }
 """.strip()
 
@@ -373,7 +379,7 @@ def render_essay_score_report_html(
     output = Path(output_path)
     if output.suffix.lower() != ".html":
         raise ValueError("essay score report output path must end with .html")
-    if title is not None and (not isinstance(title, str) or not title.strip()):
+    if title is not None and (type(title) is not str or not title.strip()):
         raise ValueError("essay score report title must be a non-empty string")
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -9,9 +9,13 @@ are honored, exposure caps are respected, and assembly is deterministic.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+import fast_mlsirm.ata as ata_module
+from fast_mlsirm._ata_core_loader import ata_core
 from fast_mlsirm.ata import AssembledForm, assemble_to_target, item_information_matrix
 from fast_mlsirm.types import MLSIRMParams
 
@@ -121,6 +125,77 @@ def test_assembly_is_deterministic_under_seed():
     a = assemble_to_target(bank, fid, thetas, target, length=10, model=MODEL, seed=42)
     b = assemble_to_target(bank, fid, thetas, target, length=10, model=MODEL, seed=42)
     assert a.items.tolist() == b.items.tolist()
+
+
+def test_target_gain_arithmetic_is_owned_by_rust_boundary(monkeypatch):
+    """Public ATA must delegate the result-affecting target-gain arithmetic."""
+    bank, fid = _bank(n_items=8)
+    thetas = np.array([-0.5, 0.5])
+    target = np.array([4.0, 4.0])
+    calls: list[tuple[tuple[int, int], tuple[int, ...]]] = []
+
+    def target_information_gains(matrix, candidates, target_info, accumulated):
+        matrix = np.asarray(matrix, dtype=np.float64)
+        candidates = np.asarray(candidates, dtype=np.int64)
+        target_info = np.asarray(target_info, dtype=np.float64)
+        accumulated = np.asarray(accumulated, dtype=np.float64)
+        calls.append((matrix.shape, tuple(int(i) for i in candidates.tolist())))
+        return [
+            float(
+                np.sum(
+                    np.minimum(target_info, accumulated + matrix[:, item])
+                    - np.minimum(target_info, accumulated)
+                )
+            )
+            for item in candidates
+        ]
+
+    fake_core = SimpleNamespace(target_information_gains=target_information_gains)
+    monkeypatch.setattr(ata_module, "ata_core", lambda: fake_core, raising=False)
+
+    form = assemble_to_target(bank, fid, thetas, target, length=4, model=MODEL, seed=7)
+
+    assert form.items.size == 4
+    assert calls
+    assert all(shape == (2, 8) for shape, _ in calls)
+
+
+def test_compiled_target_gain_matches_reference_formula():
+    """The installed Rust ATA core matches the explicit capped-shortfall oracle."""
+    matrix = np.array(
+        [
+            [1.0, 2.0, 4.0],
+            [0.5, 2.0, 3.0],
+        ],
+        dtype=np.float64,
+    )
+    candidates = np.array([0, 2], dtype=np.int64)
+    target = np.array([4.0, 3.0], dtype=np.float64)
+    accumulated = np.array([1.0, 2.0], dtype=np.float64)
+    expected = np.array(
+        [
+            np.sum(
+                np.minimum(target, accumulated + matrix[:, item])
+                - np.minimum(target, accumulated)
+            )
+            for item in candidates
+        ],
+        dtype=np.float64,
+    )
+
+    actual = np.asarray(
+        ata_core().target_information_gains(matrix, candidates, target, accumulated),
+        dtype=np.float64,
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-12)
+    with pytest.raises(ValueError, match="non-negative"):
+        ata_core().target_information_gains(
+            matrix,
+            np.array([-1], dtype=np.int64),
+            target,
+            accumulated,
+        )
 
 
 def test_invalid_arguments_raise():

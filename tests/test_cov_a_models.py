@@ -28,6 +28,60 @@ def test_exploratory_rejects_non_positive_integer(bad):
         exploratory(bad)
 
 
+def test_exploratory_accepts_genuine_numpy_integer_scalar():
+    spec = exploratory(np.int64(2))
+    assert spec.dimensions == 2
+
+
+def test_exploratory_rejects_integer_subclasses_before_callbacks():
+    calls: list[str] = []
+
+    class HostileInt(int):
+        def __int__(self) -> int:
+            calls.append("python-__int__")
+            raise AssertionError("integer coercion callback executed")
+
+        def __repr__(self) -> str:
+            calls.append("python-__repr__")
+            raise AssertionError("representation callback executed")
+
+    class HostileNumpyInt(np.int64):
+        def __int__(self) -> int:
+            calls.append("numpy-__int__")
+            raise AssertionError("integer coercion callback executed")
+
+        def __repr__(self) -> str:
+            calls.append("numpy-__repr__")
+            raise AssertionError("representation callback executed")
+
+    for value in (HostileInt(2), HostileNumpyInt(2)):
+        with pytest.raises(ValueError, match="positive integer"):
+            exploratory(value)
+
+    assert calls == []
+
+
+def test_exploratory_rejects_hostile_metaclass_hash_before_callback():
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            calls.append("type-__hash__")
+            raise AssertionError("type hash callback executed")
+
+    class HostileInt(int, metaclass=HostileMeta):
+        pass
+
+    class HostileNumpyInt(np.int64, metaclass=HostileMeta):
+        pass
+
+    for value in (HostileInt(2), HostileNumpyInt(2)):
+        with pytest.raises(ValueError, match="positive integer"):
+            exploratory(value)
+
+    assert calls == []
+
+
 def test_confirmatory_happy_path_and_n_dims():
     pattern = np.array([[1, 0], [0, 1], [1, 0]])
     spec = confirmatory(pattern)
@@ -73,6 +127,108 @@ def test_resolve_model_int_one_is_single_factor():
     assert isinstance(spec, ExploratoryModel)
     assert pat.shape == (5, 1)
     assert np.all(pat == 1)
+
+
+def test_resolve_model_accepts_genuine_numpy_integer_scalar():
+    spec, pat = _resolve_model(np.uint64(1), 5)
+    assert isinstance(spec, ExploratoryModel)
+    assert spec.dimensions == 1
+    assert pat.shape == (5, 1)
+
+
+def test_resolve_model_rejects_integer_subclasses_before_callbacks():
+    calls: list[str] = []
+
+    class HostileInt(int):
+        def __int__(self) -> int:
+            calls.append("python-__int__")
+            raise AssertionError("integer coercion callback executed")
+
+        def __repr__(self) -> str:
+            calls.append("python-__repr__")
+            raise AssertionError("representation callback executed")
+
+    class HostileNumpyInt(np.int64):
+        def __int__(self) -> int:
+            calls.append("numpy-__int__")
+            raise AssertionError("integer coercion callback executed")
+
+        def __repr__(self) -> str:
+            calls.append("numpy-__repr__")
+            raise AssertionError("representation callback executed")
+
+    for value in (HostileInt(1), HostileNumpyInt(1)):
+        with pytest.raises(TypeError, match="factor count"):
+            _resolve_model(value, 5)
+
+    assert calls == []
+
+
+def test_resolve_model_rejects_hostile_metaclass_hash_before_callback():
+    calls: list[str] = []
+
+    class HostileMeta(type):
+        def __hash__(cls) -> int:
+            calls.append("type-__hash__")
+            raise AssertionError("type hash callback executed")
+
+    class HostileInt(int, metaclass=HostileMeta):
+        pass
+
+    class HostileNumpyInt(np.int64, metaclass=HostileMeta):
+        pass
+
+    for value in (HostileInt(1), HostileNumpyInt(1)):
+        with pytest.raises(TypeError, match="factor count"):
+            _resolve_model(value, 5)
+
+    assert calls == []
+
+
+def test_resolve_model_rejects_exploratory_subclass_before_attribute_callback():
+    """Reject exploratory subclasses before reading caller-controlled fields."""
+    calls: list[str] = []
+
+    class HostileExploratory(ExploratoryModel):
+        """Expose a hostile dimensions attribute on a caller subclass."""
+
+        def __getattribute__(self, name: str):
+            """Fail if model resolution reads caller-controlled dimensions."""
+            if name == "dimensions":
+                calls.append(name)
+                raise AssertionError("model attribute callback executed")
+            return super().__getattribute__(name)
+
+    spec = object.__new__(HostileExploratory)
+    object.__setattr__(spec, "dimensions", 1)
+
+    with pytest.raises(TypeError, match="factor count"):
+        _resolve_model(spec, 5)
+
+    assert calls == []
+
+
+def test_resolve_model_rejects_confirmatory_subclass_before_attribute_callback():
+    """Reject confirmatory subclasses before reading loading-pattern metadata."""
+    calls: list[str] = []
+
+    class HostileConfirmatory(ConfirmatoryModel):
+        """Expose a hostile loading-pattern attribute on a caller subclass."""
+
+        def __getattribute__(self, name: str):
+            """Fail if model resolution reads caller-controlled metadata."""
+            if name == "loading_pattern":
+                calls.append(name)
+                raise AssertionError("model attribute callback executed")
+            return super().__getattribute__(name)
+
+    spec = object.__new__(HostileConfirmatory)
+    object.__setattr__(spec, "loading_pattern", np.ones((5, 1), dtype=np.int64))
+
+    with pytest.raises(TypeError, match="factor count"):
+        _resolve_model(spec, 5)
+
+    assert calls == []
 
 
 def test_resolve_model_multidim_exploratory_not_implemented():

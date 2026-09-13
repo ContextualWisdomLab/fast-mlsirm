@@ -14,9 +14,16 @@ use mlsirm_core::equating::{
 };
 use mlsirm_core::fitstats::{
     benjamini_hochberg as core_benjamini_hochberg, chi2_sf as core_chi2_sf,
+    cluster_moment_covariance as core_cluster_moment_covariance,
+    factorized_multilevel_moments as core_factorized_multilevel_moments,
+    factorized_trait_moments as core_factorized_trait_moments,
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
-    m2_rmsea2 as core_m2, person_fit as core_person_fit, poly_local_dependence as core_poly_ld,
-    poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
+    m2_cmle_rasch as core_m2_cmle_rasch, m2_rmsea2 as core_m2,
+    m2_rmsea2_structured as core_m2_structured, person_fit as core_person_fit,
+    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2,
+    projected_m2 as core_projected_m2,
+    projected_m2_workspace_elements as core_projected_m2_workspace_elements,
+    s_x2 as core_s_x2, SX2Config, PROJECTED_M2_MAX_WORKSPACE_ELEMENTS,
 };
 use mlsirm_core::linking::{
     irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
@@ -27,6 +34,13 @@ use mlsirm_core::inference::{
     second_order_test as core_second_order_test,
     standard_errors_from_vcov as core_standard_errors_from_vcov,
     vcov_from_hessian as core_vcov_from_hessian,
+};
+use mlsirm_core::interaction_map::residual_interaction_map as core_residual_interaction_map;
+use mlsirm_core::sampling_design::{
+    finite_population_achieved_proportion as core_finite_population_achieved_proportion,
+    finite_population_proportion_design as core_finite_population_proportion_design,
+    AllocationMethod as CoreAllocationMethod, SamplingStratum as CoreSamplingStratum,
+    ACHIEVED_PROPORTION_SCHEMA_VERSION, SAMPLING_DESIGN_SCHEMA_VERSION,
 };
 use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
 use mlsirm_core::marginal::{
@@ -6296,6 +6310,33 @@ fn grm_cell_logprobs(base: f64, thresholds: PyReadonlyArray1<'_, f64>) -> PyResu
     Ok(core_grm_logprobs(base, thresholds.as_slice()?))
 }
 
+/// Batched public GRM/GPCM category probabilities and expected category scores.
+#[pyfunction]
+#[pyo3(signature = (theta, slope, cat_params, n_items, n_cat, model))]
+fn polytomous_predictions(
+    py: Python<'_>,
+    theta: PyReadonlyArray1<'_, f64>,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    n_cat: usize,
+    model: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let result = mlsirm_core::poly::polytomous_predictions(
+        theta.as_slice()?,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        n_items,
+        n_cat,
+        parse_poly_model(model)?,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("probabilities", PyArray1::from_vec(py, result.probabilities))?;
+    out.set_item("expected", PyArray1::from_vec(py, result.expected))?;
+    Ok(out.into())
+}
+
 /// Unidimensional polytomous marginal-EM fit (Rust compute path). `model` is
 /// "grm" (default) or "gpcm"; `y` holds integer categories `0..n_cat-1`.
 #[pyfunction]
@@ -7013,6 +7054,337 @@ fn m2_stat(
         &prior,
         q_theta,
         rule,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("m2", res.m2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rmsea2", res.rmsea2)?;
+    out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
+    out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
+    out.set_item("srmsr", res.srmsr)?;
+    out.set_item("null_m2", res.null_m2)?;
+    out.set_item("null_df", res.null_df)?;
+    out.set_item("cfi", res.cfi)?;
+    out.set_item("tli", res.tli)?;
+    out.set_item("n_moments", res.n_moments)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_complete", res.n_complete)?;
+    Ok(out.into())
+}
+
+/// Structured single-population M2 with Rust-owned calibration bookkeeping.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
+    fixed_items = None, estimate_population = false, tau_fixed = false,
+))]
+fn m2_structured_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+    fixed_items: Option<PyReadonlyArray1<'_, bool>>,
+    estimate_population: bool,
+    tau_fixed: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let fixed = fixed_items
+        .as_ref()
+        .map(|values| values.as_slice())
+        .transpose()?;
+    let res = core_m2_structured(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+        fixed,
+        estimate_population,
+        tau_fixed,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("m2", res.m2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rmsea2", res.rmsea2)?;
+    out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
+    out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
+    out.set_item("srmsr", res.srmsr)?;
+    out.set_item("null_m2", res.null_m2)?;
+    out.set_item("null_df", res.null_df)?;
+    out.set_item("cfi", res.cfi)?;
+    out.set_item("tli", res.tli)?;
+    out.set_item("n_moments", res.n_moments)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_complete", res.n_complete)?;
+    Ok(out.into())
+}
+
+
+
+/// Projected M2 quadratic form ownership entrypoint (dense residual / Delta / Xi).
+fn decode_m2_item_sets(values: &[i64], offsets: &[i64]) -> PyResult<Vec<Vec<usize>>> {
+    if offsets.is_empty() || offsets[0] != 0 {
+        return Err(PyValueError::new_err(
+            "item-set offsets must start at zero",
+        ));
+    }
+    let final_offset = usize::try_from(*offsets.last().unwrap_or(&-1))
+        .map_err(|_| PyValueError::new_err("item-set offsets must be non-negative"))?;
+    if final_offset != values.len() {
+        return Err(PyValueError::new_err(
+            "item-set offsets must end at the item-value length",
+        ));
+    }
+    let mut item_sets = Vec::with_capacity(offsets.len().saturating_sub(1));
+    for window in offsets.windows(2) {
+        let start = usize::try_from(window[0])
+            .map_err(|_| PyValueError::new_err("item-set offsets must be non-negative"))?;
+        let end = usize::try_from(window[1])
+            .map_err(|_| PyValueError::new_err("item-set offsets must be non-negative"))?;
+        if end < start || end > values.len() {
+            return Err(PyValueError::new_err("item-set offsets must be monotone"));
+        }
+        let mut item_set = Vec::with_capacity(end - start);
+        for &value in &values[start..end] {
+            item_set.push(
+                usize::try_from(value)
+                    .map_err(|_| PyValueError::new_err("item-set indices must be non-negative"))?,
+            );
+        }
+        item_sets.push(item_set);
+    }
+    Ok(item_sets)
+}
+
+/// Rust-owned simple-structure M2 moment integration for one population.
+#[pyfunction]
+#[pyo3(signature = (probs, trait_weights, space_weights, q_theta, factor_id, item_values, item_offsets))]
+fn factorized_trait_moments_stat(
+    probs: PyReadonlyArray1<'_, f64>,
+    trait_weights: PyReadonlyArray1<'_, f64>,
+    space_weights: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    item_values: PyReadonlyArray1<'_, i64>,
+    item_offsets: PyReadonlyArray1<'_, i64>,
+) -> PyResult<Vec<f64>> {
+    let factor_id = factor_id
+        .as_slice()?
+        .iter()
+        .map(|&value| {
+            usize::try_from(value)
+                .map_err(|_| PyValueError::new_err("factor_id values must be non-negative"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let n_dims = factor_id.iter().copied().max().map_or(Ok(0), |maximum| {
+        maximum
+            .checked_add(1)
+            .ok_or_else(|| PyValueError::new_err("factor_id dimension overflows"))
+    })?;
+    let item_sets = decode_m2_item_sets(item_values.as_slice()?, item_offsets.as_slice()?)?;
+    core_factorized_trait_moments(
+        probs.as_slice()?,
+        trait_weights.as_slice()?,
+        space_weights.as_slice()?,
+        q_theta,
+        &factor_id,
+        n_dims,
+        &item_sets,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Rust-owned shared-cluster M2 moment integration for a multilevel population.
+#[pyfunction]
+#[pyo3(signature = (probs, cluster_weights, trait_weights, space_weights, q_u, q_theta, factor_id, item_values, item_offsets))]
+fn factorized_multilevel_moments_stat(
+    probs: PyReadonlyArray1<'_, f64>,
+    cluster_weights: PyReadonlyArray1<'_, f64>,
+    trait_weights: PyReadonlyArray1<'_, f64>,
+    space_weights: PyReadonlyArray1<'_, f64>,
+    q_u: usize,
+    q_theta: usize,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    item_values: PyReadonlyArray1<'_, i64>,
+    item_offsets: PyReadonlyArray1<'_, i64>,
+) -> PyResult<Vec<f64>> {
+    let factor_id = factor_id
+        .as_slice()?
+        .iter()
+        .map(|&value| {
+            usize::try_from(value)
+                .map_err(|_| PyValueError::new_err("factor_id values must be non-negative"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let n_dims = factor_id.iter().copied().max().map_or(Ok(0), |maximum| {
+        maximum
+            .checked_add(1)
+            .ok_or_else(|| PyValueError::new_err("factor_id dimension overflows"))
+    })?;
+    let item_sets = decode_m2_item_sets(item_values.as_slice()?, item_offsets.as_slice()?)?;
+    core_factorized_multilevel_moments(
+        probs.as_slice()?,
+        cluster_weights.as_slice()?,
+        trait_weights.as_slice()?,
+        space_weights.as_slice()?,
+        q_u,
+        q_theta,
+        &factor_id,
+        n_dims,
+        &item_sets,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Rust-owned cluster-total covariance for multilevel M2 moments.
+#[pyfunction]
+#[pyo3(signature = (z_rows, model_moments, cluster_id, n_rows, n_moments, n_clusters))]
+fn cluster_moment_covariance_stat(
+    z_rows: PyReadonlyArray1<'_, f64>,
+    model_moments: PyReadonlyArray1<'_, f64>,
+    cluster_id: PyReadonlyArray1<'_, i64>,
+    n_rows: usize,
+    n_moments: usize,
+    n_clusters: usize,
+) -> PyResult<Vec<f64>> {
+    let cluster_id = cluster_id
+        .as_slice()?
+        .iter()
+        .map(|&value| {
+            usize::try_from(value)
+                .map_err(|_| PyValueError::new_err("cluster ids must be non-negative"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    core_cluster_moment_covariance(
+        z_rows.as_slice()?,
+        model_moments.as_slice()?,
+        &cluster_id,
+        n_rows,
+        n_moments,
+        n_clusters,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Projected M2 quadratic form ownership entrypoint (dense residual / Delta / Xi).
+#[pyfunction]
+fn projected_m2(
+    residual: PyReadonlyArray1<'_, f64>,
+    delta: PyReadonlyArray2<'_, f64>,
+    xi: PyReadonlyArray2<'_, f64>,
+    n: f64,
+) -> PyResult<f64> {
+    let residual_arr = residual.as_array();
+    let delta_arr = delta.as_array();
+    let xi_arr = xi.as_array();
+    let s = residual_arr.len();
+    if delta_arr.shape()[0] != s {
+        return Err(PyValueError::new_err(
+            "delta rows must match residual length",
+        ));
+    }
+    if xi_arr.shape() != [s, s] {
+        return Err(PyValueError::new_err("xi must be residual_len x residual_len"));
+    }
+    let p = delta_arr.shape()[1];
+    let workspace_elements = core_projected_m2_workspace_elements(s, p)
+        .map_err(PyValueError::new_err)?;
+    if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
+        return Err(PyValueError::new_err(
+            "projected M2 workspace exceeds supported element budget",
+        ));
+    }
+    if !n.is_finite() {
+        return Err(PyValueError::new_err("n must be finite"));
+    }
+    if residual_arr.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("residual values must be finite"));
+    }
+    if delta_arr.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("delta values must be finite"));
+    }
+    if xi_arr.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("xi values must be finite"));
+    }
+    let residual = residual.as_slice()?;
+    let delta_elements = s
+        .checked_mul(p)
+        .ok_or_else(|| PyValueError::new_err("projected M2 dimensions overflow"))?;
+    let xi_elements = s
+        .checked_mul(s)
+        .ok_or_else(|| PyValueError::new_err("projected M2 dimensions overflow"))?;
+    let mut delta_flat = vec![0.0_f64; delta_elements];
+    for row in 0..s {
+        for col in 0..p {
+            delta_flat[row * p + col] = delta_arr[[row, col]];
+        }
+    }
+    let mut xi_flat = vec![0.0_f64; xi_elements];
+    for row in 0..s {
+        for col in 0..s {
+            xi_flat[row * s + col] = xi_arr[[row, col]];
+        }
+    }
+    core_projected_m2(residual, &delta_flat, xi_flat, s, p, n).map_err(PyValueError::new_err)
+}
+
+/// Conditional-Rasch M2 (CMLE ownership path).
+#[pyfunction]
+#[pyo3(signature = (y, observed, n_persons, item_easiness))]
+fn m2_cmle_rasch_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    item_easiness: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_m2_cmle_rasch(
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        item_easiness.as_slice()?,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -9027,10 +9399,182 @@ fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f6
     core_standard_errors_from_vcov(vcov.as_slice()?, n).map_err(PyValueError::new_err)
 }
 
+/// Version of the Python-to-Rust marginal-MMLE call contract.
+const MARGINAL_CAPABILITY_VERSION: u32 = 1;
+
+#[pyfunction]
+fn finite_population_proportion_design(
+    py: Python<'_>,
+    population_size: usize,
+    confidence_level: f64,
+    margin_of_error: f64,
+    stratum_population_sizes: Vec<usize>,
+    stratum_expected_proportions: Vec<f64>,
+    allocation_method: &str,
+) -> PyResult<Py<PyAny>> {
+    if stratum_population_sizes.len() != stratum_expected_proportions.len() {
+        return Err(PyValueError::new_err(
+            "stratum population sizes and expected proportions must have equal length",
+        ));
+    }
+    let method = CoreAllocationMethod::parse(allocation_method).ok_or_else(|| {
+        PyValueError::new_err("allocation_method must be proportional or neyman")
+    })?;
+    let strata: Vec<CoreSamplingStratum> = stratum_population_sizes
+        .into_iter()
+        .zip(stratum_expected_proportions)
+        .map(|(population_size, expected_proportion)| CoreSamplingStratum {
+            population_size,
+            expected_proportion,
+        })
+        .collect();
+    let result = core_finite_population_proportion_design(
+        population_size,
+        confidence_level,
+        margin_of_error,
+        &strata,
+        method,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("schema_version", result.schema_version)?;
+    out.set_item("source_identity", result.source_identity)?;
+    out.set_item("source_sha256", result.source_sha256)?;
+    out.set_item("algorithm_version", result.algorithm_version)?;
+    out.set_item("population_size", result.population_size)?;
+    out.set_item("expected_proportion", result.expected_proportion)?;
+    out.set_item("confidence_level", result.confidence_level)?;
+    out.set_item("critical_value", result.critical_value)?;
+    out.set_item("margin_of_error", result.margin_of_error)?;
+    out.set_item("uncorrected_sample_size", result.uncorrected_sample_size)?;
+    out.set_item("sample_size", result.sample_size)?;
+    out.set_item(
+        "finite_population_correction",
+        result.finite_population_correction,
+    )?;
+    out.set_item("allocation_method", result.allocation_method.as_str())?;
+    out.set_item(
+        "stratum_population_sizes",
+        result
+            .strata
+            .iter()
+            .map(|stratum| stratum.population_size)
+            .collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "stratum_expected_proportions",
+        result
+            .strata
+            .iter()
+            .map(|stratum| stratum.expected_proportion)
+            .collect::<Vec<_>>(),
+    )?;
+    out.set_item("stratum_sample_sizes", result.stratum_sample_sizes)?;
+    out.set_item(
+        "stratum_inclusion_probability_ratios",
+        result.stratum_inclusion_probability_ratios,
+    )?;
+    out.set_item("input_sha256", result.input_sha256)?;
+    out.set_item("output_sha256", result.output_sha256)?;
+    out.set_item("artifact_sha256", result.artifact_sha256)?;
+    Ok(out.into_any().unbind())
+}
+
+#[pyfunction]
+fn finite_population_achieved_proportion(
+    py: Python<'_>,
+    design_artifact_sha256: &str,
+    population_size: usize,
+    sample_size: usize,
+    success_count: usize,
+    confidence_level: f64,
+) -> PyResult<Py<PyAny>> {
+    let result = core_finite_population_achieved_proportion(
+        design_artifact_sha256,
+        population_size,
+        sample_size,
+        success_count,
+        confidence_level,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("schema_version", result.schema_version)?;
+    out.set_item("source_identity", result.source_identity)?;
+    out.set_item("source_sha256", result.source_sha256)?;
+    out.set_item("algorithm_version", result.algorithm_version)?;
+    out.set_item("design_artifact_sha256", result.design_artifact_sha256)?;
+    out.set_item("population_size", result.population_size)?;
+    out.set_item("sample_size", result.sample_size)?;
+    out.set_item("success_count", result.success_count)?;
+    out.set_item("estimated_proportion", result.estimated_proportion)?;
+    out.set_item("design_variance", result.design_variance)?;
+    out.set_item("confidence_level", result.confidence_level)?;
+    out.set_item("interval_method", result.interval_method)?;
+    out.set_item("lower_success_count", result.lower_success_count)?;
+    out.set_item("upper_success_count", result.upper_success_count)?;
+    out.set_item("lower_proportion", result.lower_proportion)?;
+    out.set_item("upper_proportion", result.upper_proportion)?;
+    out.set_item("input_sha256", result.input_sha256)?;
+    out.set_item("output_sha256", result.output_sha256)?;
+    out.set_item("artifact_sha256", result.artifact_sha256)?;
+    Ok(out.into_any().unbind())
+}
+
+#[pyfunction]
+fn residual_interaction_map(
+    py: Python<'_>,
+    observed: PyReadonlyArray2<'_, f64>,
+    expected: PyReadonlyArray2<'_, f64>,
+    axis_count: usize,
+) -> PyResult<Py<PyAny>> {
+    if observed.shape() != expected.shape() {
+        return Err(PyValueError::new_err(
+            "observed and expected must have the same two-dimensional shape",
+        ));
+    }
+    let shape = observed.shape();
+    let result = core_residual_interaction_map(
+        observed.as_slice()?,
+        expected.as_slice()?,
+        shape[0],
+        shape[1],
+        axis_count,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("person_indices", result.person_indices)?;
+    out.set_item("item_indices", result.item_indices)?;
+    out.set_item("scored_person_count", result.scored_person_count)?;
+    out.set_item("scored_item_count", result.scored_item_count)?;
+    out.set_item("person_coordinates", result.person_coordinates)?;
+    out.set_item("item_coordinates", result.item_coordinates)?;
+    out.set_item("singular_values", result.singular_values)?;
+    out.set_item("axis_shares", result.axis_shares)?;
+    out.set_item("residual", result.residual)?;
+    out.set_item("distance", result.distance)?;
+    out.set_item("reconstruction", result.reconstruction)?;
+    out.set_item("unexplained", result.unexplained)?;
+    out.set_item("cross_share", result.cross_share)?;
+    out.set_item("axis_count", result.axis_count)?;
+    Ok(out.into_any().unbind())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
+    m.add(
+        "SAMPLING_DESIGN_SCHEMA_VERSION",
+        SAMPLING_DESIGN_SCHEMA_VERSION,
+    )?;
+    m.add(
+        "ACHIEVED_PROPORTION_SCHEMA_VERSION",
+        ACHIEVED_PROPORTION_SCHEMA_VERSION,
+    )?;
+    m.add_function(wrap_pyfunction!(finite_population_proportion_design, m)?)?;
+    m.add_function(wrap_pyfunction!(finite_population_achieved_proportion, m)?)?;
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
+    m.add_function(wrap_pyfunction!(residual_interaction_map, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
@@ -9132,6 +9676,12 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(leniency_residuals_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(m2_structured_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(m2_cmle_rasch_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(factorized_trait_moments_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(factorized_multilevel_moments_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(cluster_moment_covariance_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(projected_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
@@ -9213,6 +9763,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;

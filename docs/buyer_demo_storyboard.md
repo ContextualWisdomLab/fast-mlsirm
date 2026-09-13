@@ -14,8 +14,9 @@ The demo should show a complete buyer review without customer data:
      and commit SHA.
    - Show `commercial_release_manifest.json` as the top-level evidence index
      for the buyer run.
-   - Explain that NumPy is the reference backend and Rust/PyO3 is optional
-     acceleration for the objective.
+   - Explain that Rust/PyO3 is the production numerical owner. `backend=auto`
+     fails closed without `fast_mlsirm._core`. Pass `backend=numpy` only for
+     the explicit reference/parity path.
 2. **Synthetic Data**
    - Generate MLS2PLM synthetic response data.
    - Show that no buyer data is required for acceptance reproduction.

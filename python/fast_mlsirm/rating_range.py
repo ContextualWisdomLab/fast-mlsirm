@@ -14,6 +14,18 @@ from ._rating_range_core_loader import rating_range_core
 
 MAX_CATEGORY_COUNT = 1_000
 MAX_OBSERVATIONS = 1_000_000
+_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.ulonglong,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +52,26 @@ class RatingRangeEvidence:
     central_tendency_signal: bool
 
 
+def _require_category_count(value: object) -> int:
+    """Return a trusted built-in category count without caller callbacks.
+
+    Only an exact Python ``int`` or an exact supported NumPy integer scalar
+    identity is admitted. Subclasses are rejected before conversion, type
+    hashing, equality, representation, or native-core dispatch can execute
+    caller-controlled code.
+    """
+    value_type = type(value)
+    if value_type is int:
+        category_count = value
+    elif any(value_type is trusted_type for trusted_type in _NUMPY_INTEGER_TYPES):
+        category_count = int(value)
+    else:
+        raise ValueError("category_count must be an integer between 2 and 1000")
+    if not 2 <= category_count <= MAX_CATEGORY_COUNT:
+        raise ValueError("category_count must be between 2 and 1000")
+    return category_count
+
+
 def _rating_array(
     values: np.ndarray,
     name: str,
@@ -48,7 +80,9 @@ def _rating_array(
     expected_length: int | None = None,
 ) -> np.ndarray:
     """Validate one paired rating vector without performing scoring arithmetic."""
-    arr = np.asarray(values)
+    if type(values) is not np.ndarray:
+        raise ValueError(f"{name} must be a NumPy array")
+    arr = values
     if arr.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
     if arr.size > MAX_OBSERVATIONS:
@@ -86,13 +120,7 @@ def paired_rating_range_evidence(
     cases. Relative span and SD ratios are unavailable when the reference
     denominator is zero. No acceptance threshold is applied.
     """
-    if isinstance(category_count, (bool, np.bool_)) or not isinstance(
-        category_count, (int, np.integer)
-    ):
-        raise ValueError("category_count must be an integer between 2 and 1000")
-    category_count = int(category_count)
-    if not 2 <= category_count <= MAX_CATEGORY_COUNT:
-        raise ValueError("category_count must be between 2 and 1000")
+    category_count = _require_category_count(category_count)
 
     automated_v = _rating_array(
         automated,

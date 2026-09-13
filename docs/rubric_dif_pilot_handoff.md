@@ -65,6 +65,13 @@ subgroup and intersectional analyses, recovery simulation, and human review.
 The generated-item audit and schema gates remain governance boundaries rather
 than evidence of measurement invariance.
 
+The Angoff transformed-item-difficulty / delta-plot screen is part of this
+observed-score DIF family. It is documented separately in
+[`delta_plot_dif.md`](delta_plot_dif.md) and decided in
+[`adr/0018-angoff-delta-plot-dif.md`](adr/0018-angoff-delta-plot-dif.md). It is
+not a CWE, OWASP, or NIST control, and it is not an alias for Mantel–Haenszel,
+logistic DIF, or SIBTEST.
+
 ## Primary methodological sources
 
 Dorans, N. J., & Kulick, E. (1986). Demonstrating the utility of the
@@ -84,3 +91,25 @@ Shealy, R., & Stout, W. (1993). A model-based standardization approach that
 separates true bias/DIF from group ability differences and detects test bias/DTF
 as well as item bias/DIF. *Psychometrika, 58*(2), 159–194.
 https://doi.org/10.1007/BF02294572
+
+Angoff, W. H. (1972, September). *A technique for the investigation of
+cultural differences* [Paper presentation]. Annual meeting of the American
+Psychological Association, Honolulu, HI, United States.
+
+Angoff, W. H., & Ford, S. F. (1973). Item-race interaction on a test of
+scholastic aptitude. *Journal of Educational Measurement, 10*(2), 95–105.
+https://doi.org/10.1111/j.1745-3984.1973.tb00787.x
+
+Magis, D., & Facon, B. (2012). Angoff's Delta method revisited: Improving DIF
+detection under small samples. *British Journal of Mathematical and
+Statistical Psychology, 65*(2), 302–321.
+https://doi.org/10.1111/j.2044-8317.2011.02025.x
+
+Magis, D., & Facon, B. (2014). deltaPlotR: An R package for differential item
+functioning analysis with Angoff's Delta Plot. *Journal of Statistical
+Software, 59*(1), 1–19. https://doi.org/10.18637/jss.v059.c01
+
+American Educational Research Association, American Psychological
+Association, & National Council on Measurement in Education. (2014).
+*Standards for educational and psychological testing*. American Educational
+Research Association.

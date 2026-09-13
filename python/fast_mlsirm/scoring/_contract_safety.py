@@ -6,13 +6,28 @@ from collections.abc import Mapping
 from enum import Enum
 import hashlib
 import json
-import operator
 from typing import Any, TypeVar
+
+import numpy as np
 
 from fast_mlsirm.rubric.models import _identifier, _semantic_version, _text
 
 from . import _validation as base
 
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
 _SENSITIVE_METADATA_FIELDS = frozenset(
     {
         "answer_text",
@@ -121,37 +136,52 @@ def enum_value(
         ) from None
 
 
+def _has_exact_type(value: Any, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether a control has one exact package-trusted scalar type."""
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _normalize_metadata_scalar(value: Any) -> tuple[bool, Any]:
+    """Normalize JSON scalar subclasses through inert base-type descriptors."""
+    value_type = type(value)
+    if value is None or value_type in (bool, int, float, str):
+        return True, value
+    if isinstance(value, str):
+        return True, str.__str__(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return True, int.__int__(value)
+    if isinstance(value, float):
+        return True, float.__float__(value)
+    return False, value
+
+
 def bounded_positive_integer(
     value: Any,
     name: str,
     maximum: int,
     path: str | None = None,
 ) -> int:
-    """Normalize one positive integer without leaking numeric callbacks."""
+    """Normalize one positive integer without caller-controlled coercion."""
     resolved_path = path or f"$.{name}"
-    if isinstance(value, bool):
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
         raise base.assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be an integer between 1 and {maximum}",
         )
-    try:
-        normalized = operator.index(value)
-    except base.AssessmentSpecError:
-        raise
-    except Exception:
-        raise base.assessment_error(
-            f"invalid_{name}",
-            resolved_path,
-            f"{name} must be an integer between 1 and {maximum}",
-        ) from None
-    if isinstance(normalized, bool) or not 1 <= normalized <= maximum:
+    if not 1 <= normalized <= maximum:
         raise base.assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be between 1 and {maximum}",
         )
-    return int(normalized)
+    return normalized
 
 
 def bounded_values(
@@ -299,6 +329,10 @@ def _preflight_metadata(
             f"metadata exceeds the maximum node count of {base.MAX_METADATA_NODES}",
         )
 
+    is_scalar, normalized_scalar = _normalize_metadata_scalar(value)
+    if is_scalar:
+        return normalized_scalar
+
     if isinstance(value, Mapping):
         marker = id(value)
         if marker in active:
@@ -338,7 +372,10 @@ def _preflight_metadata(
                             "metadata mapping entries must contain one key and value",
                         ) from None
                     key_path = f"{path}.keys[{index}]"
-                    key = base._metadata_key(raw_key, key_path)
+                    key_is_scalar, key_input = _normalize_metadata_scalar(raw_key)
+                    if not key_is_scalar or type(key_input) is not str:
+                        key_input = raw_key
+                    key = base._metadata_key(key_input, key_path)
                     if key.casefold() in _SENSITIVE_METADATA_FIELDS:
                         raise base.assessment_error(
                             "sensitive_metadata_field",

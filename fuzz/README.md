@@ -19,7 +19,7 @@ codegraph explore "neg_loglik_and_grad config Params ModelConfig"
 | --- | --- | --- |
 | `load_factor_csv` | `python/fast_mlsirm/io.py` | Reads an on-disk item→factor CSV via `numpy.loadtxt`; reached from the CLI. |
 | `render_diagnostics_report` | `python/fast_mlsirm/report.py` | Parses an **arbitrary JSON** diagnostics file and renders it to HTML. |
-| `MLS2PLMConfig` / `FitConfig` `.validate()` | `python/fast_mlsirm/config.py` | Every CLI / API call funnels user numeric parameters through these validators. |
+| `MLS2PLMConfig` / `FitConfig` construction and `.validate()` | `python/fast_mlsirm/config.py` | Every CLI / API call funnels user numeric parameters through these validators, including construction-time checks. |
 | `neg_loglik_and_grad` | `crates/mlsirm-core/src/lib.rs` | The core numeric kernel — widest Rust blast radius; consumes response data + parameter vectors. |
 
 ## Tools & Licenses

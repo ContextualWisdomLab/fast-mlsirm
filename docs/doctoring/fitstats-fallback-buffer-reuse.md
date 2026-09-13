@@ -2,7 +2,7 @@
 
 ## Decision
 
-The NumPy reference/fallback implementation of item infit and outfit reuses one
+The explicit NumPy reference implementation of item infit and outfit reuses one
 owned float64 squared-residual buffer and applies the Boolean observation mask in
 place. It retains the masked residual column sum for infit, computes the
 variance denominator with NumPy's `where=` reduction, and then reuses the

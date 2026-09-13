@@ -48,7 +48,7 @@ _CONTRACT_IDENTITY_FIELDS = frozenset(
 
 def _source_content(value: Any) -> str:
     """Validate bounded source text while preserving exact whitespace and offsets."""
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise ValueError("content must be a string")
     if not value.strip():
         raise ValueError("content must not be empty")
@@ -111,11 +111,35 @@ def _validate_contract_depth(content: str) -> None:
 
 def _contract_object(contract_json: str) -> dict[str, Any]:
     """Parse canonical contract JSON and require a top-level object."""
-    if not isinstance(contract_json, str) or not contract_json:
+    if type(contract_json) is not str or not contract_json:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
+
+    def _reject_duplicates(pairs):
+        result = {}
+        for k, v in pairs:
+            if k in result:
+                raise ValueError("contract_json contains duplicate keys")
+            result[k] = v
+        return result
+
+    def _reject_nonfinite(literal):
+        raise ValueError("contract_json contains non-finite numbers")
+
+    def _reject_float_nonfinite(value):
+        import math
+        f_val = float(value)
+        if not math.isfinite(f_val):
+            raise ValueError("contract_json contains non-finite numbers")
+        return f_val
+
     try:
-        contract = json.loads(contract_json)
+        contract = json.loads(
+            contract_json,
+            object_pairs_hook=_reject_duplicates,
+            parse_constant=_reject_nonfinite,
+            parse_float=_reject_float_nonfinite,
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
@@ -482,7 +506,7 @@ class StaticFixtureProvider:
         """Validate stable provider provenance and preserve explicit fixture text."""
         self.provider_id = _identifier(self.provider_id, "provider_id")
         self.model_id = _identifier(self.model_id, "model_id")
-        if not isinstance(self.response_text, str):
+        if type(self.response_text) is not str:
             raise ValueError("response_text must be a string")
 
     def generate(self, request: GenerationRequest) -> str:
@@ -640,7 +664,7 @@ def execute_generation(
             "provider_failure",
             "provider generation failed without exposing provider diagnostics",
         ) from None
-    if not isinstance(raw_response, str):
+    if type(raw_response) is not str:
         raise GenerationProviderError(
             "invalid_provider_output",
             "provider must return JSON text",

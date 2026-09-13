@@ -12,6 +12,54 @@ from .config import MAX_MAX_ITER
 
 
 _MAX_ATTRIBUTES = 15
+# Keep the Python trust boundary aligned with the Rust sequential-CDM resource cap.
+_SEQ_MAX_CAT = 50
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_CDM_MODELS = frozenset(("dina", "dino"))
+
+
+def _reject_untrusted_response_container(value: object) -> None:
+    """Delegate response-container admission to the canonical safety module.
+
+    The package initializer installs the same canonical guard on ordinary import.
+    Keeping this reload fallback as a delegation, rather than a second implementation,
+    preserves identical callback-safe semantics when ``fast_mlsirm.cdm`` is reloaded
+    directly without re-running package initialization.
+    """
+
+    from ._cdm_response_safety import _reject_untrusted_response_container as reject
+
+    reject(value)
+
+
+def _response_array(value: np.ndarray) -> np.ndarray:
+    """Materialize accepted real response storage without lossy coercion."""
+    _reject_untrusted_response_container(value)
+    response_array = np.asarray(value)
+    if np.iscomplexobj(response_array):
+        raise ValueError("responses must be real-valued")
+    if response_array.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    with np.errstate(over="ignore", invalid="ignore"):
+        converted = response_array.astype(np.float64, copy=False)
+        round_tripped = converted.astype(response_array.dtype, copy=False)
+    if not np.array_equal(response_array, round_tripped, equal_nan=True):
+        raise ValueError("responses must be exactly representable as float64")
+    return converted
 
 
 def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -26,21 +74,41 @@ def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _validate_stopping_controls(max_iter: int, tol: float) -> tuple[int, float]:
-    """Validate and return the EM iteration cap and convergence tolerance."""
-    if (
-        not isinstance(max_iter, (int, np.integer))
-        or isinstance(max_iter, (bool, np.bool_))
-        or not 1 <= int(max_iter) <= MAX_MAX_ITER
-    ):
+    """Validate exact scalar EM controls without caller-controlled coercion hooks."""
+    max_iter_type = type(max_iter)
+    if max_iter_type is int:
+        iteration_cap = max_iter
+    elif any(max_iter_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
+        iteration_cap = int(max_iter)
+    else:
         raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
-    if not isinstance(tol, (int, float, np.integer, np.floating)) or isinstance(
-        tol, (bool, np.bool_)
+    if not 1 <= iteration_cap <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
+
+    tol_type = type(tol)
+    if not (
+        tol_type is int
+        or tol_type is float
+        or any(
+            tol_type is scalar_type
+            for scalar_type in (*_NUMPY_INTEGER_SCALAR_TYPES, *_NUMPY_FLOAT_SCALAR_TYPES)
+        )
     ):
         raise ValueError("tol must be a finite number > 0")
-    tolerance = float(tol)
+    try:
+        tolerance = float(tol)
+    except OverflowError as exc:
+        raise ValueError("tol must be a finite number > 0") from exc
     if not np.isfinite(tolerance) or tolerance <= 0:
         raise ValueError("tol must be a finite number > 0")
-    return int(max_iter), tolerance
+    return iteration_cap, tolerance
+
+
+def _validate_model_selector(model: str) -> str:
+    """Accept only the exact built-in DINA/DINO selector vocabulary."""
+    if type(model) is not str or model not in _CDM_MODELS:
+        raise ValueError("model must be 'dina' or 'dino'")
+    return model
 
 
 def _validate_q_matrix_input(
@@ -51,6 +119,8 @@ def _validate_q_matrix_input(
     if q.ndim != 2:
         raise ValueError(f"{name} must be a 2-D items x attributes array")
     if q.shape[0] != n_items:
+        if name == "step_q":
+            raise ValueError("step_q must have sum(n_steps) rows")
         raise ValueError(f"{name} must have one row per item")
     n_attributes = q.shape[1]
     if not 1 <= n_attributes <= _MAX_ATTRIBUTES:
@@ -62,6 +132,55 @@ def _validate_q_matrix_input(
     if not np.all(np.isfinite(q)) or not np.all((q == 0) | (q == 1)):
         raise ValueError(f"{name} entries must be finite and exactly 0 or 1")
     return q.astype(np.int64, copy=False), n_attributes
+
+
+def _validate_seq_n_steps(value: object, n_items: int) -> tuple[np.ndarray, int]:
+    """Admit sequential step counts without executing caller conversion protocols."""
+
+    value_type = type(value)
+    if value_type is np.ndarray:
+        raw_steps = value
+        if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
+            raise ValueError("n_steps must be a 1-D array of length n_items")
+        if raw_steps.dtype.kind not in ("i", "u"):
+            raise ValueError("n_steps entries must be positive integers")
+        if np.any(raw_steps < 1):
+            raise ValueError("n_steps entries must be positive integers")
+        if np.any(raw_steps > _SEQ_MAX_CAT):
+            raise ValueError(f"n_steps entries must be <= {_SEQ_MAX_CAT}")
+        steps = raw_steps.astype(np.int64, copy=False)
+        return steps, sum(int(step) for step in steps)
+
+    if value_type is not list and value_type is not tuple:
+        raise ValueError(
+            "n_steps must be a trusted 1-D integer NumPy array or built-in sequence"
+        )
+    if len(value) != n_items:
+        raise ValueError("n_steps must be a 1-D array of length n_items")
+
+    normalized: list[int] = []
+    for step in value:
+        step_type = type(step)
+        if step_type is int or any(
+            step_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES
+        ):
+            step_value = int(step)
+        elif step_type in (bool, float, str, bytes, np.bool_) or any(
+            step_type is scalar_type for scalar_type in _NUMPY_FLOAT_SCALAR_TYPES
+        ):
+            raise ValueError("n_steps entries must be positive integers")
+        else:
+            raise ValueError(
+                "n_steps must be a trusted 1-D integer NumPy array or built-in sequence"
+            )
+        if step_value < 1:
+            raise ValueError("n_steps entries must be positive integers")
+        if step_value > _SEQ_MAX_CAT:
+            raise ValueError(f"n_steps entries must be <= {_SEQ_MAX_CAT}")
+        normalized.append(step_value)
+
+    steps = np.asarray(normalized, dtype=np.int64)
+    return steps, sum(normalized)
 
 
 @dataclass
@@ -138,20 +257,20 @@ def fit_cdm(
             disorders using cognitive diagnosis models. *Psychological Methods,
             11*(3), 287–305. https://doi.org/10.1037/1082-989X.11.3.287
     """
+    model = _validate_model_selector(model)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
+    yy, observed = _prepare_binary_responses(y)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_cdm"):
         raise RuntimeError("fit_cdm requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    yy, observed = _prepare_binary_responses(y)
     res = core.fit_cdm(
         yy,
         observed,
@@ -159,9 +278,9 @@ def fit_cdm(
         int(n_persons),
         int(n_items),
         int(n_attributes),
-        str(model),
-        int(max_iter),
-        float(tol),
+        model,
+        max_iter,
+        tol,
     )
     return CdmFit(
         model=str(res["model"]),
@@ -245,20 +364,19 @@ def fit_gdina(
             diagnosis modeling. *Journal of Statistical Software, 93*(14), 1-26.
             https://doi.org/10.18637/jss.v093.i14
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
+    yy, observed = _prepare_binary_responses(y)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_gdina"):
         raise RuntimeError("fit_gdina requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    yy, observed = _prepare_binary_responses(y)
     res = core.fit_gdina(
         yy,
         observed,
@@ -266,8 +384,8 @@ def fit_gdina(
         int(n_persons),
         int(n_items),
         int(n_attributes),
-        int(max_iter),
-        float(tol),
+        max_iter,
+        tol,
     )
     return GdinaFit(
         item_off=np.asarray(res["item_off"], dtype=np.int64),
@@ -347,20 +465,19 @@ def validate_q_matrix(
             Measurement, 45*(4), 343-362.
             https://doi.org/10.1111/j.1745-3984.2008.00069.x
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    q, n_attributes = _validate_q_matrix_input(provisional_q, "provisional_q", n_items)
+    yy, observed = _prepare_binary_responses(y)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "validate_q_matrix"):
         raise RuntimeError("validate_q_matrix requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    q, n_attributes = _validate_q_matrix_input(provisional_q, "provisional_q", n_items)
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    yy, observed = _prepare_binary_responses(y)
     res = core.validate_q_matrix(
         yy,
         observed,
@@ -369,8 +486,8 @@ def validate_q_matrix(
         int(n_items),
         int(n_attributes),
         float(epsilon),
-        int(max_iter),
-        float(tol),
+        max_iter,
+        tol,
     )
     return QMatrixValidation(
         suggested_q=np.asarray(res["suggested_q"], dtype=np.int64).reshape(n_items, n_attributes),
@@ -460,20 +577,19 @@ def gdina_wald_selection(
             selection, and attribute classification. *Applied Psychological
             Measurement, 40*(3), 200–217. https://doi.org/10.1177/0146621615621717
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
+    yy, observed = _prepare_binary_responses(y)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "gdina_wald_selection"):
         raise RuntimeError("gdina_wald_selection requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    yy, observed = _prepare_binary_responses(y)
     res = core.gdina_wald_selection(
         yy,
         observed,
@@ -482,8 +598,8 @@ def gdina_wald_selection(
         int(n_items),
         int(n_attributes),
         float(alpha),
-        int(max_iter),
-        float(tol),
+        max_iter,
+        tol,
     )
     models = list(res["models"])
     n_models = len(models)
@@ -567,20 +683,20 @@ def fit_ho_cdm(
             cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
             https://doi.org/10.1007/BF02295640
     """
+    model = _validate_model_selector(model)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
+    yy, observed = _prepare_binary_responses(y)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_ho_cdm"):
         raise RuntimeError("fit_ho_cdm requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_cdm(
         yy,
         observed,
@@ -588,9 +704,9 @@ def fit_ho_cdm(
         int(n_persons),
         int(n_items),
         int(n_attributes),
-        str(model),
-        int(max_iter),
-        float(tol),
+        model,
+        max_iter,
+        tol,
     )
     return HoCdmFit(
         model=str(res["model"]),
@@ -685,20 +801,19 @@ def fit_ho_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
+    yy, observed = _prepare_binary_responses(y)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_ho_gdina"):
         raise RuntimeError("fit_ho_gdina requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_gdina(
         yy,
         observed,
@@ -706,8 +821,8 @@ def fit_ho_gdina(
         int(n_persons),
         int(n_items),
         int(n_attributes),
-        int(max_iter),
-        float(tol),
+        max_iter,
+        tol,
     )
     return HoGdinaFit(
         item_off=np.asarray(res["item_off"], dtype=np.int64),
@@ -825,23 +940,22 @@ def fit_seq_gdina(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
             76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_seq_gdina"):
-        raise RuntimeError("fit_seq_gdina requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_seq_gdina"):
+        raise RuntimeError("fit_seq_gdina requires the compiled Rust core")
     res = core.fit_seq_gdina(
         yy,
         observed.reshape(-1),
@@ -849,8 +963,8 @@ def fit_seq_gdina(
         int(n_persons),
         int(n_items),
         int(n_attributes),
-        int(max_iter),
-        float(tol),
+        max_iter,
+        tol,
     )
     return SeqGdinaFit(
         s_off=np.asarray(res["s_off"], dtype=np.int64),
@@ -871,6 +985,7 @@ def fit_seq_gdina(
         stopping_tolerance=float(res["stopping_tolerance"]),
         n_parameters=int(res["n_parameters"]),
     )
+
 
 @dataclass
 class SeqGdinaQrFit:
@@ -943,39 +1058,23 @@ def fit_seq_gdina_qr(
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
             179-199. https://doi.org/10.1007/s11336-011-9207-7
     """
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
+    y = _response_array(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    steps, n_step_rows = _validate_seq_n_steps(n_steps, n_items)
+    sq, n_attributes = _validate_q_matrix_input(step_q, "step_q", n_step_rows)
+    if np.isinf(y).any():
+        raise ValueError("responses must be finite ordered categories or NaN (missing)")
+    observed = ~np.isnan(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_seq_gdina_qr"):
         raise RuntimeError("fit_seq_gdina_qr requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    raw_steps = np.asarray(n_steps)
-    if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
-        raise ValueError("n_steps must be a 1-D array of length n_items")
-    if not np.issubdtype(raw_steps.dtype, np.integer) or np.issubdtype(
-        raw_steps.dtype, np.bool_
-    ):
-        raise ValueError("n_steps entries must be positive integers")
-    if np.any(raw_steps < 1):
-        raise ValueError("n_steps entries must be positive integers")
-    steps = raw_steps.astype(np.int64, copy=False)
-    n_step_rows = sum(int(m) for m in steps)
-    sq = np.asarray(step_q)
-    if sq.ndim != 2:
-        raise ValueError("step_q must be a 2-D (sum_i n_steps[i]) x n_attributes array")
-    if sq.shape[0] != n_step_rows:
-        raise ValueError("step_q must have sum(n_steps) rows")
-    sq, n_attributes = _validate_q_matrix_input(step_q, "step_q", n_step_rows)
-    if np.isinf(y).any():
-        raise ValueError("responses must be finite ordered categories or NaN (missing)")
-
-    max_iter, tol = _validate_stopping_controls(max_iter, tol)
-    observed = ~np.isnan(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_seq_gdina_qr(
         yy,
         observed.reshape(-1),
@@ -984,8 +1083,8 @@ def fit_seq_gdina_qr(
         int(n_persons),
         int(n_items),
         int(n_attributes),
-        int(max_iter),
-        float(tol),
+        max_iter,
+        tol,
     )
     return SeqGdinaQrFit(
         step_off=np.asarray(res["step_off"], dtype=np.int64),

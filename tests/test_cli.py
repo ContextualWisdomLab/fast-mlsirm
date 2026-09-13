@@ -7,6 +7,13 @@ import pytest
 
 from fast_mlsirm.cli import main
 
+
+@pytest.fixture(autouse=True)
+def _cli_workspace(tmp_path, monkeypatch):
+    """Exercise the CLI boundary from an explicit caller-owned workspace."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_cli_empty_args(capsys):
     with patch.object(sys, 'argv', ['fast-mlsirm']):
         assert main() == 2
@@ -50,7 +57,7 @@ def test_cli_fit_success(tmp_path):
     fit_dir = tmp_path / "fit_out"
 
     # Run simulation to get files
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
 
     args = ["fit", "--responses", str(sim_dir / "responses.npy"), "--factors", str(sim_dir / "item_factor.csv"), "--model", "MLS2PLM", "--max-iter", "1", "--out", str(fit_dir)]
@@ -65,7 +72,7 @@ def test_cli_fit_json_output(tmp_path, capsys):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
     capsys.readouterr()
 
@@ -79,8 +86,7 @@ def test_cli_fit_json_output(tmp_path, capsys):
         "MLS2PLM",
         "--max-iter",
         "1",
-        "--backend",
-        "numpy",
+        "--reference",
         "--out",
         str(fit_dir),
         "--json",
@@ -101,10 +107,11 @@ def test_cli_fit_json_output(tmp_path, capsys):
 
 
 def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
+    pytest.importorskip("fast_mlsirm._core")
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
     capsys.readouterr()
 
@@ -129,16 +136,16 @@ def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
         assert main() == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["backend"] in {"numpy", "rust"}
+    assert payload["backend"] == "rust"
     summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
-    assert summary["backend"] == payload["backend"]
+    assert summary["backend"] == "rust"
 
 def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     pytest.importorskip("fast_mlsirm._core")
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
     capsys.readouterr()
 
@@ -171,6 +178,36 @@ def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     assert payload["rust_device"] == "gpu"
     summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
     assert summary["rust_device"] == "gpu"
+
+
+def test_cli_rejects_reference_with_explicit_rust_backend(tmp_path, capsys):
+    args = [
+        "fit",
+        "--responses",
+        str(tmp_path / "responses.npy"),
+        "--factors",
+        str(tmp_path / "factors.csv"),
+        "--reference",
+        "--backend",
+        "rust",
+        "--out",
+        str(tmp_path / "fit_out"),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 2
+    assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_cli_rejects_numpy_as_a_production_backend(capsys):
+    with patch.object(
+        sys,
+        "argv",
+        ["fast-mlsirm", "fit", "--backend", "numpy"],
+    ):
+        with pytest.raises(SystemExit) as failure:
+            main()
+    assert failure.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_cli_score_json_payload_reports_scores(capsys):
@@ -277,7 +314,7 @@ def test_cli_diagnose_fit_success(tmp_path):
     fit_dir = tmp_path / "fit_out"
     diag_dir = tmp_path / "diag_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
 
     with patch.object(sys, 'argv', ['fast-mlsirm', 'fit', '--responses', str(sim_dir / "responses.npy"), '--factors', str(sim_dir / "item_factor.csv"), '--model', 'MLS2PLM', '--max-iter', '1', '--out', str(fit_dir)]):
@@ -357,7 +394,7 @@ def test_cli_diagnose_dimensions_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     diag_dir = tmp_path / "dim_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '50', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
         main()
 
     args = [
@@ -549,6 +586,66 @@ def test_cli_fit_missing_file(capsys):
 
     captured = capsys.readouterr()
     assert "Error: Could not find file" in captured.err
+
+
+def test_cli_rejects_paths_outside_workspace(tmp_path, capsys):
+    outside = tmp_path.parent / "outside-fast-mlsirm"
+    args = [
+        "simulate",
+        "--persons",
+        "10",
+        "--dims",
+        "1",
+        "--items-per-dim",
+        "1",
+        "--out",
+        str(outside),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "must remain within the current working directory" in capsys.readouterr().err
+    assert not outside.exists()
+
+
+def test_cli_rejects_input_paths_outside_workspace(tmp_path, capsys):
+    outside = tmp_path.parent / "outside-fast-mlsirm-input.npy"
+    args = [
+        "fit",
+        "--responses",
+        str(outside),
+        "--factors",
+        "item_factor.csv",
+        "--out",
+        "fit_out",
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "must remain within the current working directory" in capsys.readouterr().err
+
+
+def test_cli_rejects_symlinked_workspace_parent(tmp_path, capsys):
+    outside = tmp_path.parent / "outside-fast-mlsirm-parent"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+    args = [
+        "simulate",
+        "--persons",
+        "10",
+        "--dims",
+        "1",
+        "--items-per-dim",
+        "1",
+        "--out",
+        str(linked / "out"),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "must remain within the current working directory" in capsys.readouterr().err
+    assert list(outside.iterdir()) == []
 
 def test_cli_fit_bad_data(tmp_path, capsys):
     bad_npy = tmp_path / "bad.npy"

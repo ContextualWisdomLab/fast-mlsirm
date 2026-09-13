@@ -13,13 +13,19 @@ from importlib.machinery import ExtensionFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from types import ModuleType
 import sys
+import threading
 
 
 _MODULE_NAME = "fast_mlsirm._rotation_core"
+_LOAD_LOCK = threading.Lock()
 
 
 def rotation_core() -> ModuleType:
     """Return the cached secondary Rust extension module.
+
+    Concurrent callers are serialized through initialization so no caller can
+    observe the temporary ``sys.modules`` entry before ``exec_module`` has
+    completed.
 
     Raises
     ------
@@ -28,24 +34,25 @@ def rotation_core() -> ModuleType:
         the extension loader cannot initialize ``PyInit__rotation_core``.
     """
 
-    cached = sys.modules.get(_MODULE_NAME)
-    if cached is not None:
-        return cached
+    with _LOAD_LOCK:
+        cached = sys.modules.get(_MODULE_NAME)
+        if cached is not None:
+            return cached
 
-    from . import _core
+        from . import _core
 
-    binary_path = getattr(_core, "__file__", None)
-    if not binary_path:
-        raise ImportError("fast_mlsirm._core does not expose an extension path")
-    loader = ExtensionFileLoader(_MODULE_NAME, binary_path)
-    spec = spec_from_loader(_MODULE_NAME, loader)
-    if spec is None:
-        raise ImportError("could not create the fast_mlsirm rotation extension spec")
-    module = module_from_spec(spec)
-    sys.modules[_MODULE_NAME] = module
-    try:
-        loader.exec_module(module)
-    except BaseException:
-        sys.modules.pop(_MODULE_NAME, None)
-        raise
-    return module
+        binary_path = getattr(_core, "__file__", None)
+        if not binary_path:
+            raise ImportError("fast_mlsirm._core does not expose an extension path")
+        loader = ExtensionFileLoader(_MODULE_NAME, binary_path)
+        spec = spec_from_loader(_MODULE_NAME, loader)
+        if spec is None:
+            raise ImportError("could not create the fast_mlsirm rotation extension spec")
+        module = module_from_spec(spec)
+        sys.modules[_MODULE_NAME] = module
+        try:
+            loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(_MODULE_NAME, None)
+            raise
+        return module

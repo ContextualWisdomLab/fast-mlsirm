@@ -9,7 +9,6 @@ and policy, never a universally optimal criterion claim.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
@@ -20,7 +19,12 @@ from .rotation import (
     _method_name,
     _mode_name,
     _optional_matrix,
+    _optional_trusted_integer,
+    _optional_trusted_real,
     _solution_from_core,
+    _trusted_boolean,
+    _trusted_integer,
+    _trusted_real,
 )
 
 
@@ -77,7 +81,7 @@ _POLICIES = frozenset(
 def _policy_name(value: str) -> str:
     """Normalize and validate a decision policy identifier."""
 
-    if not isinstance(value, str) or not value.strip():
+    if type(value) is not str or not value.strip():
         raise ValueError("policy must be a non-empty string")
     normalized = value.strip().lower().replace("-", "_")
     if normalized not in _POLICIES:
@@ -85,11 +89,11 @@ def _policy_name(value: str) -> str:
     return normalized
 
 
-def _candidate_names(values: Sequence[str]) -> tuple[str, ...]:
-    """Return at least two distinct, normalized candidate names."""
+def _candidate_names(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Return at least two distinct names from an inert candidate container."""
 
-    if isinstance(values, (str, bytes)):
-        raise ValueError("candidates must be a sequence of criterion names")
+    if type(values) not in (list, tuple):
+        raise ValueError("candidates must be an exact list or tuple of criterion names")
     normalized = tuple(_method_name(value) for value in values)
     if len(normalized) < 2:
         raise ValueError("criterion selection requires at least two candidates")
@@ -164,7 +168,7 @@ def _result_from_core(value: dict[str, object]) -> RotationSelectionResult:
 
 def select_rotation_criterion(
     loadings: np.ndarray,
-    candidates: Sequence[str],
+    candidates: list[str] | tuple[str, ...],
     *,
     mode: str = "oblique",
     policy: str = "fully_exploratory",
@@ -193,10 +197,26 @@ def select_rotation_criterion(
     grade; fewer are explicitly exploratory.
     """
 
-    matrix = _matrix(loadings, "loadings")
     names = _candidate_names(candidates)
     resolved_mode = _mode_name("geomin", mode)
     resolved_policy = _policy_name(policy)
+    marshaled_normalize = _trusted_boolean(normalize, "normalize")
+    marshaled_n_starts = _trusted_integer(n_starts, "n_starts")
+    marshaled_seed = _trusted_integer(seed, "seed")
+    marshaled_max_iter = _trusted_integer(max_iter, "max_iter")
+    marshaled_tolerance = _trusted_real(tolerance, "tolerance")
+    marshaled_function_window = _trusted_integer(function_window, "function_window")
+    marshaled_max_line_search = _trusted_integer(max_line_search, "max_line_search")
+    marshaled_basin_tolerance = _trusted_real(basin_tolerance, "basin_tolerance")
+    marshaled_max_threads = _trusted_integer(max_threads, "max_threads")
+    marshaled_kappa = _optional_trusted_real(kappa, "kappa")
+    marshaled_gamma = _optional_trusted_real(gamma, "gamma")
+    marshaled_delta = _optional_trusted_real(delta, "delta")
+    marshaled_simplimax_zeros = _optional_trusted_integer(
+        simplimax_zeros, "simplimax_zeros"
+    )
+
+    matrix = _matrix(loadings, "loadings")
     bootstraps = _bootstrap_array(bootstrap_loadings, matrix.shape)
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
@@ -208,19 +228,19 @@ def select_rotation_criterion(
         list(names),
         resolved_mode,
         resolved_policy,
-        bool(normalize),
-        int(n_starts),
-        int(seed),
-        int(max_iter),
-        float(tolerance),
-        int(function_window),
-        int(max_line_search),
-        float(basin_tolerance),
-        int(max_threads),
-        kappa,
-        gamma,
-        delta,
-        simplimax_zeros,
+        marshaled_normalize,
+        marshaled_n_starts,
+        marshaled_seed,
+        marshaled_max_iter,
+        marshaled_tolerance,
+        marshaled_function_window,
+        marshaled_max_line_search,
+        marshaled_basin_tolerance,
+        marshaled_max_threads,
+        marshaled_kappa,
+        marshaled_gamma,
+        marshaled_delta,
+        marshaled_simplimax_zeros,
         target_matrix,
         weight_matrix,
         bootstraps,

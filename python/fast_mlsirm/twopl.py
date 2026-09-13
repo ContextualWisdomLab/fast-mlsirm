@@ -15,11 +15,213 @@ import numpy as np
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_XI_POINTS
+from .irt_contract import MAX_IRT_RESPONSE_CELLS, MIN_IRT_ITEMS, validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS = 3
+_NUMPY_INTEGER_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_NUMPY_COMPLEX_TYPES = (np.complex64, np.complex128, np.clongdouble)
+
+
+def _finite_integer(value: object, name: str) -> int:
+    """Normalize one trusted integral scalar without invoking caller protocols."""
+
+    value_type = type(value)
+    if value_type is int:
+        return value
+    if value_type in _NUMPY_INTEGER_TYPES:
+        return int(value)
+    if value_type is float:
+        numeric = value
+    elif value_type in _NUMPY_FLOAT_TYPES:
+        numeric = float(value)
+    else:
+        raise ValueError(f"{name} must be a finite integer")
+    if not np.isfinite(numeric) or numeric != np.floor(numeric):
+        raise ValueError(f"{name} must be a finite integer")
+    return int(numeric)
+
+
+def _positive_finite_real(value: object, name: str) -> float:
+    """Normalize one trusted positive real losslessly to the Rust ``f64`` domain."""
+
+    value_type = type(value)
+    if value_type not in (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES):
+        raise ValueError(f"{name} must be finite and > 0")
+    try:
+        numeric = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and > 0") from exc
+    if not np.isfinite(numeric) or numeric <= 0.0:
+        raise ValueError(f"{name} must be finite and > 0")
+
+    lossless = True
+    if value_type is int:
+        lossless = numeric.is_integer() and int(numeric) == value
+    elif value_type in _NUMPY_INTEGER_TYPES:
+        lossless = numeric.is_integer() and int(numeric) == int(value)
+    elif value_type in _NUMPY_FLOAT_TYPES:
+        lossless = value_type(numeric) == value
+    if not lossless:
+        raise ValueError(
+            f"{name} must be finite and > 0 and exactly representable as Rust f64"
+        )
+    return numeric
+
+
+def _boolean(value: object, name: str) -> bool:
+    """Normalize one trusted Boolean scalar without truth-value callbacks."""
+
+    value_type = type(value)
+    if value_type is bool:
+        return value
+    if value_type is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean")
+
+
+def _u64_seed(value: object) -> int:
+    """Normalize the integration seed without lossy float conversion."""
+
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif value_type in _NUMPY_INTEGER_TYPES:
+        normalized = int(value)
+    else:
+        raise ValueError("xi_seed must be a non-negative integer")
+    if not 0 <= normalized < 2**64:
+        raise ValueError("xi_seed must be in [0, 2**64)")
+    return normalized
+
+
+def _response_scalar(value: object) -> float:
+    """Normalize one dichotomous response without caller conversion hooks."""
+
+    value_type = type(value)
+    if value_type is complex or value_type in _NUMPY_COMPLEX_TYPES:
+        raise ValueError("responses must be real-valued")
+    if value_type is bool or value_type is np.bool_:
+        return float(bool(value))
+    if value_type is int or value_type in _NUMPY_INTEGER_TYPES:
+        numeric = int(value)
+        if numeric not in (0, 1):
+            raise ValueError("dichotomous responses must be 0, 1, or NaN")
+        return float(numeric)
+    if value_type is float or value_type in _NUMPY_FLOAT_TYPES:
+        if np.isnan(value):
+            return float("nan")
+        if not np.isfinite(value):
+            raise ValueError("observed responses must be finite or NaN")
+        if value != np.floor(value):
+            raise ValueError("observed responses must be integer category values")
+        if value < 0 or value > 1:
+            raise ValueError("dichotomous responses must be 0, 1, or NaN")
+        return float(value)
+    raise ValueError("responses must be a real numeric matrix")
+
+
+def _require_minimum_item_count(n_items: int) -> None:
+    """Replay the shared IRT minimum-item contract before dense response work."""
+
+    if n_items < MIN_IRT_ITEMS:
+        raise ValueError(
+            "IRT responses must contain at least two item columns; "
+            "a scalar or one-item result is not an IRT experiment"
+        )
+
+
+def _trusted_response_matrix(responses: object) -> np.ndarray:
+    """Admit dichotomous response evidence before any lossy NumPy coercion."""
+
+    if type(responses) is np.ndarray:
+        source = responses
+        if source.ndim != 2:
+            raise ValueError("responses must be a 2-D persons x items array")
+        if source.size > MAX_IRT_RESPONSE_CELLS:
+            raise ValueError(
+                f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+            )
+        _require_minimum_item_count(int(source.shape[1]))
+        if source.dtype.kind == "c":
+            raise ValueError("responses must be real-valued")
+        if source.dtype.kind not in {"b", "i", "u", "f"}:
+            raise ValueError("responses must be a real numeric matrix")
+        if source.dtype.kind == "f":
+            missing = np.isnan(source)
+            if np.any(~missing & ~np.isfinite(source)):
+                raise ValueError("observed responses must be finite or NaN")
+            observed = source[~missing]
+            if observed.size and np.any(observed != np.floor(observed)):
+                raise ValueError("observed responses must be integer category values")
+        else:
+            observed = source.reshape(-1)
+        if observed.size and np.any((observed < 0) | (observed > 1)):
+            raise ValueError("dichotomous responses must be 0, 1, or NaN")
+        return np.ascontiguousarray(source, dtype=np.float64)
+
+    if type(responses) not in (list, tuple):
+        raise ValueError("responses must be a real numeric matrix")
+    if len(responses) > 2 * MAX_IRT_RESPONSE_CELLS + 1:
+        raise ValueError("responses exceed the structural-work limit")
+
+    normalized_rows: list[list[float]] = []
+    expected_width: int | None = None
+    logical_cells = 0
+    for row in responses:
+        if type(row) is np.ndarray:
+            if row.ndim != 1:
+                raise ValueError("responses must be a 2-D persons x items array")
+            if row.dtype.kind == "c":
+                raise ValueError("responses must be real-valued")
+            if row.dtype.kind not in {"b", "i", "u", "f"}:
+                raise ValueError("responses must be a real numeric matrix")
+            row_size = int(row.size)
+            _require_minimum_item_count(row_size)
+            logical_cells += row_size
+            if logical_cells > MAX_IRT_RESPONSE_CELLS:
+                raise ValueError(
+                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+                )
+            row_values = [_response_scalar(value) for value in row]
+        elif type(row) in (list, tuple):
+            row_size = len(row)
+            _require_minimum_item_count(row_size)
+            logical_cells += row_size
+            if logical_cells > MAX_IRT_RESPONSE_CELLS:
+                raise ValueError(
+                    f"responses must contain at most {MAX_IRT_RESPONSE_CELLS:,} cells"
+                )
+            row_values = [_response_scalar(value) for value in row]
+        else:
+            raise ValueError("responses must be a 2-D persons x items array")
+        if expected_width is None:
+            expected_width = len(row_values)
+        elif len(row_values) != expected_width:
+            raise ValueError("responses must be a 2-D persons x items array")
+        normalized_rows.append(row_values)
+
+    if not normalized_rows:
+        source = np.empty((0, 0), dtype=np.float64)
+    else:
+        source = np.asarray(normalized_rows, dtype=np.float64)
+    if source.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    return source
 
 
 @dataclass
@@ -121,68 +323,46 @@ def fit_2pl(
             Carlo EM. *Computational Statistics & Data Analysis, 48*(4), 685-701.
             https://doi.org/10.1016/j.csda.2004.03.019
     """
-    # Fail closed on hostile node_rule before any core import or coercion.
+    # Fail closed on hostile integration controls before caller data or core work.
     node_rule = normalize_node_rule(node_rule)
+    gh_rule = node_rule == "gh"
+    q_int = _finite_integer(q, "q")
+    if gh_rule and q_int not in _SUPPORTED_Q:
+        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
+    estimate_corr_bool = _boolean(estimate_corr, "estimate_corr")
+    max_iter_int = _finite_integer(max_iter, "max_iter")
+    if not (1 <= max_iter_int <= MAX_MAX_ITER):
+        raise ValueError(f"max_iter must be in 1..{MAX_MAX_ITER}")
+    tol_float = _positive_finite_real(tol, "tol")
+    xi_points_int = _finite_integer(xi_points, "xi_points")
+    if not gh_rule and not (1 <= xi_points_int <= MAX_XI_POINTS):
+        raise ValueError(f"xi_points must be in 1..{MAX_XI_POINTS}")
+    xi_seed_int = _u64_seed(xi_seed)
 
+    y = _trusted_response_matrix(responses)
+    # Reuse the shared IRT shape/semantic authority after callback-free,
+    # lossless dichotomous admission. It is now operating on package-owned
+    # float64 evidence, not caller-controlled conversion protocols.
+    y = validate_irt_response_matrix(y, "dichotomous")
+    n_persons, n_items = y.shape
+    resolved_model, pat = _resolve_model(model, n_items)
+    n_dims = pat.shape[1]
+    # The Gauss-Hermite product grid caps D <= _MAX_DIMS; the QMC/MC rules reach D <= 6 (the Halton
+    # prime axes). The core does the authoritative rule-dependent check; this mirrors it up front.
+    max_dims = _MAX_DIMS if gh_rule else 6
+    if not 1 <= n_dims <= max_dims:
+        raise ValueError(
+            f"loading_pattern dimensions must be between 1 and {max_dims} "
+            f"(node_rule={node_rule!r})"
+        )
+
+    observed = ~np.isnan(y)
     from .fitstats import _core_module
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_2pl"):
         raise RuntimeError("fit_2pl requires the compiled Rust core")
 
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    n_persons, n_items = y.shape
-    resolved_model, pat = _resolve_model(model, n_items)
-    n_dims = pat.shape[1]
-    # The Gauss-Hermite product grid caps D <= _MAX_DIMS; the QMC/MC rules reach D <= 6 (the Halton
-    # prime axes). The core does the authoritative rule-dependent check; this mirrors it up front.
-    _gh = node_rule == "gh"
-    _max_dims = _MAX_DIMS if _gh else 6
-    if not 1 <= n_dims <= _max_dims:
-        raise ValueError(
-            f"loading_pattern dimensions must be between 1 and {_max_dims} "
-            f"(node_rule={node_rule!r})"
-        )
-    if np.isinf(y).any():
-        raise ValueError("responses must be 0, 1, or NaN (missing)")
-
-    def _finite_integer(value: int, name: str) -> int:
-        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
-        scalar = np.asarray(value)
-        if (
-            scalar.ndim != 0
-            or not np.issubdtype(scalar.dtype, np.number)
-            or np.iscomplexobj(scalar)
-        ):
-            raise ValueError(f"{name} must be a finite integer")
-        numeric = float(scalar)
-        if not np.isfinite(numeric) or numeric != np.floor(numeric):
-            raise ValueError(f"{name} must be a finite integer")
-        return int(numeric)
-
-    q_int = _finite_integer(q, "q")
-    max_iter_int = _finite_integer(max_iter, "max_iter")
-    # q is used only by the Gauss-Hermite rule; the QMC/MC rules ignore it (matching the core).
-    if _gh and q_int not in _SUPPORTED_Q:
-        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
-    xi_points_int = _finite_integer(xi_points, "xi_points")
-    if not (1 <= max_iter_int <= MAX_MAX_ITER):
-        raise ValueError(f"max_iter must be in 1..{MAX_MAX_ITER}")
-    if not _gh and not (1 <= xi_points_int <= MAX_XI_POINTS):
-        raise ValueError(f"xi_points must be in 1..{MAX_XI_POINTS}")
-    # xi_seed is a full-range u64 (default 0x9E37_79B9_7F4A_7C15): validate it as an EXACT integer
-    # WITHOUT a float64 round-trip. _finite_integer casts through float(), which silently rounds any
-    # value >= 2^53 (the default drifts, breaking Rust<->Python parity) and overflows u64 near the
-    # top of the range (raising OverflowError in the PyO3 conversion).
-    if isinstance(xi_seed, bool) or not isinstance(xi_seed, (int, np.integer)):
-        raise ValueError("xi_seed must be a non-negative integer")
-    xi_seed_int = int(xi_seed)
-    if not 0 <= xi_seed_int < 2**64:
-        raise ValueError("xi_seed must be in [0, 2**64)")
-
-    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_2pl(
         yy,
@@ -192,9 +372,9 @@ def fit_2pl(
         int(n_items),
         int(n_dims),
         q_int,
-        bool(estimate_corr),
+        estimate_corr_bool,
         max_iter_int,
-        float(tol),
+        tol_float,
         node_rule,
         xi_points_int,
         xi_seed_int,

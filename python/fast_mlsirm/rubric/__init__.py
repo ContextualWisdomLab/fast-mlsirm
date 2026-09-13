@@ -1,5 +1,12 @@
 """Rubric-centered authoring, generation, audit, pilot, and bank lifecycle."""
 
+from . import item_bank as _item_bank
+from ._item_bank_reactivation_validation import (
+    install as _install_item_bank_reactivation_validation,
+)
+
+_install_item_bank_reactivation_validation(_item_bank)
+
 from .candidates import BinaryAnswerKey as BinaryAnswerKey
 from .candidates import CandidateValidationError as CandidateValidationError
 from .candidates import ConstructedAnswerKey as ConstructedAnswerKey
@@ -54,6 +61,14 @@ from .item_bank import ItemBankLifecycleState as ItemBankLifecycleState
 from .item_bank import PolicyCriticality as PolicyCriticality
 from .item_bank import build_item_bank_pilot_record as build_item_bank_pilot_record
 from .item_bank import transition_item_bank_record as transition_item_bank_record
+from .item_parameter_evidence import ItemParameterEvidence as ItemParameterEvidence
+from .item_parameter_evidence import ItemParameterStatus as ItemParameterStatus
+from .item_parameter_evidence import (
+    ProvisionalParameterMethod as ProvisionalParameterMethod,
+)
+from .item_parameter_evidence import (
+    build_item_parameter_evidence as build_item_parameter_evidence,
+)
 from .models import BlueprintPlan as BlueprintPlan
 from .models import DifficultyBand as DifficultyBand
 from .models import EvidenceMode as EvidenceMode
@@ -73,14 +88,25 @@ from .pilot_observations import build_facets_pilot_design as build_facets_pilot_
 from .pilot_observations import (
     build_pilot_observation_record as build_pilot_observation_record,
 )
+from .semantic_screening import CandidateScreeningResult as CandidateScreeningResult
+from .semantic_screening import ScreeningDimension as ScreeningDimension
+from .semantic_screening import ScreeningEvaluatorKind as ScreeningEvaluatorKind
+from .semantic_screening import ScreeningStatus as ScreeningStatus
+from .semantic_screening import SemanticScreeningCheck as SemanticScreeningCheck
+from .semantic_screening import (
+    build_candidate_screening_result as build_candidate_screening_result,
+)
+from .semantic_screening import (
+    build_semantic_screening_check as build_semantic_screening_check,
+)
 from .testlet_pilot import TestletPilotDesign as TestletPilotDesign
 from .testlet_pilot import build_testlet_pilot_design as build_testlet_pilot_design
 from .verified_pilot import PilotCandidateRecord as PilotCandidateRecord
 
-# Preserve the established star-import contract. Audit, pilot, and item-bank
-# types remain explicit subpackage attributes and are imported by their
-# documented names, but are not added to ``__all__`` until the next
-# public-surface version bump.
+# Preserve the established star-import contract. Audit, pilot, item-bank, and
+# semantic-screening types remain explicit subpackage attributes and are
+# imported by their documented names, but are not added to ``__all__`` until
+# the next public-surface version bump.
 __all__ = [
     "MAX_BLUEPRINTS",
     "BinaryAnswerKey",

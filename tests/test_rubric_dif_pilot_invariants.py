@@ -86,3 +86,68 @@ def test_direct_constructor_rechecks_schema_binding():
     object.__setattr__(design.binary_design, "schema_version", "different_schema")
     with pytest.raises(ValueError, match="schema_version"):
         _direct(design.binary_design, design.respondent_group_ids)
+
+
+def test_post_construction_group_mutation_is_replayed_before_public_handoffs():
+    """Frozen-record rebinding cannot silently change the DIF populations."""
+    design = _valid_design()
+    object.__setattr__(
+        design,
+        "respondent_group_ids",
+        ("focal_group_alpha", "focal_group_alpha"),
+    )
+
+    for operation in (
+        design.group_array,
+        design.to_observed_score_dif_kwargs,
+        design.to_dict,
+    ):
+        with pytest.raises(ValueError, match="reference group"):
+            operation()
+
+
+def test_nested_mirt_subclass_is_rejected_before_field_callbacks():
+    """Only the exact package MIRT record may cross the DIF replay boundary."""
+    design = _valid_design()
+    binary = design.binary_design
+
+    class CallbackMirt(type(binary)):
+        callbacks = 0
+
+        def __getattribute__(self, name):
+            if name in {"schema_version", "respondent_ids"}:
+                type(self).callbacks += 1
+                raise AssertionError("caller field callback executed")
+            return super().__getattribute__(name)
+
+    hostile = object.__new__(CallbackMirt)
+    object.__getattribute__(hostile, "__dict__").update(
+        object.__getattribute__(binary, "__dict__")
+    )
+
+    with pytest.raises(TypeError, match="MirtPilotDesign"):
+        _direct(hostile, design.respondent_group_ids)
+    assert CallbackMirt.callbacks == 0
+
+
+def test_mutated_group_container_is_rejected_before_iteration_callbacks():
+    """Replay never iterates a callback-bearing replacement group container."""
+    design = _valid_design()
+
+    class CallbackGroups(tuple):
+        callbacks = 0
+
+        def __len__(self):
+            type(self).callbacks += 1
+            raise AssertionError("caller length callback executed")
+
+        def __iter__(self):
+            type(self).callbacks += 1
+            raise AssertionError("caller iteration callback executed")
+
+    hostile = CallbackGroups(design.respondent_group_ids)
+    object.__setattr__(design, "respondent_group_ids", hostile)
+
+    with pytest.raises(TypeError, match="respondent_group_ids"):
+        design.group_array()
+    assert CallbackGroups.callbacks == 0

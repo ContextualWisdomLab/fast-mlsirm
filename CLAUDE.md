@@ -26,6 +26,21 @@ fully before making changes. In particular it defines:
   deployment concerns. The hosted runtime must not be recreated under
   `services/assessment_runtime` in this repository.
 
+## Runtime Contract
+
+The following block is machine-checked against package metadata and the shipped
+backend-ownership policy. Keep it as one exact TOML block rather than replacing
+it with an equivalent prose-only claim.
+
+<!-- BEGIN fast-mlsirm-runtime-contract -->
+```toml
+[runtime_contract]
+requires_python = ">=3.12"
+auto_backend = "rust_required"
+numpy_role = "reference_parity_only"
+```
+<!-- END fast-mlsirm-runtime-contract -->
+
 ## Common Commands
 
 ### Setup
@@ -35,9 +50,10 @@ toolchain should be on `PATH` (`cargo`/`rustc`) for deterministic local builds.
 If cargo is absent, maturin may try to provision a temporary Rust toolchain via
 `puccinialin`; set `MATURIN_NO_INSTALL_RUST=1` when you need a fail-fast
 offline/proxy-safe build. A proxy or certificate error in that fallback is not
-proof of a Python/PyO3 incompatibility. `pyproject.toml` declares Python
-`>=3.10`; required CI currently builds and tests CPython 3.12, so broader
-interpreter claims need matching build/import/full-suite CI evidence.
+proof of a Python/PyO3 incompatibility. `pyproject.toml` declares
+`requires-python = ">=3.12"`, matching the required CPython 3.12 and 3.14 CI
+matrix. Broader interpreter claims need matching build/import/full-suite CI
+evidence.
 
 ```bash
 python -m pip install -e .          # builds fast_mlsirm._core via maturin
@@ -145,9 +161,11 @@ examples/enterprise_demo/ Synthetic procurement evidence manifests
   PyO3/numpy. maturin (configured in `pyproject.toml`) compiles the extension
   into `fast_mlsirm._core` during install.
 - The **backend axis is `{numpy, rust, auto}`** (default `auto`), resolved in
-  `python/fast_mlsirm/backend.py`: Rust when `_core` imports, otherwise the
-  numerically-identical NumPy reference in `python/fast_mlsirm/objective.py`
-  and `math.py`, which is kept for parity testing and fallback.
+  `python/fast_mlsirm/backend.py`: explicit `numpy` is the reference/parity
+  choice, explicit `rust` requires the compiled core, and production-convenience
+  `auto` resolves to Rust when `_core` imports. `auto` fails closed when the
+  compiled Rust core is unavailable; automatic resolution never silently
+  changes the numerical owner to NumPy.
 - **GPU is a device sub-option of the Rust backend**, not a separate backend:
   `FitConfig(backend="rust", rust_device={auto,cpu,gpu})`. The wgpu kernels in
   `crates/mlsirm-core/src/gpu.rs` run in f32 and fall back to the f64 scalar

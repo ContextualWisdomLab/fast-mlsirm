@@ -51,23 +51,58 @@ from dataclasses import dataclass
 import numpy as np
 
 
-def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
-    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``.
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
+_NUMPY_FLOAT_SCALAR_TYPES = (
+    np.float16,
+    np.float32,
+    np.float64,
+    np.longdouble,
+)
 
-    Error messages name only the field and package-owned bounds. They never
-    interpolate caller-controlled values (or invoke ``repr``/``str`` on them),
-    so hostile content cannot leak through validation diagnostics.
+
+def _has_exact_type(value: object, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether ``value`` has one exact package-trusted scalar type."""
+
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
+def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
+    """Validate and coerce a trusted integral scalar within package bounds.
+
+    Only exact built-in numeric types and exact supported NumPy scalar types
+    are admitted. This rejects caller-defined subclasses before ``int()``,
+    ``np.isfinite()``, equality, or range comparisons can dispatch to caller
+    code. Error messages name only the field and package-owned bounds.
     """
-    # Reject bool first: ``bool`` is a subclass of ``int`` but is not an
-    # exposure-control cardinality.
-    if isinstance(value, bool):
-        raise ValueError(f"{name} must be an integer")
-    if isinstance(value, (int, np.integer)):
+    value_type = type(value)
+    if value_type is int:
+        iv = value
+    elif _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES):
         iv = int(value)
-    elif isinstance(value, (float, np.floating)):
-        if not np.isfinite(value) or int(value) != value:
+    elif value_type is float:
+        if not np.isfinite(value) or not value.is_integer():
             raise ValueError(f"{name} must be an integer")
         iv = int(value)
+    elif _has_exact_type(value, _NUMPY_FLOAT_SCALAR_TYPES):
+        if not bool(np.isfinite(value)):
+            raise ValueError(f"{name} must be an integer")
+        iv = int(value)
+        if iv != value:
+            raise ValueError(f"{name} must be an integer")
     else:
         raise ValueError(f"{name} must be an integer")
     if iv < minimum or (maximum is not None and iv > maximum):
@@ -75,6 +110,61 @@ def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> i
             f"{name} out of range [{minimum}, {maximum if maximum is not None else '∞'}]"
         )
     return iv
+
+
+def _as_real_numeric_array(name: str, value: object) -> np.ndarray:
+    """Admit real numeric caller storage before native ``float64`` marshalling."""
+
+    array = np.asarray(value)
+    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError(f"{name} must be a real numeric array")
+    return np.ascontiguousarray(array, dtype=np.float64)
+
+
+def _as_real_scalar(name: str, value: object) -> float:
+    """Normalize a package-trusted real scalar without caller conversion hooks."""
+
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        return float(value)
+    if _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES) or _has_exact_type(
+        value, _NUMPY_FLOAT_SCALAR_TYPES
+    ):
+        return float(value)
+    raise ValueError(f"{name} must be a real scalar")
+
+
+def _as_boolean_scalar(name: str, value: object) -> bool:
+    """Normalize a package-trusted Boolean scalar without caller truth hooks."""
+
+    if type(value) is bool:
+        return value
+    if type(value) is np.bool_:
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean scalar")
+
+
+def _as_boolean_array(name: str, value: object) -> np.ndarray:
+    """Admit Boolean storage before native mask marshalling."""
+
+    array = np.asarray(value)
+    if array.dtype != np.bool_:
+        raise ValueError(f"{name} must be a boolean array")
+    return np.ascontiguousarray(array, dtype=np.bool_)
+
+
+def _as_binary_response_array(name: str, value: object) -> np.ndarray:
+    """Admit real numeric 0/1 storage before native ``uint8`` marshalling."""
+
+    array = np.asarray(value)
+    if np.iscomplexobj(array) or array.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError(f"{name} must be a real numeric array")
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a 1-D array")
+    values = np.ascontiguousarray(array, dtype=np.float64)
+    if not np.isin(values, (0.0, 1.0)).all():
+        raise ValueError(f"{name} must contain only 0 or 1")
+    return np.ascontiguousarray(values, dtype=np.uint8)
 
 
 @dataclass
@@ -119,32 +209,39 @@ def sympson_hetter(
     the stopping rule. ``r_max = 1`` reduces exactly to unconstrained
     max-information CAT (no exposure randomization is consumed).
     """
-    # Validate public integer controls before importing the Rust extension so
-    # hostile values fail closed even when the optional core is unavailable.
+    # Establish all scalar control contracts before caller-owned data or the
+    # optional Rust extension can be touched.
     _usize_max = int(np.iinfo(np.uintp).max)
     test_length = _as_int("test_length", test_length, maximum=_usize_max)
     n_simulees = _as_int("n_simulees", n_simulees, maximum=_usize_max)
     max_iter = _as_int("max_iter", max_iter, maximum=_usize_max)
     seed = _as_int("seed", seed, maximum=2**64 - 1)
     q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
+    r_max = _as_real_scalar("r_max", r_max)
+    if not np.isfinite(r_max) or not (0.0 < r_max <= 1.0):
+        raise ValueError("r_max must be finite and in (0, 1]")
+    tol = _as_real_scalar("tol", tol)
+    if not np.isfinite(tol) or tol < 0.0:
+        raise ValueError("tol must be finite and non-negative")
 
-    from . import _core
-
-    a = np.ascontiguousarray(a, dtype=np.float64)
-    b = np.ascontiguousarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if c is None:
         c = np.zeros_like(a)
-    c = np.ascontiguousarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
+
+    from . import _core
 
     r = _core.py_sympson_hetter(
         a,
         b,
         c,
-        float(r_max),
+        r_max,
         test_length,
         n_simulees,
         max_iter,
-        float(tol),
+        tol,
         seed,
         q_theta,
     )
@@ -157,6 +254,7 @@ def sympson_hetter(
         converged=bool(r["converged"]),
         history_max_exposure=np.asarray(r["history_max_exposure"]),
     )
+
 
 @dataclass
 class AStratifiedResult:
@@ -213,24 +311,31 @@ def a_stratified(
             Psychological Measurement, 25*(4), 333-341. (Not read; cited
             only as the deferred b-blocking extension.)
     """
-    from . import _core
+    _usize_max = int(np.iinfo(np.uintp).max)
+    n_strata = _as_int("n_strata", n_strata, maximum=_usize_max)
+    test_length = _as_int("test_length", test_length, maximum=_usize_max)
+    n_simulees = _as_int("n_simulees", n_simulees, maximum=_usize_max)
+    seed = _as_int("seed", seed, maximum=2**64 - 1)
+    q_theta = _as_int("q_theta", q_theta, maximum=_usize_max)
 
-    a = np.ascontiguousarray(a, dtype=np.float64)
-    b = np.ascontiguousarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if c is None:
         c = np.zeros_like(a)
-    c = np.ascontiguousarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
 
-    _usize_max = int(np.iinfo(np.uintp).max)
+    from . import _core
+
     r = _core.py_a_stratified(
         a,
         b,
         c,
-        _as_int("n_strata", n_strata, maximum=_usize_max),
-        _as_int("test_length", test_length, maximum=_usize_max),
-        _as_int("n_simulees", n_simulees, maximum=_usize_max),
-        _as_int("seed", seed, maximum=2**64 - 1),
-        _as_int("q_theta", q_theta, maximum=_usize_max),
+        n_strata,
+        test_length,
+        n_simulees,
+        seed,
+        q_theta,
     )
     return AStratifiedResult(
         exposure=np.asarray(r["exposure"]),
@@ -240,6 +345,7 @@ def a_stratified(
         theta_rmse=float(r["theta_rmse"]),
         theta_bias=float(r["theta_bias"]),
     )
+
 
 def kl_information(
     a: np.ndarray,
@@ -279,26 +385,23 @@ def kl_information(
             catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
-    from . import _core
+    theta0 = _as_real_scalar("theta0", theta0)
+    delta = _as_real_scalar("delta", delta)
 
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    return np.asarray(
-        _core.py_kl_information(
-            np.ascontiguousarray(a),
-            np.ascontiguousarray(b),
-            np.ascontiguousarray(c),
-            float(theta0),
-            float(delta),
-        )
-    )
+
+    from . import _core
+
+    return np.asarray(_core.py_kl_information(a, b, c, theta0, delta))
 
 
 def kl_select(
@@ -324,27 +427,25 @@ def kl_select(
     (``mlsirm_core::exposure::kl_select``). See :func:`kl_information` for
     sources and references.
     """
-    from . import _core
+    n_administered = _as_int("n_administered", n_administered, minimum=1)
+    theta0 = _as_real_scalar("theta0", theta0)
+    r = _as_real_scalar("r", r)
 
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
-    mask = np.asarray(administered, dtype=np.bool_)
+    else:
+        c = _as_real_numeric_array("c", c)
+    mask = _as_boolean_array("administered", administered)
     if c.ndim != 1 or mask.ndim != 1:
         raise ValueError("c and administered must be 1-D arrays")
-    res = _core.py_kl_select(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(mask),
-        float(theta0),
-        _as_int("n_administered", n_administered, minimum=1),
-        float(r),
-    )
+
+    from . import _core
+
+    res = _core.py_kl_select(a, b, c, mask, theta0, n_administered, r)
     return {
         "index": np.asarray(res["index"]),
         "selected": int(res["selected"]),
@@ -390,11 +491,16 @@ def owen_update(
             Measurement, 6*(4), 431-444.
             https://doi.org/10.1177/014662168200600405
     """
+    a = _as_real_scalar("a", a)
+    b = _as_real_scalar("b", b)
+    c = _as_real_scalar("c", c)
+    correct = _as_boolean_scalar("correct", correct)
+    mu = _as_real_scalar("mu", mu)
+    sig2 = _as_real_scalar("sig2", sig2)
+
     from . import _core
 
-    return _core.py_owen_update(
-        float(a), float(b), float(c), bool(correct), float(mu), float(sig2)
-    )
+    return _core.py_owen_update(a, b, c, correct, mu, sig2)
 
 
 def owen_cat(
@@ -433,37 +539,35 @@ def owen_cat(
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
             adaptive testing* (Research Report 96-01). University of Twente.
     """
-    from . import _core
+    test_length = _as_int("test_length", test_length, minimum=1)
+    mu0 = _as_real_scalar("mu0", mu0)
+    sig2_0 = _as_real_scalar("sig2_0", sig2_0)
+    if sig2_stop is not None:
+        sig2_stop = _as_real_scalar("sig2_stop", sig2_stop)
 
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    responses = np.asarray(responses)
-    if responses.ndim != 1:
-        raise ValueError("responses must be a 1-D array")
-    # Validate BEFORE the uint8 cast: astype(np.uint8) silently truncates
-    # (1.2 -> 1, 0.9 -> 0) and wraps negatives (-1 -> 255), and complex
-    # inputs would silently drop the imaginary part, laundering invalid
-    # inputs past the Rust-side 0/1 check.
-    if np.iscomplexobj(responses):
-        raise ValueError("responses must contain only 0 or 1")
-    if not np.isin(responses.astype(np.float64), (0.0, 1.0)).all():
-        raise ValueError("responses must contain only 0 or 1")
+    responses = _as_binary_response_array("responses", responses)
+
+    from . import _core
+
     r = _core.py_owen_cat(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(responses, dtype=np.uint8),
-        float(mu0),
-        float(sig2_0),
-        _as_int("test_length", test_length, minimum=1),
-        None if sig2_stop is None else float(sig2_stop),
+        a,
+        b,
+        c,
+        responses,
+        mu0,
+        sig2_0,
+        test_length,
+        sig2_stop,
     )
     return {
         "administered": list(r["administered"]),
@@ -517,43 +621,61 @@ def ccat_select(
             catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
-    from . import _core
+    # Scalar controls fail closed before any caller-owned array is materialized.
+    theta0 = _as_real_scalar("theta0", theta0)
 
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    groups = np.asarray(groups)
-    if groups.ndim != 1:
+
+    groups_source = np.asarray(groups)
+    if (
+        np.iscomplexobj(groups_source)
+        or groups_source.dtype.kind not in {"b", "i", "u", "f"}
+    ):
+        raise ValueError("groups must be a real numeric array")
+    if groups_source.ndim != 1:
         raise ValueError("groups must be a 1-D array")
-    # Validate BEFORE the uintp cast: casting would silently truncate
-    # non-integers, wrap negatives, and drop imaginary parts.
-    if np.iscomplexobj(groups):
+    if groups_source.dtype.kind == "f":
+        if (
+            not np.isfinite(groups_source).all()
+            or (groups_source < 0).any()
+            or (groups_source != np.floor(groups_source)).any()
+        ):
+            raise ValueError("groups must contain non-negative integers")
+    elif groups_source.dtype.kind == "i" and (groups_source < 0).any():
         raise ValueError("groups must contain non-negative integers")
-    gf = groups.astype(np.float64)
-    if not np.isfinite(gf).all() or (gf < 0).any() or (gf != np.floor(gf)).any():
+    with np.errstate(invalid="ignore", over="ignore"):
+        groups_marshaled = np.ascontiguousarray(groups_source, dtype=np.uintp)
+    if not np.array_equal(
+        groups_marshaled.astype(groups_source.dtype, copy=False), groups_source
+    ):
         raise ValueError("groups must contain non-negative integers")
-    targets = np.asarray(targets, dtype=np.float64)
+
+    targets = _as_real_numeric_array("targets", targets)
     if targets.ndim != 1:
         raise ValueError("targets must be a 1-D array")
-    administered = np.asarray(administered)
+    administered = _as_boolean_array("administered", administered)
     if administered.ndim != 1:
         raise ValueError("administered must be a 1-D array")
-    if administered.dtype != np.bool_:
-        raise ValueError("administered must be a boolean array")
+
+    from . import _core
+
     r = _core.py_ccat_select(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(groups, dtype=np.uintp),
-        np.ascontiguousarray(targets),
-        np.ascontiguousarray(administered),
-        float(theta0),
+        a,
+        b,
+        c,
+        groups_marshaled,
+        targets,
+        administered,
+        theta0,
     )
     return {
         "selected": int(r["selected"]),
@@ -605,40 +727,32 @@ def epv_select(
             catR. *Journal of Statistical Software, 48*(8), 1-31.
             https://doi.org/10.18637/jss.v048.i08
     """
-    from . import _core
+    mu = _as_real_scalar("mu", mu)
+    sig2 = _as_real_scalar("sig2", sig2)
 
-    # Reject complex input BEFORE the float64 casts: the casts would silently
-    # discard imaginary parts (complex laundering).
-    for name, arr in (("a", a), ("b", b), ("c", c)):
-        if arr is not None and np.iscomplexobj(np.asarray(arr)):
-            raise ValueError(f"{name} must be real-valued")
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    administered = np.asarray(administered)
+    administered = _as_boolean_array("administered", administered)
     if administered.ndim != 1:
         raise ValueError("administered must be a 1-D array")
-    if administered.dtype != np.bool_:
-        raise ValueError("administered must be a boolean array")
-    r = _core.py_epv_select(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(administered),
-        float(mu),
-        float(sig2),
-    )
+
+    from . import _core
+
+    r = _core.py_epv_select(a, b, c, administered, mu, sig2)
     return {
         "selected": int(r["selected"]),
         "epv": np.asarray(r["epv"]),
         "predictive": np.asarray(r["predictive"]),
     }
+
 
 def sprt_classify(
     a: np.ndarray,
@@ -690,42 +804,44 @@ def sprt_classify(
         Wald, A. (1947). *Sequential analysis*. Wiley. (NOT read; boundary
             forms verified through the READ sources above.)
     """
-    from . import _core
+    theta_cut = _as_real_scalar("theta_cut", theta_cut)
+    if not np.isfinite(theta_cut):
+        raise ValueError("theta_cut must be finite")
+    delta = _as_real_scalar("delta", delta)
+    if not np.isfinite(delta) or delta <= 0.0:
+        raise ValueError("delta must be finite and > 0")
+    alpha = _as_real_scalar("alpha", alpha)
+    if not np.isfinite(alpha) or not (0.0 < alpha < 1.0):
+        raise ValueError("alpha must be finite and in (0, 1)")
+    beta = _as_real_scalar("beta", beta)
+    if not np.isfinite(beta) or not (0.0 < beta < 1.0):
+        raise ValueError("beta must be finite and in (0, 1)")
+    if alpha + beta >= 1.0:
+        raise ValueError("alpha + beta must be < 1")
 
-    # Reject complex input BEFORE the dtype casts: the casts would silently
-    # discard imaginary parts (complex laundering).
-    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
-        if arr is not None and np.iscomplexobj(np.asarray(arr)):
-            raise ValueError(f"{name} must be real-valued")
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
-    resp = np.asarray(responses)
-    if resp.ndim != 1:
-        raise ValueError("responses must be a 1-D array")
-    if resp.dtype == np.bool_:
-        resp = resp.astype(np.uint8)
-    else:
-        resp_f = np.asarray(resp, dtype=np.float64)
-        if not np.all(np.isin(resp_f, (0.0, 1.0))):
-            raise ValueError("responses must contain only 0 and 1")
-        resp = resp_f.astype(np.uint8)
+    responses = _as_binary_response_array("responses", responses)
+
+    from . import _core
+
     r = _core.py_sprt_classify(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(resp),
-        float(theta_cut),
-        float(delta),
-        float(alpha),
-        float(beta),
+        a,
+        b,
+        c,
+        responses,
+        theta_cut,
+        delta,
+        alpha,
+        beta,
     )
     return {
         "decision": str(r["decision"]),
@@ -733,6 +849,8 @@ def sprt_classify(
         "llr": float(r["llr"]),
         "llr_trace": np.asarray(r["llr_trace"]),
     }
+
+
 def ci_classify(
     a: np.ndarray,
     b: np.ndarray,
@@ -788,40 +906,34 @@ def ci_classify(
             categories. *Educational and Psychological Measurement, 60*(5),
             713-734. (NOT read; historical.)
     """
-    from . import _core
+    theta_cut = _as_real_scalar("theta_cut", theta_cut)
+    if not np.isfinite(theta_cut):
+        raise ValueError("theta_cut must be finite")
+    z_crit = _as_real_scalar("z_crit", z_crit)
+    if not np.isfinite(z_crit) or z_crit <= 0.0:
+        raise ValueError("z_crit must be finite and > 0")
 
-    # Reject complex input BEFORE the dtype casts: the casts would silently
-    # discard imaginary parts (complex laundering).
-    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
-        if arr is not None and np.iscomplexobj(np.asarray(arr)):
-            raise ValueError(f"{name} must be real-valued")
-    a = np.asarray(a, dtype=np.float64)
-    b = np.asarray(b, dtype=np.float64)
+    a = _as_real_numeric_array("a", a)
+    b = _as_real_numeric_array("b", b)
     if a.ndim != 1 or b.ndim != 1:
         raise ValueError("a and b must be 1-D arrays")
     if c is None:
         c = np.zeros_like(a)
-    c = np.asarray(c, dtype=np.float64)
+    else:
+        c = _as_real_numeric_array("c", c)
     if c.ndim != 1:
         raise ValueError("c must be a 1-D array")
-    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
-    resp = np.asarray(responses)
-    if resp.ndim != 1:
-        raise ValueError("responses must be a 1-D array")
-    if resp.dtype == np.bool_:
-        resp = resp.astype(np.uint8)
-    else:
-        resp_f = np.asarray(resp, dtype=np.float64)
-        if not np.all(np.isin(resp_f, (0.0, 1.0))):
-            raise ValueError("responses must contain only 0 and 1")
-        resp = resp_f.astype(np.uint8)
+    responses = _as_binary_response_array("responses", responses)
+
+    from . import _core
+
     r = _core.py_ci_classify(
-        np.ascontiguousarray(a),
-        np.ascontiguousarray(b),
-        np.ascontiguousarray(c),
-        np.ascontiguousarray(resp),
-        float(theta_cut),
-        float(z_crit),
+        a,
+        b,
+        c,
+        responses,
+        theta_cut,
+        z_crit,
     )
     return {
         "decision": str(r["decision"]),
@@ -831,6 +943,7 @@ def ci_classify(
         "lower_trace": np.asarray(r["lower_trace"]),
         "upper_trace": np.asarray(r["upper_trace"]),
     }
+
 
 def flexilevel_administer(
     responses: np.ndarray,
@@ -871,12 +984,13 @@ def flexilevel_administer(
             effectiveness of flexilevel tests* (Research Bulletin RB-71-6;
             ERIC ED051286). Educational Testing Service. (READ.)
     """
+    n_persons = _as_int("n_persons", n_persons, minimum=1)
+    n_items = _as_int("n_items", n_items, minimum=3)
+
     from . import _core
 
     if np.iscomplexobj(np.asarray(responses)):
         raise ValueError("responses must be real-valued")
-    n_persons = _as_int("n_persons", n_persons, minimum=1)
-    n_items = _as_int("n_items", n_items, minimum=3)
     resp = np.asarray(responses)
     if resp.ndim == 2:
         if resp.shape != (n_persons, n_items):
@@ -956,6 +1070,7 @@ def flexilevel_score_distribution(p: np.ndarray) -> dict:
         "variance": float(r["variance"]),
     }
 
+
 def stradaptive_administer(
     stratum: np.ndarray,
     difficulty: np.ndarray,
@@ -1004,15 +1119,16 @@ def stradaptive_administer(
             test* (Research Report 73-3; ERIC ED084301). University of
             Minnesota, Psychometric Methods Program. (READ.)
     """
+    entry_stratum = _as_int("entry_stratum", entry_stratum, minimum=0)
+    min_items = _as_int("min_items", min_items, minimum=1)
+    max_items = _as_int("max_items", max_items, minimum=1)
+
     from . import _core
 
     for name, arr in (("stratum", stratum), ("difficulty", difficulty),
                       ("responses", responses)):
         if np.iscomplexobj(np.asarray(arr)):
             raise ValueError(f"{name} must be real-valued")
-    entry_stratum = _as_int("entry_stratum", entry_stratum, minimum=0)
-    min_items = _as_int("min_items", min_items, minimum=1)
-    max_items = _as_int("max_items", max_items, minimum=1)
     chance = float(chance)
     # Validate BEFORE the integer/uint8 casts (casts truncate/wrap).
     try:
@@ -1061,6 +1177,7 @@ def stradaptive_administer(
         "consistency": float(r["consistency"]),
     }
 
+
 def pyramidal_administer(
     b: np.ndarray,
     n_stages: int,
@@ -1102,9 +1219,10 @@ def pyramidal_administer(
             testing.* (NOT read; all-item and final-difficulty scores
             implemented as described by Larkin & Weiss, 1974.)
     """
+    n_stages = _as_int("n_stages", n_stages, minimum=1)
+
     from . import _core
 
-    n_stages = _as_int("n_stages", n_stages, minimum=1)
     if np.iscomplexobj(np.asarray(b)) or np.iscomplexobj(np.asarray(u)):
         raise ValueError("b and u must be real-valued")
     try:
@@ -1179,8 +1297,8 @@ def two_stage_route(
     Weiss, 1974, Equation 2; ``a1``/``b1`` are the routing test's mean
     discrimination and difficulty, ``c`` the shared chance level), then
     assigns the measurement test whose mean difficulty ``b_meas[k]`` is
-    closest to that estimate (minimum absolute difference; ties break to
-    the LOWEST index, a derived convention the sources leave unstated).
+    closest to that estimate (minimum absolute difference; ties break to the
+    LOWEST index, a derived convention the sources leave unstated).
     Returns ``(theta1, assigned)``. All numerics run in the Rust core
     (``mlsirm_core::exposure::two_stage_route``); see its module comment
     for the full READ/NOT-READ citation-governance record.
@@ -1191,10 +1309,11 @@ def two_stage_route(
             ED103466). University of Minnesota, Psychometric Methods
             Program. (READ.)
     """
-    from . import _core
-
     x1 = _as_int("x1", x1, minimum=0)
     m1 = _as_int("m1", m1, minimum=1)
+
+    from . import _core
+
     b_arr = _two_stage_real_1d("b_meas", b_meas)
     theta1, assigned = _core.py_two_stage_route(
         x1, m1, float(a1), float(b1), b_arr, float(c)
@@ -1241,13 +1360,14 @@ def two_stage_score(
             ED103466). University of Minnesota, Psychometric Methods
             Program. (READ.)
     """
-    from . import _core
-
     x1 = _as_int("x1", x1, minimum=0)
     m1 = _as_int("m1", m1, minimum=1)
     x2 = _as_int("x2", x2, minimum=0)
     m2 = _as_int("m2", m2, minimum=1)
     administered = _as_int("administered", administered, minimum=0)
+
+    from . import _core
+
     a_arr = _two_stage_real_1d("a_meas", a_meas)
     b_arr = _two_stage_real_1d("b_meas", b_meas)
     r = _core.py_two_stage_score(

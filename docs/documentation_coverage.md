@@ -1,7 +1,7 @@
 # Architecture documentation completeness and maintenance matrix
 
 Status: **Authoritative maintenance audit**  
-Last reviewed: 2026-08-12
+Last reviewed: 2026-08-16
 
 This matrix answers whether GitHub can reconstruct the current `fast-mlsirm` product, technical, scientific, security, operability, and release intent without relying on chat history or stale pull-request prose. File existence is not sufficient: document availability and product-capability maturity are evaluated separately against protected-main code, tests, workflows, accepted decisions, and live work.
 
@@ -29,6 +29,17 @@ This matrix answers whether GitHub can reconstruct the current `fast-mlsirm` pro
 - **SUPERSEDED** — a previous capability/implementation path has been replaced.
 - **REJECTED** — reviewed and intentionally excluded.
 - **OUT_OF_SCOPE** — outside the reusable measurement-core boundary.
+
+For compatibility with review reports, the human-readable status shorthand is
+also normative: **IMPLEMENTED**, **ACTIVE PR**, **PLANNED**, and
+**DOWNSTREAM**. The phrase **IMPLEMENTED / PLANNED extensions** means that a
+protected-main primitive exists while the explicitly named broader extension
+remains planned or partial; **ACTIVE PR** never means protected-main truth.
+The **Canonical PyO3/public-export registry** is the target source of truth
+for native entrypoints. ADR-0011 remains **Proposed**: protected main still
+uses its existing separate native initializers and package export paths, while
+**ACCEPTED_ARCHITECTURE / PARTIAL** describes the target registry capability
+that is not yet a protected-main completion claim.
 
 ## Canonical documentation coverage
 
@@ -70,10 +81,13 @@ The table below records product truth, not documentation-file presence. “Imple
 | Governed post-pilot item-bank lifecycle | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | immutable post-pilot lifecycle/evidence gates are integrated; linking/exposure/drift/assembly/release integration continues incrementally |
 | Bifactor / higher-order / testlet / two-tier / many-facet relation governance | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | relation-safe policy is established; family-specific estimator/validation evidence varies |
 | Latent-space residual interaction | IMPLEMENTED_ON_PROTECTED_MAIN | interpretation remains gated on substantive dimension/testlet/facet diagnosis |
+| Angoff delta-plot observed-score DIF | IMPLEMENTED_ON_PROTECTED_MAIN | `fast_mlsirm.delta_plot`; method page and ADR-0018; flags are screens, not fairness determinations |
+| Bradley–Terry MM pairwise ranking | IMPLEMENTED_ON_PROTECTED_MAIN | `bradley_terry_mm` and additive-ties `bratt_mm`; ADR-0017; Rao–Kupper/Davidson remain unimplemented |
 | Formal non-nested distinguishability/model comparison | PARTIAL | fail-closed relation-aware comparison exists; additional family-specific evidence and metadata remain incremental |
 | Adaptive rotation criterion selection | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust-backed criterion registry/multi-start selector/report surfaces are integrated; additional criteria/GPU/recovery remain incremental |
 | Multilevel / cross-classified / multiple-membership contracts | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | contextual and longitudinal contracts are integrated; estimator identification/recovery remains separate work |
-| Temporal/longitudinal/drift estimators | PARTIAL | governed contracts/design primitives exist; continuous-time or richer estimator claims require separate recovery evidence |
+| Temporal/longitudinal/drift estimators | IMPLEMENTED_ON_ACTIVE_PR / PARTIAL | independent OLS/AR (ADR-0019) and joint MAP hierarchical CT-AR Rasch (ADR-0020) exist on stacked longitudinal PRs; estimated MMMC `u_h` and GPU parity remain excluded |
+| Crossed / multiple-membership person-effect estimator | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | Rust MAP recovery with RMSE evidence is integrated; richer variance-component claims remain separate |
 | Automated essay scoring calibration/validation | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | governed essay contracts/validation/reporting exist; generalized rater discrimination/range/drift remains incremental |
 | Paired automated-vs-reference rating-range evidence | IMPLEMENTED_ON_PROTECTED_MAIN | Rust-owned paired range/compression diagnostic is integrated |
 | Enterprise issue measurement | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | reusable evidence/calibration adapters exist; causal intervention utility remains downstream/policy-bound |
@@ -82,10 +96,10 @@ The table below records product truth, not documentation-file presence. “Imple
 | Fixed-anchor parameter linking arithmetic | IMPLEMENTED_ON_PROTECTED_MAIN | protected main owns scale/shift estimation and theta/alpha/b transformation in Rust/PyO3 |
 | Observed-information Hessian and second-order diagnostics | IMPLEMENTED_ON_PROTECTED_MAIN | protected main owns finite-difference coefficients/symmetric Hessian assembly and eigenvalue/positive-definiteness diagnostics in Rust/PyO3; Python only evaluates objective samples and transports results |
 | JMLE Adam/L-BFGS optimizer arithmetic | IMPLEMENTED_ON_PROTECTED_MAIN | PR #760 is ancestral to current protected main; `backend="rust"` delegates Adam/L-BFGS/combined optimizer control to compiled Rust while recovery evidence remains governed separately by issue #626 |
-| Parallel-analysis public control/resource hardening | IMPLEMENTED_ON_ACTIVE_PR | current fail-first/implementation PR owns strict integer/control and bounded-workspace hardening; it remains non-shipped until exact-head integration |
+| Parallel-analysis public control/resource hardening | IMPLEMENTED_ON_PROTECTED_MAIN | strict integer/control validation and bounded random-benchmark workspace ceilings are ancestral to protected main |
 | Hourly review-repair caller | IMPLEMENTED_ON_PROTECTED_MAIN / PARTIAL | PR #763 integrated the product-side bounded caller; operational scheduler/control-plane acceptance remains external evidence rather than a library capability |
 | LLM-judge raw JSON depth hardening | IMPLEMENTED_ON_PROTECTED_MAIN | PR #764 is ancestral to current protected main and bounds recursive JSON nesting before parser materialization |
-| Essay-report native dark-mode status accents | IMPLEMENTED_ON_ACTIVE_PR | current accessibility PR owns the CSS-variable/media-query change; do not treat it as protected-main until integration |
+| Essay-report native dark-mode status accents | IMPLEMENTED_ON_PROTECTED_MAIN | CSS-variable and prefers-color-scheme dark-mode status accents are ancestral to protected main |
 | Canonical PyO3/public-export governance | ACCEPTED_ARCHITECTURE / PARTIAL | ADR-0011 governs convergence; feature-by-feature hardening continues |
 | Purpose-limited sensitive-data handling | IMPLEMENTED_ON_PROTECTED_MAIN / DOWNSTREAM | reusable contracts prefer purpose limitation/minimization/separated identities; hosted authorization/retention execution remains downstream |
 | LLM orchestration/model credentials | IMPLEMENTED_ON_PROTECTED_MAIN | provider execution and independent reviewer identity/credential boundaries are governed; provider calls remain outside psychometric numerical core |
@@ -95,9 +109,8 @@ The table below records product truth, not documentation-file presence. “Imple
 
 At this review, material open work includes:
 
-- strict/bounded public controls and Rust allocation preflight for parallel analysis;
-- the documentation-fitness refresh itself, which may describe current protected truth but is not authoritative until merged; and
-- native dark-mode report status accents.
+- Rust allocation preflight for parallel analysis, if it remains separate;
+- the documentation-fitness refresh itself, which may describe current protected truth but is not authoritative until merged.
 
 These remain active-PR evidence, not protected-main capability. Their source heads, checks, reviews, writer leases, and mergeability are operational evidence and must be re-fetched rather than copied into timeless architecture prose.
 

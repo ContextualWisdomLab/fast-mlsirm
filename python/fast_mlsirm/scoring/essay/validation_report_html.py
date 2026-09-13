@@ -108,8 +108,8 @@ def _identifier_list(
     """Render identifier evidence as a list or explicit atomic status region."""
     if not identifiers:
         return (
-            '<p class="empty-state" role="status" aria-atomic="true">'
-            f"{escape(empty_message)}</p>"
+            '<div class="empty-state" role="status" aria-atomic="true">'
+            f"{escape(empty_message)}</div>"
         )
     items = "".join(
         f"<li><code>{escape(identifier)}</code></li>" for identifier in identifiers
@@ -162,6 +162,7 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
         headers=("Metric", "Exact value", "Interpretation boundary"),
         rows=_metric_rows(report),
         empty_message="No validation metrics are available.",
+        row_header_column=0,
     )
     triggers = _identifier_list(
         report.review_trigger_ids,
@@ -237,7 +238,7 @@ def render_essay_validation_evidence_report_html(
     output = Path(output_path)
     if output.suffix.lower() != ".html":
         raise ValueError("essay validation evidence output path must end with .html")
-    if title is not None and (not isinstance(title, str) or not title.strip()):
+    if title is not None and (type(title) is not str or not title.strip()):
         raise ValueError("essay validation evidence title must be a non-empty string")
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)

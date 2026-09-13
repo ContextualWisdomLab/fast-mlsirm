@@ -26,6 +26,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from scripts._bounded_json import parse_json_bounded
+except ModuleNotFoundError:
+    from _bounded_json import parse_json_bounded
+
 # The helper must remain importable both when this file is executed directly and
 # when repository tests load it through ``spec_from_file_location``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -117,7 +122,10 @@ def _metadata_string_set(
 
 def parse_workspace_targets(metadata_output: str) -> list[CargoTarget]:
     """Return exact default-tested targets for Cargo workspace members."""
-    metadata = json.loads(metadata_output)
+    try:
+        metadata = parse_json_bounded(metadata_output)
+    except ValueError as exc:
+        raise ValueError("Cargo metadata output is not valid JSON") from exc
     if not isinstance(metadata, dict):
         raise ValueError("Cargo metadata root must be an object")
     packages = metadata.get("packages")

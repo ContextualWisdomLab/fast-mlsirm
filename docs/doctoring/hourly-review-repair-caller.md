@@ -1,100 +1,66 @@
-# Hourly bounded PR review-repair caller
+# Hourly bounded PR review-repair caller — retired
+
+**Status: SUPERSEDED**
 
 ## Decision
 
-`fast-mlsirm` owns a schedule-only caller and delegates review-feedback repair to
-the organization-owned reusable workflow. The caller does not copy the central
-scheduler, OpenCode worker, model configuration, reviewer credentials, approval
-logic, or merge policy into the psychometrics repository.
+The repository-local hourly review-repair caller introduced by PR #763 is retired.
+`fast-mlsirm` now preserves a single writer plane and does not schedule a second
+repository workflow that can dispatch review-feedback mutations independently of
+the dedicated repository writer. The organization-owned `.github` repository
+remains a read-only governance dependency from this repository; it is not a
+second `fast-mlsirm` writer.
 
-The workflow runs at minute 37 of every hour, scans only
-`ContextualWisdomLab/fast-mlsirm` pull requests targeting protected `main`, and
-permits at most one new repair dispatch per run. The same exact head cannot be
-redispatched more often than once per hour. Product-level and central
-single-flight concurrency prevent overlapping maintenance runs. The product
-caller uses `cancel-in-progress: false`: if a delayed heartbeat overlaps an
-existing bounded scan, GitHub may retain the later member of the concurrency
-group instead of terminating the in-flight scan. Exact-head retry suppression
-and the repository writer lease remain central-worker responsibilities, so
-non-cancellation does not authorize two repair writers for one PR head.
+This is a control-plane correction, not a relaxation of review or merge gates.
+Required CI, security checks, unresolved-thread handling, exact-head evidence,
+independent approval where live governance requires it, and protected-branch
+rules remain authoritative.
 
-## Immutable implementation source
+## Empirical failure evidence
 
-The caller uses the reusable workflow at exact commit
-`2f16cca4aae2d11ccc928f8e03fdcbd97a96d5a2`. It does not select `main`, another
-mutable branch, `HEAD`, or the deprecated `canonical_ref` input. The pinned
-central implementation is the reviewed NVIDIA NIM repair plane proposed in
-`ContextualWisdomLab/.github#782`.
+The caller never demonstrated an operational scheduled run on protected `main`.
+Its first two default-branch scheduled executions both ended in
+`startup_failure` before GitHub created any jobs:
 
-This product PR must remain Draft until that central commit is integrated into
-the protected central default branch, the caller pin is reconciled to the final
-accepted immutable commit, and the product caller passes its own exact-head
-checks and independent review. A scheduled workflow does not execute from a
-pull-request branch; activation begins only after the caller exists on the
-repository default branch.
+- run `31531589790` (run number 1); and
+- run `31537656804` (run number 2).
 
-## Credential and model boundary
+Both runs referenced the immutable central reusable-workflow commit
+`2f16cca4aae2d11ccc928f8e03fdcbd97a96d5a2`. Because the failure occurred before
+job creation, rerunning product code or changing psychometric tests cannot alter
+the failing boundary. More importantly, retaining a second scheduled mutation
+plane conflicts with the repository's single-writer lease even if the reusable
+workflow were later repaired upstream.
 
-The caller passes only the established optional scheduler credentials:
+## Replacement contract
 
-- `PR_REVIEW_MERGE_TOKEN`; and
-- `OPENCODE_APPROVE_TOKEN`.
+The repository therefore enforces these invariants:
 
-The workflow-generated `GITHUB_TOKEN` is explicitly limited to `contents: read`
-at both workflow and reusable-workflow-call job scope. It receives no Actions,
-issue, pull-request, status, or repository write permission. The central
-scheduler performs any authorized cross-repository mutation only through one of
-the two explicitly forwarded established credentials and fails closed when both
-are absent.
+1. `.github/workflows/hourly-review-repair.yml` is absent;
+2. no repository-owned workflow delegates to `pr-review-fix-scheduler.yml@...`;
+3. repository code, tests, docs, refs, and PR state are mutated through one
+   active `fast-mlsirm` writer lease at a time; and
+4. review and merge authority remain separate from writer identity.
 
-The caller never uses `secrets: inherit`, `COPILOT_GITHUB_TOKEN`, GitHub Models,
-or a GitHub token as model authentication. The central workflow owns NVIDIA NIM
-model execution and binds `NVIDIA_NIM_API_KEY` only inside the protected repair
-worker. The product caller has no model secret and cannot approve, merge,
-release, modify branch protection, or broaden the repair worker's file scope.
+`tests/test_hourly_review_repair_workflow.py` is retained as a regression guard
+for the *absence* of the competing caller so a path rename cannot silently
+restore the retired scheduler.
 
-## Failure and merge behavior
+## Lineage
 
-Missing credentials, absent central workflow, stale or malformed PR metadata,
-model failure, unresolved review feedback, failed checks, or exact-head drift
-must fail closed. The caller may request a bounded repair; it is not merge
-evidence. Independent review, current-head required checks, unresolved-thread
-protection, latest-pusher rules, and repository branch protection remain the
-merge authority.
+- PR #558 proposed the original caller and closed unmerged.
+- PR #763 reapplied and merged the caller onto protected `main`.
+- The post-merge scheduled evidence above showed two startup failures with zero
+  jobs, and the single-writer control-plane contract supersedes the design.
 
-The minute-37 offset is deliberate. GitHub documents that scheduled workflow
-runs may be delayed during high load, especially at the start of the hour, and
-recommends scheduling at another minute. GitHub also specifies that scheduled
-workflows run only from the latest commit on the default branch.
+Historical changelog entries remain historical evidence that the caller existed;
+they must not be interpreted as current architecture or operational capability.
 
-## Verification
+## Rollback / reintroduction boundary
 
-Permanent contract tests assert:
-
-1. exact hourly cron and absence of branch-selected/manual triggers;
-2. immutable central workflow SHA and absence of mutable refs;
-3. exact target repository and base branch;
-4. one repair dispatch and one-hour same-head retry bounds;
-5. non-cancelling product-level single-flight concurrency;
-6. read-only workflow-generated token permissions;
-7. explicit scheduler-secret forwarding only; and
-8. absence of `secrets: inherit`, `COPILOT_GITHUB_TOKEN`, and direct model
-   credentials.
-
-## Rollback
-
-Delete the product caller or pin it to a previously reviewed central commit.
-Rollback must not replace immutable delegation with copied privileged code or a
-mutable central branch. Manual review, repository checks, and branch protection
-continue to operate when the caller is absent.
-
-## References
-
-GitHub. (2026). *Events that trigger workflows*. GitHub Docs.
-https://docs.github.com/en/enterprise-cloud@latest/actions/reference/workflows-and-actions/events-that-trigger-workflows
-
-GitHub. (2026). *Reusing workflow configurations*. GitHub Docs.
-https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows
-
-GitHub. (2026). *Workflow syntax for GitHub Actions*. GitHub Docs.
-https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+Do not restore the repository-local scheduler merely to retrigger review or work
+around approval latency. Reintroduction requires a new explicit architecture and
+governance decision that proves there is still exactly one mutation writer for
+`fast-mlsirm`, demonstrates an operational default-branch run, preserves
+independent reviewer identity, and does not weaken required checks or branch
+protection.

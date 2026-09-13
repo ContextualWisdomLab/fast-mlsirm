@@ -270,3 +270,12 @@ def test_hourly_governance_workflow_retry_shell_is_syntactically_valid():
         timeout=10,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_hourly_governance_workflow_does_not_persist_checkout_credentials():
+    """Read-only governance steps cannot inherit a persisted checkout token."""
+    text = _workflow_text()
+    checkout = text.index("      - name: Check out reviewed source")
+    setup = text.index("      - name: Set up Python", checkout)
+    checkout_step = text[checkout:setup]
+    assert "persist-credentials: false" in checkout_step

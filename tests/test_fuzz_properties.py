@@ -104,16 +104,16 @@ def test_render_report_never_crashes_and_escapes(tmp_path_factory, payload):
 def test_mls2plm_config_validate_total(
     n_persons, n_dims, items_per_dim, latent_dim, phi, gamma, dtype
 ):
-    cfg = MLS2PLMConfig(
-        n_persons=n_persons,
-        n_dims=n_dims,
-        items_per_dim=items_per_dim,
-        latent_dim=latent_dim,
-        phi=phi,
-        gamma=gamma,
-        dtype=dtype,
-    )
     try:
+        cfg = MLS2PLMConfig(
+            n_persons=n_persons,
+            n_dims=n_dims,
+            items_per_dim=items_per_dim,
+            latent_dim=latent_dim,
+            phi=phi,
+            gamma=gamma,
+            dtype=dtype,
+        )
         cfg.validate()
     except ValueError:
         return
@@ -143,18 +143,18 @@ def test_fit_config_validate_total(
     init_gamma,
     backend,
 ):
-    cfg = FitConfig(
-        model=model,
-        latent_dim=latent_dim,
-        optimizer=optimizer,
-        max_iter=max_iter,
-        n_restarts=n_restarts,
-        learning_rate=learning_rate,
-        eps_distance=eps_distance,
-        init_gamma=init_gamma,
-        backend=backend,
-    )
     try:
+        cfg = FitConfig(
+            model=model,
+            latent_dim=latent_dim,
+            optimizer=optimizer,
+            max_iter=max_iter,
+            n_restarts=n_restarts,
+            learning_rate=learning_rate,
+            eps_distance=eps_distance,
+            init_gamma=init_gamma,
+            backend=backend,
+        )
         cfg.validate()
     except ValueError:
         return

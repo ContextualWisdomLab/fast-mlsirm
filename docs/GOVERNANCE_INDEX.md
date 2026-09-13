@@ -28,6 +28,7 @@ security posture, test strategy, and operability artifacts. Pair with root
 | ADR-004 | CI matrix includes CPython 3.12 and 3.14; required check name is `python` | Accepted — `.github/workflows/ci.yml` |
 | ADR-005 | LLM/agent automation uses `NVIDIA_NIM_API_KEY`; do not use `COPILOT_GITHUB_TOKEN` for agent paths | Accepted — org agent policy; review-bot keys unchanged |
 | ADR-006 | PII handling prefers access control and purpose limitation over irreversible masking that blocks scoring | Accepted — commercial/security posture |
+| ADR-007 | Buyer-review Figma evidence is file-ID-bound and Code Connect-disabled in the reusable core | Accepted — `docs/adr/0016-figma-buyer-evidence-design-boundary.md` |
 
 ## Threat model (summary)
 
@@ -84,7 +85,7 @@ STRIDE focus for this package:
 | Requirement | Design | Code | Test |
 | --- | --- | --- | --- |
 | MLS2PLM point estimate | PRD formula contract | `crates/mlsirm-core`, `fit.py` | recovery RMSE tests |
-| Multilevel nesting | MMLE design + Fox & Glas (2001) | `PopulationSpec::Multilevel` | multilevel recovery / contracts |
+| Multilevel nesting | MMLE design + Fox & Glas (2001) | `PopulationSpec::Multilevel` + `estimate_crossed_person_effects` | multilevel recovery / contracts |
 | Temporal occasions | Longitudinal contracts RFC | `TemporalOccasion` | `tests/test_multilevel_*.py` |
 | Python 3.14 support | ADR-004 | `.github/workflows/ci.yml` | `tests/test_ci_python_314_contract.py` |
 
@@ -98,7 +99,7 @@ flowchart TB
   end
   subgraph py [Python package]
     API[fit config io scoring]
-    ML[multilevel contracts]
+    ML[multilevel contracts and crossed u_h]
     VAL[fail-closed validators]
   end
   subgraph rust [Rust crates]

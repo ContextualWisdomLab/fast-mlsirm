@@ -37,8 +37,14 @@ _MANAGED_CONFIDENCE_KEYS = frozenset(
 
 def _observation_status(value: ObservationStatus | str) -> ObservationStatus:
     """Return one supported observation status with a stable failure boundary."""
-    if isinstance(value, ObservationStatus):
+    if type(value) is ObservationStatus:
         return value
+    if type(value) is not str:
+        raise assessment_error(
+            "invalid_observation_status",
+            "$.status",
+            "status must be a supported observation status",
+        )
     try:
         return ObservationStatus(value)
     except Exception:
@@ -53,7 +59,7 @@ def _enterprise_request_context(
     request: ScoringRequest,
 ) -> tuple[str, str, frozenset[str], bool]:
     """Return verified enterprise provenance carried by one shared request."""
-    if not isinstance(request, ScoringRequest):
+    if type(request) is not ScoringRequest:
         raise assessment_error(
             "invalid_scoring_request",
             "$.request",
@@ -143,7 +149,7 @@ def _observation_evidence(
         maximum=MAX_EVIDENCE_REFERENCES,
     )
     for index, value in enumerate(raw):
-        if not isinstance(value, EvidenceReference):
+        if type(value) is not EvidenceReference:
             raise assessment_error(
                 "invalid_evidence_reference",
                 f"$.evidence_references[{index}]",

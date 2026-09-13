@@ -7,10 +7,11 @@ from enum import Enum
 import hashlib
 import json
 import math
-import operator
 import re
 from types import MappingProxyType
 from typing import Any, TypeVar
+
+import numpy as np
 
 from fast_mlsirm.rubric.models import _identifier, _semantic_version, _text
 
@@ -31,6 +32,20 @@ MIN_SIGNED_INTEGER = -(1 << 63)
 MAX_SIGNED_INTEGER = (1 << 63) - 1
 FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
+_NUMPY_INTEGER_SCALAR_TYPES = (
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.intp,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.uintp,
+    np.ulonglong,
+)
 _SENSITIVE_METADATA_FIELDS = frozenset(
     {
         "answer_text",
@@ -52,9 +67,9 @@ class AssessmentSpecError(ValueError):
 
     def __init__(self, code: str, path: str, message: str) -> None:
         """Store bounded machine metadata without caller-controlled values."""
-        if not isinstance(code, str) or _ERROR_CODE_PATTERN.fullmatch(code) is None:
+        if type(code) is not str or _ERROR_CODE_PATTERN.fullmatch(code) is None:
             raise ValueError("code must use two-or-more-token lower snake_case")
-        if not isinstance(path, str) or not path.startswith("$"):
+        if type(path) is not str or not path.startswith("$"):
             raise ValueError("path must begin with '$'")
         if len(path) > MAX_ERROR_PATH_LENGTH:
             raise ValueError(
@@ -62,7 +77,7 @@ class AssessmentSpecError(ValueError):
             )
         if not path.isprintable():
             raise ValueError("path must not contain control characters")
-        if not isinstance(message, str) or not message.strip():
+        if type(message) is not str or not message.strip():
             raise ValueError("message must not be empty")
         if len(message) > MAX_ERROR_MESSAGE_LENGTH:
             raise ValueError(
@@ -150,8 +165,8 @@ def semantic_version(value: Any, name: str, path: str | None = None) -> str:
 
 
 def assessment_schema_version(value: Any) -> str:
-    """Require the independent assessment wire-schema version."""
-    if value != ASSESSMENT_SCHEMA_VERSION:
+    """Require the exact built-in assessment wire-schema version string."""
+    if type(value) is not str or value != ASSESSMENT_SCHEMA_VERSION:
         raise assessment_error(
             "invalid_schema_version",
             "$.schema_version",
@@ -166,9 +181,16 @@ def enum_value(
     name: str,
     path: str | None = None,
 ) -> EnumValue:
-    """Return one exact enum member without reflecting a rejected value."""
-    if isinstance(value, enum_type):
+    """Return an exact enum member or admit only inert built-in wire text."""
+    value_type = type(value)
+    if value_type is enum_type:
         return value
+    if value_type is not str:
+        raise assessment_error(
+            f"invalid_{name}",
+            path or f"$.{name}",
+            f"{name} must be one of the supported values",
+        )
     try:
         return enum_type(value)
     except (TypeError, ValueError, OverflowError):
@@ -190,35 +212,38 @@ def strict_boolean(value: Any, name: str, path: str | None = None) -> bool:
     return value
 
 
+def _has_exact_type(value: Any, trusted_types: tuple[type, ...]) -> bool:
+    """Return whether a control has one exact package-trusted scalar type."""
+    value_type = type(value)
+    return any(value_type is trusted_type for trusted_type in trusted_types)
+
+
 def bounded_positive_integer(
     value: Any,
     name: str,
     maximum: int,
     path: str | None = None,
 ) -> int:
-    """Return a bounded positive integer with stable conversion failures."""
+    """Return a bounded positive integer without caller-controlled coercion."""
     resolved_path = path or f"$.{name}"
-    if isinstance(value, bool):
+    value_type = type(value)
+    if value_type is int:
+        normalized = value
+    elif _has_exact_type(value, _NUMPY_INTEGER_SCALAR_TYPES):
+        normalized = int(value)
+    else:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be an integer between 1 and {maximum}",
         )
-    try:
-        normalized = operator.index(value)
-    except (TypeError, ValueError, OverflowError):
-        raise assessment_error(
-            f"invalid_{name}",
-            resolved_path,
-            f"{name} must be an integer between 1 and {maximum}",
-        ) from None
-    if isinstance(normalized, bool) or not 1 <= normalized <= maximum:
+    if not 1 <= normalized <= maximum:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
             f"{name} must be between 1 and {maximum}",
         )
-    return int(normalized)
+    return normalized
 
 
 def bounded_values(
@@ -273,9 +298,9 @@ def bounded_values(
 
 
 def fingerprint(value: Any, name: str, path: str | None = None) -> str:
-    """Return a validated lowercase SHA-256 fingerprint."""
+    """Return a validated exact built-in lowercase SHA-256 fingerprint."""
     resolved_path = path or f"$.{name}"
-    if not isinstance(value, str) or FINGERPRINT_PATTERN.fullmatch(value) is None:
+    if type(value) is not str or FINGERPRINT_PATTERN.fullmatch(value) is None:
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -344,7 +369,7 @@ def sorted_fingerprints(
 
 def _metadata_key(value: Any, path: str) -> str:
     """Return one bounded safe metadata key without reflecting its value."""
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise assessment_error(
             "invalid_metadata_key",
             path,
@@ -453,9 +478,9 @@ def freeze_json_value(
             path,
             f"metadata exceeds the maximum node count of {MAX_METADATA_NODES}",
         )
-    if value is None or isinstance(value, bool):
+    if value is None or type(value) is bool:
         return value
-    if isinstance(value, int):
+    if type(value) is int:
         if not MIN_SIGNED_INTEGER <= value <= MAX_SIGNED_INTEGER:
             raise assessment_error(
                 "integer_out_of_range",
@@ -463,7 +488,7 @@ def freeze_json_value(
                 "integer metadata must fit the signed 64-bit range",
             )
         return value
-    if isinstance(value, float):
+    if type(value) is float:
         if not math.isfinite(value):
             raise assessment_error(
                 "non_finite_metadata_number",
@@ -471,7 +496,7 @@ def freeze_json_value(
                 "numeric metadata must be finite",
             )
         return 0.0 if value == 0.0 else value
-    if isinstance(value, str):
+    if type(value) is str:
         if len(value) > MAX_METADATA_TEXT_LENGTH:
             raise assessment_error(
                 "metadata_text_too_long",

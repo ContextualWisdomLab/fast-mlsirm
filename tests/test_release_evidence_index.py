@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -27,6 +28,7 @@ def _sha256(path: Path) -> str:
 
 
 def _write_repo(root: Path) -> None:
+    """Create a minimal real Git repository with reconstructable provenance."""
     _write(
         root / "pyproject.toml",
         """
@@ -34,6 +36,27 @@ def _write_repo(root: Path) -> None:
         name = "fast-mlsirm"
         version = "0.1.0"
         """,
+    )
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "add", "pyproject.toml"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=fast-mlsirm tests",
+            "-c",
+            "user.email=tests@fast-mlsirm.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "test source provenance",
+        ],
+        check=True,
     )
 
 

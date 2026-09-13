@@ -65,12 +65,20 @@ The system may return `indeterminate`, `requires_distinguishability_test`, or `r
 - **Always select bifactor when it fits better.** Rejected because bifactor flexibility does not establish scoreability.
 - **Always add latent space for residual fit.** Rejected; latent space is residual interaction after substantive/facet/testlet structure and must improve held-out/recovery evidence.
 
-## References
+## Research and standards basis
 
-Cai, L. (2010). A two-tier full-information item factor analysis model with applications. *Psychometrika, 75*, 581–612.
+This ADR is about factor retention and structural model choice, including when a latent-space residual interaction may be added. Score interpretation after a selected model remains governed by AERA, APA, and NCME (2014). NIST, OWASP, and CWE catalogs are not the methodological basis.
 
-Preacher, K. J., Zhang, G., Kim, C., & Mels, G. (2013). Choosing the optimal number of factors in exploratory factor analysis: A model selection perspective. *Multivariate Behavioral Research, 48*, 28–56.
+American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014). *Standards for educational and psychological testing*. American Educational Research Association.
 
-Rijmen, F. (2010). Formal relations and an empirical comparison among the bi-factor, the testlet, and a second-order multidimensional IRT model. *Journal of Educational Measurement, 47*, 361–372.
+Cai, L. (2010). A two-tier full-information item factor analysis model with applications. *Psychometrika, 75*, 581–612. https://doi.org/10.1007/s11336-010-9178-0
 
-Schneider, L., Chalmers, R. P., Debelak, R., & Merkle, E. C. (2020). Model selection of nested and non-nested item response models using Vuong tests. *Multivariate Behavioral Research, 55*, 664–684.
+Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika, 86*(2), 378–403. https://doi.org/10.1007/s11336-021-09762-5
+
+Kang, I., & Jeon, M. (2025). Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika, 90*(2), 799–826. https://doi.org/10.1017/psy.2025.5
+
+Preacher, K. J., Zhang, G., Kim, C., & Mels, G. (2013). Choosing the optimal number of factors in exploratory factor analysis: A model selection perspective. *Multivariate Behavioral Research, 48*, 28–56. https://doi.org/10.1080/00273171.2012.710386
+
+Rijmen, F. (2010). Formal relations and an empirical comparison among the bi-factor, the testlet, and a second-order multidimensional IRT model. *Journal of Educational Measurement, 47*, 361–372. https://doi.org/10.1111/j.1745-3984.2010.00118.x
+
+Schneider, L., Chalmers, R. P., Debelak, R., & Merkle, E. C. (2020). Model selection of nested and non-nested item response models using Vuong tests. *Multivariate Behavioral Research, 55*, 664–684. https://doi.org/10.1080/00273171.2019.1664280

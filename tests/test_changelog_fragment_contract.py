@@ -142,6 +142,30 @@ def test_changelog_sync_rejects_ambiguous_headings_and_markers(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "fragment_text",
+    [
+        "# <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->\n\n## Fixed\n\n- Note.\n",
+        "# First feature\n\n## Fixed\n\n- <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->\n",
+    ],
+)
+def test_fragment_markers_are_rejected_before_changelog_update(
+    tmp_path, fragment_text: str
+) -> None:
+    """Reserved marker content must fail closed before the target file changes."""
+    module = _module()
+    changelog = tmp_path / "CHANGELOG.md"
+    fragment = tmp_path / "100-marker.md"
+    changelog.write_text(_changelog(), encoding="utf-8")
+    fragment.write_text(fragment_text, encoding="utf-8")
+    before = changelog.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="reserved fragment marker"):
+        module.update_changelog(changelog, (fragment,))
+
+    assert changelog.read_text(encoding="utf-8") == before
+
+
 def test_cli_check_and_update_modes_are_fail_closed(tmp_path, capsys):
     """The release command returns failure on drift and success after update."""
     module = _module()

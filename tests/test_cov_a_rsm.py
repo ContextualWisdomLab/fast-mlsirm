@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-
 from fast_mlsirm.rsm import RsmFit, fit_rsm
 
 
@@ -32,15 +31,16 @@ def test_fit_rsm_happy_path_inferred_n_cat():
 
 
 def test_fit_rsm_requires_rust_core():
-    with patch("fast_mlsirm.fitstats._core_module", return_value=None):
-        with pytest.raises(RuntimeError):
-            fit_rsm(_poly(), n_cat=3, q_theta=7)
+    with patch("fast_mlsirm.fitstats._core_module", return_value=None), pytest.raises(
+        RuntimeError
+    ):
+        fit_rsm(_poly(), n_cat=3, q_theta=7)
 
 
 def test_fit_rsm_rejects_bad_n_cat_type():
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         fit_rsm(_poly(), n_cat=2.5)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         fit_rsm(_poly(), n_cat=True)
 
 
