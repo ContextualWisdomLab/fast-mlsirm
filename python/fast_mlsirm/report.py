@@ -388,7 +388,7 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     a note describing how many of the total rows are shown.
     """
     if not rows:
-        return '<div class="empty-state" role="status">No rows were recorded in this section.</div>'
+        return '<div class="empty-state" role="status" aria-atomic="true">No rows were recorded in this section.</div>'
 
     columns = _columns(rows)
     body_rows = []
