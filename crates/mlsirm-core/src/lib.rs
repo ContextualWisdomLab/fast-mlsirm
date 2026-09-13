@@ -3,6 +3,7 @@ pub mod bifactor_indices;
 pub mod cdm;
 pub mod classification;
 pub mod crm;
+pub mod decision_support;
 pub mod detect;
 pub mod dif;
 pub mod equating;
