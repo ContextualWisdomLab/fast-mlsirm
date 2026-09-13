@@ -3,7 +3,83 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Preregistered external-validation evidence profiles
+
+- Added a domain-neutral, source-text-free `fast_mlsirm.validation_profile` contract for preregistered external evidence. Profiles preserve technical, construct, transportability, fairness, and decision-utility evidence as distinct classes with explicit `passed`, `failed`, `indeterminate`, `not_executed`, and `not_applicable` states; bind exact assessment/rubric/item-bank/model/protocol provenance; reject future-available evidence beyond the analysis cutoff; normalize callback-free fixed-offset timestamps to UTC; bound evidence and limitation collections before iteration; replay profile and nested-evidence invariants before granting public serialization or fingerprint authority after post-construction mutation; and expose a deterministic SHA-256 profile fingerprint without aggregating away failed or unavailable evidence. The slice performs validation, serialization, and provenance only; future statistical validity, transportability, fairness, and utility arithmetic remains Rust-owned.
+
+#### Finite-population proportion sampling design
+
+- Added a domain-neutral Rust/PyO3 `fast-mlsirm.sampling-design.v1` contract for normal-approximation finite-population proportion sample size, finite-population correction, and caller-selected proportional or equal-cost Neyman stratum allocation. Python only validates and marshals exact caller evidence; sample-size, correction, and allocation arithmetic remains Rust-owned.
+- The immutable result retains canonical ordered inputs and binds Rust-generated source/input/output SHA-256 identities to the stable source identity and algorithm version. Callers keep sample-frame and selected-membership provenance outside the arithmetic artifact.
+
+#### Cross-engine conformance report accessibility
+
+- W3C, *Understanding Success Criterion 2.4.1: Bypass Blocks* (WCAG 2.2), https://www.w3.org/WAI/WCAG22/Understanding/bypass-blocks.html — motivates the report's keyboard skip link to the main-content region so sequential navigation can bypass preceding/repeated material.
+- W3C, *Understanding Success Criterion 2.4.7: Focus Visible* (WCAG 2.2), https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html — supports retaining an explicit visible keyboard-focus treatment for the programmatically focusable report target.
+- W3C, *Understanding Success Criterion 2.3.3: Animation from Interactions* (WCAG 2.2), https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html — identifies user motion preference, including `prefers-reduced-motion`, as a mechanism for suppressing non-essential interaction motion.
+- W3C, *Understanding Success Criterion 1.4.11: Non-text Contrast* (WCAG 2.2), https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html — provides the 3:1 visual-boundary contrast basis; executable evidence computes contrast from the exact rendered `--line` and `--canvas` tokens for light, dark-screen, and print states.
+- W3C, *Content Security Policy Level 3*, https://www.w3.org/TR/CSP3/ — defines hash-source matching for inline style content; the report authorizes the SHA-256 digest of the exact `_css()` UTF-8 bytes emitted inside its single `<style>` element instead of broad `unsafe-inline` styling.
+These standards/guidance are cited, linked, and summarized rather than redistributed as repository PDFs.
+
+#### Achieved finite-population proportion
+
+- Added a Rust-owned terminal SRSWOR proportion artifact with design variance,
+  Wang/Konijn exact confidence limits, exhaustive coverage tests, and bound
+  sampling-design provenance.
+
+#### Lineage channel weight evidence
+
+- Add a Rust fail-closed evidence contract for continuous lineage channel scores
+  and an independently accepted criterion anchor. Weight estimation remains
+  unavailable until pair-level independent criterion observations are supplied.
+
 ### Changed
+
+#### Share one judge-result IRT projection core
+
+- Remove the duplicate category/binning implementation from the explicit criterion-order adapter. `LLMJudgeResult.to_irt_row` remains the single package-owned projection authority; the explicit-order adapter preserves its stricter sealed-mapping checks, delegates once to that canonical projection, and only permutes the validated row into caller-supplied criterion order.
+- Add parity regressions for score-derived and explicit-category projections, custom criterion order, delegation to the canonical core, and the sealed result-mapping boundary. No judge scoring threshold, category arithmetic, psychometric likelihood, or Rust numerical behavior changes.
+
+#### Item parameter provenance
+
+- Governed item-bank parameter provenance now distinguishes `provisional` cold-start artifacts from empirically `calibrated` artifacts with immutable, content-addressed evidence. Provisional records must name one bounded domain-neutral method (`rasch_common_discrimination`, `template_prior`, `lltm_predicted`, or `constrained_prior`) and an exact basis fingerprint and cannot carry calibration evidence; calibrated records require an exact calibration-evidence fingerprint and cannot carry provisional provenance. The contract binds item/version, response-model identity, and parameter-artifact fingerprint while storing no raw responses, prompts, provider output, or fitting arithmetic. Item-bank JSON/HTML reports can include this explicit parameter evidence, report `not_supplied` rather than inferring calibration when it is absent, and fail closed on item/version or lifecycle/status mismatches. All parameter estimation, calibration, linking, scoring, uncertainty, and recovery arithmetic remains Rust-owned.
+
+#### Cross-engine conformance report accessibility
+
+- Add a keyboard skip link, explicit main-content focus target, focus-visible treatment, reduced-motion handling, and readable table styling to the standalone cross-engine conformance evidence report.
+- Bind the rendered light, dark-screen, and print canvases plus table boundaries to package-owned `--canvas`, `--text`, and `--line` tokens, and derive the 3:1 boundary-contrast regression from those exact production token values rather than assumed user-agent system colors.
+- Keep the self-contained report fail-closed under Content Security Policy by authorizing only the exact inline stylesheet bytes through a SHA-256 `style-src` hash; scripts and unsafe inline styles remain disallowed.
+- Add regression evidence that the rendered stylesheet hash matches the emitted CSP and that the skip-link/focus contracts remain present.
+
+#### Customer copy actionability
+
+- Public-API error paths now state the invalid input and the concrete next
+  action instead of internal validation vocabulary: judge-scoring projection
+  errors say to rebuild criterion mappings as plain dicts keyed by criterion id
+  (replacing "exact built-in dict" jargon), Rust backend unavailability errors
+  name the install/reference-path next steps, and unknown serving item codes
+  point at the bundle's items list.
+- CLI workspace-boundary and candidate-input errors append actionable next
+  steps (move the file under the working directory, use unique
+  `label=path.npy` candidate flags, reduce oversized candidate sets) without
+  changing exit codes, validation order, or fail-closed behavior.
+- Diagnostics report renderer errors tell the customer how to recover:
+  choose a `.html` output name and regenerate unsupported JSON via
+  `fast-mlsirm diagnose-fit` / `fast-mlsirm diagnose-dimensions`.
+- README quickstart guidance no longer instructs an unexecutable command
+  (`fit --backend numpy`; production backend choices are `{rust, auto}`) and
+  now points to the explicit NumPy reference path (`--reference` /
+  `fast_mlsirm.fit_reference`); feature copy describes fixed-item calibration
+  by its method instead of legacy package names.
+
+#### Lineage channel weight evidence
+
+- Restore the `mlsirm-core` boundary to a domain-neutral criterion-anchor
+  contract. The canonical field is `criterion_anchor`; the historical serialized
+  `tepp_anchor` field remains readable only as a compatibility alias. Producer-
+  specific schema validation is no longer compiled into the numerical core.
 
 #### Release cut 0.9.1
 
@@ -36,6 +112,72 @@
   removal of the stale 0.8.0 leftover.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Compensatory 2PL response and tolerance admission
+
+- Compensatory 2PL admission now seals both response evidence and the Rust `f64` convergence tolerance before caller data or native work. Response admission rejects caller-controlled array/numeric conversion protocols, complex evidence, ragged/non-numeric matrices, oversized logical matrices, and wider-precision values that would only become valid dichotomous observations after binary64 narrowing; exact NumPy numeric matrices and ordinary built-in matrices of concrete Python/NumPy 0/1/NaN values remain supported. The shared IRT minimum of two item columns is replayed from inert shape/row metadata after the existing logical-cell ceiling but before value-wise scans, scalar normalization, NumPy dense materialization, or compiled-core discovery, so structurally impossible one-item experiments cannot spend the full admitted response-work budget first. `tol` remains callback-safe but now also must preserve its exact numeric identity through normalization to Rust `f64`, so lossy extended-precision and large-integer controls fail closed while exact binary64-compatible controls remain supported. Accepted response evidence is normalized to package-owned contiguous `float64` before the existing Rust estimator boundary. The 2PL likelihood, quadrature, latent-correlation ECM, convergence arithmetic, and scoring are unchanged and remain Rust-owned.
+
+#### Independent parameter provenance edges
+
+- Item-parameter provenance now rejects self-referential edges: a provisional parameter artifact cannot name itself as its cold-start basis, and a calibrated parameter artifact cannot name itself as calibration evidence. This preserves an independent upstream provenance edge without changing any Rust-owned estimation, calibration, scoring, linking, uncertainty, or recovery arithmetic.
+
+#### Item-bank lifecycle public identity replay
+
+- Governed item-bank lifecycle records now replay their factory-sealed creation-time identity before returning a public fingerprint/id or serializing JSON-compatible content. A package-owned weak creation-seal registry binds each live factory-created object identity to its original fingerprint, so coherently rebinding both lifecycle content and the record's stored digest cannot manufacture fresh authority; dead-record entries are removed without retaining the record, and object-identity reuse is rejected. Callback-bearing mutations continue to fail closed, while valid lifecycle identities and payloads remain unchanged. No calibration, fit, DIF, information, linking, scoring, uncertainty, or other psychometric arithmetic changes.
+
+#### Residual interaction-map structural budget
+
+- Bound exact built-in matrix traversal independently of logical numeric cells so malformed empty-row fan-out fails before dense NumPy or compiled-core work while valid matrices inside the 20,000,000-cell evidence contract remain supported.
+
+#### Finite-population proportion sampling design
+
+- Replay the Rust `population_size <= 2^53` and 100,000-strata resource domains at the Python boundary before member normalization or Rust dispatch, and reject integer-valued strict probability controls without an unnecessary `float(...)` conversion so oversized/invalid controls fail with package-owned `ValueError` rather than consuming avoidable work or surfacing conversion overflow.
+
+#### RSM response structural and shape budgets
+
+- Bound exact built-in Rating Scale Model response-carrier traversal independently
+  of logical numeric cells, so malformed empty-row fan-out cannot consume
+  unbounded Python preflight work while keeping the response cell count at zero.
+- Preserve the existing 20,000,000-cell RSM evidence envelope and every valid
+  non-empty persons-by-items matrix inside it: built-in row plus scalar traversal
+  is bounded by twice the logical-cell ceiling before NumPy materialization.
+- Replay the established two-dimensional rectangular response contract and the
+  minimum-two-item RSM/IRT design contract from inert ndarray shape or exact
+  built-in row metadata after resource accounting but before value-wise scans or
+  dense float64 marshalling. Small-backed 1-D and one-item broadcast views now
+  fail their existing structural diagnostics without first allocating a large
+  dense matrix.
+- Keep RSM likelihood, marginal-ML EM/ECM, shared-threshold estimation, latent
+  integration, scoring, convergence, and uncertainty arithmetic unchanged in the
+  Rust core.
+
+#### Sampling result contract replay
+
+- Replay the Rust-owned sampling algorithm identity before public result marshalling so a same-schema stale or foreign extension fails closed instead of being exposed under the current contract.
+- Validate every returned stratum inclusion-probability ratio against the Rust-returned sample and population counts before constructing the public sampling artifact, with stable package-owned errors for missing, malformed, count-mismatched, or inconsistent ratio evidence.
+- Preserve the Rust-owned sample-size, finite-population-correction, proportional-allocation, and equal-cost Neyman arithmetic unchanged.
+
+#### Bounded capped-strata allocation
+
+- Replace repeated full active-set rescans in finite-population capped stratum allocation with a threshold-sorted water-filling pass, so the cap phase inspects each admitted stratum at most once after sorting.
+- Add a maximum-envelope 100,000-strata census regression and an operation-count proof for the cap phase without relying on wall-clock timing.
+- Preserve the existing Rust-owned proportional/Neyman quotas, census caps, deterministic input-order tie behavior, largest-remainder integerization, exact inclusion-probability ratios, and fail-closed zero-allocation contract.
+
+#### Release acceptance watchdog budget
+
+- Derive the commercial-release wrapper deadline for `release_acceptance.py` from the authoritative sequential inner acceptance budgets plus a 60-second orchestration margin, so future bounded-stage changes cannot silently reintroduce an outer watchdog that terminates legitimate fail-closed acceptance before the inner operation-specific deadline can report its evidence.
+
+#### Release helper import integrity
+
+- Fail closed when repository-owned bounded JSON or subprocess helpers raise an internal missing-dependency error; direct-script fallback now occurs only when the `scripts` package or the bounded helper module itself is unavailable, preserving the first causal boundary.
+
+#### Confirmatory loading-pattern evidence admission
+
+- Seal confirmatory items-by-dimensions loading-pattern evidence before NumPy array or numeric conversion protocols can execute, while preserving exact NumPy and ordinary built-in Boolean/integer/real 0/1 matrices as canonical read-only `int64` model structure.
+- Reject callback-bearing providers/subclasses, non-real or non-numeric storage, ragged/non-2-D evidence, non-finite values, and non-binary values with package-owned diagnostics before model-resolution work.
+- Replay the canonical read-only `int64` loading structure before public dimension or item-count resolution so post-construction field rebinding cannot execute caller-controlled shape metadata.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.9.1] - 2026-08-25
 
