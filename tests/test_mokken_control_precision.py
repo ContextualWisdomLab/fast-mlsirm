@@ -74,3 +74,28 @@ def test_mokken_normalizes_overflowing_integer_control_before_scores(
 
     with pytest.raises(ValueError, match=rf"{control_name} must be finite"):
         mokken.mokken_analysis(object(), **{control_name: 10**400})
+
+
+@pytest.mark.parametrize(
+    ("control_name", "value", "message"),
+    [
+        ("lower_bound", -0.01, r"lower_bound must be in \[0, 1\)"),
+        ("lower_bound", 1.0, r"lower_bound must be in \[0, 1\)"),
+        ("alpha", 0.0, r"alpha must be in \(0, 1\)"),
+        ("alpha", 1.0, r"alpha must be in \(0, 1\)"),
+    ],
+)
+def test_mokken_rejects_explicit_out_of_range_control_before_scores(
+    monkeypatch: pytest.MonkeyPatch,
+    control_name: str,
+    value: float,
+    message: str,
+) -> None:
+    """Explicit invalid decision controls fail before rejected response work."""
+    def _unexpected_scores(responses: object) -> tuple[np.ndarray, int, int]:
+        raise AssertionError("response traversal executed before control rejection")
+
+    monkeypatch.setattr(mokken, "_validated_scores", _unexpected_scores)
+
+    with pytest.raises(ValueError, match=message):
+        mokken.mokken_analysis(object(), **{control_name: value})

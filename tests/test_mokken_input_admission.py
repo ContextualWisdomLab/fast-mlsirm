@@ -54,6 +54,7 @@ def test_mokken_rejects_hostile_lower_bound_before_core(
         mokken.mokken_analysis(
             np.array([[0, 1], [1, 0]], dtype=np.int8),
             lower_bound=_HostileReal(0.3),
+            alpha=0.05,
         )
 
 
@@ -66,6 +67,7 @@ def test_mokken_rejects_hostile_alpha_before_core(
     with pytest.raises(ValueError, match="alpha must be a real number"):
         mokken.mokken_analysis(
             np.array([[0, 1], [1, 0]], dtype=np.int8),
+            lower_bound=0.3,
             alpha=_HostileReal(0.05),
         )
 
@@ -218,7 +220,7 @@ def test_mokken_materializes_non_contiguous_scores_for_rust(
     responses = np.arange(12, dtype=np.int64).reshape(3, 4)[:, ::2]
     assert not responses.flags.c_contiguous
 
-    mokken.mokken_analysis(responses)
+    mokken.mokken_analysis(responses, lower_bound=0.3, alpha=0.05)
 
     assert len(captured) == 2
     assert all(response.flags.c_contiguous for response in captured)

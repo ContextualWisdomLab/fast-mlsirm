@@ -5035,7 +5035,7 @@ def test_mokken_analysis_coefficients_and_cluster_recovery():
     guttman = np.array(
         [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 1, 1]], dtype=float
     )
-    g = mokken_analysis(guttman)
+    g = mokken_analysis(guttman, lower_bound=0.3, alpha=0.05)
     assert isinstance(g, MokkenResult)
     assert abs(g.h - 1.0) < 1e-12
     off = ~np.eye(3, dtype=bool)
@@ -5050,7 +5050,7 @@ def test_mokken_analysis_coefficients_and_cluster_recovery():
     t2 = rng.normal(size=(n, 1)) * 1.6
     xa = (rng.random((n, per)) < 1.0 / (1.0 + np.exp(-(t1 - bs)))).astype(int)
     xb = (rng.random((n, per)) < 1.0 / (1.0 + np.exp(-(t2 - bs)))).astype(int)
-    res = mokken_analysis(np.hstack([xa, xb]), lower_bound=0.3)
+    res = mokken_analysis(np.hstack([xa, xb]), lower_bound=0.3, alpha=0.05)
     a, b = res.scale[0], res.scale[4]
     assert a > 0 and b > 0 and a != b, res.scale
     assert np.all(res.scale[:4] == a) and np.all(res.scale[4:] == b), res.scale
@@ -5084,14 +5084,14 @@ def test_mokken_analysis_rejects_malformed_input():
     with pytest.raises(ValueError, match="2-D"):
         mokken_analysis(ok.reshape(-1))
     with pytest.raises(ValueError, match="lower_bound"):
-        mokken_analysis(ok, lower_bound=1.0)
+        mokken_analysis(ok, lower_bound=1.0, alpha=0.05)
     with pytest.raises(ValueError, match="alpha"):
-        mokken_analysis(ok, alpha=0.0)
+        mokken_analysis(ok, lower_bound=0.3, alpha=0.0)
     # crate-side guard surfaces as ValueError too (zero-variance item)
     cst = ok.copy()
     cst[:, 0] = 1.0
     with pytest.raises(ValueError, match="zero variance"):
-        mokken_analysis(cst)
+        mokken_analysis(cst, lower_bound=0.3, alpha=0.05)
 
 def test_ksirt_analysis_fixture_exact_values():
     """Kernel-smoothing IRT (Ramsay, 1991, as cited in Mazza et al., 2014):
