@@ -48,6 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-## 2025-05-19 - Using `np.einsum` to avoid row-wise intermediate allocations
-**Learning:** `np.sum(diff * diff, axis=1)` 계산 시 파이썬 루프나 중간 배열(diff * diff)을 생성하여 메모리 낭비와 성능 저하를 일으킵니다. 이를 방지하기 위해 `np.einsum("ij,ij->i", diff, diff)`를 사용하면 중간 메모리 할당을 피해 속도를 크게 향상시킬 수 있습니다.
-**Action:** 행 방향이나 특정 축을 기준으로 제곱합 등 복잡한 축약 연산을 수행할 경우 `np.sum` 대신 `np.einsum`을 우선적으로 고려하여 중간 배열 할당을 피해야 합니다.
