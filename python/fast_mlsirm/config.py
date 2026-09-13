@@ -11,11 +11,11 @@ from .backend import (
 )
 
 
-VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"}
-VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
+VALID_MODELS = frozenset({"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"})
+VALID_OPTIMIZERS = frozenset({"adam", "lbfgs", "adam_lbfgs"})
 # Public production estimators. Future estimator identities are added only after
 # their public fitting paths are implemented and validated end to end.
-VALID_ESTIMATORS = {"jmle", "mmle"}
+VALID_ESTIMATORS = frozenset({"jmle", "mmle"})
 
 # Hard upper bounds on caller-supplied sizes, to reject sparse/oversized
 # configurations that would force huge allocations before any real work
