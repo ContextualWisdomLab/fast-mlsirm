@@ -19,10 +19,14 @@ from fast_mlsirm.rubric import (
     ResponseFormat,
     RubricLevel,
     RubricSpecification,
+    ScreeningDimension,
+    ScreeningStatus,
     SourceDocument,
     audit_generated_item_candidate,
     build_generation_request,
     build_pilot_candidate_record,
+    build_candidate_screening_result,
+    build_semantic_screening_check,
     compile_item_blueprints,
     parse_generated_item_candidate,
 )
@@ -193,6 +197,27 @@ def _pilot_kwargs() -> dict[str, str]:
     }
 
 
+def _screening_result(candidate, report):
+    """Return one complete eligible semantic-screening result for a fixture."""
+    checks = tuple(
+        build_semantic_screening_check(
+            dimension=dimension,
+            status=ScreeningStatus.PASS,
+            decision_evidence_fingerprint=hex(index + 1)[2:] * 64,
+        )
+        for index, dimension in enumerate(ScreeningDimension)
+    )
+    return build_candidate_screening_result(
+        candidate,
+        report,
+        screening_policy_id="semantic_screening_policy",
+        screening_policy_version="1.0.0",
+        evaluator_kind="human",
+        evaluator_fingerprint="f" * 64,
+        checks=checks,
+    )
+
+
 def test_clean_candidate_is_audited_and_admitted_deterministically():
     """A clean candidate advances only through an exact audit binding."""
     candidate = _candidate()
@@ -207,12 +232,23 @@ def test_clean_candidate_is_audited_and_admitted_deterministically():
     assert first.audit_report_id.startswith("audit_report_")
     assert first.to_dict()["candidate_fingerprint"] == candidate.candidate_fingerprint
 
-    pilot = build_pilot_candidate_record(candidate, first, **_pilot_kwargs())
-    repeated = build_pilot_candidate_record(candidate, first, **_pilot_kwargs())
+    pilot = build_pilot_candidate_record(
+        candidate,
+        first,
+        screening_result=_screening_result(candidate, first),
+        **_pilot_kwargs(),
+    )
+    repeated = build_pilot_candidate_record(
+        candidate,
+        first,
+        screening_result=_screening_result(candidate, first),
+        **_pilot_kwargs(),
+    )
     assert pilot == repeated
     assert pilot.lifecycle_state is CandidateLifecycleState.PILOT
     assert pilot.pilot_record_id.startswith("pilot_record_")
     assert pilot.to_dict()["audit_report_fingerprint"] == first.audit_report_fingerprint
+    assert "screening_result_fingerprint" in pilot.to_dict()
 
 
 def test_prompt_injection_and_declared_safety_notes_require_review():
@@ -438,7 +474,12 @@ def test_pilot_record_rejects_bypass_and_report_mismatch():
     """Pilot admission requires an exact clean report and valid explicit identities."""
     candidate = _candidate()
     report = audit_generated_item_candidate(candidate)
-    pilot = build_pilot_candidate_record(candidate, report, **_pilot_kwargs())
+    pilot = build_pilot_candidate_record(
+        candidate,
+        report,
+        screening_result=_screening_result(candidate, report),
+        **_pilot_kwargs(),
+    )
     values = {
         key: value
         for key, value in pilot.__dict__.items()

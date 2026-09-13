@@ -44,6 +44,7 @@ def _core_pilot_record(lifecycle_state: object) -> _CorePilotCandidateRecord:
         item_id="generated_item_alpha",
         candidate_fingerprint="a" * 64,
         audit_report_fingerprint="b" * 64,
+        screening_result_fingerprint="c" * 64,
         audit_policy_id="generated_item_audit",
         audit_policy_version="1.0.0",
         blueprint_id="blueprint_alpha",

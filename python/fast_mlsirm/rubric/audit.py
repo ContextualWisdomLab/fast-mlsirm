@@ -19,6 +19,7 @@ from .models import (
 )
 
 MAX_AUDIT_FINDINGS = 64
+PILOT_RECORD_SCHEMA_VERSION = "2.0"
 _MAX_AUDIT_MESSAGE_CHARACTERS = 512
 _AUDIT_PATH_PATTERN = re.compile(r"^\$(?:\.[a-z][a-z0-9_]*|\[[0-9]+\])*$")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -93,6 +94,16 @@ def _fingerprint(value: Any, name: str) -> str:
     normalized = _text(value, name, maximum=64)
     if len(normalized) != 64 or any(ch not in "0123456789abcdef" for ch in normalized):
         raise ValueError(f"{name} must be 64 lower hexadecimal characters")
+    return normalized
+
+
+def _pilot_record_schema_version(value: Any) -> str:
+    """Accept only the current screening-bound pilot-record schema version."""
+    normalized = _text(value, "schema_version", maximum=16)
+    if normalized != PILOT_RECORD_SCHEMA_VERSION:
+        raise ValueError(
+            f"pilot schema_version must be '{PILOT_RECORD_SCHEMA_VERSION}'"
+        )
     return normalized
 
 
@@ -274,7 +285,7 @@ class CandidateAuditReport:
 
 @dataclass(frozen=True)
 class PilotCandidateRecord:
-    """Immutable admission record for an audited candidate entering a pilot."""
+    """Immutable admission record for a screened candidate entering a pilot."""
 
     pilot_study_id: str
     query_testlet_id: str
@@ -284,13 +295,14 @@ class PilotCandidateRecord:
     item_id: str
     candidate_fingerprint: str
     audit_report_fingerprint: str
+    screening_result_fingerprint: str
     audit_policy_id: str
     audit_policy_version: str
     blueprint_id: str
     rubric_id: str
     rubric_version: str
     lifecycle_state: CandidateLifecycleState = CandidateLifecycleState.PILOT
-    schema_version: str = SCHEMA_VERSION
+    schema_version: str = PILOT_RECORD_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         """Normalize pilot provenance and reject lifecycle bypasses."""
@@ -318,6 +330,14 @@ class PilotCandidateRecord:
         )
         object.__setattr__(
             self,
+            "screening_result_fingerprint",
+            _fingerprint(
+                self.screening_result_fingerprint,
+                "screening_result_fingerprint",
+            ),
+        )
+        object.__setattr__(
+            self,
             "audit_policy_version",
             _semantic_version(self.audit_policy_version, "audit_policy_version"),
         )
@@ -337,7 +357,7 @@ class PilotCandidateRecord:
         object.__setattr__(
             self,
             "schema_version",
-            _schema_version(self.schema_version),
+            _pilot_record_schema_version(self.schema_version),
         )
 
     def _content_dict(self) -> dict[str, str]:
@@ -352,6 +372,7 @@ class PilotCandidateRecord:
             "item_id": self.item_id,
             "candidate_fingerprint": self.candidate_fingerprint,
             "audit_report_fingerprint": self.audit_report_fingerprint,
+            "screening_result_fingerprint": self.screening_result_fingerprint,
             "audit_policy_id": self.audit_policy_id,
             "audit_policy_version": self.audit_policy_version,
             "blueprint_id": self.blueprint_id,
@@ -641,13 +662,14 @@ def build_pilot_candidate_record(
     candidate: GeneratedItemCandidate,
     audit_report: CandidateAuditReport,
     *,
+    screening_result_fingerprint: str,
     pilot_study_id: str,
     query_testlet_id: str,
     generator_family_id: str,
     judge_policy_id: str,
     occasion_id: str,
 ) -> PilotCandidateRecord:
-    """Admit an unchanged audited candidate into a deterministic pilot contract."""
+    """Admit an unchanged screened candidate into a deterministic pilot contract."""
     if not isinstance(candidate, GeneratedItemCandidate):
         raise TypeError("candidate must be a GeneratedItemCandidate")
     if not isinstance(audit_report, CandidateAuditReport):
@@ -674,6 +696,7 @@ def build_pilot_candidate_record(
         item_id=candidate.item_id,
         candidate_fingerprint=candidate_fingerprint,
         audit_report_fingerprint=audit_report.audit_report_fingerprint,
+        screening_result_fingerprint=screening_result_fingerprint,
         audit_policy_id=audit_report.audit_policy_id,
         audit_policy_version=audit_report.audit_policy_version,
         blueprint_id=candidate.blueprint_id,

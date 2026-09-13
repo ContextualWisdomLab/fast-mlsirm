@@ -29,7 +29,7 @@ ItemBlueprint[]
 GenerationContract / canonical JSON / provider-neutral prompt
 ```
 
-The package does **not** claim that an LLM-generated candidate is valid merely because it conforms structurally. Content screening, artificial-crowd trials, human review, and Rust-backed psychometric calibration remain separate quality gates.
+The package does **not** claim that an LLM-generated candidate is valid merely because it conforms structurally. A complete, pilot-eligible `CandidateScreeningResult` is required before `build_pilot_candidate_record` can admit the candidate. Content screening, artificial-crowd trials, human review, and Rust-backed psychometric calibration remain separate quality gates.
 
 ## Complete example
 
@@ -247,8 +247,10 @@ It does not compute item difficulty, discrimination, fit, information, DIF, dime
 2. Compile a bounded BlueprintPlan
 3. Send each GenerationContract to an isolated provider adapter
 4. Validate structured output and cross-field references
-5. Screen answerability, ambiguity, leakage, bias, and source support
-6. Run artificial-crowd and/or human pilot responses
+5. Record a complete semantic `CandidateScreeningResult` for answerability,
+   ambiguity, leakage, bias, and source support
+6. Admit only pilot-eligible screened candidates, then run artificial-crowd
+   and/or human pilot responses
 7. Calibrate with Rust-backed IRT / many-facet / latent-space models
 8. Reject misfitting, low-information, locally dependent, or DIF items
 9. Publish accepted items into a versioned bank
@@ -260,7 +262,8 @@ Structural conformance is necessary but not sufficient. The governed item bank, 
 ## Planned slices
 
 1. A provider protocol and deterministic offline fixture provider.
-2. Candidate structural validation and content-screening result schemas.
+2. Candidate structural validation and content-screening result schemas
+   (implemented; pilot admission now requires an eligible screening result).
 3. Artificial-crowd orchestration with evaluator provenance.
 4. Rust-backed calibration plans and acceptance policies.
 5. Versioned item-bank lifecycle, drift, DIF, exposure, and adaptive regeneration.
