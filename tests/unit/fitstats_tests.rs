@@ -226,6 +226,22 @@ fn sx2_rejects_malformed_bank_controls_and_weights() {
     .err()
     .expect("expected invalid fdr error");
     assert!(err.contains("fdr_q"), "got: {err}");
+
+    let err = s_x2(
+        &valid_bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config {
+            q_theta: 61,
+            ..Default::default()
+        },
+        None,
+    )
+    .err()
+    .expect("binary S-X2 must preserve the bounded quadrature contract");
+    assert_eq!(err, "unsupported quadrature size 61");
 }
 
 #[test]
