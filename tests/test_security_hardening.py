@@ -41,11 +41,18 @@ def test_population_labels_compacted_not_unbounded():
 
 @pytest.mark.parametrize(
     "bad",
-    [np.array([-1, 0]), np.array([0.5, 1.5]), np.array([np.nan, 1.0]), np.array([[0], [1]])],
+    [
+        np.array([-1, 0]),
+        np.array([0.5, 1.5]),
+        np.array([np.nan, 1.0]),
+        np.array([[0], [1]]),
+    ],
 )
 def test_population_labels_reject_invalid(bad):
     with pytest.raises(ValueError):
-        _compact_population_labels(bad, bad.shape[0] if bad.ndim == 1 else 2, "group_id")
+        _compact_population_labels(
+            bad, bad.shape[0] if bad.ndim == 1 else 2, "group_id"
+        )
 
 
 # ---- VULN-0004 / VULN-0005: unbounded config sizes -------------------------
@@ -64,8 +71,14 @@ def test_config_rejects_extreme_xi_points():
 # ---- VULN-0003: judge label coercion ---------------------------------------
 @pytest.mark.parametrize(
     "labels",
-    [np.array([0.9, 1.9]), np.array([-1.0, 0.0]), np.array([np.nan, 1.0]),
-     np.array([np.inf, 1.0]), np.array([0, 5]), np.array([[0], [1]])],
+    [
+        np.array([0.9, 1.9]),
+        np.array([-1.0, 0.0]),
+        np.array([np.nan, 1.0]),
+        np.array([np.inf, 1.0]),
+        np.array([0, 5]),
+        np.array([[0], [1]]),
+    ],
 )
 def test_validate_judge_rejects_bad_labels(labels):
     with pytest.raises(ValueError):
@@ -85,7 +98,13 @@ def _bundle(n_items=1, n_dims=1, latent_dim=1):
         "tau": -30.0,
         "population": None,
         "items": [
-            {"code": f"q{j}", "factor_id": 0, "alpha": 0.0, "b": 0.0, "zeta": [0.0] * latent_dim}
+            {
+                "code": f"q{j}",
+                "factor_id": 0,
+                "alpha": 0.0,
+                "b": 0.0,
+                "zeta": [0.0] * latent_dim,
+            }
             for j in range(n_items)
         ],
     }
@@ -256,14 +275,21 @@ def test_config_rejects_nonfinite_or_unbounded_numerics(kw):
 
 
 def test_config_accepts_normal_numerics():
-    FitConfig(model="MLS2PLM", estimator="mmle", max_iter=100, n_restarts=2,
-              m_steps=4, learning_rate=0.01, tolerance=1e-6,
-              eps_distance=1e-8, init_gamma=1.0, gradient_clip=100.0).validate()
+    FitConfig(
+        model="MLS2PLM",
+        estimator="mmle",
+        max_iter=100,
+        n_restarts=2,
+        m_steps=4,
+        learning_rate=0.01,
+        tolerance=1e-6,
+        eps_distance=1e-8,
+        init_gamma=1.0,
+        gradient_clip=100.0,
+    ).validate()
 
 
-@pytest.mark.parametrize(
-    "bad", [0, -1, True, 1.5, "10", MAX_LBFGS_HISTORY + 1, 10**9]
-)
+@pytest.mark.parametrize("bad", [0, -1, True, 1.5, "10", MAX_LBFGS_HISTORY + 1, 10**9])
 def test_fitconfig_rejects_invalid_lbfgs_history(bad):
     with pytest.raises(ValueError, match="lbfgs_history"):
         FitConfig(lbfgs_history=bad).validate()
@@ -379,7 +405,7 @@ from fast_mlsirm.validation import _validate_labels  # noqa: E402
 
 # ---- VULN-0001 (2nd): irtree_expand dense-allocation bound -----------------
 def test_irtree_expand_rejects_oversized_expansion():
-    y = np.zeros((1, 60_000))       # persons*items*nodes = 1*60000*900 = 5.4e7
+    y = np.zeros((1, 60_000))  # persons*items*nodes = 1*60000*900 = 5.4e7
     mapping = np.zeros((900, 2))
     with pytest.raises(ValueError, match="exceeds"):
         irtree_expand(y, mapping)
@@ -393,8 +419,15 @@ def test_irtree_expand_accepts_normal_shapes():
 
 
 # ---- VULN-0002 (2nd): irtree node_dims must be finite non-negative ints ----
-@pytest.mark.parametrize("bad", [np.array([0.5, 1.0]), np.array([-1.0, 0.0]),
-                                 np.array([np.nan, 0.0]), np.array([np.inf, 0.0])])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        np.array([0.5, 1.0]),
+        np.array([-1.0, 0.0]),
+        np.array([np.nan, 0.0]),
+        np.array([np.inf, 0.0]),
+    ],
+)
 def test_irtree_expand_rejects_bad_node_dims(bad):
     y = np.zeros((3, 2))
     mapping = np.zeros((2, 3))
@@ -417,10 +450,15 @@ def test_validate_judge_rejects_mismatched_human_a_length():
 
 
 # ---- VULN-0004 (2nd): oakes factor_id validated before use -----------------
-@pytest.mark.parametrize("bad", [np.array([0.0, np.nan, 1.0]),
-                                 np.array([0.0, -1.0, 1.0]),
-                                 np.array([0.5, 1.0, 2.0]),
-                                 np.zeros((2, 3))])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        np.array([0.0, np.nan, 1.0]),
+        np.array([0.0, -1.0, 1.0]),
+        np.array([0.5, 1.0, 2.0]),
+        np.zeros((2, 3)),
+    ],
+)
 def test_oakes_rejects_bad_factor_id(bad):
     result = types.SimpleNamespace(model="MLSRM", population={}, params=None)
     y = np.zeros((5, 3))
@@ -430,8 +468,14 @@ def test_oakes_rejects_bad_factor_id(bad):
 
 # ---- VULN-0005 (2nd): observed_information bounds the dense Hessian ---------
 def test_observed_information_rejects_huge_parameter_vector():
-    p = MLSIRMParams(theta=np.zeros((6000, 1)), alpha=np.zeros(1), b=np.zeros(1),
-                     xi=np.zeros((1, 1)), zeta=np.zeros((1, 1)), tau=0.0)
+    p = MLSIRMParams(
+        theta=np.zeros((6000, 1)),
+        alpha=np.zeros(1),
+        b=np.zeros(1),
+        xi=np.zeros((1, 1)),
+        zeta=np.zeros((1, 1)),
+        tau=0.0,
+    )
     with pytest.raises(ValueError, match="at most"):
         observed_information(np.zeros((3, 1)), np.array([0]), p)
 
@@ -449,19 +493,21 @@ def test_validate_bundle_rejects_grid_explosion():
 def _link_ns(alpha, b, theta):
     alpha = np.asarray(alpha, float)
     return types.SimpleNamespace(
-        alpha=alpha, a=np.exp(alpha).reshape(-1, 1),
-        b=np.asarray(b, float), theta=np.asarray(theta, float),
+        alpha=alpha,
+        a=np.exp(alpha).reshape(-1, 1),
+        b=np.asarray(b, float),
+        theta=np.asarray(theta, float),
     )
 
 
-def test_link_rejects_duplicate_anchors():        # VULN-0007
+def test_link_rejects_duplicate_anchors():  # VULN-0007
     s = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
     t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
     with pytest.raises(ValueError, match="unique"):
         link_fixed_item_parameters(s, t, anchor_items=np.array([0, 0]))
 
 
-def test_link_rejects_non_2d_theta():             # VULN-0008
+def test_link_rejects_non_2d_theta():  # VULN-0008
     s = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros(2))
     t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros(2))
     with pytest.raises(ValueError, match="2-D"):
@@ -469,15 +515,16 @@ def test_link_rejects_non_2d_theta():             # VULN-0008
 
 
 @pytest.mark.parametrize("alpha", [[0.0, np.inf], [0.0, np.nan]])
-def test_link_rejects_non_finite_params(alpha):   # VULN-0009
+def test_link_rejects_non_finite_params(alpha):  # VULN-0009
     s = _link_ns(alpha, [0.0, 0.1], np.zeros((2, 1)))
     t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
     with pytest.raises(ValueError, match="finite"):
         link_fixed_item_parameters(s, t, anchor_items=np.array([0, 1]))
 
 
-@pytest.mark.parametrize("anchors", [np.array([0.5, 1.0]), np.array([-1.0, 0.0]),
-                                     np.array([np.nan, 0.0])])
+@pytest.mark.parametrize(
+    "anchors", [np.array([0.5, 1.0]), np.array([-1.0, 0.0]), np.array([np.nan, 0.0])]
+)
 def test_link_rejects_bad_anchor_indices(anchors):  # VULN-0010
     s = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
     t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
@@ -506,7 +553,9 @@ def test_link_rejects_uint64_wraparound_anchor():
     s = _link_ns([0.1, 0.2], [0.0, 1.0], np.zeros((2, 1)))
     t = _link_ns([0.1, 0.2], [0.0, 1.0], np.zeros((2, 1)))
     with pytest.raises(ValueError, match="reference existing items"):
-        link_fixed_item_parameters(s, t, anchor_items=np.array([2**64 - 1], dtype=np.uint64))
+        link_fixed_item_parameters(
+            s, t, anchor_items=np.array([2**64 - 1], dtype=np.uint64)
+        )
 
 
 # ---- VULN-0004: unbounded category count k in validate_judge ---------------
@@ -522,10 +571,13 @@ def test_irtree_expand_byte_budget_rejects_400mb():
 
 
 # ---- VULN-0006: unbounded simulation dimensions ----------------------------
-@pytest.mark.parametrize("kw", [
-    {"n_persons": 100_000, "n_dims": 100, "items_per_dim": 100},
-    {"n_persons": 10_000_000, "n_dims": 2, "items_per_dim": 8},
-])
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"n_persons": 100_000, "n_dims": 100, "items_per_dim": 100},
+        {"n_persons": 10_000_000, "n_dims": 2, "items_per_dim": 8},
+    ],
+)
 def test_mls2plmconfig_rejects_oversized_dims(kw):
     with pytest.raises(ValueError):
         MLS2PLMConfig(**kw).validate()
@@ -547,11 +599,21 @@ def test_mls2plmconfig_rejects_nonfinite_gamma(gamma):
 def test_fit_marginal_numpy_rejects_oversized_population():
     with pytest.raises(ValueError, match="n_groups"):
         fit_marginal_numpy(
-            np.array([[0.0]]), np.array([[True]]), np.array([0], dtype=np.int64),
-            model="ULS2PLM", n_dims=1, latent_dim=1,
-            pop={"kind": "multigroup", "group_id": np.array([0], dtype=np.int64),
-                 "n_groups": 1_000_000_000},
-            q_theta=7, q_xi=7, q_u=7, max_iter=1,
+            np.array([[0.0]]),
+            np.array([[True]]),
+            np.array([0], dtype=np.int64),
+            model="ULS2PLM",
+            n_dims=1,
+            latent_dim=1,
+            pop={
+                "kind": "multigroup",
+                "group_id": np.array([0], dtype=np.int64),
+                "n_groups": 1_000_000_000,
+            },
+            q_theta=7,
+            q_xi=7,
+            q_u=7,
+            max_iter=1,
         )
 
 
@@ -566,8 +628,15 @@ def test_fitconfig_rejects_aggregate_optimizer_work():
 def test_observed_information_rejects_nonfinite_step(bad):
     from fast_mlsirm.inference import observed_information
     from fast_mlsirm.types import MLSIRMParams
-    p = MLSIRMParams(theta=np.zeros((2, 1)), alpha=np.zeros(1), b=np.zeros(1),
-                     xi=np.zeros((1, 1)), zeta=np.zeros((1, 1)), tau=0.0)
+
+    p = MLSIRMParams(
+        theta=np.zeros((2, 1)),
+        alpha=np.zeros(1),
+        b=np.zeros(1),
+        xi=np.zeros((1, 1)),
+        zeta=np.zeros((1, 1)),
+        tau=0.0,
+    )
     with pytest.raises(ValueError, match="finite"):
         observed_information(np.zeros((2, 1)), np.array([0]), p, step=bad)
 
@@ -617,9 +686,19 @@ def test_predict_proba_rejects_factor_id_before_integer_cast(bad):
 def test_fit_marginal_numpy_rejects_qmc_working_set():
     with pytest.raises(ValueError, match="working set"):
         fit_marginal_numpy(
-            np.zeros((16, 4)), np.ones((16, 4), bool), np.array([0, 0, 0, 0], dtype=np.int64),
-            model="MLS2PLM", n_dims=1, latent_dim=2,
-            q_theta=7, q_xi=7, q_u=7, xi_rule="qmc", xi_points=1_000_000, m_steps=1, max_iter=1,
+            np.zeros((16, 4)),
+            np.ones((16, 4), bool),
+            np.array([0, 0, 0, 0], dtype=np.int64),
+            model="MLS2PLM",
+            n_dims=1,
+            latent_dim=2,
+            q_theta=7,
+            q_xi=7,
+            q_u=7,
+            xi_rule="qmc",
+            xi_points=1_000_000,
+            m_steps=1,
+            max_iter=1,
         )
 
 
@@ -667,7 +746,9 @@ def test_oakes_rejects_n_dims_exceeding_items():
         oakes_standard_errors(result, np.zeros((5, 1)), np.array([7]))
 
 
-def _oakes_result(*, population=None, status="converged", optimizer="mmle_marginal_em/rust"):
+def _oakes_result(
+    *, population=None, status="converged", optimizer="mmle_marginal_em/rust"
+):
     return types.SimpleNamespace(
         model="MLS2PLM",
         population={} if population is None else population,
@@ -713,9 +794,7 @@ def test_oakes_rejects_nonconverged_or_non_mmle_fit():
 @pytest.mark.parametrize("h", [0.0, -1e-5, np.nan, np.inf])
 def test_oakes_rejects_invalid_finite_difference_step(h):
     with pytest.raises(ValueError, match="h must be"):
-        oakes_standard_errors(
-            _oakes_result(), np.zeros((4, 2)), np.array([0, 0]), h=h
-        )
+        oakes_standard_errors(_oakes_result(), np.zeros((4, 2)), np.array([0, 0]), h=h)
 
 
 def test_oakes_allows_supported_converged_mmle_fit(monkeypatch):
@@ -730,18 +809,25 @@ def test_oakes_allows_supported_converged_mmle_fit(monkeypatch):
             "information": [25.0],
         },
     )
-    result = oakes_standard_errors(
-        _oakes_result(), np.zeros((4, 2)), np.array([0, 0])
-    )
+    result = oakes_standard_errors(_oakes_result(), np.zeros((4, 2)), np.array([0, 0]))
     assert result == {"labels": ["b:0"], "se": [0.2], "information": [25.0]}
 
 
-@pytest.mark.parametrize("args", [
-    (np.array([1.0, np.nan]), np.array([0.0, 0.0]), np.array([1.0, 1.0]), np.array([0.0, 0.0])),
-    (np.array([-1.0]), np.array([0.0]), np.array([1.0]), np.array([0.0])),
-])
+@pytest.mark.parametrize(
+    "args",
+    [
+        (
+            np.array([1.0, np.nan]),
+            np.array([0.0, 0.0]),
+            np.array([1.0, 1.0]),
+            np.array([0.0, 0.0]),
+        ),
+        (np.array([-1.0]), np.array([0.0]), np.array([1.0]), np.array([0.0])),
+    ],
+)
 def test_irt_link_rejects_nonfinite_or_nonpositive(args):
     from fast_mlsirm import linking as _lk
+
     if fitstats._core_module() is None:  # pragma: no cover
         pytest.skip("irt_link requires the compiled Rust core")
     with pytest.raises(ValueError):
@@ -753,7 +839,9 @@ def test_validate_judge_compacts_sparse_subgroup():
     if serving._core_module() is None:  # pragma: no cover
         pytest.skip("validate_judge requires the compiled Rust core")
     v = validate_judge(
-        np.array([0, 1, 0, 1]), np.array([0, 1, 1, 0]), k=2,
+        np.array([0, 1, 0, 1]),
+        np.array([0, 1, 1, 0]),
+        k=2,
         subgroup=np.array([0, 4294967295, 0, 4294967295], dtype=np.uint32),
     )
     assert v is not None  # returns promptly; compaction -> 2 groups
@@ -916,7 +1004,9 @@ def test_2pl_rejects_unsupported_quadrature_before_native(monkeypatch, q):
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="q must be one of"):
         fit_2pl(
-            np.array([[1.0, 0.0]]), model=models.confirmatory(np.eye(2, dtype=np.int64)), q=q
+            np.array([[1.0, 0.0]]),
+            model=models.confirmatory(np.eye(2, dtype=np.int64)),
+            q=q,
         )
 
 
@@ -927,7 +1017,8 @@ def test_2pl_rejects_more_than_three_dimensions_before_native(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="between 1 and 3"):
         fit_2pl(
-            np.array([[1.0, 0.0, 1.0, 0.0]]), model=models.confirmatory(np.eye(4, dtype=np.int64))
+            np.array([[1.0, 0.0, 1.0, 0.0]]),
+            model=models.confirmatory(np.eye(4, dtype=np.int64)),
         )
 
 
@@ -970,14 +1061,13 @@ def test_cdm_wrappers_reject_unsafe_q_before_native(
     "n_steps",
     [np.array([1.5]), np.array([np.nan]), np.array([-1]), np.array([0])],
 )
-def test_seq_gdina_qr_rejects_unsafe_step_counts_before_native(
-    monkeypatch, n_steps
-):
+def test_seq_gdina_qr_rejects_unsafe_step_counts_before_native(monkeypatch, n_steps):
     from fast_mlsirm.cdm import fit_seq_gdina_qr
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="n_steps"):
         fit_seq_gdina_qr(np.array([[1.0]]), np.array([[1]]), n_steps)
+
 
 class _RejectPolyDifCore:
     def poly_dif(self, *_args):
@@ -1046,6 +1136,7 @@ def test_polytomous_dif_rejects_unsafe_controls_before_native(
             np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **kwargs
         )
 
+
 def test_nominal_rejects_fractional_categories_before_native(monkeypatch):
     from fast_mlsirm import models
     from fast_mlsirm.nominal import fit_nominal
@@ -1062,6 +1153,7 @@ def test_nominal_rejects_fractional_categories_before_native(monkeypatch):
             model=models.confirmatory(np.ones((1, 1), dtype=np.int64)),
         )
 
+
 @pytest.mark.parametrize("factor_id", [np.array([0.5]), np.array([np.nan])])
 def test_fit_rejects_fractional_factor_id_before_integer_cast(factor_id):
     from fast_mlsirm.fit import fit as fit_model
@@ -1077,9 +1169,7 @@ def test_fit_rejects_fractional_factor_id_before_integer_cast(factor_id):
 # ===========================================================================
 # Strix current-head resource-exhaustion regressions.
 # ===========================================================================
-def test_factor_csv_rejects_oversized_text_before_numpy_parse(
-    tmp_path, monkeypatch
-):
+def test_factor_csv_rejects_oversized_text_before_numpy_parse(tmp_path, monkeypatch):
     path = tmp_path / "factors.csv"
     path.write_text("item_id,factor_id\n0,0\n", encoding="utf-8")
     monkeypatch.setattr("fast_mlsirm.io.MAX_FACTOR_CSV_BYTES", 8)
@@ -1131,7 +1221,9 @@ def test_multidimensional_polytomous_rejects_unsafe_int64_cast_before_native(
     module = __import__(f"fast_mlsirm.{family}", fromlist=[f"fit_{family}"])
     function = getattr(module, f"fit_{family}")
     with (
-        patch("fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()),
+        patch(
+            "fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()
+        ),
         warnings.catch_warnings(),
     ):
         warnings.simplefilter("error", RuntimeWarning)
@@ -1173,7 +1265,9 @@ def test_multidimensional_polytomous_rejects_unsafe_budgets_before_native(
 ):
     module = __import__(f"fast_mlsirm.{family}", fromlist=[f"fit_{family}"])
     function = getattr(module, f"fit_{family}")
-    with patch("fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()):
+    with patch(
+        "fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()
+    ):
         with pytest.raises(ValueError, match="max_iter|xi_points"):
             function(np.array([[0.0]]), n_cat=2, q=7, **kwargs)
 
@@ -1605,3 +1699,39 @@ def test_serving_rejects_non_mapping_response_payloads(monkeypatch, function, pa
     monkeypatch.setattr(serving, "_core_module", lambda: BombCore())
     with pytest.raises(ValueError, match="object mapping"):
         function(_bundle(), payload)
+
+
+def test_json_loader_rejects_underflow_prefix_with_deep_nesting(tmp_path):
+    from fast_mlsirm.io import _load_json_bounded
+
+    path = tmp_path / "underflow_deep.json"
+    depth = 128
+    extra = 10
+    path.write_text(
+        "]}" * extra + "[" * (depth + extra) + "0" + "]" * (depth + extra),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="nesting|JSON"):
+        _load_json_bounded(path, source="test JSON")
+
+
+def test_json_loader_rejects_valid_deep_nesting(tmp_path):
+    from fast_mlsirm.io import _load_json_bounded
+
+    path = tmp_path / "valid_deep.json"
+    depth = 129
+    path.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
+    with pytest.raises(ValueError, match="nesting"):
+        _load_json_bounded(path, source="test JSON")
+
+
+def test_json_loader_accepts_valid_boundary_nesting(tmp_path):
+    from fast_mlsirm.io import _load_json_bounded
+
+    path = tmp_path / "valid_boundary.json"
+    depth = 128
+    path.write_text(
+        '{"a":' * (depth - 1) + '{"a": 0}' + "}" * (depth - 1), encoding="utf-8"
+    )
+    result = _load_json_bounded(path, source="test JSON")
+    assert isinstance(result, dict)
