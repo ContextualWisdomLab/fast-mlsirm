@@ -73,7 +73,7 @@ def render_unreleased(paths: Iterable[Path] | None = None) -> str:
     """Render all fragments as one deterministic ``Unreleased`` Markdown block."""
     selected = fragment_paths() if paths is None else tuple(paths)
     if not selected:
-        raise ValueError("at least one changelog fragment is required")
+        return "## Unreleased\n"
 
     grouped: dict[str, list[tuple[str, tuple[str, ...]]]] = defaultdict(list)
     for path in selected:
@@ -94,10 +94,15 @@ def render_unreleased(paths: Iterable[Path] | None = None) -> str:
 
 def _managed_block(rendered: str) -> str:
     """Return the marker-delimited fragment body embedded under Unreleased."""
-    heading, separator, body = rendered.partition("\n\n")
-    if heading != "## Unreleased" or not separator or not body.strip():
-        raise ValueError("rendered changelog must contain one non-empty Unreleased block")
-    return f"{BEGIN_MARKER}\n{body.rstrip()}\n{END_MARKER}\n"
+    if rendered == "## Unreleased\n":
+        return f"{BEGIN_MARKER}\n{END_MARKER}\n"
+    prefix = "## Unreleased\n\n"
+    if not rendered.startswith(prefix):
+        raise ValueError("rendered changelog must contain one Unreleased block")
+    body = rendered[len(prefix) :].rstrip()
+    if not body:
+        raise ValueError("rendered changelog has an invalid empty fragment body")
+    return f"{BEGIN_MARKER}\n{body}\n{END_MARKER}\n"
 
 
 def synchronize_text(changelog: str, rendered: str) -> str:
