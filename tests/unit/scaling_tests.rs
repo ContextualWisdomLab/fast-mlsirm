@@ -5903,7 +5903,7 @@ fn pr_elom_rowmean() {
     .unwrap();
     assert!(allna.iter().all(|v| v.is_nan()));
     // P9d: stored-NaN seat replaced by trat.
-    let p9d = predict_rating_multi(
+    let replacement_scores = predict_rating_multi(
         &[f64::NAN, 2200.0, 2100.0],
         &[20, 20, 20],
         &[0, 1, 2],
@@ -5914,6 +5914,7 @@ fn pr_elom_rowmean() {
         false,
     )
     .unwrap();
+    assert_eq!(&replacement_scores[0..3], &[2.5, 0.0, -2.5]);
     // tng boundary in the multi branch: games == tng KEPT (strict <).
     let boundary = predict_rating_multi(
         &[2300.0, 2200.0, 2100.0],
