@@ -485,14 +485,15 @@ fn testlet_reports_max_iter_nonconvergence() {
     assert_eq!(res.loglik_trace.len(), cfg.max_iter);
 }
 
-/// Literature-grade Monte-Carlo (>=500 reps): Bradlow-Wainer-Wang-style design.
-/// Uses the RASCH testlet (the well-identified case; in the 2PL testlet the free
-/// discrimination a_i and the testlet SD sigma_d both scale the LD via a_i*sigma_d
-/// and separate only weakly with few testlets). Recovers the testlet variances and
-/// item difficulties under normal and skew ability.
-#[test]
-#[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-fn mc_testlet_recovery_500() {
+/// Run one 500-rep Bradlow-Wainer-Wang-style recovery condition.
+///
+/// Normal and skew ability remain separate ignored tests so each condition keeps
+/// its complete 500-rep denominator while receiving an independent bounded child
+/// process in the statistical-study shard runner. Rust 1.98.1 exposed one normal
+/// replicate that was still above the unchanged 1e-6 log-likelihood tolerance at
+/// the former 1,500-iteration harness budget, so the budget is raised without
+/// changing the estimator tolerance or any recovery threshold.
+fn run_mc_testlet_recovery_500(skew: bool) {
     let (n, j, d_n, per, reps) = (1000usize, 24usize, 4usize, 6usize, 500usize);
     let tid = contiguous_testlets(j, d_n);
     let sig2_t = vec![0.2f64, 0.4, 0.6, 0.8];
@@ -500,50 +501,62 @@ fn mc_testlet_recovery_500() {
     let a_t = vec![1.0f64; j];
     let cfg = TestletConfig {
         q_gamma: 15,
-        max_iter: 1500,
+        max_iter: 1800,
         ..TestletConfig::default()
     };
-    for &skew in [false, true].iter() {
-        let (mut s_b, mut s_sig, mut s_bsig, mut n_conv) = (0.0, 0.0, 0.0, 0.0);
-        for rep in 0..reps {
-            let seed = 0xBADC0FFEE0DDF00Du64
-                .wrapping_mul(rep as u64 + 1)
-                .wrapping_add(if skew { 0x9E3779B97F4A7C15 } else { 0 });
-            let mut rng = Lcg(seed);
-            let beta_t: Vec<f64> = (0..j)
-                .map(|i| -1.5 + 3.0 * (i % per) as f64 / (per - 1) as f64)
-                .collect();
-            let y = simulate(&a_t, &beta_t, &sig2_t, &tid, n, j, skew, &mut rng);
-            let observed = vec![true; n * j];
-            let res =
-                fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &cfg).unwrap();
-            assert!(
-                res.converged,
-                "testlet Monte-Carlo fit did not converge: skew={skew}, rep={rep}, n_iter={}, final_delta={}",
-                res.n_iter,
-                res.final_loglik_change
-            );
-            s_b += rmse(&res.beta, &beta_t);
-            s_sig += rmse(&res.sigma2, &sig2_t);
-            s_bsig += bias(&res.sigma2, &sig2_t);
-            if res.converged {
-                n_conv += 1.0;
-            }
+    let (mut s_b, mut s_sig, mut s_bsig, mut n_conv) = (0.0, 0.0, 0.0, 0.0);
+    for rep in 0..reps {
+        let seed = 0xBADC0FFEE0DDF00Du64
+            .wrapping_mul(rep as u64 + 1)
+            .wrapping_add(if skew { 0x9E3779B97F4A7C15 } else { 0 });
+        let mut rng = Lcg(seed);
+        let beta_t: Vec<f64> = (0..j)
+            .map(|i| -1.5 + 3.0 * (i % per) as f64 / (per - 1) as f64)
+            .collect();
+        let y = simulate(&a_t, &beta_t, &sig2_t, &tid, n, j, skew, &mut rng);
+        let observed = vec![true; n * j];
+        let res =
+            fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &cfg).unwrap();
+        assert!(
+            res.converged,
+            "testlet Monte-Carlo fit did not converge: skew={skew}, rep={rep}, n_iter={}, final_delta={}",
+            res.n_iter,
+            res.final_loglik_change
+        );
+        s_b += rmse(&res.beta, &beta_t);
+        s_sig += rmse(&res.sigma2, &sig2_t);
+        s_bsig += bias(&res.sigma2, &sig2_t);
+        if res.converged {
+            n_conv += 1.0;
         }
-        let r = reps as f64;
-        println!(
-            "skew={}: RMSE(beta)={:.4} RMSE(sigma2)={:.4} bias(sigma2)={:.4} converged={:.2}",
-            skew,
-            s_b / r,
-            s_sig / r,
-            s_bsig / r,
-            n_conv / r
-        );
-        assert!(s_b / r < 0.12, "RMSE(beta) {} skew={skew}", s_b / r);
-        assert!(s_sig / r < 0.15, "RMSE(sigma2) {} skew={skew}", s_sig / r);
-        assert_eq!(
-            n_conv, r,
-            "not every Monte-Carlo fit converged (skew={skew})"
-        );
     }
+    let r = reps as f64;
+    println!(
+        "skew={}: RMSE(beta)={:.4} RMSE(sigma2)={:.4} bias(sigma2)={:.4} converged={:.2}",
+        skew,
+        s_b / r,
+        s_sig / r,
+        s_bsig / r,
+        n_conv / r
+    );
+    assert!(s_b / r < 0.12, "RMSE(beta) {} skew={skew}", s_b / r);
+    assert!(s_sig / r < 0.15, "RMSE(sigma2) {} skew={skew}", s_sig / r);
+    assert_eq!(
+        n_conv, r,
+        "not every Monte-Carlo fit converged (skew={skew})"
+    );
+}
+
+/// Literature-grade Monte-Carlo (500 reps): normal ability condition.
+#[test]
+#[ignore = "literature-grade Monte-Carlo (500 reps); run with: cargo test --release -- --ignored --nocapture"]
+fn mc_testlet_recovery_500_normal() {
+    run_mc_testlet_recovery_500(false);
+}
+
+/// Literature-grade Monte-Carlo (500 reps): skew ability condition.
+#[test]
+#[ignore = "literature-grade Monte-Carlo (500 reps); run with: cargo test --release -- --ignored --nocapture"]
+fn mc_testlet_recovery_500_skew() {
+    run_mc_testlet_recovery_500(true);
 }

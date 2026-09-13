@@ -2,6 +2,9 @@ name: Statistical Studies
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "rust-toolchain.toml"
   schedule:
     # Stagger from the top of the hour to reduce hosted-runner congestion.
     - cron: "17 2 * * *"
@@ -18,8 +21,11 @@ permissions:
 # interpolate into command arguments, or print a credential.
 
 concurrency:
+  # A synchronized compiler-baseline PR invalidates the predecessor head's
+  # recovery evidence. Cancel that obsolete same-ref run instead of making the
+  # current exact head wait behind hours of stale Monte Carlo work.
   group: statistical-studies-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   rust-ignored:
@@ -44,7 +50,7 @@ jobs:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
       - name: Run target-qualified ignored Rust shard
         run: >-
           python scripts/run_ignored_rust_shard.py
@@ -54,6 +60,16 @@ jobs:
           --skip mlsirm-core/test/literature_true_parameter_recovery::gpu_recovery_matches_cpu_on_paper_design
           --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
           --skip mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::twopl::tests::mc_corr_mirt_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::twopl::tests::mc_qmc_mirt_recovery_500
+          --skip mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d4_normal
+          --skip mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d4_skew
+          --skip mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d5_normal
+          --skip mlsirm-core/test/qmc_mirt_recovery_cells::mc_qmc_mirt_recovery_500_d5_skew
+          --skip mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_gpcm_mhrm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::mhrm::tests::mc_mhrm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::testlet::tests::mc_testlet_recovery_500_normal
+          --skip mlsirm-core/lib/mlsirm_core::testlet::tests::mc_testlet_recovery_500_skew
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies
@@ -65,7 +81,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
       - run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
 
   rust-recovery:
@@ -78,7 +94,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
       - name: Run Kang-Jeon paper-design recovery
         run: >-
           cargo test --release -p mlsirm-core
@@ -102,7 +118,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
       - name: Run multidimensional GRM Monte Carlo recovery
         run: |
           set -euo pipefail
@@ -119,6 +135,263 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  testlet-normal-recovery:
+    name: Testlet normal 500-rep recovery study
+    runs-on: ubuntu-latest
+    # This literature-grade cell took more than an hour under Rust 1.98.1.
+    # Give it an independent bounded job so unrelated shard work cannot consume
+    # the wall-clock budget while preserving all 500 replications and thresholds.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run normal-ability testlet Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            testlet::tests::mc_testlet_recovery_500_normal \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee testlet-normal-recovery-study.log
+      - name: Publish normal testlet recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: testlet-normal-recovery-study-${{ github.run_id }}
+          path: testlet-normal-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  testlet-skew-recovery:
+    name: Testlet skew 500-rep recovery study
+    runs-on: ubuntu-latest
+    # Exact Rust 1.98.1 evidence reached this cell only after ~80 minutes of
+    # other shard work and the aggregate 180-minute job was cancelled while it
+    # was still computing. Isolate the cell; do not weaken its scientific design.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run skew-ability testlet Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            testlet::tests::mc_testlet_recovery_500_skew \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee testlet-skew-recovery-study.log
+      - name: Publish skew testlet recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: testlet-skew-recovery-study-${{ github.run_id }}
+          path: testlet-skew-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  corr-mirt-recovery:
+    name: Correlated MIRT 500-rep recovery study
+    runs-on: ubuntu-latest
+    # The D=2 and D=3 normal/skew cells are one literature-grade study. The
+    # exact Rust 1.98.1 canary completed both D=2 cells before the generic
+    # 7,200-second child bound expired during D=3, so this study owns the
+    # maximum bounded Actions budget instead of weakening its design.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run correlated MIRT Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            twopl::tests::mc_corr_mirt_recovery_500 \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee corr-mirt-recovery-study.log
+      - name: Publish correlated MIRT recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: corr-mirt-recovery-study-${{ github.run_id }}
+          path: corr-mirt-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  qmc-mirt-d4-normal-recovery:
+    name: QMC MIRT D4 normal 500-rep recovery study
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run QMC MIRT D4 normal recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --test qmc_mirt_recovery_cells \
+            mc_qmc_mirt_recovery_500_d4_normal \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee qmc-mirt-d4-normal-recovery-study.log
+      - name: Publish QMC MIRT D4 normal recovery log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qmc-mirt-d4-normal-recovery-study-${{ github.run_id }}
+          path: qmc-mirt-d4-normal-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  qmc-mirt-d4-skew-recovery:
+    name: QMC MIRT D4 skew 500-rep recovery study
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run QMC MIRT D4 skew recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --test qmc_mirt_recovery_cells \
+            mc_qmc_mirt_recovery_500_d4_skew \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee qmc-mirt-d4-skew-recovery-study.log
+      - name: Publish QMC MIRT D4 skew recovery log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qmc-mirt-d4-skew-recovery-study-${{ github.run_id }}
+          path: qmc-mirt-d4-skew-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  qmc-mirt-d5-normal-recovery:
+    name: QMC MIRT D5 normal 500-rep recovery study
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run QMC MIRT D5 normal recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --test qmc_mirt_recovery_cells \
+            mc_qmc_mirt_recovery_500_d5_normal \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee qmc-mirt-d5-normal-recovery-study.log
+      - name: Publish QMC MIRT D5 normal recovery log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qmc-mirt-d5-normal-recovery-study-${{ github.run_id }}
+          path: qmc-mirt-d5-normal-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  qmc-mirt-d5-skew-recovery:
+    name: QMC MIRT D5 skew 500-rep recovery study
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run QMC MIRT D5 skew recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --test qmc_mirt_recovery_cells \
+            mc_qmc_mirt_recovery_500_d5_skew \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee qmc-mirt-d5-skew-recovery-study.log
+      - name: Publish QMC MIRT D5 skew recovery log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qmc-mirt-d5-skew-recovery-study-${{ github.run_id }}
+          path: qmc-mirt-d5-skew-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  gpcm-mhrm-recovery:
+    name: GPCM MHRM 500-rep recovery study
+    runs-on: ubuntu-latest
+    # Both D=2 cells completed before the generic 7,200-second child bound
+    # expired. Preserve the full study and move only its execution budget.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run GPCM MHRM Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            mhrm::tests::mc_gpcm_mhrm_recovery_500 \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee gpcm-mhrm-recovery-study.log
+      - name: Publish GPCM MHRM recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gpcm-mhrm-recovery-study-${{ github.run_id }}
+          path: gpcm-mhrm-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
+  mhrm-recovery:
+    name: MHRM 500-rep recovery study
+    runs-on: ubuntu-latest
+    # This study includes D=2 and D=6 normal/skew cells plus correlated-Sigma
+    # recovery. Keep its full denominator and acceptance under a bounded job.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+      - name: Run MHRM Monte Carlo recovery
+        run: |
+          set -euo pipefail
+          cargo test --release -p mlsirm-core --lib \
+            mhrm::tests::mc_mhrm_recovery_500 \
+            -- --ignored --exact --nocapture --test-threads=1 \
+            2>&1 | tee mhrm-recovery-study.log
+      - name: Publish MHRM recovery study log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mhrm-recovery-study-${{ github.run_id }}
+          path: mhrm-recovery-study.log
+          if-no-files-found: error
+          retention-days: 90
+
   gpu-recovery:
     name: Literature GPU recovery parity
     runs-on: ubuntu-latest
@@ -132,7 +405,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
       - name: Install software Vulkan adapter
         run: |
           sudo apt-get update
