@@ -411,24 +411,34 @@ fn dimtest_pt_groups(
     (groups, retained_pt_scores, n_discarded)
 }
 
-/// Per-group DIMTEST intermediates for one assessment subtest, exposed so
-/// tests can pin every step of the Nandakumar & Stout (1992/1993) formula
-/// against an independent oracle (not just the top-level statistics).
+/// Per-group DIMTEST intermediates for one assessment subtest.
+///
+/// Production only retains `contribution`, the value consumed by
+/// [`dimtest_stat`]. Test builds additionally retain the formula intermediates
+/// so the independent Nandakumar & Stout (1992/1993) oracle can pin every
+/// computational step without carrying test-only diagnostics in release code.
 #[derive(Debug, Clone, Copy)]
 struct DimtestGroupDiag {
     /// Retained group size `J_k`.
+    #[cfg(test)]
     jk: usize,
     /// Mean raw AT total score in the group.
+    #[cfg(test)]
     mean: f64,
     /// ML (divide-by-`J_k`) variance of the AT total, `sigma_hat_k^2`.
+    #[cfg(test)]
     v: f64,
     /// Unidimensional-null variance `sigma_hat_U,k^2 = sum_i p_i (1 - p_i)`.
+    #[cfg(test)]
     u: f64,
     /// ML fourth central moment of the AT total, `mu4_k`.
+    #[cfg(test)]
     mu4: f64,
     /// `delta4_k = sum_i p_i (1 - p_i) (1 - 2 p_i)^2`.
+    #[cfg(test)]
     delta4: f64,
     /// Refined bias-correction denominator squared, `S_k^2`.
+    #[cfg(test)]
     s2: f64,
     /// Group contribution `(sigma_hat_k^2 - sigma_hat_U,k^2) / S_k`.
     contribution: f64,
@@ -474,12 +484,19 @@ fn dimtest_group_diag(
         return Err("dimtest: a retained group has zero standard error (S_k = 0)".to_string());
     }
     Ok(DimtestGroupDiag {
+        #[cfg(test)]
         jk: idx.len(),
+        #[cfg(test)]
         mean,
+        #[cfg(test)]
         v,
+        #[cfg(test)]
         u,
+        #[cfg(test)]
         mu4,
+        #[cfg(test)]
         delta4,
+        #[cfg(test)]
         s2,
         contribution: (v - u) / s2.sqrt(),
     })
