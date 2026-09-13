@@ -2,7 +2,7 @@
 
 Status: **Authoritative living architecture baseline**
 Repository: `ContextualWisdomLab/fast-mlsirm`  
-Last reviewed: 2026-08-11
+Last reviewed: 2026-09-01
 
 This document describes the current and intended architecture of `fast-mlsirm`
 using the concerns and viewpoints of ISO/IEC/IEEE 42010:2022. It is the root
@@ -180,7 +180,9 @@ product. Explicit CWL integrations include Psychometrics Commons, Keyverse,
 Gyeot, TEPP, `contextual-orchestrator`, `pg-llm-batch`,
 `semantic-data-portal`, and EgressWeave. Each host remains independently
 operable; no service accesses another service's application database through
-this library.
+this library. TEPP-originated designs enter only through the versioned,
+immutable Anti-Corruption Layer governed by ADR-0028; an adapter cannot become
+an unversioned shortcut around that contract.
 
 ## 4. Domain and population model
 
@@ -196,20 +198,27 @@ model-comparison/recovery evidence. Calibration design inputs are a versioned
 many-to-many association with observations.
 
 The population contract must not force an atomistic analysis when the design is
-hierarchical, multiply affiliated, or longitudinal:
+hierarchical, multiply affiliated, or time-indexed:
 
 - **single:** independent persons;
 - **multigroup:** known group membership for DIF/equating contexts;
 - **multilevel:** nested cluster effects such as school/class;
 - **multiple membership:** weighted membership in more than one cluster;
-- **longitudinal:** explicit person, occasion, time origin, and ordering with
-  temporal validity rules.
+- **time-indexed:** explicit person, occasion, and elapsed-time carriers supplied
+  to a psychometric numerical kernel after temporal/event semantics are resolved
+  outside this bounded context.
+
+Time-indexed psychometric kernels consume explicit person, occasion, and elapsed-time carriers; they do not define event ontology, temporal validity, event ordering, changing-membership history, or longitudinal leakage policy.
+TEPP owns those temporal/event semantics and supplies them only through the versioned, immutable Anti-Corruption Layer governed by ADR-0028.
+A measurement-occasion facet used by a psychometric model is not a TEPP temporal event model.
 
 The `fast_mlsirm.multilevel` contracts are content-addressed and fail closed.
 ADR-0019 proposes a state layer for independent OLS trends and caller-supplied
 discrete AR predictions. ADR-0020 proposes a separate joint MAP hierarchical
 continuous-time AR(1) Rasch slice with estimated `(mu, tau, lambda)`, elapsed-day
-transitions, and Wald observed-information intervals. That slice excludes
+transitions, and Wald observed-information intervals. Those are numerical
+measurement kernels over explicit supplied time carriers, not ownership of a
+temporal event ontology or longitudinal composition policy. That slice excludes
 estimated multiple-membership `u_h` and does not claim GPU parity. Remaining
 nested/crossed estimators stay paper-scoped until their own Rust
 implementation and recovery evidence are complete; the presence of a contract

@@ -175,6 +175,27 @@ catalog/release provenance, contextual-orchestrator for bounded LLM
 orchestration, and EgressWeave for controlled external egress. Treat those as
 integrations, not hidden implementation dependencies.
 
+### Temporal/event and Context Fabric ownership
+
+TEPP owns temporal/event composition and semantics, including event ontology,
+valid/system/event-time meaning, event ordering, changing-membership history,
+and longitudinal leakage policy. fast-mlsirm owns reusable time-indexed
+psychometric numerical kernels over explicit supplied occasion/time carriers.
+A TEPP-originated temporal design enters this repository only through a
+versioned immutable Anti-Corruption Layer; cross-service SQL, direct TEPP
+database access, and hidden TEPP runtime dependencies are prohibited.
+
+`ContextualWisdomLab/context-graph-contracts` is the contract-only Shared Kernel
+for Context Assertions, CloudEvents, provenance, conformance, and admission;
+`ContextualWisdomLab/enterprise-architecture-core` is the authoritative EA
+Decision Plane. Treat both as foreign owner surfaces from this repository.
+Architecture/package/backend/toolchain/consumer-lifecycle facts may be projected
+only through an immutable released `context-graph-contracts` contract with
+provenance. Estimator values, latent scores, DIF/fit diagnostics, and
+scientific-validity evidence are not authoritative EA facts. Do not pin an
+unreleased sibling PR head, duplicate those facts into EA authority, or modify
+Context Fabric repositories as a leaf workaround.
+
 ### Research grounding (attach paper PDFs)
 
 Substantive feature/process PRs should find the relevant academic papers and

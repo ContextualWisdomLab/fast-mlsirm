@@ -1,7 +1,7 @@
 # Requirements, decisions, implementation and evidence matrix
 
 Status: **Authoritative traceability baseline**  
-Last reviewed: 2026-08-16
+Last reviewed: 2026-09-01
 
 This matrix makes the major product requirements discoverable without reconstructing decisions from chat history or PR bodies. It deliberately distinguishes **protected-main implementation**, **active/open work**, **future research**, and **downstream ownership**.
 
@@ -27,6 +27,7 @@ This matrix makes the major product requirements discoverable without reconstruc
 | True-parameter recovery | PRD-PRN-003, TRD-TEST-003..006 | ADR-0008 | simulation/recovery reports, Rust/NumPy parity, scheduled statistical studies/recovery contracts | Accepted |
 | Correlation vs recovery/agreement | PRD-PRN-003, scoring validity requirements | ADR-0008, ADR-0005 | recovery/simulation, agreement/QWK/facets evidence | Accepted: correlation is supplementary association evidence, never sole proof of parameter recovery or interchangeability |
 | Multilevel/multiple-membership/temporal | PRD-FR-060..062, TRD-MLT | ADR-0007, ADR-0019, ADR-0020 | contracts plus OLS/AR state layer and a separate joint MAP hierarchical CT-AR Rasch slice exist on the stacked longitudinal PRs; estimated MMMC `u_h` and GPU parity remain excluded | Proposed/partial / active PR |
+| Temporal event ownership boundary | PRD-FR-064/065, TRD-MLT-007/008 | ADR-0028 | `docs/adr/0028-tepp-temporal-event-composition-boundary.md`, `tests/test_tepp_temporal_context_boundary.py`; existing Rust CT-AR Rasch kernel remains fast-mlsirm-owned while TEPP owns event semantics/composition | Accepted ownership boundary / active PR |
 | Crossed / multiple-membership person effects | PRD-FR-060..062, TRD-MLT | ADR-0007 | protected main has Rust MAP recovery with RMSE evidence; OLS/AR and continuous-time claims remain separate slices | Implemented / partial |
 | TEPP-anchored Event Lineage channel weights | PRD-FR-063, TRD-MLT-006 | ADR-0023 | Active PR #1423 admits continuous pair/channel evidence and exact accepted TEPP v1 identity in Rust, then returns `IndependentCriterionObservationsUnavailable`; no floor, Python fit, or local normalization. This is not protected-main evidence until exact-head integration. | Proposed / active PR; pair-level producer evidence missing |
 | Accessible standalone reports | PRD-FR-070..072, NFR-004 | ADR-0005 | report renderers, exact-value exports, WCAG-focused regression/doctoring | Accepted/evolving |
