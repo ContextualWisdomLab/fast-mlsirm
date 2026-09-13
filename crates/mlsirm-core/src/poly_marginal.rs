@@ -300,7 +300,6 @@ pub fn fit_poly_lsirm(
     }
 
     let mut prev_ll = f64::NEG_INFINITY;
-    let mut ll = f64::NEG_INFINITY;
     let mut it = 0;
     while it < max_iter {
         // per-item cell log-probs at each (theta, xi) node
@@ -326,7 +325,7 @@ pub fn fit_poly_lsirm(
         }
         // E-step: person posteriors -> expected category counts rbar[i][node][k]
         let mut rbar = vec![vec![0.0_f64; cell * n_cat]; n_items];
-        ll = 0.0;
+        let mut iteration_log_likelihood = 0.0;
         let mut log_node = vec![0.0_f64; cell];
         for p in 0..n_persons {
             for t in 0..q_t {
@@ -348,7 +347,7 @@ pub fn fit_poly_lsirm(
             for node in 0..cell {
                 denom += (log_node[node] - mx).exp();
             }
-            ll += mx + denom.ln();
+            iteration_log_likelihood += mx + denom.ln();
             for i in 0..n_items {
                 if !is_obs(p, i) {
                     continue;
@@ -377,10 +376,10 @@ pub fn fit_poly_lsirm(
             params[i] = m_step_item(params[i].clone(), &ctx, 6);
         }
         it += 1;
-        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
+        if (iteration_log_likelihood - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
             break;
         }
-        prev_ll = ll;
+        prev_ll = iteration_log_likelihood;
     }
 
     let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
@@ -415,6 +414,7 @@ pub fn fit_poly_lsirm(
     let mut theta_sd = vec![0.0_f64; n_persons];
     let mut xi_eap = vec![0.0_f64; n_persons * latent_dim];
     let mut log_node = vec![0.0_f64; cell];
+    let mut final_log_likelihood = 0.0_f64;
     for p in 0..n_persons {
         for t in 0..q_t {
             for x in 0..n_xi {
@@ -435,6 +435,7 @@ pub fn fit_poly_lsirm(
         for node in 0..cell {
             denom += (log_node[node] - mx).exp();
         }
+        final_log_likelihood += mx + denom.ln();
         let (mut m1, mut m2) = (0.0_f64, 0.0_f64);
         for t in 0..q_t {
             for x in 0..n_xi {
@@ -457,7 +458,7 @@ pub fn fit_poly_lsirm(
         theta_eap,
         theta_sd,
         xi_eap,
-        loglik: ll,
+        loglik: final_log_likelihood,
         n_iter: it,
     })
 }
