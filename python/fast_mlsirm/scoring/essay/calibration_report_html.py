@@ -251,7 +251,7 @@ def _validated_report(
 def _identifier_list(identifiers: tuple[str, ...], *, empty_message: str) -> str:
     """Render identifier evidence as a semantic list or explicit empty state."""
     if not identifiers:
-        return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
+        return f'<div class="empty-state" role="status" aria-atomic="true">{escape(empty_message)}</div>'
     items = "".join(
         f"<li><code>{escape(identifier)}</code></li>" for identifier in identifiers
     )

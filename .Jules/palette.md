@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2025-02-13 - Empty States Accessibility with aria-atomic
+**Learning:** When using `role="status"` for status regions like empty states (e.g., `.empty-state` divs) in HTML reports, screen readers may only announce partial changes if the region updates dynamically. To ensure the complete context or message is announced upon update or focus, the region must also specify `aria-atomic="true"`.
+**Action:** Always apply `aria-atomic="true"` alongside `role="status"` on empty state elements or status regions so that the entire text content is read out to assistive technologies, avoiding lost context.
