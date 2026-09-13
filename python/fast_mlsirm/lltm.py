@@ -20,6 +20,19 @@ _NUMPY_INTEGER_TYPES = (
     np.uint64,
 )
 _NUMPY_FLOAT_TYPES = (np.float16, np.float32, np.float64, np.longdouble)
+_NUMPY_COMPLEX_TYPES = (np.complex64, np.complex128, np.clongdouble)
+_TRUSTED_REAL_SCALAR_TYPES = (
+    bool,
+    int,
+    float,
+    np.bool_,
+    *_NUMPY_INTEGER_TYPES,
+    *_NUMPY_FLOAT_TYPES,
+)
+_TRUSTED_COMPLEX_SCALAR_TYPES = (complex, *_NUMPY_COMPLEX_TYPES)
+_MAX_LLTM_MATRIX_CELLS = 20_000_000
+_MAX_LLTM_MATRIX_NODES = 2 * _MAX_LLTM_MATRIX_CELLS
+_MINIMUM_SHAPE_ERROR = "n_persons, n_items and n_basic must be >= 1"
 
 
 def _boolean(value: object, name: str) -> bool:
@@ -49,7 +62,7 @@ def _positive_integer(value: object, name: str) -> int:
 
 
 def _nonnegative_finite_real(value: object, name: str) -> float:
-    """Normalize one trusted finite non-negative real without caller coercion hooks."""
+    """Normalize one trusted finite non-negative real without lossy Rust-f64 narrowing."""
 
     value_type = type(value)
     if value_type not in (int, float, *_NUMPY_INTEGER_TYPES, *_NUMPY_FLOAT_TYPES):
@@ -60,7 +73,123 @@ def _nonnegative_finite_real(value: object, name: str) -> float:
         raise ValueError(f"{name} must be finite and non-negative") from exc
     if not np.isfinite(normalized) or normalized < 0.0:
         raise ValueError(f"{name} must be finite and non-negative")
+
+    if value_type is int or value_type in _NUMPY_INTEGER_TYPES:
+        if int(normalized) != int(value):
+            raise ValueError(f"{name} must be finite and non-negative")
+    elif value_type in _NUMPY_FLOAT_TYPES and value_type(normalized) != value:
+        raise ValueError(f"{name} must be finite and non-negative")
     return normalized
+
+
+def _matrix_shape_error(name: str) -> str:
+    if name == "responses":
+        return "responses must be a 2-D persons x items array"
+    return "q_design must be a 2-D items x basic-operations array"
+
+
+def _enforce_matrix_budget(name: str, n_rows: int, n_columns: int) -> None:
+    """Bound logical matrix size before dense package-owned materialization."""
+
+    if n_rows * n_columns > _MAX_LLTM_MATRIX_CELLS:
+        raise ValueError(
+            f"{name} exceeds the {_MAX_LLTM_MATRIX_CELLS}-cell resource limit"
+        )
+
+
+def _enforce_matrix_structure_budget(name: str, n_nodes: int) -> None:
+    """Bound Python container traversal independently of logical scalar cells."""
+
+    if n_nodes > _MAX_LLTM_MATRIX_NODES:
+        raise ValueError(
+            f"{name} exceeds the {_MAX_LLTM_MATRIX_NODES}-node structural resource limit"
+        )
+
+
+def _enforce_minimum_matrix_shape(n_rows: int, n_columns: int) -> None:
+    """Replay Rust's non-empty LLTM matrix dimensions before native discovery."""
+
+    if n_rows < 1 or n_columns < 1:
+        raise ValueError(_MINIMUM_SHAPE_ERROR)
+
+
+def _validate_ndarray_storage(value: np.ndarray, name: str, *, row: bool) -> int:
+    """Validate one exact NumPy carrier without invoking caller conversion protocols."""
+
+    expected_ndim = 1 if row else 2
+    if value.ndim != expected_ndim:
+        raise ValueError(_matrix_shape_error(name))
+    kind = value.dtype.kind
+    if kind == "c":
+        raise ValueError(f"{name} must be real-valued")
+    if kind not in "biuf":
+        raise ValueError(f"{name} must contain real-valued numeric evidence")
+    return int(value.shape[0] if row else value.shape[1])
+
+
+def _materialize_real_matrix(value: object, name: str) -> np.ndarray:
+    """Create the package-owned float64 matrix after callback-free preflight."""
+
+    try:
+        materialized = np.asarray(value, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must contain real-valued numeric evidence") from exc
+    if materialized.ndim != 2:
+        raise ValueError(_matrix_shape_error(name))
+    return materialized
+
+
+def _trusted_real_matrix(value: object, name: str) -> np.ndarray:
+    """Materialize one callback-free, resource-bounded real matrix after preflight."""
+
+    value_type = type(value)
+    if value_type is np.ndarray:
+        n_rows = int(value.shape[0]) if value.ndim == 2 else 0
+        width = _validate_ndarray_storage(value, name, row=False)
+        _enforce_matrix_budget(name, n_rows, width)
+        _enforce_minimum_matrix_shape(n_rows, width)
+        return _materialize_real_matrix(value, name)
+
+    if value_type not in (list, tuple):
+        raise ValueError(f"{name} must be an exact NumPy array or built-in matrix")
+    if not value:
+        raise ValueError(_matrix_shape_error(name))
+
+    n_rows = len(value)
+    structural_nodes = n_rows
+    _enforce_matrix_structure_budget(name, structural_nodes)
+    width: int | None = None
+    for row_value in value:
+        row_type = type(row_value)
+        if row_type is np.ndarray:
+            row_width = _validate_ndarray_storage(row_value, name, row=True)
+        elif row_type in (list, tuple):
+            row_width = len(row_value)
+        else:
+            raise ValueError(_matrix_shape_error(name))
+
+        if width is None:
+            width = row_width
+            _enforce_matrix_budget(name, n_rows, width)
+        elif row_width != width:
+            raise ValueError(_matrix_shape_error(name))
+
+        if row_type in (list, tuple):
+            structural_nodes += row_width
+            _enforce_matrix_structure_budget(name, structural_nodes)
+            for scalar in row_value:
+                scalar_type = type(scalar)
+                if scalar_type in _TRUSTED_COMPLEX_SCALAR_TYPES:
+                    raise ValueError(f"{name} must be real-valued")
+                if scalar_type not in _TRUSTED_REAL_SCALAR_TYPES:
+                    raise ValueError(f"{name} must contain real-valued numeric evidence")
+        else:
+            _enforce_matrix_structure_budget(name, structural_nodes)
+
+    if width is None:
+        raise ValueError(_matrix_shape_error(name))
+    _enforce_minimum_matrix_shape(n_rows, width)
+    return _materialize_real_matrix(value, name)
 
 
 @dataclass
@@ -137,19 +266,12 @@ def fit_lltm(
     normalized_max_iter = _positive_integer(max_iter, "max_iter")
     normalized_tol = _nonnegative_finite_real(tol, "tol")
 
-    y_input = np.asarray(responses)
-    if np.iscomplexobj(y_input):
-        raise ValueError("responses must be real-valued")
-    y = np.asarray(y_input, dtype=np.float64)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-
-    q_input = np.asarray(q_design)
-    if np.iscomplexobj(q_input):
-        raise ValueError("q_design must be real-valued")
-    q = np.asarray(q_input, dtype=np.float64)
-    if q.ndim != 2:
-        raise ValueError("q_design must be a 2-D items x basic-operations array")
+    y = _trusted_real_matrix(responses, "responses")
+    q = _trusted_real_matrix(q_design, "q_design")
+    if np.isinf(y).any():
+        raise ValueError("responses must contain only finite values or NaN missingness")
+    if not np.isfinite(q).all():
+        raise ValueError("q_design entries must be finite")
 
     n_persons, n_items = y.shape
     if q.shape[0] != n_items:
@@ -162,7 +284,7 @@ def fit_lltm(
     if core is None or not hasattr(core, "fit_lltm"):
         raise RuntimeError("fit_lltm requires the compiled Rust core")
 
-    observed = np.isfinite(y)
+    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_lltm(
         yy,
