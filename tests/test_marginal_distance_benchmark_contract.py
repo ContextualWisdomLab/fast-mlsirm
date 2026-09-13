@@ -86,3 +86,23 @@ def test_numpy_configuration_modern_mode_is_warning_free() -> None:
         warnings.simplefilter("error")
         configuration_text = benchmark._numpy_configuration()
     assert configuration_text
+
+
+def test_numpy_configuration_preserves_modern_dictionary(monkeypatch) -> None:
+    """Keep the requested mode and returned build metadata in the report."""
+    import ast
+
+    benchmark = _load_benchmark_module()
+    configuration_calls = []
+    build_configuration = {"Build Dependencies": {"blas": {"name": "fixture-blas"}}}
+
+    def modern_show_config(*, mode):
+        configuration_calls.append(mode)
+        return build_configuration
+
+    monkeypatch.setattr(benchmark.np, "show_config", modern_show_config)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        configuration_text = benchmark._numpy_configuration()
+    assert configuration_calls == ["dicts"]
+    assert ast.literal_eval(configuration_text) == build_configuration
