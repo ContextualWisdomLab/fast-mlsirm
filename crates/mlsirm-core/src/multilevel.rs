@@ -30,9 +30,156 @@ mod estimator;
 mod kernel;
 
 pub use estimator::{
-    estimate_crossed_person_effects, CrossedPersonEffectConfig, CrossedPersonEffectEstimate,
-    MAX_CROSSED_EFFECTS, MAX_CROSSED_ITER,
+    CrossedPersonEffectConfig, CrossedPersonEffectEstimate, MAX_CROSSED_EFFECTS,
+    MAX_CROSSED_ITER,
 };
+
+/// Maximum contextual-membership edges accepted at the public Rust boundary.
+pub const MAX_CONTEXT_MEMBERSHIPS: usize = 100_000;
+/// Maximum CSR row-pointer entries accepted at the public Rust boundary.
+pub const MAX_CONTEXT_ROW_OFFSETS: usize = MAX_CONTEXT_MEMBERSHIPS + 1;
+
+#[allow(clippy::too_many_arguments)]
+fn preflight_crossed_estimator_controls(
+    y: &[f64],
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    item_slopes: &[f64],
+    item_intercepts: &[f64],
+    person_offsets: &[f64],
+    classification_offsets: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_effects: usize,
+    config: &CrossedPersonEffectConfig,
+) -> Result<(), String> {
+    if n_persons < 1 || n_items < 1 || n_effects < 1 {
+        return Err("n_persons, n_items, and n_effects must be at least one".to_string());
+    }
+    if n_effects > MAX_CROSSED_EFFECTS {
+        return Err(format!(
+            "n_effects exceeds the dense Newton cap of {MAX_CROSSED_EFFECTS}"
+        ));
+    }
+    if classification_offsets.len() > n_effects + 1 {
+        return Err("classification_offsets exceeds n_effects + 1".to_string());
+    }
+    let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
+    if expected > estimator::MAX_CROSSED_RESPONSE_CELLS {
+        return Err(format!(
+            "crossed response matrix exceeds the logical-cell cap of {}",
+            estimator::MAX_CROSSED_RESPONSE_CELLS
+        ));
+    }
+    if y.len() != expected {
+        return Err("y must have length n_persons * n_items".to_string());
+    }
+    if classification_offsets.len() < 2 {
+        return Err("classification_offsets must contain at least one classification".to_string());
+    }
+    if classification_offsets[0] != 0
+        || *classification_offsets.last().expect("non-empty") != n_effects
+        || classification_offsets
+            .windows(2)
+            .any(|window| window[1] <= window[0])
+    {
+        return Err(
+            "classification_offsets must start at zero, increase strictly, and end at n_effects"
+                .to_string(),
+        );
+    }
+    for window in classification_offsets.windows(2) {
+        if window[1] - window[0] < 2 {
+            return Err("each classification must contain at least two context levels".to_string());
+        }
+    }
+    if row_offsets.len() > MAX_CONTEXT_ROW_OFFSETS {
+        return Err(format!(
+            "row_offsets exceeds the CSR row-pointer cap of {MAX_CONTEXT_ROW_OFFSETS}"
+        ));
+    }
+    if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
+        return Err(format!(
+            "context_indices exceeds the membership-edge cap of {MAX_CONTEXT_MEMBERSHIPS}"
+        ));
+    }
+    if !config.prior_precision.is_finite() || config.prior_precision <= 0.0 {
+        return Err("prior_precision must be finite and strictly positive".to_string());
+    }
+    if !(1..=MAX_CROSSED_ITER).contains(&config.max_iter) {
+        return Err(format!("max_iter must be in 1..={MAX_CROSSED_ITER}"));
+    }
+    if !config.tol.is_finite() || config.tol <= 0.0 {
+        return Err("tol must be finite and strictly positive".to_string());
+    }
+    if !(1..=estimator::MAX_CROSSED_WORKERS).contains(&config.worker_count) {
+        return Err(format!(
+            "worker_count must be in 1..={}",
+            estimator::MAX_CROSSED_WORKERS
+        ));
+    }
+    if item_slopes.len() != n_items || item_intercepts.len() != n_items {
+        return Err("item_slopes and item_intercepts must have length n_items".to_string());
+    }
+    if !person_offsets.is_empty() && person_offsets.len() != n_persons {
+        return Err("person_offsets must be empty or have length n_persons".to_string());
+    }
+    if row_offsets.len() != n_persons + 1 {
+        return Err("row_offsets must have length n_persons + 1".to_string());
+    }
+    Ok(())
+}
+
+/// Estimate crossed / multiple-membership person effects after bounded control preflight.
+///
+/// Cheap dimension, response-work, response-length, membership-resource,
+/// execution-control, and structural-cardinality validation runs before any
+/// response-value traversal. The private estimator repeats those invariants as
+/// defense in depth and owns all likelihood, score/information, Newton,
+/// centering, and CPU/GPU numerical work.
+#[allow(clippy::too_many_arguments)]
+pub fn estimate_crossed_person_effects(
+    y: &[f64],
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+    item_slopes: &[f64],
+    item_intercepts: &[f64],
+    person_offsets: &[f64],
+    classification_offsets: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_effects: usize,
+    config: CrossedPersonEffectConfig,
+) -> Result<CrossedPersonEffectEstimate, String> {
+    preflight_crossed_estimator_controls(
+        y,
+        row_offsets,
+        context_indices,
+        item_slopes,
+        item_intercepts,
+        person_offsets,
+        classification_offsets,
+        n_persons,
+        n_items,
+        n_effects,
+        &config,
+    )?;
+    estimator::estimate_crossed_person_effects(
+        y,
+        row_offsets,
+        context_indices,
+        weights,
+        item_slopes,
+        item_intercepts,
+        person_offsets,
+        classification_offsets,
+        n_persons,
+        n_items,
+        n_effects,
+        config,
+    )
+}
 
 fn validate_unique_context_indices_per_row(
     row_offsets: &[usize],
@@ -89,6 +236,16 @@ pub fn weighted_contextual_effect(
     effects: &[f64],
     worker_count: usize,
 ) -> Result<Vec<f64>, String> {
+    if row_offsets.len() > MAX_CONTEXT_ROW_OFFSETS {
+        return Err(format!(
+            "row_offsets exceeds the CSR row-pointer cap of {MAX_CONTEXT_ROW_OFFSETS}"
+        ));
+    }
+    if context_indices.len() > MAX_CONTEXT_MEMBERSHIPS {
+        return Err(format!(
+            "context_indices exceeds the membership-edge cap of {MAX_CONTEXT_MEMBERSHIPS}"
+        ));
+    }
     validate_unique_context_indices_per_row(row_offsets, context_indices)?;
     validate_referenced_finite_effects(context_indices, effects)?;
     let output = kernel::weighted_contextual_effect(
