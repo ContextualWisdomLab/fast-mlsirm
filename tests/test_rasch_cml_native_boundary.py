@@ -44,6 +44,17 @@ class _HostileFloat(float):
         raise AssertionError("caller-owned __float__ executed")
 
 
+class _HostileArray:
+    """Array-protocol provider that native result validation must never execute."""
+
+    calls = 0
+
+    def __array__(self, *args, **kwargs):
+        del args, kwargs
+        type(self).calls += 1
+        raise AssertionError("caller-owned __array__ executed")
+
+
 def _unexpected_core_discovery():
     """Fail if rejected public input reaches compiled-core discovery."""
 
@@ -273,3 +284,149 @@ def test_exact_longdouble_tolerance_preserves_compatibility(monkeypatch):
         fit_rasch_cml(_binary(), tol=np.longdouble(0.5))
 
     assert calls == 1
+
+
+def test_fit_rasch_cml_rejects_hostile_native_result_before_array_callback(monkeypatch):
+    """A stale/foreign native result cannot run array protocols during marshalling."""
+
+    _HostileArray.calls = 0
+
+    class _Core:
+        def fit_rasch_cml(self, *args):
+            del args
+            return {
+                "beta": _HostileArray(),
+                "se": [0.1, 0.1, 0.1],
+                "loglik": -1.0,
+                "n_iter": 1,
+                "converged": True,
+                "n_used": 4,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    with pytest.raises(RuntimeError, match="invalid Rasch CML Rust result payload"):
+        fit_rasch_cml(_binary())
+
+    assert _HostileArray.calls == 0
+
+
+def test_fit_rasch_cml_rejects_malformed_native_result_shape_and_finiteness(monkeypatch):
+    """Native vectors and scalar evidence are replayed before public marshalling."""
+
+    payloads = [
+        {
+            "beta": [0.0, 0.0],
+            "se": [0.1, 0.1, 0.1],
+            "loglik": -1.0,
+            "n_iter": 1,
+            "converged": True,
+            "n_used": 4,
+        },
+        {
+            "beta": [0.0, 0.0, 0.0],
+            "se": [0.1, 0.1, 0.1],
+            "loglik": float("nan"),
+            "n_iter": 1,
+            "converged": True,
+            "n_used": 4,
+        },
+    ]
+
+    class _Core:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def fit_rasch_cml(self, *args):
+            del args
+            return self.payload
+
+    for payload in payloads:
+        monkeypatch.setattr(fitstats, "_core_module", lambda payload=payload: _Core(payload))
+        with pytest.raises(RuntimeError, match="invalid Rasch CML Rust result payload"):
+            fit_rasch_cml(_binary())
+
+
+def test_andersen_rejects_hostile_native_result_before_array_callback(monkeypatch):
+    """Andersen result vectors cannot invoke array protocols before replay."""
+
+    _HostileArray.calls = 0
+
+    class _Core:
+        def andersen_lr_test(self, *args):
+            del args
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": _HostileArray(),
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    with pytest.raises(RuntimeError, match="invalid Andersen Rust result payload"):
+        andersen_lr_test(_binary(), [0, 0, 1, 1])
+
+    assert _HostileArray.calls == 0
+
+
+def test_andersen_rejects_native_n_used_outside_person_bound(monkeypatch):
+    """Impossible native counts fail before int64 NumPy marshalling."""
+
+    class _Core:
+        def andersen_lr_test(self, *args):
+            del args
+            return {
+                "lr": 0.0,
+                "df": 2,
+                "p_value": 1.0,
+                "n_used": [2**100, 2],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    with pytest.raises(RuntimeError, match="invalid Andersen Rust result payload"):
+        andersen_lr_test(_binary(), [0, 0, 1, 1])
+
+
+def test_native_result_replay_preserves_valid_current_shaped_payloads(monkeypatch):
+    """Current Rust-shaped built-in payloads preserve public return compatibility."""
+
+    class _Core:
+        def fit_rasch_cml(self, *args):
+            del args
+            return {
+                "beta": [-0.2, 0.0, 0.2],
+                "se": [0.1, float("nan"), 0.1],
+                "loglik": -2.5,
+                "n_iter": 3,
+                "converged": True,
+                "n_used": 4,
+            }
+
+        def andersen_lr_test(self, *args):
+            del args
+            return {
+                "lr": 1.25,
+                "df": 2,
+                "p_value": 0.5,
+                "n_used": [2, 2],
+                "converged": True,
+            }
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
+
+    fit = fit_rasch_cml(_binary())
+    np.testing.assert_array_equal(fit["beta"], np.array([-0.2, 0.0, 0.2]))
+    assert np.isnan(fit["se"][1])
+    assert fit["n_iter"] == 3
+    assert fit["n_used"] == 4
+
+    lr = andersen_lr_test(_binary(), [0, 0, 1, 1])
+    assert lr["lr"] == 1.25
+    assert lr["df"] == 2
+    assert lr["p_value"] == 0.5
+    np.testing.assert_array_equal(lr["n_used"], np.array([2, 2], dtype=np.int64))
+    assert lr["converged"] is True
