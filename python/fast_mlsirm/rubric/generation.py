@@ -83,6 +83,21 @@ def _digest(value: Any, name: str) -> str:
     return normalized
 
 
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate keys when parsing JSON objects."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("contract_json contains a duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite(_value: str) -> float:
+    """Reject non-finite JSON numbers (NaN, Infinity)."""
+    raise ValueError("contract_json contains a non-finite JSON number")
+
+
 def _validate_contract_depth(content: str) -> None:
     """Reject contract JSON strings whose nesting depth exceeds the maximum budget."""
     depth = 0
@@ -115,7 +130,11 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
     try:
-        contract = json.loads(contract_json)
+        contract = json.loads(
+            contract_json,
+            object_pairs_hook=_unique_object,
+            parse_constant=_reject_nonfinite,
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):

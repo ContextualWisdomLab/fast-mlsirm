@@ -50,3 +50,7 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+## 2024-05-24 - JSON Smuggling/Cache Poisoning Vulnerability in Generation Contracts
+**Vulnerability:** The `json.loads` call in `_contract_object` parsed untrusted `contract_json` without rejecting duplicate keys or non-finite numbers (NaN, Infinity).
+**Learning:** Python's default JSON decoder is overly permissive, accepting extensions outside interoperable JSON which can lead to logic bugs, JSON smuggling, and cache poisoning.
+**Prevention:** Always use `object_pairs_hook` to reject duplicate keys and `parse_constant` to reject non-finite numbers when calling `json.loads` on untrusted inputs.
