@@ -44,7 +44,11 @@ def _evidence(
     )
 
 
-def _profile(*evidence: ValidationEvidenceReference) -> ValidationProfile:
+def _profile(
+    *evidence: ValidationEvidenceReference,
+    protocol_registered_at: datetime | None = None,
+    analysis_cutoff: datetime | None = None,
+) -> ValidationProfile:
     """Build one exact preregistered profile fixture."""
     return ValidationProfile(
         validation_profile_id="enterprise_validation_profile",
@@ -58,7 +62,10 @@ def _profile(*evidence: ValidationEvidenceReference) -> ValidationProfile:
         population="held_out_enterprise_systems",
         setting="external_validation_sites",
         decision_use="human_review_prioritization",
-        analysis_cutoff=datetime(2026, 8, 21, tzinfo=timezone.utc),
+        protocol_registered_at=protocol_registered_at
+        or datetime(2026, 8, 19, tzinfo=timezone.utc),
+        analysis_cutoff=analysis_cutoff
+        or datetime(2026, 8, 21, tzinfo=timezone.utc),
         evidence_references=evidence,
     )
 
@@ -125,6 +132,58 @@ def test_profile_fingerprint_is_stable_across_input_order_and_timezones() -> Non
     )
 
 
+def test_protocol_registration_is_normalized_and_serialized() -> None:
+    """Preregistration chronology is explicit UTC provenance in public identity."""
+    eastern = timezone(timedelta(hours=9))
+    profile = _profile(
+        protocol_registered_at=datetime(2026, 8, 19, 21, 30, tzinfo=eastern),
+    )
+
+    assert profile.protocol_registered_at == datetime(
+        2026, 8, 19, 12, 30, tzinfo=timezone.utc
+    )
+    assert profile.to_dict()["protocol_registered_at"] == "2026-08-19T12:30:00Z"
+
+
+def test_future_protocol_registration_fails_before_profile_claim() -> None:
+    """A protocol registered after analysis cannot claim preregistered authority."""
+    with pytest.raises(
+        ValueError,
+        match="protocol_registered_at must not exceed analysis_cutoff",
+    ):
+        _profile(
+            protocol_registered_at=datetime(2026, 8, 22, tzinfo=timezone.utc),
+        )
+
+
+def test_protocol_registration_changes_profile_fingerprint() -> None:
+    """Registration chronology contributes to deterministic profile identity."""
+    earlier = _profile(
+        protocol_registered_at=datetime(2026, 8, 18, tzinfo=timezone.utc),
+    )
+    later = _profile(
+        protocol_registered_at=datetime(2026, 8, 19, tzinfo=timezone.utc),
+    )
+
+    assert earlier.profile_fingerprint != later.profile_fingerprint
+
+
+def test_evidence_may_predate_protocol_registration() -> None:
+    """Technical or prior construct evidence may legitimately predate registration."""
+    reference = _evidence(
+        "prior_technical_evidence",
+        available_time=datetime(2026, 8, 18, tzinfo=timezone.utc),
+    )
+    profile = _profile(
+        reference,
+        protocol_registered_at=datetime(2026, 8, 19, tzinfo=timezone.utc),
+    )
+
+    assert profile.to_dict()["evidence_references"][0]["evidence_id"] == (
+        "prior_technical_evidence"
+    )
+
+
 def test_future_available_evidence_fails_before_profile_claim() -> None:
     """Evidence unavailable at analysis cutoff cannot enter the profile."""
     future = _evidence(
@@ -170,6 +229,7 @@ def test_callback_bearing_evidence_collection_fails_before_iteration() -> None:
             population="held_out_enterprise_systems",
             setting="external_validation_sites",
             decision_use="human_review_prioritization",
+            protocol_registered_at=datetime(2026, 8, 19, tzinfo=timezone.utc),
             analysis_cutoff=datetime(2026, 8, 21, tzinfo=timezone.utc),
             evidence_references=values,
         )
@@ -249,6 +309,7 @@ def test_evidence_collection_limit_is_checked_before_member_validation() -> None
             population="held_out_enterprise_systems",
             setting="external_validation_sites",
             decision_use="human_review_prioritization",
+            protocol_registered_at=datetime(2026, 8, 19, tzinfo=timezone.utc),
             analysis_cutoff=datetime(2026, 8, 21, tzinfo=timezone.utc),
             evidence_references=values,
         )
@@ -283,6 +344,27 @@ def test_profile_public_identity_replays_post_construction_invariants() -> None:
     valid = _profile(_evidence("technical_evidence"))
     assert valid.profile_fingerprint == original_fingerprint
     assert valid.to_dict() == original_payload
+
+
+def test_profile_replay_rejects_mutated_protocol_registration() -> None:
+    """Post-construction future registration cannot retain public identity authority."""
+    profile = _profile(_evidence("technical_evidence"))
+    object.__setattr__(
+        profile,
+        "protocol_registered_at",
+        datetime(2026, 8, 22, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="protocol_registered_at must not exceed analysis_cutoff",
+    ):
+        _ = profile.profile_fingerprint
+    with pytest.raises(
+        ValueError,
+        match="protocol_registered_at must not exceed analysis_cutoff",
+    ):
+        profile.to_dict()
 
 
 def test_profile_replay_rejects_callback_bearing_mutated_collection_before_iteration() -> None:
