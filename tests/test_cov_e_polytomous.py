@@ -87,6 +87,19 @@ def test_fit_polytomous_rejects_bad_q_theta():
         fit_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=12)
 
 
+def test_fit_polytomous_accepts_81_node_rule():
+    fit = fit_polytomous(_responses(6, 2, 3), n_cat=3, q_theta=81, max_iter=1)
+    assert fit.slope.shape == (2,)
+    assert np.isfinite(fit.loglik)
+
+
+def test_fit_lsirm_rejects_81_node_xi_rule():
+    with pytest.raises(ValueError, match="q_theta/q_xi must be one of"):
+        fit_lsirm_polytomous(
+            _responses(4, 2, 3), n_cat=3, q_theta=81, q_xi=81, max_iter=1
+        )
+
+
 def test_fit_polytomous_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
