@@ -17,3 +17,8 @@ crate-type = ["cdylib"]
 mlsirm-core = { path = "../mlsirm-core" }
 numpy = "0.29.0"
 pyo3 = "0.29.0"
+
+# Standalone crate: stop cargo workspace discovery here so builds also work
+# when this checkout is nested under another fast-mlsirm checkout (for
+# example `.claude/worktrees/<name>/`). The root workspace excludes this crate.
+[workspace]
