@@ -31,6 +31,12 @@ fn lsirm_rejects_unbounded_categories_and_iterations() {
         1e-6,
     )
     .is_err());
+    for tol in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(fit_poly_lsirm(
+            &y, None, 1, 1, 2, 1, PolyModel::Grm, 7, 7, 1, tol,
+        )
+        .is_err());
+    }
 }
 
 #[test]
@@ -143,6 +149,41 @@ fn poly_marginal_boundaries_and_grm_paths_are_explicit() {
         .chain(&fit.theta_sd)
         .chain(&fit.xi_eap)
         .all(|v| v.is_finite()));
+}
+
+#[test]
+fn lsirm_reports_native_termination_evidence_at_returned_state() {
+    let fit = fit_poly_lsirm(
+        &[0, 1, 2, 1],
+        None,
+        4,
+        1,
+        3,
+        1,
+        PolyModel::Grm,
+        7,
+        7,
+        1,
+        1e-6,
+    )
+    .unwrap();
+    assert!(!fit.converged);
+    assert_eq!(fit.termination_reason, "max_iter");
+    assert_eq!(fit.stopping_criterion, "observed_loglik_abs_delta");
+    assert_eq!(fit.loglik_trace.len(), fit.n_iter + 1);
+    assert_eq!(fit.final_delta, fit.loglik_trace[1] - fit.loglik_trace[0]);
+    assert!(fit.stopping_tolerance.is_finite());
+
+    let gpcm = fit_poly_lsirm(
+        &[0, 1, 2, 1], None, 4, 1, 3, 1, PolyModel::Gpcm, 7, 7, 1, 1e6,
+    )
+    .unwrap();
+    assert!(gpcm.converged);
+    assert_eq!(gpcm.termination_reason, "tolerance");
+    assert_eq!(gpcm.n_iter, 1);
+    assert_eq!(gpcm.loglik_trace.len(), 2);
+    assert_eq!(gpcm.loglik, *gpcm.loglik_trace.last().unwrap());
+    assert!(gpcm.final_delta.is_finite());
 }
 
 fn dist_matrix(z: &[f64], n: usize, d: usize) -> Vec<f64> {
