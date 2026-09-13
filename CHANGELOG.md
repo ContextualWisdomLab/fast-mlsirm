@@ -182,6 +182,7 @@ PR queue governance scripts now require the repository-owned bounded JSON helper
 - Preserve the historical scalar semantics of exact zero-dimensional numeric NumPy arrays for `lower_bound` and `alpha` while continuing to reject ndarray subclasses, object/complex storage, booleans, and arbitrary caller conversion protocols.
 - Keep unsigned signed-`int64` overflow detection exact across the supported NumPy 1.x/2.x range by comparing against an unsigned NumPy boundary instead of relying on value-based Python-int promotion.
 - Reject response evidence above 20,000,000 logical cells before NumPy matrix materialization or signed-`int64` allocation, including oversized exact broadcast arrays and exact NumPy row leaves nested inside trusted built-in response matrices.
+- Bound the Rust-owned quadratic Mokken item-pair matrices to 4,000,000 cells and reject larger item sets before pairwise allocation; the Python admission mirrors this budget while preserving the existing 20,000,000 response-cell ceiling.
 - Loevinger scalability, Z-statistics, and AISP arithmetic remain unchanged and Rust-owned.
 
 #### Many-facet rating evidence admission hardening
