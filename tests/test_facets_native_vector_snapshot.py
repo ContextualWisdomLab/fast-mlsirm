@@ -116,9 +116,9 @@ def test_native_ndarray_complex_change_at_copy_seam_fails_closed(
         value: object, *args: object, **kwargs: object
     ) -> np.ndarray:
         if value is source:
-            source.resize((4,), refcheck=False)
-            source.dtype = np.complex128
-            source[:] = [-0.25 + 2.0j, 0.25 - 3.0j]
+            # NumPy 2.x deprecates in-place ``dtype`` mutation, so model the
+            # native rebind by handing the copy seam complex evidence instead.
+            value = real_array([-0.25 + 2.0j, 0.25 - 3.0j], dtype=np.complex128)
         return real_array(value, *args, **kwargs)
 
     monkeypatch.setattr(facets.np, "array", array_after_native_complex_rebind)
