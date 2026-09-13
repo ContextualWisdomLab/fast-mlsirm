@@ -1,4 +1,6 @@
-## Polytomous LSIRM termination evidence
+# Polytomous LSIRM termination evidence
+
+## Fixed
 
 The native polytomous LSIRM fit now reports convergence evidence at the
 returned parameter state: the observed-data log-likelihood trace, signed final
