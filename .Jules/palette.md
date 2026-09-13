@@ -36,10 +36,6 @@
 **Learning:** While `outline: none;` on a `<main>` container properly removes the visual artifact when users click inside the content area, it completely breaks keyboard accessibility for users navigating via the "Skip to main content" link because no focus indicator is shown when the target is focused.
 **Action:** When overriding the focus outline on semantic containers like `<main>`, always provide a `.element:focus-visible` rule (e.g., `outline: 3px solid var(--primary-color)`) after the `:focus { outline: none; }` rule to ensure keyboard navigation remains visibly accessible without disrupting mouse interactions.
 
-## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
-**Learning:** Dense bar charts or lists can be difficult to visually parse. Highlighting the currently hovered row by dimming the surrounding rows greatly improves visual focus and UX.
-**Action:** Use a CSS pattern like `.container:hover .item:not(:hover) { opacity: 0.5; }` (along with `transition` properties on the item) to isolate visual focus during interaction with dense data visualizations.
-
 ## 2024-07-10 - HTML Report Semantic Definition Lists
 **Learning:** Using `<span>` and `<p>` elements for displaying key-value metadata pairs (like "Source: file.json") in HTML reports misses an opportunity to provide semantic structure. Additionally, purely decorative text preceding main headings (like a small subtitle) can add noise for screen reader users when read out immediately before the main `<h1>`.
 **Action:** In HTML reports, prefer semantic `<dl>`, `<dt>`, `<dd>` elements for key-value data (explicitly resetting default `<dt>` font-weight for cross-browser visual consistency), and use `aria-hidden="true"` to hide purely visual, redundant components from screen readers.
@@ -52,6 +48,6 @@
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
 
-## 2025-02-13 - Empty States Accessibility with aria-atomic
-**Learning:** When using `role="status"` for status regions like empty states (e.g., `.empty-state` divs) in HTML reports, screen readers may only announce partial changes if the region updates dynamically. To ensure the complete context or message is announced upon update or focus, the region must also specify `aria-atomic="true"`.
-**Action:** Always apply `aria-atomic="true"` alongside `role="status"` on empty state elements or status regions so that the entire text content is read out to assistive technologies, avoiding lost context.
+## 2025-02-13 - Empty States Accessibility and WAI-ARIA 1.2 Status Role
+**Learning:** While WAI-ARIA 1.2 specifies that `role="status"` has implicit `aria-live="polite"` and `aria-atomic="true"`, some older assistive technologies or browsers might not fully support this implicit behavior. Adding `aria-atomic="true"` explicitly is a compatible fallback to ensure complete string announcements when dynamically changed. Furthermore, when adding HTML attributes (like `aria-atomic`), you must proactively update corresponding exact-match string assertions in the project's tests (e.g., `tests/test_scoring_essay_report_html.py`) to prevent test suite failures, as this project enforces strict HTML string equality.
+**Action:** When applying `role="status"` on empty states, also include `aria-atomic="true"` explicitly as a safe compatibility measure, and always proactively update matching HTML string assertions in the test suite to ensure tests pass.
