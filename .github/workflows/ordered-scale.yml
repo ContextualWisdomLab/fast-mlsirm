@@ -44,7 +44,7 @@ jobs:
           mkdir -p /tmp/ordered-scale-tests
           cp tests/test_scale_codebook*.py /tmp/ordered-scale-tests/
           cd /tmp
-          python -m pytest -q -c /dev/null /tmp/ordered-scale-tests --junitxml="$GITHUB_WORKSPACE/wheelhouse/junit.xml"
+          python -m pytest -q -c /dev/null -o cache_dir="$RUNNER_TEMP/ordered-scale-pytest-cache" /tmp/ordered-scale-tests --junitxml="$GITHUB_WORKSPACE/wheelhouse/junit.xml"
       - name: Record source and wheel identities
         run: |
           python - <<'PY'
