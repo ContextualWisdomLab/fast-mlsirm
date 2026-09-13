@@ -15,6 +15,8 @@ change when the Rust backend takes over.
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import numpy as np
 import pytest
 
@@ -80,8 +82,9 @@ def _max_grad_diff(grad_a: MLSIRMParams, grad_b: MLSIRMParams) -> float:
 
 
 @pytest.fixture(autouse=True)
-def _require_rust_core():
-    pytest.importorskip("fast_mlsirm._core")
+def _require_rust_core() -> None:
+    """Require the compiled Rust extension for every numerical parity assertion."""
+    import_module("fast_mlsirm._core")
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -167,10 +170,11 @@ def test_rust_is_default_resolved_backend() -> None:
 
 
 def _rust_mmle():
-    _core = pytest.importorskip("fast_mlsirm._core")
-    fn = getattr(_core, "fit_mmle_2pl", None)
+    """Return the required native MMLE entry point or fail the parity gate."""
+    core = import_module("fast_mlsirm._core")
+    fn = getattr(core, "fit_mmle_2pl", None)
     if fn is None:
-        pytest.skip("fast_mlsirm._core lacks fit_mmle_2pl")
+        pytest.fail("fast_mlsirm._core lacks required fit_mmle_2pl")
     return fn
 
 

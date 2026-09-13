@@ -42,6 +42,8 @@ Warm, T. A. (1989). Weighted likelihood estimation of ability in item response
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import numpy as np
 import pytest
 
@@ -118,7 +120,7 @@ def test_constant_items_yield_finite_objective(backend):
     still be handled gracefully rather than dividing by a zero variance.
     """
     if backend == "rust":
-        pytest.importorskip("fast_mlsirm._core")
+        import_module("fast_mlsirm._core")
     # Column 0 is constant 0; column 3 is constant 1.
     responses = np.array(
         [
@@ -201,7 +203,7 @@ def test_missing_sentinels_are_equivalent_and_masked_entries_do_not_contribute(b
     nothing. Verified on both backends (Rubin, 1976; Bock & Aitkin, 1981).
     """
     if backend == "rust":
-        pytest.importorskip("fast_mlsirm._core")
+        import_module("fast_mlsirm._core")
     base, missing, params, factors, config = _missing_fixture()
 
     y_nan = base.copy()
@@ -233,7 +235,7 @@ def test_rust_and_numpy_agree_on_masked_inputs():
     """Rust and NumPy backends agree on masked inputs (extends the parity
     invariant of ``test_rust_parity.py`` to the NaN-sentinel + explicit-mask
     combination on a latent-space model)."""
-    pytest.importorskip("fast_mlsirm._core")
+    import_module("fast_mlsirm._core")
     base, missing, params, factors, config = _missing_fixture()
     y_nan = base.copy()
     y_nan[missing] = np.nan

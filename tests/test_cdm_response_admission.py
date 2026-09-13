@@ -213,7 +213,9 @@ def test_cdm_fits_reject_extended_precision_that_collapses_to_binary(monkeypatch
     """A non-binary long-double value cannot round into accepted float64 evidence."""
 
     if np.finfo(np.longdouble).eps >= np.finfo(np.float64).eps:
-        pytest.skip("platform longdouble does not exceed float64 precision")
+        pytest.fail(
+            "lossless CDM response-admission evidence requires longdouble wider than binary64"
+        )
 
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     almost_one = np.nextafter(np.longdouble(1), np.longdouble(0))

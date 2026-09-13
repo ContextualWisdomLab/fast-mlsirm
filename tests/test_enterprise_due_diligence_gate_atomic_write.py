@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import stat
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -24,18 +25,51 @@ def _load_module() -> ModuleType:
 GATE = _load_module()
 
 
+def _descriptor_write_prerequisites() -> dict[str, bool]:
+    """Report each OS primitive required by descriptor-relative replacement."""
+    return {
+        "posix": GATE.os.name == "posix",
+        "open_dir_fd": GATE.os.open in GATE.os.supports_dir_fd,
+        "mkdir_dir_fd": GATE.os.mkdir in GATE.os.supports_dir_fd,
+        "rename_dir_fd": GATE.os.rename in GATE.os.supports_dir_fd,
+        "unlink_dir_fd": GATE.os.unlink in GATE.os.supports_dir_fd,
+        "stat_dir_fd": GATE.os.stat in GATE.os.supports_dir_fd,
+        "fchmod": hasattr(GATE.os, "fchmod"),
+        "o_directory": hasattr(GATE.os, "O_DIRECTORY"),
+        "o_nofollow": hasattr(GATE.os, "O_NOFOLLOW"),
+    }
+
+
 def _descriptor_writes_supported() -> bool:
-    return (
-        GATE.os.name == "posix"
-        and GATE.os.open in GATE.os.supports_dir_fd
-        and GATE.os.mkdir in GATE.os.supports_dir_fd
-        and GATE.os.rename in GATE.os.supports_dir_fd
-        and GATE.os.unlink in GATE.os.supports_dir_fd
-        and GATE.os.stat in GATE.os.supports_dir_fd
-        and hasattr(GATE.os, "fchmod")
-        and hasattr(GATE.os, "O_DIRECTORY")
-        and hasattr(GATE.os, "O_NOFOLLOW")
+    """Return whether every descriptor-relative replacement primitive exists."""
+    return all(_descriptor_write_prerequisites().values())
+
+
+def _assert_descriptor_write_capability() -> None:
+    """Require every descriptor-relative replacement primitive."""
+    missing = tuple(
+        name
+        for name, available in _descriptor_write_prerequisites().items()
+        if not available
     )
+    assert not missing, (
+        "descriptor-relative atomic-write prerequisites are unavailable: "
+        + ", ".join(missing)
+    )
+
+
+def test_descriptor_write_capability_fails_closed_when_prerequisite_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing atomic-write primitives must be failing evidence, never a passing return."""
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_descriptor_write_prerequisites",
+        lambda: {"posix": False, "open_dir_fd": True},
+    )
+
+    with pytest.raises(AssertionError, match="posix"):
+        _assert_descriptor_write_capability()
 
 
 def _permissions(path: Path) -> int:
@@ -47,8 +81,7 @@ def test_descriptor_write_failure_preserves_existing_manifest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed descriptor write must not truncate the accepted manifest."""
-    if not _descriptor_writes_supported():
-        pytest.skip("descriptor-relative atomic replacement is unavailable")
+    _assert_descriptor_write_capability()
 
     monkeypatch.chdir(tmp_path)
     output_path = Path("secure") / "gate.json"
@@ -86,8 +119,7 @@ def test_descriptor_replacement_preserves_existing_manifest_permissions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Atomic replacement must retain an existing manifest's access contract."""
-    if not _descriptor_writes_supported():
-        pytest.skip("descriptor-relative atomic replacement is unavailable")
+    _assert_descriptor_write_capability()
 
     monkeypatch.chdir(tmp_path)
     output_path = Path("secure") / "gate.json"
@@ -108,8 +140,7 @@ def test_descriptor_new_manifest_uses_normal_creation_permissions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A new atomic manifest must retain ordinary file-creation permissions."""
-    if not _descriptor_writes_supported():
-        pytest.skip("descriptor-relative atomic replacement is unavailable")
+    _assert_descriptor_write_capability()
 
     monkeypatch.chdir(tmp_path)
     baseline = Path("baseline.json")
