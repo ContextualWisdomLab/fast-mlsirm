@@ -105,7 +105,7 @@ def _validate_contract_depth(content: str) -> None:
                 raise ValueError(
                     "contract_json exceeds the maximum JSON nesting depth of 128"
                 )
-        elif char in "]}":
+        elif char in "]}" and depth > 0:
             depth -= 1
 
 
@@ -128,6 +128,7 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
 
     def _reject_float_nonfinite(value):
         import math
+
         f_val = float(value)
         if not math.isfinite(f_val):
             raise ValueError("contract_json contains non-finite numbers")
