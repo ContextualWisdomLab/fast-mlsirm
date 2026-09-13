@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-09-13 - Verify Exact Head on CI Automation Bypasses
+**Vulnerability:** Pull requests can get stuck in CI due to external automation failures (e.g. CodeQL 403 errors, opencode-agent hanging, or missing rust extensions preventing python test collection) even when the code itself is secure and passes local tests.
+**Learning:** In certain situations where CI checks are failing purely due to infrastructure issues, repository maintainers might issue an explicit infrastructure-only merge exception for an *exact* commit head (e.g. under a specific repository rule like §11).
+**Prevention:** Always verify that such exceptions correctly identify the exact commit head being merged, and ensure that bypassing the broken CI checks does not inadvertently skip actual security or test validations for the core application code. Ensure follow-up tracking issues (like regression tests) are noted and addressed separately.
