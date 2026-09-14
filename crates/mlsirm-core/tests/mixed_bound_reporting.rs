@@ -4,15 +4,16 @@
 //! exactly what a genuinely low-discrimination item looks like. Without a
 //! marker the two are indistinguishable in the output, and a reviewer
 //! screening for weak items removes a working measurement rather than a bad
-//! one. `MixedItemEstimate::at_bound` is that marker; these tests pin that it
-//! fires when the bound is active and stays silent when it is not.
+//! one. `MixedItemEstimate::at_bound` is that marker.
 //!
-//! This reports the bound; it does not remove it. Removing the positivity
-//! floor is the separate, larger change tracked against the module.
+//! The positivity floor that made a reverse-keyed item bounded has since been
+//! removed, so these tests pin the marker's remaining contract: it stays silent
+//! on every item that has an interior optimum, including a reverse-keyed one,
+//! and it does not fire merely because a slope is small. The positive case —
+//! the marker firing when a bound really binds — is a unit test next to
+//! `bounds_in_force` itself.
 
-use mlsirm_core::mixed::{
-    fit_mixed_items, MixedItemKind, MixedItemSpec, AT_BOUND_SLOPE,
-};
+use mlsirm_core::mixed::{fit_mixed_items, MixedItemKind, MixedItemSpec};
 
 const N_PERSONS: usize = 1_200;
 const SEED: u64 = 20_260_914;
@@ -63,15 +64,16 @@ fn fit(slopes: &[f64]) -> Vec<Vec<&'static str>> {
     fit.items.into_iter().map(|item| item.at_bound).collect()
 }
 
-/// A reverse-keyed item cannot be represented by the current `log a`
-/// parametrization, so it is driven onto the positivity floor. The caller must
-/// be told, because the value it reports looks like a small slope.
+/// A reverse-keyed item used to be driven onto the positivity floor and had to
+/// be reported as bounded. The bound is now symmetric, so the same item is
+/// estimated properly and must report NOTHING — the marker tracks the bound, so
+/// removing the bound must remove the report.
 #[test]
-fn a_reverse_keyed_item_reports_its_slope_at_the_bound() {
+fn a_reverse_keyed_item_no_longer_rests_on_a_bound() {
     let at_bound = fit(&[1.30, -1.10, 1.20, 0.95]);
     assert!(
-        at_bound[1].contains(&AT_BOUND_SLOPE),
-        "the reverse-keyed item must report its slope at the bound, got {:?}",
+        at_bound[1].is_empty(),
+        "the reverse-keyed item is now estimable and must report no bound, got {:?}",
         at_bound[1]
     );
 }
@@ -81,9 +83,6 @@ fn a_reverse_keyed_item_reports_its_slope_at_the_bound() {
 fn ordinary_items_report_no_bound() {
     let at_bound = fit(&[1.30, -1.10, 1.20, 0.95]);
     for (item, roles) in at_bound.iter().enumerate() {
-        if item == 1 {
-            continue;
-        }
         assert!(
             roles.is_empty(),
             "item {item} has an interior optimum but reported {roles:?}"
