@@ -292,8 +292,11 @@ def fit_mmle_2pl(
     # item at exactly a = 1, this reference at 1 + 0.01 * N(0, 1) -- so the
     # parity contract could not guarantee it.
     if a.size and a[np.argmax(np.abs(a))] < 0.0:
-        a = -a
-        theta = -theta
+        # In place, so the EAP projection above remains the only assignment to
+        # `theta` — the allocation-bounded shape that
+        # tests/test_mmle_eap_projection_contract.py pins.
+        np.negative(a, out=a)
+        np.negative(theta, out=theta)
 
     return {
         "a": a,
