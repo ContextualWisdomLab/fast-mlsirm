@@ -57,6 +57,16 @@ class MixedItemParameters:
     zeta: np.ndarray
     lower_asymptote: float | None = None
     upper_asymptote: float | None = None
+    at_bound: tuple[str, ...] = ()
+    """Parameter roles whose estimate rests on an optimizer bound.
+
+    Empty is the normal case. ``"slope"``, ``"latent_position"`` or
+    ``"parameter"`` means the corresponding reported value **is** the bound
+    rather than an interior optimum, so it is not an estimate of that
+    parameter. This matters most for ``"slope"``: a bounded slope is reported
+    as a small positive number and is indistinguishable, from the number
+    alone, from a genuinely low-discrimination item.
+    """
 
 
 @dataclass(frozen=True)
@@ -339,6 +349,7 @@ def fit_mixed_items(
                 else float(item["upper_asymptote"])
             ),
             zeta=np.asarray(item["zeta"], dtype=np.float64),
+            at_bound=tuple(str(role) for role in item["at_bound"]),
         )
         for item in result["items"]
     )
