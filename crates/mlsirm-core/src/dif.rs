@@ -450,7 +450,19 @@ fn mh_sweep(
 // only when the omnibus test is BH-significant (a non-significant item is A by definition). The older
 // Zumbo & Thomas (1997) cut-offs (`0.13` / `0.26`) are considerably more conservative on the same
 // quantity. The uniform-only `delta_r2_uniform` is reported as an UNCALIBRATED descriptive number and
-// carries no letter class: the Jodoin-Gierl cut-offs were calibrated on the 2-df quantity.
+// carries no letter class.
+//
+// CONTESTED — the calibration target of those cut-offs is unresolved, and this choice depends on it.
+// This comment previously asserted the cut-offs were calibrated on the 2-df omnibus quantity; that
+// assertion has no verified source. Sireci & Rios (2013, p. 178) state the opposite — that the
+// `.035`/`.070` bands were calibrated on the UNIFORM-DIF R-squared increment, with the extension to
+// non-uniform DIF due to Gomez-Benito, Hidalgo & Padilla (2009). If that is correct, this code
+// withholds the classification from the quantity the cut-offs were built for and applies it to the
+// one they were not. Both readings are secondary: Jodoin & Gierl (2001) is ERIC abstract-only and
+// has not been read by anyone in this thread. Do not treat either direction as settled, and do not
+// change the applied quantity until the paper is obtained — a silent switch would reclassify every
+// shipped item in the opposite direction on equally unverified grounds. Tracked with the
+// acquisition attempt; see the DIF cut-off provenance issue.
 //
 // Caveats, same as the Mantel-Haenszel path above: the studied item is INCLUDED in the matching score
 // by default, and this entry point does no purification, so its criterion carries the same

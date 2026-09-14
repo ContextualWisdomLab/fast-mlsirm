@@ -596,8 +596,13 @@ def logistic_dif(
       item DIF, while 0.035 is a CEILING for calling it negligible. Treat the Jodoin-Gierl banding
       below as one of two published conventions rather than the recommendation. Provenance caveat:
       Jodoin & Gierl (2001) is ERIC abstract-only with no obtainable full text, so the 0.035/0.070
-      band and the note that these cut-offs were calibrated on the 2-df omnibus quantity are recorded
-      from secondary use rather than verified against the paper.)
+      band is recorded from secondary use rather than verified against the paper. The CALIBRATION
+      TARGET is contested: this package's own note says the cut-offs were calibrated on the 2-df
+      omnibus quantity, while Sireci & Rios (2013, p. 178) state they were calibrated on the
+      uniform-DIF increment with the non-uniform extension due to Gomez-Benito, Hidalgo & Padilla
+      (2009). Both are secondary readings of an unobtainable paper. Which quantity ``jg_class`` is
+      validly applied to therefore depends on an unresolved question; treat the class as indicative
+      rather than authoritative until it is settled.)
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item
