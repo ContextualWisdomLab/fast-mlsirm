@@ -1201,6 +1201,154 @@ def dif_polytomous(
     }
 
 
+def _benjamini_hochberg(p_values: np.ndarray, fdr_q: float) -> np.ndarray:
+    """Benjamini-Hochberg over the CONVERGED items only.
+
+    A non-converged augmented fit has a ``NaN`` p-value. Including it would
+    inflate the number of tests and weaken the threshold for every other item,
+    so it is excluded from the correction and left unflagged -- the same
+    treatment :func:`dif_polytomous` gives it, stated here because excluding a
+    test from a multiplicity correction changes what the correction means.
+    """
+    from . import fitstats
+
+    p = np.asarray(p_values, dtype=np.float64)
+    decisions = np.zeros(p.size, dtype=bool)
+    finite = np.isfinite(p)
+    if finite.any():
+        decisions[finite] = fitstats.benjamini_hochberg(p[finite], fdr_q)
+    return decisions
+
+
+def dif_polytomous_purified(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str = "gpcm",
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    fdr_q: float = 0.05,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+) -> dict[str, np.ndarray]:
+    """Iteratively purified :func:`dif_polytomous`, and the anchor-eligible set.
+
+    :func:`dif_polytomous` tests every studied item against **all** other items
+    as the anchor, once. Items with DIF are therefore part of the anchor that
+    every other item is judged against. Purification rebuilds the anchor from
+    the currently unflagged items -- each item is tested against
+    ``anchor UNION {itself}``, the same rule the dichotomous purified functions
+    use -- and repeats until the flagged set stabilizes, the anchor would fall
+    below ``min_anchor_items``, or ``max_rounds`` is reached.
+
+    Returns everything :func:`dif_polytomous` returns, plus ``anchor`` (bool per
+    item), ``n_anchor``, ``rounds`` (purification rounds after the initial
+    full-test sweep; ``0`` means none were applied), ``purify_converged``, and
+    ``purify_termination_reason`` (``"stable_flag_set"``,
+    ``"max_rounds_reached"``, or ``"insufficient_anchor_items"``).
+
+    **The removal criterion differs from the dichotomous functions, and the
+    difference is forced.** Those drop an item from the anchor on PRACTICAL
+    significance -- ETS class B or C -- because the Mantel-Haenszel chi-square
+    is over-powered at large N. No comparable calibrated class exists for this
+    sweep: the Jodoin-Gierl bands are stated on a one-degree-of-freedom uniform
+    pseudo-R-squared increment computed as a Zumbo-Thomas weighted-least-squares
+    partition, on dichotomous three-parameter items in 40-item tests, none of
+    which describes a polytomous likelihood-ratio statistic. Removal here is
+    therefore on ``flagged_bh`` alone, which makes this loop MORE aggressive at
+    large N than its dichotomous counterpart, not less. ``effect_size`` is
+    returned unchanged and uninterpreted; it carries no class.
+
+    **The returned p-values are conditional on a data-dependent selection.**
+    The anchor is chosen from the same data then tested against it, so they are
+    not guaranteed super-uniform under the null and Benjamini-Hochberg does not
+    control the FDR at ``fdr_q`` for a purified sweep. Treat ``flagged_bh`` as a
+    screening device. Purification reduces rather than removes criterion
+    contamination and can fail outright when DIF is unbalanced in direction.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+        Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of
+            differential item functioning using the parameters of item response
+            models. In P. W. Holland & H. Wainer (Eds.), *Differential item
+            functioning* (pp. 67-113). Lawrence Erlbaum.
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_items = int(y.shape[1])
+    rounds_cap = _bounded_integer(max_rounds, "max_rounds", 0, 50)
+    floor = _bounded_integer(min_anchor_items, "min_anchor_items", 1, max(n_items, 1))
+
+    def sweep(anchor: np.ndarray) -> dict[str, np.ndarray]:
+        """One full sweep, each item tested against ``anchor UNION {itself}``."""
+        result = {
+            "item": np.arange(n_items, dtype=np.int64),
+            "lr": np.full(n_items, np.nan),
+            "df": np.zeros(n_items, dtype=np.int64),
+            "p_value": np.full(n_items, np.nan),
+            "flagged_bh": np.zeros(n_items, dtype=bool),
+            "effect_size": np.full(n_items, np.nan),
+        }
+        for item in range(n_items):
+            columns = np.flatnonzero(anchor | (np.arange(n_items) == item))
+            local = int(np.flatnonzero(columns == item)[0])
+            one = dif_polytomous(
+                y[:, columns],
+                group_id,
+                n_cat,
+                model=model,
+                studied_items=np.array([local], dtype=np.int64),
+                q_theta=q_theta,
+                max_iter=max_iter,
+                tol=tol,
+                fdr_q=fdr_q,
+            )
+            for key in ("lr", "df", "p_value", "effect_size"):
+                result[key][item] = one[key][0]
+        # Multiplicity is controlled ACROSS items, so Benjamini-Hochberg is
+        # applied to the assembled sweep rather than to each one-item call,
+        # where it would be a no-op.
+        result["flagged_bh"] = _benjamini_hochberg(result["p_value"], fdr_q)
+        return result
+
+    anchor = np.ones(n_items, dtype=bool)
+    report = sweep(anchor)
+    flagged = report["flagged_bh"].copy()
+    rounds = 0
+    reason = "stable_flag_set"
+
+    while rounds < rounds_cap:
+        candidate = ~flagged
+        if int(candidate.sum()) < floor:
+            reason = "insufficient_anchor_items"
+            break
+        if np.array_equal(candidate, anchor):
+            reason = "stable_flag_set"
+            break
+        anchor = candidate
+        report = sweep(anchor)
+        rounds += 1
+        if np.array_equal(report["flagged_bh"], flagged):
+            reason = "stable_flag_set"
+            break
+        flagged = report["flagged_bh"].copy()
+    else:
+        if rounds_cap > 0 and not np.array_equal(~flagged, anchor):
+            reason = "max_rounds_reached"
+
+    report["anchor"] = anchor
+    report["n_anchor"] = int(anchor.sum())
+    report["rounds"] = rounds
+    report["purify_converged"] = reason == "stable_flag_set"
+    report["purify_termination_reason"] = reason
+    return report
+
+
 def u3_person_fit_polytomous(
     responses: np.ndarray,
     n_cat: int,
