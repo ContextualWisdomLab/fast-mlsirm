@@ -236,6 +236,20 @@ def polytomous_expected_response(fit: PolytomousFit, theta: np.ndarray) -> np.nd
     return _polytomous_predictions(fit, theta)[1]
 
 
+def _validated_monotonicity_grid(theta: np.ndarray) -> np.ndarray:
+    """A strictly ascending finite 1-D grid of at least two points."""
+    grid = np.asarray(theta, dtype=np.float64)
+    if grid.ndim != 1:
+        raise ValueError("theta must be a 1-D grid")
+    if grid.size < 2:
+        raise ValueError("theta must hold at least two points to have a slope")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("theta must be finite")
+    if not np.all(np.diff(grid) > 0.0):
+        raise ValueError("theta must be strictly ascending")
+    return grid
+
+
 @dataclass(frozen=True)
 class ExpectedScoreMonotonicity:
     """Where and by how much an expected-total-score curve decreases.
@@ -301,16 +315,7 @@ def expected_total_score_monotonicity(
     van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
     Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
     """
-    grid = np.asarray(theta, dtype=np.float64)
-    if grid.ndim != 1:
-        raise ValueError("theta must be a 1-D grid")
-    if grid.size < 2:
-        raise ValueError("theta must hold at least two points to have a slope")
-    if not np.all(np.isfinite(grid)):
-        raise ValueError("theta must be finite")
-    if not np.all(np.diff(grid) > 0.0):
-        raise ValueError("theta must be strictly ascending")
-
+    grid = _validated_monotonicity_grid(theta)
     expected_total = polytomous_expected_response(fit, grid).sum(axis=1)
     step = np.diff(expected_total)
     falling = step < 0.0
@@ -334,6 +339,114 @@ def expected_total_score_monotonicity(
         decreasing_intervals=tuple(intervals),
         monotone=not intervals,
     )
+
+
+def _decrease_report(
+    grid: np.ndarray, expected_total: np.ndarray
+) -> ExpectedScoreMonotonicity:
+    """Shared reduction from a curve to the two grid-stable statistics."""
+    step = np.diff(expected_total)
+    falling = step < 0.0
+    total_decrease = float(-step[falling].sum()) if falling.any() else 0.0
+
+    intervals: list[tuple[float, float]] = []
+    start: int | None = None
+    for index, is_falling in enumerate(falling):
+        if is_falling and start is None:
+            start = index
+        elif not is_falling and start is not None:
+            intervals.append((float(grid[start]), float(grid[index])))
+            start = None
+    if start is not None:
+        intervals.append((float(grid[start]), float(grid[-1])))
+
+    return ExpectedScoreMonotonicity(
+        theta=grid,
+        expected_total=expected_total,
+        total_decrease=total_decrease,
+        decreasing_intervals=tuple(intervals),
+        monotone=not intervals,
+    )
+
+
+def focal_expected_total_score_monotonicity(
+    fit,
+    dimension: int,
+    theta: np.ndarray,
+    q_nuisance: int = 41,
+) -> ExpectedScoreMonotonicity:
+    """Monotonicity of the expected total score along one dimension of a
+    multidimensional graded fit, with the other dimensions integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
+    focal trait; ``theta`` is the caller's grid on it. Returns the same report
+    as :func:`expected_total_score_monotonicity`, with the same two grid-stable
+    statistics and the same omissions.
+
+    **The nuisance integral collapses to one dimension, exactly.** The model is
+    compensatory, so item ``i``'s linear predictor splits as
+    ``a_if * theta_f + sum_{d != f} a_id * theta_d``. Under the fitted prior
+    ``theta ~ MVN(0, I)`` the second term is a linear combination of
+    independent standard normals, hence normal with variance
+    ``sigma_i^2 = sum_{d != f} a_id^2``. So marginalizing over any number of
+    nuisance dimensions is a single one-dimensional Gaussian integral per item,
+    evaluated here on a ``q_nuisance``-node Gauss-Hermite rule. This is a
+    property of the compensatory form and the independent prior, not an
+    approximation that improves with more dimensions.
+
+    **The monotonicity conclusion survives the marginalization**, and the step
+    that carries it is Leibniz's rule — differentiating under the integral sign,
+    elementary real analysis rather than a psychometric proposition, which is
+    why no psychometric citation is attached to it. Differentiating gives
+    ``dE[T]/dtheta_f = sum_i a_if * E_z[sum_k sigmoid'(a_if*theta_f + z +
+    beta_ik)]``, again a positive-weighted combination of the FOCAL slopes, so
+    a decrease still requires some ``a_if < 0``. Note what that does not say: it
+    constrains the focal column only, and an item loading negatively on a
+    nuisance dimension does not make this curve decrease.
+
+    No source states the multidimensional case. Junker and Sijtsma record that
+    little is known about stochastic ordering when the latent trait is
+    multidimensional, so this is presented as a derivation rather than as
+    received theory.
+    """
+    grid = _validated_monotonicity_grid(theta)
+    slope = np.asarray(fit.slope, dtype=np.float64)
+    if slope.ndim != 2:
+        raise ValueError("fit.slope must be an n_items x n_dims matrix")
+    n_items, n_dims = slope.shape
+    focal = _bounded_integer(dimension, "dimension", 0, n_dims - 1)
+    nodes_requested = _bounded_integer(q_nuisance, "q_nuisance", 2, 201)
+
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.ndim != 2 or threshold.shape[0] != n_items:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    n_cat = int(threshold.shape[1]) + 1
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+
+    nuisance_sd = np.sqrt(
+        np.square(slope).sum(axis=1) - np.square(slope[:, focal])
+    )
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+    for item in range(n_items):
+        base = slope[item, focal] * grid[:, None] + nuisance_sd[item] * nodes[None, :]
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = polytomous_expected_response(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    _ = n_cat
+    return _decrease_report(grid, expected_total)
 
 
 def _core_module():
