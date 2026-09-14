@@ -190,7 +190,12 @@ def fit_mixed_items(
 
     Every family retains its own conditional response probability. The shared
     trait is fixed to ``N(0, 1)`` for scale identification. Dominance slopes are
-    positive; nominal baseline category score/intercept are fixed to zero;
+    UNCONSTRAINED, so a reverse-keyed item is returned with a negative ``slope``
+    rather than floored at a small positive value; see the orientation note
+    below. Ideal-point and GGUM slopes stay positive, because those families
+    depend on the slope only through its magnitude and a free sign there would
+    be unidentified rather than informative. Nominal baseline category
+    score/intercept are fixed to zero;
     ordered GRM/GGUM thresholds use positive gap parameters. ``rasch`` and
     ``pcm`` fix the slope to one on the standard-normal trait scale. The 3PL,
     upper-3PL, and 4PL asymptotes are transformed so that they remain in the
@@ -199,12 +204,27 @@ def fit_mixed_items(
     transition constants in ``intercepts``; ``tutz`` fixes their common slope
     to one. ``cll`` is the one-parameter complementary log-log cell.
     Ideal-point items use
-    ``exp(-0.5 * (a * (theta - b))**2)``. LSIRM items alone use
+    ``exp(-0.5 * (a * (theta - b))**2)``, which depends on ``a`` only through
+    its square. LSIRM items alone use
     ``-||xi-zeta||`` with fixed distance weight one; all LSIRM items share the
     same standard-normal latent-space coordinate, while non-spatial items are
     constant on that integration axis. GGUM observed-category probabilities
     pair the two subjective categories ``z`` and ``M-z`` under the symmetric
     threshold sequence of Roberts et al. (2000).
+
+    **Orientation.** Where slopes are unconstrained, ``(a, theta) ->
+    (-a, -theta)`` leaves the likelihood unchanged, so the sign of the solution
+    as a whole is not identified by the data. It is pinned by returning the
+    largest-magnitude slope positive, and ``location`` flips with it while
+    intercepts, thresholds, scores, asymptotes and latent coordinates do not.
+    Two exceptions, both decided by which part of the model absorbs the
+    reflection rather than by convenience. A bank containing any fixed-slope
+    family (``rasch``, ``cll``, ``tutz``, ``pcm``, ``nominal``) is left alone:
+    an implicit slope of one cannot be negated, so the data already identify the
+    orientation and imposing a rule would move the answer away from the maximum
+    of the likelihood. A bank of only ``ideal`` and ``ggum`` items is left
+    UNPINNED: those absorb the reflection through their locations with the slope
+    untouched, so no slope-based rule can fix their sign.
 
     Rust performs the person E-step and independent item M-steps in parallel on
     CPU. ``n_threads=0`` selects the available hardware parallelism; larger
