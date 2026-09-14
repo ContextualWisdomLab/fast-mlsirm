@@ -236,6 +236,106 @@ def polytomous_expected_response(fit: PolytomousFit, theta: np.ndarray) -> np.nd
     return _polytomous_predictions(fit, theta)[1]
 
 
+@dataclass(frozen=True)
+class ExpectedScoreMonotonicity:
+    """Where and by how much an expected-total-score curve decreases.
+
+    ``theta`` is the grid the curve was evaluated on, ascending, and
+    ``expected_total`` the curve itself. ``total_decrease`` is the sum of the
+    magnitudes of the downward steps; ``decreasing_intervals`` holds one
+    ``(start, end)`` pair per maximal run of consecutive downward steps, in
+    theta units. ``monotone`` is true exactly when both are empty/zero.
+    """
+
+    theta: np.ndarray
+    expected_total: np.ndarray
+    total_decrease: float
+    decreasing_intervals: tuple[tuple[float, float], ...]
+    monotone: bool
+
+
+def expected_total_score_monotonicity(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> ExpectedScoreMonotonicity:
+    """Report where the expected total score decreases over a caller's grid.
+
+    ``theta`` is evaluated as given: the grid is the caller's measurement
+    decision, not this function's, because which region of the trait matters
+    depends on where the respondents are.
+
+    **Only two statistics are reported, and the omissions are deliberate.**
+    Under grid refinement the count of decreasing points diverges and the
+    largest single decrease goes to zero, so neither describes the curve -- they
+    describe the grid. ``total_decrease`` converges to the integral of the
+    negative part of the derivative, and the intervals converge to the region
+    where it is negative. A count and a maximum are what a Mokken monotonicity
+    summary reports, but those are sample statistics on grouped-respondent
+    proportions with a sampling distribution (van der Ark, 2007, p. 5, eq. 3),
+    which a grid evaluation of a fitted model does not have. They are not the
+    same quantities under the same names.
+
+    **Why a decrease means what it means.** For a unidimensional graded model
+    the expected total score is increasing in ``theta`` whenever every slope is
+    positive; the conclusion traces to Samejima (1972) through Hemker, Sijtsma
+    and Molenaar. The derivation is a one-line consequence a reader can check:
+    ``dE[T]/dtheta = sum_i a_i * (sum_k sigmoid'(a_i*theta + beta_ik))``, a
+    positive-weighted combination of the slopes, so a decrease requires a
+    negative ``a_i``. No source states the derivative in that form, so it is
+    shown rather than cited.
+
+    **Two things this diagnostic is not.** It is not a hypothesis test: no
+    sampling distribution is claimed and no published bootstrap or delta-method
+    statement about the monotonicity of an estimated expected-score curve
+    appears to exist. And it must not be read through stochastic-ordering
+    results: the graded model has neither the monotone likelihood ratio
+    property nor guaranteed stochastic ordering of the latent by the total
+    score (van der Ark, 2007, p. 3), so that literature would attach a property
+    this model does not have.
+
+    References
+    ----------
+    Samejima, F. (1972). A general model for free-response data.
+    *Psychometrika Monograph Supplement, 37*(4, Pt. 2).
+
+    van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
+    Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+    """
+    grid = np.asarray(theta, dtype=np.float64)
+    if grid.ndim != 1:
+        raise ValueError("theta must be a 1-D grid")
+    if grid.size < 2:
+        raise ValueError("theta must hold at least two points to have a slope")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("theta must be finite")
+    if not np.all(np.diff(grid) > 0.0):
+        raise ValueError("theta must be strictly ascending")
+
+    expected_total = polytomous_expected_response(fit, grid).sum(axis=1)
+    step = np.diff(expected_total)
+    falling = step < 0.0
+    total_decrease = float(-step[falling].sum()) if falling.any() else 0.0
+
+    intervals: list[tuple[float, float]] = []
+    start: int | None = None
+    for index, is_falling in enumerate(falling):
+        if is_falling and start is None:
+            start = index
+        elif not is_falling and start is not None:
+            intervals.append((float(grid[start]), float(grid[index])))
+            start = None
+    if start is not None:
+        intervals.append((float(grid[start]), float(grid[-1])))
+
+    return ExpectedScoreMonotonicity(
+        theta=grid,
+        expected_total=expected_total,
+        total_decrease=total_decrease,
+        decreasing_intervals=tuple(intervals),
+        monotone=not intervals,
+    )
+
+
 def _core_module():
     """Return the compiled Rust core module, or ``None`` if it is unavailable."""
     try:
