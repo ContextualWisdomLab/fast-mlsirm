@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2025-05-19 - Categorical reduction overhead in GPCM
+**Learning:** During the EM step for GPCM models, creating multiple slice copies via list comprehension and boolean indexing (`np.stack([post[y[:, i] == k].sum(axis=0) ...])`) creates huge unvectorized overhead by individually allocating and copying elements just to reduce them.
+**Action:** Instead, create a dense boolean mask and utilize highly optimized BLAS matrix multiplications `(y[:, i] == k).astype(post.dtype, copy=False) @ post` to avoid explicitly building the intermediate sliced subsets.
