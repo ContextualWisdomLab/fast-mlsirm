@@ -589,20 +589,28 @@ def logistic_dif(
       ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
       ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
       ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
-      (The older Zumbo-Thomas cut-offs of 0.13/0.26 are much more conservative: the 0.13 floor for
-      declaring DIF is stated in Zumbo, 1999, p. 27, which is the verifiable source for it — the
-      Zumbo & Thomas, 1997 working paper that defines the measure itself has no locatable public copy.
-      The two conventions disagree in value AND in direction of use: 0.13 is a FLOOR for calling an
-      item DIF, while 0.035 is a CEILING for calling it negligible. Treat the Jodoin-Gierl banding
-      below as one of two published conventions rather than the recommendation. Provenance caveat:
-      Jodoin & Gierl (2001) is ERIC abstract-only with no obtainable full text, so the 0.035/0.070
-      band is recorded from secondary use rather than verified against the paper. The CALIBRATION
-      TARGET is contested: this package's own note says the cut-offs were calibrated on the 2-df
-      omnibus quantity, while Sireci & Rios (2013, p. 178) state they were calibrated on the
-      uniform-DIF increment with the non-uniform extension due to Gomez-Benito, Hidalgo & Padilla
-      (2009). Both are secondary readings of an unobtainable paper. Which quantity ``jg_class`` is
-      validly applied to therefore depends on an unresolved question; treat the class as indicative
-      rather than authoritative until it is settled.)
+      (The 0.035/0.070 banding and the older Zumbo-Thomas 0.13/0.26 are two calibrations of the SAME
+      quantity against DIFFERENT tests, and neither is portable to the other's. Jodoin & Gierl (2001,
+      Applied Measurement in Education, 14(4), 329-349) has now been read in full and states the bands
+      on the ONE-df UNIFORM increment (p. 335); the 2-df omnibus appears only as an alternate
+      significance gate. Zumbo (1999, p. 27) states 0.13 as a Cohen-style convention on the omnibus,
+      which Jodoin & Gierl supersede rather than adopt (p. 334). The two also differ in direction of
+      use: 0.13 is a FLOOR for calling an item DIF, 0.035 a CEILING for calling it negligible.
+
+      KNOWN DEFECT, not yet corrected in behaviour: ``jg_class`` applies the bands to ``delta_r2``,
+      the 2-df quantity they were not calibrated for, and withholds them from ``delta_r2_uniform``,
+      the one they were. A second mismatch is independent of the degrees of freedom — Jodoin & Gierl
+      compute the Zumbo-Thomas weighted-least-squares (Pratt-Pregibon) partition (p. 333), not the
+      Nagelkerke pseudo-R² this package computes. Both have to be settled together, so the behaviour
+      is unchanged pending that work; treat ``jg_class`` as indicative rather than authoritative.
+
+      Calibration scope, which the letter class does not carry: the bands come from a cubic regression
+      predicting the uniform increment from SIBTEST's beta with Roussos & Stout's .059/.088 substituted
+      in (p. 335), on DICHOTOMOUS 3PL items only (pp. 337, 339) and 40-item tests (pp. 336-337). They
+      are anchored to SIBTEST bands, NOT to a Cohen norm, so 0.035 must not be read as "3.5% of
+      variance is a small effect" (pp. 345-346). The non-uniform extension is in the original itself
+      (p. 336) but rests on two items and is called provisional (pp. 346-347). The procedures become
+      conservative at large balanced samples and underpowered at unequal group sizes (pp. 346-347).)
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item
