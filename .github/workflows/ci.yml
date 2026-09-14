@@ -73,6 +73,11 @@ jobs:
       # scheduled Statistical Studies workflow rather than on every PR.
       - run: cargo test --workspace
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
+      # The fuzz crate is outside the workspace and ClusterFuzzLite builds it with
+      # `cargo fuzz build`, which silently re-resolves any dependency missing from
+      # fuzz/Cargo.lock. Fail here instead when that lockfile drifts from
+      # fuzz/Cargo.toml or the mlsirm-core path dependency.
+      - run: cargo metadata --locked --manifest-path fuzz/Cargo.toml --format-version 1 > /dev/null
 
   gpu-smoke:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
