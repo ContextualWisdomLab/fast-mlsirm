@@ -547,3 +547,84 @@ fn mc_testlet_recovery_500() {
         );
     }
 }
+
+/// `fit_testlet` shared `fit_mmle_2pl`'s `[1e-3, 10]` slope clamp, whose lower
+/// end was also a positivity floor: a reverse-keyed item was returned at
+/// `0.001` rather than with a negative slope. The bound is now symmetric, so it
+/// still guards magnitude without constraining sign.
+#[test]
+fn a_reverse_keyed_item_recovers_its_negative_slope() {
+    let mut rng = Lcg(9_182_736);
+    let (n, j, d_n) = (1_500usize, 6usize, 2usize);
+    let tid: Vec<usize> = (0..j).map(|i| i % d_n).collect();
+    let a_t = [1.35, 1.10, -0.95, 1.20, -1.25, 1.05];
+    let beta_t = [0.3, -0.2, 0.1, -0.4, 0.2, 0.0];
+    let y = simulate(&a_t, &beta_t, &vec![0.0; d_n], &tid, n, j, false, &mut rng);
+    let observed = vec![true; n * j];
+    let cfg = TestletConfig {
+        estimate_sigma: false,
+        init_sigma2: 0.0,
+        ..TestletConfig::default()
+    };
+    let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
+
+    // The orientation of the whole solution is not identified, so compare up to
+    // the global reflection: magnitudes item by item, and the sign PATTERN
+    // across items. A fitter that floors reverse-keyed items fails both.
+    for (item, (&estimated, &truth)) in res.a.iter().zip(a_t.iter()).enumerate() {
+        assert!(
+            (estimated.abs() - truth.abs()).abs() < 0.35,
+            "item {item} recovered |{estimated:.4}| for true |{truth:.2}|: {:?}",
+            res.a
+        );
+    }
+    for left in 0..a_t.len() {
+        for right in left + 1..a_t.len() {
+            assert_eq!(
+                res.a[left] * res.a[right] > 0.0,
+                a_t[left] * a_t[right] > 0.0,
+                "items {left} and {right} must land on the same side of zero as \
+                 true {:.2} / {:.2}: {:?}",
+                a_t[left],
+                a_t[right],
+                res.a
+            );
+        }
+    }
+    // And the returned reflection is the canonical one.
+    let anchor = res
+        .a
+        .iter()
+        .enumerate()
+        .max_by(|(_, x), (_, y)| x.abs().total_cmp(&y.abs()))
+        .map(|(i, _)| i)
+        .expect("one slope per item");
+    assert!(
+        res.a[anchor] > 0.0,
+        "the largest-magnitude slope must be positive: {:?}",
+        res.a
+    );
+}
+
+/// The orientation rule must not rewrite fits that were already correct.
+#[test]
+fn ordinary_testlet_data_is_returned_unflipped() {
+    let mut rng = Lcg(9_182_736);
+    let (n, j, d_n) = (900usize, 4usize, 2usize);
+    let tid: Vec<usize> = (0..j).map(|i| i % d_n).collect();
+    let a_t = [1.35, 1.10, 0.95, 1.20];
+    let beta_t = [0.3, -0.2, 0.1, -0.4];
+    let y = simulate(&a_t, &beta_t, &vec![0.0; d_n], &tid, n, j, false, &mut rng);
+    let observed = vec![true; n * j];
+    let cfg = TestletConfig {
+        estimate_sigma: false,
+        init_sigma2: 0.0,
+        ..TestletConfig::default()
+    };
+    let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
+    assert!(
+        res.a.iter().all(|value| *value > 0.0),
+        "all-positive data must come back all-positive: {:?}",
+        res.a
+    );
+}
