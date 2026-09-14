@@ -589,7 +589,15 @@ def logistic_dif(
       ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
       ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
       ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
-      (The older Zumbo & Thomas, 1997 cut-offs of 0.13/0.26 are much more conservative.)
+      (The older Zumbo-Thomas cut-offs of 0.13/0.26 are much more conservative: the 0.13 floor for
+      declaring DIF is stated in Zumbo, 1999, p. 27, which is the verifiable source for it — the
+      Zumbo & Thomas, 1997 working paper that defines the measure itself has no locatable public copy.
+      The two conventions disagree in value AND in direction of use: 0.13 is a FLOOR for calling an
+      item DIF, while 0.035 is a CEILING for calling it negligible. Treat the Jodoin-Gierl banding
+      below as one of two published conventions rather than the recommendation. Provenance caveat:
+      Jodoin & Gierl (2001) is ERIC abstract-only with no obtainable full text, so the 0.035/0.070
+      band and the note that these cut-offs were calibrated on the 2-df omnibus quantity are recorded
+      from secondary use rather than verified against the paper.)
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item
