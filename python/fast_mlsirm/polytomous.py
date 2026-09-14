@@ -321,6 +321,13 @@ def fit_polytomous(
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
 
+    Slopes are UNCONSTRAINED, so a reverse-keyed item is returned with a
+    negative ``slope`` rather than being floored at zero. Because
+    ``(a, theta) -> (-a, -theta)`` leaves the likelihood unchanged, the sign of
+    the slope vector as a whole is fixed by convention: the largest-magnitude
+    slope is returned positive. Trait scores from :func:`score_polytomous` are
+    on that same orientation.
+
     References
     ----------
     Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood
