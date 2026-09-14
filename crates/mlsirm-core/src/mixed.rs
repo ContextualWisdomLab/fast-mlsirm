@@ -198,8 +198,19 @@ const PARAM_BOUND: (f64, f64) = (-12.0, 12.0);
 /// constraining sign: a reverse-keyed item is estimated with a negative slope
 /// rather than floored.
 const SLOPE_BOUND: (f64, f64) = (-SLOPE_MAGNITUDE, SLOPE_MAGNITUDE);
-/// Largest slope magnitude the M-step accepts, on the natural scale.
-const SLOPE_MAGNITUDE: f64 = 54.6;
+/// Largest slope magnitude the M-step accepts, on the natural scale. The same
+/// value `crate::twopl`, `crate::mhrm`, `crate::mmle`, `crate::testlet` and
+/// `crate::mixture` already use, so one item does not have a different
+/// reachable range depending on which entry point fitted it. It is a numerical
+/// guard chosen for consistency across the crate, not a value any source
+/// states; a slope resting on it is reported through
+/// [`MixedItemEstimate::at_bound`] rather than passed off as an estimate.
+///
+/// This tightens the previous ceiling, which was `exp(4)` only because the old
+/// `log a` parametrization bounded the log scale at 4. A discrimination above
+/// 10 is a degenerate fit rather than a measurement, and it is now visible
+/// instead of silent.
+const SLOPE_MAGNITUDE: f64 = 10.0;
 /// Optimizer bound on the `log a` slope of `Ideal` and `Ggum`. Those families
 /// absorb the reflection through their locations, so their slope sign carries
 /// no orientation information and is held positive for identification; this
