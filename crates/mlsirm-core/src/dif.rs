@@ -487,6 +487,35 @@ fn mh_sweep(
 // quantity against two different tests, not two different measures. Neither pair is portable to the
 // other's degrees of freedom.
 //
+// AND THE REPLACEMENT QUANTITY IS NOT FULLY DEFINED BY THE SOURCE, which changes what can be
+// claimed here. Page 333 restates the equations rather than deferring: eq. 2 is the logistic model,
+// eq. 3 the weighted-least-squares solution `tau~ = (X'VX)^-1 X'Vz` with `z = X tau~ + V^-1 r`,
+// `r = u - P~`, and V diagonal with elements `P~_i (1 - P~_i)` -- the standard IRLS Bernoulli
+// weights. Eq. 4 defines the effect size as the difference of two sums of "the products of the
+// standardized regression coefficient for each explanatory variable and the correlation between the
+// response and each explanatory variable". Two of the three choices that change the number are left
+// undefined by that text: whether "the response" in the correlation is the observed `u` or the
+// working `z` (both are defined as distinct symbols one paragraph earlier), and whether the
+// coefficient is standardized on the working or the original scale. A third is unstated -- the
+// formula for the standardized coefficient itself -- and a fourth, the exact nested-model
+// specification per uniform and non-uniform term, is not given either.
+//
+// So the defensible statement is NOT "this computes the wrong quantity and here is the right one".
+// It is: this computes a Nagelkerke pseudo-`R^2`; the bands were calibrated on a different quantity
+// whose definition the source leaves underdetermined; and the package therefore cannot state what
+// its letter classes mean. Implementing the intended statistic from an underdetermined definition
+// would produce numbers with no external referent -- nothing to check them against, and no
+// obviously wrong output.
+//
+// Citation-year discrepancy, recorded rather than resolved: Jodoin & Gierl credit the measure to
+// Zumbo & Thomas *1996* throughout, with Pratt (1987) and Pregibon (1981) for the derivation logic.
+// This module's reference list says 1997. Neither has been verified against the working paper
+// itself, which has no locatable public copy under either year, so the year here is left as it
+// stands and the disagreement is noted. Anyone searching for it should try both.
+//
+// Provenance: p. 333 was transcribed by the consumer session, not read by the author of this
+// comment.
+//
 // The applied quantity is deliberately NOT changed in this commit. Correcting it reclassifies every
 // item every current caller has scored, and the destination is not simply "swap to the uniform
 // component": the pseudo-`R^2` mismatch has to be settled in the same change, or the bands would be
