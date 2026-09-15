@@ -629,3 +629,14 @@ def test_executor_rejects_non_protocol_invalid_metadata_and_wrong_request():
         execute_generation(BadMetadataProvider(), _request())
     with pytest.raises(TypeError, match="request must be a GenerationRequest"):
         execute_generation(BadMetadataProvider(), object())
+
+def test_parser_rejects_numeric_overflow():
+    from fast_mlsirm.rubric.candidates import parse_generated_item_candidate, CandidateValidationError
+    from unittest.mock import MagicMock
+    from fast_mlsirm.rubric.generation import GenerationRequest
+    req = MagicMock(spec=GenerationRequest)
+    req.contract = {"schema_version": "v1", "generation_provenance": "abc", "criteria": [], "metadata": {}}
+    raw = '{"item_text": "a", "rationales": {}, "metadata": {"val": 1e999}, "generation_provenance": "abc", "answer_key": "c", "criteria_coverage": {}, "blueprint_fingerprint": "abc", "request_fingerprint": "xyz", "raw_response_sha256": "zzz"}'
+    with pytest.raises(CandidateValidationError) as exc:
+        parse_generated_item_candidate(raw, req)
+    assert exc.value.code == "nonfinite_json_number"

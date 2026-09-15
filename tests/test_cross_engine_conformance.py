@@ -409,3 +409,8 @@ def test_fingerprint_changes_when_evidence_verdict_changes() -> None:
     )
 
     assert passed.inventory_fingerprint != failed.inventory_fingerprint
+
+def test_inventory_rejects_numeric_overflow():
+    payload = '{"inventory_fingerprint": "a", "package_version": "v1", "source_commit": "abc", "capabilities": [], "schema_version": "v1", "run_provenance": {"val": 1e999}}'
+    with pytest.raises(ValueError, match="manifest JSON contains a non-finite float"):
+        ConformanceInventory.from_json(payload)

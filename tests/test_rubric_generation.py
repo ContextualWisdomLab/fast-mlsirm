@@ -250,3 +250,8 @@ def test_provider_failures_are_redacted():
         execute_generation(FailingProvider(), request)
     assert error.value.code == "provider_failure"
     assert "secret" not in str(error.value)
+
+def test_contract_rejects_numeric_overflow():
+    from fast_mlsirm.rubric.generation import _contract_object
+    with pytest.raises(ValueError, match="contract_json contains non-finite numbers"):
+        _contract_object('{"schema_version": "v1", "val": 1e999}')

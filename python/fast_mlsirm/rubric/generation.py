@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+import math
 import re
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -127,7 +128,6 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
         raise ValueError("contract_json contains non-finite numbers")
 
     def _reject_float_nonfinite(value):
-        import math
         f_val = float(value)
         if not math.isfinite(f_val):
             raise ValueError("contract_json contains non-finite numbers")
@@ -141,6 +141,8 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
             parse_float=_reject_float_nonfinite,
         )
     except (TypeError, ValueError) as exc:
+        if "duplicate keys" in str(exc) or "non-finite numbers" in str(exc):
+            raise
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
         raise ValueError("contract_json must encode a JSON object")
