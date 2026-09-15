@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import math
 from html import escape
 from pathlib import Path
@@ -103,11 +104,9 @@ def _render_html(
             "<head>",
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(_css()), quote=True)}">',
             f"<title>{escape(title)}</title>",
-            "<style>",
-            _css(),
-            "</style>",
+            f"<style>{_css()}</style>",
             "</head>",
             "<body>",
             '<a href="#main-content" class="skip-link">Skip to main content</a>',
@@ -359,7 +358,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
                     '<div class="bar-row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
                     '<div class="bar-track" aria-hidden="true">',
-                    f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
+                    f'<progress class="bar-fill" value="{width:.1f}" max="100"></progress>',
                     "</div>",
                     f'<span class="bar-value"{_title_attr(value)}>{escape(_format_value(value))}</span>',
                     "</div>",
@@ -565,9 +564,10 @@ def _title_attr(value: Any) -> str:
     return ""
 
 
-def _content_security_policy() -> str:
+def _content_security_policy(css_content: str) -> str:
     """Return the strict CSP string embedded in every generated report."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    css_hash = base64.b64encode(hashlib.sha256(css_content.encode('utf-8')).digest()).decode('utf-8')
+    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:
@@ -816,13 +816,19 @@ h3 {
   border-radius: 999px;
 }
 
-.bar-fill {
+progress.bar-fill {
+  appearance: none;
+  border: none;
   height: 100%;
+  width: 100%;
   min-width: 8px;
-  background: var(--teal);
+  background-color: transparent;
   transform-origin: left;
   animation: bar-grow 0.8s ease-out forwards;
 }
+progress.bar-fill::-webkit-progress-bar { background-color: transparent; }
+progress.bar-fill::-webkit-progress-value { background-color: var(--teal); }
+progress.bar-fill::-moz-progress-bar { background-color: var(--teal); }
 
 @keyframes bar-grow {
   from { transform: scaleX(0); }
