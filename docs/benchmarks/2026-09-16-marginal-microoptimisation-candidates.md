@@ -24,8 +24,8 @@ Candidates replace
 dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
 ```
 
-with `np.einsum("ij,ij->i", diff, diff)`. Five open pull requests propose the
-identical replacement: #1822, #1825, #1841, #1878, #1897.
+with `np.einsum("ij,ij->i", diff, diff)`. Six open pull requests propose the
+identical replacement: #1822, #1825, #1841, #1878, #1897, #1901.
 
 **The shape matters and the proposals did not state it.** At this call site
 `diff` is `(Nx, K)` where `K` is `latent_dim`, typically 2 or 3 — a very narrow
@@ -43,7 +43,7 @@ array. A speedup measured on a large one would not transfer.
 The change is sound at the sizes this code runs. **The absolute saving is about
 2.5 microseconds per call** at (49, 2), and the site sits inside a per-item
 Newton loop inside the EM iteration, so the total depends entirely on a call
-count none of the five proposals supplies. The ratio is the eye-catching number;
+count none of the six proposals supplies. The ratio is the eye-catching number;
 the microseconds are the one a reader needs.
 
 ## Categorical reduction in the GPCM E-step
