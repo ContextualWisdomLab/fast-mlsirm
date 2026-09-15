@@ -1605,3 +1605,43 @@ def test_serving_rejects_non_mapping_response_payloads(monkeypatch, function, pa
     monkeypatch.setattr(serving, "_core_module", lambda: BombCore())
     with pytest.raises(ValueError, match="object mapping"):
         function(_bundle(), payload)
+
+def test_json_loader_rejects_underflow_prefix_with_deep_nesting(tmp_path, monkeypatch):
+    from fast_mlsirm.io import _load_json_bounded
+    path = tmp_path / "underflow_deep.json"
+    depth = 128
+    extra = 10
+    path.write_text("]}" * extra + "[" * (depth + extra) + "0" + "]" * (depth + extra), encoding="utf-8")
+    import json
+
+    # Spy on json.loads to verify it is NEVER called if our depth guard works correctly
+    calls = []
+    original_loads = json.loads
+    def spy_loads(*args, **kwargs):
+        calls.append(True)
+        return original_loads(*args, **kwargs)
+
+    monkeypatch.setattr(json, "loads", spy_loads)
+
+    import pytest
+    with pytest.raises(ValueError, match="nesting"):
+        _load_json_bounded(path, source="test JSON")
+
+    assert not calls, "json.loads was called; the depth guard was bypassed by the underflow"
+
+def test_json_loader_rejects_valid_deep_nesting(tmp_path):
+    from fast_mlsirm.io import _load_json_bounded
+    path = tmp_path / "valid_deep.json"
+    depth = 129
+    path.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
+    import pytest
+    with pytest.raises(ValueError, match="nesting"):
+        _load_json_bounded(path, source="test JSON")
+
+def test_json_loader_accepts_valid_boundary_nesting(tmp_path):
+    from fast_mlsirm.io import _load_json_bounded
+    path = tmp_path / "valid_boundary.json"
+    depth = 128
+    path.write_text('{"a":' * (depth - 1) + '{"a": 0}' + '}' * (depth - 1), encoding="utf-8")
+    result = _load_json_bounded(path, source="test JSON")
+    assert isinstance(result, dict)
