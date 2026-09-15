@@ -128,7 +128,6 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
 
     def _reject_float_nonfinite(value):
         import math
-
         f_val = float(value)
         if not math.isfinite(f_val):
             raise ValueError("contract_json contains non-finite numbers")
