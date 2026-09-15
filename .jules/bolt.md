@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2025-05-19 - Euclidean distances in marginal M-step
+**Learning:** `np.sum(diff * diff, axis=1)` 패턴을 사용해 거리를 계산하면 요소 간 곱셈을 위한 거대한 중간 배열(2D array)이 매번 메모리에 할당되면서 심각한 병목이 발생합니다. 이는 특히 M-step과 같이 반복이 많은 루프 내부에서 성능에 큰 타격을 줍니다.
+**Action:** `np.sum(x * x, axis=1)`을 사용하는 대신 `np.einsum('ij,ij->i', x, x)`를 사용하여 중간 배열의 할당을 방지하고 메모리 효율과 연산 속도를 크게 개선하십시오.
