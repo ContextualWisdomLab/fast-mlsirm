@@ -141,6 +141,8 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
             parse_float=_reject_float_nonfinite,
         )
     except (TypeError, ValueError) as exc:
+        if "duplicate keys" in str(exc) or "non-finite numbers" in str(exc):
+            raise
         raise ValueError("contract_json must be valid JSON text") from exc
     if not isinstance(contract, dict):
         raise ValueError("contract_json must encode a JSON object")

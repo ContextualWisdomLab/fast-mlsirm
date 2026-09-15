@@ -1128,3 +1128,8 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+def test_judge_rejects_numeric_overflow():
+    from fast_mlsirm.llm_judge import _response_object, JudgeFormatError
+    with pytest.raises(JudgeFormatError, match="judge response JSON is invalid"):
+        _response_object('{"rationale": "test", "meets_threshold": true, "score": 1e999}', required_fields={"rationale", "meets_threshold", "score"})
