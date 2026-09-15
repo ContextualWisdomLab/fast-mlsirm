@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-19 - Safe boolean array masking vs np.vdot
+**Learning:** When attempting to optimize array reductions, it might seem appealing to replace boolean masking like `array[where].sum()` with `np.vdot(array, where)` to avoid intermediate array allocations. However, `np.vdot` casts the boolean mask to float, and mathematically evaluates elements where the mask is `False` as `array_value * 0.0`. If `array` contains invalid values like `NaN` or `-inf` (common in log-likelihoods or unobserved elements), `NaN * 0.0` evaluates to `NaN`. This propagates into the sum, completely poisoning the output.
+**Action:** Do not use `np.vdot` to simulate boolean masking when dealing with arrays that could contain `NaN` or `inf`. Stick to `array[where].sum()` or use `where=where` argument in reductions like `np.sum(array, where=where)` to safely ignore masked elements and preserve mathematical correctness.
