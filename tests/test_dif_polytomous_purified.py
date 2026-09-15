@@ -91,6 +91,11 @@ def test_the_anchor_floor_stops_the_loop_and_says_so() -> None:
 
     assert report["purify_termination_reason"] == "insufficient_anchor_items"
     assert not report["purify_converged"]
+    # The screened set is reported even though it is below the floor. Returning
+    # the previous, larger anchor would make a failed purification look like a
+    # clean bank -- the most permissive answer, delivered silently.
+    assert report["n_anchor"] < 5
+    assert not report["anchor"].all()
 
 
 def test_the_plain_sweep_fields_are_all_still_returned(clean_data) -> None:
