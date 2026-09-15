@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-18 - Matrix Multiplication for Categorical Reduction
+**Learning:** NumPy boolean masking and row-wise summation (e.g. `[post[y == k].sum(0)]`) allocates large intermediate arrays and is slower than boolean-to-float casting paired with a dot product `(y == k).astype(dtype).T @ post`.
+**Action:** Use dot products (`@`) instead of masked `.sum(axis=0)` to compute categorical expected counts faster.
