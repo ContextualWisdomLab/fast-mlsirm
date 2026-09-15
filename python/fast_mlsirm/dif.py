@@ -597,16 +597,25 @@ def logistic_dif(
       which Jodoin & Gierl supersede rather than adopt (p. 334). The two also differ in direction of
       use: 0.13 is a FLOOR for calling an item DIF, 0.035 a CEILING for calling it negligible.
 
-      KNOWN DEFECT, not yet corrected in behaviour: ``jg_class`` applies the bands to ``delta_r2``,
-      the 2-df quantity they were not calibrated for, and withholds them from ``delta_r2_uniform``,
-      the one they were. A second mismatch is independent of the degrees of freedom — Jodoin & Gierl
-      compute the Zumbo-Thomas weighted-least-squares (Pratt-Pregibon) partition (p. 333), not the
-      Nagelkerke pseudo-R² this package computes. Both have to be settled together, so the behaviour
-      is unchanged pending that work; treat ``jg_class`` as indicative rather than authoritative.
+      KNOWN DEFECT, and the honest form of it is weaker than "we apply the wrong quantity".
+      ``jg_class`` applies the bands to ``delta_r2``, the 2-df quantity they were not calibrated
+      for, and withholds them from ``delta_r2_uniform``, the one they were. Independently of the
+      degrees of freedom, Jodoin & Gierl compute a Zumbo-Thomas weighted-least-squares
+      (Pratt-Pregibon) partition (p. 333), not the Nagelkerke pseudo-R² this package computes —
+      and that page leaves the partition UNDERDETERMINED: it does not say whether the correlation
+      is taken against the observed response or the working response of the linearization, nor on
+      which scale the coefficient is standardized, and both choices change the number. So what can
+      be defended is that this package cannot say what its letter classes mean, not that a
+      specific corrected class is available. Treat ``jg_class`` as indicative rather than
+      authoritative, and prefer the underlying magnitude to the letter.
 
       Calibration scope, which the letter class does not carry: the bands come from a cubic regression
       predicting the uniform increment from SIBTEST's beta with Roussos & Stout's .059/.088 substituted
-      in (p. 335), on DICHOTOMOUS 3PL items only (pp. 337, 339) and 40-item tests (pp. 336-337). They
+      in (p. 335). The paper never restricts the measure to an item type IN WORDS; the only scope
+      indicators are design facts — the response data were generated from a 3PL model (pp. 337,
+      339) and the tests were 40 items (pp. 336-337) — so treating the bands as inapplicable to
+      polytomous responses rests on the simulation conditions alone, the weaker of the two grounds
+      one might have had. They
       are anchored to SIBTEST bands, NOT to a Cohen norm, so 0.035 must not be read as "3.5% of
       variance is a small effect" (pp. 345-346). The non-uniform extension is in the original itself
       (p. 336) but rests on two items and is called provisional (pp. 346-347). The procedures become
