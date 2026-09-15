@@ -48,3 +48,11 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-18 - Matrix Multiplication for Categorical Reduction
+**Learning:** NumPy boolean masking and row-wise summation (e.g. `[post[y == k].sum(0)]`) allocates large intermediate arrays and is slower than boolean-to-float casting paired with a dot product `(y == k).astype(dtype).T @ post`.
+**Action:** Use dot products (`@`) instead of masked `.sum(axis=0)` to compute categorical expected counts faster.
+
+## 2024-05-19 - Fast vectorization of category loops in MMLE
+**Learning:** Looping over category indices to accumulate boolean mask dot products `[ (y == k).T @ post for k in range(...) ]` still requires Python-level loops that can cause slowdowns. A 3D boolean mask `(y[:, i, None] == np.arange(k_cat))` combined with a single transposed matrix multiplication `((y[:, i, None] == np.arange(k_cat)).astype(post.dtype, copy=False).T @ post).T` completely eliminates the loop and calculates expectations across all categories simultaneously in C, dramatically improving speed (e.g. from 0.34s to 0.14s on standard tests).
+**Action:** When iterating over a fixed categorical range to compute sums or dot products against a posterior, use broadcasting to create an added dimension `[:, None] == np.arange(...)` and multiply the entire stacked tensor at once to eliminate Python loop overhead.
