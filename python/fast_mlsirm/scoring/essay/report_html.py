@@ -9,6 +9,8 @@ authorization.
 from __future__ import annotations
 
 import json
+import hashlib
+import base64
 import math
 from html import escape
 from pathlib import Path
@@ -51,10 +53,13 @@ def _validated_report(report: EssayScoreReport) -> EssayScoreReport:
 
 def _content_security_policy() -> str:
     """Return a restrictive meta-delivered policy for the standalone artifact."""
+    css_bytes = _css().encode("utf-8")
+    sha256 = hashlib.sha256(css_bytes).digest()
+    b64 = base64.b64encode(sha256).decode("ascii")
     return "; ".join(
         (
             "default-src 'none'",
-            "style-src 'unsafe-inline'",
+            f"style-src 'sha256-{b64}'",
             "img-src data:",
             "object-src 'none'",
             "base-uri 'none'",

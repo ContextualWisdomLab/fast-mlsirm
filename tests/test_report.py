@@ -281,3 +281,29 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     assert "tbody tr:hover" in html
     assert '<div class="bar-chart" aria-hidden="true">' in html
     assert '<div class="bar-track" aria-hidden="true">' in html
+
+def test_bar_fill_inline_width_is_permitted_by_csp(tmp_path):
+    """The generated CSP must permit inline style attributes for the bar chart width."""
+    from fast_mlsirm.report import render_diagnostics_report
+    import json
+    import re
+
+    source = tmp_path / "fit_diagnostics.json"
+    out = tmp_path / "report.html"
+    source.write_text(
+        json.dumps(
+            {
+                "model_fit": {}, "itemfit": {"item_id": [0, 1], "outfit_mnsq": [1.0, 1.2], "observed_count": [4, 4]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    render_diagnostics_report(source, out)
+    html = out.read_text(encoding="utf-8")
+
+    assert 'class="bar-fill" style="width:' in html
+    csp_match = re.search(r'Content-Security-Policy" content="([^"]+)"', html)
+    assert csp_match is not None
+    csp = csp_match.group(1)
+
+    assert "&#x27;unsafe-inline&#x27;" in csp
