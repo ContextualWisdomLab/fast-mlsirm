@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+import math
 import re
 import unicodedata
 
@@ -1058,13 +1059,23 @@ class ConformanceInventory:
                 f"manifest JSON must contain at most {MAX_MANIFEST_JSON_BYTES} bytes"
             )
         _validate_raw_manifest_depth(value)
+
+        def _reject_nonfinite_float(val: str) -> float:
+            f_val = float(val)
+            if not math.isfinite(f_val):
+                raise ValueError("manifest JSON contains a non-finite float")
+            return f_val
+
         try:
             parsed = json.loads(
                 value,
                 object_pairs_hook=_reject_duplicate_json_keys,
                 parse_constant=_reject_json_constant,
+                parse_float=_reject_nonfinite_float,
             )
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, ValueError) as exc:
+            if "duplicate JSON object key" in str(exc) or "contains unsupported constant" in str(exc) or "non-finite float" in str(exc):
+                raise
             raise ValueError("manifest JSON must contain valid JSON") from exc
         except RecursionError as exc:
             raise ValueError("manifest JSON nesting is too deep") from exc
