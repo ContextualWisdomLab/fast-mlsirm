@@ -63,6 +63,7 @@ from .mhrm import fit_mhrm as fit_mhrm, MhrmFit as MhrmFit
 from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalResponseFit
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .bifactor_grm import fit_bifactor_grm as fit_bifactor_grm, BifactorGrmFit as BifactorGrmFit
+from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
 from .ksirt import ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
@@ -220,7 +221,7 @@ from .serving import (bank_information as bank_information,
                       load_serving_bundle as load_serving_bundle,
                       score_respondents as score_respondents)
 from .preprocessing import irtree_expand as irtree_expand
-from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, polytomous_category_probabilities as polytomous_category_probabilities, polytomous_expected_response as polytomous_expected_response, expected_total_score_monotonicity as expected_total_score_monotonicity, focal_expected_total_score_monotonicity as focal_expected_total_score_monotonicity, ExpectedScoreMonotonicity as ExpectedScoreMonotonicity, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, dif_polytomous_purified as dif_polytomous_purified, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous
+from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, polytomous_category_probabilities as polytomous_category_probabilities, polytomous_expected_response as polytomous_expected_response, expected_total_score_monotonicity as expected_total_score_monotonicity, focal_expected_total_score_monotonicity as focal_expected_total_score_monotonicity, bifactor_expected_total_score_monotonicity as bifactor_expected_total_score_monotonicity, ExpectedScoreMonotonicity as ExpectedScoreMonotonicity, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, dif_polytomous_purified as dif_polytomous_purified, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous
 from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as logistic_dif,
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
@@ -391,6 +392,8 @@ __all__ = [  # noqa: RUF022
     "GrmFit",
     "fit_bifactor_grm",
     "BifactorGrmFit",
+    "fit_bifactor_grm_multigroup",
+    "BifactorMultigroupFit",
     "fit_gpcm",
     "GpcmFit",
     "fit_rsm",
@@ -524,6 +527,7 @@ __all__ = [  # noqa: RUF022
     "polytomous_expected_response",
     "expected_total_score_monotonicity",
     "focal_expected_total_score_monotonicity",
+    "bifactor_expected_total_score_monotonicity",
     "ExpectedScoreMonotonicity",
     "fit_lsirm_polytomous",
     "PolyLsirmFit",
