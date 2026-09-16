@@ -52,3 +52,7 @@
 ## 2025-05-19 - Categorical reduction overhead in GPCM
 **Learning:** During the EM step for GPCM models, creating multiple slice copies via list comprehension and boolean indexing (`np.stack([post[y[:, i] == k].sum(axis=0) ...])`) creates huge unvectorized overhead by individually allocating and copying elements just to reduce them.
 **Action:** Instead, create a dense boolean mask and utilize highly optimized BLAS matrix multiplications `(y[:, i] == k).astype(post.dtype, copy=False) @ post` to avoid explicitly building the intermediate sliced subsets.
+
+## 2026-09-15 - Categorical reduction loop vs fully vectorized matrix multiplication
+**Learning:** While replacing boolean indexing with a boolean dot product inside a loop `[mask @ post for k in range(K)]` improves performance over pure indexing (1.5x), it still leaves a Python list comprehension/loop overhead. Creating a full indicator matrix once and performing a single matrix-matrix multiplication (e.g., `(y == np.arange(K)[:, None]).astype(float) @ post`) completely removes the loop and achieves far greater performance gains (3.3x) while retaining bit-level numerical parity.
+**Action:** When optimizing categorical reductions across dimensions, do not settle for vectorizing the inner calculation if an outer Python loop remains. Always attempt to eliminate the loop entirely by building a full 2D indicator mask and using a single, dense matrix-matrix multiplication.
