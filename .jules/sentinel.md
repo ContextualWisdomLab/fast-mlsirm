@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2025-02-27 - Insecure JSON Deserialization Exposing Non-finite Numbers
+**Vulnerability:** Untrusted LLM outputs parsed with `json.loads()` silently accepted non-finite numeric constants (e.g., `NaN`, `Infinity`, `1e400`) instead of throwing an error, leading to potential DoS, validation bypasses, or logic errors downstream.
+**Learning:** Python's standard `json` decoder is overly permissive by default and extends JSON parsing beyond the spec to allow IEEE 754 non-finite values unless explicitly overridden with `parse_constant` and `parse_float` hooks.
+**Prevention:** Always provide a `parse_constant` hook to raise an error on `NaN`/`Infinity` and a `parse_float` hook to check for `math.isfinite` when deserializing untrusted JSON payloads containing numbers.
