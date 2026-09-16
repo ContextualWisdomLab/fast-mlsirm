@@ -69,6 +69,7 @@ fn test_bifactor_grm_multiple_group_and_oakes_se() {
         seed: 12345,
         slope_bound: Some(6.0),
         compute_oakes_se: true,
+        device: crate::Device::Cpu,
     };
 
     let res = fit_bifactor_grm(
@@ -151,6 +152,7 @@ fn test_bifactor_grm_slope_bound_sensitivity_monotonicity() {
         seed: 777,
         slope_bound: None,
         compute_oakes_se: false,
+        device: crate::Device::Cpu,
     };
 
     let candidate_bounds = [Some(4.0), Some(6.0), Some(8.0), Some(10.0)];

@@ -3,15 +3,18 @@
 //!
 //! # References
 //! - Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor analysis.
-//!   *Psychometrika, 57*(3), 423-436.
+//!   *Psychometrika, 57*(3), 423-436. https://doi.org/10.1007/BF02295430
 //! - Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information item bifactor analysis.
-//!   *Psychological Methods, 16*(3), 221-248.
+//!   *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350
 //! - Bock, R. D., & Zimowski, M. F. (1997). Multiple Group IRT.
 //!   In W. J. van der Linden & R. K. Hambleton (Eds.), *Handbook of Modern Item Response Theory*.
+//!   Springer.
 //! - Oakes, D. (1999). Direct calculation of the information matrix via the EM algorithm.
 //!   *Journal of the Royal Statistical Society: Series B*, 61(2), 479-482.
+//!   https://doi.org/10.1111/1467-9868.00188
 //! - Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of Monte Carlo EM.
 //!   *Computational Statistics & Data Analysis, 48*(4), 685-701.
+//!   https://doi.org/10.1016/j.csda.2004.03.019
 
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
@@ -209,6 +212,200 @@ fn item_m_step_bifactor(
     params
 }
 
+/// Helper: Compute transformed nodes for a group.
+fn get_group_nodes_bifactor(
+    g: usize,
+    group_means: &[f64],
+    group_variances: &[f64],
+    standard_nodes: &[f64],
+    qn: usize,
+    n_dims: usize,
+) -> Vec<f64> {
+    let mut gn = vec![0.0_f64; qn * n_dims];
+    let mu = &group_means[g * n_dims..(g + 1) * n_dims];
+    let var = &group_variances[g * n_dims..(g + 1) * n_dims];
+    for q in 0..qn {
+        for d in 0..n_dims {
+            let std_dev = var[d].max(1e-4).sqrt();
+            gn[q * n_dims + d] = mu[d] + std_dev * standard_nodes[q * n_dims + d];
+        }
+    }
+    gn
+}
+
+/// Helper: compute per-item log-probabilities at given nodes.
+fn compute_all_lp_bifactor(
+    params: &[Vec<f64>],
+    dims_of: &[Vec<usize>],
+    nodes: &[f64],
+    n_items: usize,
+    qn: usize,
+    n_dims: usize,
+    n_cat: usize,
+) -> Vec<Vec<f64>> {
+    let mut all_lp = Vec::with_capacity(n_items);
+    for i in 0..n_items {
+        let l = dims_of[i].len();
+        let beta = &params[i][l..];
+        let mut lp_i = vec![0.0_f64; qn * n_cat];
+        for nd in 0..qn {
+            let mut base = 0.0_f64;
+            for (t, &d) in dims_of[i].iter().enumerate() {
+                base += params[i][t] * nodes[nd * n_dims + d];
+            }
+            let lp = grm_logprobs(base, beta);
+            lp_i[nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
+        }
+        all_lp.push(lp_i);
+    }
+    all_lp
+}
+
+/// Helper: build per-group transformed nodes and log-probabilities.
+///
+/// Returns `(group_nodes, group_lp)` with one entry per group; each
+/// `group_lp[g][i]` holds `qn * n_cat` log-probabilities for item `i`.
+#[allow(clippy::too_many_arguments)]
+fn build_group_lp_bifactor(
+    params: &[Vec<f64>],
+    dims_of: &[Vec<usize>],
+    group_means: &[f64],
+    group_variances: &[f64],
+    standard_nodes: &[f64],
+    effective_groups: usize,
+    n_items: usize,
+    qn: usize,
+    n_dims: usize,
+    n_cat: usize,
+) -> (Vec<Vec<f64>>, Vec<Vec<Vec<f64>>>) {
+    let mut group_nodes = Vec::with_capacity(effective_groups);
+    let mut group_lp = Vec::with_capacity(effective_groups);
+    for g in 0..effective_groups {
+        let gn = get_group_nodes_bifactor(
+            g,
+            group_means,
+            group_variances,
+            standard_nodes,
+            qn,
+            n_dims,
+        );
+        let lp = compute_all_lp_bifactor(params, dims_of, &gn, n_items, qn, n_dims, n_cat);
+        group_nodes.push(gn);
+        group_lp.push(lp);
+    }
+    (group_nodes, group_lp)
+}
+
+/// E-step given per-group log-probabilities: posterior node weights,
+/// expected category counts, and the marginal log-likelihood.
+///
+/// Uses the GPU kernel when `device` requests it and a compatible adapter is
+/// available; otherwise runs the `f64` CPU implementation. The returned
+/// `counts[i][nd][k]` are posterior-weighted expected counts under the given
+/// parameters (used both inside the EM loop and for the converged Oakes
+/// information, so the SEs reflect the fitted posterior, not uniform weights).
+#[allow(clippy::too_many_arguments)]
+fn estep_from_group_lp(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_ids: Option<&[usize]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    qn: usize,
+    effective_groups: usize,
+    group_lp: &[Vec<Vec<f64>>],
+    device: crate::Device,
+) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, f64) {
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let gpu_res = if device == crate::Device::Gpu || device == crate::Device::Auto {
+        let inputs = crate::gpu_bifactor::BifactorEstepInputs {
+            y,
+            observed,
+            group_ids,
+            n_persons,
+            n_items,
+            n_cat,
+            qn,
+            effective_groups,
+            group_lp,
+        };
+        crate::gpu_bifactor::e_step_bifactor_gpu(&inputs)
+    } else {
+        None
+    };
+    #[cfg(any(not(feature = "gpu"), coverage))]
+    let gpu_res: Option<crate::gpu_bifactor::BifactorEstepOutputs> = None;
+
+    if let Some(res) = gpu_res {
+        let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
+        let mut group_post_sums = vec![vec![0.0_f64; qn]; effective_groups];
+        for g in 0..effective_groups {
+            group_post_sums[g]
+                .copy_from_slice(&res.group_post_sums[g * qn..(g + 1) * qn]);
+        }
+        for i in 0..n_items {
+            for nd in 0..qn {
+                counts[i][nd].copy_from_slice(
+                    &res.counts[i * qn * n_cat + nd * n_cat..i * qn * n_cat + (nd + 1) * n_cat],
+                );
+            }
+        }
+        return (counts, group_post_sums, res.total_ll);
+    }
+
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
+             falling back to CPU implementation."
+        );
+    }
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
+    let mut group_post_sums = vec![vec![0.0_f64; qn]; effective_groups];
+    let mut total_ll = 0.0_f64;
+    let mut log_node = vec![0.0_f64; qn];
+    for p in 0..n_persons {
+        let g = group_ids.map_or(0, |gids| gids[p]);
+        let all_lp = &group_lp[g];
+
+        for v in log_node.iter_mut() {
+            *v = 0.0;
+        }
+
+        for i in 0..n_items {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * n_items + i];
+            let lp = &all_lp[i];
+            for nd in 0..qn {
+                log_node[nd] += lp[nd * n_cat + yc];
+            }
+        }
+
+        let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut denom = 0.0_f64;
+        for v in log_node.iter() {
+            denom += (v - mx).exp();
+        }
+        total_ll += mx + denom.ln() - (qn as f64).ln();
+
+        for nd in 0..qn {
+            let post_q = (log_node[nd] - mx).exp() / denom;
+            group_post_sums[g][nd] += post_q;
+            for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
+                let yc = y[p * n_items + i];
+                counts[i][nd][yc] += post_q;
+            }
+        }
+    }
+    (counts, group_post_sums, total_ll)
+}
+
 /// Fit a polytomous bifactor Graded Response Model via QMCEM.
 pub fn fit_bifactor_grm(
     y: &[usize],
@@ -266,7 +463,6 @@ pub fn fit_bifactor_grm(
     let xn = build_xi_nodes(xi_rule, n_dims)?;
     let (standard_nodes, _logw) = (xn.grid, xn.logw);
     let qn = cfg.qmc_draws;
-    let uniform_weight = 1.0_f64 / (qn as f64);
 
     // Group population parameters: mean and variance (reference group 0 is fixed at 0.0 and 1.0)
     let mut group_means = vec![0.0_f64; effective_groups * n_dims];
@@ -306,152 +502,40 @@ pub fn fit_bifactor_grm(
     let mut converged = false;
     let mut n_iter = 0usize;
 
-/// Helper: Compute transformed nodes for a group.
-fn get_group_nodes_bifactor(
-    g: usize,
-    group_means: &[f64],
-    group_variances: &[f64],
-    standard_nodes: &[f64],
-    qn: usize,
-    n_dims: usize,
-) -> Vec<f64> {
-    let mut gn = vec![0.0_f64; qn * n_dims];
-    let mu = &group_means[g * n_dims..(g + 1) * n_dims];
-    let var = &group_variances[g * n_dims..(g + 1) * n_dims];
-    for q in 0..qn {
-        for d in 0..n_dims {
-            let std_dev = var[d].max(1e-4).sqrt();
-            gn[q * n_dims + d] = mu[d] + std_dev * standard_nodes[q * n_dims + d];
-        }
-    }
-    gn
-}
-
-/// Helper: compute per-item log-probabilities at given nodes.
-fn compute_all_lp_bifactor(
-    params: &[Vec<f64>],
-    dims_of: &[Vec<usize>],
-    nodes: &[f64],
-    n_items: usize,
-    qn: usize,
-    n_dims: usize,
-    n_cat: usize,
-) -> Vec<Vec<f64>> {
-    let mut all_lp = Vec::with_capacity(n_items);
-    for i in 0..n_items {
-        let l = dims_of[i].len();
-        let beta = &params[i][l..];
-        let mut lp_i = vec![0.0_f64; qn * n_cat];
-        for nd in 0..qn {
-            let mut base = 0.0_f64;
-            for (t, &d) in dims_of[i].iter().enumerate() {
-                base += params[i][t] * nodes[nd * n_dims + d];
-            }
-            let lp = grm_logprobs(base, beta);
-            lp_i[nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
-        }
-        all_lp.push(lp_i);
-    }
-    all_lp
-}
-
     // EM Loop
     loop {
         // Compute transformed nodes and log-probs for each group
-        let mut group_nodes = Vec::with_capacity(effective_groups);
-        let mut group_lp = Vec::with_capacity(effective_groups);
-        for g in 0..effective_groups {
-            let gn = get_group_nodes_bifactor(g, &group_means, &group_variances, &standard_nodes, qn, n_dims);
-            let lp = compute_all_lp_bifactor(&params, &dims_of, &gn, n_items, qn, n_dims, n_cat);
-            group_nodes.push(gn);
-            group_lp.push(lp);
-        }
+        let (_group_nodes, group_lp) = build_group_lp_bifactor(
+            &params,
+            &dims_of,
+            &group_means,
+            &group_variances,
+            &standard_nodes,
+            effective_groups,
+            n_items,
+            qn,
+            n_dims,
+            n_cat,
+        );
 
-        let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
-        let mut group_post_sums = vec![vec![0.0_f64; qn]; effective_groups];
         let mut group_counts_persons = vec![0.0_f64; effective_groups];
-        let mut total_ll = 0.0_f64;
-        
         for p in 0..n_persons {
             let g = group_ids.map_or(0, |gids| gids[p]);
             group_counts_persons[g] += 1.0;
         }
 
-        #[cfg(all(feature = "gpu", not(coverage)))]
-        let gpu_res = if cfg.device == crate::Device::Gpu || cfg.device == crate::Device::Auto {
-            let inputs = crate::gpu_bifactor::BifactorEstepInputs {
-                y,
-                observed,
-                group_ids,
-                n_persons,
-                n_items,
-                n_cat,
-                qn,
-                effective_groups,
-                group_lp: &group_lp,
-            };
-            crate::gpu_bifactor::e_step_bifactor_gpu(&inputs)
-        } else {
-            None
-        };
-        #[cfg(any(not(feature = "gpu"), coverage))]
-        let gpu_res: Option<crate::gpu_bifactor::BifactorEstepOutputs> = None;
-
-        if let Some(res) = gpu_res {
-            total_ll = res.total_ll;
-            for g in 0..effective_groups {
-                group_post_sums[g].copy_from_slice(&res.group_post_sums[g * qn .. (g + 1) * qn]);
-            }
-            for i in 0..n_items {
-                for nd in 0..qn {
-                    counts[i][nd].copy_from_slice(&res.counts[i * qn * n_cat + nd * n_cat .. i * qn * n_cat + (nd + 1) * n_cat]);
-                }
-            }
-        } else {
-            if cfg.device == crate::Device::Gpu {
-                eprintln!("fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found or compilation failed; falling back to CPU implementation.");
-            }
-            // CPU E-step: iterate over respondents
-            let mut log_node = vec![0.0_f64; qn];
-            for p in 0..n_persons {
-                let g = group_ids.map_or(0, |gids| gids[p]);
-                let all_lp = &group_lp[g];
-
-                for v in log_node.iter_mut() {
-                    *v = 0.0; // Uniform QMC prior weight
-                }
-
-                for i in 0..n_items {
-                    if !is_obs(p, i) {
-                        continue;
-                    }
-                    let yc = y[p * n_items + i];
-                    let lp = &all_lp[i];
-                    for nd in 0..qn {
-                        log_node[nd] += lp[nd * n_cat + yc];
-                    }
-                }
-
-                let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                let mut denom = 0.0_f64;
-                for v in log_node.iter() {
-                    denom += (v - mx).exp();
-                }
-                total_ll += mx + denom.ln() - (qn as f64).ln(); // marginal likelihood
-
-                for nd in 0..qn {
-                    let post_q = (log_node[nd] - mx).exp() / denom;
-                    group_post_sums[g][nd] += post_q;
-                    for i in 0..n_items {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        counts[i][nd][yc] += post_q;
-                    }
-                }
-            }
-        }
+        let (counts, group_post_sums, total_ll) = estep_from_group_lp(
+            y,
+            observed,
+            group_ids,
+            n_persons,
+            n_items,
+            n_cat,
+            qn,
+            effective_groups,
+            &group_lp,
+            cfg.device,
+        );
 
         loglik_trace.push(total_ll);
 
@@ -547,11 +631,39 @@ fn compute_all_lp_bifactor(
             let h = 1e-5;
             let mut info_mat = vec![vec![0.0_f64; n_params]; n_params];
 
+            // Final E-step at the converged parameters: the Oakes observed
+            // information must use converged posterior expected counts, not
+            // uniform weights (Oakes, 1999, eq. 2–3).
+            let (_final_nodes, final_group_lp) = build_group_lp_bifactor(
+                &params,
+                &dims_of,
+                &group_means,
+                &group_variances,
+                &standard_nodes,
+                effective_groups,
+                n_items,
+                qn,
+                n_dims,
+                n_cat,
+            );
+            let (final_counts, _, _) = estep_from_group_lp(
+                y,
+                observed,
+                group_ids,
+                n_persons,
+                n_items,
+                n_cat,
+                qn,
+                effective_groups,
+                &final_group_lp,
+                cfg.device,
+            );
+
             // Baseline gradient (at MLE, should be ~0, but we evaluate it exactly)
             let mut base_grad = vec![0.0_f64; n_params];
             let mut cur_idx = 0;
             for i in 0..n_items {
-                let (_, gi) = item_qmc_neg_ll_grad(&params[i], &dims_of[i], &standard_nodes, n_dims, &counts[i], n_cat);
+                let (_, gi) = item_qmc_neg_ll_grad(&params[i], &dims_of[i], &standard_nodes, n_dims, &final_counts[i], n_cat);
                 for &g_val in &gi {
                     base_grad[cur_idx] = -g_val;
                     cur_idx += 1;
@@ -564,73 +676,30 @@ fn compute_all_lp_bifactor(
                 p_perturbed[item_j][local_j] += h;
 
                 // Full E-step for perturbed parameters
-                let mut group_lp_pert = Vec::with_capacity(effective_groups);
-                for g in 0..effective_groups {
-                    let gn = get_group_nodes_bifactor(g, &group_means, &group_variances, &standard_nodes, qn, n_dims);
-                    let lp = compute_all_lp_bifactor(&p_perturbed, &dims_of, &gn, n_items, qn, n_dims, n_cat);
-                    group_lp_pert.push(lp);
-                }
-
-                let mut counts_pert = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
-                
-                #[cfg(all(feature = "gpu", not(coverage)))]
-                let gpu_res_pert = if cfg.device == crate::Device::Gpu || cfg.device == crate::Device::Auto {
-                    let inputs = crate::gpu_bifactor::BifactorEstepInputs {
-                        y,
-                        observed,
-                        group_ids,
-                        n_persons,
-                        n_items,
-                        n_cat,
-                        qn,
-                        effective_groups,
-                        group_lp: &group_lp_pert,
-                    };
-                    crate::gpu_bifactor::e_step_bifactor_gpu(&inputs)
-                } else {
-                    None
-                };
-                #[cfg(any(not(feature = "gpu"), coverage))]
-                let gpu_res_pert: Option<crate::gpu_bifactor::BifactorEstepOutputs> = None;
-
-                if let Some(res) = gpu_res_pert {
-                    for i in 0..n_items {
-                        for nd in 0..qn {
-                            counts_pert[i][nd].copy_from_slice(&res.counts[i * qn * n_cat + nd * n_cat .. i * qn * n_cat + (nd + 1) * n_cat]);
-                        }
-                    }
-                } else {
-                    let mut log_node = vec![0.0_f64; qn];
-                    for p in 0..n_persons {
-                        let g = group_ids.map_or(0, |gids| gids[p]);
-                        let all_lp = &group_lp_pert[g];
-
-                        for v in log_node.iter_mut() { *v = 0.0; }
-                        for i in 0..n_items {
-                            if !is_obs(p, i) { continue; }
-                            let yc = y[p * n_items + i];
-                            let lp = &all_lp[i];
-                            for nd in 0..qn {
-                                log_node[nd] += lp[nd * n_cat + yc];
-                            }
-                        }
-
-                        let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                        let mut denom = 0.0_f64;
-                        for v in log_node.iter() {
-                            denom += (v - mx).exp();
-                        }
-
-                        for nd in 0..qn {
-                            let post_q = (log_node[nd] - mx).exp() / denom;
-                            for i in 0..n_items {
-                                if !is_obs(p, i) { continue; }
-                                let yc = y[p * n_items + i];
-                                counts_pert[i][nd][yc] += post_q;
-                            }
-                        }
-                    }
-                }
+                let (_pert_nodes, group_lp_pert) = build_group_lp_bifactor(
+                    &p_perturbed,
+                    &dims_of,
+                    &group_means,
+                    &group_variances,
+                    &standard_nodes,
+                    effective_groups,
+                    n_items,
+                    qn,
+                    n_dims,
+                    n_cat,
+                );
+                let (counts_pert, _, _) = estep_from_group_lp(
+                    y,
+                    observed,
+                    group_ids,
+                    n_persons,
+                    n_items,
+                    n_cat,
+                    qn,
+                    effective_groups,
+                    &group_lp_pert,
+                    cfg.device,
+                );
 
                 let mut pert_grad = vec![0.0_f64; n_params];
                 let mut p_idx = 0;

@@ -199,8 +199,11 @@ fn py_fit_bifactor_grm<'py>(
         .map(|g| g.as_slice().map(|s| s.iter().map(|&v| v as usize).collect()))
         .transpose()?;
 
-    let parsed_device = mlsirm_core::Device::parse(device)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let parsed_device = mlsirm_core::Device::parse(device).ok_or_else(|| {
+        pyo3::exceptions::PyValueError::new_err(format!(
+            "device must be one of 'cpu', 'gpu', 'auto'; got '{device}'"
+        ))
+    })?;
 
     let cfg = BifactorGrmConfig {
         max_iter,
@@ -290,8 +293,11 @@ fn py_fit_bifactor_slope_sensitivity(
         .map(|g| g.as_slice().map(|s| s.iter().map(|&v| v as usize).collect()))
         .transpose()?;
 
-    let parsed_device = mlsirm_core::Device::parse(device)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let parsed_device = mlsirm_core::Device::parse(device).ok_or_else(|| {
+        pyo3::exceptions::PyValueError::new_err(format!(
+            "device must be one of 'cpu', 'gpu', 'auto'; got '{device}'"
+        ))
+    })?;
 
     let cfg = BifactorGrmConfig {
         max_iter,
