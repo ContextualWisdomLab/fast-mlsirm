@@ -80,6 +80,7 @@ def fit_polytomous_bifactor(
     seed: int = 0x9E37_79B9_7F4A_7C15,
     slope_bound: float | None = None,
     compute_oakes_se: bool = True,
+    device: str = "cpu",
 ) -> PolytomousBifactorFit:
     """Fit a polytomous bifactor Graded Response Model via QMCEM.
 
@@ -151,6 +152,7 @@ def fit_polytomous_bifactor(
         seed,
         slope_bound,
         compute_oakes_se,
+        device,
     )
 
     return PolytomousBifactorFit(
@@ -259,6 +261,7 @@ def bifactor_slope_sensitivity(
     newton_iter: int = 10,
     qmc_draws: int = 2000,
     seed: int = 0x9E37_79B9_7F4A_7C15,
+    device: str = "cpu",
 ) -> list[dict]:
     """Run a slope upper bound sensitivity sweep across bounds (e.g. 4, 6, 8, 10)."""
     if candidate_bounds is None:
@@ -297,5 +300,6 @@ def bifactor_slope_sensitivity(
             newton_iter,
             qmc_draws,
             seed,
+            device,
         )
     )

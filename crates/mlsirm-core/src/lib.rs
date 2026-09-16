@@ -90,6 +90,7 @@ pub(crate) mod gpu_marginal;
 pub(crate) mod gpu_plausible;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_scoring;
+pub(crate) mod gpu_bifactor;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_multilevel;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

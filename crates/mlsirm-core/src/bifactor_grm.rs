@@ -29,6 +29,7 @@ pub struct BifactorGrmConfig {
     pub slope_bound: Option<f64>,
     /// Whether to compute Oakes standard errors after convergence.
     pub compute_oakes_se: bool,
+    pub device: crate::Device,
 }
 
 impl Default for BifactorGrmConfig {
@@ -42,6 +43,7 @@ impl Default for BifactorGrmConfig {
             seed: 0x9E37_79B9_7F4A_7C15,
             slope_bound: None,
             compute_oakes_se: true,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -369,45 +371,84 @@ fn compute_all_lp_bifactor(
         let mut group_post_sums = vec![vec![0.0_f64; qn]; effective_groups];
         let mut group_counts_persons = vec![0.0_f64; effective_groups];
         let mut total_ll = 0.0_f64;
-
-        // E-step: iterate over respondents
-        let mut log_node = vec![0.0_f64; qn];
+        
         for p in 0..n_persons {
             let g = group_ids.map_or(0, |gids| gids[p]);
             group_counts_persons[g] += 1.0;
-            let all_lp = &group_lp[g];
+        }
 
-            for v in log_node.iter_mut() {
-                *v = 0.0; // Uniform QMC prior weight
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        let gpu_res = if cfg.device == crate::Device::Gpu || cfg.device == crate::Device::Auto {
+            let inputs = crate::gpu_bifactor::BifactorEstepInputs {
+                y,
+                observed,
+                group_ids,
+                n_persons,
+                n_items,
+                n_cat,
+                qn,
+                effective_groups,
+                group_lp: &group_lp,
+            };
+            crate::gpu_bifactor::e_step_bifactor_gpu(&inputs)
+        } else {
+            None
+        };
+        #[cfg(any(not(feature = "gpu"), coverage))]
+        let gpu_res: Option<crate::gpu_bifactor::BifactorEstepOutputs> = None;
+
+        if let Some(res) = gpu_res {
+            total_ll = res.total_ll;
+            for g in 0..effective_groups {
+                group_post_sums[g].copy_from_slice(&res.group_post_sums[g * qn .. (g + 1) * qn]);
             }
-
             for i in 0..n_items {
-                if !is_obs(p, i) {
-                    continue;
-                }
-                let yc = y[p * n_items + i];
-                let lp = &all_lp[i];
                 for nd in 0..qn {
-                    log_node[nd] += lp[nd * n_cat + yc];
+                    counts[i][nd].copy_from_slice(&res.counts[i * qn * n_cat + nd * n_cat .. i * qn * n_cat + (nd + 1) * n_cat]);
                 }
             }
-
-            let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let mut denom = 0.0_f64;
-            for v in log_node.iter() {
-                denom += (v - mx).exp();
+        } else {
+            if cfg.device == crate::Device::Gpu {
+                eprintln!("fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found or compilation failed; falling back to CPU implementation.");
             }
-            total_ll += mx + denom.ln() - (qn as f64).ln(); // marginal likelihood
+            // CPU E-step: iterate over respondents
+            let mut log_node = vec![0.0_f64; qn];
+            for p in 0..n_persons {
+                let g = group_ids.map_or(0, |gids| gids[p]);
+                let all_lp = &group_lp[g];
 
-            for nd in 0..qn {
-                let post_q = (log_node[nd] - mx).exp() / denom;
-                group_post_sums[g][nd] += post_q;
+                for v in log_node.iter_mut() {
+                    *v = 0.0; // Uniform QMC prior weight
+                }
+
                 for i in 0..n_items {
                     if !is_obs(p, i) {
                         continue;
                     }
                     let yc = y[p * n_items + i];
-                    counts[i][nd][yc] += post_q;
+                    let lp = &all_lp[i];
+                    for nd in 0..qn {
+                        log_node[nd] += lp[nd * n_cat + yc];
+                    }
+                }
+
+                let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let mut denom = 0.0_f64;
+                for v in log_node.iter() {
+                    denom += (v - mx).exp();
+                }
+                total_ll += mx + denom.ln() - (qn as f64).ln(); // marginal likelihood
+
+                for nd in 0..qn {
+                    let post_q = (log_node[nd] - mx).exp() / denom;
+                    group_post_sums[g][nd] += post_q;
+                    for i in 0..n_items {
+                        if !is_obs(p, i) {
+                            continue;
+                        }
+                        let yc = y[p * n_items + i];
+                        counts[i][nd][yc] += post_q;
+                    }
                 }
             }
         }
@@ -486,9 +527,8 @@ fn compute_all_lp_bifactor(
     let mut condition_number = None;
 
     if cfg.compute_oakes_se {
-        // Flatten item parameters into a single vector
         let mut param_flat = Vec::new();
-        let mut param_map: Vec<(usize, usize, bool)> = Vec::new(); // (item, local_idx, is_slope)
+        let mut param_map = Vec::new(); 
 
         for i in 0..n_items {
             let l = dims_of[i].len();
@@ -504,26 +544,14 @@ fn compute_all_lp_bifactor(
 
         let n_params = param_flat.len();
         if n_params <= 120 {
-            // Compute numerical Jacobian of conditional score for Oakes Information Matrix
             let h = 1e-5;
             let mut info_mat = vec![vec![0.0_f64; n_params]; n_params];
 
-            // Baseline gradient
+            // Baseline gradient (at MLE, should be ~0, but we evaluate it exactly)
             let mut base_grad = vec![0.0_f64; n_params];
             let mut cur_idx = 0;
             for i in 0..n_items {
-                let counts_i = {
-                    let mut ci = vec![vec![0.0_f64; n_cat]; qn];
-                    // compute counts at converged MLE
-                    for p in 0..n_persons {
-                        if !is_obs(p, i) { continue; }
-                        let yc = y[p * n_items + i];
-                        let w_p = uniform_weight;
-                        ci[p % qn][yc] += w_p;
-                    }
-                    ci
-                };
-                let (_, gi) = item_qmc_neg_ll_grad(&params[i], &dims_of[i], &standard_nodes, n_dims, &counts_i, n_cat);
+                let (_, gi) = item_qmc_neg_ll_grad(&params[i], &dims_of[i], &standard_nodes, n_dims, &counts[i], n_cat);
                 for &g_val in &gi {
                     base_grad[cur_idx] = -g_val;
                     cur_idx += 1;
@@ -531,28 +559,83 @@ fn compute_all_lp_bifactor(
             }
 
             for j in 0..n_params {
-                let mut perturbed = param_flat.clone();
-                perturbed[j] += h;
-
-                // Unpack perturbed params
                 let mut p_perturbed = params.clone();
                 let (item_j, local_j, _) = param_map[j];
-                p_perturbed[item_j][local_j] = perturbed[j];
+                p_perturbed[item_j][local_j] += h;
 
-                // Evaluate score at perturbed coordinate
+                // Full E-step for perturbed parameters
+                let mut group_lp_pert = Vec::with_capacity(effective_groups);
+                for g in 0..effective_groups {
+                    let gn = get_group_nodes_bifactor(g, &group_means, &group_variances, &standard_nodes, qn, n_dims);
+                    let lp = compute_all_lp_bifactor(&p_perturbed, &dims_of, &gn, n_items, qn, n_dims, n_cat);
+                    group_lp_pert.push(lp);
+                }
+
+                let mut counts_pert = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
+                
+                #[cfg(all(feature = "gpu", not(coverage)))]
+                let gpu_res_pert = if cfg.device == crate::Device::Gpu || cfg.device == crate::Device::Auto {
+                    let inputs = crate::gpu_bifactor::BifactorEstepInputs {
+                        y,
+                        observed,
+                        group_ids,
+                        n_persons,
+                        n_items,
+                        n_cat,
+                        qn,
+                        effective_groups,
+                        group_lp: &group_lp_pert,
+                    };
+                    crate::gpu_bifactor::e_step_bifactor_gpu(&inputs)
+                } else {
+                    None
+                };
+                #[cfg(any(not(feature = "gpu"), coverage))]
+                let gpu_res_pert: Option<crate::gpu_bifactor::BifactorEstepOutputs> = None;
+
+                if let Some(res) = gpu_res_pert {
+                    for i in 0..n_items {
+                        for nd in 0..qn {
+                            counts_pert[i][nd].copy_from_slice(&res.counts[i * qn * n_cat + nd * n_cat .. i * qn * n_cat + (nd + 1) * n_cat]);
+                        }
+                    }
+                } else {
+                    let mut log_node = vec![0.0_f64; qn];
+                    for p in 0..n_persons {
+                        let g = group_ids.map_or(0, |gids| gids[p]);
+                        let all_lp = &group_lp_pert[g];
+
+                        for v in log_node.iter_mut() { *v = 0.0; }
+                        for i in 0..n_items {
+                            if !is_obs(p, i) { continue; }
+                            let yc = y[p * n_items + i];
+                            let lp = &all_lp[i];
+                            for nd in 0..qn {
+                                log_node[nd] += lp[nd * n_cat + yc];
+                            }
+                        }
+
+                        let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                        let mut denom = 0.0_f64;
+                        for v in log_node.iter() {
+                            denom += (v - mx).exp();
+                        }
+
+                        for nd in 0..qn {
+                            let post_q = (log_node[nd] - mx).exp() / denom;
+                            for i in 0..n_items {
+                                if !is_obs(p, i) { continue; }
+                                let yc = y[p * n_items + i];
+                                counts_pert[i][nd][yc] += post_q;
+                            }
+                        }
+                    }
+                }
+
                 let mut pert_grad = vec![0.0_f64; n_params];
                 let mut p_idx = 0;
                 for i in 0..n_items {
-                    let counts_i = {
-                        let mut ci = vec![vec![0.0_f64; n_cat]; qn];
-                        for p in 0..n_persons {
-                            if !is_obs(p, i) { continue; }
-                            let yc = y[p * n_items + i];
-                            ci[p % qn][yc] += uniform_weight;
-                        }
-                        ci
-                    };
-                    let (_, gi) = item_qmc_neg_ll_grad(&p_perturbed[i], &dims_of[i], &standard_nodes, n_dims, &counts_i, n_cat);
+                    let (_, gi) = item_qmc_neg_ll_grad(&p_perturbed[i], &dims_of[i], &standard_nodes, n_dims, &counts_pert[i], n_cat);
                     for &g_val in &gi {
                         pert_grad[p_idx] = -g_val;
                         p_idx += 1;
@@ -564,7 +647,6 @@ fn compute_all_lp_bifactor(
                 }
             }
 
-            // Symmetrize and regularize slightly on diagonal
             for r in 0..n_params {
                 for c in 0..n_params {
                     let sym = 0.5 * (info_mat[r][c] + info_mat[c][r]);
@@ -572,10 +654,40 @@ fn compute_all_lp_bifactor(
                 }
                 info_mat[r][r] += 1e-4;
             }
-
-            // Invert information matrix
+            
+            // Extract eigenvalues using power iteration or simply report the matrix condition.
+            // Since we need min_eigenvalue and condition_number, we can compute them via a quick power iteration for max, and inverse power iteration for min (if matrix is PD).
+            // For now, trace / n_params is a rough order of magnitude. Let's do a simple power iteration to find max eigenvalue.
+            let mut v = vec![1.0_f64; n_params];
+            let mut max_ev = 0.0_f64;
+            for _ in 0..20 {
+                let mut nv = vec![0.0_f64; n_params];
+                for r in 0..n_params {
+                    for c in 0..n_params {
+                        nv[r] += info_mat[r][c] * v[c];
+                    }
+                }
+                let norm = nv.iter().map(|x| x*x).sum::<f64>().sqrt();
+                for x in &mut nv { *x /= norm; }
+                v = nv;
+            }
+            for c in 0..n_params { max_ev += info_mat[0][c] * v[c] / v[0]; }
+            
             let id_vec = (0..n_params).map(|_| 1.0_f64).collect();
             let inv_diag = solve_small(info_mat.clone(), id_vec);
+            
+            let mut min_ev = max_ev; // Rough approximation for condition number if we can't easily compute min eigenvalue.
+            // Actually, solve_small does not give us min eigenvalue. We can estimate min_ev by power iteration on info_mat^-1.
+            let mut v_min = vec![1.0_f64; n_params];
+            for _ in 0..20 {
+                let nv = solve_small(info_mat.clone(), v_min.clone());
+                let norm = nv.iter().map(|x| x*x).sum::<f64>().sqrt();
+                v_min = nv.into_iter().map(|x| x / norm).collect();
+            }
+            let mut min_ev_inv = 0.0_f64;
+            let nv = solve_small(info_mat.clone(), v_min.clone());
+            for c in 0..n_params { min_ev_inv += nv[c] * v_min[c]; }
+            if min_ev_inv > 0.0 { min_ev = 1.0 / min_ev_inv; }
 
             let mut se_slope = vec![0.0_f64; n_items * n_dims];
             let mut se_thresh = vec![0.0_f64; n_items * m1];
@@ -594,8 +706,8 @@ fn compute_all_lp_bifactor(
 
             oakes_se_slope = Some(se_slope);
             oakes_se_threshold = Some(se_thresh);
-            min_eigenvalue = Some(0.0078);
-            condition_number = Some(400.0);
+            min_eigenvalue = Some(min_ev);
+            condition_number = Some((max_ev / min_ev.max(1e-12)).abs());
         }
     }
 

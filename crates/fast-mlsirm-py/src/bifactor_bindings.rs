@@ -186,6 +186,7 @@ fn py_fit_bifactor_grm<'py>(
     seed: u64,
     slope_bound: Option<f64>,
     compute_oakes_se: bool,
+    device: &str,
 ) -> PyResult<Bound<'py, PyDict>> {
     let y_shape = y.shape();
     let n_persons = y_shape[0];
@@ -198,6 +199,9 @@ fn py_fit_bifactor_grm<'py>(
         .map(|g| g.as_slice().map(|s| s.iter().map(|&v| v as usize).collect()))
         .transpose()?;
 
+    let parsed_device = mlsirm_core::Device::parse(device)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
     let cfg = BifactorGrmConfig {
         max_iter,
         tol,
@@ -207,6 +211,7 @@ fn py_fit_bifactor_grm<'py>(
         seed,
         slope_bound,
         compute_oakes_se,
+        device: parsed_device,
     };
 
     let obs_vec = obs_slice.map(|s| s.to_vec());
@@ -272,6 +277,7 @@ fn py_fit_bifactor_slope_sensitivity(
     newton_iter: usize,
     qmc_draws: usize,
     seed: u64,
+    device: &str,
 ) -> PyResult<Py<PyList>> {
     let y_shape = y.shape();
     let n_persons = y_shape[0];
@@ -284,6 +290,9 @@ fn py_fit_bifactor_slope_sensitivity(
         .map(|g| g.as_slice().map(|s| s.iter().map(|&v| v as usize).collect()))
         .transpose()?;
 
+    let parsed_device = mlsirm_core::Device::parse(device)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
     let cfg = BifactorGrmConfig {
         max_iter,
         tol,
@@ -293,6 +302,7 @@ fn py_fit_bifactor_slope_sensitivity(
         seed,
         slope_bound: None,
         compute_oakes_se: false,
+        device: parsed_device,
     };
 
     let obs_vec = obs_slice.map(|s| s.to_vec());

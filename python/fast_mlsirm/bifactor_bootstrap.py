@@ -73,6 +73,7 @@ def _fit_single_replicate(
     newton_iter: int,
     qmc_draws: int,
     slope_bound: float | None,
+    device: str,
 ) -> tuple[int, bool, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
     """Execute one bootstrap resample and fit."""
     rng = np.random.Generator(np.random.PCG64(seed))
@@ -100,6 +101,7 @@ def _fit_single_replicate(
             seed=qmc_seed,
             slope_bound=slope_bound,
             compute_oakes_se=False,  # SEs estimated empirically from bootstrap
+            device=device,
         )
         return (
             rep_idx,
@@ -127,9 +129,12 @@ def run_bifactor_bootstrap(
     responses: np.ndarray,
     loading_pattern: np.ndarray,
     n_cat: int,
+    n_replicates: int,
+    batch_size: int,
+    mc_stopping_ratio: float,
+    compute_budget_seconds: float,
     group_ids: np.ndarray | None = None,
     n_groups: int = 1,
-    n_replicates: int = 390,
     n_jobs: int = -1,
     base_seed: int = 42,
     device: str = "cpu",
@@ -191,36 +196,54 @@ def run_bifactor_bootstrap(
             newton_iter,
             qmc_draws,
             slope_bound,
+            device,
         ))
 
     results = [None] * n_replicates
-
-    # ThreadPoolExecutor is safe and GIL-free because fast_mlsirm_core uses py.detach
-    if n_jobs == 1 or n_replicates == 1:
-        for t in tasks:
-            res = _fit_single_replicate(*t)
-            results[res[0]] = res
-    else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
-            futures = [executor.submit(_fit_single_replicate, *t) for t in tasks]
-            for f in concurrent.futures.as_completed(futures):
-                res = f.result()
-                results[res[0]] = res
-
-    # Collect converged replicates
     converged_slopes = []
     converged_thresholds = []
     converged_means = []
     converged_vars = []
     converged_logliks = []
 
-    for r in results:
-        if r is not None and r[1]:  # converged
-            converged_slopes.append(r[2])
-            converged_thresholds.append(r[3])
-            converged_means.append(r[4])
-            converged_vars.append(r[5])
-            converged_logliks.append(r[6])
+    batches = [tasks[i:i + batch_size] for i in range(0, len(tasks), batch_size)]
+    completed_reps = 0
+
+    for batch in batches:
+        # Check compute budget
+        elapsed_so_far = time.perf_counter() - start_time
+        if elapsed_so_far >= compute_budget_seconds:
+            break
+
+        if n_jobs == 1 or len(batch) == 1:
+            for t in batch:
+                res = _fit_single_replicate(*t)
+                results[res[0]] = res
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
+                futures = [executor.submit(_fit_single_replicate, *t) for t in batch]
+                for f in concurrent.futures.as_completed(futures):
+                    res = f.result()
+                    results[res[0]] = res
+
+        completed_reps += len(batch)
+
+        for r in results[completed_reps - len(batch):completed_reps]:
+            if r is not None and r[1]:  # converged
+                converged_slopes.append(r[2])
+                converged_thresholds.append(r[3])
+                converged_means.append(r[4])
+                converged_vars.append(r[5])
+                converged_logliks.append(r[6])
+
+        n_conv = len(converged_slopes)
+        if n_conv > 10:
+            # Check Monte Carlo stopping ratio
+            # Use Efron & Tibshirani 1993 Ch 19 cv(se_B) approx 1/sqrt(2B) under normality
+            # We want MC error of SE relative to SE < mc_stopping_ratio
+            mc_cv = 1.0 / np.sqrt(2 * n_conv)
+            if mc_cv < mc_stopping_ratio:
+                break
 
     n_conv = len(converged_slopes)
     if n_conv > 1:
@@ -248,10 +271,10 @@ def run_bifactor_bootstrap(
         se_vars = np.full((n_groups, n_dims), np.nan)
 
     elapsed = time.perf_counter() - start_time
-    throughput = n_replicates / elapsed if elapsed > 0 else 0.0
+    throughput = completed_reps / elapsed if elapsed > 0 else 0.0
 
     return BifactorBootstrapResult(
-        n_replicates=n_replicates,
+        n_replicates=completed_reps,
         n_converged=n_conv,
         replicate_slopes=slopes_mat,
         replicate_thresholds=thresh_mat,
