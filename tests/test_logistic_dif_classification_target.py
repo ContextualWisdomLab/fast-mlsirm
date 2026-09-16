@@ -1,21 +1,22 @@
-"""Pin which quantity ``jg_class`` is computed from, and what the other one gives.
+"""Pin the fixed ``jg_class`` contract: "not applicable" (``"U"``), always.
 
-`logistic_dif` classifies items by comparing ``delta_r2`` -- a Nagelkerke
-pseudo-R-squared change across the two-degree-of-freedom omnibus -- to the
-Jodoin-Gierl ``.035`` / ``.070`` boundaries, and reports ``delta_r2_uniform``
-without a class.
+Superseded contract, before #1880. ``logistic_dif`` classified items by comparing
+``delta_r2`` -- a Nagelkerke pseudo-R-squared change across the two-degree-of-freedom
+omnibus -- to the Jodoin-Gierl ``.035`` / ``.070`` boundaries, and reported
+``delta_r2_uniform`` without a class. Jodoin & Gierl (2001), *Applied Measurement in
+Education, 14*(4), 329-349, states the bands on the ONE-degree-of-freedom UNIFORM
+increment of a Zumbo-Thomas weighted-least-squares partition (p. 335, p. 333), not the
+Nagelkerke two-degree-of-freedom quantity this package computes -- so the applied
+quantity was the one the bands were not built for.
 
-Jodoin & Gierl (2001), *Applied Measurement in Education, 14*(4), 329-349, has
-since been read and states the bands on the ONE-degree-of-freedom UNIFORM
-increment (p. 335). So the applied quantity is the one the bands were not built
-for, and the unclassified one is the one they were. Correcting that reclassifies
-every item every current caller has scored.
-
-These tests change nothing. They record what the package does today next to what
-the other quantity would give, so the correction lands as a visible diff in a
-test file rather than as a silent change in numbers nobody re-derives. They are
-expected to FAIL, loudly and by design, when the applied quantity changes -- at
-which point the failing assertion names what to update and why.
+Fixed contract (#1880). Correcting *which* quantity gets a letter is not available:
+the replacement statistic is itself underdetermined by the source (eq. 4, p. 333, does
+not say whether the correlation is against the observed or the working response, nor
+on which scale the coefficient is standardized -- both choices change the number). So
+``jg_class`` is retired to ``"U"`` ("not applicable") unconditionally, for every item,
+regardless of fit success, omnibus significance, or which of ``delta_r2`` /
+``delta_r2_uniform`` is inspected. ``delta_r2`` and ``delta_r2_uniform`` remain
+reported as descriptive numbers with no letter attached to either.
 """
 
 from __future__ import annotations
@@ -31,34 +32,18 @@ CROSSING_ITEM = 3
 INTERCEPT_SHIFT = 1.5
 SLOPE_DIFFERENCE = 2.0
 SEED = 20_260_915
-# The Jodoin-Gierl boundaries as the package applies them.
-MODERATE = 0.035
-LARGE = 0.070
-
-
-def _band(value: float) -> str:
-    """The letter the boundaries give a value, ignoring the significance gate."""
-    if not np.isfinite(value):
-        return "U"
-    if value < MODERATE:
-        return "A"
-    if value < LARGE:
-        return "B"
-    return "C"
 
 
 @pytest.fixture(scope="module")
 def sweep():
     """One CROSSING item: a group intercept shift AND a group slope difference.
 
-    The fixture is crossing rather than purely uniform because that is the only
-    place the two quantities separate. Under pure uniform differential
-    functioning the interaction term contributes almost nothing and the omnibus
-    and uniform increments nearly coincide -- measured here at 0.0523 against
-    0.0503, the same band. The reclassification therefore bites on crossing
-    items specifically, which are also the items the bands were least licensed
-    for: the original studied only two of them and called the extension
-    provisional.
+    Crossing rather than purely uniform because that is the only place the two
+    Nagelkerke quantities (``delta_r2`` vs. ``delta_r2_uniform``) separate at all --
+    under pure uniform DIF the interaction term contributes almost nothing and the
+    two increments nearly coincide. This keeps the fixture useful as a regression
+    guard even though neither quantity is lettered any more: it still exercises
+    that the descriptive numbers themselves stay distinct and finite.
     """
     rng = np.random.default_rng(SEED)
     theta = rng.standard_normal(2 * N_PER_GROUP)
@@ -73,59 +58,28 @@ def sweep():
     return logistic_dif(np.column_stack(columns), group)
 
 
-def test_the_class_is_computed_from_the_omnibus_quantity(sweep) -> None:
-    """What ships today."""
-    for item in range(N_ITEMS):
-        if sweep["jg_class"][item] == "U":
-            continue
-        if not sweep["flagged_bh"][item]:
-            # A non-significant item is forced to "A" regardless of magnitude,
-            # so it cannot distinguish the two quantities.
-            continue
-        assert sweep["jg_class"][item] == _band(float(sweep["delta_r2"][item])), (
-            f"item {item}: jg_class is not the band of delta_r2 -- if this now "
-            "reads from delta_r2_uniform, the applied quantity has been "
-            "corrected and this test should be replaced, not relaxed"
-        )
+def test_jg_class_is_not_applicable_for_every_item(sweep) -> None:
+    """The letter class is retired, not repointed at a different quantity."""
+    assert list(sweep["jg_class"]) == ["U"] * N_ITEMS, (
+        "jg_class must be 'U' (not applicable) unconditionally -- if this now "
+        "reports a letter again, the classifier has been un-retired without "
+        "resolving why it was retired (see this module's docstring)"
+    )
 
 
-def test_the_two_quantities_are_not_interchangeable(sweep) -> None:
+def test_the_two_quantities_remain_distinct_descriptive_numbers(sweep) -> None:
     """The uniform increment is a different number, not a rounding of the same one."""
     finite = np.isfinite(sweep["delta_r2"]) & np.isfinite(sweep["delta_r2_uniform"])
     assert finite.any()
     assert not np.allclose(
         sweep["delta_r2"][finite], sweep["delta_r2_uniform"][finite], atol=1e-6
     )
-
-
-def test_at_least_one_item_would_be_classified_differently(sweep) -> None:
-    """The reclassification is real, not hypothetical.
-
-    If this ever passes vacuously -- no item differing -- the fixture has lost
-    the property it was built for and must be rebuilt, because a correction with
-    no observable consequence cannot be reviewed.
-    """
-    differing = [
-        item
-        for item in range(N_ITEMS)
-        if np.isfinite(sweep["delta_r2"][item])
-        and np.isfinite(sweep["delta_r2_uniform"][item])
-        and _band(float(sweep["delta_r2"][item]))
-        != _band(float(sweep["delta_r2_uniform"][item]))
-    ]
-
-    assert CROSSING_ITEM in differing, (
-        "the crossing item's band no longer differs between the omnibus and "
-        "uniform quantities, so this fixture can no longer demonstrate the "
-        "reclassification and must be rebuilt"
-    )
-    # Today: omnibus 0.043 -> "B", uniform 0.027 -> "A". Correcting the applied
-    # quantity moves this item down a band.
-    assert _band(float(sweep["delta_r2"][CROSSING_ITEM])) == "B"
-    assert _band(float(sweep["delta_r2_uniform"][CROSSING_ITEM])) == "A"
+    # The crossing item is exactly where they separate; sanity-check it stays large
+    # enough to be a meaningful regression guard for the fixture itself.
+    assert sweep["delta_r2"][CROSSING_ITEM] > sweep["delta_r2_uniform"][CROSSING_ITEM]
 
 
 def test_the_uniform_increment_is_reported_without_a_class(sweep) -> None:
-    """Today's contract: the quantity the bands were built for carries no class."""
+    """The contract: neither quantity carries a letter class."""
     assert "delta_r2_uniform" in sweep
     assert "jg_class_uniform" not in sweep

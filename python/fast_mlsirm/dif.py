@@ -585,41 +585,40 @@ def logistic_dif(
     - ``chi2_uniform`` / ``p_uniform`` (1 df) tests ``b2`` *assuming* ``b3 = 0``; it is a descriptive
       follow-up, is NOT the group term of the full model, and is not interpretable when non-uniform DIF
       is present. Component p-values are unadjusted.
-    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size), and
-      ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
-      ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
-      ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
-      (The 0.035/0.070 banding and the older Zumbo-Thomas 0.13/0.26 are two calibrations of the SAME
-      quantity against DIFFERENT tests, and neither is portable to the other's. Jodoin & Gierl (2001,
-      Applied Measurement in Education, 14(4), 329-349) has now been read in full and states the bands
-      on the ONE-df UNIFORM increment (p. 335); the 2-df omnibus appears only as an alternate
-      significance gate. Zumbo (1999, p. 27) states 0.13 as a Cohen-style convention on the omnibus,
-      which Jodoin & Gierl supersede rather than adopt (p. 334). The two also differ in direction of
-      use: 0.13 is a FLOOR for calling an item DIF, 0.035 a CEILING for calling it negligible.
+    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size) and
+      ``delta_r2_uniform`` is ``R2(M1) - R2(M0)``; both are reported as DESCRIPTIVE numbers only.
+      ``jg_class`` is always ``"U"`` ("not applicable") — see "Fixed in #1880" below for why no
+      letter is defended for either quantity.
 
-      KNOWN DEFECT, and the honest form of it is weaker than "we apply the wrong quantity".
-      ``jg_class`` applies the bands to ``delta_r2``, the 2-df quantity they were not calibrated
-      for, and withholds them from ``delta_r2_uniform``, the one they were. Independently of the
-      degrees of freedom, Jodoin & Gierl compute a Zumbo-Thomas weighted-least-squares
-      (Pratt-Pregibon) partition (p. 333), not the Nagelkerke pseudo-R² this package computes —
-      and that page leaves the partition UNDERDETERMINED: it does not say whether the correlation
-      is taken against the observed response or the working response of the linearization, nor on
-      which scale the coefficient is standardized, and both choices change the number. So what can
-      be defended is that this package cannot say what its letter classes mean, not that a
-      specific corrected class is available. Treat ``jg_class`` as indicative rather than
-      authoritative, and prefer the underlying magnitude to the letter.
+      **Fixed in #1880: the Jodoin & Gierl (2001) letter class is retired, not repointed.**
+      Jodoin & Gierl calibrate their ``.035``/``.070`` bands (p. 335) on a Zumbo-Thomas
+      weighted-least-squares (Pratt-Pregibon) partition (p. 333), not on the Nagelkerke pseudo-R²
+      this package computes, and additionally state those bands on the ONE-df uniform increment,
+      not the 2-df omnibus this package previously lettered. Both mismatches would need fixing
+      together, but the replacement statistic is itself UNDERDETERMINED by the source: eq. 4 does
+      not say whether its correlation is taken against the observed response or the working
+      response of the IRLS linearization, nor on which scale the standardized coefficient is
+      computed, and both choices change the number (p. 333). A package cannot letter a quantity it
+      cannot compute, so ``jg_class`` reports ``"U"`` unconditionally instead of a class that would
+      carry no external referent. Prefer ``delta_r2`` / ``delta_r2_uniform`` directly to any letter.
 
-      Calibration scope, which the letter class does not carry: the bands come from a cubic regression
-      predicting the uniform increment from SIBTEST's beta with Roussos & Stout's .059/.088 substituted
-      in (p. 335). The paper never restricts the measure to an item type IN WORDS; the only scope
-      indicators are design facts — the response data were generated from a 3PL model (pp. 337,
-      339) and the tests were 40 items (pp. 336-337) — so treating the bands as inapplicable to
-      polytomous responses rests on the simulation conditions alone, the weaker of the two grounds
-      one might have had. They
-      are anchored to SIBTEST bands, NOT to a Cohen norm, so 0.035 must not be read as "3.5% of
-      variance is a small effect" (pp. 345-346). The non-uniform extension is in the original itself
-      (p. 336) but rests on two items and is called provisional (pp. 346-347). The procedures become
-      conservative at large balanced samples and underpowered at unequal group sizes (pp. 346-347).)
+      The bands are additionally scoped to Jodoin & Gierl's own simulation: DICHOTOMOUS responses
+      generated from a 3PL model (pp. 337, 339) on 40-item tests (pp. 336-337); nothing in the
+      paper licenses them for the polytomous logistic-regression sweep (see PR #1890), which is a
+      second, independent reason no letter is available there either. The bands are anchored to
+      SIBTEST's ``.059``/``.088`` via a cubic regression (p. 335), NOT to a Cohen norm, so ``.035``
+      must not be read as "3.5% of variance is a small effect" (pp. 345-346) even where the
+      underlying quantity were available. The non-uniform extension is in the original itself
+      (p. 336) but rests on two items and is called provisional (pp. 346-347); the procedures
+      become conservative at large balanced samples and underpowered at unequal group sizes
+      (pp. 346-347).
+
+      Zumbo (1999, p. 27) states an older, SEPARATE convention (``0.13``/``0.26``) as a Cohen-style
+      cut applied directly to the SAME Nagelkerke omnibus quantity this package computes, which
+      Jodoin & Gierl supersede rather than adopt for their own bands (p. 334); it is not restored
+      here because this package does not ship a letter class calibrated on a source it has not
+      independently verified end to end, and ``0.13`` was itself credited historically to the
+      unobtainable Zumbo & Thomas (1997) working paper rather than to Zumbo (1999) directly.
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item

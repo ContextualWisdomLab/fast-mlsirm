@@ -4798,10 +4798,11 @@ fn score_wle(
 /// `n_persons` with `0` = reference, `1` = focal. Returns a dict of per-item arrays: `item`,
 /// `chi2_uniform`/`p_uniform` and `chi2_nonuniform`/`p_nonuniform` (1 df each, DESCRIPTIVE and
 /// unadjusted), `chi2_total`/`p_total` (2 df, the PRIMARY omnibus test that Benjamini-Hochberg adjusts),
-/// `delta_r2` (Nagelkerke `R2(M2) - R2(M0)`), `delta_r2_uniform` (uncalibrated descriptive),
-/// `jg_class` (Jodoin & Gierl, 2001 `"A"`/`"B"`/`"C"`, or `"U"` when undefined), `flagged_bh`, and
-/// `converged`. A failed fit (separation, rank-deficient design, no convergence) reports NaN statistics,
-/// `converged=False`, and is never flagged.
+/// `delta_r2` (Nagelkerke `R2(M2) - R2(M0)`), `delta_r2_uniform` (descriptive, `R2(M1) - R2(M0)`),
+/// `jg_class` (always `"U"`, "not applicable" — the Jodoin & Gierl, 2001 bands are calibrated on a
+/// different, underdetermined statistic; see `python/fast_mlsirm/dif.py::logistic_dif` and #1880),
+/// `flagged_bh`, and `converged`. A failed fit (separation, rank-deficient design, no convergence)
+/// reports NaN statistics, `converged=False`, and is never flagged.
 ///
 /// References (APA 7th ed.):
 ///   Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates using an effect size

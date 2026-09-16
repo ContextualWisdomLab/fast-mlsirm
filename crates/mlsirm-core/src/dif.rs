@@ -454,8 +454,8 @@ fn mh_sweep(
 // the primary source and why the behaviour has not been changed in the same commit.
 //
 // RESOLVED against this code, on the primary source. Jodoin & Gierl (2001) has now been read in full
-// (Applied Measurement in Education 14(4), 329-349; obtained through institutional access, read by the
-// consumer session, not by the author of this comment). The bands are stated on the ONE-df UNIFORM
+// (Applied Measurement in Education 14(4), 329-349; obtained via institutional access and read
+// independently for #1880, pp. 333-337 and 345-349). The bands are stated on the ONE-df UNIFORM
 // increment: "Negligible or A-level DIF: R2delta-U < .035 ... Moderate or B-level DIF: .035 <=
 // R2delta-U < .070 ... Large or C-level DIF: R2delta-U >= .070" (p. 335). The 2-df omnibus appears
 // only as one of three alternate SIGNIFICANCE gates paired with an already-fixed cut-off. So Sireci
@@ -507,20 +507,34 @@ fn mh_sweep(
 // would produce numbers with no external referent -- nothing to check them against, and no
 // obviously wrong output.
 //
-// Citation-year discrepancy, recorded rather than resolved: Jodoin & Gierl credit the measure to
-// Zumbo & Thomas *1996* throughout, with Pratt (1987) and Pregibon (1981) for the derivation logic.
-// This module's reference list says 1997. Neither has been verified against the working paper
-// itself, which has no locatable public copy under either year, so the year here is left as it
-// stands and the disagreement is noted. Anyone searching for it should try both.
+// Citation-year discrepancy, now independently verified against the primary source and its
+// reference list (Jodoin & Gierl, 2001, obtained and read in full via institutional access,
+// p. 333 for the equations and p. 349 for the reference entry). Jodoin & Gierl cite the measure to
+// "Zumbo, B. D., & Thomas, D. R. (1996, October). A measure of DIF effect size using logistic
+// regression procedures. Paper presented at the National Board of Medical Examiners, Philadelphia"
+// (p. 349) -- a CONFERENCE PAPER, not the "University of Northern British Columbia, Edgeworth
+// Laboratory" working paper this module's reference list has historically cited under 1997. The
+// two are not confirmed to be the same document (the conference paper itself has no locatable
+// public copy either), so the 1997 citation here is left as a separate, distinct, unverified
+// entry rather than silently merged with the verified 1996 one.
 //
-// Provenance: p. 333 was transcribed by the consumer session, not read by the author of this
-// comment.
+// FIXED (#1880): `jg_classify` no longer letters any item. The two defects above cannot both be
+// corrected by swapping the applied quantity, because the replacement statistic (the Zumbo-Thomas
+// weighted-least-squares partition, p. 333) is underdetermined by the source itself -- see the
+// "NOT FULLY DEFINED" paragraph above -- so there is no quantity this package can defensibly letter
+// against Jodoin & Gierl's bands. Root cause fixed at the classifier: `jg_classify` now always
+// returns `EtsClass::Undefined` ("not applicable"), for every item, regardless of fit success or
+// omnibus significance. `delta_r2` and `delta_r2_uniform` remain reported as descriptive numbers;
+// neither carries a letter. This also mechanically disables the JG-based purification criterion in
+// `logistic_dif_purified` (`purify_flagged` only fires on `B`/`C`): its anchor no longer shrinks.
+// That is correct, not an oversight -- see the doc comment on `logistic_dif_purified` for why the
+// obvious substitute (raw omnibus significance) is not used instead.
 //
-// The applied quantity is deliberately NOT changed in this commit. Correcting it reclassifies every
-// item every current caller has scored, and the destination is not simply "swap to the uniform
-// component": the pseudo-`R^2` mismatch has to be settled in the same change, or the bands would be
-// moved onto a second quantity they were also not calibrated for. Tracked as a behaviour defect with
-// this reference block as its evidence.
+// This additionally closes the polytomous-portability gap: Jodoin & Gierl's simulation generated
+// DICHOTOMOUS responses from a 3PL model on 40-item tests (pp. 337, 339); nothing in the bands
+// transfers to the polytomous logistic-regression sweep discussed at the `dif_polytomous` entry
+// point (PR #1890), so "not applicable" is also the correct answer there, not merely for this
+// dichotomous path.
 //
 // Caveats, same as the Mantel-Haenszel path above: the studied item is INCLUDED in the matching score
 // by default, and this entry point does no purification, so its criterion carries the same
@@ -576,8 +590,12 @@ pub struct LogisticDifRow {
     pub delta_r2: f64,
     /// Nagelkerke `R2_N(M1) - R2_N(M0)`: UNCALIBRATED descriptive value, carries no letter class.
     pub delta_r2_uniform: f64,
-    /// Jodoin & Gierl (2001) A/B/C class on `delta_r2`; forced to `A` when the omnibus test is not
-    /// BH-significant, and `Undefined` when the fits failed.
+    /// Always `EtsClass::Undefined` ("not applicable"): Jodoin and Gierl (2001, p. 335) calibrated
+    /// their `.035`/`.070` bands on a Zumbo-Thomas weighted-least-squares partition (p. 333) that
+    /// this package does not compute and that the source leaves underdetermined (see the module
+    /// notes above `jg_classify`), so no letter can be defended for `delta_r2` or
+    /// `delta_r2_uniform`. Kept as a field, rather than removed, so existing callers get an
+    /// explicit "not applicable" instead of a silently vanished key.
     pub jg_class: EtsClass,
     /// Benjamini-Hochberg rejection on `p_total` across the swept items.
     pub flagged_bh: bool,
@@ -824,21 +842,21 @@ fn logistic_item_stats(
     }
 }
 
-/// Jodoin & Gierl (2001) classification, conditional on omnibus significance.
-fn jg_classify(delta_r2: f64, significant: bool) -> EtsClass {
-    if !delta_r2.is_finite() {
-        return EtsClass::Undefined;
-    }
-    if !significant {
-        return EtsClass::A; // non-significant => negligible by definition
-    }
-    if delta_r2 >= JG_LARGE {
-        EtsClass::C
-    } else if delta_r2 >= JG_MODERATE {
-        EtsClass::B
-    } else {
-        EtsClass::A
-    }
+/// "Classification" against the Jodoin and Gierl (2001) bands: always `Undefined` ("not
+/// applicable"). Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates
+/// using an effect size measure with the logistic regression procedure for DIF detection. *Applied
+/// Measurement in Education, 14*(4), 329-349, p. 335, calibrates `.035`/`.070` on a Zumbo-Thomas
+/// weighted-least-squares (Pratt-Pregibon) partition, not the Nagelkerke `delta_r2` this module
+/// computes (p. 333), and that partition's own definition is underdetermined by the source (see
+/// the module notes above this function): it does not say whether the correlation in eq. 4 is
+/// taken against the observed response or the working response of the IRLS linearization, nor on
+/// which scale the standardized coefficient is computed, and both choices change the number. A
+/// package cannot letter a value it cannot compute, so every item is `Undefined` regardless of
+/// `delta_r2`, `delta_r2_uniform`, fit success, or omnibus significance; `significant` and
+/// `delta_r2` are accepted only to keep this function's signature — and its call site — unchanged
+/// while the caller's `p_total`/`flagged_bh` fields stay meaningful on their own terms.
+fn jg_classify(_delta_r2: f64, _significant: bool) -> EtsClass {
+    EtsClass::Undefined
 }
 
 /// Zumbo (1999) logistic-regression DIF sweep over the dichotomous items of a two-group sample.
@@ -1114,7 +1132,15 @@ pub fn mantel_haenszel_dif_purified(
 }
 
 /// [`logistic_dif`] with an iteratively purified matching criterion. The purification flag is taken
-/// from `jg_class`, i.e. from the 2-df omnibus test that Benjamini-Hochberg already targets.
+/// from `jg_class`. As of #1880, `jg_class` is always `Undefined`, so `purify_flagged` never fires
+/// and this function's anchor never shrinks: `flagged_bh` alone is deliberately NOT substituted,
+/// because it is the raw omnibus significance test this package's own purification design exists to
+/// screen against (see `purify_flagged`'s doc: the Mantel-Haenszel chi-square is over-powered at
+/// large N, "exactly the regime where purification matters" -- the same is true of `p_total`, which
+/// `flagged_bh` gates). Purifying on an over-powered significance test would remove far more items
+/// than the retired letter class ever did, which is a materially different (and worse) behaviour
+/// change than simply not purifying. A criterion this package cannot validly compute (a
+/// practical-significance screen on a defensible effect size) must not gate purification either.
 pub fn logistic_dif_purified(
     y: &[u8],
     group: &[u8],
