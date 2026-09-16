@@ -53,7 +53,6 @@
 use crate::marginal::XiRuleKind;
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::poly::{gpcm_logprobs, gpcm_node_gradient, solve_small};
-use crate::quadrature::SUPPORTED_Q;
 
 const GP_MAX_NODES: usize = 200_000;
 const GP_MAX_COUNT_CELLS: usize = 60_000_000;
@@ -149,13 +148,16 @@ fn validate(
                      node_rule qmc/mc for D up to {GP_MAX_DIMS_QMC}"
                 ));
             }
-            if !SUPPORTED_Q.contains(&cfg.q) {
-                return Err(format!("q must be one of {SUPPORTED_Q:?}; got {}", cfg.q));
+            if cfg.q < 1 {
+                return Err(format!("q must be >= 1; got {}", cfg.q));
             }
+            // #1929: no node-count cap, so q^n_dims can overflow for a large q;
+            // checked_mul turns that into an Err instead of a wrapped size.
             let mut n = 1usize;
             for _ in 0..n_dims {
-                // SUPPORTED_Q and the three-dimension bound cap this at 41^3 = 68,921.
-                n *= cfg.q;
+                n = n
+                    .checked_mul(cfg.q)
+                    .ok_or_else(|| format!("q^n_dims overflows usize (q={}, n_dims={n_dims})", cfg.q))?;
             }
             n
         }
@@ -205,7 +207,7 @@ fn validate(
             return Err(format!("loading_pattern[{idx}] must be 0 or 1; got {v}"));
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) && y[p * n_items + i] >= n_cat {
@@ -441,7 +443,7 @@ pub fn fit_gpcm(
                 .collect()
         })
         .collect();
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
 
     // Init: slope = 1.0 on the item's FIRST loaded dim (0 elsewhere); step_k = log(freq_k / freq_0)
     // (the GPCM baseline log-odds, NON-cumulative) — exactly fit_poly_unidim's GPCM init.

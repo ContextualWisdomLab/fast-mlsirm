@@ -454,3 +454,69 @@ fn mc_mixture_recovery_500() {
         assert!(sum_ari / r > 0.55, "mean ARI {} skew={skew}", sum_ari / r);
     }
 }
+
+/// `fit_mixture` shared `fit_mmle_2pl`'s `[1e-3, 10]` slope clamp, whose lower
+/// end was also a positivity floor: a reverse-keyed item was returned at
+/// `0.001` rather than with a negative slope. The bound is now symmetric, and
+/// the reflection it exposes is pinned across ALL classes at once, since they
+/// share one ability scale.
+#[test]
+fn a_reverse_keyed_item_recovers_its_negative_slope() {
+    let mut rng = TestRng(5_150_945);
+    let (n, j) = (2_000usize, 6usize);
+    let a0 = [1.35, 1.10, -0.95, 1.20, -1.25, 1.05];
+    let b0 = [0.3, -0.2, 0.1, -0.4, 0.2, 0.0];
+    let (y, _) = simulate_c2(n, j, 1.0, &b0, &a0, false, &mut rng);
+    let observed = vec![true; n * j];
+    let res = fit_mixture(&y, &observed, n, j, 1, MixtureModel::TwoPl, &MixtureConfig::default())
+        .unwrap();
+
+    // Identified up to the global reflection: magnitudes, then the sign pattern.
+    for (item, (&estimated, &truth)) in res.a.iter().zip(a0.iter()).enumerate() {
+        assert!(
+            (estimated.abs() - truth.abs()).abs() < 0.35,
+            "item {item} recovered |{estimated:.4}| for true |{truth:.2}|: {:?}",
+            res.a
+        );
+    }
+    for left in 0..a0.len() {
+        for right in left + 1..a0.len() {
+            assert_eq!(
+                res.a[left] * res.a[right] > 0.0,
+                a0[left] * a0[right] > 0.0,
+                "items {left} and {right} must land on the same side of zero: {:?}",
+                res.a
+            );
+        }
+    }
+    let anchor = res
+        .a
+        .iter()
+        .enumerate()
+        .max_by(|(_, x), (_, y)| x.abs().total_cmp(&y.abs()))
+        .map(|(i, _)| i)
+        .expect("one slope per item");
+    assert!(
+        res.a[anchor] > 0.0,
+        "the largest-magnitude slope must be positive: {:?}",
+        res.a
+    );
+}
+
+/// The orientation rule must not rewrite fits that were already correct.
+#[test]
+fn ordinary_mixture_data_is_returned_unflipped() {
+    let mut rng = TestRng(5_150_945);
+    let (n, j) = (1_200usize, 5usize);
+    let a0 = [1.35, 1.10, 0.95, 1.20, 1.05];
+    let b0 = [0.3, -0.2, 0.1, -0.4, 0.2];
+    let (y, _) = simulate_c2(n, j, 1.0, &b0, &a0, false, &mut rng);
+    let observed = vec![true; n * j];
+    let res = fit_mixture(&y, &observed, n, j, 1, MixtureModel::TwoPl, &MixtureConfig::default())
+        .unwrap();
+    assert!(
+        res.a.iter().all(|value| *value > 0.0),
+        "all-positive data must come back all-positive: {:?}",
+        res.a
+    );
+}

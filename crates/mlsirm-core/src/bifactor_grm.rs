@@ -86,7 +86,7 @@
 //! `n_starts`, and `seed` are CALLER ARGUMENTS; any out-of-range value is a
 //! loud `Err`, never a silent clamp. Upper bounds exist only where a real
 //! constraint exists: the quadrature counts must name an embedded
-//! Gauss-Hermite rule (`SUPPORTED_Q`), and working-set sizes that would
+//! Gauss-Hermite node count (any `n >= 1`; #1929), and working-set sizes that would
 //! overflow `usize` are rejected by checked arithmetic. Everything else is
 //! lower-bounded only (`n_specific >= 1`, `n_cat >= 2`, `max_iter >= 1`,
 //! `n_starts >= 1`, `newton_iter >= 1`, finite positive `tol`/`ridge`).
@@ -129,23 +129,24 @@
 //! 443-459. https://doi.org/10.1007/BF02293801
 
 use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
-use crate::quadrature::SUPPORTED_Q;
 
-// NOTE (stage-1 review fix-up): this module imposes no magic size caps. Upper
-// bounds without a documented origin (a previous revision capped n_specific,
-// n_starts, max_iter, newton_iter, n_cat, and the response-cell count) were
-// removed; what remains are the correctness checks: lower bounds (empty or
-// degenerate problems), the embedded-quadrature rule set that actually
-// exists, finiteness/positivity of real-valued controls, and checked
-// arithmetic that turns size overflow into `Err` instead of a panic.
+// NOTE (stage-1 review fix-up, updated #1929): this module imposes no magic
+// size caps. Upper bounds without a documented origin (a previous revision
+// capped n_specific, n_starts, max_iter, newton_iter, n_cat, and the
+// response-cell count) were removed; what remains are the correctness
+// checks: lower bounds (empty or degenerate problems, or q_general/
+// q_specific < 1 — any Gauss-Hermite node count >= 1 is generated on
+// demand, no fixed rule table required), finiteness/positivity of
+// real-valued controls, and checked arithmetic that turns size overflow
+// into `Err` instead of a panic.
 
 /// Configuration for [`fit_bifactor_grm`]. Every field is caller-owned and
 /// range-validated; nothing is clamped.
 #[derive(Clone, Copy, Debug)]
 pub struct BifactorGrmConfig {
-    /// Gauss-Hermite nodes for the general factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes for the general factor (any `n >= 1`).
     pub q_general: usize,
-    /// Gauss-Hermite nodes per specific factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes per specific factor (any `n >= 1`).
     pub q_specific: usize,
     pub max_iter: usize,
     pub tol: f64,
@@ -159,20 +160,9 @@ pub struct BifactorGrmConfig {
     pub ridge: f64,
 }
 
-impl Default for BifactorGrmConfig {
-    fn default() -> Self {
-        Self {
-            q_general: 21,
-            q_specific: 11,
-            max_iter: 500,
-            tol: 1e-6,
-            n_starts: 1,
-            seed: 0x9E37_79B9_7F4A_7C15,
-            newton_iter: 10,
-            ridge: 1e-8,
-        }
-    }
-}
+// No `Default` impl: `q_general`/`q_specific` are quadrature node counts
+// with no sourced accuracy target for any particular value (Project rule,
+// issue #1929), so every field is a caller-owned, explicit choice.
 
 /// Result of [`fit_bifactor_grm`].
 #[derive(Clone, Debug)]
@@ -237,17 +227,14 @@ fn validate(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if !SUPPORTED_Q.contains(&cfg.q_general) {
-        return Err(format!(
-            "q_general must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_general
-        ));
+    // #1929: no node-count cap. Only the lower bound (>= 1) is checked here;
+    // `require_gh_rule` (called wherever nodes are actually generated) also
+    // guards the eigensolve allocation against usize overflow for absurd q.
+    if cfg.q_general < 1 {
+        return Err(format!("q_general must be >= 1; got {}", cfg.q_general));
     }
-    if !SUPPORTED_Q.contains(&cfg.q_specific) {
-        return Err(format!(
-            "q_specific must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_specific
-        ));
+    if cfg.q_specific < 1 {
+        return Err(format!("q_specific must be >= 1; got {}", cfg.q_specific));
     }
     if cfg.max_iter < 1 {
         return Err("max_iter must be >= 1".into());
@@ -1079,10 +1066,18 @@ pub fn bifactor_grm_marginal_loglik(
     q_general: usize,
     q_specific: usize,
 ) -> Result<f64, String> {
+    // max_iter/tol/n_starts/seed/newton_iter/ridge are irrelevant here: this
+    // helper only evaluates loglik at given parameters, it does not fit, so
+    // `validate` sees them only for its own field-level bounds checks.
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
-        ..BifactorGrmConfig::default()
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
     };
     let v = validate(
         y,
@@ -1134,10 +1129,18 @@ pub fn bifactor_grm_marginal_loglik_brute(
     q_general: usize,
     q_specific: usize,
 ) -> Result<f64, String> {
+    // max_iter/tol/n_starts/seed/newton_iter/ridge are irrelevant here: this
+    // helper only evaluates loglik at given parameters, it does not fit, so
+    // `validate` sees them only for its own field-level bounds checks.
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
-        ..BifactorGrmConfig::default()
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
     };
     let v = validate(
         y,
@@ -1317,7 +1320,7 @@ fn pack_params(
 // `q_general`, `q_specific`, `max_iter`, `tol`, `n_starts`, `seed` are caller
 // arguments; any out-of-range value is a loud `Err`, never a silent clamp.
 // Upper bounds exist only where a real constraint exists: the quadrature
-// counts must name an embedded Gauss-Hermite rule (`SUPPORTED_Q`), and
+// counts must be `>= 1` (any node count is generated on demand; #1929), and
 // working-set sizes that would overflow `usize` are rejected by checked
 // arithmetic. Everything else is lower-bounded only. `seed`
 // drives ONLY the random-start jitter (quadrature is deterministic); start
@@ -1361,9 +1364,9 @@ fn pack_params(
 /// held at the reference value 1 (`false`).
 #[derive(Clone, Copy, Debug)]
 pub struct BifactorMultigroupConfig {
-    /// Gauss-Hermite nodes for the general factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes for the general factor (any `n >= 1`).
     pub q_general: usize,
-    /// Gauss-Hermite nodes per specific factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes per specific factor (any `n >= 1`).
     pub q_specific: usize,
     pub max_iter: usize,
     pub tol: f64,
@@ -1439,17 +1442,14 @@ fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String>
     // Mirror the single-group checks exactly (lower bounds only, no magic
     // caps — stage-1 review fix-up; quadrature restricted to the embedded
     // rules that exist). Caller-owned numerics behave identically.
-    if !SUPPORTED_Q.contains(&cfg.q_general) {
-        return Err(format!(
-            "q_general must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_general
-        ));
+    // #1929: no node-count cap. Only the lower bound (>= 1) is checked here;
+    // `require_gh_rule` (called wherever nodes are actually generated) also
+    // guards the eigensolve allocation against usize overflow for absurd q.
+    if cfg.q_general < 1 {
+        return Err(format!("q_general must be >= 1; got {}", cfg.q_general));
     }
-    if !SUPPORTED_Q.contains(&cfg.q_specific) {
-        return Err(format!(
-            "q_specific must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_specific
-        ));
+    if cfg.q_specific < 1 {
+        return Err(format!("q_specific must be >= 1; got {}", cfg.q_specific));
     }
     if cfg.max_iter < 1 {
         return Err("max_iter must be >= 1".into());

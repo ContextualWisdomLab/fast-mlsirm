@@ -181,7 +181,7 @@ fn rsm_validate_rejects_malformed() {
     assert!(fit_rsm(&[0, 1], None, 1, 2, 1, 21, 10, 1e-6).is_err()); // n_cat<2
     assert!(fit_rsm(&[0, 1, 2], None, 1, 2, 3, 21, 10, 1e-6).is_err()); // wrong len
     assert!(fit_rsm(&[0, 9], None, 1, 2, 3, 21, 10, 1e-6).is_err()); // category out of range
-    assert!(fit_rsm(&[0, 1, 0, 1], None, 2, 2, 2, 99, 10, 1e-6).is_err()); // bad q
+    assert!(fit_rsm(&[0, 1, 0, 1], None, 2, 2, 2, 0, 10, 1e-6).is_err()); // #1929: q=0 is bad, q=99 is now fine
     assert!(fit_rsm(&[], None, 0, 1, 2, 21, 10, 1e-6).is_err()); // no persons
     assert!(fit_rsm(&[], None, 1, 0, 2, 21, 10, 1e-6).is_err()); // no items
     assert!(fit_rsm(&[0, 1], None, 1, 2, 2, 21, 0, 1e-6).is_err()); // no iterations

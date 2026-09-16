@@ -187,8 +187,9 @@ def test_free_anchor_keeps_anchored_rows_equal() -> None:
 
 def test_rejects_out_of_range_caller_arguments() -> None:
     y, group = _simulate(SEED)
+    # #1929: no node-count cap; q_general=5 is now accepted, only < 1 is not.
     with pytest.raises(ValueError):
-        _fit(y, group, q_general=5)
+        _fit(y, group, q_general=0)
     with pytest.raises(ValueError):
         _fit(y, group, n_starts=0)
     with pytest.raises(ValueError):
@@ -221,3 +222,10 @@ def test_non_convergence_is_reported_not_substituted() -> None:
     fit = _fit(y, group, max_iter=1, tol=1e-12)
     assert not fit.converged
     assert fit.termination_reason == "max_iter_reached"
+
+
+def test_q_general_and_q_specific_are_required() -> None:
+    """RED test for #1929: no unsourced defaults exist for the node counts."""
+    y, group = _simulate(SEED)
+    with pytest.raises(TypeError):
+        fit_bifactor_grm_multigroup(y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC)

@@ -41,8 +41,6 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
-_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41, 61, 81)
-_SUPPORTED_XI_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -87,16 +85,23 @@ def _quadrature_points(value) -> int:
 
 
 def _fit_quadrature_points(value) -> int:
-    """Return one exact supported calibration Gauss-Hermite node count."""
+    """Return one exact calibration Gauss-Hermite node count.
+
+    #1929: no fixed-table cap; the Rust core generates any n >= 1 rule on
+    demand (Golub & Welsch, 1969). The upper bound here is the package's
+    shared quadrature-point resource budget (``MAX_POLY_QUADRATURE_POINTS``),
+    not a rule-table restriction — matching the q_nuisance/q_specific
+    validation elsewhere in this module.
+    """
     value_type = type(value)
     if value_type is int:
         validated = value
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
-    if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
+        raise ValueError("q_theta must be an integer >= 1")
+    if not 1 <= validated <= MAX_POLY_QUADRATURE_POINTS:
+        raise ValueError(f"q_theta must be in 1..={MAX_POLY_QUADRATURE_POINTS}")
     return validated
 
 
@@ -108,9 +113,9 @@ def _fit_xi_quadrature_points(value) -> int:
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
-    if validated not in _SUPPORTED_XI_QUADRATURE_POINTS:
-        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
+        raise ValueError("q_xi must be an integer >= 1")
+    if not 1 <= validated <= MAX_POLY_QUADRATURE_POINTS:
+        raise ValueError(f"q_xi must be in 1..={MAX_POLY_QUADRATURE_POINTS}")
     return validated
 
 
@@ -375,14 +380,16 @@ def focal_expected_total_score_monotonicity(
     fit,
     dimension: int,
     theta: np.ndarray,
-    q_nuisance: int = 41,
+    q_nuisance: int,
 ) -> ExpectedScoreMonotonicity:
     """Monotonicity of the expected total score along one dimension of a
     multidimensional graded fit, with the other dimensions integrated out.
 
     ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
-    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is the
-    caller-chosen Gauss-Hermite node count in ``1..=4096``: the lower bound
+    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is a
+    required, caller-chosen Gauss-Hermite node count in ``1..=4096`` — no
+    default is offered, because no accuracy target is on file to source one
+    against (Project rule, issue #1929). The lower bound
     is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
     Golub & Welsch, 1969) and the upper bound reuses this package's
     quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
@@ -488,7 +495,7 @@ def focal_expected_total_score_monotonicity(
 def bifactor_expected_total_score_monotonicity(
     fit,
     theta: np.ndarray,
-    q_specific: int = 41,
+    q_specific: int,
 ) -> ExpectedScoreMonotonicity:
     """Monotonicity of the expected total score along the general factor of
     a fitted bifactor GRM, with each item's specific factor integrated out.
@@ -497,8 +504,10 @@ def bifactor_expected_total_score_monotonicity(
     object exposing the same ``a_general``, ``a_specific``, and ``threshold``
     fields); the general factor is always the focal dimension, matching the
     bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
-    caller's grid on the general factor. ``q_specific`` is the caller-chosen
-    Gauss-Hermite node count in ``1..=4096``: the lower bound is exact (an
+    caller's grid on the general factor. ``q_specific`` is a required,
+    caller-chosen Gauss-Hermite node count in ``1..=4096`` — no default is
+    offered, because no accuracy target is on file to source one against
+    (Project rule, issue #1929). The lower bound is exact (an
     ``n``-node Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969)
     and the upper bound reuses this package's quadrature-point budget
     (``MAX_POLY_QUADRATURE_POINTS``), not a new constant. Returns the same
@@ -923,9 +932,7 @@ def fit_lsirm_polytomous(
         validated_q_xi = _fit_xi_quadrature_points(q_xi)
     except ValueError as exc:
         raise ValueError(
-            "q_theta/q_xi must be one of the supported rules; "
-            "q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81; "
-            "q_xi must be one of 7, 11, 15, 21, 31, 41"
+            "q_theta and q_xi must be >= 1"
         ) from exc
     validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
     validated_tol = _positive_real(tol, "tol")
@@ -1730,6 +1737,151 @@ def dif_polytomous_purified(
     report["purify_converged"] = reason == "stable_flag_set"
     report["purify_termination_reason"] = reason
     return report
+
+
+def dif_polytomous_anchor_sets(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str = "gpcm",
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    fdr_q: float = 0.05,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+    reference_group: int | None = None,
+) -> dict:
+    """Anchor-eligible set per focal group, and the intersection across them.
+
+    :func:`dif_polytomous_purified` estimates one latent distribution per group
+    and returns a single anchor set for the whole comparison. That is the right
+    object when every group is calibrated together, and the wrong one when the
+    question is which items are invariant against EACH focal group separately
+    -- an item can be invariant against one focal group and not another, and a
+    pooled sweep can leave it in the anchor because the effects partly cancel.
+
+    Each focal group is therefore purified against the reference on its own
+    two-group subset, and ``intersection`` is the set eligible against all of
+    them: the anchor a fixed-item calibration can defend for every group at
+    once.
+
+    ``reference_group`` defaults to the smallest label present. Returns
+    ``reference_group``; ``focal_groups`` (the caller's own labels, in order);
+    ``per_group``, a dict from focal label to that group's full
+    :func:`dif_polytomous_purified` report; ``anchor_by_group``, a
+    ``n_focal x n_items`` boolean matrix; ``intersection`` and
+    ``n_intersection``; and ``intersection_trustworthy`` with
+    ``untrustworthy_groups``.
+
+    **A failed purification does not silently narrow the intersection.** If a
+    group's loop ended on ``insufficient_anchor_items`` or ran out of rounds,
+    its anchor set is not a converged answer, and intersecting it would let a
+    failure masquerade as a strict result -- a smaller anchor looks more
+    conservative while actually being less supported. The intersection is still
+    computed, because a caller may want to inspect it, but
+    ``intersection_trustworthy`` is ``False`` and ``untrustworthy_groups``
+    names the groups responsible. Check it before using the result.
+
+    Every caveat on :func:`dif_polytomous_purified` applies per group, and one
+    compounds here: each group's anchor is selected from that group's own data,
+    so the intersection is a selection over selections and its error rate is
+    further from nominal than any single sweep's.
+
+    **Cost.** Each purification round fits one two-group model per item, and
+    that happens once per focal group, so the work is roughly
+    ``n_focal_groups * n_items * (rounds + 1)`` marginal-EM fits. On a large
+    bank with several focal groups this is minutes rather than seconds; lower
+    ``max_rounds`` or ``q_theta`` if that matters more than the last round of
+    refinement.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+            (the *iterative backward* anchor class this loop follows per
+            group: start from all other items, exclude flagged items, repeat).
+        Kopf, J., Zeileis, A., & Strobl, C. (2015). Anchor selection strategies
+            for DIF analysis: Review, assessment, and new approaches.
+            *Educational and Psychological Measurement, 75*(1), 22-56.
+            https://doi.org/10.1177/0013164414529792
+            (p. 2: "[e]xcluding DIF items from the anchor by using iterative
+            steps may not solve the problem when the test contains many DIF
+            items" -- the reason a single pooled anchor is checked per focal
+            group here rather than assumed adequate for all of them at once;
+            pp. 9-10 review the *all-other* anchor class this loop's per-item
+            auxiliary test is built on).
+        Woods, C. M. (2009). Empirical selection of anchors for tests of
+            differential item functioning. *Applied Psychological Measurement,
+            33*(1), 42-57. https://doi.org/10.1177/0146621607314044
+            (originated the rank-based, no-prior-knowledge anchor selection
+            this and :func:`dif_polytomous_purified` build on; a constant
+            anchor from the resulting ranking outperformed the all-other
+            method "in the majority of the simulated settings," per Kopf
+            et al., 2015, p. 9, quoting Woods, 2009, p. 53).
+
+        Per-group anchor sets and their intersection are this function's own
+        extension to more than two groups, not a design taken verbatim from
+        the sources above: none of them evaluates more than one focal group
+        against a shared reference, so none states the risk this function
+        guards against directly -- that a pooled, multi-group sweep can average
+        away DIF that is present against one focal group and absent against
+        another. That risk follows from the same two-group contamination logic
+        the sources do state (an anchor is only as trustworthy as the pairwise
+        comparison it was purified on).
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    labels = _nonnegative_integer_vector(group_id, "group_id")
+    if labels.size != y.shape[0]:
+        raise ValueError("group_id must have one entry per person")
+    present = np.unique(labels)
+    if present.size < 2:
+        raise ValueError("group_id must contain at least two distinct groups")
+
+    if reference_group is None:
+        reference = int(present[0])
+    else:
+        reference = _bounded_integer(reference_group, "reference_group", 0, int(present[-1]))
+        if reference not in present:
+            raise ValueError("reference_group must be a group label present in group_id")
+    focal_groups = [int(label) for label in present if int(label) != reference]
+
+    per_group: dict[int, dict] = {}
+    anchor_by_group = np.ones((len(focal_groups), int(y.shape[1])), dtype=bool)
+    untrustworthy: list[int] = []
+    for row, focal in enumerate(focal_groups):
+        keep = (labels == reference) | (labels == focal)
+        report = dif_polytomous_purified(
+            y[keep],
+            np.where(labels[keep] == reference, 0, 1),
+            n_cat,
+            model=model,
+            q_theta=q_theta,
+            max_iter=max_iter,
+            tol=tol,
+            fdr_q=fdr_q,
+            max_rounds=max_rounds,
+            min_anchor_items=min_anchor_items,
+        )
+        per_group[focal] = report
+        anchor_by_group[row] = report["anchor"]
+        if not report["purify_converged"]:
+            untrustworthy.append(focal)
+
+    intersection = np.logical_and.reduce(anchor_by_group, axis=0)
+    return {
+        "reference_group": reference,
+        "focal_groups": focal_groups,
+        "per_group": per_group,
+        "anchor_by_group": anchor_by_group,
+        "intersection": intersection,
+        "n_intersection": int(intersection.sum()),
+        "intersection_trustworthy": not untrustworthy,
+        "untrustworthy_groups": untrustworthy,
+    }
 
 
 def u3_person_fit_polytomous(

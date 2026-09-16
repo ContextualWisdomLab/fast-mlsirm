@@ -93,7 +93,8 @@ def test_fit_gpcm_rejects_controls_before_callbacks_or_data(
     [
         ({"n_cat": 1}, "n_cat must be between"),
         ({"n_cat": MAX_POLYTOMOUS_CATEGORIES + 1}, "n_cat must be between"),
-        ({"q": 13}, "q must be one of"),
+        # #1929: no node-count cap; q=13 is now accepted, only < 1 is not.
+        ({"q": 0}, "q must be >= 1"),
         ({"max_iter": 0}, "max_iter must be between"),
         ({"max_iter": MAX_MAX_ITER + 1}, "max_iter must be between"),
         ({"tol": 0.0}, "tol must be finite and > 0"),
