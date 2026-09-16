@@ -863,21 +863,66 @@ fn purification_stops_on_a_too_short_anchor() {
     assert_eq!(pur.rounds, 0);
     assert!(!pur.converged && pur.n_anchor == n_items);
     assert_eq!(pur.termination_reason, "insufficient_anchor_items");
-    // the logistic purified entry point still runs, but #1880 retired jg_class to Undefined, so
-    // purify_flagged (which only fires on B/C) never fires: the anchor is the untouched full test.
+    // the logistic purified entry point applies the SAME strict floor: it also stops on round 0 with
+    // the untouched full test as anchor, even though (post-#1941) its criterion is `flagged_bh` and
+    // can otherwise shrink the anchor -- see `logistic_purification_removes_planted_dif_from_anchor`.
     let lp = logistic_dif_purified(
         &y,
         &group,
         n,
         n_items,
         &LogisticDifConfig::default(),
-        &PurifyConfig::default(),
+        &strict,
     )
     .unwrap();
     assert_eq!(lp.n_anchor, n_items);
     assert!(lp.anchor.iter().all(|&a| a));
     assert_eq!(lp.rounds, 0);
-    assert_eq!(lp.termination_reason, "stable_flag_set");
+    assert_eq!(lp.termination_reason, "insufficient_anchor_items");
+}
+
+/// FIX FOR #1941: `logistic_dif_purified`'s anchor must actually shrink around planted DIF items.
+/// Before the fix, the criterion was `purify_flagged(jg_class)`, and #1880 retired `jg_class` to
+/// `Undefined` for every item, so the anchor never changed regardless of the DIF present (see the
+/// git-blame'd assertions this test replaces in `purification_stops_on_a_too_short_anchor`). The fix
+/// switches the criterion to `flagged_bh`, so this seeded bank with unidirectional DIF must converge
+/// to an anchor that excludes the planted items and retains the clean ones.
+#[test]
+fn logistic_purification_removes_planted_dif_from_anchor() {
+    let (n, n_items) = (3000usize, 12usize);
+    let dif_items = [2usize, 5, 8];
+    let (y, group) = purification_bank(n, n_items, &dif_items, 0.6, 0x9F1E2);
+    let cfg = LogisticDifConfig::default();
+    let plain = logistic_dif(&y, &group, n, n_items, &cfg).unwrap();
+    // PRECONDITION: the fixture must actually flag the planted items in the unpurified sweep.
+    assert!(
+        dif_items.iter().all(|&d| plain[d].flagged_bh),
+        "fixture precondition failed: planted items not flagged unpurified: {:?}",
+        plain.iter().map(|r| r.flagged_bh).collect::<Vec<_>>()
+    );
+    let pur = logistic_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
+        .unwrap();
+    assert!(
+        pur.rounds >= 1,
+        "purification never ran a round: anchor stayed at the full test (regression to #1880's \
+         jg_class bug); n_anchor={} rounds={}",
+        pur.n_anchor,
+        pur.rounds
+    );
+    for &d in &dif_items {
+        assert!(!pur.anchor[d], "planted DIF item {d} left in the anchor");
+        assert!(
+            pur.rows[d].flagged_bh,
+            "planted item {d} lost its flag after purification"
+        );
+    }
+    let clean: Vec<usize> = (0..n_items).filter(|i| !dif_items.contains(i)).collect();
+    assert!(
+        clean.iter().all(|&j| pur.anchor[j]),
+        "a clean item was dropped from the anchor: {:?}",
+        pur.anchor
+    );
+    assert_eq!(pur.n_anchor, n_items - dif_items.len());
 }
 
 /// STRUCTURAL ANCHOR for the returned rows: `rows` must be the sweep against the REPORTED `anchor`,

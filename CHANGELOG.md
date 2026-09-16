@@ -3,7 +3,146 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Preregistered external-validation evidence profiles
+
+- Added a domain-neutral, source-text-free `fast_mlsirm.validation_profile` contract for preregistered external evidence. Profiles preserve technical, construct, transportability, fairness, and decision-utility evidence as distinct classes with explicit `passed`, `failed`, `indeterminate`, `not_executed`, and `not_applicable` states; bind exact assessment/rubric/item-bank/model/protocol provenance; reject future-available evidence beyond the analysis cutoff; normalize callback-free fixed-offset timestamps to UTC; bound evidence and limitation collections before iteration; replay profile and nested-evidence invariants before granting public serialization or fingerprint authority after post-construction mutation; and expose a deterministic SHA-256 profile fingerprint without aggregating away failed or unavailable evidence. The slice performs validation, serialization, and provenance only; future statistical validity, transportability, fairness, and utility arithmetic remains Rust-owned.
+
+#### Finite-population proportion sampling design
+
+- Added a domain-neutral Rust/PyO3 `fast-mlsirm.sampling-design.v1` contract for normal-approximation finite-population proportion sample size, finite-population correction, and caller-selected proportional or equal-cost Neyman stratum allocation. Python only validates and marshals exact caller evidence; sample-size, correction, and allocation arithmetic remains Rust-owned.
+- The immutable result retains canonical ordered inputs and binds Rust-generated source/input/output SHA-256 identities to the stable source identity and algorithm version. Callers keep sample-frame and selected-membership provenance outside the arithmetic artifact.
+
+#### Single-group polytomous bifactor GRM with Gibbons-Hedeker reduction (stage 1 of #1912)
+
+- Add a single-group full-information polytomous bifactor graded response
+  fitter (Gibbons et al., 2007; Gibbons & Hedeker, 1992; Samejima, 1969):
+  unconstrained general/specific slopes, strictly decreasing boundary
+  intercepts, caller-supplied item-to-specific map with general-only items,
+  Bock-Aitkin EM with Gibbons-Hedeker dimension reduction, deterministic
+  multi-start selection, general-factor EAP scores with posterior SDs, and a
+  `fit_bifactor_grm` Python binding. Unobserved categories fail loudly;
+  `max_iter` exhaustion reports `converged=False` instead of substituting
+  values. Validated against `mirt::bfactor(itemtype="graded")` on a committed
+  fixture (loglik gap 0.015, slope gap <= 0.046, intercept gap <= 0.028).
+
+#### Achieved finite-population proportion
+
+- Added a Rust-owned terminal SRSWOR proportion artifact with design variance,
+  Wang/Konijn exact confidence limits, exhaustive coverage tests, and bound
+  sampling-design provenance.
+
+#### Binary response state contract
+
+- Add the versioned `fast_mlsirm_binary_response/v1` Measurement contract so dichotomous 0/1 values remain separate from missing, not-observed, abstained, invalid, omitted, not-applicable, insufficient-evidence, and adjudicated states; keep polytomous rubric/facet contracts separate and fail closed instead of thresholding.
+
+#### Lineage channel weight evidence
+
+- Add a Rust fail-closed evidence contract for continuous lineage channel scores
+  and an independently accepted criterion anchor. Weight estimation remains
+  unavailable until pair-level independent criterion observations are supplied.
+
 ### Changed
+
+#### Share one judge-result IRT projection core
+
+- Remove the duplicate category/binning implementation from the explicit criterion-order adapter. `LLMJudgeResult.to_irt_row` remains the single package-owned projection authority; the explicit-order adapter preserves its stricter sealed-mapping checks, delegates once to that canonical projection, and only permutes the validated row into caller-supplied criterion order.
+- Add parity regressions for score-derived and explicit-category projections, custom criterion order, delegation to the canonical core, and the sealed result-mapping boundary. No judge scoring threshold, category arithmetic, psychometric likelihood, or Rust numerical behavior changes.
+
+#### Item parameter provenance
+
+- Governed item-bank parameter provenance now distinguishes `provisional` cold-start artifacts from empirically `calibrated` artifacts with immutable, content-addressed evidence. Provisional records must name one bounded domain-neutral method (`rasch_common_discrimination`, `template_prior`, `lltm_predicted`, or `constrained_prior`) and an exact basis fingerprint and cannot carry calibration evidence; calibrated records require an exact calibration-evidence fingerprint and cannot carry provisional provenance. The contract binds item/version, response-model identity, and parameter-artifact fingerprint while storing no raw responses, prompts, provider output, or fitting arithmetic. Item-bank JSON/HTML reports can include this explicit parameter evidence, report `not_supplied` rather than inferring calibration when it is absent, and fail closed on item/version or lifecycle/status mismatches. All parameter estimation, calibration, linking, scoring, uncertainty, and recovery arithmetic remains Rust-owned.
+
+#### `logistic_dif`'s `jg_class` is retired to "not applicable" (#1880)
+
+- **Breaking, for any caller reading `jg_class`.** `logistic_dif` (and
+  `logistic_dif_purified`) no longer letter items `"A"`/`"B"`/`"C"` against the
+  Jodoin and Gierl (2001) effect-size bands. `jg_class` now reports `"U"`
+  ("not applicable") unconditionally, for every item, regardless of fit
+  success or omnibus significance. `delta_r2` (the Nagelkerke `R2(M2) -
+  R2(M0)` change across the 2-df omnibus) and `delta_r2_uniform` (`R2(M1) -
+  R2(M0)`) are unchanged and remain reported as descriptive numbers; neither
+  carries a letter class. Callers who branched on `jg_class == "A"`/`"B"`/`"C"`
+  must switch to reading `delta_r2` / `delta_r2_uniform` directly, or to
+  `flagged_bh` for a significance-only decision.
+- `logistic_dif_purified`'s anchor no longer shrinks: its purification
+  criterion (`purify_flagged`) only fires on `jg_class in {B, C}`, which is
+  now unreachable. This is deliberate, not a silent regression: the obvious
+  substitute, raw `flagged_bh` significance, is exactly the over-powered
+  test this package's purification design exists to screen against (see the
+  doc comment on `logistic_dif_purified`), so substituting it would purify
+  far more aggressively than the retired letter class ever did — a
+  materially different and worse behaviour change than simply not
+  purifying. Callers who relied on `logistic_dif_purified` actually
+  shrinking the anchor should track #1880 for a principled replacement
+  criterion, or use `mantel_haenszel_dif_purified` (unaffected; it purifies
+  on its own ETS `ets_class`, not `jg_class`).
+- **Why.** Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and
+  power rates using an effect size measure with the logistic regression
+  procedure for DIF detection. *Applied Measurement in Education, 14*(4),
+  329-349, calibrates its `.035`/`.070` bands (p. 335) on a Zumbo-Thomas
+  weighted-least-squares (Pratt-Pregibon) partition (p. 333) — not the
+  Nagelkerke pseudo-R² this package computes — and states them on the
+  ONE-degree-of-freedom UNIFORM increment, not the 2-df omnibus this package
+  previously lettered (`delta_r2`). Both mismatches were confirmed against
+  the primary source (read in full via institutional access) and would need
+  correcting together, but the replacement statistic is itself
+  underdetermined by that source: eq. 4 (p. 333) does not say whether its
+  correlation is taken against the observed response or the working response
+  of the IRLS linearization, nor on which scale the standardized coefficient
+  is computed, and both choices change the number. A package cannot letter a
+  quantity it cannot compute, so the honest fix is "not applicable," not a
+  guessed replacement. The bands are additionally scoped to the paper's own
+  simulation — dichotomous responses generated from a 3PL model (pp. 337,
+  339) on 40-item tests (pp. 336-337) — so they were never licensed for the
+  polytomous logistic-regression sweep either (see PR #1890's independent
+  finding on this point).
+- **Migration.** Any stored or logged `jg_class` values from before this
+  change reflected bands applied to the wrong quantity (2-df omnibus instead
+  of 1-df uniform) computed from the wrong statistic (Nagelkerke instead of
+  the Zumbo-Thomas WLS partition); they should not be treated as ground truth
+  and do not need to be "corrected" to a new letter, because no letter is
+  defensible. Use `delta_r2` / `delta_r2_uniform` (continuous, unchanged) and
+  `flagged_bh` (significance only, unchanged) directly.
+- **References.** Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I
+  error and power rates using an effect size measure with the logistic
+  regression procedure for DIF detection. *Applied Measurement in Education,
+  14*(4), 329-349. https://doi.org/10.1207/S15324818AME1404_2 — Nagelkerke,
+  N. J. D. (1991). A note on a general definition of the coefficient of
+  determination. *Biometrika, 78*(3), 691-692.
+  https://doi.org/10.1093/biomet/78.3.691 — Zumbo, B. D. (1999). *A handbook
+  on the theory and methods of differential item functioning (DIF)*.
+  Directorate of Human Resources Research and Evaluation, Department of
+  National Defense.
+
+#### Customer copy actionability
+
+- Public-API error paths now state the invalid input and the concrete next
+  action instead of internal validation vocabulary: judge-scoring projection
+  errors say to rebuild criterion mappings as plain dicts keyed by criterion id
+  (replacing "exact built-in dict" jargon), Rust backend unavailability errors
+  name the install/reference-path next steps, and unknown serving item codes
+  point at the bundle's items list.
+- CLI workspace-boundary and candidate-input errors append actionable next
+  steps (move the file under the working directory, use unique
+  `label=path.npy` candidate flags, reduce oversized candidate sets) without
+  changing exit codes, validation order, or fail-closed behavior.
+- Diagnostics report renderer errors tell the customer how to recover:
+  choose a `.html` output name and regenerate unsupported JSON via
+  `fast-mlsirm diagnose-fit` / `fast-mlsirm diagnose-dimensions`.
+- README quickstart guidance no longer instructs an unexecutable command
+  (`fit --backend numpy`; production backend choices are `{rust, auto}`) and
+  now points to the explicit NumPy reference path (`--reference` /
+  `fast_mlsirm.fit_reference`); feature copy describes fixed-item calibration
+  by its method instead of legacy package names.
+
+#### Lineage channel weight evidence
+
+- Restore the `mlsirm-core` boundary to a domain-neutral criterion-anchor
+  contract. The canonical field is `criterion_anchor`; the historical serialized
+  `tepp_anchor` field remains readable only as a compatibility alias. Producer-
+  specific schema validation is no longer compiled into the numerical core.
 
 #### Release cut 0.9.1
 
@@ -36,6 +175,119 @@
   removal of the stale 0.8.0 leftover.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Compensatory 2PL response and tolerance admission
+
+- Compensatory 2PL admission now seals both response evidence and the Rust `f64` convergence tolerance before caller data or native work. Response admission rejects caller-controlled array/numeric conversion protocols, complex evidence, ragged/non-numeric matrices, oversized logical matrices, and wider-precision values that would only become valid dichotomous observations after binary64 narrowing; exact NumPy numeric matrices and ordinary built-in matrices of concrete Python/NumPy 0/1/NaN values remain supported. The shared IRT minimum of two item columns is replayed from inert shape/row metadata after the existing logical-cell ceiling but before value-wise scans, scalar normalization, NumPy dense materialization, or compiled-core discovery, so structurally impossible one-item experiments cannot spend the full admitted response-work budget first. `tol` remains callback-safe but now also must preserve its exact numeric identity through normalization to Rust `f64`, so lossy extended-precision and large-integer controls fail closed while exact binary64-compatible controls remain supported. Accepted response evidence is normalized to package-owned contiguous `float64` before the existing Rust estimator boundary. The 2PL likelihood, quadrature, latent-correlation ECM, convergence arithmetic, and scoring are unchanged and remain Rust-owned.
+
+#### Independent parameter provenance edges
+
+- Item-parameter provenance now rejects self-referential edges: a provisional parameter artifact cannot name itself as its cold-start basis, and a calibrated parameter artifact cannot name itself as calibration evidence. This preserves an independent upstream provenance edge without changing any Rust-owned estimation, calibration, scoring, linking, uncertainty, or recovery arithmetic.
+
+#### Item-bank lifecycle public identity replay
+
+- Governed item-bank lifecycle records now replay their factory-sealed creation-time identity before returning a public fingerprint/id or serializing JSON-compatible content. A package-owned weak creation-seal registry binds each live factory-created object identity to its original fingerprint, so coherently rebinding both lifecycle content and the record's stored digest cannot manufacture fresh authority; dead-record entries are removed without retaining the record, and object-identity reuse is rejected. Callback-bearing mutations continue to fail closed, while valid lifecycle identities and payloads remain unchanged. No calibration, fit, DIF, information, linking, scoring, uncertainty, or other psychometric arithmetic changes.
+
+#### Residual interaction-map structural budget
+
+- Bound exact built-in matrix traversal independently of logical numeric cells so malformed empty-row fan-out fails before dense NumPy or compiled-core work while valid matrices inside the 20,000,000-cell evidence contract remain supported.
+
+#### Finite-population proportion sampling design
+
+- Replay the Rust `population_size <= 2^53` and 100,000-strata resource domains at the Python boundary before member normalization or Rust dispatch, and reject integer-valued strict probability controls without an unnecessary `float(...)` conversion so oversized/invalid controls fail with package-owned `ValueError` rather than consuming avoidable work or surfacing conversion overflow.
+
+#### RSM response structural and shape budgets
+
+- Bound exact built-in Rating Scale Model response-carrier traversal independently
+  of logical numeric cells, so malformed empty-row fan-out cannot consume
+  unbounded Python preflight work while keeping the response cell count at zero.
+- Preserve the existing 20,000,000-cell RSM evidence envelope and every valid
+  non-empty persons-by-items matrix inside it: built-in row plus scalar traversal
+  is bounded by twice the logical-cell ceiling before NumPy materialization.
+- Replay the established two-dimensional rectangular response contract and the
+  minimum-two-item RSM/IRT design contract from inert ndarray shape or exact
+  built-in row metadata after resource accounting but before value-wise scans or
+  dense float64 marshalling. Small-backed 1-D and one-item broadcast views now
+  fail their existing structural diagnostics without first allocating a large
+  dense matrix.
+- Keep RSM likelihood, marginal-ML EM/ECM, shared-threshold estimation, latent
+  integration, scoring, convergence, and uncertainty arithmetic unchanged in the
+  Rust core.
+
+#### Sampling result contract replay
+
+- Replay the Rust-owned sampling algorithm identity before public result marshalling so a same-schema stale or foreign extension fails closed instead of being exposed under the current contract.
+- Validate every returned stratum inclusion-probability ratio against the Rust-returned sample and population counts before constructing the public sampling artifact, with stable package-owned errors for missing, malformed, count-mismatched, or inconsistent ratio evidence.
+- Preserve the Rust-owned sample-size, finite-population-correction, proportional-allocation, and equal-cost Neyman arithmetic unchanged.
+
+#### Bounded capped-strata allocation
+
+- Replace repeated full active-set rescans in finite-population capped stratum allocation with a threshold-sorted water-filling pass, so the cap phase inspects each admitted stratum at most once after sorting.
+- Add a maximum-envelope 100,000-strata census regression and an operation-count proof for the cap phase without relying on wall-clock timing.
+- Preserve the existing Rust-owned proportional/Neyman quotas, census caps, deterministic input-order tie behavior, largest-remainder integerization, exact inclusion-probability ratios, and fail-closed zero-allocation contract.
+
+#### Release acceptance watchdog budget
+
+- Derive the commercial-release wrapper deadline for `release_acceptance.py` from the authoritative sequential inner acceptance budgets plus a 60-second orchestration margin, so future bounded-stage changes cannot silently reintroduce an outer watchdog that terminates legitimate fail-closed acceptance before the inner operation-specific deadline can report its evidence.
+
+#### Release helper import integrity
+
+- Fail closed when repository-owned bounded JSON or subprocess helpers raise an internal missing-dependency error; direct-script fallback now occurs only when the `scripts` package or the bounded helper module itself is unavailable, preserving the first causal boundary.
+
+#### Confirmatory loading-pattern evidence admission
+
+- Seal confirmatory items-by-dimensions loading-pattern evidence before NumPy array or numeric conversion protocols can execute, while preserving exact NumPy and ordinary built-in Boolean/integer/real 0/1 matrices as canonical read-only `int64` model structure.
+- Reject callback-bearing providers/subclasses, non-real or non-numeric storage, ragged/non-2-D evidence, non-finite values, and non-binary values with package-owned diagnostics before model-resolution work.
+- Replay the canonical read-only `int64` loading structure before public dimension or item-count resolution so post-construction field rebinding cannot execute caller-controlled shape metadata.
+
+#### DIMTEST release-build diagnostic ownership
+
+- Keep the per-group DIMTEST formula intermediates used by the independent Nandakumar & Stout oracle in test builds only, while release builds retain only the group contribution consumed by the production statistic. This removes the production dead-field warning without suppressing lints or changing DIMTEST arithmetic, public results, or the existing intermediate-value oracle.
+
+#### `logistic_dif_purified` purifies again, on `flagged_bh` (#1941)
+
+- **`logistic_dif_purified` no longer no-ops.** Its anchor-purification
+  criterion was `purify_flagged(jg_class)` (`jg_class in {B, C}`). #1880
+  retired `jg_class` to `"U"` ("not applicable") for every item, so that
+  criterion could never fire: `n_anchor` stayed at the initial item count and
+  `rounds` stayed `0` regardless of the DIF actually present in the data.
+  This silently downgraded the function to an expensive wrapper around
+  `logistic_dif` that never purified anything.
+- **Replacement criterion: `flagged_bh`.** The purification loop now drops an
+  item from the anchor when its Benjamini-Hochberg-adjusted `chi2_total`
+  omnibus test (`flagged_bh`) rejects — the same multiplicity-controlled
+  significance test `dif_polytomous_purified` uses for the identical reason:
+  no calibrated practical-significance class (an ETS-style B/C letter)
+  exists for this statistic. Jodoin and Gierl's (2001) `.035`/`.070` bands
+  are stated on a Zumbo-Thomas weighted-least-squares one-degree-of-freedom
+  partition this package does not compute, not on the two-degree-of-freedom
+  Nagelkerke pseudo-R² `delta_r2` this package reports (see #1880's
+  fragment), so `flagged_bh` is used directly rather than guessing a class.
+  This makes the loop's anchor MORE aggressive at large `N` than
+  `mantel_haenszel_dif_purified`'s practical-significance screen, not less —
+  documented on the function.
+- **No public API change.** `logistic_dif_purified`'s signature and return
+  keys (`anchor`, `n_anchor`, `rounds`, `purify_converged`,
+  `purify_termination_reason`, plus every `logistic_dif` key) are unchanged.
+  Only the purification behavior — which items the anchor excludes, for data
+  with DIF present — changes, from "never" to "on `flagged_bh`".
+  `jg_class` itself is untouched and remains `"U"` for every item.
+- **Caveat inherited, not introduced.** As before, the anchor is selected
+  from the same data it is then tested against, so the returned p-values are
+  conditional on a data-dependent selection and Benjamini-Hochberg does not
+  carry an FDR guarantee for the purified sweep; treat `flagged_bh` as a
+  screening device (see the function's existing docstring caveats, unchanged
+  by this fix).
+- **References.** Candell, G. L., & Drasgow, F. (1988). An iterative
+  procedure for linking metrics and assessing item bias in item response
+  theory. *Applied Psychological Measurement, 12*(3), 253-260.
+  https://doi.org/10.1177/014662168801200304 — Zumbo, B. D. (1999). *A
+  handbook on the theory and methods of differential item functioning
+  (DIF): Logistic regression modeling as a unitary framework for binary and
+  Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
+  Research and Evaluation, Department of National Defense.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.9.1] - 2026-08-25
 

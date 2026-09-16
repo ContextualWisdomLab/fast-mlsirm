@@ -2428,11 +2428,16 @@ def test_dif_purification():
     assert q0["purify_termination_reason"] == "stable_flag_set"
     np.testing.assert_array_equal(q0["chi2_mh"], p0["chi2_mh"])
 
-    # the logistic variant runs, but its jg_class-based purification criterion is retired to "U" for
-    # every item (#1880), so it can never fire: the anchor never shrinks, even for the planted items
-    lp = logistic_dif_purified(y, group)
-    assert all(lp["anchor"][d] for d in dif_items)
-    assert lp["n_anchor"] == 12 and lp["rounds"] == 0
+    # FIXED (#1941): the logistic variant's purification criterion switched from the unreachable
+    # jg_class (retired to "U" for every item by #1880) to flagged_bh, so the anchor now actually
+    # shrinks around the planted items instead of staying stuck at the full test. A smaller shift
+    # than the Mantel-Haenszel fixture above: the 2-df omnibus chi2_total logistic test is powerful
+    # enough at shift=1.2, n=3000 to flag every item (universal criterion contamination, not just
+    # the planted ones), which would make "planted items leave, clean items stay" unfalsifiable.
+    y_logit, group_logit = bank(dif_items, 0.6, 41)
+    lp = logistic_dif_purified(y_logit, group_logit)
+    assert all(not lp["anchor"][d] for d in dif_items), "planted items must leave the anchor"
+    assert lp["n_anchor"] == 12 - len(dif_items) and lp["rounds"] >= 1
     # the loop's scalar flag must NOT collide with logistic_dif's PER-ITEM convergence array: the two
     # answer different questions, and a same-named scalar silently destroyed the array at the boundary
     assert np.asarray(lp["converged"], dtype=bool).shape == (12,)

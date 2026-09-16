@@ -1132,15 +1132,33 @@ pub fn mantel_haenszel_dif_purified(
 }
 
 /// [`logistic_dif`] with an iteratively purified matching criterion. The purification flag is taken
-/// from `jg_class`. As of #1880, `jg_class` is always `Undefined`, so `purify_flagged` never fires
-/// and this function's anchor never shrinks: `flagged_bh` alone is deliberately NOT substituted,
-/// because it is the raw omnibus significance test this package's own purification design exists to
-/// screen against (see `purify_flagged`'s doc: the Mantel-Haenszel chi-square is over-powered at
-/// large N, "exactly the regime where purification matters" -- the same is true of `p_total`, which
-/// `flagged_bh` gates). Purifying on an over-powered significance test would remove far more items
-/// than the retired letter class ever did, which is a materially different (and worse) behaviour
-/// change than simply not purifying. A criterion this package cannot validly compute (a
-/// practical-significance screen on a defensible effect size) must not gate purification either.
+/// from `flagged_bh` (the Benjamini-Hochberg-adjusted omnibus `chi2_total` test), NOT from `jg_class`.
+///
+/// **Fixed in #1941: `jg_class` cannot gate purification because #1880 retired it to `Undefined` for
+/// every item** (see [`LogisticDifRow::jg_class`]), so the original `purify_flagged(r.jg_class)`
+/// criterion could never fire: the anchor never shrank regardless of the DIF actually present in the
+/// data. That silently downgraded this function to an expensive no-op wrapper around
+/// [`logistic_dif`], contrary to its documented purpose (Candell & Drasgow, 1988).
+///
+/// No calibrated practical-significance class survives for this sweep -- the same reasoning already
+/// applied to the polytomous purified sweep (`fast_mlsirm.polytomous.dif_polytomous_purified`, which
+/// this mirrors): Jodoin & Gierl's bands are stated on a one-degree-of-freedom Zumbo-Thomas
+/// weighted-least-squares partition this package does not compute (see `jg_classify`'s module
+/// notes), so `flagged_bh` -- multiplicity-controlled via Benjamini-Hochberg across the swept items,
+/// same as [`mantel_haenszel_dif_purified`]'s `ets_class` screen and `dif_polytomous_purified`'s
+/// criterion -- is used directly instead. This makes the loop MORE aggressive at large N than the
+/// practical-significance screen `mantel_haenszel_dif_purified` uses, not less; see the function-level
+/// caveats on conditional p-values and directional imbalance (Wang & Su, 2004), which apply here too.
+///
+/// # References (APA 7th ed.)
+///
+/// Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking metrics and assessing item
+///     bias in item response theory. *Applied Psychological Measurement, 12*(3), 253-260.
+///     https://doi.org/10.1177/014662168801200304
+/// Zumbo, B. D. (1999). *A handbook on the theory and methods of differential item functioning (DIF):
+///     Logistic regression modeling as a unitary framework for binary and Likert-type (ordinal) item
+///     scores* (p. 27). Directorate of Human Resources Research and Evaluation, Department of
+///     National Defense.
 pub fn logistic_dif_purified(
     y: &[u8],
     group: &[u8],
@@ -1152,7 +1170,7 @@ pub fn logistic_dif_purified(
     purify_loop(
         purify,
         |anchor| logistic_sweep(y, group, n_persons, n_items, cfg, anchor),
-        |r: &LogisticDifRow| purify_flagged(r.jg_class),
+        |r: &LogisticDifRow| r.flagged_bh,
     )
 }
 
