@@ -485,6 +485,116 @@ def focal_expected_total_score_monotonicity(
     return _decrease_report(grid, expected_total)
 
 
+def bifactor_expected_total_score_monotonicity(
+    fit,
+    theta: np.ndarray,
+    q_specific: int = 41,
+) -> ExpectedScoreMonotonicity:
+    """Monotonicity of the expected total score along the general factor of
+    a fitted bifactor GRM, with each item's specific factor integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.bifactor_grm.BifactorGrmFit` (or any
+    object exposing the same ``a_general``, ``a_specific``, and ``threshold``
+    fields); the general factor is always the focal dimension, matching the
+    bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
+    caller's grid on the general factor. ``q_specific`` is the caller-chosen
+    Gauss-Hermite node count in ``1..=4096``: the lower bound is exact (an
+    ``n``-node Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969)
+    and the upper bound reuses this package's quadrature-point budget
+    (``MAX_POLY_QUADRATURE_POINTS``), not a new constant. Returns the same
+    report as :func:`expected_total_score_monotonicity`.
+
+    **Why one node count integrates every item's specific factor.** In the
+    bifactor pattern each item loads the general factor plus at most one
+    specific factor (Gibbons et al., 2007, eq. 9), so the joint response
+    probability's ``s``-fold integral (eq. 10) collapses to a single
+    two-dimensional integral per specific-factor block under the orthogonal
+    ``N(0, 1)`` prior -- one dimension for the general factor, one for that
+    block's specific factor (eqs. 11-12, extended to the graded case in eqs.
+    13-14, with eq. 8 giving the Gauss-Hermite approximation form). That
+    two-dimensional reduction is for the *joint* probability of a whole
+    response pattern, where items sharing a block are correlated through
+    their common specific factor. The expected total score does not need
+    that joint structure: expectation is linear, so
+    ``E[T | theta_G] = sum_i E_{theta_Si}[score_i(theta_G, theta_Si)]``
+    holds term by term regardless of which items share a specific factor.
+    Each term is therefore exactly the item's own one-dimensional
+    Gauss-Hermite integral over its specific factor -- the same collapse
+    :func:`focal_expected_total_score_monotonicity` uses for a general
+    multidimensional graded fit, specialized to the bifactor loading
+    pattern (at most one nonzero non-focal slope per item). A general-only
+    item (``a_specific == 0``) needs no marginalization: the quadrature
+    still runs, contributing exactly its unmarginalized value because the
+    weights sum to one.
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    Eq. 8 (p. 7) is the Gauss-Hermite approximation to the marginal
+    response-pattern probability; eq. 9 (p. 7) is the bifactor linear
+    predictor restricting each item to the general factor plus at most one
+    specific factor; eq. 10 (p. 7) is the unrestricted ``s``-fold integral;
+    eqs. 11-12 (p. 8) are Stuart's (1958) and Gibbons and Hedeker's (1992)
+    two-dimensional reduction under the orthogonal-normal basis; eqs. 13-14
+    (p. 8) extend it to the graded response model.
+
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. *Mathematics of Computation, 23*(106), 221-230.
+    https://doi.org/10.1090/S0025-5718-69-99647-1
+    """
+    grid = _validated_monotonicity_grid(theta)
+    if not hasattr(fit, "a_general") or not hasattr(fit, "a_specific"):
+        raise TypeError("fit must expose a_general and a_specific arrays")
+    if not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose a threshold array")
+    a_general = np.asarray(fit.a_general, dtype=np.float64)
+    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
+    if a_general.ndim != 1 or a_general.size == 0:
+        raise ValueError("fit.a_general must be a non-empty 1-D array")
+    if a_specific.shape != a_general.shape:
+        raise ValueError("fit.a_specific must have the same shape as fit.a_general")
+    if not np.all(np.isfinite(a_general)) or not np.all(np.isfinite(a_specific)):
+        raise ValueError("fit.a_general and fit.a_specific must be finite")
+    n_items = a_general.shape[0]
+
+    nodes_requested = _bounded_integer(
+        q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
+    )
+
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.ndim != 2 or threshold.shape[0] != n_items:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+    for item in range(n_items):
+        base = (
+            a_general[item] * grid[:, None] + a_specific[item] * nodes[None, :]
+        )
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = polytomous_expected_response(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    return _decrease_report(grid, expected_total)
+
+
 def _core_module():
     """Return the compiled Rust core module, or ``None`` if it is unavailable."""
     try:
