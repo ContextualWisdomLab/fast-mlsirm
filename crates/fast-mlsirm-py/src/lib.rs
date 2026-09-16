@@ -1395,7 +1395,10 @@ fn fit_bifactor_grm(
         tol,
         n_starts,
         seed,
-        ..BifactorGrmConfig::default()
+        // newton_iter/ridge: inner Newton M-step controls, not exposed to
+        // Python and out of #1929's quadrature-node scope.
+        newton_iter: 10,
+        ridge: 1e-8,
     };
     let res = core_fit_bifactor_grm(
         &yy,

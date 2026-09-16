@@ -186,8 +186,9 @@ def fit_bifactor_grm_multigroup(
     n_cat: int,
     n_specific: int,
     anchor_mask: np.ndarray | None = None,
-    q_general: int = 21,
-    q_specific: int = 11,
+    *,
+    q_general: int,
+    q_specific: int,
     max_iter: int = 500,
     tol: float = 1e-6,
     n_starts: int = 1,
@@ -206,8 +207,10 @@ def fit_bifactor_grm_multigroup(
     or a length-``n_items`` boolean array with ``True`` = common across
     groups and ``False`` = free per group (at least one common item is
     required when there are 2+ groups). ``q_general``/``q_specific`` are
-    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)`` — the
-    embedded rules that exist, hence the only accepted values);
+    required, keyword-only Gauss-Hermite node counts (one of
+    ``(7, 11, 15, 21, 31, 41)`` — the embedded rules that exist, hence the
+    only accepted values); no default is offered, because no accuracy
+    target is on file to source one against (Project rule, issue #1929).
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
     per the no-magic-caps rule — upper-bounded only where a real constraint
