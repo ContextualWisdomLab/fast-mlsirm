@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from .audit import (
     CandidateAuditReport,
     PilotAdmissionError,
@@ -12,8 +14,11 @@ from .candidates import GeneratedItemCandidate
 from .verified_pilot import PilotCandidateRecord
 from .verified_pilot import _from_verified_core
 
+if TYPE_CHECKING:
+    from .semantic_screening import CandidateScreeningResult
+
 AUDIT_POLICY_ID = "generated_item_audit"
-AUDIT_POLICY_VERSION = "1.0.0"
+AUDIT_POLICY_VERSION = "2.0.0"
 
 
 def audit_generated_item_candidate(
@@ -31,6 +36,7 @@ def build_pilot_candidate_record(
     candidate: GeneratedItemCandidate,
     audit_report: CandidateAuditReport,
     *,
+    screening_result: CandidateScreeningResult | None = None,
     pilot_study_id: str,
     query_testlet_id: str,
     generator_family_id: str,
@@ -67,10 +73,60 @@ def build_pilot_candidate_record(
             "$.audit_report.audit_report_fingerprint",
             "audit report does not match a replay of the current policy",
         )
+    if not audit_report.is_pilot_eligible:
+        raise PilotAdmissionError(
+            "audit_not_clear",
+            "$.audit_report",
+            "candidate has unresolved blocking or review-required findings",
+        )
+
+    if screening_result is None:
+        raise PilotAdmissionError(
+            "screening_required",
+            "$.screening_result",
+            "candidate requires a verified semantic screening result",
+        )
+    from .semantic_screening import CandidateScreeningResult
+
+    if type(screening_result) is not CandidateScreeningResult:
+        raise TypeError("screening_result must be a CandidateScreeningResult")
+    try:
+        screening_content, screening_result_fingerprint = screening_result._verify_seal()
+        screening_eligible = screening_result._pilot_eligible_from_content(
+            screening_content
+        )
+    except ValueError:
+        raise PilotAdmissionError(
+            "screening_result_unverified",
+            "$.screening_result",
+            "screening result does not match its creation-time identity",
+        ) from None
+    if screening_content["candidate_fingerprint"] != candidate_fingerprint:
+        raise PilotAdmissionError(
+            "screening_candidate_mismatch",
+            "$.screening_result.candidate_fingerprint",
+            "screening result does not bind the exact candidate",
+        )
+    if (
+        screening_content["audit_report_fingerprint"]
+        != audit_report.audit_report_fingerprint
+    ):
+        raise PilotAdmissionError(
+            "screening_report_mismatch",
+            "$.screening_result.audit_report_fingerprint",
+            "screening result does not bind the exact audit report",
+        )
+    if not screening_eligible:
+        raise PilotAdmissionError(
+            "screening_not_clear",
+            "$.screening_result",
+            "candidate has unresolved semantic screening decisions",
+        )
 
     core_record = _build_pilot_candidate_record(
         candidate,
         audit_report,
+        screening_result_fingerprint=screening_result_fingerprint,
         pilot_study_id=pilot_study_id,
         query_testlet_id=query_testlet_id,
         generator_family_id=generator_family_id,
