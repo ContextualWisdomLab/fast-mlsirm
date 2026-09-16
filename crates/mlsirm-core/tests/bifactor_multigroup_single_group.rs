@@ -175,3 +175,76 @@ fn single_group_multigroup_matches_stage1_exactly() {
     assert_eq!(single.n_iter, multi.n_iter);
     assert_eq!(single.best_start, multi.best_start);
 }
+
+#[test]
+fn uncapped_start_budget_is_accepted() {
+    // No magic upper caps on caller budgets (stage-1 review fix-up rule):
+    // `n_starts = 40` validates and indexes its 40 runs.
+    let mut rng = Lcg(20_260_921);
+    let mut y = vec![0usize; 60 * N_ITEMS];
+    for p in 0..60 {
+        let t_g = rng.standard_normal();
+        let mut t_s = [0.0f64; N_SPECIFIC];
+        for slot in t_s.iter_mut() {
+            *slot = rng.standard_normal();
+        }
+        for i in 0..N_ITEMS {
+            let s = SPECIFIC_MAP[i] as usize;
+            let base = TRUE_A_G[i] * t_g + TRUE_A_S[i] * t_s[s];
+            let mut cum = [0.0f64; 3];
+            for k in 0..3 {
+                cum[k] = sigmoid(base + TRUE_D[i][k]);
+            }
+            let probs = [1.0 - cum[0], cum[0] - cum[1], cum[1] - cum[2], cum[2]];
+            let mut draw = rng.uniform();
+            let mut cat = N_CAT - 1;
+            for (k, pr) in probs.iter().enumerate() {
+                if draw < *pr {
+                    cat = k;
+                    break;
+                }
+                draw -= *pr;
+            }
+            y[p * N_ITEMS + i] = cat;
+        }
+    }
+    // Nudge any missing category into the data so the fit validates.
+    for i in 0..N_ITEMS {
+        for k in 0..N_CAT {
+            if !(0..60).any(|p| y[p * N_ITEMS + i] == k) {
+                y[i] = k;
+            }
+        }
+    }
+    let cfg = BifactorMultigroupConfig {
+        q_general: 7,
+        q_specific: 7,
+        max_iter: 1,
+        tol: 1e-12,
+        n_starts: 40,
+        seed: 20_260_922,
+        newton_iter: 10,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+    };
+    let group_id = vec![0usize; 60];
+    let fit = fit_bifactor_grm_multigroup(
+        &y,
+        None,
+        &group_id,
+        1,
+        &SPECIFIC_MAP,
+        60,
+        N_ITEMS,
+        N_SPECIFIC,
+        N_CAT,
+        None,
+        &cfg,
+    )
+    .expect("n_starts=40 must be accepted (no upper cap)");
+    assert!(
+        fit.best_start < 40,
+        "best_start must index the 40 runs; got {}",
+        fit.best_start
+    );
+}

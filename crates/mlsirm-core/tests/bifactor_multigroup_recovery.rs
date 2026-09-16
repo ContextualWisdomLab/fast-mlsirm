@@ -2,10 +2,13 @@
 //! (stage 2 of #1912).
 //!
 //! Data are generated from the MODEL DEFINITION
-//! (`P(Y >= k) = logistic(a_G * theta_G + a_S * theta_S + d_k)`, Gibbons et al.,
-//! 2007, eq. 4, p. 6; bifactor linear predictor eq. 9, p. 7; reduced marginal
-//! eqs. 13-14, p. 8) with an independent simulation RNG — never from crate
-//! internals. Groups share item parameters; the reference group is `N(0, I)`
+//! (`P(Y >= k) = logistic(a_G * theta_G + a_S * theta_S + d_k)`; the linear
+//! predictor follows Gibbons et al., 2007, eq. 9, "The Bifactor Model for
+//! Graded Response Data" section — the logistic link is an implementation
+//! choice, the paper uses the normal ogive — and the person marginal factors
+//! per general node, Gibbons et al., 2007, eq. 15, "Marginal Maximum
+//! Likelihood Estimation" section) with an independent simulation RNG —
+//! never from crate internals. Groups share item parameters; the reference group is `N(0, I)`
 //! and the focal group's general-factor distribution `N(mu, sigma^2)` is
 //! estimated (Cai, Yang, & Hansen, 2011, multiple-group reference-group
 //! paragraph near Fig. 7: reference means 0 / covariance identity, focal

@@ -1434,16 +1434,19 @@ fn fit_bifactor_grm(
 /// `N(0, I)`; each focal group's general-factor mean/variance — plus, when
 /// `estimate_specific_vars` is set, its specific-factor variances (means fixed
 /// at 0) — are estimated by marginal ML via EM with the Gibbons-Hedeker
-/// reduction applied per group (Gibbons et al., 2007, eqs. 13-14, p. 8; Cai et
-/// al., 2011). Reflection is canonicalized jointly across groups (general flip
+/// reduction applied per group (Gibbons et al., 2007, eq. 15, "Marginal
+/// Maximum Likelihood Estimation" section; Cai et al., 2011, extend Gibbons
+/// and Hedeker's (1992) bifactor dimension reduction, p. 221). Reflection is canonicalized jointly across groups (general flip
 /// also negates every group mean and the reported general EAPs). Returns a
 /// dict with per-group `a_general` / `a_specific` / `threshold` (`n_groups`
 /// rows; anchored rows identical), `general_mean` / `general_sd` (`[0]` pinned
 /// to `0` / `1`), `specific_sd` (`n_groups x n_specific`, `[0]` all `1`),
 /// `theta_g_eap` / `theta_g_sd` on the common scale, `group_category_counts`,
 /// `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
-/// `final_loglik_change`, `best_start`, `n_parameters`. With `n_groups == 1`
-/// this bit-reproduces `fit_bifactor_grm`.
+/// `final_loglik_change`, `best_start`, `n_parameters`. The item M-step uses
+/// the crate defaults (`newton_iter = 10`, `ridge = 1e-8`, Hessian
+/// conditioning only, NOT a prior), shared with the GRM estimator. With
+/// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false))]

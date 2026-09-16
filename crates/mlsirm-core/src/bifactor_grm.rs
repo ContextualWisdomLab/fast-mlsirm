@@ -1270,23 +1270,34 @@ fn pack_params(
 // keeps the weights; cf. `poly::fit_poly_multigroup`'s
 // `theta_{g,t} = mu_g + sigma_g x_t` for the Bock-Zimowski pooling).
 //
+// Two deliberate departures from Gibbons et al. (2007), both implementation
+// choices: the link is logistic rather than their normal ogive (to match the
+// `mirt` graded comparison in this repository's fixture), and the intercepts
+// are written directly as `d_ik` rather than split into `c_j + d_t`.
+//
 // # Verified paper locators (full texts read; no invented equation numbers)
+// periodically re-verified against the PDFs (stage-1 review fix-up)
 //
 // - Gibbons et al. (2007), `~/papers/Gibbons2007_APM_bifactor_GRM.pdf`
 //   (Appl. Psych. Meas. 31(1), 4-19): Samejima GRM category form eq. 4 (p. 6);
-//   bifactor linear predictor `z = c + d + sum a_jk theta_k` eq. 9 (p. 7);
-//   reduced unconditional probability eq. 13 and its quadrature form eq. 14
-//   (p. 8); marginal decomposition eq. 15 and loglik eq. 16 (p. 9); general-
-//   factor EAP eq. 17 and posterior variance eq. 18 (pp. 9-10).
+//   bifactor linear predictor `z = c + d + sum a_jk theta_k` eq. 9
+//   ("The Bifactor Model for Graded Response Data" section);
+//   Gibbons & Hedeker (1992) reduce the "s-dimensional integral in (4) to a
+//   two-dimensional integral" via Stuart's (1958) reduction for variates each
+//   related to a single dimension only (their eq. 6); the person marginal
+//   factors per general node (Gibbons et al., 2007, eq. 15, "Marginal Maximum
+//   Likelihood Estimation" section); marginal decomposition eq. 15 and loglik
+//   eq. 16 (p. 9); general-factor EAP eq. 17 and posterior variance eq. 18
+//   (pp. 9-10).
 // - Cai, Yang, & Hansen (2011), Zotero `TNQ22C7T` (Psych. Methods 16(3),
-//   221-248; full text read via the local Zotero API attachment): the
-//   multiple-group reference-group paragraph near Fig. 7 — reference latent
-//   variables have zero means and identity covariance, focal location/scale
-//   are estimated relative to the reference, with at least one common item's
-//   parameters set equal across groups to link the scales; the estimator
-//   extends Gibbons-Hedeker (1992) reduction so the marginal loglik needs
-//   only 2-D integration regardless of latent dimensionality (abstract +
-//   estimation sections); graded cumulative
+//   221-248; full text read via the local Zotero API attachment): extend
+//   "Gibbons and Hedeker's (1992) bifactor dimension reduction method"
+//   (p. 221) and estimate with "the Bock and Aitkin (1981) EM algorithm"
+//   ("Maximum Marginal Likelihood Estimation" section); the multiple-group
+//   reference-group paragraph near Fig. 7 — reference latent variables have
+//   zero means and identity covariance, focal location/scale are estimated
+//   relative to the reference, with at least one common item's parameters
+//   set equal across groups to link the scales; graded cumulative
 //   `P(y >= k) = 1/(1+exp(-[d_k + a0*theta0 + as*theta_s]))` in the category-
 //   response-probabilities section.
 // - Bock & Zimowski (1997), Handbook of Modern IRT chap. 25 (pp. 433-448),
@@ -1295,14 +1306,20 @@ fn pack_params(
 //   `poly::fit_poly_multigroup` Bock-Zimowski pooling already in this crate).
 // - Bafumi et al. (2005) for fixing the per-dimension reflection
 //   `(a, theta) -> (-a, -theta)` by a parameter restriction; here the crate
-//   rule (largest-magnitude slope positive per dimension, consistently across
-//   groups; general flip also negates every group mean and the reported
+//   rule (largest-magnitude slope positive per dimension, read from the
+//   ANCHORED linking items only so a free item's DIF outlier cannot drive the
+//   global orientation, applied jointly across groups; general flip also
+//   negates every group mean and the reported
 //   general EAPs — the #1879 mu-sign fix).
 //
-// # Caller-owned numerics (no hidden clamps)
+// # Caller-owned numerics (no hidden clamps, no magic caps)
 //
 // `q_general`, `q_specific`, `max_iter`, `tol`, `n_starts`, `seed` are caller
-// arguments with validated ranges; out-of-range is a loud `Err`. `seed`
+// arguments; any out-of-range value is a loud `Err`, never a silent clamp.
+// Upper bounds exist only where a real constraint exists: the quadrature
+// counts must name an embedded Gauss-Hermite rule (`SUPPORTED_Q`), and
+// working-set sizes that would overflow `usize` are rejected by checked
+// arithmetic. Everything else is lower-bounded only. `seed`
 // drives ONLY the random-start jitter (quadrature is deterministic); start
 // `t` derives from `seed ^ GOLDEN * (t + 1)`. Group variances are estimated
 // unconstrained-positive with NO clamping: a non-finite or non-positive
@@ -1419,8 +1436,9 @@ pub struct BifactorMultigroupResult {
 }
 
 fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String> {
-    // Mirror the single-group range checks exactly (same caps, same messages
-    // modulo the struct name) so caller-owned numerics behave identically.
+    // Mirror the single-group checks exactly (lower bounds only, no magic
+    // caps — stage-1 review fix-up; quadrature restricted to the embedded
+    // rules that exist). Caller-owned numerics behave identically.
     if !SUPPORTED_Q.contains(&cfg.q_general) {
         return Err(format!(
             "q_general must be one of {SUPPORTED_Q:?}; got {}",
@@ -1433,23 +1451,17 @@ fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String>
             cfg.q_specific
         ));
     }
-    if !(1..=BG_MAX_ITER).contains(&cfg.max_iter) {
-        return Err(format!("max_iter must be in 1..={BG_MAX_ITER}"));
+    if cfg.max_iter < 1 {
+        return Err("max_iter must be >= 1".into());
     }
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());
     }
-    if !(1..=BG_MAX_STARTS).contains(&cfg.n_starts) {
-        return Err(format!(
-            "n_starts must be in 1..={BG_MAX_STARTS}; got {}",
-            cfg.n_starts
-        ));
+    if cfg.n_starts < 1 {
+        return Err("n_starts must be >= 1".into());
     }
-    if !(1..=BG_MAX_NEWTON).contains(&cfg.newton_iter) {
-        return Err(format!(
-            "newton_iter must be in 1..={BG_MAX_NEWTON}; got {}",
-            cfg.newton_iter
-        ));
+    if cfg.newton_iter < 1 {
+        return Err("newton_iter must be >= 1".into());
     }
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
@@ -1623,6 +1635,7 @@ fn e_step_multigroup(
     Vec<f64>,
     Vec<f64>,
     Vec<Vec<f64>>,
+    Vec<Vec<f64>>,
 ) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     // Per-group logprob tables at the CURRENT group nodes.
@@ -1677,6 +1690,11 @@ fn e_step_multigroup(
     let mut s1_g = vec![0.0f64; n_groups];
     let mut s2_g = vec![0.0f64; n_groups];
     let mut s2_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
+    // Per-(group, block) posterior mass for the specific-variance M-step:
+    // persons with no observed item in block `s` contribute nothing to that
+    // block's moments and must not dilute its denominator (review fix for
+    // block-wise MAR with `estimate_specific_vars`).
+    let mut w_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
 
     let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
     let mut log_i = vec![0.0f64; v.n_specific * qg];
@@ -1766,6 +1784,7 @@ fn e_step_multigroup(
                     let post = log_post.exp();
                     // Specific moments at zero mean for the variance M-step.
                     let ts = ts_groups[g][s][h];
+                    w_spec[g][s] += post;
                     s2_spec[g][s] += post * ts * ts;
                     for &i in members {
                         if !is_obs(p, i) {
@@ -1778,7 +1797,7 @@ fn e_step_multigroup(
             }
         }
     }
-    (loglik, counts, w_acc, s1_g, s2_g, s2_spec)
+    (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1812,7 +1831,10 @@ fn run_single_start_multigroup(
     );
     // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
     // taus move): node_g[node]/node_s[node] parallel `counts[g][i]`.
-    let mut loglik_trace: Vec<f64> = Vec::with_capacity(cfg.max_iter + 1);
+    // No pre-allocation from `max_iter`: it is caller-owned and unbounded
+    // above, so `with_capacity(max_iter + 1)` could overflow; the trace grows
+    // amortized instead (stage-1 review fix-up).
+    let mut loglik_trace: Vec<f64> = Vec::new();
     let mut converged = false;
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
@@ -1832,7 +1854,7 @@ fn run_single_start_multigroup(
                 }
             }
         }
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec) = e_step_multigroup(
+        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
             v,
             y,
             observed,
@@ -1981,7 +2003,14 @@ fn run_single_start_multigroup(
             sigmas[g] = var.sqrt();
             if cfg.estimate_specific_vars {
                 for s in 0..v.n_specific {
-                    let vrow = s2_spec[g][s] / w_acc[g];
+                    // Denominator counts only persons observed in this block
+                    // (block-wise MAR must not dilute the variance update).
+                    if w_spec[g][s] <= 0.0 || !w_spec[g][s].is_finite() {
+                        return Err(format!(
+                            "group {g} specific-{s} has no posterior mass"
+                        ));
+                    }
+                    let vrow = s2_spec[g][s] / w_spec[g][s];
                     if !vrow.is_finite() {
                         return Err(format!("non-finite group-{g} specific-{s} update"));
                     }
@@ -2043,6 +2072,24 @@ pub fn fit_bifactor_grm_multigroup(
     if n_groups < 1 {
         return Err("n_groups must be >= 1".into());
     }
+    // Multigroup-shaped inputs are validated BEFORE the single-group
+    // delegation so malformed `group_id`/`anchor` fail loudly on every path
+    // (review fix: delegation must not silently ignore them).
+    if group_id.len() != n_persons {
+        return Err("group_id must have length n_persons".into());
+    }
+    if group_id.iter().any(|&g| g >= n_groups) {
+        return Err("group_id labels must be < n_groups".into());
+    }
+    let anchor_vec: Vec<bool> = match anchor {
+        Some(a) => {
+            if a.len() != n_items {
+                return Err("anchor must have length n_items".into());
+            }
+            a.to_vec()
+        }
+        None => vec![true; n_items],
+    };
     // With a single group there is no multigroup structure to estimate: the
     // node-shift is the identity and the pooled M-step is the single-group
     // M-step, so delegate to stage 1 and bit-reproduce it exactly.
@@ -2086,9 +2133,9 @@ pub fn fit_bifactor_grm_multigroup(
             n_parameters: single.n_parameters,
         });
     }
-    // Base structural validation (pooled categories, blocks, caps) reuses the
-    // single-group validator so the two paths accept exactly the same data
-    // layouts.
+    // Base structural validation (pooled categories, blocks, checked
+    // arithmetic) reuses the single-group validator so the two paths accept
+    // exactly the same data layouts.
     let single_cfg = BifactorGrmConfig {
         q_general: cfg.q_general,
         q_specific: cfg.q_specific,
@@ -2109,12 +2156,20 @@ pub fn fit_bifactor_grm_multigroup(
         n_cat,
         &single_cfg,
     )?;
-    if group_id.len() != n_persons {
-        return Err("group_id must have length n_persons".into());
-    }
-    if group_id.iter().any(|&g| g >= n_groups) {
-        return Err("group_id labels must be < n_groups".into());
-    }
+    // Working-set sizes with the multigroup factor: overflow is a loud `Err`
+    // (the single-group validator covers the per-group grid; the `n_groups`
+    // expansion is checked here).
+    let nodes_per_item = cfg
+        .q_general
+        .checked_mul(cfg.q_specific)
+        .ok_or_else(|| "q_general * q_specific overflows usize".to_string())?;
+    n_items
+        .checked_mul(nodes_per_item)
+        .and_then(|v| v.checked_mul(n_cat))
+        .and_then(|v| v.checked_mul(n_groups))
+        .ok_or_else(|| {
+            "n_groups * n_items * q_general * q_specific * n_cat overflows usize".to_string()
+        })?;
     let mut group_n = vec![0usize; n_groups];
     for &g in group_id {
         group_n[g] += 1;
@@ -2122,15 +2177,6 @@ pub fn fit_bifactor_grm_multigroup(
     if group_n.contains(&0) {
         return Err("every group 0..n_groups-1 must contain at least one person".into());
     }
-    let anchor_vec: Vec<bool> = match anchor {
-        Some(a) => {
-            if a.len() != n_items {
-                return Err("anchor must have length n_items".into());
-            }
-            a.to_vec()
-        }
-        None => vec![true; n_items],
-    };
     if !anchor_vec.iter().any(|&a| a) {
         return Err(
             "at least one anchored (common) item is required to link the group scales \
@@ -2345,19 +2391,23 @@ pub fn fit_bifactor_grm_multigroup(
     let specific_sd = outcome.taus;
 
     // Joint reflection canonicalization across groups: one decision per
-    // dimension over every group's slopes, so anchored equality is preserved.
-    // General flip negates every group's general slopes, every group mean,
-    // and the reported general EAPs (the #1879 mu-sign fix); thresholds,
-    // variances, and posterior SDs are invariant. Specific flips negate that
-    // block's slopes in every group.
-    let anchor_g = (0..n_groups)
-        .flat_map(|g| (0..n_items).map(move |i| (g, i)))
+    // dimension, so anchored equality is preserved. The sign is read from
+    // the ANCHORED (linking) items only — a free item's DIF outlier must not
+    // drive the global orientation (review fix; falls back to all items only
+    // when a block has no anchored member). General flip negates every
+    // group's general slopes, every group mean, and the reported general
+    // EAPs (the #1879 mu-sign fix); thresholds, variances, and posterior SDs
+    // are invariant. Specific flips negate that block's slopes in every group.
+    let anchored_items: Vec<usize> = (0..n_items).filter(|&i| anchor_vec[i]).collect();
+    let anchor_g = anchored_items
+        .iter()
+        .flat_map(|&i| (0..n_groups).map(move |g| (g, i)))
         .max_by(|&(g1, i1), &(g2, i2)| {
             a_general[g1][i1]
                 .abs()
                 .total_cmp(&a_general[g2][i2].abs())
         })
-        .expect("at least one item");
+        .expect("at least one anchored item");
     if a_general[anchor_g.0][anchor_g.1] < 0.0 {
         for row in a_general.iter_mut() {
             for a in row.iter_mut() {
@@ -2372,8 +2422,17 @@ pub fn fit_bifactor_grm_multigroup(
         }
     }
     for members in v.blocks.iter() {
+        let anchored_members: Vec<usize> =
+            members.iter().copied().filter(|&i| anchor_vec[i]).collect();
+        // Prefer anchored members; fall back to the whole block only when it
+        // has no anchored item.
+        let candidates: &[usize] = if anchored_members.is_empty() {
+            members
+        } else {
+            &anchored_members
+        };
         let anchor = (0..n_groups)
-            .flat_map(|g| members.iter().map(move |&i| (g, i)))
+            .flat_map(|g| candidates.iter().map(move |&i| (g, i)))
             .max_by(|&(g1, i1), &(g2, i2)| {
                 a_specific[g1][i1]
                     .abs()

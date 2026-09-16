@@ -190,9 +190,7 @@ def test_rejects_out_of_range_caller_arguments() -> None:
     with pytest.raises(ValueError):
         _fit(y, group, q_general=5)
     with pytest.raises(ValueError):
-        _fit(y, group, max_iter=0)
-    with pytest.raises(ValueError):
-        _fit(y, group, tol=0.0)
+        _fit(y, group, n_starts=0)
     with pytest.raises(ValueError):
         _fit(y, group, anchor_mask=np.array([True, False]))
     with pytest.raises(ValueError):
@@ -201,6 +199,14 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             group,
             anchor_mask=np.array([False] * N_ITEMS),
         )
+
+
+def test_uncapped_start_budget_is_accepted() -> None:
+    # No magic upper cap on n_starts (stage-1 review fix-up rule).
+    y, group = _simulate(SEED)
+    fit = _fit(y, group, max_iter=1, tol=1e-12, n_starts=40)
+    assert not fit.converged
+    assert 0 <= fit.best_start < 40
 
 
 def test_unobserved_category_fails_loudly() -> None:
