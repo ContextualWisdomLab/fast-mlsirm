@@ -1,14 +1,12 @@
-# GPU-parallel polytomous bifactor QMCEM, 2-stage Lord-Wingersky recursion, and 390-replicate bootstrap
+# GPU-parallel bifactor E-step and joint person bootstrap with caller-controlled stopping
 
 ## Added
 
-- Add multidimensional Polytomous Bifactor Graded Response Model (GRM) simultaneous calibration via Quasi-Monte Carlo EM (`fast_mlsirm.polytomous_bifactor.fit_polytomous_bifactor`). Supports multiple-group estimation with reference group standard normal constraints and focal group latent mean/variance updates.
-- Compute Oakes empirical observed information standard errors for all item parameters without missing values, verifying positive definite information matrices.
-- Implement two-stage Lord-Wingersky recursion (`bifactor_lord_wingersky`) matching direct enumeration within $10^{-12}$ on a 257-point grid spanning $[-8.0, 8.0]$.
-- Add discrimination slope upper bound sensitivity analysis (`bifactor_slope_sensitivity`) verifying monotonic non-decrease in log-likelihood across bounds $[4, 6, 8, 10]$.
-- Add parallelized 390-replicate joint person bootstrap runner (`fast_mlsirm.bifactor_bootstrap.run_bifactor_bootstrap`) with GIL-detached execution (`py.detach`), achieving $>70$ replicates/second throughput and parameter reproducibility within $10^{-6}$.
+- Add a GPU-parallel E-step for the polytomous bifactor GRM QMCEM (`crates/mlsirm-core/src/gpu_bifactor.rs`), covering the merged stage-1 estimator and the stage-2 multigroup calibration. Kernels accumulate in f32; CPU/GPU fit-level agreement is asserted within a documented single-precision tolerance on fixtures including reverse-keyed items and multiple groups. CPU fallback when no GPU adapter is available.
+- Add a joint person bootstrap driver (`fast_mlsirm.bifactor_bootstrap.run_bifactor_bootstrap`) in which replicate count, batch size, Monte Carlo stopping ratio, and compute budget are caller arguments with validated ranges. The stopping rule is a sequential application of the endpoint-accuracy framework of Andrews and Buchinsky (2000, §§ 2–4): the run stops once the maximum percentile-interval endpoint movement relative to the interval half-width falls below the caller ratio. Per-replicate convergence is reported; failed replicates are excluded, never substituted.
+- Report bootstrap percentile intervals alongside empirical standard errors.
 
 ## Fixed
 
-- Allow `clippy::erasing_op` and `clippy::identity_op` in `crates/mlsirm-core/Cargo.toml` under `[lints.clippy]`, resolving 24 false positive deny-level lint errors triggered by row/column index stride arithmetic in unit tests (Issue #1905).
-- Add `tabindex="-1"` to `<main id="main-content">` in item bank HTML reports and align test assertions to ensure skip-link keyboard focus transfer (PR #1915).
+- Build the Oakes observed information from converged posterior expected counts (final E-step at the fitted parameters), replacing the uniform-weight accumulation; eigenvalues and condition numbers are computed from the information matrix, never hard-coded.
+- Remove the crate-wide `clippy::erasing_op` / `clippy::identity_op` allowance; no broad lint suppression remains.

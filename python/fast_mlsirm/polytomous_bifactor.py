@@ -8,16 +8,25 @@ multiple-group simultaneous calibration, slope bounding, Oakes standard errors,
 and two-stage Lord-Wingersky recursion.
 
 References:
+    - Samejima, F. (1969). Estimation of latent ability using a response
+      pattern of graded scores. *Psychometrika, 34*, 1–97.
+      https://doi.org/10.1007/BF03372160
     - Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor analysis.
-      Psychometrika, 57(3), 423-436.
+      *Psychometrika, 57*(3), 423-436. https://doi.org/10.1007/BF02295430
     - Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information item bifactor analysis.
-      Psychological Methods, 16(3), 221-248.
+      *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350
     - Bock, R. D., & Zimowski, M. F. (1997). Multiple Group IRT.
-      In Handbook of Modern Item Response Theory.
+      In W. J. van der Linden & R. K. Hambleton (Eds.),
+      *Handbook of Modern Item Response Theory*. Springer.
     - Oakes, D. (1999). Direct calculation of the information matrix via the EM algorithm.
-      Journal of the Royal Statistical Society: Series B, 61(2), 479-482.
+      *Journal of the Royal Statistical Society: Series B, 61*(2), 479-482.
+      https://doi.org/10.1111/1467-9868.00188
+    - Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of
+      Monte Carlo EM. *Computational Statistics & Data Analysis, 48*(4), 685-701.
+      https://doi.org/10.1016/j.csda.2004.03.019
     - Lord, F. M., & Wingersky, M. S. (1984). Comparison of IRT true-score and equipercentile equating.
-      Applied Psychological Measurement, 8(4), 453-461.
+      *Applied Psychological Measurement, 8*(4), 453-461.
+      https://doi.org/10.1177/014662168400800409
 """
 
 from __future__ import annotations
@@ -99,9 +108,18 @@ def fit_polytomous_bifactor(
         ridge: Ridge penalty for Hessian conditioning during Newton M-step.
         newton_iter: Number of Newton iterations per item in M-step.
         qmc_draws: Number of Quasi-Monte Carlo Halton integration draws.
+            Quadrature count is precision: it is caller-controlled with no
+            upper cap. Study-setting fits use at least 121 draws and check
+            stabilization at higher counts (e.g. 241, 481); the GPU E-step
+            kernels accumulate in f32, so CPU/GPU parity targets the looser
+            single-precision agreement documented in
+            `tests/test_bifactor_gpu.py`.
         seed: Random seed for deterministic Halton sequence shift.
         slope_bound: Optional upper bound |a_id| <= slope_bound on discrimination magnitude.
         compute_oakes_se: Whether to compute Oakes observed information standard errors.
+        device: 'cpu' runs the f64 scalar E-step; 'gpu' runs the WGSL f32
+            E-step kernels and falls back to CPU (with a warning) when no GPU
+            adapter is available; 'auto' prefers GPU without warning.
 
     Returns:
         PolytomousBifactorFit containing estimated slopes, thresholds, group moments,

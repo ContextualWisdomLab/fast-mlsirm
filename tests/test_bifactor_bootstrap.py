@@ -90,7 +90,7 @@ def test_bifactor_bootstrap_reproducibility() -> None:
         base_seed=42,
         max_iter=10,
         tol=1e-3,
-        qmc_draws=100,
+        qmc_draws=200,
     )
 
     res_run2 = run_bifactor_bootstrap(
@@ -102,7 +102,7 @@ def test_bifactor_bootstrap_reproducibility() -> None:
         base_seed=42,
         max_iter=10,
         tol=1e-3,
-        qmc_draws=100,
+        qmc_draws=200,
     )
 
     assert res_run1.n_converged == res_run2.n_converged

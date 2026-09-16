@@ -1,30 +1,68 @@
 # Copyright (c) 2026 ContextualWisdomLab. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-"""Joint person bootstrap replication for polytomous bifactor models.
+"""Joint person bootstrap for polytomous bifactor models.
 
-Provides parallelized bootstrap resampling (with optional group stratification),
-parameter extraction, convergence tracking, and empirical standard error estimation.
-Designed for 390-replicate empirical validation with CPU/GPU execution parity.
+Resamples persons (stratified by group when multiple groups are present),
+refits the polytomous bifactor graded response model on each replicate, and
+reports empirical standard errors and percentile intervals from the converged
+replicates. Replicate count, batch size, Monte Carlo stopping ratio, and
+compute budget are caller arguments; this module defines no study-specific
+defaults for them.
+
+Implementation basis
+--------------------
+The replicate-number stopping rule is a sequential application of the accuracy
+framework of Andrews and Buchinsky (2000, §§ 2–4): a finite-``B`` bootstrap
+quantity is accurate when its percentage deviation from the ideal (``B`` → ∞)
+bootstrap quantity is small. The caller-supplied ``mc_stopping_ratio`` plays
+the role of their percentage-deviation bound ``pdb`` (expressed as a
+fraction): after each batch, the percentile interval endpoints of every free
+parameter are recomputed from all converged replicates so far, and the run
+stops once the maximum endpoint movement relative to the interval half-width
+falls below ``mc_stopping_ratio``. Because the ideal endpoints are unknown
+mid-run, successive-batch endpoint movement is used as the observable proxy;
+the compute budget always caps the run. Bias-corrected-and-accelerated (BCa)
+intervals are out of scope.
+
+References
+----------
+- Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for choosing
+  the number of bootstrap repetitions. *Econometrica, 68*(1), 23–51.
+  https://www.jstor.org/stable/2999474 (full text: Cowles Foundation Paper
+  No. 1001, http://dido.econ.yale.edu/~dwka/pub/p1001.pdf; see eqs.
+  (4.1)–(4.4) for the batch-size formulae and § 6 for the 95% interval
+  simulations motivating the default ``ci_level``).
+- Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor
+  analysis. *Psychometrika, 57*(3), 423–436.
+  https://doi.org/10.1007/BF02295430
+- Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+  item bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+  https://doi.org/10.1037/a0023350
 """
 
 from __future__ import annotations
 
 import concurrent.futures
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+import math
 import os
 import time
 import numpy as np
 
-from .polytomous_bifactor import PolytomousBifactorFit, fit_polytomous_bifactor
+from .polytomous_bifactor import fit_polytomous_bifactor
 
 
 @dataclass
 class BifactorBootstrapResult:
     """Summary and replicate storage of a joint person bootstrap run."""
 
-    n_replicates: int
+    n_requested: int
+    n_replicates: int  # replicates actually completed (≤ n_requested)
     n_converged: int
+    converged: np.ndarray  # bool per completed replicate, in replicate order
+    stopped_early: bool  # True when the MC stopping rule fired
+    ci_level: float
     replicate_slopes: np.ndarray  # (B_conv, n_items, n_dims)
     replicate_thresholds: np.ndarray  # (B_conv, n_items, n_cat - 1)
     replicate_group_means: np.ndarray  # (B_conv, n_groups, n_dims)
@@ -34,6 +72,14 @@ class BifactorBootstrapResult:
     se_threshold: np.ndarray  # (n_items, n_cat - 1)
     se_group_means: np.ndarray  # (n_groups, n_dims)
     se_group_variances: np.ndarray  # (n_groups, n_dims)
+    ci_lower_slope: np.ndarray
+    ci_upper_slope: np.ndarray
+    ci_lower_threshold: np.ndarray
+    ci_upper_threshold: np.ndarray
+    ci_lower_group_means: np.ndarray
+    ci_upper_group_means: np.ndarray
+    ci_lower_group_variances: np.ndarray
+    ci_upper_group_variances: np.ndarray
     wall_clock_seconds: float
     throughput_replicates_per_second: float
     device: str = "cpu"
@@ -45,7 +91,15 @@ def _generate_bootstrap_indices(
     n_groups: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Generate bootstrap sample indices, with stratification if multiple groups."""
+    """Generate bootstrap sample indices, with stratification if multiple groups.
+
+    Implementation basis: nonparametric iid person resampling within each
+    known group (the resampling scheme to which Andrews and Buchinsky (2000,
+    § 2) apply their replicate-number results for iid data; Andrews, D. W. K.,
+    & Buchinsky, M. (2000). A three-step method for choosing the number of
+    bootstrap repetitions. *Econometrica, 68*(1), 23–51.
+    https://www.jstor.org/stable/2999474).
+    """
     if group_ids is None or n_groups <= 1:
         return rng.integers(0, n_persons, size=n_persons, endpoint=False)
 
@@ -75,7 +129,13 @@ def _fit_single_replicate(
     slope_bound: float | None,
     device: str,
 ) -> tuple[int, bool, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
-    """Execute one bootstrap resample and fit."""
+    """Execute one bootstrap resample and fit.
+
+    The replicate seed derives deterministically from the caller-supplied
+    ``base_seed`` and the replicate index, so CPU and GPU runs with the same
+    ``base_seed`` draw identical resamples and identical QMC shifts and match
+    replicate-by-replicate up to device precision.
+    """
     rng = np.random.Generator(np.random.PCG64(seed))
     n_persons = responses.shape[0]
 
@@ -125,6 +185,43 @@ def _fit_single_replicate(
         )
 
 
+def _stack_monitor_vector(
+    slopes: list[np.ndarray],
+    thresholds: list[np.ndarray],
+    means: list[np.ndarray],
+    variances: list[np.ndarray],
+) -> np.ndarray:
+    """Stack converged replicate estimates into one row-per-replicate matrix."""
+    rows = [
+        np.concatenate([s.ravel(), t.ravel(), m.ravel(), v.ravel()])[None, :]
+        for s, t, m, v in zip(slopes, thresholds, means, variances)
+    ]
+    return np.concatenate(rows, axis=0)
+
+
+def _endpoint_movement(
+    prev_lo: np.ndarray,
+    prev_hi: np.ndarray,
+    new_lo: np.ndarray,
+    new_hi: np.ndarray,
+) -> float:
+    """Maximum endpoint movement relative to the new interval half-width.
+
+    Entries with zero half-width (parameters that are constant across
+    replicates, e.g. fixed reference-group moments) carry no Monte Carlo
+    uncertainty and are excluded. This is the observable proxy for the
+    percentage deviation of finite-``B`` interval endpoints from their ideal
+    counterparts in Andrews and Buchinsky (2000, §§ 2–4).
+    """
+    half = (new_hi - new_lo) / 2.0
+    live = half > 0
+    if not np.any(live):
+        return 0.0
+    move = np.maximum(np.abs(new_lo[live] - prev_lo[live]),
+                      np.abs(new_hi[live] - prev_hi[live])) / half[live]
+    return float(np.max(move))
+
+
 def run_bifactor_bootstrap(
     responses: np.ndarray,
     loading_pattern: np.ndarray,
@@ -138,6 +235,7 @@ def run_bifactor_bootstrap(
     n_jobs: int = -1,
     base_seed: int = 42,
     device: str = "cpu",
+    ci_level: float = 0.95,
     slope_bound: float | None = None,
     max_iter: int = 100,
     tol: float = 1e-4,
@@ -151,12 +249,25 @@ def run_bifactor_bootstrap(
         responses: Persons x items array of response categories.
         loading_pattern: Items x dims array in {0, 1}.
         n_cat: Number of response categories.
+        n_replicates: Total bootstrap replicates requested (caller-supplied;
+            no study-specific default is defined by this module).
+        batch_size: Replicates per batch; the stopping rule and the compute
+            budget are evaluated at batch boundaries.
+        mc_stopping_ratio: Bound on the Monte Carlo error of the percentile
+            interval endpoints relative to the interval half-width, in the
+            role of the percentage-deviation bound ``pdb`` of Andrews and
+            Buchinsky (2000, §§ 2–4). Must satisfy ``0 <= ratio < 1``;
+            ``0`` disables early stopping (the run completes all requested
+            replicates within budget).
+        compute_budget_seconds: Wall-clock budget; batch execution stops when
+            the elapsed time reaches this bound.
         group_ids: Optional 1-D group membership indices.
         n_groups: Number of groups.
-        n_replicates: Total bootstrap replicates (e.g. 390).
         n_jobs: Number of parallel workers (-1 for all logical cores).
         base_seed: Master seed for deterministic replication.
-        device: 'cpu' or 'gpu' execution device.
+        device: 'cpu', 'gpu', or 'auto' execution device.
+        ci_level: Nominal level of the reported percentile intervals and of
+            the endpoints monitored by the stopping rule (0 < level < 1).
         slope_bound: Upper bound on slope magnitude.
         max_iter: Max EM iterations per replicate.
         tol: Convergence tolerance.
@@ -165,16 +276,52 @@ def run_bifactor_bootstrap(
         qmc_draws: Halton draws per person.
 
     Returns:
-        BifactorBootstrapResult with replicate matrices, empirical SEs, and timing.
+        BifactorBootstrapResult with replicate matrices, empirical SEs,
+        percentile intervals, per-replicate convergence flags, and timing.
+        Replicates that fail to converge (or raise) are reported in
+        ``converged`` and excluded from all summary statistics; failed
+        replicates are never substituted or imputed.
+
+    References:
+        Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
+        choosing the number of bootstrap repetitions. *Econometrica, 68*(1),
+        23–51. https://www.jstor.org/stable/2999474
     """
-    if not isinstance(n_replicates, int) or n_replicates <= 0:
-        raise ValueError(f"n_replicates must be positive, got {n_replicates}")
-    if not isinstance(batch_size, int) or batch_size <= 0:
-        raise ValueError(f"batch_size must be positive, got {batch_size}")
-    if not isinstance(mc_stopping_ratio, (float, int)) or mc_stopping_ratio < 0:
-        raise ValueError(f"mc_stopping_ratio must be non-negative, got {mc_stopping_ratio}")
-    if not isinstance(compute_budget_seconds, (float, int)) or compute_budget_seconds <= 0:
-        raise ValueError(f"compute_budget_seconds must be positive, got {compute_budget_seconds}")
+    if isinstance(n_replicates, bool) or not isinstance(n_replicates, int) or n_replicates < 1:
+        raise ValueError(f"n_replicates must be a positive integer, got {n_replicates!r}")
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+        raise ValueError(f"batch_size must be a positive integer, got {batch_size!r}")
+    if (
+        isinstance(mc_stopping_ratio, bool)
+        or not isinstance(mc_stopping_ratio, (float, int))
+        or not math.isfinite(mc_stopping_ratio)
+        or not 0.0 <= mc_stopping_ratio < 1.0
+    ):
+        raise ValueError(
+            "mc_stopping_ratio must satisfy 0 <= ratio < 1 "
+            f"(0 disables early stopping), got {mc_stopping_ratio!r}"
+        )
+    if (
+        isinstance(compute_budget_seconds, bool)
+        or not isinstance(compute_budget_seconds, (float, int))
+        or not math.isfinite(compute_budget_seconds)
+        or compute_budget_seconds <= 0
+    ):
+        raise ValueError(
+            f"compute_budget_seconds must be positive and finite, got {compute_budget_seconds!r}"
+        )
+    if (
+        isinstance(ci_level, bool)
+        or not isinstance(ci_level, (float, int))
+        or not math.isfinite(ci_level)
+        or not 0.0 < ci_level < 1.0
+    ):
+        raise ValueError(f"ci_level must satisfy 0 < level < 1, got {ci_level!r}")
+    if not isinstance(device, str) or device.strip().lower() not in ("cpu", "gpu", "auto"):
+        raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
+    if isinstance(qmc_draws, bool) or not isinstance(qmc_draws, int) or qmc_draws < 1:
+        raise ValueError(f"qmc_draws must be a positive integer, got {qmc_draws!r}")
+    device = device.strip().lower()
 
     start_time = time.perf_counter()
 
@@ -185,6 +332,9 @@ def run_bifactor_bootstrap(
     lp_arr = np.asarray(loading_pattern, dtype=np.uint8)
     n_items, n_dims = lp_arr.shape
     g_arr = np.asarray(group_ids, dtype=np.int64) if group_ids is not None else None
+
+    alpha = 1.0 - float(ci_level)
+    lo_q, hi_q = 100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)
 
     # Prepare replicate tasks with deterministic seeds
     tasks = []
@@ -208,17 +358,22 @@ def run_bifactor_bootstrap(
             device,
         ))
 
-    results = [None] * n_replicates
-    converged_slopes = []
-    converged_thresholds = []
-    converged_means = []
-    converged_vars = []
-    converged_logliks = []
+    results: list = [None] * n_replicates
+    converged_flags = np.zeros(0, dtype=bool)
+    converged_slopes: list[np.ndarray] = []
+    converged_thresholds: list[np.ndarray] = []
+    converged_means: list[np.ndarray] = []
+    converged_vars: list[np.ndarray] = []
+    converged_logliks: list[float] = []
 
     batches = [tasks[i:i + batch_size] for i in range(0, len(tasks), batch_size)]
     completed_reps = 0
+    stopped_early = False
+    prev_lo: np.ndarray | None = None
+    prev_hi: np.ndarray | None = None
+    batches_completed = 0
 
-    for batch in batches:
+    for batch_pos, batch in enumerate(batches):
         # Check compute budget
         elapsed_so_far = time.perf_counter() - start_time
         if elapsed_so_far >= compute_budget_seconds:
@@ -235,9 +390,15 @@ def run_bifactor_bootstrap(
                     res = f.result()
                     results[res[0]] = res
 
+        batch_flags = np.array(
+            [results[t[0]][1] for t in batch], dtype=bool
+        )
+        converged_flags = np.concatenate([converged_flags, batch_flags])
         completed_reps += len(batch)
+        batches_completed += 1
 
-        for r in results[completed_reps - len(batch):completed_reps]:
+        for t in batch:
+            r = results[t[0]]
             if r is not None and r[1]:  # converged
                 converged_slopes.append(r[2])
                 converged_thresholds.append(r[3])
@@ -245,14 +406,27 @@ def run_bifactor_bootstrap(
                 converged_vars.append(r[5])
                 converged_logliks.append(r[6])
 
-        n_conv = len(converged_slopes)
-        if n_conv > 10:
-            # Check Monte Carlo stopping ratio
-            # Use Efron & Tibshirani 1993 Ch 19 cv(se_B) approx 1/sqrt(2B) under normality
-            # We want MC error of SE relative to SE < mc_stopping_ratio
-            mc_cv = 1.0 / np.sqrt(2 * n_conv)
-            if mc_cv < mc_stopping_ratio:
-                break
+        # Monte Carlo stopping check at batch boundaries (needs two endpoint
+        # estimates to measure movement, so it can only fire from the second
+        # completed batch on, and never on the final batch).
+        last_batch = batch_pos == len(batches) - 1
+        if (
+            mc_stopping_ratio > 0
+            and batches_completed >= 2
+            and not last_batch
+            and converged_slopes
+        ):
+            stacked = _stack_monitor_vector(
+                converged_slopes, converged_thresholds, converged_means, converged_vars
+            )
+            new_lo = np.percentile(stacked, lo_q, axis=0)
+            new_hi = np.percentile(stacked, hi_q, axis=0)
+            if prev_lo is not None and prev_hi is not None:
+                movement = _endpoint_movement(prev_lo, prev_hi, new_lo, new_hi)
+                if movement < mc_stopping_ratio:
+                    stopped_early = True
+                    break
+            prev_lo, prev_hi = new_lo, new_hi
 
     n_conv = len(converged_slopes)
     if n_conv > 1:
@@ -267,6 +441,15 @@ def run_bifactor_bootstrap(
         se_thresh = np.std(thresh_mat, axis=0, ddof=1)
         se_means = np.std(means_mat, axis=0, ddof=1)
         se_vars = np.std(vars_mat, axis=0, ddof=1)
+
+        ci_lower_slope = np.percentile(slopes_mat, lo_q, axis=0)
+        ci_upper_slope = np.percentile(slopes_mat, hi_q, axis=0)
+        ci_lower_thresh = np.percentile(thresh_mat, lo_q, axis=0)
+        ci_upper_thresh = np.percentile(thresh_mat, hi_q, axis=0)
+        ci_lower_means = np.percentile(means_mat, lo_q, axis=0)
+        ci_upper_means = np.percentile(means_mat, hi_q, axis=0)
+        ci_lower_vars = np.percentile(vars_mat, lo_q, axis=0)
+        ci_upper_vars = np.percentile(vars_mat, hi_q, axis=0)
     else:
         slopes_mat = np.empty((0, n_items, n_dims), dtype=np.float64)
         thresh_mat = np.empty((0, n_items, n_cat - 1), dtype=np.float64)
@@ -279,12 +462,25 @@ def run_bifactor_bootstrap(
         se_means = np.full((n_groups, n_dims), np.nan)
         se_vars = np.full((n_groups, n_dims), np.nan)
 
+        ci_lower_slope = np.full((n_items, n_dims), np.nan)
+        ci_upper_slope = np.full((n_items, n_dims), np.nan)
+        ci_lower_thresh = np.full((n_items, n_cat - 1), np.nan)
+        ci_upper_thresh = np.full((n_items, n_cat - 1), np.nan)
+        ci_lower_means = np.full((n_groups, n_dims), np.nan)
+        ci_upper_means = np.full((n_groups, n_dims), np.nan)
+        ci_lower_vars = np.full((n_groups, n_dims), np.nan)
+        ci_upper_vars = np.full((n_groups, n_dims), np.nan)
+
     elapsed = time.perf_counter() - start_time
     throughput = completed_reps / elapsed if elapsed > 0 else 0.0
 
     return BifactorBootstrapResult(
+        n_requested=n_replicates,
         n_replicates=completed_reps,
         n_converged=n_conv,
+        converged=converged_flags,
+        stopped_early=stopped_early,
+        ci_level=float(ci_level),
         replicate_slopes=slopes_mat,
         replicate_thresholds=thresh_mat,
         replicate_group_means=means_mat,
@@ -294,6 +490,14 @@ def run_bifactor_bootstrap(
         se_threshold=se_thresh,
         se_group_means=se_means,
         se_group_variances=se_vars,
+        ci_lower_slope=ci_lower_slope,
+        ci_upper_slope=ci_upper_slope,
+        ci_lower_threshold=ci_lower_thresh,
+        ci_upper_threshold=ci_upper_thresh,
+        ci_lower_group_means=ci_lower_means,
+        ci_upper_group_means=ci_upper_means,
+        ci_lower_group_variances=ci_lower_vars,
+        ci_upper_group_variances=ci_upper_vars,
         wall_clock_seconds=elapsed,
         throughput_replicates_per_second=throughput,
         device=device,

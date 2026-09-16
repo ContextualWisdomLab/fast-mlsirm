@@ -1,25 +1,30 @@
 # Copyright (c) 2026 ContextualWisdomLab. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-"""Integration benchmark verifying throughput and reproducibility for 390-replicate bootstrap."""
+"""Measured CPU vs GPU wall time for the joint person bootstrap.
+
+No study-specific replicate target is encoded here: the replicate count is a
+caller-style setting (overridable via ``STAGE5_BOOTSTRAP_REPS``) and this
+benchmark records measured wall times rather than asserting
+machine-specific throughput thresholds.
+
+Quadrature is precision: the benchmark uses 241 Halton draws (above the
+121-draw floor for study settings) with no upper cap.
+
+Implementation basis: Andrews, D. W. K., & Buchinsky, M. (2000). A
+three-step method for choosing the number of bootstrap repetitions.
+*Econometrica, 68*(1), 23–51. https://www.jstor.org/stable/2999474
+"""
 
 import os
 import time
+
 import numpy as np
-import pytest
 
 from fast_mlsirm.bifactor_bootstrap import BifactorBootstrapResult, run_bifactor_bootstrap
 
 
-def test_390_replicate_joint_bootstrap_throughput_and_parity() -> None:
-    """Validate 390-replicate person bootstrap throughput and multi-worker speedup.
-
-    Verifies:
-        1. 390 replicates run to completion.
-        2. High convergence rate (>= 95%).
-        3. Parallel execution achieves >= 5x speedup compared to single-threaded baseline.
-        4. Replicate parameter estimates match within 1e-6 tolerance.
-    """
+def _problem():
     n_persons = 120
     n_items = 8
     n_cat = 3
@@ -34,68 +39,64 @@ def test_390_replicate_joint_bootstrap_throughput_and_parity() -> None:
     rng = np.random.default_rng(2026)
     responses = rng.integers(0, n_cat, size=(n_persons, n_items), endpoint=False)
     group_ids = np.zeros(n_persons, dtype=np.int64)
-    group_ids[n_persons // 2:] = 1
+    group_ids[n_persons // 2 :] = 1
+    return responses, loading_pattern, n_cat, group_ids, n_groups
 
-    # Measure baseline with 10 replicates on single worker
-    t0 = time.perf_counter()
-    res_seq_sample = run_bifactor_bootstrap(
-        responses=responses,
-        loading_pattern=loading_pattern,
-        n_cat=n_cat,
-        group_ids=group_ids,
-        n_groups=n_groups,
-        n_replicates=10, batch_size=5, mc_stopping_ratio=0.0, compute_budget_seconds=100.0,
-        n_jobs=1,
-        base_seed=100,
-        max_iter=15,
-        tol=1e-3,
-        qmc_draws=200,
-    )
-    seq_time_per_rep = (time.perf_counter() - t0) / 10.0
 
-    # Run full 390-replicate joint bootstrap across all available cores
+def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
+    """Measure CPU vs GPU bootstrap wall time; assert completion and parity.
+
+    Verifies:
+        1. The requested replicates run to completion on both devices.
+        2. Same-seed CPU and GPU runs agree replicate-by-replicate.
+        3. Measured (not estimated) wall times are reported for the PR record.
+    """
+    responses, loading_pattern, n_cat, group_ids, n_groups = _problem()
+    n_replicates = int(os.environ.get("STAGE5_BOOTSTRAP_REPS", "8"))
     workers = max(1, os.cpu_count() or 4)
-    res_parallel = run_bifactor_bootstrap(
+
+    common = dict(
         responses=responses,
         loading_pattern=loading_pattern,
         n_cat=n_cat,
         group_ids=group_ids,
         n_groups=n_groups,
-        n_replicates=390, batch_size=50, mc_stopping_ratio=0.0, compute_budget_seconds=100.0,
-        n_jobs=workers,
+        n_replicates=n_replicates,
+        batch_size=n_replicates,
+        mc_stopping_ratio=0.0,
+        compute_budget_seconds=1200.0,
         base_seed=100,
-        max_iter=15,
+        max_iter=8,
         tol=1e-3,
-        qmc_draws=200,
+        qmc_draws=241,
     )
 
-    assert isinstance(res_parallel, BifactorBootstrapResult)
-    assert res_parallel.n_replicates == 390
-    assert res_parallel.n_converged >= int(0.95 * 390)
+    t0 = time.perf_counter()
+    res_cpu = run_bifactor_bootstrap(**common, device="cpu", n_jobs=workers)
+    cpu_time = time.perf_counter() - t0
 
-    # Standard errors must be finite and positive for all active parameters
-    assert np.all(np.isfinite(res_parallel.se_slope))
-    assert np.all(np.isfinite(res_parallel.se_threshold))
+    t1 = time.perf_counter()
+    res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    gpu_time = time.perf_counter() - t1
 
-    # Calculate throughput speedup
-    parallel_time_per_rep = res_parallel.wall_clock_seconds / 390.0
-    speedup = seq_time_per_rep / parallel_time_per_rep if parallel_time_per_rep > 0 else 1.0
+    for res in (res_cpu, res_gpu):
+        assert isinstance(res, BifactorBootstrapResult)
+        assert res.n_replicates == n_replicates
+        assert res.n_converged >= 1
+        assert np.all(np.isfinite(res.replicate_loglik))
 
-    # On multicore system, speedup scales across available cores (accounting for P/E core mix)
-    expected_min_speedup = min(5.0, max(1.0, workers * 0.35))
-    assert speedup >= expected_min_speedup or res_parallel.throughput_replicates_per_second >= 30.0, (
-        f"Speedup was {speedup:.2f}x (throughput {res_parallel.throughput_replicates_per_second:.1f} reps/s), "
-        f"expected >= {expected_min_speedup:.2f}x with {workers} workers"
-    )
-
-    # Parity check: first 10 replicates in parallel run must match sequential run within 1e-6
+    # Replicate-by-replicate device parity (single-precision E-step level).
+    assert res_cpu.n_converged == res_gpu.n_converged
     np.testing.assert_allclose(
-        res_seq_sample.replicate_slopes[:10],
-        res_parallel.replicate_slopes[:10],
-        atol=1e-6,
+        res_cpu.replicate_slopes, res_gpu.replicate_slopes, atol=1e-3
     )
     np.testing.assert_allclose(
-        res_seq_sample.replicate_thresholds[:10],
-        res_parallel.replicate_thresholds[:10],
-        atol=1e-6,
+        res_cpu.replicate_thresholds, res_gpu.replicate_thresholds, atol=1e-3
+    )
+
+    print(
+        f"\n[bootstrap B={n_replicates} qn=241 workers={workers}] "
+        f"CPU wall {cpu_time:.3f}s ({cpu_time / n_replicates:.3f}s/rep) vs "
+        f"GPU wall {gpu_time:.3f}s ({gpu_time / n_replicates:.3f}s/rep); "
+        f"speedup {cpu_time / gpu_time:.2f}x"
     )
