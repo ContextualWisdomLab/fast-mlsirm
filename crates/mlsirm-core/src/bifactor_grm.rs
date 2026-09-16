@@ -6,8 +6,7 @@
 //! Each item `i` has `K = n_cat` ORDERED categories, an UNCONSTRAINED general
 //! slope `a_iG` on the real line, an UNCONSTRAINED specific slope `a_iS` on at
 //! most one orthogonal specific factor, and `K - 1` STRICTLY DECREASING
-//! boundary intercepts `d_ik` (Gibbons et al., 2007, eq. 4; Gibbons & Hedeker,
-//! 1992; Samejima, 1969):
+//! boundary intercepts `d_ik`:
 //!
 //! ```text
 //! P(Y_ij >= k | theta_G, theta_S(i)) = logistic(a_iG * theta_G + a_iS * theta_S(i) + d_ik),
@@ -15,22 +14,38 @@
 //! ```
 //!
 //! with `P(Y >= 0) = 1`, `P(Y >= K) = 0`, and category probabilities from
-//! adjacent differences. The caller supplies the item-to-specific assignment
+//! adjacent differences (Samejima, 1969). The linear predictor follows the
+//! bifactor graded model of Gibbons et al. (2007, eq. 9, "The Bifactor Model
+//! for Graded Response Data" section): each item loads the general factor
+//! plus at most one specific factor ("only one of the k = 2..s values of
+//! a_jk is nonzero in addition to a_j1"), with independent standard-normal
+//! factors ("Assuming independence of the theta") — the same `N(0, I)`
+//! factor assumption as Gibbons & Hedeker (1992, eq. 1). Two deliberate
+//! departures from Gibbons et al. (2007), both implementation choices: the
+//! link is logistic rather than their normal ogive (to match the `mirt`
+//! graded comparison in this repository's fixture), and the intercepts are
+//! written directly as `d_ik` rather than split into `c_j + d_t`.
+//! The caller supplies the item-to-specific assignment
 //! (`specific_map[i] = -1` for a general-only item, otherwise `0..n_specific`);
-//! every item loads the general factor. Factors are orthogonal `N(0, 1)`
-//! (Gibbons et al., 2007, "Model" section). Slopes are UNCONSTRAINED so that
+//! every item loads the general factor. Slopes are UNCONSTRAINED so that
 //! reverse-keyed items are representable, matching the crate's unidimensional
 //! (`poly::fit_poly_unidim`) and multidimensional (`grm::fit_grm`) GRM
 //! estimators since #1879.
 //!
 //! # Estimation: Bock-Aitkin EM with Gibbons-Hedeker reduction
 //!
-//! Full product-grid marginal ML would integrate `Q^(S+1)` latent nodes
-//! (Gibbons & Hedeker, 1992, note the exponential cost in the number of
-//! specific factors). Because item `i` depends only on `theta_G` and its own
-//! `theta_S(i)`, the person marginal factors per general node (Gibbons et al.,
-//! 2007, "Parameter estimation" section; Cai, Yang, & Hansen, 2011, Birnbaum
-//! / Bock-Aitkin EM section for the same two-tier reduction idea):
+//! Full product-grid marginal ML would integrate `Q^(S+1)` latent nodes;
+//! Gibbons & Hedeker (1992) show the bifactor restriction "reduces the
+//! s-dimensional integral in (4) to a two-dimensional integral", via Stuart's
+//! (1958) reduction for variates each related to a single dimension only
+//! (their eq. 6: "the s dimensions are unconditionally independent, and the
+//! joint probability is the product of s unidimensional probabilities").
+//! Because item `i` depends only on `theta_G` and its own `theta_S(i)`, the
+//! person marginal factors per general node (Gibbons et al., 2007, eq. 15,
+//! "Marginal Maximum Likelihood Estimation" section). Cai, Yang, & Hansen
+//! (2011) extend "Gibbons and Hedeker's (1992) bifactor dimension reduction
+//! method" (p. 221) and likewise estimate with "the Bock and Aitkin (1981)
+//! EM algorithm" ("Maximum Marginal Likelihood Estimation" section):
 //!
 //! ```text
 //! L_p = sum_g w_g * G_pg * prod_s I_psg,
@@ -51,9 +66,12 @@
 //! Unit trait variances fix the slope scale on every dimension; ordered
 //! thresholds fix the category direction (Samejima, 1969). The bifactor
 //! loading pattern (each item on the general factor plus at most one
-//! specific) fixes rotation given at least two items per specific factor,
-//! which is enforced at validation (Gibbons et al., 2007, identification
-//! discussion). The per-dimension reflection
+//! specific; Gibbons & Hedeker, 1992) fixes rotation. Validation additionally
+//! requires at least two items per specific factor — an implementation
+//! choice, not a paper prescription: no minimum-block-size theorem was found
+//! in the cited sources, and smaller blocks leave the general/specific split
+//! weakly identified (seen as a slow EM tail in the stage-1 `mirt`
+//! comparison). The per-dimension reflection
 //! `(a_.d, theta_d) -> (-a_.d, -theta_d)` leaves every category probability
 //! INVARIANT, so it is CANONICALIZED with the same deterministic rule the
 //! crate already uses (`poly::canonicalize_slope_reflection`, `grm.rs`):
@@ -62,15 +80,20 @@
 //! block — negating that dimension's slopes AND (for the general dimension)
 //! the reported `theta_G` EAPs, but NOT the thresholds.
 //!
-//! # Caller-owned numerics (no hidden clamps)
+//! # Caller-owned numerics (no hidden clamps, no magic caps)
 //!
 //! Quadrature densities (`q_general`, `q_specific`), `max_iter`, `tol`,
-//! `n_starts`, and `seed` are CALLER ARGUMENTS with validated ranges; any
-//! out-of-range value is a loud `Err`, never a silent clamp. `seed` drives
-//! ONLY the random-start jitter (Gauss-Hermite quadrature is deterministic),
-//! and start `t` derives deterministically from `seed ^ f(t)`, so a rerun
-//! with the same `(seed, n_starts, ...)` bit-reproduces the fit (#1912
-//! reproducibility requirement).
+//! `n_starts`, and `seed` are CALLER ARGUMENTS; any out-of-range value is a
+//! loud `Err`, never a silent clamp. Upper bounds exist only where a real
+//! constraint exists: the quadrature counts must name an embedded
+//! Gauss-Hermite rule (`SUPPORTED_Q`), and working-set sizes that would
+//! overflow `usize` are rejected by checked arithmetic. Everything else is
+//! lower-bounded only (`n_specific >= 1`, `n_cat >= 2`, `max_iter >= 1`,
+//! `n_starts >= 1`, `newton_iter >= 1`, finite positive `tol`/`ridge`).
+//! `seed` drives ONLY the random-start jitter (Gauss-Hermite quadrature is
+//! deterministic), and start `t` derives deterministically from
+//! `seed ^ f(t)`, so a rerun with the same `(seed, n_starts, ...)`
+//! bit-reproduces the fit (#1912 reproducibility requirement).
 //!
 //! # Failure reporting
 //!
@@ -108,12 +131,13 @@
 use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 use crate::quadrature::SUPPORTED_Q;
 
-const BG_MAX_CAT: usize = 64;
-const BG_MAX_ITER: usize = 100_000;
-const BG_MAX_SPECIFIC: usize = 16;
-const BG_MAX_STARTS: usize = 32;
-const BG_MAX_NEWTON: usize = 50;
-const BG_MAX_PERSONS_ITEMS_CELLS: usize = 60_000_000;
+// NOTE (stage-1 review fix-up): this module imposes no magic size caps. Upper
+// bounds without a documented origin (a previous revision capped n_specific,
+// n_starts, max_iter, newton_iter, n_cat, and the response-cell count) were
+// removed; what remains are the correctness checks: lower bounds (empty or
+// degenerate problems), the embedded-quadrature rule set that actually
+// exists, finiteness/positivity of real-valued controls, and checked
+// arithmetic that turns size overflow into `Err` instead of a panic.
 
 /// Configuration for [`fit_bifactor_grm`]. Every field is caller-owned and
 /// range-validated; nothing is clamped.
@@ -207,13 +231,11 @@ fn validate(
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if !(1..=BG_MAX_SPECIFIC).contains(&n_specific) {
-        return Err(format!(
-            "n_specific must be in 1..={BG_MAX_SPECIFIC}; got {n_specific}"
-        ));
+    if n_specific < 1 {
+        return Err("n_specific must be >= 1".into());
     }
-    if !(2..=BG_MAX_CAT).contains(&n_cat) {
-        return Err(format!("n_cat must be in 2..={BG_MAX_CAT}; got {n_cat}"));
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
     }
     if !SUPPORTED_Q.contains(&cfg.q_general) {
         return Err(format!(
@@ -227,23 +249,17 @@ fn validate(
             cfg.q_specific
         ));
     }
-    if !(1..=BG_MAX_ITER).contains(&cfg.max_iter) {
-        return Err(format!("max_iter must be in 1..={BG_MAX_ITER}"));
+    if cfg.max_iter < 1 {
+        return Err("max_iter must be >= 1".into());
     }
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());
     }
-    if !(1..=BG_MAX_STARTS).contains(&cfg.n_starts) {
-        return Err(format!(
-            "n_starts must be in 1..={BG_MAX_STARTS}; got {}",
-            cfg.n_starts
-        ));
+    if cfg.n_starts < 1 {
+        return Err("n_starts must be >= 1".into());
     }
-    if !(1..=BG_MAX_NEWTON).contains(&cfg.newton_iter) {
-        return Err(format!(
-            "newton_iter must be in 1..={BG_MAX_NEWTON}; got {}",
-            cfg.newton_iter
-        ));
+    if cfg.newton_iter < 1 {
+        return Err("newton_iter must be >= 1".into());
     }
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
@@ -251,11 +267,17 @@ fn validate(
     let n_cells = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
-    if n_cells > BG_MAX_PERSONS_ITEMS_CELLS {
-        return Err(format!(
-            "n_persons * n_items = {n_cells} exceeds the cap {BG_MAX_PERSONS_ITEMS_CELLS}"
-        ));
-    }
+    // Dominant working-set size (per-item expected-count and log-prob tables
+    // over the reduced node grid): overflow here is a loud `Err`, never a
+    // wrapped index or a capacity panic deeper in the E-step.
+    let nodes_per_item = cfg
+        .q_general
+        .checked_mul(cfg.q_specific)
+        .ok_or_else(|| "q_general * q_specific overflows usize".to_string())?;
+    n_items
+        .checked_mul(nodes_per_item)
+        .and_then(|v| v.checked_mul(n_cat))
+        .ok_or_else(|| "n_items * q_general * q_specific * n_cat overflows usize".to_string())?;
     if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
@@ -286,7 +308,8 @@ fn validate(
         if members.len() < 2 {
             return Err(format!(
                 "specific factor {s} has {} item(s); at least two items per specific factor are \
-                 required for identification (Gibbons et al., 2007)",
+                 required (implementation stability choice — smaller blocks leave the \
+                 general/specific split weakly identified; see the module docs)",
                 members.len()
             ));
         }
@@ -770,7 +793,10 @@ fn run_single_start(
         }
     }
 
-    let mut loglik_trace: Vec<f64> = Vec::with_capacity(cfg.max_iter + 1);
+    // No pre-allocation from `max_iter`: it is caller-owned and unbounded
+    // above, so `with_capacity(max_iter + 1)` could overflow; the trace grows
+    // amortized instead.
+    let mut loglik_trace: Vec<f64> = Vec::new();
     let mut converged = false;
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();

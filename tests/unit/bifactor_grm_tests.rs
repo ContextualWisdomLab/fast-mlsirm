@@ -166,6 +166,59 @@ fn oracle_rejects_nonzero_specific_slope_on_general_only_items() {
 }
 
 #[test]
+fn uncapped_budgets_are_accepted() {
+    // Stage-1 review fix-up: no magic upper caps on caller budgets. Lower
+    // bounds (and only lower bounds) are validated; size overflow is a loud
+    // `Err` from checked arithmetic instead.
+    let (y, n_persons) = valid_data();
+    let cfg = BifactorGrmConfig {
+        max_iter: 1,
+        tol: 1e-12,
+        n_starts: 40,
+        ..valid_config()
+    };
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("n_starts=40 must be accepted (no upper cap)");
+    assert!(
+        fit.best_start < 40,
+        "best_start must index the 40 runs; got {}",
+        fit.best_start
+    );
+
+    // n_specific=17 validates: 34 items in 17 pairs, 12 persons cycling all
+    // three categories so every boundary stays identified.
+    let n_items_17 = 34usize;
+    let n_persons_17 = 12usize;
+    let map_17: Vec<i32> = (0..n_items_17).map(|i| (i / 2) as i32).collect();
+    let mut y_17 = vec![0usize; n_persons_17 * n_items_17];
+    for p in 0..n_persons_17 {
+        for i in 0..n_items_17 {
+            y_17[p * n_items_17 + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    fit_bifactor_grm(
+        &y_17,
+        None,
+        &map_17,
+        n_persons_17,
+        n_items_17,
+        17,
+        TINY_N_CAT,
+        &valid_config(),
+    )
+    .expect("n_specific=17 must be accepted (no upper cap)");
+}
+
+#[test]
 fn rejects_unsupported_quadrature_counts() {
     let (y, n_persons) = valid_data();
     for (qg, qs) in [(5, 7), (7, 5), (21, 22), (100, 7)] {
@@ -274,8 +327,9 @@ fn rejects_malformed_specific_map() {
         &valid_config(),
     )
     .expect_err("specific_map entries below -1 must be rejected");
-    // A specific factor with fewer than two items is not identified
-    // (Gibbons et al., 2007, identification discussion).
+    // A specific factor with fewer than two items is rejected as an
+    // implementation stability choice (weakly identified general/specific
+    // split; no minimum-block-size theorem in the cited sources).
     fit_bifactor_grm(
         &y,
         None,
