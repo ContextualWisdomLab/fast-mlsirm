@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-23 - Optimize distance computation with np.einsum
+**Learning:** Using `np.sum(diff * diff, axis=1)` creates an intermediate array for `diff * diff` before summing, which causes unnecessary memory allocation and performance degradation, especially in hot loops or large array operations. `np.einsum('ij,ij->i', diff, diff)` performs the squaring and summation in a single pass without allocating a large intermediate array.
+**Action:** When calculating row-wise sums of squared differences, use `np.einsum('ij,ij->i', diff, diff)` instead of `np.sum(diff * diff, axis=1)` to avoid intermediate array allocations and improve performance.
