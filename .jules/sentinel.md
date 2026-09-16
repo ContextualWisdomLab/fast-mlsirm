@@ -50,6 +50,7 @@ that reaps the owned child without assuming signal delivery always succeeds.
 group when a reader proves a descendant owns a capture pipe, bounded-reap the
 direct child, catch cleanup `OSError`, and preserve stable timeout/overflow/data
 errors for governance and procurement evidence.
+
 ## 2026-09-12 - Fix insecure deserialization in _contract_object
 **Vulnerability:** Untrusted JSON input deserialization in `_contract_object` lacked hooks to reject duplicate object keys and non-finite constant numbers (`NaN`, `Infinity`).
 **Learning:** Python's `json.loads` is overly permissive by default. Without explicit `object_pairs_hook` and `parse_constant`, it can lead to JSON smuggling, logic bugs, or unintended decoder extensions, violating strict interoperable JSON expectations.

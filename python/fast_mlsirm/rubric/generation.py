@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+import math
 import re
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -98,6 +99,14 @@ def _reject_json_constant(value: str) -> object:
     raise ValueError(f"contract JSON contains unsupported constant: {value}")
 
 
+def _reject_nonfinite_json_float(value: str) -> float:
+    """Reject a syntactically valid number that overflows to infinity."""
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError(f"contract JSON contains a non-finite number: {value}")
+    return parsed
+
+
 def _validate_contract_depth(content: str) -> None:
     """Reject contract JSON strings whose nesting depth exceeds the maximum budget."""
     depth = 0
@@ -130,31 +139,12 @@ def _contract_object(contract_json: str) -> dict[str, Any]:
         raise ValueError("contract_json must be non-empty JSON text")
     _validate_contract_depth(contract_json)
 
-    def _reject_duplicates(pairs):
-        result = {}
-        for k, v in pairs:
-            if k in result:
-                raise ValueError("contract_json contains duplicate keys")
-            result[k] = v
-        return result
-
-    def _reject_nonfinite(literal):
-        raise ValueError("contract_json contains non-finite numbers")
-
-    def _reject_float_nonfinite(value):
-        import math
-
-        f_val = float(value)
-        if not math.isfinite(f_val):
-            raise ValueError("contract_json contains non-finite numbers")
-        return f_val
-
     try:
         contract = json.loads(
             contract_json,
             object_pairs_hook=_reject_duplicate_json_keys,
             parse_constant=_reject_json_constant,
-            parse_float=_reject_float_nonfinite,
+            parse_float=_reject_nonfinite_json_float,
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("contract_json must be valid JSON text") from exc
