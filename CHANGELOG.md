@@ -5,6 +5,233 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
+#### Release cut 0.10.0
+
+- Project version is bumped to 0.10.0 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.10.0] - 2026-09-17` release section: two-stage polytomous bifactor GRM
+  calibration (single-group and multiple-group concurrent, #1912), expected-
+  total-score and focal-dimension monotonicity diagnostics for unidimensional,
+  multidimensional, and bifactor graded fits (#1873, #1888, #1889, #1928),
+  purified polytomous DIF with per-item and per-focal-group anchor sets
+  (#1874, #1890, #1891), retirement of `logistic_dif`'s `jg_class` to "not
+  applicable" (a breaking change, #1880), required (no unsourced-default)
+  quadrature node-count arguments across the new bifactor/monotonicity APIs (a
+  breaking change, #1933), symmetric (sign-preserving) slope-magnitude bounds
+  for `fit_mmle_2pl`, `fit_testlet`, and `fit_mixture` that stop silently
+  floor-clamping reverse-keyed slopes to a near-zero value (breaking changes,
+  #1884, #1885), an `at_bound` boundary-value report for `fit_mixed_items`
+  estimates (#1882), reverse-keyed and reflection-classification contract
+  coverage (#1870, #1883), a fail-closed assertion for dedicated Statistical
+  Studies recovery jobs (#1937), and this release cycle's own doc/changelog
+  self-corrections (#1938, #1940).
+- Eleven of the PRs folded into this release (#1926, #1888, #1889, #1928,
+  #1890, #1891, #1870, #1882, #1883, #1884, #1933) had originally merged with
+  no `docs/changelog.d` fragment; their fragments were written retroactively
+  for this cut from each PR's title, body, and linked issue, sourced against
+  the actual merged public API surface rather than restated from memory.
+- This cut also removes the standing predecessor note `release-0.9.1-cut.md`,
+  whose substance is permanently recorded in the `[0.9.1] - 2026-08-25`
+  section and in git history, mirroring the precedent set by that cut's own
+  removal of `release-0.9.0-cut.md`.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.10.0] - 2026-09-17
+
+### Added
+
+#### Preregistered external-validation evidence profiles
+
+- Added a domain-neutral, source-text-free `fast_mlsirm.validation_profile` contract for preregistered external evidence. Profiles preserve technical, construct, transportability, fairness, and decision-utility evidence as distinct classes with explicit `passed`, `failed`, `indeterminate`, `not_executed`, and `not_applicable` states; bind exact assessment/rubric/item-bank/model/protocol provenance; reject future-available evidence beyond the analysis cutoff; normalize callback-free fixed-offset timestamps to UTC; bound evidence and limitation collections before iteration; replay profile and nested-evidence invariants before granting public serialization or fingerprint authority after post-construction mutation; and expose a deterministic SHA-256 profile fingerprint without aggregating away failed or unavailable evidence. The slice performs validation, serialization, and provenance only; future statistical validity, transportability, fairness, and utility arithmetic remains Rust-owned.
+
+#### Finite-population proportion sampling design
+
+- Added a domain-neutral Rust/PyO3 `fast-mlsirm.sampling-design.v1` contract for normal-approximation finite-population proportion sample size, finite-population correction, and caller-selected proportional or equal-cost Neyman stratum allocation. Python only validates and marshals exact caller evidence; sample-size, correction, and allocation arithmetic remains Rust-owned.
+- The immutable result retains canonical ordered inputs and binds Rust-generated source/input/output SHA-256 identities to the stable source identity and algorithm version. Callers keep sample-frame and selected-membership provenance outside the arithmetic artifact.
+
+#### Pin signed-slope recovery for reverse-keyed graded items (#1870)
+
+- Add contract coverage confirming `fit_grm` recovers negative (reverse-keyed) slopes with no non-negativity bound: simulating graded data from the package-native form with known negative slopes and refitting recovers them (max absolute error 0.10 across three reverse-keyed items in the fixture), with zero exact-zero estimates. No product code changed; `fit_grm`'s unconstrained-slope contract was previously documented but untested against a true negative slope.
+
+#### Report when a fit_mixed_items estimate rests on an optimizer bound (#1882, refs #1881)
+
+- Add `MixedItemEstimate::at_bound` (surfaced through the PyO3 binding as `MixedItemParameters.at_bound`), listing which parameter roles (`"slope"`, `"latent_position"`, `"parameter"`) are held at one of `clamp_params`'s three bounds (`[-12, 12]` on every free parameter, `[-5, 4]` on a free-slope family's working `log a`, `[-6, 6]` per latent coordinate of a spatial family) at the returned solution. Empty is the normal case. Previously an estimate resting on a bound (e.g. a reverse-keyed item's slope pushed onto the `exp(-5)` positivity floor and reported as `0.006738`, indistinguishable from a genuinely low-discrimination item) was reported with no indication it was a boundary value rather than an interior optimum.
+
+#### Pin which reflection each item family absorbs (#1883, refs #1881)
+
+- Add contract coverage classifying which `(a, theta)` or `(theta, delta)` reflection each `fit_mixed_items` item family absorbs, checked against the model cells directly rather than existing helper predicates: `TwoPl`/`Grm`/`Gpcm`/`Sequential`/`Lsirm*` absorb a joint `(a, theta)` reflection (slope anchor applies); `Rasch`/`Cll`/`Tutz` absorb none and pin the orientation themselves; `Ideal`/`Ggum` absorb a joint `(theta, delta)` reflection with the slope untouched, so no slope anchor can pin them. No product code or behavior changed.
+
+#### Expected-total-score monotonicity diagnostic (#1888, closes the unidimensional half of #1873)
+
+- Add a unidimensional expected-total-score monotonicity diagnostic built on the existing `polytomous_expected_response` curve: rather than a single boolean, it reports the theta interval(s) of decrease and the total decrease (the integral of the negative part of the derivative), both of which are stable under grid refinement, unlike a raw count or maximum decrease.
+
+#### Focal-dimension monotonicity for multidimensional graded fits (#1889, closes #1873)
+
+- Add `focal_expected_total_score_monotonicity`, extending the #1888 diagnostic to compensatory multidimensional graded fits: each item's nuisance dimensions marginalize to a single one-dimensional Gaussian integral under the fitted `theta ~ MVN(0, I)` prior, so the focal-dimension curve reduces to the existing unidimensional numeric path with no new multidimensional kernel.
+- `q_nuisance` is a required caller argument (no unsourced default quadrature-node count).
+
+#### Purified polytomous DIF sweep with an anchor-eligible set (#1890, addresses requirement 1 of #1874)
+
+- Add `dif_polytomous_purified`: iteratively purifies the polytomous DIF anchor by testing each item against `anchor UNION {itself}` until the flagged set stabilizes, the anchor would fall below `min_anchor_items`, or `max_rounds` is reached — the same rule the dichotomous purified functions use, extended to `dif_polytomous`, which previously tested every studied item against all others with no anchor set returned.
+- Returns everything the plain `dif_polytomous` sweep returns, plus `anchor`, `n_anchor`, `rounds`, `purify_converged`, and `purify_termination_reason`, matching the dichotomous purified functions' contract field for field. No Rust-side numeric change; the existing two-group entry point is reused on the restricted anchor column subset.
+
+#### Per-focal-group anchor sets and their intersection (#1891, addresses requirement 3 of #1874)
+
+- Add `dif_polytomous_anchor_sets`: purifies each focal group against the reference on its own two-group subset (via `dif_polytomous_purified`, #1890) and returns the per-group reports, the `n_focal x n_items` anchor matrix, and the intersection anchor a fixed-item calibration can defend for every group at once. Caller-supplied group labels are densified internally and returned unchanged.
+- If any group's purification loop ends on `insufficient_anchor_items` or exhausts `max_rounds`, `intersection_trustworthy` is `False` and `untrustworthy_groups` names the affected groups, so a failed purification cannot silently narrow the intersection into a false-conservative result.
+
+#### Single-group polytomous bifactor GRM with Gibbons-Hedeker reduction (stage 1 of #1912)
+
+- Add a single-group full-information polytomous bifactor graded response
+  fitter (Gibbons et al., 2007; Gibbons & Hedeker, 1992; Samejima, 1969):
+  unconstrained general/specific slopes, strictly decreasing boundary
+  intercepts, caller-supplied item-to-specific map with general-only items,
+  Bock-Aitkin EM with Gibbons-Hedeker dimension reduction, deterministic
+  multi-start selection, general-factor EAP scores with posterior SDs, and a
+  `fit_bifactor_grm` Python binding. Unobserved categories fail loudly;
+  `max_iter` exhaustion reports `converged=False` instead of substituting
+  values. Validated against `mirt::bfactor(itemtype="graded")` on a committed
+  fixture (loglik gap 0.015, slope gap <= 0.046, intercept gap <= 0.028).
+
+#### Multiple-group concurrent calibration for the polytomous bifactor GRM (stage 2 of #1912)
+
+- Add `fit_bifactor_grm_multigroup` (Rust `mlsirm_core::bifactor_grm`, Python `fast_mlsirm.bifactor_multigroup`): concurrent multi-group calibration for the bifactor GRM, sharing item parameters across groups with optional per-item anchored/free flags (at least one anchored item required for 2+ groups to link scales).
+- Reference group 0 is pinned to N(0, I); focal general-factor mean/variance are estimated, plus optional focal specific-factor variances (means fixed at 0) via `estimate_specific_vars`. Marginal ML uses Bock-Aitkin EM with the Gibbons-Hedeker reduction applied per group; failures are loud per-start errors, never silently clamped.
+- Returns per-group EAPs/SDs on the common (reference) scale, per-group category counts, loglik trace, and a convergence flag. Joint cross-group reflection canonicalization reads sign from anchored linking items only. `n_groups == 1` delegates to and bit-reproduces stage-1 `fit_bifactor_grm` (#1925).
+
+#### Bifactor GRM adapter for focal expected-score monotonicity (#1928, links #1873, #1912)
+
+- Add `bifactor_expected_total_score_monotonicity(fit, theta, q_specific)`, an adapter over `focal_expected_total_score_monotonicity` (#1889) for `BifactorGrmFit`/`fit_bifactor_grm` (#1925) with the general factor as the fixed focal dimension; each item's own specific factor is integrated out by caller-sized Gauss-Hermite quadrature bounded by the existing `MAX_POLY_QUADRATURE_POINTS`.
+- `q_specific` is a required caller argument (no unsourced default quadrature-node count). Exported from `fast_mlsirm` alongside the existing monotonicity diagnostics.
+
+#### Achieved finite-population proportion
+
+- Added a Rust-owned terminal SRSWOR proportion artifact with design variance,
+  Wang/Konijn exact confidence limits, exhaustive coverage tests, and bound
+  sampling-design provenance.
+
+#### Binary response state contract
+
+- Add the versioned `fast_mlsirm_binary_response/v1` Measurement contract so dichotomous 0/1 values remain separate from missing, not-observed, abstained, invalid, omitted, not-applicable, insufficient-evidence, and adjudicated states; keep polytomous rubric/facet contracts separate and fail closed instead of thresholding.
+
+#### Lineage channel weight evidence
+
+- Add a Rust fail-closed evidence contract for continuous lineage channel scores
+  and an independently accepted criterion anchor. Weight estimation remains
+  unavailable until pair-level independent criterion observations are supplied.
+
+### Changed
+
+#### Share one judge-result IRT projection core
+
+- Remove the duplicate category/binning implementation from the explicit criterion-order adapter. `LLMJudgeResult.to_irt_row` remains the single package-owned projection authority; the explicit-order adapter preserves its stricter sealed-mapping checks, delegates once to that canonical projection, and only permutes the validated row into caller-supplied criterion order.
+- Add parity regressions for score-derived and explicit-category projections, custom criterion order, delegation to the canonical core, and the sealed result-mapping boundary. No judge scoring threshold, category arithmetic, psychometric likelihood, or Rust numerical behavior changes.
+
+#### Item parameter provenance
+
+- Governed item-bank parameter provenance now distinguishes `provisional` cold-start artifacts from empirically `calibrated` artifacts with immutable, content-addressed evidence. Provisional records must name one bounded domain-neutral method (`rasch_common_discrimination`, `template_prior`, `lltm_predicted`, or `constrained_prior`) and an exact basis fingerprint and cannot carry calibration evidence; calibrated records require an exact calibration-evidence fingerprint and cannot carry provisional provenance. The contract binds item/version, response-model identity, and parameter-artifact fingerprint while storing no raw responses, prompts, provider output, or fitting arithmetic. Item-bank JSON/HTML reports can include this explicit parameter evidence, report `not_supplied` rather than inferring calibration when it is absent, and fail closed on item/version or lifecycle/status mismatches. All parameter estimation, calibration, linking, scoring, uncertainty, and recovery arithmetic remains Rust-owned.
+
+#### `logistic_dif`'s `jg_class` is retired to "not applicable" (#1880)
+
+- **Breaking, for any caller reading `jg_class`.** `logistic_dif` (and
+  `logistic_dif_purified`) no longer letter items `"A"`/`"B"`/`"C"` against the
+  Jodoin and Gierl (2001) effect-size bands. `jg_class` now reports `"U"`
+  ("not applicable") unconditionally, for every item, regardless of fit
+  success or omnibus significance. `delta_r2` (the Nagelkerke `R2(M2) -
+  R2(M0)` change across the 2-df omnibus) and `delta_r2_uniform` (`R2(M1) -
+  R2(M0)`) are unchanged and remain reported as descriptive numbers; neither
+  carries a letter class. Callers who branched on `jg_class == "A"`/`"B"`/`"C"`
+  must switch to reading `delta_r2` / `delta_r2_uniform` directly, or to
+  `flagged_bh` for a significance-only decision.
+- `logistic_dif_purified`'s anchor no longer shrinks: its purification
+  criterion (`purify_flagged`) only fires on `jg_class in {B, C}`, which is
+  now unreachable. This is deliberate, not a silent regression: the obvious
+  substitute, raw `flagged_bh` significance, is exactly the over-powered
+  test this package's purification design exists to screen against (see the
+  doc comment on `logistic_dif_purified`), so substituting it would purify
+  far more aggressively than the retired letter class ever did — a
+  materially different and worse behaviour change than simply not
+  purifying. Callers who relied on `logistic_dif_purified` actually
+  shrinking the anchor should track #1880 for a principled replacement
+  criterion, or use `mantel_haenszel_dif_purified` (unaffected; it purifies
+  on its own ETS `ets_class`, not `jg_class`).
+- **Why.** Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and
+  power rates using an effect size measure with the logistic regression
+  procedure for DIF detection. *Applied Measurement in Education, 14*(4),
+  329-349, calibrates its `.035`/`.070` bands (p. 335) on a Zumbo-Thomas
+  weighted-least-squares (Pratt-Pregibon) partition (p. 333) — not the
+  Nagelkerke pseudo-R² this package computes — and states them on the
+  ONE-degree-of-freedom UNIFORM increment, not the 2-df omnibus this package
+  previously lettered (`delta_r2`). Both mismatches were confirmed against
+  the primary source (read in full via institutional access) and would need
+  correcting together, but the replacement statistic is itself
+  underdetermined by that source: eq. 4 (p. 333) does not say whether its
+  correlation is taken against the observed response or the working response
+  of the IRLS linearization, nor on which scale the standardized coefficient
+  is computed, and both choices change the number. A package cannot letter a
+  quantity it cannot compute, so the honest fix is "not applicable," not a
+  guessed replacement. The bands are additionally scoped to the paper's own
+  simulation — dichotomous responses generated from a 3PL model (pp. 337,
+  339) on 40-item tests (pp. 336-337) — so they were never licensed for the
+  polytomous logistic-regression sweep either (see PR #1890's independent
+  finding on this point).
+- **Migration.** Any stored or logged `jg_class` values from before this
+  change reflected bands applied to the wrong quantity (2-df omnibus instead
+  of 1-df uniform) computed from the wrong statistic (Nagelkerke instead of
+  the Zumbo-Thomas WLS partition); they should not be treated as ground truth
+  and do not need to be "corrected" to a new letter, because no letter is
+  defensible. Use `delta_r2` / `delta_r2_uniform` (continuous, unchanged) and
+  `flagged_bh` (significance only, unchanged) directly.
+- **References.** Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I
+  error and power rates using an effect size measure with the logistic
+  regression procedure for DIF detection. *Applied Measurement in Education,
+  14*(4), 329-349. https://doi.org/10.1207/S15324818AME1404_2 — Nagelkerke,
+  N. J. D. (1991). A note on a general definition of the coefficient of
+  determination. *Biometrika, 78*(3), 691-692.
+  https://doi.org/10.1093/biomet/78.3.691 — Zumbo, B. D. (1999). *A handbook
+  on the theory and methods of differential item functioning (DIF)*.
+  Directorate of Human Resources Research and Evaluation, Department of
+  National Defense.
+
+#### Require q_general/q_specific/q_nuisance, no unsourced defaults (#1933, refs AGENTS.md, #1929)
+
+- **Breaking.** Per project rule (tuning numbers such as quadrature node counts must be caller arguments with no study-specific or unsourced default), four new APIs added this release cycle (#1873, #1888, #1889, #1912, #1925, #1926, #1928) had unsourced numeric defaults; those defaults are removed and the arguments are now required:
+  - `fast_mlsirm.focal_expected_total_score_monotonicity`: `q_nuisance` (was `41`).
+  - `fast_mlsirm.bifactor_expected_total_score_monotonicity`: `q_specific` (was `41`).
+  - `fast_mlsirm.bifactor_grm.fit_bifactor_grm`: `q_general`, `q_specific` (were `21`, `11`).
+  - `fast_mlsirm.bifactor_multigroup.fit_bifactor_grm_multigroup`: `q_general`, `q_specific` (were `21`, `11`), now required and keyword-only after `anchor_mask=None`.
+  - `mlsirm_core::bifactor_grm::BifactorGrmConfig` no longer implements `Default`; every field must be set explicitly at every call site.
+- Existing call sites (Python wrapper tests, two Rust loglik-only helpers, and the PyO3 binding) are updated to pass every field explicitly. Each touched call site gains a test asserting that omitting the node-count argument raises `TypeError` (Python) or fails to compile (Rust, no `Default`).
+
+#### Customer copy actionability
+
+- Public-API error paths now state the invalid input and the concrete next
+  action instead of internal validation vocabulary: judge-scoring projection
+  errors say to rebuild criterion mappings as plain dicts keyed by criterion id
+  (replacing "exact built-in dict" jargon), Rust backend unavailability errors
+  name the install/reference-path next steps, and unknown serving item codes
+  point at the bundle's items list.
+- CLI workspace-boundary and candidate-input errors append actionable next
+  steps (move the file under the working directory, use unique
+  `label=path.npy` candidate flags, reduce oversized candidate sets) without
+  changing exit codes, validation order, or fail-closed behavior.
+- Diagnostics report renderer errors tell the customer how to recover:
+  choose a `.html` output name and regenerate unsupported JSON via
+  `fast-mlsirm diagnose-fit` / `fast-mlsirm diagnose-dimensions`.
+- README quickstart guidance no longer instructs an unexecutable command
+  (`fit --backend numpy`; production backend choices are `{rust, auto}`) and
+  now points to the explicit NumPy reference path (`--reference` /
+  `fast_mlsirm.fit_reference`); feature copy describes fixed-item calibration
+  by its method instead of legacy package names.
+
+#### Lineage channel weight evidence
+
+- Restore the `mlsirm-core` boundary to a domain-neutral criterion-anchor
+  contract. The canonical field is `criterion_anchor`; the historical serialized
+  `tepp_anchor` field remains readable only as a compatibility alias. Producer-
+  specific schema validation is no longer compiled into the numerical core.
+
 #### Release cut 0.9.1
 
 - Project version is bumped to 0.9.1 in `pyproject.toml`, `crates/mlsirm-core`,
@@ -36,7 +263,99 @@
   removal of the stale 0.8.0 leftover.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+### Fixed
+
+#### Compensatory 2PL response and tolerance admission
+
+- Compensatory 2PL admission now seals both response evidence and the Rust `f64` convergence tolerance before caller data or native work. Response admission rejects caller-controlled array/numeric conversion protocols, complex evidence, ragged/non-numeric matrices, oversized logical matrices, and wider-precision values that would only become valid dichotomous observations after binary64 narrowing; exact NumPy numeric matrices and ordinary built-in matrices of concrete Python/NumPy 0/1/NaN values remain supported. The shared IRT minimum of two item columns is replayed from inert shape/row metadata after the existing logical-cell ceiling but before value-wise scans, scalar normalization, NumPy dense materialization, or compiled-core discovery, so structurally impossible one-item experiments cannot spend the full admitted response-work budget first. `tol` remains callback-safe but now also must preserve its exact numeric identity through normalization to Rust `f64`, so lossy extended-precision and large-integer controls fail closed while exact binary64-compatible controls remain supported. Accepted response evidence is normalized to package-owned contiguous `float64` before the existing Rust estimator boundary. The 2PL likelihood, quadrature, latent-correlation ECM, convergence arithmetic, and scoring are unchanged and remain Rust-owned.
+
+#### Independent parameter provenance edges
+
+- Item-parameter provenance now rejects self-referential edges: a provisional parameter artifact cannot name itself as its cold-start basis, and a calibrated parameter artifact cannot name itself as calibration evidence. This preserves an independent upstream provenance edge without changing any Rust-owned estimation, calibration, scoring, linking, uncertainty, or recovery arithmetic.
+
+#### Item-bank lifecycle public identity replay
+
+- Governed item-bank lifecycle records now replay their factory-sealed creation-time identity before returning a public fingerprint/id or serializing JSON-compatible content. A package-owned weak creation-seal registry binds each live factory-created object identity to its original fingerprint, so coherently rebinding both lifecycle content and the record's stored digest cannot manufacture fresh authority; dead-record entries are removed without retaining the record, and object-identity reuse is rejected. Callback-bearing mutations continue to fail closed, while valid lifecycle identities and payloads remain unchanged. No calibration, fit, DIF, information, linking, scoring, uncertainty, or other psychometric arithmetic changes.
+
+#### Residual interaction-map structural budget
+
+- Bound exact built-in matrix traversal independently of logical numeric cells so malformed empty-row fan-out fails before dense NumPy or compiled-core work while valid matrices inside the 20,000,000-cell evidence contract remain supported.
+
+#### Finite-population proportion sampling design
+
+- Replay the Rust `population_size <= 2^53` and 100,000-strata resource domains at the Python boundary before member normalization or Rust dispatch, and reject integer-valued strict probability controls without an unnecessary `float(...)` conversion so oversized/invalid controls fail with package-owned `ValueError` rather than consuming avoidable work or surfacing conversion overflow.
+
+#### RSM response structural and shape budgets
+
+- Bound exact built-in Rating Scale Model response-carrier traversal independently
+  of logical numeric cells, so malformed empty-row fan-out cannot consume
+  unbounded Python preflight work while keeping the response cell count at zero.
+- Preserve the existing 20,000,000-cell RSM evidence envelope and every valid
+  non-empty persons-by-items matrix inside it: built-in row plus scalar traversal
+  is bounded by twice the logical-cell ceiling before NumPy materialization.
+- Replay the established two-dimensional rectangular response contract and the
+  minimum-two-item RSM/IRT design contract from inert ndarray shape or exact
+  built-in row metadata after resource accounting but before value-wise scans or
+  dense float64 marshalling. Small-backed 1-D and one-item broadcast views now
+  fail their existing structural diagnostics without first allocating a large
+  dense matrix.
+- Keep RSM likelihood, marginal-ML EM/ECM, shared-threshold estimation, latent
+  integration, scoring, convergence, and uncertainty arithmetic unchanged in the
+  Rust core.
+
+#### Sampling result contract replay
+
+- Replay the Rust-owned sampling algorithm identity before public result marshalling so a same-schema stale or foreign extension fails closed instead of being exposed under the current contract.
+- Validate every returned stratum inclusion-probability ratio against the Rust-returned sample and population counts before constructing the public sampling artifact, with stable package-owned errors for missing, malformed, count-mismatched, or inconsistent ratio evidence.
+- Preserve the Rust-owned sample-size, finite-population-correction, proportional-allocation, and equal-cost Neyman arithmetic unchanged.
+
+#### Bounded capped-strata allocation
+
+- Replace repeated full active-set rescans in finite-population capped stratum allocation with a threshold-sorted water-filling pass, so the cap phase inspects each admitted stratum at most once after sorting.
+- Add a maximum-envelope 100,000-strata census regression and an operation-count proof for the cap phase without relying on wall-clock timing.
+- Preserve the existing Rust-owned proportional/Neyman quotas, census caps, deterministic input-order tie behavior, largest-remainder integerization, exact inclusion-probability ratios, and fail-closed zero-allocation contract.
+
+#### Release acceptance watchdog budget
+
+- Derive the commercial-release wrapper deadline for `release_acceptance.py` from the authoritative sequential inner acceptance budgets plus a 60-second orchestration margin, so future bounded-stage changes cannot silently reintroduce an outer watchdog that terminates legitimate fail-closed acceptance before the inner operation-specific deadline can report its evidence.
+
+#### Release helper import integrity
+
+- Fail closed when repository-owned bounded JSON or subprocess helpers raise an internal missing-dependency error; direct-script fallback now occurs only when the `scripts` package or the bounded helper module itself is unavailable, preserving the first causal boundary.
+
+#### Confirmatory loading-pattern evidence admission
+
+- Seal confirmatory items-by-dimensions loading-pattern evidence before NumPy array or numeric conversion protocols can execute, while preserving exact NumPy and ordinary built-in Boolean/integer/real 0/1 matrices as canonical read-only `int64` model structure.
+- Reject callback-bearing providers/subclasses, non-real or non-numeric storage, ragged/non-2-D evidence, non-finite values, and non-binary values with package-owned diagnostics before model-resolution work.
+- Replay the canonical read-only `int64` loading structure before public dimension or item-count resolution so post-construction field rebinding cannot execute caller-controlled shape metadata.
+
+#### DIMTEST release-build diagnostic ownership
+
+- Keep the per-group DIMTEST formula intermediates used by the independent Nandakumar & Stout oracle in test builds only, while release builds retain only the group contribution consumed by the production statistic. This removes the production dead-field warning without suppressing lints or changing DIMTEST arithmetic, public results, or the existing intermediate-value oracle.
+
+#### Bound the 2PL slope's magnitude without constraining its sign (#1884, refs #1881 acceptance item 4)
+
+- **Breaking, for any caller reading a `fit_mmle_2pl` slope that was previously clamped to the lower bound.** `mmle.rs` and `python/fast_mlsirm/estimators/mmle.py` clamped the Newton M-step slope update to `[1e-3, 10.0]`, which is also a hard positivity floor: a true negative slope (e.g. a reverse-keyed item, true value `-0.90`) was silently returned as `0.0010`, indistinguishable from an item that measures nothing. The bound is now symmetric (`[-10.0, 10.0]`), still guarding magnitude but no longer constraining sign.
+- Since `(a, theta) -> (-a, -theta)` leaves the likelihood invariant, `fit_mmle_2pl` now canonicalizes on the largest-magnitude slope being positive (`canonicalize_reflection`), the same convention already used by `fit_grm`, `fit_gpcm`, `fit_twopl`, and `fit_mhrm`.
+
+#### Bound the testlet/mixture slope's magnitude without constraining its sign (#1885, refs #1881)
+
+- **Breaking, for any caller reading a `fit_testlet` or `fit_mixture` slope that was previously clamped to the lower bound.** Following the same audit that produced #1884, `testlet.rs` (Newton M-step and projection step) and `mixture.rs` (Newton M-step) each clamped their slope update to `[1e-3, 10.0]`, the same positivity floor that silently returned reverse-keyed slopes as `0.0010`. Both are now bounded symmetrically (`[-10.0, 10.0]`), guarding magnitude without constraining sign, and both canonicalize on the largest-magnitude slope being positive via the shared `canonicalize_reflection` introduced by #1884.
+- `fit_testlet`'s testlet effect `gamma ~ N(0, sigma2)` and `fit_mixture`'s analogous structure are accounted for in the per-model reflection algebra, since the intercept/testlet terms are not all invariant under `(a, theta) -> (-a, -theta)` the same way across models.
+
+#### Per-focal-group anchor sets and their intersection (#1891, addresses requirement 3 of #1874)
+
+- Fix a defect in `dif_polytomous_purified`'s (#1890) purification loop surfaced while testing the `insufficient_anchor_items` failure mode: the loop's prior behavior on that termination path is corrected so it no longer returns a result inconsistent with a failed purification.
+
+#### Fail closed when dedicated Statistical Studies filters match nothing (#1937, closes #1869)
+
+- The dedicated Statistical Studies jobs ran `cargo test ... --exact <name>`, which exits 0 when the filter matches no test, so a renamed or removed recovery study would keep publishing a green true-parameter-recovery signal with zero tests actually run. Each of the four dedicated steps now captures its output and asserts exactly one test passed, so a filter that matches nothing now fails the job instead of silently reporting success.
+
+#### Update logistic_dif_purified doc/test for retired jg_class (#1940)
+
+- `logistic_dif_purified`'s docstring still claimed a non-uniform item is removed from its purification criterion, which #1880/#1935's retirement of `jg_class` to unconditional `"U"` made permanently impossible (the criterion can never fire, so the anchor never shrinks). The docstring is corrected to state the current no-op purification behavior and point callers at `mantel_haenszel_dif_purified` or the raw `delta_r2`/`flagged_bh` outputs for a real purified or significance-only read; the corresponding test assertion is updated to match.
+
 ## [0.9.1] - 2026-08-25
 
 ### Added
