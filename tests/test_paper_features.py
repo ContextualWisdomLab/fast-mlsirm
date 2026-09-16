@@ -2217,8 +2217,9 @@ def test_logistic_dif_zumbo():
     np.testing.assert_allclose(
         lr["chi2_uniform"] + lr["chi2_nonuniform"], lr["chi2_total"], atol=1e-6
     )
-    clean = [i for i in range(n_items) if i not in (cross_item, unif_item)]
-    assert all(lr["jg_class"][i] == "A" for i in clean)
+    # #1880: jg_class is "not applicable" (U) for every item now, clean or not -- the bands were
+    # calibrated on a different, underdetermined statistic (see logistic_dif's docstring).
+    assert all(lr["jg_class"][i] == "U" for i in range(n_items))
 
     # validation
     with pytest.raises(ValueError):
@@ -2427,9 +2428,11 @@ def test_dif_purification():
     assert q0["purify_termination_reason"] == "stable_flag_set"
     np.testing.assert_array_equal(q0["chi2_mh"], p0["chi2_mh"])
 
-    # the logistic variant runs and also drops the planted items from its anchor
+    # the logistic variant runs, but its jg_class-based purification criterion is retired to "U" for
+    # every item (#1880), so it can never fire: the anchor never shrinks, even for the planted items
     lp = logistic_dif_purified(y, group)
-    assert all(not lp["anchor"][d] for d in dif_items)
+    assert all(lp["anchor"][d] for d in dif_items)
+    assert lp["n_anchor"] == 12 and lp["rounds"] == 0
     # the loop's scalar flag must NOT collide with logistic_dif's PER-ITEM convergence array: the two
     # answer different questions, and a same-named scalar silently destroyed the array at the boundary
     assert np.asarray(lp["converged"], dtype=bool).shape == (12,)

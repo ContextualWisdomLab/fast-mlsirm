@@ -165,8 +165,8 @@ def fit_bifactor_grm(
     specific_map: np.ndarray,
     n_cat: int,
     n_specific: int,
-    q_general: int = 21,
-    q_specific: int = 11,
+    q_general: int,
+    q_specific: int,
     max_iter: int = 500,
     tol: float = 1e-6,
     n_starts: int = 1,
@@ -179,8 +179,10 @@ def fit_bifactor_grm(
     ``specific_map`` is a length-``n_items`` integer array with ``-1`` for
     general-only items and ``0..n_specific-1`` otherwise; every specific
     factor needs at least two items. ``q_general``/``q_specific`` are
-    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)`` — the
-    embedded rules that exist, hence the only accepted values);
+    required Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)`` —
+    the embedded rules that exist, hence the only accepted values); no
+    default is offered, because no accuracy target is on file to source one
+    against (Project rule, issue #1929).
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
     per the no-magic-caps rule — upper-bounded only where a real constraint

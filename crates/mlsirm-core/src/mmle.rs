@@ -8,6 +8,23 @@
 //!
 //! Scope: unidimensional 2PL, logit = a*theta + b, ability prior N(0, 1).
 //! Item parameters (a, b) by EM; ability returned as EAP posterior mean.
+//!
+//! **Orientation.** Slopes are UNCONSTRAINED, so a reverse-keyed item is
+//! estimated with a negative `a` rather than floored at zero. That leaves the
+//! reflection `(a, theta) -> (-a, -theta)`, which holds `a*theta` — hence the
+//! logit, every `b`, and the likelihood — fixed, so the sign of the solution as
+//! a whole is not identified by the data. It is pinned here by requiring the
+//! largest-magnitude slope to be positive, the same anchor convention used by
+//! `crate::grm`, `crate::gpcm`, `crate::twopl`, `crate::mhrm` and
+//! `crate::poly`, so all of them agree on the same data.
+//!
+//! The rule is not cosmetic. Without it the sign would rest on initialization,
+//! and the two backends do not share one: this fitter starts every item at
+//! `a = 1` exactly, while the NumPy reference in
+//! `python/fast_mlsirm/estimators/mmle.py` starts at `1 + 0.01 * N(0, 1)`. A
+//! sign that depends on the start is a sign the parity gate cannot guarantee,
+//! and any later change to either initialization could flip every returned
+//! `a` and `theta` without touching a line that looks like it concerns signs.
 
 /// 41-node probabilists' Gauss-Hermite rule, weights normalized to sum 1
 /// (quadrature for a standard-normal N(0,1) ability prior). Values are the
@@ -270,7 +287,13 @@ pub fn fit_mmle_2pl(
                 }
                 let da = (h_bb * g_a - h_ab * g_b) / det;
                 let db = (h_aa * g_b - h_ab * g_a) / det;
-                ai = (ai - da).clamp(1e-3, 10.0);
+                // Magnitude guard only. The lower end was 1e-3, which also made
+                // `a > 0` structurally unrepresentable: a reverse-keyed item was
+                // not estimated with a negative slope, it was floored and
+                // reported as 0.001, which reads as an item that measures
+                // nothing. The guard is now symmetric, so the bound constrains
+                // magnitude without constraining sign.
+                ai = (ai - da).clamp(-A_MAGNITUDE_BOUND, A_MAGNITUDE_BOUND);
                 bi -= db;
                 if da.abs() + db.abs() < 1e-8 {
                     break;
@@ -298,6 +321,8 @@ pub fn fit_mmle_2pl(
         theta[p] = m;
     }
 
+    canonicalize_reflection(&mut a, &mut theta);
+
     let n_iter = loglik_trace.len();
     MmleResult {
         a,
@@ -306,6 +331,30 @@ pub fn fit_mmle_2pl(
         loglik_trace,
         n_iter,
         converged,
+    }
+}
+
+/// Largest slope magnitude the M-step will accept, on the natural scale. A
+/// numerical guard on the Newton step, not a model claim; it is symmetric so
+/// that it bounds magnitude without constraining sign.
+pub(crate) const A_MAGNITUDE_BOUND: f64 = 10.0;
+
+/// Pin the reflection `(a, theta) -> (-a, -theta)` by requiring the
+/// largest-magnitude slope to be positive. `b` is invariant under the flip and
+/// is not touched. A no-op whenever the anchor item is already positive, which
+/// is every fit whose items mostly key with the trait.
+pub(crate) fn canonicalize_reflection(a: &mut [f64], theta: &mut [f64]) {
+    let anchor = a
+        .iter()
+        .enumerate()
+        .max_by(|(_, x), (_, y)| x.abs().total_cmp(&y.abs()))
+        .map(|(i, _)| i);
+    let Some(anchor) = anchor else { return };
+    if a[anchor] >= 0.0 {
+        return;
+    }
+    for value in a.iter_mut().chain(theta.iter_mut()) {
+        *value = -*value;
     }
 }
 

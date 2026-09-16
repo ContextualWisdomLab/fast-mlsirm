@@ -375,14 +375,16 @@ def focal_expected_total_score_monotonicity(
     fit,
     dimension: int,
     theta: np.ndarray,
-    q_nuisance: int = 41,
+    q_nuisance: int,
 ) -> ExpectedScoreMonotonicity:
     """Monotonicity of the expected total score along one dimension of a
     multidimensional graded fit, with the other dimensions integrated out.
 
     ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
-    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is the
-    caller-chosen Gauss-Hermite node count in ``1..=4096``: the lower bound
+    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is a
+    required, caller-chosen Gauss-Hermite node count in ``1..=4096`` — no
+    default is offered, because no accuracy target is on file to source one
+    against (Project rule, issue #1929). The lower bound
     is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
     Golub & Welsch, 1969) and the upper bound reuses this package's
     quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
@@ -470,6 +472,118 @@ def focal_expected_total_score_monotonicity(
     expected_total = np.zeros(grid.size, dtype=np.float64)
     for item in range(n_items):
         base = slope[item, focal] * grid[:, None] + nuisance_sd[item] * nodes[None, :]
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = polytomous_expected_response(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    return _decrease_report(grid, expected_total)
+
+
+def bifactor_expected_total_score_monotonicity(
+    fit,
+    theta: np.ndarray,
+    q_specific: int,
+) -> ExpectedScoreMonotonicity:
+    """Monotonicity of the expected total score along the general factor of
+    a fitted bifactor GRM, with each item's specific factor integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.bifactor_grm.BifactorGrmFit` (or any
+    object exposing the same ``a_general``, ``a_specific``, and ``threshold``
+    fields); the general factor is always the focal dimension, matching the
+    bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
+    caller's grid on the general factor. ``q_specific`` is a required,
+    caller-chosen Gauss-Hermite node count in ``1..=4096`` — no default is
+    offered, because no accuracy target is on file to source one against
+    (Project rule, issue #1929). The lower bound is exact (an
+    ``n``-node Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969)
+    and the upper bound reuses this package's quadrature-point budget
+    (``MAX_POLY_QUADRATURE_POINTS``), not a new constant. Returns the same
+    report as :func:`expected_total_score_monotonicity`.
+
+    **Why one node count integrates every item's specific factor.** In the
+    bifactor pattern each item loads the general factor plus at most one
+    specific factor (Gibbons et al., 2007, eq. 9), so the joint response
+    probability's ``s``-fold integral (eq. 10) collapses to a single
+    two-dimensional integral per specific-factor block under the orthogonal
+    ``N(0, 1)`` prior -- one dimension for the general factor, one for that
+    block's specific factor (eqs. 11-12, extended to the graded case in eqs.
+    13-14, with eq. 8 giving the Gauss-Hermite approximation form). That
+    two-dimensional reduction is for the *joint* probability of a whole
+    response pattern, where items sharing a block are correlated through
+    their common specific factor. The expected total score does not need
+    that joint structure: expectation is linear, so
+    ``E[T | theta_G] = sum_i E_{theta_Si}[score_i(theta_G, theta_Si)]``
+    holds term by term regardless of which items share a specific factor.
+    Each term is therefore exactly the item's own one-dimensional
+    Gauss-Hermite integral over its specific factor -- the same collapse
+    :func:`focal_expected_total_score_monotonicity` uses for a general
+    multidimensional graded fit, specialized to the bifactor loading
+    pattern (at most one nonzero non-focal slope per item). A general-only
+    item (``a_specific == 0``) needs no marginalization: the quadrature
+    still runs, contributing exactly its unmarginalized value because the
+    weights sum to one.
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    Eq. 8 (p. 7) is the Gauss-Hermite approximation to the marginal
+    response-pattern probability; eq. 9 (p. 7) is the bifactor linear
+    predictor restricting each item to the general factor plus at most one
+    specific factor; eq. 10 (p. 7) is the unrestricted ``s``-fold integral;
+    eqs. 11-12 (p. 8) are Stuart's (1958) and Gibbons and Hedeker's (1992)
+    two-dimensional reduction under the orthogonal-normal basis; eqs. 13-14
+    (p. 8) extend it to the graded response model.
+
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. *Mathematics of Computation, 23*(106), 221-230.
+    https://doi.org/10.1090/S0025-5718-69-99647-1
+    """
+    grid = _validated_monotonicity_grid(theta)
+    if not hasattr(fit, "a_general") or not hasattr(fit, "a_specific"):
+        raise TypeError("fit must expose a_general and a_specific arrays")
+    if not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose a threshold array")
+    a_general = np.asarray(fit.a_general, dtype=np.float64)
+    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
+    if a_general.ndim != 1 or a_general.size == 0:
+        raise ValueError("fit.a_general must be a non-empty 1-D array")
+    if a_specific.shape != a_general.shape:
+        raise ValueError("fit.a_specific must have the same shape as fit.a_general")
+    if not np.all(np.isfinite(a_general)) or not np.all(np.isfinite(a_specific)):
+        raise ValueError("fit.a_general and fit.a_specific must be finite")
+    n_items = a_general.shape[0]
+
+    nodes_requested = _bounded_integer(
+        q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
+    )
+
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.ndim != 2 or threshold.shape[0] != n_items:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+    for item in range(n_items):
+        base = (
+            a_general[item] * grid[:, None] + a_specific[item] * nodes[None, :]
+        )
         cell = PolytomousFit(
             model="grm",
             slope=unit_slope,
@@ -1620,6 +1734,151 @@ def dif_polytomous_purified(
     report["purify_converged"] = reason == "stable_flag_set"
     report["purify_termination_reason"] = reason
     return report
+
+
+def dif_polytomous_anchor_sets(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str = "gpcm",
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    fdr_q: float = 0.05,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+    reference_group: int | None = None,
+) -> dict:
+    """Anchor-eligible set per focal group, and the intersection across them.
+
+    :func:`dif_polytomous_purified` estimates one latent distribution per group
+    and returns a single anchor set for the whole comparison. That is the right
+    object when every group is calibrated together, and the wrong one when the
+    question is which items are invariant against EACH focal group separately
+    -- an item can be invariant against one focal group and not another, and a
+    pooled sweep can leave it in the anchor because the effects partly cancel.
+
+    Each focal group is therefore purified against the reference on its own
+    two-group subset, and ``intersection`` is the set eligible against all of
+    them: the anchor a fixed-item calibration can defend for every group at
+    once.
+
+    ``reference_group`` defaults to the smallest label present. Returns
+    ``reference_group``; ``focal_groups`` (the caller's own labels, in order);
+    ``per_group``, a dict from focal label to that group's full
+    :func:`dif_polytomous_purified` report; ``anchor_by_group``, a
+    ``n_focal x n_items`` boolean matrix; ``intersection`` and
+    ``n_intersection``; and ``intersection_trustworthy`` with
+    ``untrustworthy_groups``.
+
+    **A failed purification does not silently narrow the intersection.** If a
+    group's loop ended on ``insufficient_anchor_items`` or ran out of rounds,
+    its anchor set is not a converged answer, and intersecting it would let a
+    failure masquerade as a strict result -- a smaller anchor looks more
+    conservative while actually being less supported. The intersection is still
+    computed, because a caller may want to inspect it, but
+    ``intersection_trustworthy`` is ``False`` and ``untrustworthy_groups``
+    names the groups responsible. Check it before using the result.
+
+    Every caveat on :func:`dif_polytomous_purified` applies per group, and one
+    compounds here: each group's anchor is selected from that group's own data,
+    so the intersection is a selection over selections and its error rate is
+    further from nominal than any single sweep's.
+
+    **Cost.** Each purification round fits one two-group model per item, and
+    that happens once per focal group, so the work is roughly
+    ``n_focal_groups * n_items * (rounds + 1)`` marginal-EM fits. On a large
+    bank with several focal groups this is minutes rather than seconds; lower
+    ``max_rounds`` or ``q_theta`` if that matters more than the last round of
+    refinement.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+            (the *iterative backward* anchor class this loop follows per
+            group: start from all other items, exclude flagged items, repeat).
+        Kopf, J., Zeileis, A., & Strobl, C. (2015). Anchor selection strategies
+            for DIF analysis: Review, assessment, and new approaches.
+            *Educational and Psychological Measurement, 75*(1), 22-56.
+            https://doi.org/10.1177/0013164414529792
+            (p. 2: "[e]xcluding DIF items from the anchor by using iterative
+            steps may not solve the problem when the test contains many DIF
+            items" -- the reason a single pooled anchor is checked per focal
+            group here rather than assumed adequate for all of them at once;
+            pp. 9-10 review the *all-other* anchor class this loop's per-item
+            auxiliary test is built on).
+        Woods, C. M. (2009). Empirical selection of anchors for tests of
+            differential item functioning. *Applied Psychological Measurement,
+            33*(1), 42-57. https://doi.org/10.1177/0146621607314044
+            (originated the rank-based, no-prior-knowledge anchor selection
+            this and :func:`dif_polytomous_purified` build on; a constant
+            anchor from the resulting ranking outperformed the all-other
+            method "in the majority of the simulated settings," per Kopf
+            et al., 2015, p. 9, quoting Woods, 2009, p. 53).
+
+        Per-group anchor sets and their intersection are this function's own
+        extension to more than two groups, not a design taken verbatim from
+        the sources above: none of them evaluates more than one focal group
+        against a shared reference, so none states the risk this function
+        guards against directly -- that a pooled, multi-group sweep can average
+        away DIF that is present against one focal group and absent against
+        another. That risk follows from the same two-group contamination logic
+        the sources do state (an anchor is only as trustworthy as the pairwise
+        comparison it was purified on).
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    labels = _nonnegative_integer_vector(group_id, "group_id")
+    if labels.size != y.shape[0]:
+        raise ValueError("group_id must have one entry per person")
+    present = np.unique(labels)
+    if present.size < 2:
+        raise ValueError("group_id must contain at least two distinct groups")
+
+    if reference_group is None:
+        reference = int(present[0])
+    else:
+        reference = _bounded_integer(reference_group, "reference_group", 0, int(present[-1]))
+        if reference not in present:
+            raise ValueError("reference_group must be a group label present in group_id")
+    focal_groups = [int(label) for label in present if int(label) != reference]
+
+    per_group: dict[int, dict] = {}
+    anchor_by_group = np.ones((len(focal_groups), int(y.shape[1])), dtype=bool)
+    untrustworthy: list[int] = []
+    for row, focal in enumerate(focal_groups):
+        keep = (labels == reference) | (labels == focal)
+        report = dif_polytomous_purified(
+            y[keep],
+            np.where(labels[keep] == reference, 0, 1),
+            n_cat,
+            model=model,
+            q_theta=q_theta,
+            max_iter=max_iter,
+            tol=tol,
+            fdr_q=fdr_q,
+            max_rounds=max_rounds,
+            min_anchor_items=min_anchor_items,
+        )
+        per_group[focal] = report
+        anchor_by_group[row] = report["anchor"]
+        if not report["purify_converged"]:
+            untrustworthy.append(focal)
+
+    intersection = np.logical_and.reduce(anchor_by_group, axis=0)
+    return {
+        "reference_group": reference,
+        "focal_groups": focal_groups,
+        "per_group": per_group,
+        "anchor_by_group": anchor_by_group,
+        "intersection": intersection,
+        "n_intersection": int(intersection.sum()),
+        "intersection_trustworthy": not untrustworthy,
+        "untrustworthy_groups": untrustworthy,
+    }
 
 
 def u3_person_fit_polytomous(

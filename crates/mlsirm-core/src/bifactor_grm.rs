@@ -159,20 +159,9 @@ pub struct BifactorGrmConfig {
     pub ridge: f64,
 }
 
-impl Default for BifactorGrmConfig {
-    fn default() -> Self {
-        Self {
-            q_general: 21,
-            q_specific: 11,
-            max_iter: 500,
-            tol: 1e-6,
-            n_starts: 1,
-            seed: 0x9E37_79B9_7F4A_7C15,
-            newton_iter: 10,
-            ridge: 1e-8,
-        }
-    }
-}
+// No `Default` impl: `q_general`/`q_specific` are quadrature node counts
+// with no sourced accuracy target for any particular value (Project rule,
+// issue #1929), so every field is a caller-owned, explicit choice.
 
 /// Result of [`fit_bifactor_grm`].
 #[derive(Clone, Debug)]
@@ -1079,10 +1068,18 @@ pub fn bifactor_grm_marginal_loglik(
     q_general: usize,
     q_specific: usize,
 ) -> Result<f64, String> {
+    // max_iter/tol/n_starts/seed/newton_iter/ridge are irrelevant here: this
+    // helper only evaluates loglik at given parameters, it does not fit, so
+    // `validate` sees them only for its own field-level bounds checks.
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
-        ..BifactorGrmConfig::default()
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
     };
     let v = validate(
         y,
@@ -1134,10 +1131,18 @@ pub fn bifactor_grm_marginal_loglik_brute(
     q_general: usize,
     q_specific: usize,
 ) -> Result<f64, String> {
+    // max_iter/tol/n_starts/seed/newton_iter/ridge are irrelevant here: this
+    // helper only evaluates loglik at given parameters, it does not fit, so
+    // `validate` sees them only for its own field-level bounds checks.
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
-        ..BifactorGrmConfig::default()
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
     };
     let v = validate(
         y,
@@ -1249,6 +1254,1247 @@ pub(crate) fn pack_params(
             d: thresholds[i * v.m1..(i + 1) * v.m1].to_vec(),
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Multiple-group concurrent calibration (stage 2 of #1912).
+//
+// Groups share item parameters (anchored items) with optional per-item
+// free/anchored flags; the reference group (0) is pinned to `N(0, I)` and each
+// focal group's general-factor mean/variance — plus, when requested, its
+// specific-factor variances (means fixed at 0) — are estimated by marginal ML
+// via EM with the Gibbons-Hedeker reduction applied per group:
+//
+// ```text
+// L_pg = sum_g w_g * G_pg(g) * prod_s I_psg(g),
+// I_psg(g) = sum_h v_h * prod_{i in s} P(Y_pi | theta_{G,g}, theta_{S,g,s}),
+// theta_{G,g,t} = mu_g + sigma_g * X_t,  theta_{S,g,s,h} = tau_{g,s} * X_h,
+// ```
+//
+// with the shared Gauss-Hermite weights (the node-shift reparameterization
+// keeps the weights; cf. `poly::fit_poly_multigroup`'s
+// `theta_{g,t} = mu_g + sigma_g x_t` for the Bock-Zimowski pooling).
+//
+// Two deliberate departures from Gibbons et al. (2007), both implementation
+// choices: the link is logistic rather than their normal ogive (to match the
+// `mirt` graded comparison in this repository's fixture), and the intercepts
+// are written directly as `d_ik` rather than split into `c_j + d_t`.
+//
+// # Verified paper locators (full texts read; no invented equation numbers)
+// periodically re-verified against the PDFs (stage-1 review fix-up)
+//
+// - Gibbons et al. (2007), `~/papers/Gibbons2007_APM_bifactor_GRM.pdf`
+//   (Appl. Psych. Meas. 31(1), 4-19): Samejima GRM category form eq. 4 (p. 6);
+//   bifactor linear predictor `z = c + d + sum a_jk theta_k` eq. 9
+//   ("The Bifactor Model for Graded Response Data" section);
+//   Gibbons & Hedeker (1992) reduce the "s-dimensional integral in (4) to a
+//   two-dimensional integral" via Stuart's (1958) reduction for variates each
+//   related to a single dimension only (their eq. 6); the person marginal
+//   factors per general node (Gibbons et al., 2007, eq. 15, "Marginal Maximum
+//   Likelihood Estimation" section); marginal decomposition eq. 15 and loglik
+//   eq. 16 (p. 9); general-factor EAP eq. 17 and posterior variance eq. 18
+//   (pp. 9-10).
+// - Cai, Yang, & Hansen (2011), Zotero `TNQ22C7T` (Psych. Methods 16(3),
+//   221-248; full text read via the local Zotero API attachment): extend
+//   "Gibbons and Hedeker's (1992) bifactor dimension reduction method"
+//   (p. 221) and estimate with "the Bock and Aitkin (1981) EM algorithm"
+//   ("Maximum Marginal Likelihood Estimation" section); the multiple-group
+//   reference-group paragraph near Fig. 7 — reference latent variables have
+//   zero means and identity covariance, focal location/scale are estimated
+//   relative to the reference, with at least one common item's parameters
+//   set equal across groups to link the scales; graded cumulative
+//   `P(y >= k) = 1/(1+exp(-[d_k + a0*theta0 + as*theta_s]))` in the category-
+//   response-probabilities section.
+// - Bock & Zimowski (1997), Handbook of Modern IRT chap. 25 (pp. 433-448),
+//   multiple-group IRT (conceptual; no equation locator claimed — the pooled
+//   item M-step stacks each group's nodes and expected counts, exactly the
+//   `poly::fit_poly_multigroup` Bock-Zimowski pooling already in this crate).
+// - Bafumi et al. (2005) for fixing the per-dimension reflection
+//   `(a, theta) -> (-a, -theta)` by a parameter restriction; here the crate
+//   rule (largest-magnitude slope positive per dimension, read from the
+//   ANCHORED linking items only so a free item's DIF outlier cannot drive the
+//   global orientation, applied jointly across groups; general flip also
+//   negates every group mean and the reported
+//   general EAPs — the #1879 mu-sign fix).
+//
+// # Caller-owned numerics (no hidden clamps, no magic caps)
+//
+// `q_general`, `q_specific`, `max_iter`, `tol`, `n_starts`, `seed` are caller
+// arguments; any out-of-range value is a loud `Err`, never a silent clamp.
+// Upper bounds exist only where a real constraint exists: the quadrature
+// counts must name an embedded Gauss-Hermite rule (`SUPPORTED_Q`), and
+// working-set sizes that would overflow `usize` are rejected by checked
+// arithmetic. Everything else is lower-bounded only. `seed`
+// drives ONLY the random-start jitter (quadrature is deterministic); start
+// `t` derives from `seed ^ GOLDEN * (t + 1)`. Group variances are estimated
+// unconstrained-positive with NO clamping: a non-finite or non-positive
+// update fails that start loudly (failed starts are skipped; all-failed
+// reports the first error). At least one anchored item is required when
+// `n_groups >= 2` (Cai et al. 2011 linking requirement).
+//
+// # Failure reporting
+//
+// Every declared category must be observed pooled for every item (Samejima,
+// 1969); additionally every free item must show every declared category in
+// EVERY group (its per-group parameters are otherwise unidentified). Both
+// are loud `Err`s naming item/group/category. Non-convergence reports
+// `converged == false` with `termination_reason == "max_iter_reached"`.
+//
+// # References (APA 7th ed.)
+//
+// Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
+// D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).
+// Full-information item bifactor analysis of graded response data. *Applied
+// Psychological Measurement, 31*(1), 4-19.
+// https://doi.org/10.1177/0146621606289485
+//
+// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
+// https://doi.org/10.1037/a0023350
+//
+// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J.
+// van der Linden & R. K. Hambleton (Eds.), *Handbook of modern item response
+// theory* (pp. 433-448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
+//
+// Bafumi, J., Gelman, A., Park, D. K., & Kaplan, N. (2005). Practical issues in
+// implementing and understanding Bayesian ideal point estimation. *Political
+// Analysis, 13*(2), 171-187. https://doi.org/10.1093/pan/mpi010
+
+/// Configuration for [`fit_bifactor_grm_multigroup`]. Numeric fields mirror
+/// [`BifactorGrmConfig`]; `estimate_specific_vars` selects whether focal
+/// specific-factor variances (means fixed at 0) are estimated (`true`) or
+/// held at the reference value 1 (`false`).
+#[derive(Clone, Copy, Debug)]
+pub struct BifactorMultigroupConfig {
+    /// Gauss-Hermite nodes for the general factor (one of `SUPPORTED_Q`).
+    pub q_general: usize,
+    /// Gauss-Hermite nodes per specific factor (one of `SUPPORTED_Q`).
+    pub q_specific: usize,
+    pub max_iter: usize,
+    pub tol: f64,
+    /// Number of EM runs from jittered starts; the best loglik wins.
+    pub n_starts: usize,
+    /// Seeds ONLY the random-start jitter (quadrature is deterministic).
+    pub seed: u64,
+    /// Inner Newton iterations per item M-step.
+    pub newton_iter: usize,
+    /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
+    pub ridge: f64,
+    /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
+    pub estimate_specific_vars: bool,
+}
+
+impl Default for BifactorMultigroupConfig {
+    fn default() -> Self {
+        Self {
+            q_general: 21,
+            q_specific: 11,
+            max_iter: 500,
+            tol: 1e-6,
+            n_starts: 1,
+            seed: 0x9E37_79B9_7F4A_7C15,
+            newton_iter: 10,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+        }
+    }
+}
+
+/// Result of [`fit_bifactor_grm_multigroup`].
+///
+/// Item tables are `n_groups` rows: `a_general[g][i]`, `a_specific[g][i]`
+/// (`0.0` for general-only items), `threshold[g][i * (n_cat - 1)..]`.
+/// Anchored items are identical across rows by construction (a single shared
+/// estimate copied to every group); free items hold per-group estimates.
+/// `general_mean[0] == 0`, `general_sd[0] == 1`, `specific_sd[0][*] == 1` are
+/// the pinned reference. `theta_g_eap`/`theta_g_sd` are per-person
+/// general-factor EAPs on the COMMON (reference) scale.
+#[derive(Clone, Debug)]
+pub struct BifactorMultigroupResult {
+    pub a_general: Vec<Vec<f64>>,
+    pub a_specific: Vec<Vec<f64>>,
+    pub threshold: Vec<Vec<f64>>,
+    /// General-factor means, length `n_groups` (`[0] == 0` pinned).
+    pub general_mean: Vec<f64>,
+    /// General-factor SDs, length `n_groups` (`[0] == 1` pinned).
+    pub general_sd: Vec<f64>,
+    /// Specific-factor SDs, `n_groups x n_specific` (`[0][*] == 1` pinned;
+    /// focal rows are 1 unless `estimate_specific_vars`).
+    pub specific_sd: Vec<Vec<f64>>,
+    /// General-factor EAP on the common scale, length `n_persons`.
+    pub theta_g_eap: Vec<f64>,
+    /// General-factor posterior SD, length `n_persons`.
+    pub theta_g_sd: Vec<f64>,
+    /// Observed-data category counts per group, `n_groups` rows of
+    /// `n_items * n_cat`.
+    pub group_category_counts: Vec<Vec<usize>>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub final_loglik_change: f64,
+    /// Winning start index in `0..n_starts` (deterministic from `seed`).
+    pub best_start: usize,
+    /// Free item parameters (anchored counted once, free per group) plus
+    /// estimated group distribution parameters.
+    pub n_parameters: usize,
+}
+
+fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String> {
+    // Mirror the single-group checks exactly (lower bounds only, no magic
+    // caps — stage-1 review fix-up; quadrature restricted to the embedded
+    // rules that exist). Caller-owned numerics behave identically.
+    if !SUPPORTED_Q.contains(&cfg.q_general) {
+        return Err(format!(
+            "q_general must be one of {SUPPORTED_Q:?}; got {}",
+            cfg.q_general
+        ));
+    }
+    if !SUPPORTED_Q.contains(&cfg.q_specific) {
+        return Err(format!(
+            "q_specific must be one of {SUPPORTED_Q:?}; got {}",
+            cfg.q_specific
+        ));
+    }
+    if cfg.max_iter < 1 {
+        return Err("max_iter must be >= 1".into());
+    }
+    if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if cfg.n_starts < 1 {
+        return Err("n_starts must be >= 1".into());
+    }
+    if cfg.newton_iter < 1 {
+        return Err("newton_iter must be >= 1".into());
+    }
+    if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
+        return Err("ridge must be finite and positive".into());
+    }
+    Ok(())
+}
+
+/// Group-aware initial parameters: anchored items from pooled base rates,
+/// free items from group-specific base rates (start 0); starts `t >= 1` add
+/// deterministic `N(0, *)` jitter from `SplitMix64(seed ^ GOLDEN * (t + 1))`
+/// and re-sort `d` decreasing. Group distributions start at the reference
+/// (`mu = 0`, `sigma = 1`, `tau = 1`); starts `t >= 1` jitter focal
+/// `mu += 0.2 N`, `sigma *= exp(0.1 N)`, `tau *= exp(0.1 N)` (taus only when
+/// estimated — otherwise they stay pinned at 1).
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
+#[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
+fn initial_params_multigroup(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_id: &[usize],
+    n_groups: usize,
+    anchor: &[bool],
+    seed: u64,
+    start: usize,
+    estimate_specific_vars: bool,
+) -> (Vec<Vec<ItemParams>>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+    let mut rng = SplitMix64(seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(start as u64 + 1)));
+    // Base-rate intercepts: pooled for anchored, per-group for free.
+    let pooled_d = |item: usize, rng: &mut SplitMix64| -> Vec<f64> {
+        let mut freq = vec![1e-3f64; v.n_cat];
+        for p in 0..v.n_persons {
+            if is_obs(p, item) {
+                freq[y[p * v.n_items + item]] += 1.0;
+            }
+        }
+        let tot: f64 = freq.iter().sum();
+        let mut d = vec![0.0f64; v.m1];
+        let mut cum = 0.0f64;
+        for k in (1..v.n_cat).rev() {
+            cum += freq[k] / tot;
+            let c = cum.clamp(1e-4, 1.0 - 1e-4);
+            d[k - 1] = (c / (1.0 - c)).ln();
+        }
+        if start > 0 {
+            for dk in d.iter_mut() {
+                *dk += 0.25 * rng.standard_normal();
+            }
+            d.sort_by(|x, y| y.total_cmp(x));
+        }
+        d
+    };
+    let group_d = |item: usize, g: usize, rng: &mut SplitMix64| -> Vec<f64> {
+        let mut freq = vec![1e-3f64; v.n_cat];
+        for p in 0..v.n_persons {
+            if group_id[p] == g && is_obs(p, item) {
+                freq[y[p * v.n_items + item]] += 1.0;
+            }
+        }
+        let tot: f64 = freq.iter().sum();
+        let mut d = vec![0.0f64; v.m1];
+        let mut cum = 0.0f64;
+        for k in (1..v.n_cat).rev() {
+            cum += freq[k] / tot;
+            let c = cum.clamp(1e-4, 1.0 - 1e-4);
+            d[k - 1] = (c / (1.0 - c)).ln();
+        }
+        if start > 0 {
+            for dk in d.iter_mut() {
+                *dk += 0.25 * rng.standard_normal();
+            }
+            d.sort_by(|x, y| y.total_cmp(x));
+        }
+        d
+    };
+    // Item inits in item order (anchored share one draw, free draw per group
+    // in group order) so the sequence is deterministic given
+    // `(seed, start, anchor)`.
+    let mut anchored_init: Vec<Option<ItemParams>> = vec![None; v.n_items];
+    for i in 0..v.n_items {
+        if !anchor[i] {
+            continue;
+        }
+        let d = pooled_d(i, &mut rng);
+        let (mut a_g, mut a_s) = (1.0f64, v.item_block[i].map(|_| 0.8f64));
+        if start > 0 {
+            a_g += 0.4 * rng.standard_normal();
+            if let Some(a) = a_s.as_mut() {
+                *a += 0.4 * rng.standard_normal();
+            }
+        }
+        anchored_init[i] = Some(ItemParams { a_g, a_s, d });
+    }
+    let mut params_groups: Vec<Vec<ItemParams>> = Vec::with_capacity(n_groups);
+    for g in 0..n_groups {
+        let mut row = Vec::with_capacity(v.n_items);
+        for i in 0..v.n_items {
+            if anchor[i] {
+                row.push(anchored_init[i].clone().expect("anchored init filled"));
+            } else {
+                let d = group_d(i, g, &mut rng);
+                let (mut a_g, mut a_s) = (1.0f64, v.item_block[i].map(|_| 0.8f64));
+                if start > 0 {
+                    a_g += 0.4 * rng.standard_normal();
+                    if let Some(a) = a_s.as_mut() {
+                        *a += 0.4 * rng.standard_normal();
+                    }
+                }
+                row.push(ItemParams { a_g, a_s, d });
+            }
+        }
+        params_groups.push(row);
+    }
+    let mut mus = vec![0.0f64; n_groups];
+    let mut sigmas = vec![1.0f64; n_groups];
+    let mut taus = vec![vec![1.0f64; v.n_specific]; n_groups];
+    if start > 0 {
+        for g in 1..n_groups {
+            mus[g] += 0.2 * rng.standard_normal();
+            sigmas[g] = (0.1 * rng.standard_normal()).exp();
+            if estimate_specific_vars {
+                for s in 0..v.n_specific {
+                    taus[g][s] = (0.1 * rng.standard_normal()).exp();
+                }
+            }
+        }
+    }
+    (params_groups, mus, sigmas, taus)
+}
+
+struct MultiStartOutcome {
+    params_groups: Vec<Vec<ItemParams>>,
+    mus: Vec<f64>,
+    sigmas: Vec<f64>,
+    taus: Vec<Vec<f64>>,
+    loglik_trace: Vec<f64>,
+    n_iter: usize,
+    converged: bool,
+    termination_reason: String,
+    final_loglik_change: f64,
+}
+
+/// One reduced E-step sweep over all groups: total observed-data loglik, plus
+/// per-group expected category counts (`counts[g][i][node][k]`,
+/// `node = t * qs + h` for block items, `node = t` for general-only items)
+/// and the posterior moments that drive the group-distribution M-step
+/// (`s1_g/s2_g` for the general factor, `s2_spec[g][s]` for the specifics at
+/// zero mean).
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
+#[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
+fn e_step_multigroup(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_id: &[usize],
+    n_groups: usize,
+    params_groups: &[Vec<ItemParams>],
+    tg_groups: &[Vec<f64>],
+    ts_groups: &[Vec<Vec<f64>>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+) -> (
+    f64,
+    Vec<Vec<Vec<Vec<f64>>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<Vec<f64>>,
+    Vec<Vec<f64>>,
+) {
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+    // Per-group logprob tables at the CURRENT group nodes.
+    let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
+    for g in 0..n_groups {
+        let mut tables = Vec::with_capacity(v.n_items);
+        for (i, par) in params_groups[g].iter().enumerate() {
+            match par.a_s {
+                Some(a_s) => {
+                    let s = v.item_block[i].expect("block item has an owning block");
+                    let mut lp = vec![0.0f64; qg * qs * v.n_cat];
+                    for t in 0..qg {
+                        for h in 0..qs {
+                            let base =
+                                par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            let probs = grm_logprobs(base, &par.d);
+                            lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
+                                .copy_from_slice(&probs);
+                        }
+                    }
+                    tables.push(lp);
+                }
+                None => {
+                    let mut lp = vec![0.0f64; qg * v.n_cat];
+                    for t in 0..qg {
+                        let base = par.a_g * tg_groups[g][t];
+                        let probs = grm_logprobs(base, &par.d);
+                        lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
+                    }
+                    tables.push(lp);
+                }
+            }
+        }
+        tables_groups.push(tables);
+    }
+
+    let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
+    for g in 0..n_groups {
+        let _ = g;
+        let mut cg = Vec::with_capacity(v.n_items);
+        for i in 0..v.n_items {
+            let n_nodes = if v.item_block[i].is_some() {
+                qg * qs
+            } else {
+                qg
+            };
+            cg.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
+        counts.push(cg);
+    }
+    let mut w_acc = vec![0.0f64; n_groups];
+    let mut s1_g = vec![0.0f64; n_groups];
+    let mut s2_g = vec![0.0f64; n_groups];
+    let mut s2_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
+    // Per-(group, block) posterior mass for the specific-variance M-step:
+    // persons with no observed item in block `s` contribute nothing to that
+    // block's moments and must not dilute its denominator (review fix for
+    // block-wise MAR with `estimate_specific_vars`).
+    let mut w_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
+
+    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
+    let mut log_i = vec![0.0f64; v.n_specific * qg];
+    let mut gen_log = vec![0.0f64; qg];
+    let mut log_like_g = vec![0.0f64; qg];
+    let mut post_g = vec![0.0f64; qg];
+    let mut tmp_h = vec![0.0f64; qs];
+
+    let mut loglik = 0.0f64;
+    for p in 0..v.n_persons {
+        let g = group_id[p];
+        let tables = &tables_groups[g];
+        gen_log.copy_from_slice(log_wg);
+        for &i in &v.general_only {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * v.n_items + i];
+            let lp = &tables[i];
+            for t in 0..qg {
+                gen_log[t] += lp[t * v.n_cat + yc];
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            for t in 0..qg {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if !is_obs(p, i) {
+                            continue;
+                        }
+                        let yc = y[p * v.n_items + i];
+                        acc += tables[i][(t * qs + h) * v.n_cat + yc];
+                    }
+                    block_acc[(s * qg + t) * qs + h] = acc;
+                }
+            }
+            for t in 0..qg {
+                for h in 0..qs {
+                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
+                }
+                log_i[s * qg + t] = log_sum_exp(&tmp_h);
+            }
+        }
+        for t in 0..qg {
+            let mut acc = gen_log[t];
+            for s in 0..v.n_specific {
+                acc += log_i[s * qg + t];
+            }
+            log_like_g[t] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        loglik += log_lp;
+        for t in 0..qg {
+            post_g[t] = (log_like_g[t] - log_lp).exp();
+        }
+        // General moments (common-scale nodes) for the group M-step.
+        for t in 0..qg {
+            w_acc[g] += post_g[t];
+            s1_g[g] += post_g[t] * tg_groups[g][t];
+            s2_g[g] += post_g[t] * tg_groups[g][t] * tg_groups[g][t];
+        }
+        for &i in &v.general_only {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * v.n_items + i];
+            for t in 0..qg {
+                counts[g][i][t][yc] += post_g[t];
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            let any_obs = members.iter().any(|&i| is_obs(p, i));
+            if !any_obs {
+                continue;
+            }
+            for t in 0..qg {
+                let mut others = gen_log[t] - log_wg[t];
+                for s2 in 0..v.n_specific {
+                    if s2 != s {
+                        others += log_i[s2 * qg + t];
+                    }
+                }
+                for h in 0..qs {
+                    let log_post =
+                        log_wg[t] + block_acc[(s * qg + t) * qs + h] + others - log_lp;
+                    let post = log_post.exp();
+                    // Specific moments at zero mean for the variance M-step.
+                    let ts = ts_groups[g][s][h];
+                    w_spec[g][s] += post;
+                    s2_spec[g][s] += post * ts * ts;
+                    for &i in members {
+                        if !is_obs(p, i) {
+                            continue;
+                        }
+                        let yc = y[p * v.n_items + i];
+                        counts[g][i][t * qs + h][yc] += post;
+                    }
+                }
+            }
+        }
+    }
+    (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
+fn run_single_start_multigroup(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_id: &[usize],
+    n_groups: usize,
+    anchor: &[bool],
+    cfg: &BifactorMultigroupConfig,
+    tg_std: &[f64],
+    ts_std: &[f64],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    start: usize,
+) -> Result<MultiStartOutcome, String> {
+    let (mut params_groups, mut mus, mut sigmas, mut taus) = initial_params_multigroup(
+        v,
+        y,
+        observed,
+        group_id,
+        n_groups,
+        anchor,
+        cfg.seed,
+        start,
+        cfg.estimate_specific_vars,
+    );
+    // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
+    // taus move): node_g[node]/node_s[node] parallel `counts[g][i]`.
+    // No pre-allocation from `max_iter`: it is caller-owned and unbounded
+    // above, so `with_capacity(max_iter + 1)` could overflow; the trace grows
+    // amortized instead (stage-1 review fix-up).
+    let mut loglik_trace: Vec<f64> = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0usize;
+    let mut termination_reason = "max_iter_reached".to_string();
+    let mut final_loglik_change = f64::NAN;
+
+    loop {
+        // Common-scale group nodes for this sweep.
+        let mut tg_groups = vec![vec![0.0f64; qg]; n_groups];
+        let mut ts_groups = vec![vec![vec![0.0f64; qs]; v.n_specific]; n_groups];
+        for g in 0..n_groups {
+            for (t, &x) in tg_std.iter().enumerate() {
+                tg_groups[g][t] = mus[g] + sigmas[g] * x;
+            }
+            for s in 0..v.n_specific {
+                for (h, &x) in ts_std.iter().enumerate() {
+                    ts_groups[g][s][h] = taus[g][s] * x;
+                }
+            }
+        }
+        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+            v,
+            y,
+            observed,
+            group_id,
+            n_groups,
+            &params_groups,
+            &tg_groups,
+            &ts_groups,
+            log_wg,
+            log_ws,
+            qg,
+            qs,
+        );
+        let previous = loglik_trace.last().copied();
+        let change = checked_em_loglik_change(ll, previous, n_iter)?;
+        loglik_trace.push(ll);
+        if let Some(change) = change {
+            let prev = previous.expect("change requires a previous log-likelihood");
+            final_loglik_change = change;
+            if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+                converged = true;
+                termination_reason = "tolerance_met".to_string();
+                break;
+            }
+        }
+        if n_iter == cfg.max_iter {
+            break;
+        }
+        // M-step, item parameters: anchored items pool every group's nodes
+        // and expected counts (Bock-Zimowski pooling); free items fit per
+        // group. Stacked node order is groups outer, `(t, h)` inner with
+        // `node = t * qs + h` for block items (matching the E-step layout).
+        for i in 0..v.n_items {
+            let has_specific = v.item_block[i].is_some();
+            if anchor[i] {
+                let per_group = if has_specific { qg * qs } else { qg };
+                let mut stacked_g = Vec::with_capacity(n_groups * per_group);
+                let mut stacked_s = Vec::with_capacity(n_groups * per_group);
+                let mut stacked_c = Vec::with_capacity(n_groups * per_group);
+                for g in 0..n_groups {
+                    if has_specific {
+                        let s = v.item_block[i].expect("block item has a block");
+                        for t in 0..qg {
+                            for h in 0..qs {
+                                stacked_g.push(tg_groups[g][t]);
+                                stacked_s.push(ts_groups[g][s][h]);
+                                stacked_c.push(counts[g][i][t * qs + h].clone());
+                            }
+                        }
+                    } else {
+                        for t in 0..qg {
+                            stacked_g.push(tg_groups[g][t]);
+                            stacked_s.push(0.0);
+                            stacked_c.push(counts[g][i][t].clone());
+                        }
+                    }
+                }
+                let mut packed = Vec::with_capacity(1 + has_specific as usize + v.m1);
+                packed.push(params_groups[0][i].a_g);
+                if let Some(a_s) = params_groups[0][i].a_s {
+                    packed.push(a_s);
+                }
+                packed.extend_from_slice(&params_groups[0][i].d);
+                let updated = m_step_item(
+                    packed,
+                    has_specific,
+                    &stacked_g,
+                    &stacked_s,
+                    &stacked_c,
+                    v.n_cat,
+                    cfg.ridge,
+                    cfg.newton_iter,
+                );
+                for g in 0..n_groups {
+                    params_groups[g][i].a_g = updated[0];
+                    if has_specific {
+                        params_groups[g][i].a_s = Some(updated[1]);
+                        params_groups[g][i].d = updated[2..].to_vec();
+                    } else {
+                        params_groups[g][i].d = updated[1..].to_vec();
+                    }
+                }
+            } else {
+                for g in 0..n_groups {
+                    let (node_g, node_s): (Vec<f64>, Vec<f64>) = if has_specific {
+                        let s = v.item_block[i].expect("block item has a block");
+                        let mut gg = Vec::with_capacity(qg * qs);
+                        let mut ss = Vec::with_capacity(qg * qs);
+                        for t in 0..qg {
+                            for h in 0..qs {
+                                gg.push(tg_groups[g][t]);
+                                ss.push(ts_groups[g][s][h]);
+                            }
+                        }
+                        (gg, ss)
+                    } else {
+                        (tg_groups[g].clone(), vec![0.0; qg])
+                    };
+                    let mut packed = Vec::with_capacity(1 + has_specific as usize + v.m1);
+                    packed.push(params_groups[g][i].a_g);
+                    if let Some(a_s) = params_groups[g][i].a_s {
+                        packed.push(a_s);
+                    }
+                    packed.extend_from_slice(&params_groups[g][i].d);
+                    let updated = m_step_item(
+                        packed,
+                        has_specific,
+                        &node_g,
+                        &node_s,
+                        &counts[g][i],
+                        v.n_cat,
+                        cfg.ridge,
+                        cfg.newton_iter,
+                    );
+                    params_groups[g][i].a_g = updated[0];
+                    if has_specific {
+                        params_groups[g][i].a_s = Some(updated[1]);
+                        params_groups[g][i].d = updated[2..].to_vec();
+                    } else {
+                        params_groups[g][i].d = updated[1..].to_vec();
+                    }
+                }
+            }
+        }
+        // M-step, focal group distributions (reference g = 0 pinned to
+        // N(0, I)). General: mu = mean EAP, var = mean posterior second
+        // moment minus mu^2 (Bock-Aitkin/Bock-Zimowski moment update).
+        // Specifics (when estimated): tau^2 = mean posterior second moment
+        // at zero mean. All unconstrained-positive with NO clamping: a
+        // non-finite or non-positive update fails the start loudly.
+        for g in 1..n_groups {
+            if w_acc[g] <= 0.0 || !w_acc[g].is_finite() {
+                return Err(format!("group {g} has no posterior mass"));
+            }
+            let mean = s1_g[g] / w_acc[g];
+            let var = s2_g[g] / w_acc[g] - mean * mean;
+            if !mean.is_finite() || !var.is_finite() {
+                return Err(format!("non-finite group-{g} general moment update"));
+            }
+            if var <= 0.0 {
+                return Err(format!(
+                    "non-positive group-{g} general variance update ({var:.6e})"
+                ));
+            }
+            mus[g] = mean;
+            sigmas[g] = var.sqrt();
+            if cfg.estimate_specific_vars {
+                for s in 0..v.n_specific {
+                    // Denominator counts only persons observed in this block
+                    // (block-wise MAR must not dilute the variance update).
+                    if w_spec[g][s] <= 0.0 || !w_spec[g][s].is_finite() {
+                        return Err(format!(
+                            "group {g} specific-{s} has no posterior mass"
+                        ));
+                    }
+                    let vrow = s2_spec[g][s] / w_spec[g][s];
+                    if !vrow.is_finite() {
+                        return Err(format!("non-finite group-{g} specific-{s} update"));
+                    }
+                    if vrow <= 0.0 {
+                        return Err(format!(
+                            "non-positive group-{g} specific-{s} variance update ({vrow:.6e})"
+                        ));
+                    }
+                    taus[g][s] = vrow.sqrt();
+                }
+            }
+        }
+        n_iter += 1;
+    }
+    Ok(MultiStartOutcome {
+        params_groups,
+        mus,
+        sigmas,
+        taus,
+        loglik_trace,
+        n_iter,
+        converged,
+        termination_reason,
+        final_loglik_change,
+    })
+}
+
+/// Fit the multiple-group polytomous bifactor GRM by Bock-Aitkin marginal ML
+/// with the Gibbons-Hedeker reduction applied per group. `y`/`observed` are
+/// row-major `n_persons * n_items` (`y` ordered categories `0..n_cat-1`,
+/// missing cells dropped MAR); `group_id` is length `n_persons` with values
+/// in `0..n_groups` (group 0 is the reference, pinned to `N(0, I)`);
+/// `specific_map` is length `n_items` with `-1` for general-only items and
+/// `0..n_specific` otherwise; `anchor` is `None` (all items common) or length
+/// `n_items` with `true` = common across groups and `false` = free per group
+/// (at least one anchored item is required when `n_groups >= 2` to link the
+/// scales — Cai, Yang, & Hansen, 2011). Runs `n_starts` EM runs and keeps the
+/// best loglik. With `n_groups == 1` this delegates to [`fit_bifactor_grm`]
+/// and bit-reproduces the stage-1 result. Returns `Err` on malformed input,
+/// unobserved categories (pooled for every item; per-group for every free
+/// item), or total numerical failure; per-start non-convergence is reported
+/// through the winning run's flags, never substituted.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
+pub fn fit_bifactor_grm_multigroup(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_id: &[usize],
+    n_groups: usize,
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: Option<&[bool]>,
+    cfg: &BifactorMultigroupConfig,
+) -> Result<BifactorMultigroupResult, String> {
+    validate_multigroup_cfg(cfg)?;
+    if n_groups < 1 {
+        return Err("n_groups must be >= 1".into());
+    }
+    // Multigroup-shaped inputs are validated BEFORE the single-group
+    // delegation so malformed `group_id`/`anchor` fail loudly on every path
+    // (review fix: delegation must not silently ignore them).
+    if group_id.len() != n_persons {
+        return Err("group_id must have length n_persons".into());
+    }
+    if group_id.iter().any(|&g| g >= n_groups) {
+        return Err("group_id labels must be < n_groups".into());
+    }
+    let anchor_vec: Vec<bool> = match anchor {
+        Some(a) => {
+            if a.len() != n_items {
+                return Err("anchor must have length n_items".into());
+            }
+            a.to_vec()
+        }
+        None => vec![true; n_items],
+    };
+    // With a single group there is no multigroup structure to estimate: the
+    // node-shift is the identity and the pooled M-step is the single-group
+    // M-step, so delegate to stage 1 and bit-reproduce it exactly.
+    if n_groups == 1 {
+        let single_cfg = BifactorGrmConfig {
+            q_general: cfg.q_general,
+            q_specific: cfg.q_specific,
+            max_iter: cfg.max_iter,
+            tol: cfg.tol,
+            n_starts: cfg.n_starts,
+            seed: cfg.seed,
+            newton_iter: cfg.newton_iter,
+            ridge: cfg.ridge,
+        };
+        let single = fit_bifactor_grm(
+            y,
+            observed,
+            specific_map,
+            n_persons,
+            n_items,
+            n_specific,
+            n_cat,
+            &single_cfg,
+        )?;
+        return Ok(BifactorMultigroupResult {
+            a_general: vec![single.a_general],
+            a_specific: vec![single.a_specific],
+            threshold: vec![single.threshold],
+            general_mean: vec![0.0],
+            general_sd: vec![1.0],
+            specific_sd: vec![vec![1.0; n_specific]],
+            theta_g_eap: single.theta_g_eap,
+            theta_g_sd: single.theta_g_sd,
+            group_category_counts: vec![single.category_counts],
+            loglik_trace: single.loglik_trace,
+            n_iter: single.n_iter,
+            converged: single.converged,
+            termination_reason: single.termination_reason,
+            final_loglik_change: single.final_loglik_change,
+            best_start: single.best_start,
+            n_parameters: single.n_parameters,
+        });
+    }
+    // Base structural validation (pooled categories, blocks, checked
+    // arithmetic) reuses the single-group validator so the two paths accept
+    // exactly the same data layouts.
+    let single_cfg = BifactorGrmConfig {
+        q_general: cfg.q_general,
+        q_specific: cfg.q_specific,
+        max_iter: cfg.max_iter,
+        tol: cfg.tol,
+        n_starts: cfg.n_starts,
+        seed: cfg.seed,
+        newton_iter: cfg.newton_iter,
+        ridge: cfg.ridge,
+    };
+    let v = validate(
+        y,
+        observed,
+        specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &single_cfg,
+    )?;
+    // Working-set sizes with the multigroup factor: overflow is a loud `Err`
+    // (the single-group validator covers the per-group grid; the `n_groups`
+    // expansion is checked here).
+    let nodes_per_item = cfg
+        .q_general
+        .checked_mul(cfg.q_specific)
+        .ok_or_else(|| "q_general * q_specific overflows usize".to_string())?;
+    n_items
+        .checked_mul(nodes_per_item)
+        .and_then(|v| v.checked_mul(n_cat))
+        .and_then(|v| v.checked_mul(n_groups))
+        .ok_or_else(|| {
+            "n_groups * n_items * q_general * q_specific * n_cat overflows usize".to_string()
+        })?;
+    let mut group_n = vec![0usize; n_groups];
+    for &g in group_id {
+        group_n[g] += 1;
+    }
+    if group_n.contains(&0) {
+        return Err("every group 0..n_groups-1 must contain at least one person".into());
+    }
+    if !anchor_vec.iter().any(|&a| a) {
+        return Err(
+            "at least one anchored (common) item is required to link the group scales \
+             (Cai, Yang, & Hansen, 2011)"
+                .into(),
+        );
+    }
+    // Free items need every declared category in EVERY group (their per-group
+    // boundaries are otherwise unidentified). Anchored items are identified
+    // from the pooled data (already checked by `validate`), so a group may
+    // lose a category on an anchored item without changing the parameter
+    // count — the declared `n_cat` stays fixed across groups (#1912 rule).
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
+    for i in 0..n_items {
+        if !anchor_vec[i] {
+            for g in 0..n_groups {
+                let mut seen = vec![false; n_cat];
+                let mut any = false;
+                for p in 0..n_persons {
+                    if group_id[p] == g && is_obs(p, i) {
+                        any = true;
+                        seen[y[p * n_items + i]] = true;
+                    }
+                }
+                if !any {
+                    return Err(format!("free item {i} has no observed responses in group {g}"));
+                }
+                if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
+                    return Err(format!(
+                        "free item {i} category {k} is never observed in group {g} \
+                         (unidentified per-group GRM boundary)"
+                    ));
+                }
+            }
+        }
+    }
+
+    let (tg_std, wg) = gh_rule(cfg.q_general)?;
+    let (ts_std, ws) = gh_rule(cfg.q_specific)?;
+    let qg = tg_std.len();
+    let qs = ts_std.len();
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+
+    let mut best: Option<MultiStartOutcome> = None;
+    let mut best_ll = f64::NEG_INFINITY;
+    let mut best_start = 0usize;
+    let mut first_error: Option<String> = None;
+    for start in 0..cfg.n_starts {
+        match run_single_start_multigroup(
+            &v,
+            y,
+            observed,
+            group_id,
+            n_groups,
+            &anchor_vec,
+            cfg,
+            tg_std,
+            ts_std,
+            &log_wg,
+            &log_ws,
+            qg,
+            qs,
+            start,
+        ) {
+            Ok(outcome) => {
+                let ll = *outcome
+                    .loglik_trace
+                    .last()
+                    .expect("EM trace is never empty");
+                if best.is_none() || ll > best_ll {
+                    best_ll = ll;
+                    best = Some(outcome);
+                    best_start = start;
+                }
+            }
+            Err(e) => {
+                if first_error.is_none() {
+                    first_error = Some(format!("start {start}: {e}"));
+                }
+            }
+        }
+    }
+    let outcome = best.ok_or_else(|| {
+        format!(
+            "all {} EM start(s) failed numerically; first error: {}",
+            cfg.n_starts,
+            first_error.unwrap_or_else(|| "unknown".into())
+        )
+    })?;
+
+    // Final EAP pass for theta_G on the common (reference) scale at the
+    // winning parameters (Gibbons et al., 2007, eqs. 17-18, pp. 9-10, applied
+    // per group at that group's common-scale nodes).
+    let mut tg_groups = vec![vec![0.0f64; qg]; n_groups];
+    let mut ts_groups = vec![vec![vec![0.0f64; qs]; v.n_specific]; n_groups];
+    for g in 0..n_groups {
+        for (t, &x) in tg_std.iter().enumerate() {
+            tg_groups[g][t] = outcome.mus[g] + outcome.sigmas[g] * x;
+        }
+        for s in 0..v.n_specific {
+            for (h, &x) in ts_std.iter().enumerate() {
+                ts_groups[g][s][h] = outcome.taus[g][s] * x;
+            }
+        }
+    }
+    // Rebuild per-group tables at the winning parameters.
+    let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
+    for g in 0..n_groups {
+        let mut tables = Vec::with_capacity(v.n_items);
+        for (i, par) in outcome.params_groups[g].iter().enumerate() {
+            match par.a_s {
+                Some(a_s) => {
+                    let s = v.item_block[i].expect("block item has a block");
+                    let mut lp = vec![0.0f64; qg * qs * v.n_cat];
+                    for t in 0..qg {
+                        for h in 0..qs {
+                            let base =
+                                par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            let probs = grm_logprobs(base, &par.d);
+                            lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
+                                .copy_from_slice(&probs);
+                        }
+                    }
+                    tables.push(lp);
+                }
+                None => {
+                    let mut lp = vec![0.0f64; qg * v.n_cat];
+                    for t in 0..qg {
+                        let base = par.a_g * tg_groups[g][t];
+                        let probs = grm_logprobs(base, &par.d);
+                        lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
+                    }
+                    tables.push(lp);
+                }
+            }
+        }
+        tables_groups.push(tables);
+    }
+    let mut theta_g_eap = vec![0.0f64; n_persons];
+    let mut theta_g_sd = vec![0.0f64; n_persons];
+    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
+    let mut log_i = vec![0.0f64; v.n_specific * qg];
+    let mut log_like_g = vec![0.0f64; qg];
+    let mut tmp_h = vec![0.0f64; qs];
+    for p in 0..n_persons {
+        let g = group_id[p];
+        let tables = &tables_groups[g];
+        let mut gen_log = log_wg.clone();
+        for &i in &v.general_only {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * n_items + i];
+            for t in 0..qg {
+                gen_log[t] += tables[i][t * n_cat + yc];
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            for t in 0..qg {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if !is_obs(p, i) {
+                            continue;
+                        }
+                        let yc = y[p * n_items + i];
+                        acc += tables[i][(t * qs + h) * n_cat + yc];
+                    }
+                    block_acc[(s * qg + t) * qs + h] = acc;
+                }
+                for h in 0..qs {
+                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
+                }
+                log_i[s * qg + t] = log_sum_exp(&tmp_h);
+            }
+        }
+        for t in 0..qg {
+            let mut acc = gen_log[t];
+            for s in 0..v.n_specific {
+                acc += log_i[s * qg + t];
+            }
+            log_like_g[t] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        let (mut m1, mut m2) = (0.0f64, 0.0f64);
+        for (t, &ll) in log_like_g.iter().enumerate() {
+            let post = (ll - log_lp).exp();
+            let theta = tg_groups[g][t];
+            m1 += post * theta;
+            m2 += post * theta * theta;
+        }
+        theta_g_eap[p] = m1;
+        theta_g_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
+    }
+
+    // Assemble dense per-group outputs (anchored rows already identical).
+    let mut a_general = vec![vec![0.0f64; n_items]; n_groups];
+    let mut a_specific = vec![vec![0.0f64; n_items]; n_groups];
+    let mut threshold = vec![vec![0.0f64; n_items * v.m1]; n_groups];
+    for g in 0..n_groups {
+        for (i, par) in outcome.params_groups[g].iter().enumerate() {
+            a_general[g][i] = par.a_g;
+            if let Some(a_s) = par.a_s {
+                a_specific[g][i] = a_s;
+            }
+            threshold[g][i * v.m1..(i + 1) * v.m1].copy_from_slice(&par.d);
+        }
+    }
+    let mut general_mean = outcome.mus;
+    let general_sd = outcome.sigmas;
+    let specific_sd = outcome.taus;
+
+    // Joint reflection canonicalization across groups: one decision per
+    // dimension, so anchored equality is preserved. The sign is read from
+    // the ANCHORED (linking) items only — a free item's DIF outlier must not
+    // drive the global orientation (review fix; falls back to all items only
+    // when a block has no anchored member). General flip negates every
+    // group's general slopes, every group mean, and the reported general
+    // EAPs (the #1879 mu-sign fix); thresholds, variances, and posterior SDs
+    // are invariant. Specific flips negate that block's slopes in every group.
+    let anchored_items: Vec<usize> = (0..n_items).filter(|&i| anchor_vec[i]).collect();
+    let anchor_g = anchored_items
+        .iter()
+        .flat_map(|&i| (0..n_groups).map(move |g| (g, i)))
+        .max_by(|&(g1, i1), &(g2, i2)| {
+            a_general[g1][i1]
+                .abs()
+                .total_cmp(&a_general[g2][i2].abs())
+        })
+        .expect("at least one anchored item");
+    if a_general[anchor_g.0][anchor_g.1] < 0.0 {
+        for row in a_general.iter_mut() {
+            for a in row.iter_mut() {
+                *a = -*a;
+            }
+        }
+        for m in general_mean.iter_mut() {
+            *m = -*m;
+        }
+        for t in theta_g_eap.iter_mut() {
+            *t = -*t;
+        }
+    }
+    for members in v.blocks.iter() {
+        let anchored_members: Vec<usize> =
+            members.iter().copied().filter(|&i| anchor_vec[i]).collect();
+        // Prefer anchored members; fall back to the whole block only when it
+        // has no anchored item.
+        let candidates: &[usize] = if anchored_members.is_empty() {
+            members
+        } else {
+            &anchored_members
+        };
+        let anchor = (0..n_groups)
+            .flat_map(|g| candidates.iter().map(move |&i| (g, i)))
+            .max_by(|&(g1, i1), &(g2, i2)| {
+                a_specific[g1][i1]
+                    .abs()
+                    .total_cmp(&a_specific[g2][i2].abs())
+            })
+            .expect("validated blocks are non-empty");
+        if a_specific[anchor.0][anchor.1] < 0.0 {
+            for g in 0..n_groups {
+                for &i in members {
+                    a_specific[g][i] = -a_specific[g][i];
+                }
+            }
+        }
+    }
+
+    let mut group_category_counts = vec![vec![0usize; n_items * n_cat]; n_groups];
+    for p in 0..n_persons {
+        let g = group_id[p];
+        for i in 0..n_items {
+            if is_obs(p, i) {
+                group_category_counts[g][i * n_cat + y[p * n_items + i]] += 1;
+            }
+        }
+    }
+
+    let mut n_parameters = 0usize;
+    for i in 0..n_items {
+        let per_item = 1 + v.item_block[i].is_some() as usize + v.m1;
+        if anchor_vec[i] {
+            n_parameters += per_item;
+        } else {
+            n_parameters += n_groups * per_item;
+        }
+    }
+    n_parameters += (n_groups - 1) * 2;
+    if cfg.estimate_specific_vars {
+        n_parameters += (n_groups - 1) * v.n_specific;
+    }
+
+    Ok(BifactorMultigroupResult {
+        a_general,
+        a_specific,
+        threshold,
+        general_mean,
+        general_sd,
+        specific_sd,
+        theta_g_eap,
+        theta_g_sd,
+        group_category_counts,
+        loglik_trace: outcome.loglik_trace,
+        n_iter: outcome.n_iter,
+        converged: outcome.converged,
+        termination_reason: outcome.termination_reason,
+        final_loglik_change: outcome.final_loglik_change,
+        best_start,
+        n_parameters,
+    })
 }
 
 #[cfg(test)]

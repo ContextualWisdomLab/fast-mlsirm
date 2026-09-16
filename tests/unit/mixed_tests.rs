@@ -493,3 +493,142 @@ fn mixed_fit_validation_and_helper_boundaries() {
     let stationary = m_step_item(&binary, &initial, &grid, &zero_counts, 6);
     assert_eq!(stationary.len(), initial.len());
 }
+
+// ===================== reflection taxonomy =====================
+//
+// Which transform leaves a cell's log-probabilities unchanged decides how (and
+// whether) an orientation rule can pin the latent sign for a bank containing
+// that family. The three cases below are the input to that rule, so they are
+// pinned here against the cells themselves rather than left as an argument.
+
+/// Max absolute difference between two cells' log-probabilities.
+fn cell_gap(left: &[f64], right: &[f64]) -> f64 {
+    assert_eq!(left.len(), right.len());
+    left.iter()
+        .zip(right)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max)
+}
+
+const EXACT: f64 = 1e-12;
+
+/// Case 3. `Ggum` is symmetric in `theta - delta` because its thresholds are
+/// built antisymmetrically, so reflecting the person and item locations
+/// TOGETHER is an exact symmetry with the slope untouched. The slope therefore
+/// carries no orientation information and a slope anchor cannot pin the sign
+/// for a bank of these.
+#[test]
+fn ggum_is_invariant_under_joint_reflection_of_person_and_item_location() {
+    let spec = MixedItemSpec {
+        kind: MixedItemKind::Ggum,
+        n_categories: 4,
+    };
+    let thresholds = [0.8, 0.2, -0.4];
+    let build = |delta: f64| {
+        let mut params = vec![1.2_f64.ln(), delta];
+        params.extend(ordered_raw(&thresholds));
+        params
+    };
+    let mut worst = 0.0_f64;
+    for step in 0..13 {
+        let theta = -3.0 + 0.5 * step as f64;
+        for delta in [-1.3, -0.2, 0.7] {
+            let forward = item_logprobs(&spec, &build(delta), theta, &[], 0);
+            let reflected = item_logprobs(&spec, &build(-delta), -theta, &[], 0);
+            worst = worst.max(cell_gap(&forward, &reflected));
+        }
+    }
+    assert!(
+        worst < EXACT,
+        "GGUM must be invariant under (theta, delta) -> (-theta, -delta); worst gap {worst:e}"
+    );
+}
+
+/// Case 3. `Ideal` uses `exp(-0.5 * (a*(theta - delta))^2)`, so the same joint
+/// reflection is exact for it too.
+#[test]
+fn ideal_point_cell_is_invariant_under_joint_reflection_of_person_and_item_location() {
+    let spec = MixedItemSpec {
+        kind: MixedItemKind::Ideal,
+        n_categories: 2,
+    };
+    let mut worst = 0.0_f64;
+    for step in 0..13 {
+        let theta = -3.0 + 0.5 * step as f64;
+        for delta in [-1.1, 0.4] {
+            let forward = item_logprobs(&spec, &[1.3_f64.ln(), delta], theta, &[], 0);
+            let reflected = item_logprobs(&spec, &[1.3_f64.ln(), -delta], -theta, &[], 0);
+            worst = worst.max(cell_gap(&forward, &reflected));
+        }
+    }
+    assert!(
+        worst < EXACT,
+        "ideal-point cell must be invariant under joint location reflection; worst gap {worst:e}"
+    );
+}
+
+/// Case 2. `Rasch` carries an implicit slope fixed at `+1` that cannot be
+/// negated, so the same joint reflection is NOT a symmetry: `logistic(theta-b)`
+/// becomes `logistic(-(theta-b))`. One such item therefore identifies a bank's
+/// orientation by itself, and an anchor rule imposed on top of it would move
+/// the answer away from the maximum-likelihood solution.
+#[test]
+fn rasch_is_not_invariant_under_joint_reflection_so_it_pins_the_orientation() {
+    let spec = MixedItemSpec {
+        kind: MixedItemKind::Rasch,
+        n_categories: 2,
+    };
+    let forward = item_logprobs(&spec, &[0.6], 1.1, &[], 0);
+    let reflected = item_logprobs(&spec, &[-0.6], -1.1, &[], 0);
+    assert!(
+        cell_gap(&forward, &reflected) > 0.1,
+        "a fixed-slope family must NOT absorb the reflection: {forward:?} vs {reflected:?}"
+    );
+}
+
+/// Case 1. Despite its name, `LsirmGrm` is not a distance model in `theta`:
+/// `base = a*theta - distance(xi, zeta)` takes theta LINEARLY, and the distance
+/// lives in a latent space theta is not part of. So the slope does carry the
+/// orientation, exactly as in the slope-intercept families, and negating theta
+/// alone is observable.
+#[test]
+fn latent_space_family_takes_theta_linearly_so_its_slope_carries_the_orientation() {
+    let spec = MixedItemSpec {
+        kind: MixedItemKind::LsirmGrm,
+        n_categories: 4,
+    };
+    let mut params = vec![1.25_f64.ln()];
+    params.extend(ordered_raw(&[0.9, 0.0, -0.9]));
+    params.extend([0.4, -0.2]); // zeta
+    let xi = [0.1, 0.5];
+    let forward = item_logprobs(&spec, &params, 0.8, &xi, 2);
+    let flipped = item_logprobs(&spec, &params, -0.8, &xi, 2);
+    assert!(
+        cell_gap(&forward, &flipped) > 0.1,
+        "negating theta alone must change a latent-space cell: {forward:?} vs {flipped:?}"
+    );
+}
+
+/// The latent space carries a SEPARATE indeterminacy that must not be confused
+/// with the trait's orientation: `distance` is invariant under any isometry
+/// applied jointly to the person and item coordinates, and theta is untouched.
+/// A rule aimed at the trait's sign would constrain the wrong space.
+#[test]
+fn latent_space_isometry_is_a_different_indeterminacy_from_the_trait_orientation() {
+    let spec = MixedItemSpec {
+        kind: MixedItemKind::LsirmGrm,
+        n_categories: 4,
+    };
+    let build = |zeta: [f64; 2]| {
+        let mut params = vec![1.25_f64.ln()];
+        params.extend(ordered_raw(&[0.9, 0.0, -0.9]));
+        params.extend(zeta);
+        params
+    };
+    let forward = item_logprobs(&spec, &build([0.4, -0.2]), 0.8, &[0.1, 0.5], 2);
+    let reflected = item_logprobs(&spec, &build([-0.4, 0.2]), 0.8, &[-0.1, -0.5], 2);
+    assert!(
+        cell_gap(&forward, &reflected) < EXACT,
+        "reflecting the latent coordinates jointly must leave the cell unchanged"
+    );
+}
