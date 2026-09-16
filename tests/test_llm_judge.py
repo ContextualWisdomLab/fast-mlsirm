@@ -1128,3 +1128,36 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        pytest.param("NaN", id="nan-literal"),
+        pytest.param("Infinity", id="infinity-literal"),
+        pytest.param("1e999", id="overflow-to-inf"),
+        pytest.param("-1e999", id="overflow-to-negative-inf"),
+    ],
+)
+def test_judge_response_rejects_every_non_finite_score(literal: str) -> None:
+    """A judge score must be a finite number, whichever way it arrives.
+
+    ``parse_constant`` only intercepts the ``NaN``/``Infinity`` literals. A
+    plain ``1e999`` is well-formed JSON and silently becomes ``inf``, so the
+    ``parse_float`` hook is what closes that half.
+    """
+    raw = (
+        '{"score": %s, "accepted": true, "rationale": "ok",'
+        ' "criterion_scores": {"task_alignment": 0.8, "factual_support": 0.8}}'
+    ) % literal
+
+    with pytest.raises(JudgeFormatError) as caught:
+        ContextualOrchestratorJudge(_FakeOrchestrator(raw)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+    assert "non-finite" in str(caught.value) or "unsupported JSON constant" in str(
+        caught.value
+    )
