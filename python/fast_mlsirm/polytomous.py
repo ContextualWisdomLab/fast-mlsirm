@@ -1736,6 +1736,151 @@ def dif_polytomous_purified(
     return report
 
 
+def dif_polytomous_anchor_sets(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str = "gpcm",
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    fdr_q: float = 0.05,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+    reference_group: int | None = None,
+) -> dict:
+    """Anchor-eligible set per focal group, and the intersection across them.
+
+    :func:`dif_polytomous_purified` estimates one latent distribution per group
+    and returns a single anchor set for the whole comparison. That is the right
+    object when every group is calibrated together, and the wrong one when the
+    question is which items are invariant against EACH focal group separately
+    -- an item can be invariant against one focal group and not another, and a
+    pooled sweep can leave it in the anchor because the effects partly cancel.
+
+    Each focal group is therefore purified against the reference on its own
+    two-group subset, and ``intersection`` is the set eligible against all of
+    them: the anchor a fixed-item calibration can defend for every group at
+    once.
+
+    ``reference_group`` defaults to the smallest label present. Returns
+    ``reference_group``; ``focal_groups`` (the caller's own labels, in order);
+    ``per_group``, a dict from focal label to that group's full
+    :func:`dif_polytomous_purified` report; ``anchor_by_group``, a
+    ``n_focal x n_items`` boolean matrix; ``intersection`` and
+    ``n_intersection``; and ``intersection_trustworthy`` with
+    ``untrustworthy_groups``.
+
+    **A failed purification does not silently narrow the intersection.** If a
+    group's loop ended on ``insufficient_anchor_items`` or ran out of rounds,
+    its anchor set is not a converged answer, and intersecting it would let a
+    failure masquerade as a strict result -- a smaller anchor looks more
+    conservative while actually being less supported. The intersection is still
+    computed, because a caller may want to inspect it, but
+    ``intersection_trustworthy`` is ``False`` and ``untrustworthy_groups``
+    names the groups responsible. Check it before using the result.
+
+    Every caveat on :func:`dif_polytomous_purified` applies per group, and one
+    compounds here: each group's anchor is selected from that group's own data,
+    so the intersection is a selection over selections and its error rate is
+    further from nominal than any single sweep's.
+
+    **Cost.** Each purification round fits one two-group model per item, and
+    that happens once per focal group, so the work is roughly
+    ``n_focal_groups * n_items * (rounds + 1)`` marginal-EM fits. On a large
+    bank with several focal groups this is minutes rather than seconds; lower
+    ``max_rounds`` or ``q_theta`` if that matters more than the last round of
+    refinement.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+            (the *iterative backward* anchor class this loop follows per
+            group: start from all other items, exclude flagged items, repeat).
+        Kopf, J., Zeileis, A., & Strobl, C. (2015). Anchor selection strategies
+            for DIF analysis: Review, assessment, and new approaches.
+            *Educational and Psychological Measurement, 75*(1), 22-56.
+            https://doi.org/10.1177/0013164414529792
+            (p. 2: "[e]xcluding DIF items from the anchor by using iterative
+            steps may not solve the problem when the test contains many DIF
+            items" -- the reason a single pooled anchor is checked per focal
+            group here rather than assumed adequate for all of them at once;
+            pp. 9-10 review the *all-other* anchor class this loop's per-item
+            auxiliary test is built on).
+        Woods, C. M. (2009). Empirical selection of anchors for tests of
+            differential item functioning. *Applied Psychological Measurement,
+            33*(1), 42-57. https://doi.org/10.1177/0146621607314044
+            (originated the rank-based, no-prior-knowledge anchor selection
+            this and :func:`dif_polytomous_purified` build on; a constant
+            anchor from the resulting ranking outperformed the all-other
+            method "in the majority of the simulated settings," per Kopf
+            et al., 2015, p. 9, quoting Woods, 2009, p. 53).
+
+        Per-group anchor sets and their intersection are this function's own
+        extension to more than two groups, not a design taken verbatim from
+        the sources above: none of them evaluates more than one focal group
+        against a shared reference, so none states the risk this function
+        guards against directly -- that a pooled, multi-group sweep can average
+        away DIF that is present against one focal group and absent against
+        another. That risk follows from the same two-group contamination logic
+        the sources do state (an anchor is only as trustworthy as the pairwise
+        comparison it was purified on).
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    labels = _nonnegative_integer_vector(group_id, "group_id")
+    if labels.size != y.shape[0]:
+        raise ValueError("group_id must have one entry per person")
+    present = np.unique(labels)
+    if present.size < 2:
+        raise ValueError("group_id must contain at least two distinct groups")
+
+    if reference_group is None:
+        reference = int(present[0])
+    else:
+        reference = _bounded_integer(reference_group, "reference_group", 0, int(present[-1]))
+        if reference not in present:
+            raise ValueError("reference_group must be a group label present in group_id")
+    focal_groups = [int(label) for label in present if int(label) != reference]
+
+    per_group: dict[int, dict] = {}
+    anchor_by_group = np.ones((len(focal_groups), int(y.shape[1])), dtype=bool)
+    untrustworthy: list[int] = []
+    for row, focal in enumerate(focal_groups):
+        keep = (labels == reference) | (labels == focal)
+        report = dif_polytomous_purified(
+            y[keep],
+            np.where(labels[keep] == reference, 0, 1),
+            n_cat,
+            model=model,
+            q_theta=q_theta,
+            max_iter=max_iter,
+            tol=tol,
+            fdr_q=fdr_q,
+            max_rounds=max_rounds,
+            min_anchor_items=min_anchor_items,
+        )
+        per_group[focal] = report
+        anchor_by_group[row] = report["anchor"]
+        if not report["purify_converged"]:
+            untrustworthy.append(focal)
+
+    intersection = np.logical_and.reduce(anchor_by_group, axis=0)
+    return {
+        "reference_group": reference,
+        "focal_groups": focal_groups,
+        "per_group": per_group,
+        "anchor_by_group": anchor_by_group,
+        "intersection": intersection,
+        "n_intersection": int(intersection.sum()),
+        "intersection_trustworthy": not untrustworthy,
+        "untrustworthy_groups": untrustworthy,
+    }
+
+
 def u3_person_fit_polytomous(
     responses: np.ndarray,
     n_cat: int,
