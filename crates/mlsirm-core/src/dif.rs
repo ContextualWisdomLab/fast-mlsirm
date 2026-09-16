@@ -446,11 +446,81 @@ fn mh_sweep(
 // Effect size: the Nagelkerke (1991) pseudo-`R^2` change `delta_r2 = R2_N(M2) - R2_N(M0)`, with
 // `R2_CS(M) = 1 - exp(2(ll_null - ll(M))/n)` and `R2_N(M) = R2_CS(M) / (1 - exp(2 ll_null / n))`
 // (`ll_null` is the INTERCEPT-ONLY fit, not M0). Items are classified by the Jodoin & Gierl (2001)
-// thresholds on that quantity — A (negligible) `< 0.035`, B `0.035..0.070`, C (large) `>= 0.070` — and
-// only when the omnibus test is BH-significant (a non-significant item is A by definition). The older
-// Zumbo & Thomas (1997) cut-offs (`0.13` / `0.26`) are considerably more conservative on the same
-// quantity. The uniform-only `delta_r2_uniform` is reported as an UNCALIBRATED descriptive number and
-// carries no letter class: the Jodoin-Gierl cut-offs were calibrated on the 2-df quantity.
+// `.035` / `.070` boundaries applied to that quantity — A (negligible), B, C (large) — and only when
+// the omnibus test is BH-significant (a non-significant item is A by definition). The older Zumbo &
+// Thomas (1997) cut-offs (`0.13` / `0.26`) are a different convention on the same underlying quantity
+// (see below). The uniform-only `delta_r2_uniform` is reported as a descriptive number and carries no
+// letter class. BOTH of those choices are now known to be wrong; the reference block below records
+// the primary source and why the behaviour has not been changed in the same commit.
+//
+// RESOLVED against this code, on the primary source. Jodoin & Gierl (2001) has now been read in full
+// (Applied Measurement in Education 14(4), 329-349; obtained through institutional access, read by the
+// consumer session, not by the author of this comment). The bands are stated on the ONE-df UNIFORM
+// increment: "Negligible or A-level DIF: R2delta-U < .035 ... Moderate or B-level DIF: .035 <=
+// R2delta-U < .070 ... Large or C-level DIF: R2delta-U >= .070" (p. 335). The 2-df omnibus appears
+// only as one of three alternate SIGNIFICANCE gates paired with an already-fixed cut-off. So Sireci
+// & Rios (2013, p. 178) were right and the assertion this comment used to make was wrong: the code
+// below applies the bands to the 2-df quantity they were NOT built for, and withholds them from the
+// 1-df uniform quantity they WERE built for.
+//
+// Two further mismatches surfaced by the same reading, both independent of the degrees of freedom:
+//   * The statistic is not the same one. Jodoin & Gierl use the Zumbo-Thomas weighted-least-squares
+//     (Pratt-Pregibon) partition — sums of products of each standardized regression coefficient and
+//     the correlation between the response and that explanatory variable (p. 333), explicitly NOT
+//     converted to Cohen's f-squared (p. 334). Nagelkerke, Cox-Snell and McFadden are not mentioned.
+//     The code above computes Nagelkerke. Cut-offs calibrated on one pseudo-`R^2` are not portable
+//     to another.
+//   * The calibration is empirical and test-specific: a cubic regression predicting R2delta-U from
+//     SIBTEST's beta with Roussos & Stout's .059/.088 substituted in (p. 335), on DICHOTOMOUS 3PL
+//     items only (pp. 337, 339) and 40-item tests (pp. 336-337). Shorter tests and polytomous
+//     responses are outside the calibration; `.035` is anchored to SIBTEST bands, NOT to a Cohen
+//     norm, so it must not be read as "3.5% of variance is a small effect" (pp. 345-346).
+//
+// The non-uniform extension is IN the original, contrary to Sireci & Rios attributing it solely to
+// Gomez-Benito, Hidalgo & Padilla (2009): "These values are also used with R2delta-N because
+// classification guidelines for nonuniform DIF have not been developed" (p. 336). It rests on two
+// non-uniform items and the authors call for further study (pp. 346-347).
+//
+// Zumbo (1999, p. 27) is confirmed: `.13`/`.26` is the SAME statistic on the SAME scale, but a
+// Cohen-style convention applied to the omnibus, which Jodoin & Gierl supersede rather than adopt
+// (p. 334). The factor of roughly four between the two conventions is two calibrations of one
+// quantity against two different tests, not two different measures. Neither pair is portable to the
+// other's degrees of freedom.
+//
+// AND THE REPLACEMENT QUANTITY IS NOT FULLY DEFINED BY THE SOURCE, which changes what can be
+// claimed here. Page 333 restates the equations rather than deferring: eq. 2 is the logistic model,
+// eq. 3 the weighted-least-squares solution `tau~ = (X'VX)^-1 X'Vz` with `z = X tau~ + V^-1 r`,
+// `r = u - P~`, and V diagonal with elements `P~_i (1 - P~_i)` -- the standard IRLS Bernoulli
+// weights. Eq. 4 defines the effect size as the difference of two sums of "the products of the
+// standardized regression coefficient for each explanatory variable and the correlation between the
+// response and each explanatory variable". Two of the three choices that change the number are left
+// undefined by that text: whether "the response" in the correlation is the observed `u` or the
+// working `z` (both are defined as distinct symbols one paragraph earlier), and whether the
+// coefficient is standardized on the working or the original scale. A third is unstated -- the
+// formula for the standardized coefficient itself -- and a fourth, the exact nested-model
+// specification per uniform and non-uniform term, is not given either.
+//
+// So the defensible statement is NOT "this computes the wrong quantity and here is the right one".
+// It is: this computes a Nagelkerke pseudo-`R^2`; the bands were calibrated on a different quantity
+// whose definition the source leaves underdetermined; and the package therefore cannot state what
+// its letter classes mean. Implementing the intended statistic from an underdetermined definition
+// would produce numbers with no external referent -- nothing to check them against, and no
+// obviously wrong output.
+//
+// Citation-year discrepancy, recorded rather than resolved: Jodoin & Gierl credit the measure to
+// Zumbo & Thomas *1996* throughout, with Pratt (1987) and Pregibon (1981) for the derivation logic.
+// This module's reference list says 1997. Neither has been verified against the working paper
+// itself, which has no locatable public copy under either year, so the year here is left as it
+// stands and the disagreement is noted. Anyone searching for it should try both.
+//
+// Provenance: p. 333 was transcribed by the consumer session, not read by the author of this
+// comment.
+//
+// The applied quantity is deliberately NOT changed in this commit. Correcting it reclassifies every
+// item every current caller has scored, and the destination is not simply "swap to the uniform
+// component": the pseudo-`R^2` mismatch has to be settled in the same change, or the bands would be
+// moved onto a second quantity they were also not calibrated for. Tracked as a behaviour defect with
+// this reference block as its evidence.
 //
 // Caveats, same as the Mantel-Haenszel path above: the studied item is INCLUDED in the matching score
 // by default, and this entry point does no purification, so its criterion carries the same

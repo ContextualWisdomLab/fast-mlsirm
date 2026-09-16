@@ -589,7 +589,37 @@ def logistic_dif(
       ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
       ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
       ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
-      (The older Zumbo & Thomas, 1997 cut-offs of 0.13/0.26 are much more conservative.)
+      (The 0.035/0.070 banding and the older Zumbo-Thomas 0.13/0.26 are two calibrations of the SAME
+      quantity against DIFFERENT tests, and neither is portable to the other's. Jodoin & Gierl (2001,
+      Applied Measurement in Education, 14(4), 329-349) has now been read in full and states the bands
+      on the ONE-df UNIFORM increment (p. 335); the 2-df omnibus appears only as an alternate
+      significance gate. Zumbo (1999, p. 27) states 0.13 as a Cohen-style convention on the omnibus,
+      which Jodoin & Gierl supersede rather than adopt (p. 334). The two also differ in direction of
+      use: 0.13 is a FLOOR for calling an item DIF, 0.035 a CEILING for calling it negligible.
+
+      KNOWN DEFECT, and the honest form of it is weaker than "we apply the wrong quantity".
+      ``jg_class`` applies the bands to ``delta_r2``, the 2-df quantity they were not calibrated
+      for, and withholds them from ``delta_r2_uniform``, the one they were. Independently of the
+      degrees of freedom, Jodoin & Gierl compute a Zumbo-Thomas weighted-least-squares
+      (Pratt-Pregibon) partition (p. 333), not the Nagelkerke pseudo-R² this package computes —
+      and that page leaves the partition UNDERDETERMINED: it does not say whether the correlation
+      is taken against the observed response or the working response of the linearization, nor on
+      which scale the coefficient is standardized, and both choices change the number. So what can
+      be defended is that this package cannot say what its letter classes mean, not that a
+      specific corrected class is available. Treat ``jg_class`` as indicative rather than
+      authoritative, and prefer the underlying magnitude to the letter.
+
+      Calibration scope, which the letter class does not carry: the bands come from a cubic regression
+      predicting the uniform increment from SIBTEST's beta with Roussos & Stout's .059/.088 substituted
+      in (p. 335). The paper never restricts the measure to an item type IN WORDS; the only scope
+      indicators are design facts — the response data were generated from a 3PL model (pp. 337,
+      339) and the tests were 40 items (pp. 336-337) — so treating the bands as inapplicable to
+      polytomous responses rests on the simulation conditions alone, the weaker of the two grounds
+      one might have had. They
+      are anchored to SIBTEST bands, NOT to a Cohen norm, so 0.035 must not be read as "3.5% of
+      variance is a small effect" (pp. 345-346). The non-uniform extension is in the original itself
+      (p. 336) but rests on two items and is called provisional (pp. 346-347). The procedures become
+      conservative at large balanced samples and underpowered at unequal group sizes (pp. 346-347).)
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item
