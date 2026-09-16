@@ -3,6 +3,87 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.10.0
+
+- Project version is bumped to 0.10.0 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.10.0] - 2026-09-17` release section: two-stage polytomous bifactor GRM
+  calibration (single-group and multiple-group concurrent, #1912), expected-
+  total-score and focal-dimension monotonicity diagnostics for unidimensional,
+  multidimensional, and bifactor graded fits (#1873, #1888, #1889, #1928),
+  purified polytomous DIF with per-item and per-focal-group anchor sets
+  (#1874, #1890, #1891), retirement of `logistic_dif`'s `jg_class` to "not
+  applicable" (a breaking change, #1880), required (no unsourced-default)
+  quadrature node-count arguments across the new bifactor/monotonicity APIs (a
+  breaking change, #1933), symmetric (sign-preserving) slope-magnitude bounds
+  for `fit_mmle_2pl`, `fit_testlet`, and `fit_mixture` that stop silently
+  floor-clamping reverse-keyed slopes to a near-zero value (breaking changes,
+  #1884, #1885), an `at_bound` boundary-value report for `fit_mixed_items`
+  estimates (#1882), reverse-keyed and reflection-classification contract
+  coverage (#1870, #1883), a fail-closed assertion for dedicated Statistical
+  Studies recovery jobs (#1937), and this release cycle's own doc/changelog
+  self-corrections (#1938, #1940).
+- Eleven of the PRs folded into this release (#1926, #1888, #1889, #1928,
+  #1890, #1891, #1870, #1882, #1883, #1884, #1933) had originally merged with
+  no `docs/changelog.d` fragment; their fragments were written retroactively
+  for this cut from each PR's title, body, and linked issue, sourced against
+  the actual merged public API surface rather than restated from memory.
+- This cut also removes the standing predecessor note `release-0.9.1-cut.md`,
+  whose substance is permanently recorded in the `[0.9.1] - 2026-08-25`
+  section and in git history, mirroring the precedent set by that cut's own
+  removal of `release-0.9.0-cut.md`.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### `logistic_dif_purified` purifies again, on `flagged_bh` (#1941)
+
+- **`logistic_dif_purified` no longer no-ops.** Its anchor-purification
+  criterion was `purify_flagged(jg_class)` (`jg_class in {B, C}`). #1880
+  retired `jg_class` to `"U"` ("not applicable") for every item, so that
+  criterion could never fire: `n_anchor` stayed at the initial item count and
+  `rounds` stayed `0` regardless of the DIF actually present in the data.
+  This silently downgraded the function to an expensive wrapper around
+  `logistic_dif` that never purified anything.
+- **Replacement criterion: `flagged_bh`.** The purification loop now drops an
+  item from the anchor when its Benjamini-Hochberg-adjusted `chi2_total`
+  omnibus test (`flagged_bh`) rejects — the same multiplicity-controlled
+  significance test `dif_polytomous_purified` uses for the identical reason:
+  no calibrated practical-significance class (an ETS-style B/C letter)
+  exists for this statistic. Jodoin and Gierl's (2001) `.035`/`.070` bands
+  are stated on a Zumbo-Thomas weighted-least-squares one-degree-of-freedom
+  partition this package does not compute, not on the two-degree-of-freedom
+  Nagelkerke pseudo-R² `delta_r2` this package reports (see #1880's
+  fragment), so `flagged_bh` is used directly rather than guessing a class.
+  This makes the loop's anchor MORE aggressive at large `N` than
+  `mantel_haenszel_dif_purified`'s practical-significance screen, not less —
+  documented on the function.
+- **No public API change.** `logistic_dif_purified`'s signature and return
+  keys (`anchor`, `n_anchor`, `rounds`, `purify_converged`,
+  `purify_termination_reason`, plus every `logistic_dif` key) are unchanged.
+  Only the purification behavior — which items the anchor excludes, for data
+  with DIF present — changes, from "never" to "on `flagged_bh`".
+  `jg_class` itself is untouched and remains `"U"` for every item.
+- **Caveat inherited, not introduced.** As before, the anchor is selected
+  from the same data it is then tested against, so the returned p-values are
+  conditional on a data-dependent selection and Benjamini-Hochberg does not
+  carry an FDR guarantee for the purified sweep; treat `flagged_bh` as a
+  screening device (see the function's existing docstring caveats, unchanged
+  by this fix).
+- **References.** Candell, G. L., & Drasgow, F. (1988). An iterative
+  procedure for linking metrics and assessing item bias in item response
+  theory. *Applied Psychological Measurement, 12*(3), 253-260.
+  https://doi.org/10.1177/014662168801200304 — Zumbo, B. D. (1999). *A
+  handbook on the theory and methods of differential item functioning
+  (DIF): Logistic regression modeling as a unitary framework for binary and
+  Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
+  Research and Evaluation, Department of National Defense.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.10.0] - 2026-09-17
+
 ### Added
 
 #### Preregistered external-validation evidence profiles
@@ -13,6 +94,37 @@
 
 - Added a domain-neutral Rust/PyO3 `fast-mlsirm.sampling-design.v1` contract for normal-approximation finite-population proportion sample size, finite-population correction, and caller-selected proportional or equal-cost Neyman stratum allocation. Python only validates and marshals exact caller evidence; sample-size, correction, and allocation arithmetic remains Rust-owned.
 - The immutable result retains canonical ordered inputs and binds Rust-generated source/input/output SHA-256 identities to the stable source identity and algorithm version. Callers keep sample-frame and selected-membership provenance outside the arithmetic artifact.
+
+#### Pin signed-slope recovery for reverse-keyed graded items (#1870)
+
+- Add contract coverage confirming `fit_grm` recovers negative (reverse-keyed) slopes with no non-negativity bound: simulating graded data from the package-native form with known negative slopes and refitting recovers them (max absolute error 0.10 across three reverse-keyed items in the fixture), with zero exact-zero estimates. No product code changed; `fit_grm`'s unconstrained-slope contract was previously documented but untested against a true negative slope.
+
+#### Report when a fit_mixed_items estimate rests on an optimizer bound (#1882, refs #1881)
+
+- Add `MixedItemEstimate::at_bound` (surfaced through the PyO3 binding as `MixedItemParameters.at_bound`), listing which parameter roles (`"slope"`, `"latent_position"`, `"parameter"`) are held at one of `clamp_params`'s three bounds (`[-12, 12]` on every free parameter, `[-5, 4]` on a free-slope family's working `log a`, `[-6, 6]` per latent coordinate of a spatial family) at the returned solution. Empty is the normal case. Previously an estimate resting on a bound (e.g. a reverse-keyed item's slope pushed onto the `exp(-5)` positivity floor and reported as `0.006738`, indistinguishable from a genuinely low-discrimination item) was reported with no indication it was a boundary value rather than an interior optimum.
+
+#### Pin which reflection each item family absorbs (#1883, refs #1881)
+
+- Add contract coverage classifying which `(a, theta)` or `(theta, delta)` reflection each `fit_mixed_items` item family absorbs, checked against the model cells directly rather than existing helper predicates: `TwoPl`/`Grm`/`Gpcm`/`Sequential`/`Lsirm*` absorb a joint `(a, theta)` reflection (slope anchor applies); `Rasch`/`Cll`/`Tutz` absorb none and pin the orientation themselves; `Ideal`/`Ggum` absorb a joint `(theta, delta)` reflection with the slope untouched, so no slope anchor can pin them. No product code or behavior changed.
+
+#### Expected-total-score monotonicity diagnostic (#1888, closes the unidimensional half of #1873)
+
+- Add a unidimensional expected-total-score monotonicity diagnostic built on the existing `polytomous_expected_response` curve: rather than a single boolean, it reports the theta interval(s) of decrease and the total decrease (the integral of the negative part of the derivative), both of which are stable under grid refinement, unlike a raw count or maximum decrease.
+
+#### Focal-dimension monotonicity for multidimensional graded fits (#1889, closes #1873)
+
+- Add `focal_expected_total_score_monotonicity`, extending the #1888 diagnostic to compensatory multidimensional graded fits: each item's nuisance dimensions marginalize to a single one-dimensional Gaussian integral under the fitted `theta ~ MVN(0, I)` prior, so the focal-dimension curve reduces to the existing unidimensional numeric path with no new multidimensional kernel.
+- `q_nuisance` is a required caller argument (no unsourced default quadrature-node count).
+
+#### Purified polytomous DIF sweep with an anchor-eligible set (#1890, addresses requirement 1 of #1874)
+
+- Add `dif_polytomous_purified`: iteratively purifies the polytomous DIF anchor by testing each item against `anchor UNION {itself}` until the flagged set stabilizes, the anchor would fall below `min_anchor_items`, or `max_rounds` is reached — the same rule the dichotomous purified functions use, extended to `dif_polytomous`, which previously tested every studied item against all others with no anchor set returned.
+- Returns everything the plain `dif_polytomous` sweep returns, plus `anchor`, `n_anchor`, `rounds`, `purify_converged`, and `purify_termination_reason`, matching the dichotomous purified functions' contract field for field. No Rust-side numeric change; the existing two-group entry point is reused on the restricted anchor column subset.
+
+#### Per-focal-group anchor sets and their intersection (#1891, addresses requirement 3 of #1874)
+
+- Add `dif_polytomous_anchor_sets`: purifies each focal group against the reference on its own two-group subset (via `dif_polytomous_purified`, #1890) and returns the per-group reports, the `n_focal x n_items` anchor matrix, and the intersection anchor a fixed-item calibration can defend for every group at once. Caller-supplied group labels are densified internally and returned unchanged.
+- If any group's purification loop ends on `insufficient_anchor_items` or exhausts `max_rounds`, `intersection_trustworthy` is `False` and `untrustworthy_groups` names the affected groups, so a failed purification cannot silently narrow the intersection into a false-conservative result.
 
 #### Single-group polytomous bifactor GRM with Gibbons-Hedeker reduction (stage 1 of #1912)
 
@@ -26,6 +138,17 @@
   `max_iter` exhaustion reports `converged=False` instead of substituting
   values. Validated against `mirt::bfactor(itemtype="graded")` on a committed
   fixture (loglik gap 0.015, slope gap <= 0.046, intercept gap <= 0.028).
+
+#### Multiple-group concurrent calibration for the polytomous bifactor GRM (stage 2 of #1912)
+
+- Add `fit_bifactor_grm_multigroup` (Rust `mlsirm_core::bifactor_grm`, Python `fast_mlsirm.bifactor_multigroup`): concurrent multi-group calibration for the bifactor GRM, sharing item parameters across groups with optional per-item anchored/free flags (at least one anchored item required for 2+ groups to link scales).
+- Reference group 0 is pinned to N(0, I); focal general-factor mean/variance are estimated, plus optional focal specific-factor variances (means fixed at 0) via `estimate_specific_vars`. Marginal ML uses Bock-Aitkin EM with the Gibbons-Hedeker reduction applied per group; failures are loud per-start errors, never silently clamped.
+- Returns per-group EAPs/SDs on the common (reference) scale, per-group category counts, loglik trace, and a convergence flag. Joint cross-group reflection canonicalization reads sign from anchored linking items only. `n_groups == 1` delegates to and bit-reproduces stage-1 `fit_bifactor_grm` (#1925).
+
+#### Bifactor GRM adapter for focal expected-score monotonicity (#1928, links #1873, #1912)
+
+- Add `bifactor_expected_total_score_monotonicity(fit, theta, q_specific)`, an adapter over `focal_expected_total_score_monotonicity` (#1889) for `BifactorGrmFit`/`fit_bifactor_grm` (#1925) with the general factor as the fixed focal dimension; each item's own specific factor is integrated out by caller-sized Gauss-Hermite quadrature bounded by the existing `MAX_POLY_QUADRATURE_POINTS`.
+- `q_specific` is a required caller argument (no unsourced default quadrature-node count). Exported from `fast_mlsirm` alongside the existing monotonicity diagnostics.
 
 #### Achieved finite-population proportion
 
@@ -115,6 +238,16 @@
   on the theory and methods of differential item functioning (DIF)*.
   Directorate of Human Resources Research and Evaluation, Department of
   National Defense.
+
+#### Require q_general/q_specific/q_nuisance, no unsourced defaults (#1933, refs AGENTS.md, #1929)
+
+- **Breaking.** Per project rule (tuning numbers such as quadrature node counts must be caller arguments with no study-specific or unsourced default), four new APIs added this release cycle (#1873, #1888, #1889, #1912, #1925, #1926, #1928) had unsourced numeric defaults; those defaults are removed and the arguments are now required:
+  - `fast_mlsirm.focal_expected_total_score_monotonicity`: `q_nuisance` (was `41`).
+  - `fast_mlsirm.bifactor_expected_total_score_monotonicity`: `q_specific` (was `41`).
+  - `fast_mlsirm.bifactor_grm.fit_bifactor_grm`: `q_general`, `q_specific` (were `21`, `11`).
+  - `fast_mlsirm.bifactor_multigroup.fit_bifactor_grm_multigroup`: `q_general`, `q_specific` (were `21`, `11`), now required and keyword-only after `anchor_mask=None`.
+  - `mlsirm_core::bifactor_grm::BifactorGrmConfig` no longer implements `Default`; every field must be set explicitly at every call site.
+- Existing call sites (Python wrapper tests, two Rust loglik-only helpers, and the PyO3 binding) are updated to pass every field explicitly. Each touched call site gains a test asserting that omitting the node-count argument raises `TypeError` (Python) or fails to compile (Rust, no `Default`).
 
 #### Customer copy actionability
 
@@ -246,49 +379,28 @@
 
 - Keep the per-group DIMTEST formula intermediates used by the independent Nandakumar & Stout oracle in test builds only, while release builds retain only the group contribution consumed by the production statistic. This removes the production dead-field warning without suppressing lints or changing DIMTEST arithmetic, public results, or the existing intermediate-value oracle.
 
-#### `logistic_dif_purified` purifies again, on `flagged_bh` (#1941)
+#### Bound the 2PL slope's magnitude without constraining its sign (#1884, refs #1881 acceptance item 4)
 
-- **`logistic_dif_purified` no longer no-ops.** Its anchor-purification
-  criterion was `purify_flagged(jg_class)` (`jg_class in {B, C}`). #1880
-  retired `jg_class` to `"U"` ("not applicable") for every item, so that
-  criterion could never fire: `n_anchor` stayed at the initial item count and
-  `rounds` stayed `0` regardless of the DIF actually present in the data.
-  This silently downgraded the function to an expensive wrapper around
-  `logistic_dif` that never purified anything.
-- **Replacement criterion: `flagged_bh`.** The purification loop now drops an
-  item from the anchor when its Benjamini-Hochberg-adjusted `chi2_total`
-  omnibus test (`flagged_bh`) rejects — the same multiplicity-controlled
-  significance test `dif_polytomous_purified` uses for the identical reason:
-  no calibrated practical-significance class (an ETS-style B/C letter)
-  exists for this statistic. Jodoin and Gierl's (2001) `.035`/`.070` bands
-  are stated on a Zumbo-Thomas weighted-least-squares one-degree-of-freedom
-  partition this package does not compute, not on the two-degree-of-freedom
-  Nagelkerke pseudo-R² `delta_r2` this package reports (see #1880's
-  fragment), so `flagged_bh` is used directly rather than guessing a class.
-  This makes the loop's anchor MORE aggressive at large `N` than
-  `mantel_haenszel_dif_purified`'s practical-significance screen, not less —
-  documented on the function.
-- **No public API change.** `logistic_dif_purified`'s signature and return
-  keys (`anchor`, `n_anchor`, `rounds`, `purify_converged`,
-  `purify_termination_reason`, plus every `logistic_dif` key) are unchanged.
-  Only the purification behavior — which items the anchor excludes, for data
-  with DIF present — changes, from "never" to "on `flagged_bh`".
-  `jg_class` itself is untouched and remains `"U"` for every item.
-- **Caveat inherited, not introduced.** As before, the anchor is selected
-  from the same data it is then tested against, so the returned p-values are
-  conditional on a data-dependent selection and Benjamini-Hochberg does not
-  carry an FDR guarantee for the purified sweep; treat `flagged_bh` as a
-  screening device (see the function's existing docstring caveats, unchanged
-  by this fix).
-- **References.** Candell, G. L., & Drasgow, F. (1988). An iterative
-  procedure for linking metrics and assessing item bias in item response
-  theory. *Applied Psychological Measurement, 12*(3), 253-260.
-  https://doi.org/10.1177/014662168801200304 — Zumbo, B. D. (1999). *A
-  handbook on the theory and methods of differential item functioning
-  (DIF): Logistic regression modeling as a unitary framework for binary and
-  Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
-  Research and Evaluation, Department of National Defense.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+- **Breaking, for any caller reading a `fit_mmle_2pl` slope that was previously clamped to the lower bound.** `mmle.rs` and `python/fast_mlsirm/estimators/mmle.py` clamped the Newton M-step slope update to `[1e-3, 10.0]`, which is also a hard positivity floor: a true negative slope (e.g. a reverse-keyed item, true value `-0.90`) was silently returned as `0.0010`, indistinguishable from an item that measures nothing. The bound is now symmetric (`[-10.0, 10.0]`), still guarding magnitude but no longer constraining sign.
+- Since `(a, theta) -> (-a, -theta)` leaves the likelihood invariant, `fit_mmle_2pl` now canonicalizes on the largest-magnitude slope being positive (`canonicalize_reflection`), the same convention already used by `fit_grm`, `fit_gpcm`, `fit_twopl`, and `fit_mhrm`.
+
+#### Bound the testlet/mixture slope's magnitude without constraining its sign (#1885, refs #1881)
+
+- **Breaking, for any caller reading a `fit_testlet` or `fit_mixture` slope that was previously clamped to the lower bound.** Following the same audit that produced #1884, `testlet.rs` (Newton M-step and projection step) and `mixture.rs` (Newton M-step) each clamped their slope update to `[1e-3, 10.0]`, the same positivity floor that silently returned reverse-keyed slopes as `0.0010`. Both are now bounded symmetrically (`[-10.0, 10.0]`), guarding magnitude without constraining sign, and both canonicalize on the largest-magnitude slope being positive via the shared `canonicalize_reflection` introduced by #1884.
+- `fit_testlet`'s testlet effect `gamma ~ N(0, sigma2)` and `fit_mixture`'s analogous structure are accounted for in the per-model reflection algebra, since the intercept/testlet terms are not all invariant under `(a, theta) -> (-a, -theta)` the same way across models.
+
+#### Per-focal-group anchor sets and their intersection (#1891, addresses requirement 3 of #1874)
+
+- Fix a defect in `dif_polytomous_purified`'s (#1890) purification loop surfaced while testing the `insufficient_anchor_items` failure mode: the loop's prior behavior on that termination path is corrected so it no longer returns a result inconsistent with a failed purification.
+
+#### Fail closed when dedicated Statistical Studies filters match nothing (#1937, closes #1869)
+
+- The dedicated Statistical Studies jobs ran `cargo test ... --exact <name>`, which exits 0 when the filter matches no test, so a renamed or removed recovery study would keep publishing a green true-parameter-recovery signal with zero tests actually run. Each of the four dedicated steps now captures its output and asserts exactly one test passed, so a filter that matches nothing now fails the job instead of silently reporting success.
+
+#### Update logistic_dif_purified doc/test for retired jg_class (#1940)
+
+- `logistic_dif_purified`'s docstring still claimed a non-uniform item is removed from its purification criterion, which #1880/#1935's retirement of `jg_class` to unconditional `"U"` made permanently impossible (the criterion can never fire, so the anchor never shrinks). The docstring is corrected to state the current no-op purification behavior and point callers at `mantel_haenszel_dif_purified` or the raw `delta_r2`/`flagged_bh` outputs for a real purified or significance-only read; the corresponding test assertion is updated to match.
+
 ## [0.9.1] - 2026-08-25
 
 ### Added

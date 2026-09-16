@@ -47,7 +47,7 @@
 //!   parameters. *Psychometrika, 46*(4), 443-459. <https://doi.org/10.1007/BF02293801>
 
 use crate::mmle::{log_sigmoid, sigmoid_stable, GH_NODES, GH_WEIGHTS};
-use crate::quadrature::{gh_rule, SUPPORTED_Q};
+use crate::quadrature::gh_rule;
 
 /// Upper bound on caller-controlled EM iterations, shared with the Python API.
 const TESTLET_MAX_ITER: usize = 100_000;
@@ -66,7 +66,7 @@ pub struct TestletConfig {
     /// Convergence tolerance on `|delta loglik|`; `0.0` is permitted (runs the full
     /// `max_iter`) — needed for the exact `sigma -> 0` reduction anchor.
     pub tol: f64,
-    /// Inner `gamma` Gauss-Hermite nodes; must be one of `SUPPORTED_Q` (7/11/15/21/31/41).
+    /// Inner `gamma` Gauss-Hermite nodes; any `n >= 1`.
     pub q_gamma: usize,
     pub ridge_a: f64,
     pub ridge_b: f64,
@@ -154,12 +154,12 @@ fn validate(
     if !cfg.init_sigma2.is_finite() || cfg.init_sigma2 < 0.0 {
         return Err("init_sigma2 must be finite and non-negative".into());
     }
-    if !SUPPORTED_Q.contains(&cfg.q_gamma) {
-        return Err(format!(
-            "q_gamma must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_gamma
-        ));
+    // #1929: no node-count cap; require_gh_rule below also guards the
+    // eigensolve allocation against usize overflow for an absurd q_gamma.
+    if cfg.q_gamma < 1 {
+        return Err(format!("q_gamma must be >= 1; got {}", cfg.q_gamma));
     }
+    crate::quadrature::require_gh_rule(cfg.q_gamma, "q_gamma")?;
     let n_cells = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
@@ -510,7 +510,7 @@ pub fn fit_testlet(
     validate(y, observed, testlet_id, n_persons, n_items, n_testlets, cfg)?;
     let (n, j, d_n) = (n_persons, n_items, n_testlets);
     let qt = GH_NODES.len();
-    let (u_nodes, u_weights) = gh_rule(cfg.q_gamma).expect("q_gamma validated in SUPPORTED_Q");
+    let (u_nodes, u_weights) = gh_rule(cfg.q_gamma).expect("q_gamma validated (>= 1) in validate()");
     let qg = u_nodes.len();
     let log_wt: Vec<f64> = GH_WEIGHTS.iter().map(|w| w.ln()).collect();
     let log_vu: Vec<f64> = u_weights.iter().map(|w| w.ln()).collect();

@@ -41,8 +41,6 @@ VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
-_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41, 61, 81)
-_SUPPORTED_XI_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -87,16 +85,23 @@ def _quadrature_points(value) -> int:
 
 
 def _fit_quadrature_points(value) -> int:
-    """Return one exact supported calibration Gauss-Hermite node count."""
+    """Return one exact calibration Gauss-Hermite node count.
+
+    #1929: no fixed-table cap; the Rust core generates any n >= 1 rule on
+    demand (Golub & Welsch, 1969). The upper bound here is the package's
+    shared quadrature-point resource budget (``MAX_POLY_QUADRATURE_POINTS``),
+    not a rule-table restriction — matching the q_nuisance/q_specific
+    validation elsewhere in this module.
+    """
     value_type = type(value)
     if value_type is int:
         validated = value
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
-    if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
+        raise ValueError("q_theta must be an integer >= 1")
+    if not 1 <= validated <= MAX_POLY_QUADRATURE_POINTS:
+        raise ValueError(f"q_theta must be in 1..={MAX_POLY_QUADRATURE_POINTS}")
     return validated
 
 
@@ -108,9 +113,9 @@ def _fit_xi_quadrature_points(value) -> int:
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
-    if validated not in _SUPPORTED_XI_QUADRATURE_POINTS:
-        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
+        raise ValueError("q_xi must be an integer >= 1")
+    if not 1 <= validated <= MAX_POLY_QUADRATURE_POINTS:
+        raise ValueError(f"q_xi must be in 1..={MAX_POLY_QUADRATURE_POINTS}")
     return validated
 
 
@@ -927,9 +932,7 @@ def fit_lsirm_polytomous(
         validated_q_xi = _fit_xi_quadrature_points(q_xi)
     except ValueError as exc:
         raise ValueError(
-            "q_theta/q_xi must be one of the supported rules; "
-            "q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81; "
-            "q_xi must be one of 7, 11, 15, 21, 31, 41"
+            "q_theta and q_xi must be >= 1"
         ) from exc
     validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
     validated_tol = _positive_real(tol, "tol")

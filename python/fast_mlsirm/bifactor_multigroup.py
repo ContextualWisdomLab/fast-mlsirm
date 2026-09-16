@@ -94,7 +94,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -207,9 +206,9 @@ def fit_bifactor_grm_multigroup(
     or a length-``n_items`` boolean array with ``True`` = common across
     groups and ``False`` = free per group (at least one common item is
     required when there are 2+ groups). ``q_general``/``q_specific`` are
-    required, keyword-only Gauss-Hermite node counts (one of
-    ``(7, 11, 15, 21, 31, 41)`` — the embedded rules that exist, hence the
-    only accepted values); no default is offered, because no accuracy
+    required, keyword-only Gauss-Hermite node counts (any integer ``>= 1``;
+    generated on demand via Golub & Welsch, 1969 — no fixed-table cap,
+    issue #1929); no default is offered, because no accuracy
     target is on file to source one against (Project rule, issue #1929).
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
@@ -227,11 +226,13 @@ def fit_bifactor_grm_multigroup(
     if n_specific_int < 1:
         raise ValueError("n_specific must be >= 1")
     q_general_int = _finite_integer_control(q_general, "q_general")
-    if q_general_int not in _SUPPORTED_Q:
-        raise ValueError(f"q_general must be one of {_SUPPORTED_Q}")
+    # #1929: no node-count cap; the Rust core generates any n >= 1
+    # rule on demand (Golub & Welsch, 1969) and guards overflow.
+    if q_general_int < 1:
+        raise ValueError("q_general must be >= 1")
     q_specific_int = _finite_integer_control(q_specific, "q_specific")
-    if q_specific_int not in _SUPPORTED_Q:
-        raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
     max_iter_int = _finite_integer_control(max_iter, "max_iter")
     if max_iter_int < 1:
         raise ValueError("max_iter must be >= 1")
