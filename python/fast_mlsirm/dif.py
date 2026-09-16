@@ -269,8 +269,12 @@ def logistic_dif_purified(
     """Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust).
 
     The same purification loop as :func:`mantel_haenszel_dif_purified`, with the anchor decided by
-    ``jg_class`` (the Jodoin-Gierl class of the 2-df omnibus test). Unlike the Mantel-Haenszel variant
-    this detects crossing DIF, so a non-uniform item is removed from the criterion too.
+    ``jg_class`` (the Jodoin-Gierl class of the 2-df omnibus test). ``jg_class`` is currently retired to
+    ``"U"`` ("not applicable") for every item (see #1880), so the purification criterion this variant was
+    designed around can never fire: the anchor never shrinks (``n_anchor`` stays at its initial size and
+    ``rounds`` stays ``0``), regardless of uniform or crossing DIF in the data. Use
+    :func:`mantel_haenszel_dif_purified` when an actually-purified anchor is required, or `delta_r2` /
+    `delta_r2_uniform` / `flagged_bh` from :func:`logistic_dif` directly for a significance-only read.
 
     Returns everything :func:`logistic_dif` returns — including its PER-ITEM ``converged`` array, one
     flag per item's IRLS fit — plus ``anchor``, ``n_anchor``, ``rounds``, and the scalar
