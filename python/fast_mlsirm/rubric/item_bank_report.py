@@ -480,7 +480,7 @@ def render_item_bank_report_html(
         "code{overflow-wrap:anywhere;}"
         "</style>\n</head>\n<body>\n"
         '<a class="skip-link" href="#main-content">Skip to report</a>\n'
-        '<main id="main-content" tabindex="-1">\n'
+        '<main id="main-content">\n'
         f"<h1>{escaped_title}</h1>\n"
         '<section aria-labelledby="summary-heading"><h2 id="summary-heading">'
         "Summary</h2><dl>"
