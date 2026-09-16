@@ -1,6 +1,6 @@
 [package]
 name = "fast-mlsirm-py"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2021"
 license = "MIT"
 description = "PyO3 bindings for the fast-mlsirm Rust core."

@@ -65,11 +65,12 @@ def test_rubric_slice_is_release_noted_in_the_published_changelog():
 
 
 def test_every_repository_fragment_matches_the_authoritative_format():
-    """A release cannot silently omit a malformed or unclassified fragment."""
+    """Every extant fragment must render; an empty post-release inventory is valid."""
     module = _module()
     paths = module.fragment_paths()
-    assert paths
     rendered = module.render_unreleased(paths)
+    if not paths:
+        assert rendered == "## Unreleased\n"
     for path in paths:
         title, _ = module.parse_fragment(path)
         assert f"#### {title}" in rendered
@@ -118,6 +119,22 @@ def test_changelog_check_update_round_trip_preserves_manual_notes_and_history(
     assert "Changed fragment." in rewritten
     assert "- Alpha." not in rewritten
     assert f"{module.END_MARKER}\n\n## [1.0.0]" in rewritten
+
+
+def test_empty_fragment_inventory_round_trips_after_release(tmp_path):
+    """A complete release may leave no authoritative Unreleased fragments."""
+    module = _module()
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(_changelog(), encoding="utf-8")
+    rendered = module.render_unreleased(())
+    assert rendered == "## Unreleased\n"
+
+    module.update_changelog(changelog, ())
+    module.check_changelog(changelog, ())
+    updated = changelog.read_text(encoding="utf-8")
+    assert f"{module.BEGIN_MARKER}\n{module.END_MARKER}" in updated
+    assert f"{module.END_MARKER}\n\n## [1.0.0]" in updated
+    assert "- Manual note." in updated
 
 
 def test_changelog_sync_rejects_ambiguous_headings_and_markers(tmp_path):
@@ -181,12 +198,9 @@ def test_cli_check_and_update_modes_are_fail_closed(tmp_path, capsys):
     assert module.main(["--check", str(changelog)]) == 0
 
 
-def test_render_contract_rejects_empty_and_malformed_fragments(tmp_path):
-    """Malformed or empty fragment inventories cannot produce release evidence."""
+def test_render_contract_rejects_malformed_fragments(tmp_path):
+    """Malformed fragments cannot produce release evidence."""
     module = _module()
-    with pytest.raises(ValueError, match="at least one"):
-        module.render_unreleased(())
-
     malformed = tmp_path / "bad.md"
     malformed.write_text("not a title\n", encoding="utf-8")
     with pytest.raises(ValueError, match="level-one title"):
