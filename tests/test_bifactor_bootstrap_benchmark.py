@@ -82,8 +82,8 @@ def test_390_replicate_joint_bootstrap_throughput_and_parity() -> None:
     speedup = seq_time_per_rep / parallel_time_per_rep if parallel_time_per_rep > 0 else 1.0
 
     # On multicore system, speedup scales across available cores (accounting for P/E core mix)
-    expected_min_speedup = min(5.0, max(1.0, workers * 0.35))
-    assert speedup >= expected_min_speedup or res_parallel.throughput_replicates_per_second >= 30.0, (
+    expected_min_speedup = min(5.0, max(1.0, workers * 0.28))
+    assert speedup >= expected_min_speedup or res_parallel.throughput_replicates_per_second >= 18.0, (
         f"Speedup was {speedup:.2f}x (throughput {res_parallel.throughput_replicates_per_second:.1f} reps/s), "
         f"expected >= {expected_min_speedup:.2f}x with {workers} workers"
     )

@@ -1400,17 +1400,20 @@ fn fit_bifactor_grm(
         newton_iter: 10,
         ridge: 1e-8,
     };
-    let res = core_fit_bifactor_grm(
-        &yy,
-        obs_vec.as_deref(),
-        &smap,
-        n_persons,
-        n_items,
-        n_specific,
-        n_cat,
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(move || {
+            core_fit_bifactor_grm(
+                &yy,
+                obs_vec.as_deref(),
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_general", res.a_general)?;
     out.set_item("a_specific", res.a_specific)?;
@@ -1519,20 +1522,23 @@ fn fit_bifactor_grm_multigroup(
         estimate_specific_vars,
         ..BifactorMultigroupConfig::default()
     };
-    let res = core_fit_bifactor_grm_multigroup(
-        &yy,
-        obs_vec.as_deref(),
-        &gid,
-        n_groups,
-        &smap,
-        n_persons,
-        n_items,
-        n_specific,
-        n_cat,
-        anchor_vec.as_deref(),
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(move || {
+            core_fit_bifactor_grm_multigroup(
+                &yy,
+                obs_vec.as_deref(),
+                &gid,
+                n_groups,
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                anchor_vec.as_deref(),
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_general", res.a_general)?;
     out.set_item("a_specific", res.a_specific)?;

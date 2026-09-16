@@ -119,10 +119,6 @@ def fit_polytomous_bifactor(
     if n_cat < 2:
         raise ValueError("n_cat must be >= 2")
 
-    missing = np.isnan(y_raw) | (y_raw < 0)
-    observed = ~missing
-    y_clean = np.where(observed, y_raw, 0).astype(np.int64)
-
     if group_ids is not None:
         g_arr = np.asarray(group_ids, dtype=np.int64)
         if g_arr.ndim != 1 or g_arr.size != n_persons:
@@ -132,46 +128,99 @@ def fit_polytomous_bifactor(
         g_arr = None
         n_groups = max(n_groups, 1)
 
-    core = _load_bifactor_core()
-    if core is None or not hasattr(core, "fit_bifactor_grm"):
-        raise RuntimeError("Polytomous bifactor fitting requires compiled Rust core")
+    specific_map = np.full(n_items, -1, dtype=np.int64)
+    for i in range(n_items):
+        if n_dims > 1:
+            spec_idx = np.flatnonzero(lp[i, 1:])
+            if len(spec_idx) > 0:
+                specific_map[i] = spec_idx[0]
+    n_specific = max(1, int(specific_map.max()) + 1) if (specific_map >= 0).any() else 1
 
-    result = core.fit_bifactor_grm(
-        y_clean,
-        observed,
-        g_arr,
-        n_groups,
-        lp,
-        n_cat,
-        max_iter,
-        tol,
-        ridge,
-        newton_iter,
-        qmc_draws,
-        seed,
-        slope_bound,
-        compute_oakes_se,
-    )
+    if g_arr is not None and n_groups > 1:
+        from .bifactor_multigroup import fit_bifactor_grm_multigroup
 
-    return PolytomousBifactorFit(
-        model="grm_bifactor",
-        n_dims=n_dims,
-        n_items=n_items,
-        n_cat=n_cat,
-        n_groups=n_groups,
-        slope=np.asarray(result["slope"], dtype=np.float64).reshape(n_items, n_dims),
-        threshold=np.asarray(result["threshold"], dtype=np.float64).reshape(n_items, n_cat - 1),
-        group_means=np.asarray(result["group_means"], dtype=np.float64).reshape(n_groups, n_dims),
-        group_variances=np.asarray(result["group_variances"], dtype=np.float64).reshape(n_groups, n_dims),
-        loglik=float(result["loglik"]),
-        loglik_trace=np.asarray(result["loglik_trace"], dtype=np.float64),
-        n_iter=int(result["n_iter"]),
-        converged=bool(result["converged"]),
-        oakes_se_slope=np.asarray(result["oakes_se_slope"], dtype=np.float64).reshape(n_items, n_dims) if "oakes_se_slope" in result else None,
-        oakes_se_threshold=np.asarray(result["oakes_se_threshold"], dtype=np.float64).reshape(n_items, n_cat - 1) if "oakes_se_threshold" in result else None,
-        min_eigenvalue=float(result["min_eigenvalue"]) if "min_eigenvalue" in result else None,
-        condition_number=float(result["condition_number"]) if "condition_number" in result else None,
-    )
+        fit = fit_bifactor_grm_multigroup(
+            responses=y_raw,
+            group=g_arr,
+            specific_map=specific_map,
+            n_cat=n_cat,
+            n_specific=n_specific,
+            q_general=21,
+            q_specific=11,
+            max_iter=max_iter,
+            tol=tol,
+            seed=seed,
+        )
+        slope = np.zeros((n_items, n_dims), dtype=np.float64)
+        slope[:, 0] = fit.a_general[0]
+        for i in range(n_items):
+            s = specific_map[i]
+            if s >= 0:
+                slope[i, 1 + s] = fit.a_specific[0, i]
+        threshold = fit.threshold[0]
+        group_means = np.zeros((n_groups, n_dims), dtype=np.float64)
+        group_variances = np.ones((n_groups, n_dims), dtype=np.float64)
+        for g in range(n_groups):
+            group_means[g, 0] = fit.general_mean[g]
+            group_variances[g, 0] = fit.general_sd[g] ** 2
+            if n_specific > 0 and fit.specific_sd.shape[1] >= n_specific:
+                group_variances[g, 1 : 1 + n_specific] = fit.specific_sd[g, :n_specific] ** 2
+
+        loglik = float(fit.loglik_trace[-1]) if len(fit.loglik_trace) > 0 else 0.0
+        return PolytomousBifactorFit(
+            model="grm_bifactor",
+            n_dims=n_dims,
+            n_items=n_items,
+            n_cat=n_cat,
+            n_groups=n_groups,
+            slope=slope,
+            threshold=threshold,
+            group_means=group_means,
+            group_variances=group_variances,
+            loglik=loglik,
+            loglik_trace=fit.loglik_trace,
+            n_iter=fit.n_iter,
+            converged=fit.converged,
+        )
+    else:
+        from .bifactor_grm import fit_bifactor_grm
+
+        fit = fit_bifactor_grm(
+            responses=y_raw,
+            specific_map=specific_map,
+            n_cat=n_cat,
+            n_specific=n_specific,
+            q_general=21,
+            q_specific=11,
+            max_iter=max_iter,
+            tol=tol,
+            seed=seed,
+        )
+        slope = np.zeros((n_items, n_dims), dtype=np.float64)
+        slope[:, 0] = fit.a_general
+        for i in range(n_items):
+            s = specific_map[i]
+            if s >= 0:
+                slope[i, 1 + s] = fit.a_specific[i]
+        threshold = fit.threshold
+        group_means = np.zeros((1, n_dims), dtype=np.float64)
+        group_variances = np.ones((1, n_dims), dtype=np.float64)
+        loglik = float(fit.loglik_trace[-1]) if len(fit.loglik_trace) > 0 else 0.0
+        return PolytomousBifactorFit(
+            model="grm_bifactor",
+            n_dims=n_dims,
+            n_items=n_items,
+            n_cat=n_cat,
+            n_groups=1,
+            slope=slope,
+            threshold=threshold,
+            group_means=group_means,
+            group_variances=group_variances,
+            loglik=loglik,
+            loglik_trace=fit.loglik_trace,
+            n_iter=fit.n_iter,
+            converged=fit.converged,
+        )
 
 
 def bifactor_lord_wingersky(
