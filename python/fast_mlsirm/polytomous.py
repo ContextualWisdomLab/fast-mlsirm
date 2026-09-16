@@ -1255,6 +1255,17 @@ def dif_polytomous_purified(
     ``purify_termination_reason`` (``"stable_flag_set"``,
     ``"max_rounds_reached"``, or ``"insufficient_anchor_items"``).
 
+    **Check the reason before using the anchor.** On
+    ``"insufficient_anchor_items"`` the returned ``anchor`` is the screened set
+    that fell below ``min_anchor_items`` -- it is reported rather than replaced
+    by the previous, larger one, because returning the larger set would present
+    a failed purification as a clean bank. So ``n_anchor`` can be smaller than
+    ``min_anchor_items``, and that combination means the bank could not support
+    the loop, not that few items are invariant. The reported per-item statistics
+    are from the last completed sweep (against the previous anchor); the
+    sub-floor candidate is not re-swept because the floor guards a
+    too-short criterion.
+
     **The removal criterion differs from the dichotomous functions, and the
     difference is forced.** Those drop an item from the anchor on PRACTICAL
     significance -- ETS class B or C -- because the Mantel-Haenszel chi-square
@@ -1332,6 +1343,12 @@ def dif_polytomous_purified(
     while rounds < rounds_cap:
         candidate = ~flagged
         if int(candidate.sum()) < floor:
+            # Report the screened set even though it is below the floor. The
+            # floor means "too few items remain to run another sweep against",
+            # not "the flags were wrong", and returning the previous, larger
+            # anchor would present a failed purification as a clean bank --
+            # the most permissive possible answer, delivered silently.
+            anchor = candidate
             reason = "insufficient_anchor_items"
             break
         if np.array_equal(candidate, anchor):
