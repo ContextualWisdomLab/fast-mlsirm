@@ -60,11 +60,17 @@ fn fixture_numbers(text: &str, key: &str) -> Vec<f64> {
     // Minimal JSON reader for the numeric arrays the R script writes:
     // finds `"key": [...]` and flattens nested matrices row-major (the
     // brackets are treated as separators, matching the R writer's layout).
+    // The trailing `:` check keeps a future key that extends this name from
+    // misparsing.
     let anchor = format!("\"{key}\"");
     let start = text
         .find(&anchor)
         .unwrap_or_else(|| panic!("fixture is missing key {key:?}"));
     let after = &text[start + anchor.len()..];
+    assert!(
+        after.starts_with(':'),
+        "fixture key {key:?} must be followed by ':'"
+    );
     let open = after.find('[').expect("fixture array must open with [");
     let mut depth = 0usize;
     let mut end = None;
@@ -203,13 +209,17 @@ fn rust_oakes_se_matches_mirt_oakes_fixture() {
     assert!(
         worst_se <= 0.05,
         "Rust Oakes SEs must match mirt SE.type='Oakes' within 5% (same \
-         data, same MLE point, matched quadrature family; measured 8.4e-3 \
-         at quadpts = 15, band adds margin for harmless refactors); worst = \
-         {worst_se:.3e} at param {worst_se_j}"
+         data, same MLE point, matched quadrature family). This is a \
+         REGRESSION GUARD, not a calibration: the band sits at ~6x the \
+         measured 8.4e-3 gap at quadpts = 15 so harmless refactors pass \
+         while implementation drift trips it. The gap sources are GH-node \
+         conventions and mirt's TOL = 5e-4 fit looseness; the 121+-node \
+         fixture on rebase recalibrates the band. Worst = {worst_se:.3e} \
+         at param {worst_se_j}"
     );
     assert!(
         worst_v <= 0.10,
-        "Rust vcov must match mirt vcov within 10% scaled (measured 1.9e-2 \
-         at quadpts = 15); worst = {worst_v:.3e}"
+        "Rust vcov regression guard (~5x the measured 1.9e-2 at \
+         quadpts = 15); worst = {worst_v:.3e}"
     );
 }

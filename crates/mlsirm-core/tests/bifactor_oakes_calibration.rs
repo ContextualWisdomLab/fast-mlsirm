@@ -48,12 +48,10 @@ const M1: usize = N_CAT - 1;
 const SPECIFIC_MAP: [i32; N_ITEMS] = [0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
 
 const TRUE_A_G: [f64; N_ITEMS] = [
-    1.60, -1.20, 1.10, 0.90, -1.40, 1.30, 1.00, 0.80, 1.20, -1.10, 1.40, 1.00,
-    0.90, 1.20,
+    1.60, -1.20, 1.10, 0.90, -1.40, 1.30, 1.00, 0.80, 1.20, -1.10, 1.40, 1.00, 0.90, 1.20,
 ];
 const TRUE_A_S: [f64; N_ITEMS] = [
-    1.10, 0.90, 1.20, 0.80, 1.00, 1.30, 0.70, 0.90, 1.10, 0.80, 1.20, 1.00,
-    0.90, 0.70,
+    1.10, 0.90, 1.20, 0.80, 1.00, 1.30, 0.70, 0.90, 1.10, 0.80, 1.20, 1.00, 0.90, 0.70,
 ];
 const TRUE_D: [[f64; M1]; N_ITEMS] = [
     [1.30, 0.10, -1.10],
@@ -107,11 +105,11 @@ fn simulate(n_persons: usize, seed: u64) -> Vec<usize> {
             let base = TRUE_A_G[i] * tg + TRUE_A_S[i] * ts[s];
             let u = rng.uniform();
             let mut cat = 0usize;
-            for k in 0..M1 {
+            for d in TRUE_D[i].iter().take(M1) {
                 // Y >= k+1 iff u <= P(Y >= k+1): count the cumulative
                 // thresholds u falls BELOW (inversion sampling; `u > p`
                 // here would generate category-REVERSED data).
-                if u < 1.0 / (1.0 + (-(base + TRUE_D[i][k])).exp()) {
+                if u < 1.0 / (1.0 + (-(base + d)).exp()) {
                     cat += 1;
                 } else {
                     break;
@@ -142,11 +140,7 @@ fn covers_all_categories(y: &[usize], n_persons: usize) -> bool {
 /// the whole block.) A test-side reporting alignment, not an estimator
 /// change.
 fn align_to_truth(a_g: &mut [f64], a_s: &mut [f64]) {
-    let dot_g: f64 = a_g
-        .iter()
-        .zip(TRUE_A_G.iter())
-        .map(|(a, b)| a * b)
-        .sum();
+    let dot_g: f64 = a_g.iter().zip(TRUE_A_G.iter()).map(|(a, b)| a * b).sum();
     if dot_g < 0.0 {
         for a in a_g.iter_mut() {
             *a = -*a;
@@ -259,9 +253,15 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
         // Non-PD replicates are SKIPPED (their EM stop was off-max on a flat
         // split tail — the assembly correctly refuses SEs there); the PD
         // rate is reported and floored below. Both branches are
-        // deterministic under the fixed replicate seeds.
+        // deterministic under the fixed replicate seeds. The comparison is
+        // therefore conditional on arrival; with the floor passing at
+        // 100/100 the conditioning is empty and the comparison is
+        // unconditional.
         if !res.positive_definite {
-            eprintln!("replicate {r}: non-PD info skipped ({:?})", res.non_pd_reason);
+            eprintln!(
+                "replicate {r}: non-PD info skipped ({:?})",
+                res.non_pd_reason
+            );
             continue;
         }
         n_pd += 1;
@@ -333,7 +333,7 @@ const CONV_N: usize = 800;
 
 #[test]
 fn estimates_stabilize_as_grid_grows_within_supported_cap() {
-    let y = simulate(CONV_N, 0xC0E_77);
+    let y = simulate(CONV_N, 0x000C_0E77);
     assert!(covers_all_categories(&y, CONV_N));
     let mut prev: Option<(f64, Vec<f64>, Vec<f64>)> = None;
     for &q in &[21usize, 31, 41] {
@@ -393,7 +393,10 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
         params.extend_from_slice(&fit.a_general);
         params.extend_from_slice(&fit.a_specific);
         params.extend_from_slice(&fit.threshold);
-        eprintln!("grid q={q}: ll={ll:.4} max|SE|={:.4}", se.iter().cloned().fold(0.0, f64::max));
+        eprintln!(
+            "grid q={q}: ll={ll:.4} max|SE|={:.4}",
+            se.iter().cloned().fold(0.0, f64::max)
+        );
         if let Some((pll, pparams, pse)) = prev {
             let dll = (ll - pll).abs();
             let dpar: f64 = params

@@ -105,11 +105,11 @@ def test_se_returns_matching_vcov_and_se_at_fitted_mle() -> None:
     assert res.vcov is not None and res.vcov.shape == (k, k)
     assert res.se is not None and res.se.shape == (k,)
     assert bool(np.all(np.isfinite(res.se)) and np.all(res.se > 0))
-    # Symmetry of information and vcov; se == sqrt(diag(vcov)).
+    # Symmetry of information and vcov; se == sqrt(diag(vcov)) exactly.
     np.testing.assert_allclose(res.information, res.information.T, rtol=1e-12)
     np.testing.assert_allclose(res.vcov, res.vcov.T, rtol=1e-9)
     np.testing.assert_allclose(
-        res.se, np.sqrt(np.maximum(np.diag(res.vcov), 0.0)), rtol=1e-12
+        res.se, np.sqrt(np.diag(res.vcov)), rtol=1e-12
     )
     # Labels follow the free order: per item [a_general, a_specific, d...].
     assert res.labels[0] == "a_general:0"
@@ -166,4 +166,33 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             fit.a_general, fit.a_specific, fit.threshold[:, :1], y,
             SPECIFIC_MAP, N_CAT, N_SPECIFIC, q_general=7, q_specific=7,
             fd_step=1e-5,
+        )
+
+
+def test_core_binding_rejects_negative_y_without_mask() -> None:
+    # The PyO3 binding must not silently coerce negative categories to 0
+    # when no observed mask is given (masked-out cells may carry negative
+    # placeholders; unmasked cells must be non-negative).
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    assert core is not None and hasattr(core, "bifactor_oakes_se")
+    y = _simulate(SEED)
+    bad = y.astype(np.int64).reshape(-1).copy()
+    bad[0] = -1
+    with pytest.raises(ValueError):
+        core.bifactor_oakes_se(
+            TRUE_A_G.astype(np.float64),
+            TRUE_A_S.astype(np.float64),
+            TRUE_D.astype(np.float64).reshape(-1),
+            bad,
+            None,
+            SPECIFIC_MAP.astype(np.int64),
+            N_PERSONS,
+            N_ITEMS,
+            N_SPECIFIC,
+            N_CAT,
+            7,
+            7,
+            1e-5,
         )

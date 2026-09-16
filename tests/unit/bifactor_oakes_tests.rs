@@ -29,9 +29,7 @@
 //! Methodology, 61*(2), 479-482. https://doi.org/10.1111/1467-9868.00188
 
 use super::*;
-use crate::bifactor_grm::{
-    bifactor_grm_marginal_loglik, fit_bifactor_grm, BifactorGrmConfig,
-};
+use crate::bifactor_grm::{bifactor_grm_marginal_loglik, fit_bifactor_grm, BifactorGrmConfig};
 
 // ---------------------------------------------------------------------------
 // Shared tiny problem (mirrors the stage-1 reduction test scales).
@@ -114,19 +112,6 @@ impl Lcg {
         let u2 = self.uniform();
         (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
     }
-}
-
-fn simulate_tiny(n_persons: usize, seed: u64) -> Vec<usize> {
-    let (a_g, a_s, thresholds) = tiny_params();
-    simulate_from_model(
-        n_persons,
-        seed,
-        &a_g,
-        &a_s,
-        &thresholds,
-        TINY_N_ITEMS,
-        TINY_N_CAT,
-    )
 }
 
 /// Six-item identified design (three items per specific factor): the
@@ -347,8 +332,7 @@ fn oakes_information_matches_fd_of_marginal_loglik_on_tiny_problem() {
             let mut xmp = packed.clone();
             xmp[j] -= hj;
             xmp[l] += hl;
-            let mixed = (loglik_at(&xpp) - loglik_at(&xpm) - loglik_at(&xmp)
-                + loglik_at(&xmm))
+            let mixed = (loglik_at(&xpp) - loglik_at(&xpm) - loglik_at(&xmp) + loglik_at(&xmm))
                 / (4.0 * hj * hl);
             fd_info[j * k + l] = -mixed;
             fd_info[l * k + j] = -mixed;
@@ -377,104 +361,111 @@ fn six_item_mle_is_positive_definite_with_matching_vcov_and_se() {
     // Positive definiteness holds at (near) the MLE, not at arbitrary
     // parameters: simulate from the model definition with an independent
     // RNG, fit to the MLE, and evaluate the Oakes information there.
-    // Design, sample size, quadrature, and budgets below are TEST arguments.
-    let n_persons = 800usize;
-    let (true_ag, true_as, true_th) = six_params();
-    let y = simulate_from_model(
-        n_persons,
-        0x5EED_1234,
-        &true_ag,
-        &true_as,
-        &true_th,
-        SIX_N_ITEMS,
-        SIX_N_CAT,
-    );
-    for i in 0..SIX_N_ITEMS {
-        for k in 0..SIX_N_CAT {
+    // Design, sample size, quadrature, budgets, and BOTH seeds below are
+    // TEST arguments (two seed pairs so a benign RNG change cannot flip
+    // the PD outcome unnoticed).
+    for (sim_seed, fit_seed) in [(0x5EED_1234u64, 777u64), (0x00C0_FFEEu64, 4242u64)] {
+        let n_persons = 800usize;
+        let (true_ag, true_as, true_th) = six_params();
+        let y = simulate_from_model(
+            n_persons,
+            sim_seed,
+            &true_ag,
+            &true_as,
+            &true_th,
+            SIX_N_ITEMS,
+            SIX_N_CAT,
+        );
+        for i in 0..SIX_N_ITEMS {
+            for k in 0..SIX_N_CAT {
+                assert!(
+                    (0..n_persons).any(|p| y[p * SIX_N_ITEMS + i] == k),
+                    "simulated data must cover category {k} of item {i}"
+                );
+            }
+        }
+        let fit_cfg = BifactorGrmConfig {
+            q_general: 7,
+            q_specific: 7,
+            max_iter: 500,
+            tol: 1e-7,
+            n_starts: 3,
+            seed: fit_seed,
+            newton_iter: 10,
+            ridge: 1e-8,
+        };
+        let fit = fit_bifactor_grm(
+            &y,
+            None,
+            &SIX_SPECIFIC_MAP,
+            n_persons,
+            SIX_N_ITEMS,
+            SIX_N_SPECIFIC,
+            SIX_N_CAT,
+            &fit_cfg,
+        )
+        .expect("six-item simulated fit must succeed");
+        assert!(
+            fit.converged,
+            "six-item simulated fit must converge; reason: {}",
+            fit.termination_reason
+        );
+        let cfg = tiny_oakes_config();
+        let res = bifactor_oakes_se(
+            &fit.a_general,
+            &fit.a_specific,
+            &fit.threshold,
+            &y,
+            None,
+            &SIX_SPECIFIC_MAP,
+            n_persons,
+            SIX_N_ITEMS,
+            SIX_N_SPECIFIC,
+            SIX_N_CAT,
+            &cfg,
+        )
+        .expect("Oakes SEs at the six-item MLE must return Ok");
+        assert!(
+            res.positive_definite,
+            "the six-item MLE must be positive definite (seeds {sim_seed:#X}/{fit_seed}); \
+             reason: {:?}",
+            res.non_pd_reason
+        );
+        assert!(
+            res.non_pd_reason.is_none(),
+            "a PD result must carry no reason"
+        );
+        let (vcov, se) = (
+            res.vcov.expect("PD implies vcov"),
+            res.se.expect("PD implies se"),
+        );
+        let k = res.labels.len();
+        assert_eq!(vcov.len(), k * k);
+        assert_eq!(se.len(), k);
+        assert!(
+            se.iter().all(|s| s.is_finite() && *s > 0.0),
+            "SEs must be finite and positive; got {se:?}"
+        );
+        // vcov diagonals are variances: se == sqrt(diag(vcov)) exactly (the
+        // assembly never clips; Cholesky success certifies PD).
+        for j in 0..k {
+            let expect = vcov[j * k + j].sqrt();
             assert!(
-                (0..n_persons).any(|p| y[p * SIX_N_ITEMS + i] == k),
-                "simulated data must cover category {k} of item {i}"
+                (se[j] - expect).abs() <= 1e-12,
+                "se[{j}] must equal sqrt(vcov[{j},{j}])"
             );
         }
-    }
-    let fit_cfg = BifactorGrmConfig {
-        q_general: 7,
-        q_specific: 7,
-        max_iter: 500,
-        tol: 1e-7,
-        n_starts: 3,
-        seed: 777,
-        newton_iter: 10,
-        ridge: 1e-8,
-    };
-    let fit = fit_bifactor_grm(
-        &y,
-        None,
-        &SIX_SPECIFIC_MAP,
-        n_persons,
-        SIX_N_ITEMS,
-        SIX_N_SPECIFIC,
-        SIX_N_CAT,
-        &fit_cfg,
-    )
-    .expect("six-item simulated fit must succeed");
-    assert!(
-        fit.converged,
-        "six-item simulated fit must converge; reason: {}",
-        fit.termination_reason
-    );
-    let cfg = tiny_oakes_config();
-    let res = bifactor_oakes_se(
-        &fit.a_general,
-        &fit.a_specific,
-        &fit.threshold,
-        &y,
-        None,
-        &SIX_SPECIFIC_MAP,
-        n_persons,
-        SIX_N_ITEMS,
-        SIX_N_SPECIFIC,
-        SIX_N_CAT,
-        &cfg,
-    )
-    .expect("Oakes SEs at the six-item MLE must return Ok");
-    assert!(
-        res.positive_definite,
-        "the six-item MLE must be positive definite; reason: {:?}",
-        res.non_pd_reason
-    );
-    assert!(
-        res.non_pd_reason.is_none(),
-        "a PD result must carry no reason"
-    );
-    let (vcov, se) = (res.vcov.expect("PD implies vcov"), res.se.expect("PD implies se"));
-    let k = res.labels.len();
-    assert_eq!(vcov.len(), k * k);
-    assert_eq!(se.len(), k);
-    assert!(
-        se.iter().all(|s| s.is_finite() && *s > 0.0),
-        "SEs must be finite and positive; got {se:?}"
-    );
-    // vcov diagonals are variances: se == sqrt(diag(vcov)).
-    for j in 0..k {
-        let expect = vcov[j * k + j].max(0.0).sqrt();
-        assert!(
-            (se[j] - expect).abs() <= 1e-12,
-            "se[{j}] must equal sqrt(vcov[{j},{j}])"
-        );
     }
 }
 
 #[test]
 fn non_pd_information_is_flagged_with_reason_and_no_substitute() {
-    // One respondent cannot identify 16 item parameters: the observed
-    // information must be singular, and the assembly must FLAG it with a
-    // reason while returning `None` (never a substitute) for vcov/se.
-    // The test asserts the CONTRACT in both branches so it stays
-    // deterministic whatever the numerical outcome on this degenerate input.
+    // Three respondents cannot identify 16 item parameters: the observed
+    // information is singular, and the assembly must FLAG it with a reason
+    // while returning `None` (never a substitute) for vcov/se. Three
+    // respondents is the smallest sample covering every category of every
+    // item (fewer would trip the unidentified-boundary validator instead).
     let (a_g, a_s, thresholds) = tiny_params();
-    // Three respondents is the smallest sample covering every category of
-    // every item (fewer would trip the unidentified-boundary validator).
     let y_few = vec![0usize, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2];
     let res = bifactor_oakes_se(
         &a_g,
@@ -492,11 +483,227 @@ fn non_pd_information_is_flagged_with_reason_and_no_substitute() {
     .expect("even a degenerate problem must return Ok with flags, never Err");
     let k = res.labels.len();
     assert_eq!(res.information.len(), k * k);
-    assert_eq!(res.positive_definite, res.vcov.is_some());
-    assert_eq!(res.positive_definite, res.se.is_some());
-    assert_eq!(res.positive_definite, res.non_pd_reason.is_none());
-    if !res.positive_definite {
-        let reason = res.non_pd_reason.expect("non-PD implies a reason");
-        assert!(!reason.is_empty(), "the reason must be non-empty");
+    assert!(
+        !res.positive_definite,
+        "three respondents cannot identify 16 parameters; the flag must trip"
+    );
+    assert!(res.vcov.is_none(), "non-PD implies no vcov substitute");
+    assert!(res.se.is_none(), "non-PD implies no SE substitute");
+    let reason = res.non_pd_reason.expect("non-PD implies a reason");
+    assert!(!reason.is_empty(), "the reason must be non-empty");
+}
+
+// ---------------------------------------------------------------------------
+// General-only items (`specific_map == -1`): no `a_S` slot exists, the
+// per-item node grid is general-only, and the Oakes information must still
+// match the numerical marginal Hessian (same FD cross-check as the
+// all-block tiny problem).
+// ---------------------------------------------------------------------------
+
+/// Item -> specific map with general-only items 0 and 2.
+const MIXED_SPECIFIC_MAP: [i32; TINY_N_ITEMS] = [-1, 0, -1, 0];
+
+fn mixed_params() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    // `a_specific` must be exactly 0.0 on general-only items.
+    let (a_g, _, thresholds) = tiny_params();
+    let a_specific = vec![0.0, 1.1, 0.0, 0.6];
+    (a_g, a_specific, thresholds)
+}
+
+#[test]
+fn general_only_items_have_no_specific_slot_and_match_fd() {
+    let (a_g, a_s, thresholds) = mixed_params();
+    let (y, n_persons) = tiny_data();
+    let cfg = tiny_oakes_config();
+    let provider = Stage1Provider::new(
+        &y,
+        None,
+        &MIXED_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        1,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("stage-1 provider with general-only items must build");
+    // Free order: item 0 [a_G, d, d], item 1 [a_G, a_S, d, d], ...
+    assert_eq!(
+        provider.labels(),
+        vec![
+            "a_general:0",
+            "d:0:0",
+            "d:0:1",
+            "a_general:1",
+            "a_specific:1",
+            "d:1:0",
+            "d:1:1",
+            "a_general:2",
+            "d:2:0",
+            "d:2:1",
+            "a_general:3",
+            "a_specific:3",
+            "d:3:0",
+            "d:3:1",
+        ]
+    );
+    let k = provider.free_len();
+    assert_eq!(k, 3 + 4 + 3 + 4);
+    let res = bifactor_oakes_se(
+        &a_g,
+        &a_s,
+        &thresholds,
+        &y,
+        None,
+        &MIXED_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        1,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("Oakes SEs with general-only items must return Ok");
+    assert_eq!(res.labels.len(), k);
+    assert_eq!(res.information.len(), k * k);
+    // Same marginal-Hessian cross-check as the all-block tiny problem,
+    // over the mixed free vector (general-only items contribute 3 slots).
+    let m1 = TINY_N_CAT - 1;
+    let loglik_at = |p: &[f64], spec: &[ItemSpec]| -> f64 {
+        let mut ag = vec![0.0; TINY_N_ITEMS];
+        let mut as_ = vec![0.0; TINY_N_ITEMS];
+        let mut th = vec![0.0; TINY_N_ITEMS * m1];
+        for (i, s) in spec.iter().enumerate() {
+            ag[i] = p[s.slots[0]];
+            let mut off = 1;
+            if s.has_specific {
+                as_[i] = p[s.slots[1]];
+                off = 2;
+            }
+            for j in 0..m1 {
+                th[i * m1 + j] = p[s.slots[off + j]];
+            }
+        }
+        bifactor_grm_marginal_loglik(
+            &ag,
+            &as_,
+            &th,
+            &y,
+            None,
+            &MIXED_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            1,
+            TINY_N_CAT,
+            cfg.q_general,
+            cfg.q_specific,
+        )
+        .expect("marginal loglik at perturbed params must evaluate")
+    };
+    let specs = provider.item_specs();
+    let mut packed = vec![0.0f64; k];
+    for (i, s) in specs.iter().enumerate() {
+        packed[s.slots[0]] = a_g[i];
+        let mut off = 1;
+        if s.has_specific {
+            packed[s.slots[1]] = a_s[i];
+            off = 2;
+        }
+        for j in 0..m1 {
+            packed[s.slots[off + j]] = thresholds[i * m1 + j];
+        }
+    }
+    let h = 1e-5;
+    let mut worst = 0.0f64;
+    for j in 0..k {
+        let hj = h * (1.0 + packed[j].abs());
+        let mut xp = packed.clone();
+        xp[j] += hj;
+        let mut xm = packed.clone();
+        xm[j] -= hj;
+        let lp = loglik_at(&xp, &specs);
+        let lm = loglik_at(&xm, &specs);
+        let l0 = loglik_at(&packed, &specs);
+        let fd_diag = -((lp - 2.0 * l0 + lm) / (hj * hj));
+        let o = res.information[j * k + j];
+        worst = worst.max((o - fd_diag).abs() / (1.0 + fd_diag.abs()));
+    }
+    assert!(
+        worst <= 2e-2,
+        "Oakes diagonal must match the marginal-Hessian diagonal with \
+         general-only items present; worst scaled gap = {worst:.3e}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Binary (`M = 1`) GRM cell Hessian: collapses to the logistic Hessian
+// `-(r_0 + r_1) * s * (1 - s)`, and matches central FD of the cell gradient.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn binary_cell_hessian_matches_logistic_form_and_fd() {
+    use crate::poly::{grm_node_gradient, grm_node_hessian};
+    let (base, thr, counts) = (0.7f64, vec![0.2f64], vec![1.5f64, 2.5f64]);
+    let (grand, row_sums, mat) = grm_node_hessian(base, &thr, &counts);
+    let s = 1.0 / (1.0 + (-(base + thr[0])).exp());
+    let expect = -(counts[0] + counts[1]) * s * (1.0 - s);
+    assert!(
+        (grand - expect).abs() <= 1e-12 * (1.0 + expect.abs()),
+        "M=1 grand sum must equal the logistic Hessian; got {grand}, expect {expect}"
+    );
+    assert_eq!(row_sums.len(), 1);
+    assert!((row_sums[0] - expect).abs() <= 1e-12 * (1.0 + expect.abs()));
+    assert!((mat[0][0] - expect).abs() <= 1e-12 * (1.0 + expect.abs()));
+    // FD cross-check of the cell gradient.
+    let h = 1e-7;
+    let f = |b: f64, d0: f64| grm_node_gradient(b, &[d0], &counts);
+    let (gp, gtp) = f(base + h, thr[0]);
+    let (gm, gtm) = f(base - h, thr[0]);
+    let (gdp, _) = f(base, thr[0] + h);
+    let (gdm, _) = f(base, thr[0] - h);
+    let fd_bb = (gp - gm) / (2.0 * h);
+    let fd_bd = (gdp - gdm) / (2.0 * h);
+    let fd_db = (gtp[0] - gtm[0]) / (2.0 * h);
+    let (_, gdtp) = f(base, thr[0] + h);
+    let (_, gdtm) = f(base, thr[0] - h);
+    let fd_dd = (gdtp[0] - gdtm[0]) / (2.0 * h);
+    for (got, want, name) in [
+        (grand, fd_bb, "d_base d_base"),
+        (fd_bd, fd_db, "symmetry d_base d_thr"),
+        (mat[0][0], fd_dd, "d_thr d_thr"),
+    ] {
+        assert!(
+            (got - want).abs() <= 1e-5 * (1.0 + want.abs()),
+            "binary cell Hessian {name}: got {got}, want {want}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `fd_step` validation: non-finite or non-positive steps are loud errors.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rejects_non_positive_fd_steps() {
+    let (y, n_persons) = tiny_data();
+    for fd_step in [0.0, -1e-5, f64::NAN, f64::INFINITY] {
+        let cfg = BifactorOakesConfig {
+            q_general: 7,
+            q_specific: 7,
+            fd_step,
+        };
+        let err = Stage1Provider::new(
+            &y,
+            None,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &cfg,
+        )
+        .expect_err("non-positive fd_step must fail loudly, never clamp");
+        assert!(
+            err.contains("fd_step"),
+            "the error must name fd_step; got: {err}"
+        );
     }
 }

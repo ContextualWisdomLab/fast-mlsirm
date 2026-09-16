@@ -156,6 +156,7 @@ pub(crate) trait PosteriorProvider {
 /// Single-group [`PosteriorProvider`] (stage 1): the Gibbons-Hedeker reduced
 /// E-step at the caller quadrature, sharing the item-parameter packing that
 /// stage 2 (multigroup) reuses.
+#[derive(Clone, Debug)]
 pub(crate) struct Stage1Provider {
     y: Vec<usize>,
     observed: Option<Vec<bool>>,
@@ -303,8 +304,7 @@ impl Stage1Provider {
 impl PosteriorProvider for Stage1Provider {
     fn posterior_at(&self, packed: &[f64]) -> Result<OakesPosterior, String> {
         let params = self.unpack(packed);
-        let tables =
-            fill_logprob_tables(&self.v, &params, &self.tg, &self.ts, self.qg, self.qs);
+        let tables = fill_logprob_tables(&self.v, &params, &self.tg, &self.ts, self.qg, self.qs);
         let (_, counts) = e_step(
             &self.v,
             &self.y,
@@ -433,7 +433,8 @@ pub(crate) fn q_hessian_analytic(
             &posterior.node_s[i],
             &posterior.counts[i],
         );
-        let (g_slot, s_slot, s_off) = (spec.slots[0], spec.has_specific.then(|| spec.slots[1]), off);
+        let (g_slot, s_slot, s_off) =
+            (spec.slots[0], spec.has_specific.then(|| spec.slots[1]), off);
         for (node, cnt) in counts.iter().enumerate() {
             let base = a_g * tg[node] + a_s * ts[node];
             let (grand, row_sums, mat) = grm_node_hessian(base, &d, cnt);
@@ -460,7 +461,6 @@ pub(crate) fn q_hessian_analytic(
                 }
             }
         }
-        let _ = s_off;
     }
     hess
 }
@@ -575,7 +575,10 @@ pub fn bifactor_oakes_se(
     let term_a = q_hessian_analytic(&packed, &posterior0, &provider);
 
     // Term B: cross derivative — forward FD over the posterior argument
-    // (one E-step per coordinate), gradient evaluated at the base xi.
+    // (one E-step per coordinate), gradient evaluated at the base xi. A
+    // perturbation can invert a tight threshold gap (making the perturbed
+    // posterior non-finite); that surfaces as non-finite information and is
+    // reported through the non-PD flag, never as Err.
     let g0 = q_gradient_analytic(&packed, &posterior0, &provider);
     let mut cross = vec![0.0f64; k * k];
     for j in 0..k {
@@ -589,12 +592,15 @@ pub fn bifactor_oakes_se(
         }
     }
 
-    // Observed information = -(A + B), symmetrized (Oakes, 1999, eq. 6).
+    // Observed information = -(A + B) by Oakes (1999, eq. 6, p. 480),
+    // symmetrized to remove forward-FD asymmetry (the exact sum is
+    // symmetric). Note `cross[j * k + c]` holds d g_c / d xi_j, i.e. the
+    // transpose of the mixed partials, so the average recovers (B+B')/2.
     let mut information = vec![0.0f64; k * k];
     for r in 0..k {
         for c in 0..k {
-            information[r * k + c] =
-                -0.5 * (term_a[r * k + c] + cross[r * k + c] + term_a[c * k + r] + cross[c * k + r]);
+            information[r * k + c] = -0.5
+                * (term_a[r * k + c] + cross[r * k + c] + term_a[c * k + r] + cross[c * k + r]);
         }
     }
     if information.iter().any(|v| !v.is_finite()) {
@@ -611,7 +617,19 @@ pub fn bifactor_oakes_se(
     }
     match cholesky_inverse(&information, k) {
         Ok(vcov) => {
-            let se: Vec<f64> = (0..k).map(|j| vcov[j * k + j].max(0.0).sqrt()).collect();
+            // A successful Cholesky certifies positive definiteness, hence
+            // every diagonal of the inverse is positive; take exact square
+            // roots (no clipping — a non-positive diagonal here would be an
+            // arithmetic bug, surfaced by the debug assertion, not data).
+            let se: Vec<f64> = (0..k)
+                .map(|j| {
+                    debug_assert!(
+                        vcov[j * k + j] > 0.0,
+                        "Cholesky-certified PD inverse must have a positive diagonal"
+                    );
+                    vcov[j * k + j].sqrt()
+                })
+                .collect();
             Ok(BifactorOakesResult {
                 labels,
                 information,

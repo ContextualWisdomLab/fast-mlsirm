@@ -308,6 +308,14 @@ class BifactorOakesSe:
     ``se`` the standard errors, or ``None`` exactly when ``vcov`` is
     ``None``; ``positive_definite`` the flag; ``non_pd_reason`` the reason,
     or ``None`` when positive definite.
+
+    Implementation basis: Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal
+    Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188 (eq. 6, p. 480); graded cell
+    Gibbons, R. D., et al. (2007). Full-information item bifactor analysis
+    of graded response data. *Applied Psychological Measurement, 31*(1),
+    4-19. https://doi.org/10.1177/0146621606289485 (eq. 9, p. 7).
     """
 
     labels: list

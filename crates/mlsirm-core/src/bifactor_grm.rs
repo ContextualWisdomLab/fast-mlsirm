@@ -192,6 +192,7 @@ pub struct BifactorGrmResult {
 
 /// Validated problem structure shared by the fitter and the public
 /// marginal-loglik entry points.
+#[derive(Clone, Debug)]
 pub(crate) struct Validated {
     pub(crate) n_persons: usize,
     pub(crate) n_items: usize,

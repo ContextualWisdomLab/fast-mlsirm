@@ -226,8 +226,7 @@ pub fn grm_node_hessian(
         let t_left = r_left * rv_left;
         // H_jj = w_j * A_j - v_j^2 * (r_{j+1}/P_{j+1}^2 + r_j/P_j^2),
         // with w_j = v_j * (1 - 2 s_j): factor the shared v_j/P ratios.
-        mat[j][j] = one_minus_2s[j] * (t_right - t_left)
-            - (t_right * rv_right + t_left * rv_left);
+        mat[j][j] = one_minus_2s[j] * (t_right - t_left) - (t_right * rv_right + t_left * rv_left);
         // H_{j,j+1} = r_{j+1} * v_j * v_{j+1} / P_{j+1}^2 (category j+1 is
         // the only one involving both boundaries j and j+1).
         if j + 1 < m && r_right != 0.0 {
