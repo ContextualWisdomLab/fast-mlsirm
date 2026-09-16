@@ -13,7 +13,6 @@ from .config import MAX_MAX_ITER
 
 
 MAX_TESTLET_RESPONSE_CELLS = 20_000_000
-_SUPPORTED_Q_GAMMA = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_TYPES = tuple(
     np.dtype(name).type
     for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64")
@@ -77,9 +76,11 @@ def _normalize_testlet_controls(
     elif _is_exact_type(q_gamma_type, _NUMPY_INTEGER_TYPES):
         q_gamma_value = int(q_gamma)
     else:
-        raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
-    if q_gamma_value not in _SUPPORTED_Q_GAMMA:
-        raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
+        raise ValueError("q_gamma must be an integer >= 1")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969) and guards allocation overflow.
+    if q_gamma_value < 1:
+        raise ValueError("q_gamma must be >= 1")
 
     init_sigma2_type = type(init_sigma2)
     if not (

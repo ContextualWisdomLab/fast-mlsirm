@@ -35,7 +35,6 @@ from .objective import linear_predictor, prepare_response, validate_factor_id
 
 MAX_PERSON_FIT_REPLICATES = 10_000
 MAX_PERSON_FIT_WORK_CELLS = 200_000_000
-_SUPPORTED_QUADRATURE = (7, 11, 15, 21, 31, 41)
 
 
 def _validate_sx2_controls(
@@ -46,14 +45,16 @@ def _validate_sx2_controls(
     Checks that the quadrature sizes are supported and that the minimum-expected
     cell count, BH false-discovery rate, and minimum effect size are valid.
     """
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969) and guards allocation overflow.
     quadrature = []
     for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
         if (
             isinstance(value, (bool, np.bool_))
             or not isinstance(value, (int, np.integer))
-            or int(value) not in _SUPPORTED_QUADRATURE
+            or int(value) < 1
         ):
-            raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
+            raise ValueError(f"{name} must be an integer >= 1")
         quadrature.append(int(value))
 
     numeric = []

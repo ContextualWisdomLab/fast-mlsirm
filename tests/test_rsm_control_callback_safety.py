@@ -133,10 +133,10 @@ def test_q_theta_untrusted_values_rejected_without_hash_or_numeric_callbacks() -
     """Reject hostile quadrature controls before hashing or numeric callbacks."""
     _HostileInt.reset()
     _HashTrap.callbacks = 0
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         fit_rsm(_ResponseSentinel(), n_cat=3, q_theta=_HostileInt(7))
     assert _HostileInt.callbacks == 0
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         fit_rsm(_ResponseSentinel(), n_cat=3, q_theta=_HashTrap())
     assert _HashTrap.callbacks == 0
 

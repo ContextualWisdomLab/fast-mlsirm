@@ -186,7 +186,7 @@ pub fn gtheory_pi(
         return Err("gtheory_pi: need at least 2 persons and 2 items".to_string());
     }
     validate(x, n_p * n_i, "gtheory_pi")?;
-    if n_i_prime.iter().any(|&n| n == 0) {
+    if n_i_prime.contains(&0) {
         return Err("gtheory_pi: n_i_prime entries must be >= 1".to_string());
     }
 

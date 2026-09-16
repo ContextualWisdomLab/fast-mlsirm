@@ -108,6 +108,7 @@ use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorGrmConfig,
     BifactorMultigroupConfig,
 };
+use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1566,6 +1567,134 @@ fn fit_bifactor_grm_multigroup(
     out.set_item("theta_g_eap", res.theta_g_eap)?;
     out.set_item("theta_g_sd", res.theta_g_sd)?;
     out.set_item("group_category_counts", res.group_category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("best_start", res.best_start)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Single-group polytomous two-tier graded response model (Cai, 2010,
+/// abstract read; Cai, Yang, & Hansen, 2011, eq. 6-7, full text read;
+/// `mlsirm_core::two_tier_grm::fit_two_tier_grm`). Each item's `n_cat` ORDERED categories load a caller-supplied subset of
+/// the `n_primary` correlated primary dimensions (`a_primary`, row-major
+/// `n_items * n_primary`, unconstrained, `0` at fixed pattern positions)
+/// and at most one orthogonal specific factor (`a_specific`,
+/// unconstrained, `0` for specific-free items):
+/// `P(Y>=k|theta) = sigmoid(sum_p a_ip*theta_p + a_S*theta_S + d_k)` with
+/// strictly decreasing boundary intercepts `d`, `theta_P ~ MVN(0, Phi)`
+/// (`Phi` the estimated primary correlation matrix) and orthogonal
+/// `N(0, 1)` specifics. `primary_map` is a row-major
+/// `n_items * n_primary` boolean array (each primary needs >= 2 loading
+/// items); `specific_map` is length `n_items` with `-1` for specific-free
+/// items and `0..n_specific` otherwise (each specific needs >= 2 items).
+/// Estimation is Bock-Aitkin EM with dimension reduction over the specific
+/// tier (`O(Q_P^P * sum_s Q_S * |block_s|)` per person); `q_primary` /
+/// `q_specific` are Gauss-Hermite counts, `n_starts` deterministic starts
+/// from `seed` keep the best loglik. Returns a dict with `a_primary`,
+/// `a_specific`, `threshold` (`n_items * (n_cat-1)`, strictly decreasing per
+/// item), `phi` (`n_primary * n_primary` correlation), `theta_p_eap` /
+/// `theta_p_sd` (primary-factor EAPs + marginal posterior SDs, row-major
+/// `n_persons * n_primary`), `category_counts` (`n_items * n_cat`),
+/// `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
+/// `final_loglik_change`, `best_start`, `n_parameters`.
+/// Unobserved categories raise `ValueError`; `max_iter` exhaustion reports
+/// `converged = False` instead of substituting values.
+///
+/// References (APA 7th ed.):
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
+/// accessible — no equation locator is drawn from it)
+///
+/// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+/// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
+/// https://doi.org/10.1037/a0023350 (full text read)
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15))]
+fn fit_two_tier_grm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    primary_map: PyReadonlyArray1<'_, bool>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    n_starts: usize,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    // Missing cells may carry any negative placeholder (the Python wrapper
+    // sends 0); only observed cells must be non-negative categories.
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+                return Ok(0usize);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let pmap: Vec<bool> = primary_map.as_slice()?.to_vec();
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = TwoTierGrmConfig {
+        q_primary,
+        q_specific,
+        max_iter,
+        tol,
+        n_starts,
+        seed,
+        // newton_iter/ridge: inner Newton M-step controls, not exposed to
+        // Python and out of #1929's quadrature-node scope.
+        newton_iter: 10,
+        ridge: 1e-8,
+    };
+    let res = core_fit_two_tier_grm(
+        &yy,
+        obs_vec.as_deref(),
+        &pmap,
+        &smap,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_primary", res.a_primary)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("phi", res.phi)?;
+    out.set_item("theta_p_eap", res.theta_p_eap)?;
+    out.set_item("theta_p_sd", res.theta_p_sd)?;
+    out.set_item("category_counts", res.category_counts)?;
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
@@ -9849,6 +9978,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;

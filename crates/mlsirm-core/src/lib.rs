@@ -52,6 +52,7 @@ pub mod subscores;
 pub mod test_form;
 pub mod testlet;
 pub mod twopl;
+pub mod two_tier_grm;
 pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.

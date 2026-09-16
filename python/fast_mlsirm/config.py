@@ -301,13 +301,14 @@ class FitConfig:
         ):
             raise ValueError("gradient_clip must be > 0 and finite, or None")
 
-        supported_q = {7, 11, 15, 21, 31, 41}
+        # #1929: no node-count cap; the Rust core generates any n >= 1 rule
+        # on demand (Golub & Welsch, 1969) and guards allocation overflow.
         q_theta = _trusted_integer(self.q_theta, "q_theta")
         q_xi = _trusted_integer(self.q_xi, "q_xi")
         q_u = _trusted_integer(self.q_u, "q_u")
         for name, quadrature_nodes in (("q_theta", q_theta), ("q_xi", q_xi), ("q_u", q_u)):
-            if quadrature_nodes not in supported_q:
-                raise ValueError(f"{name} must be one of {sorted(supported_q)}")
+            if quadrature_nodes < 1:
+                raise ValueError(f"{name} must be >= 1")
         m_steps = _trusted_integer(self.m_steps, "m_steps")
         if not (1 <= m_steps <= MAX_M_STEPS):
             raise ValueError(f"m_steps must be >= 1 and <= {MAX_M_STEPS}")

@@ -161,7 +161,7 @@ fn validate(
     if !cfg.start_spread.is_finite() || cfg.start_spread < 0.0 {
         return Err("start_spread must be finite and non-negative".into());
     }
-    if !cfg.pi_floor.is_finite() || !(0.0 < cfg.pi_floor && cfg.pi_floor < 1.0 / n_classes as f64) {
+    if !(cfg.pi_floor.is_finite() && 0.0 < cfg.pi_floor && cfg.pi_floor < 1.0 / n_classes as f64) {
         return Err("pi_floor must be finite and in (0, 1/n_classes)".into());
     }
     if n_classes > u32::MAX as usize {

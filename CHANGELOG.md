@@ -3,7 +3,50 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Single-group polytomous two-tier GRM with reduction over the specific tier (stage 4 of #1912)
+
+- Add a single-group full-information polytomous two-tier graded response
+  fitter (Cai, 2010; Cai, Yang, & Hansen, 2011, eq. 6-7; Gibbons et al.,
+  2007, eq. 9/15): caller-supplied confirmatory primary pattern with an
+  estimated primary correlation matrix, at most one orthogonal specific
+  factor per item, unconstrained slopes, strictly decreasing boundary
+  intercepts, Bock-Aitkin EM integrating only `P + 1` dimensions
+  (fixed-grid primaries with Phi reweighting, per-block specific sums),
+  deterministic multi-start selection, primary-factor EAP scores with
+  posterior SDs, and a `fit_two_tier_grm` Python binding. Reduces exactly to
+  the stage-1 bifactor GRM at one primary dimension. Validated against
+  `mirt::bfactor` with a two-tier specification on a committed fixture
+  (slopes/intercepts/correlation/loglik agreement bands with measured values
+  reported in the tests).
+
 ### Changed
+
+#### Clippy lint triage for #1905
+
+- Documented as intentionally left: `needless_range_loop` (114, all
+  `HasPlaceholders`, each needs per-site judgment in numeric kernels),
+  `too_many_arguments` (28, public API shape; repo convention is
+  per-fn allow), `neg_cmp_op_on_partial_ord` (14, load-bearing NaN
+  guards where the lint suggestion would change validation behavior),
+  `type_complexity` (5, public signatures), `if_same_then_else`
+  (2, intentional degenerate arms with distinct documented reasons).
+  Test-target warnings are triaged as follow-up in the issue.
+
+#### Single-group polytomous two-tier GRM with reduction over the specific tier (stage 4 of #1912)
+
+- `q_primary`/`q_specific` validation now resolves the shared arbitrary-`n`
+  Gauss-Hermite quadrature (`quadrature::require_gh_rule`, any `n >= 1`,
+  #1929) instead of a fixed `SUPPORTED_Q` membership table, matching the
+  removal of that table's cap. Add a `#[ignore]`d 121-vs-241 node-count
+  numerical-agreement regression (`two_tier_grm_node_agreement.rs`,
+  single-primary/single-specific design to keep the primary product grid
+  tractable), executed locally (`cargo test --release -- --ignored
+  --nocapture`) at both node counts: `q=121` converged in 6 iterations
+  (2.20s, final loglik -1246.539916) and `q=241` converged in 6 iterations
+  (8.12s, final loglik -1246.539916) — `|loglik diff| = 0.000000`, well
+  inside the 5e-3 tolerance.
 
 #### Release cut 0.10.0
 
@@ -36,6 +79,70 @@
   removal of `release-0.9.0-cut.md`.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Clippy lint triage for #1905
+
+- Resolve the 24 deny-level `clippy::erasing_op` errors: every site was
+  verified (twice, independently) to be the intentional flat row-major
+  index idiom (`0 * stride` keeps rows aligned), with no genuine bug.
+  Narrow function-level `#[allow]`s with a one-line reason were added;
+  no crate-wide allow. `cargo clippy --workspace --all-targets` exits 0.
+- Apply clearly-safe machine lints with no behavior change
+  (`map_or` to `is_none_or`/`is_some_and`, `contains`, range-contains,
+  `is_multiple_of`, `div_ceil`, needless borrows, `copy_from_slice`,
+  NaN-preserving boolean simplification, single-match/collapsible/
+  for-values/obfuscated-if rewrites, unnecessary cast, doc-list
+  indentation). Lib warnings 380 -> 279.
+- Truncate non-representable float digits (`excessive_precision`) in
+  quadrature tables and numeric constants. All 116 changed literals
+  parse to bit-identical `f64` values (verified programmatically);
+  the quadrature tables' shortest-roundtrip claim now holds.
+  Lib warnings 279 -> 163.
+
+#### `logistic_dif_purified` purifies again, on `flagged_bh` (#1941)
+
+- **`logistic_dif_purified` no longer no-ops.** Its anchor-purification
+  criterion was `purify_flagged(jg_class)` (`jg_class in {B, C}`). #1880
+  retired `jg_class` to `"U"` ("not applicable") for every item, so that
+  criterion could never fire: `n_anchor` stayed at the initial item count and
+  `rounds` stayed `0` regardless of the DIF actually present in the data.
+  This silently downgraded the function to an expensive wrapper around
+  `logistic_dif` that never purified anything.
+- **Replacement criterion: `flagged_bh`.** The purification loop now drops an
+  item from the anchor when its Benjamini-Hochberg-adjusted `chi2_total`
+  omnibus test (`flagged_bh`) rejects — the same multiplicity-controlled
+  significance test `dif_polytomous_purified` uses for the identical reason:
+  no calibrated practical-significance class (an ETS-style B/C letter)
+  exists for this statistic. Jodoin and Gierl's (2001) `.035`/`.070` bands
+  are stated on a Zumbo-Thomas weighted-least-squares one-degree-of-freedom
+  partition this package does not compute, not on the two-degree-of-freedom
+  Nagelkerke pseudo-R² `delta_r2` this package reports (see #1880's
+  fragment), so `flagged_bh` is used directly rather than guessing a class.
+  This makes the loop's anchor MORE aggressive at large `N` than
+  `mantel_haenszel_dif_purified`'s practical-significance screen, not less —
+  documented on the function.
+- **No public API change.** `logistic_dif_purified`'s signature and return
+  keys (`anchor`, `n_anchor`, `rounds`, `purify_converged`,
+  `purify_termination_reason`, plus every `logistic_dif` key) are unchanged.
+  Only the purification behavior — which items the anchor excludes, for data
+  with DIF present — changes, from "never" to "on `flagged_bh`".
+  `jg_class` itself is untouched and remains `"U"` for every item.
+- **Caveat inherited, not introduced.** As before, the anchor is selected
+  from the same data it is then tested against, so the returned p-values are
+  conditional on a data-dependent selection and Benjamini-Hochberg does not
+  carry an FDR guarantee for the purified sweep; treat `flagged_bh` as a
+  screening device (see the function's existing docstring caveats, unchanged
+  by this fix).
+- **References.** Candell, G. L., & Drasgow, F. (1988). An iterative
+  procedure for linking metrics and assessing item bias in item response
+  theory. *Applied Psychological Measurement, 12*(3), 253-260.
+  https://doi.org/10.1177/014662168801200304 — Zumbo, B. D. (1999). *A
+  handbook on the theory and methods of differential item functioning
+  (DIF): Logistic regression modeling as a unitary framework for binary and
+  Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
+  Research and Evaluation, Department of National Defense.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.10.0] - 2026-09-17
 
