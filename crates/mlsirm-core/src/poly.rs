@@ -25,7 +25,7 @@ fn validate_observed_categories(
     n_cat: usize,
 ) -> Result<(), String> {
     for (idx, &value) in y.iter().enumerate() {
-        if observed.map_or(true, |o| o[idx]) && value >= n_cat {
+        if observed.is_none_or(|o| o[idx]) && value >= n_cat {
             return Err("observed response categories must be < n_cat".into());
         }
     }
@@ -554,7 +554,7 @@ pub fn fit_poly_unidim(
         }
     }
     validate_observed_categories(y, observed, n_cat)?;
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
@@ -623,9 +623,7 @@ pub fn fit_poly_unidim(
         let mut ll = 0.0;
         let mut log_node = vec![0.0_f64; qn];
         for p in 0..n_persons {
-            for nd in 0..qn {
-                log_node[nd] = log_w[nd];
-            }
+            log_node[..qn].copy_from_slice(&log_w[..qn]);
             for i in 0..n_items {
                 if !is_obs(p, i) {
                     continue;
@@ -722,10 +720,8 @@ fn nominal_item_neg_ll_grad(
     let z = n_cat - 1;
     let mut scores = vec![0.0_f64; n_cat];
     let mut intercepts = vec![0.0_f64; n_cat];
-    for m in 0..z {
-        scores[m + 1] = params[m];
-        intercepts[m + 1] = params[z + m];
-    }
+    scores[1..(z + 1)].copy_from_slice(&params[..z]);
+    intercepts[1..(z + 1)].copy_from_slice(&params[z..(z + z)]);
     let mut ll = 0.0_f64;
     let mut grad = vec![0.0_f64; 2 * z];
     for (nd, &theta) in nodes.iter().enumerate() {
@@ -849,7 +845,7 @@ pub fn fit_nominal(
         }
     }
     let z = n_cat - 1;
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) && y[p * n_items + i] >= n_cat {
@@ -896,10 +892,8 @@ pub fn fit_nominal(
         for i in 0..n_items {
             let mut scores = vec![0.0_f64; n_cat];
             let mut intercepts = vec![0.0_f64; n_cat];
-            for m in 0..z {
-                scores[m + 1] = params[i][m];
-                intercepts[m + 1] = params[i][z + m];
-            }
+    scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
+    intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
             for (nd, &theta) in nodes.iter().enumerate() {
                 let lp = gpcm_logprobs(theta, &scores, &intercepts);
                 item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
@@ -909,9 +903,7 @@ pub fn fit_nominal(
         let mut ll = 0.0;
         let mut log_node = vec![0.0_f64; qn];
         for p in 0..n_persons {
-            for nd in 0..qn {
-                log_node[nd] = log_w[nd];
-            }
+            log_node[..qn].copy_from_slice(&log_w[..qn]);
             for i in 0..n_items {
                 if !is_obs(p, i) {
                     continue;
@@ -1036,7 +1028,7 @@ pub fn poly_person_fit(
     let (theta_eap, _sd) = score_poly_eap(
         y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta,
     )?;
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let cell = |i: usize, theta: f64| -> Vec<f64> {
         let a = slope[i];
         let cp = &cat_params[i * z..(i + 1) * z];
@@ -1420,7 +1412,7 @@ pub fn fit_poly_multigroup(
     for &g in group_id {
         group_n[g] += 1;
     }
-    if group_n.iter().any(|&c| c == 0) {
+    if group_n.contains(&0) {
         return Err("every group 0..n_groups-1 must contain at least one person".into());
     }
     if let Some(o) = observed {
@@ -1434,7 +1426,7 @@ pub fn fit_poly_multigroup(
             return Err("studied_item out of range".into());
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
@@ -1524,9 +1516,7 @@ pub fn fit_poly_multigroup(
         let mut log_node = vec![0.0_f64; qn];
         for p in 0..n_persons {
             let g = group_id[p];
-            for t in 0..qn {
-                log_node[t] = log_w[t];
-            }
+            log_node[..qn].copy_from_slice(&log_w[..qn]);
             for i in 0..n_items {
                 if !is_obs(p, i) {
                     continue;
@@ -1899,7 +1889,7 @@ pub fn u3_poly_person_fit(
         }
     }
     let m = n_cat - 1;
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
 
     // per-item cumulative logit weights cw[i][0..=m] from sample ISRF proportions
     let mut cw = vec![vec![0.0_f64; n_cat]; n_items];
@@ -2243,14 +2233,14 @@ pub fn score_poly_eap(
     }
     validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     for (idx, &yc) in y.iter().enumerate() {
-        if observed.map_or(true, |o| o[idx]) && yc >= n_cat {
+        if observed.is_none_or(|o| o[idx]) && yc >= n_cat {
             return Err(format!(
                 "observed responses must be categories in 0..{}; y[{idx}]={yc}",
                 n_cat - 1
             ));
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
@@ -2279,9 +2269,7 @@ pub fn score_poly_eap(
     let mut theta_sd = vec![0.0_f64; n_persons];
     let mut log_node = vec![0.0_f64; qn];
     for p in 0..n_persons {
-        for nd in 0..qn {
-            log_node[nd] = log_w[nd];
-        }
+        log_node[..qn].copy_from_slice(&log_w[..qn]);
         for i in 0..n_items {
             if !is_obs(p, i) {
                 continue;
@@ -2453,7 +2441,7 @@ pub fn poly_s_x2(
         .collect();
 
     // observed counts by total score: nk[k] and obs[(i*(F+1)+k)*n_cat + zc]
-    let complete = |p: usize| observed.map_or(true, |o| (0..n_items).all(|i| o[p * n_items + i]));
+    let complete = |p: usize| observed.is_none_or(|o| (0..n_items).all(|i| o[p * n_items + i]));
     let mut nk = vec![0.0_f64; f_max + 1];
     let mut obs = vec![0.0_f64; n_items * (f_max + 1) * n_cat];
     for p in 0..n_persons {

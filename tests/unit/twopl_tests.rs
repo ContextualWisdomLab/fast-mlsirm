@@ -280,6 +280,8 @@ fn mirt_recovers_compensatory_d2() {
 /// negative) is canonicalized by the reflection so that anchor ends POSITIVE and the dimension's
 /// co-loaders flip sign — deleting the reflection block leaves the raw negative anchor and fails.
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn mirt_reflection_flips_negative_anchor() {
     // (b) flip_corr_dim on D=4: pairs are m0=(0,1) m1=(0,2) m2=(0,3) m3=(1,2) m4=(1,3) m5=(2,3).
     // Flipping dim 1 must negate exactly m0,(0,1) m3,(1,2) m4,(1,3) and leave m1,m2,m5 alone.

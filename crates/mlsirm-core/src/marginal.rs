@@ -2488,49 +2488,46 @@ pub fn fit_marginal_full(
     // Cluster posteriors for the final parameters (multilevel), plus each
     // person's context posterior conditional on engager/IRT membership.
     let mut engager_context_post: Vec<f64> = Vec::new();
-    match pop {
-        PopulationSpec::Multilevel {
+    if let PopulationSpec::Multilevel {
             cluster_id,
             n_clusters,
-        } => {
-            let q_u = ctx.n_ctx;
-            let mut lp_irt = vec![0.0_f64; n_persons * q_u];
-            for p in 0..n_persons {
-                for v in 0..q_u {
-                    lp_irt[p * q_u + v] = person_pass(
-                        p,
-                        v,
-                        &tables,
-                        &resp,
-                        factor_id,
-                        n_dims,
-                        n_items,
-                        &grids,
-                        &mut l_buf,
-                        &mut log_zdx,
-                    );
-                }
-            }
-            let (post, engager_post) = multilevel_context_posteriors(
-                &lp_irt,
-                &all_zero,
-                cluster_id,
-                *n_clusters,
-                &ctx.u_logw,
-                if mcfg.zero_inflation {
-                    Some(pi_zero)
-                } else {
-                    None
-                },
-            );
-            engager_context_post = engager_post;
-            for c in 0..*n_clusters {
-                for v in 0..q_u {
-                    u_eap[c] += post[c * q_u + v] * sigma_u * ctx.u_nodes[v];
-                }
+        } = pop {
+        let q_u = ctx.n_ctx;
+        let mut lp_irt = vec![0.0_f64; n_persons * q_u];
+        for p in 0..n_persons {
+            for v in 0..q_u {
+                lp_irt[p * q_u + v] = person_pass(
+                    p,
+                    v,
+                    &tables,
+                    &resp,
+                    factor_id,
+                    n_dims,
+                    n_items,
+                    &grids,
+                    &mut l_buf,
+                    &mut log_zdx,
+                );
             }
         }
-        _ => {}
+        let (post, engager_post) = multilevel_context_posteriors(
+            &lp_irt,
+            &all_zero,
+            cluster_id,
+            *n_clusters,
+            &ctx.u_logw,
+            if mcfg.zero_inflation {
+                Some(pi_zero)
+            } else {
+                None
+            },
+        );
+        engager_context_post = engager_post;
+        for c in 0..*n_clusters {
+            for v in 0..q_u {
+                u_eap[c] += post[c * q_u + v] * sigma_u * ctx.u_nodes[v];
+            }
+        }
     }
 
     for p in 0..n_persons {

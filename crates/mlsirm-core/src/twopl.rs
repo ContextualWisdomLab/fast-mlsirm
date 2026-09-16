@@ -964,11 +964,9 @@ pub fn fit_2pl(
                 }
                 // A rejected backtracking step keeps the previous parameters and stops. Encoding
                 // that decision separately makes the rare near-maximum path directly testable.
-                let moved = accepted
-                    .then(|| {
+                let moved = if accepted { {
                         (0..ni).map(|k| (a_new[k] - a[k]).abs()).sum::<f64>() + (b_new - b).abs()
-                    })
-                    .unwrap_or(f64::INFINITY);
+                    } } else { f64::INFINITY };
                 if accepted {
                     a = a_new;
                     b = b_new;

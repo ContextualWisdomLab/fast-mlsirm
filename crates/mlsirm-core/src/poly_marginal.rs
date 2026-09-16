@@ -225,7 +225,7 @@ pub fn fit_poly_lsirm(
     if !(1..=POLY_MAX_ITER).contains(&max_iter) {
         return Err(format!("max_iter must be in 1..={POLY_MAX_ITER}"));
     }
-    if latent_dim < 1 || latent_dim > 3 {
+    if !(1..=3).contains(&latent_dim) {
         return Err("latent_dim must be 1..3 for the tensor grid".into());
     }
     let n_cells = crate::checked_mul_usize(
@@ -241,7 +241,7 @@ pub fn fit_poly_lsirm(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) && y[p * n_items + i] >= n_cat {

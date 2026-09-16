@@ -260,6 +260,8 @@ fn sparse_design_recovers_severity_order() {
 // hardcoding true.
 // ---------------------------------------------------------------------------
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn disconnected_design_is_flagged() {
     // Two islands: persons 0..P/2 x item 0 x rater 0; persons P/2.. x item 1 x rater 1.
     let (np, ni, nj) = (60usize, 2usize, 2usize);

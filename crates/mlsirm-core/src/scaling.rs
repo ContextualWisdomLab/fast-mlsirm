@@ -3059,7 +3059,7 @@ pub fn elom_rating(
 
     // Once-shrunk base for events with empty seats (R tmpfun quirk: the
     // shrink applies to the ORIGINAL base exactly once for any nan >= 1).
-    let shrunk: Vec<f64> = if nn % 2 == 0 {
+    let shrunk: Vec<f64> = if nn.is_multiple_of(2) {
         let mut s = Vec::with_capacity(nn - 1);
         s.extend_from_slice(&base[..nn / 2 - 1]);
         s.push((base[nn / 2 - 1] + base[nn / 2]) / 2.0);
@@ -3068,7 +3068,7 @@ pub fn elom_rating(
     } else {
         let mut s = Vec::with_capacity(nn - 1);
         s.extend_from_slice(&base[..(nn - 1) / 2]);
-        s.extend_from_slice(&base[(nn + 1) / 2..]);
+        s.extend_from_slice(&base[nn.div_ceil(2)..]);
         s
     };
 
@@ -3743,7 +3743,7 @@ pub fn predict_rating_two(
     thresh: Option<f64>,
 ) -> Result<Vec<f64>, String> {
     let n = ratings.len();
-    if n < 2 || n > 10_000 {
+    if !(2..=10_000).contains(&n) {
         return Err(format!(
             "predict_rating_two: number of players must be in 2..=10000, got {n}"
         ));
@@ -3896,7 +3896,7 @@ pub fn predict_rating_multi(
     placing: bool,
 ) -> Result<Vec<f64>, String> {
     let n = ratings.len();
-    if n < 2 || n > 10_000 {
+    if !(2..=10_000).contains(&n) {
         return Err(format!(
             "predict_rating_multi: number of players must be in 2..=10000, got {n}"
         ));
@@ -3915,7 +3915,7 @@ pub fn predict_rating_multi(
     if nr == 0 {
         return Err("predict_rating_multi: at least one event row is required".to_string());
     }
-    if np < 2 || np > 1000 {
+    if !(2..=1000).contains(&np) {
         return Err(format!(
             "predict_rating_multi: seats per event must be in 2..=1000, got {np}"
         ));
