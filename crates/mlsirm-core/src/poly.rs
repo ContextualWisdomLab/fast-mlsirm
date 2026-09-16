@@ -371,7 +371,10 @@ fn checked_em_delta(
 /// companion vector `also` together when it is not. This is the unidimensional
 /// case of the per-dimension rule in `crate::grm`, and it is a no-op on the
 /// all-positive fits the previous `log a` parametrization could produce.
-fn canonicalize_slope_reflection(slope: &mut [f64], also: &mut [f64]) {
+/// Returns whether the orientation was reversed, so a caller that also reports
+/// quantities on the latent scale (e.g. group means) can reverse them too
+/// (Bafumi et al., 2005, on fixing the reflection of a latent scale).
+fn canonicalize_slope_reflection(slope: &mut [f64], also: &mut [f64]) -> bool {
     let anchor = slope
         .iter()
         .enumerate()
@@ -381,13 +384,14 @@ fn canonicalize_slope_reflection(slope: &mut [f64], also: &mut [f64]) {
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .map(|(i, _)| i);
-    let Some(anchor) = anchor else { return };
+    let Some(anchor) = anchor else { return false };
     if slope[anchor] >= 0.0 {
-        return;
+        return false;
     }
     for a in slope.iter_mut().chain(also.iter_mut()) {
         *a = -*a;
     }
+    true
 }
 
 /// Negative expected complete-data log-lik and its gradient for one item over
@@ -674,7 +678,7 @@ pub fn fit_poly_unidim(
 
     let ll = *loglik_trace.last().expect("EM trace is never empty");
     let mut slope: Vec<f64> = (0..n_items).map(|i| params[i][0]).collect();
-    canonicalize_slope_reflection(&mut slope, &mut []);
+    let _ = canonicalize_slope_reflection(&mut slope, &mut []);
     let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
     Ok(PolyFit {
         slope,
@@ -1617,7 +1621,13 @@ pub fn fit_poly_multigroup(
     } else {
         (Vec::new(), Vec::new())
     };
-    canonicalize_slope_reflection(&mut slope, &mut studied_slope);
+    // (a, theta) -> (-a, -theta): a reversed slope orientation reverses every
+    // group mean on theta as well; the SDs are unchanged.
+    if canonicalize_slope_reflection(&mut slope, &mut studied_slope) {
+        for m in mu.iter_mut() {
+            *m = -*m;
+        }
+    }
     Ok(TwoGroupPolyFit {
         slope,
         cat_params,
