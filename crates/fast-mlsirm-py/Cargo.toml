@@ -7,6 +7,7 @@ description = "PyO3 bindings for the fast-mlsirm Rust core."
 homepage = "https://github.com/ContextualWisdomLab/fast-mlsirm"
 repository = "https://github.com/ContextualWisdomLab/fast-mlsirm"
 documentation = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/README.md"
+publish = false
 
 [lib]
 name = "fast_mlsirm_core"
