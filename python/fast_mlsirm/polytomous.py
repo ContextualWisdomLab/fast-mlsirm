@@ -317,28 +317,7 @@ def expected_total_score_monotonicity(
     """
     grid = _validated_monotonicity_grid(theta)
     expected_total = polytomous_expected_response(fit, grid).sum(axis=1)
-    step = np.diff(expected_total)
-    falling = step < 0.0
-    total_decrease = float(-step[falling].sum()) if falling.any() else 0.0
-
-    intervals: list[tuple[float, float]] = []
-    start: int | None = None
-    for index, is_falling in enumerate(falling):
-        if is_falling and start is None:
-            start = index
-        elif not is_falling and start is not None:
-            intervals.append((float(grid[start]), float(grid[index])))
-            start = None
-    if start is not None:
-        intervals.append((float(grid[start]), float(grid[-1])))
-
-    return ExpectedScoreMonotonicity(
-        theta=grid,
-        expected_total=expected_total,
-        total_decrease=total_decrease,
-        decreasing_intervals=tuple(intervals),
-        monotone=not intervals,
-    )
+    return _decrease_report(grid, expected_total)
 
 
 def _decrease_report(
@@ -379,7 +358,12 @@ def focal_expected_total_score_monotonicity(
     multidimensional graded fit, with the other dimensions integrated out.
 
     ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
-    focal trait; ``theta`` is the caller's grid on it. Returns the same report
+    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is the
+    caller-chosen Gauss-Hermite node count in ``1..=4096``: the lower bound
+    is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
+    Golub & Welsch, 1969) and the upper bound reuses this package's
+    quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
+    constant. Returns the same report
     as :func:`expected_total_score_monotonicity`, with the same two grid-stable
     statistics and the same omissions.
 
@@ -404,23 +388,53 @@ def focal_expected_total_score_monotonicity(
     constrains the focal column only, and an item loading negatively on a
     nuisance dimension does not make this curve decrease.
 
-    No source states the multidimensional case. Junker and Sijtsma record that
-    little is known about stochastic ordering when the latent trait is
-    multidimensional, so this is presented as a derivation rather than as
-    received theory.
+    No source states the multidimensional case, so this is presented as a
+    derivation rather than as received theory. The scope contrast is
+    verified: stochastic ordering of the latent trait by the sum score is a
+    dichotomous-scores result that fails for polytomous models generally
+    (van der Ark, 2007, p. 3; Hemker et al., 1997). The orthogonal-factor
+    integration has the same structure elsewhere: under independent
+    ``N(0, 1)`` factors the bifactor pattern integral stays two-dimensional
+    no matter how many specific factors the scale has (Gibbons et al., 2007,
+    eqs. 12-14).
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    The bifactor restriction collapses the s-fold integral to one general
+    plus one specific dimension (eq. 12); the Gauss-Hermite quadrature
+    form is eq. 14; the orthogonal-basis assumption is stated on pp. 8-9.
+
+    van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
+    Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1997).
+    Stochastic ordering using the latent trait and the sum score in
+    polytomous IRT models. *Psychometrika, 62*, 331-347.
     """
     grid = _validated_monotonicity_grid(theta)
+    if not hasattr(fit, "slope") or not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose slope and threshold arrays")
     slope = np.asarray(fit.slope, dtype=np.float64)
     if slope.ndim != 2:
         raise ValueError("fit.slope must be an n_items x n_dims matrix")
+    if not np.all(np.isfinite(slope)):
+        raise ValueError("fit.slope must be finite")
     n_items, n_dims = slope.shape
     focal = _bounded_integer(dimension, "dimension", 0, n_dims - 1)
-    nodes_requested = _bounded_integer(q_nuisance, "q_nuisance", 2, 201)
+    nodes_requested = _bounded_integer(
+        q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS
+    )
 
     threshold = np.asarray(fit.threshold, dtype=np.float64)
     if threshold.ndim != 2 or threshold.shape[0] != n_items:
         raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
-    n_cat = int(threshold.shape[1]) + 1
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
 
     nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
     weights = weights / weights.sum()
@@ -445,7 +459,6 @@ def focal_expected_total_score_monotonicity(
         expected = polytomous_expected_response(cell, base.reshape(-1))
         expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
 
-    _ = n_cat
     return _decrease_report(grid, expected_total)
 
 

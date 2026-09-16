@@ -109,3 +109,52 @@ def test_the_focal_dimension_must_exist(dimension: int) -> None:
         focal_expected_total_score_monotonicity(
             _Fit(slope), dimension, np.linspace(-2.0, 2.0, 9)
         )
+
+
+@pytest.mark.parametrize("bad_q", [0, -3, 4097, 21.5, "21", None])
+def test_the_quadrature_count_is_a_documented_range(bad_q) -> None:
+    """``q_nuisance`` lives in ``1..=MAX_POLY_QUADRATURE_POINTS``: a Gauss
+    rule exists for every ``n >= 1`` and the cap is the package's shared
+    quadrature-point budget, not a new constant."""
+    with pytest.raises((ValueError, TypeError)):
+        focal_expected_total_score_monotonicity(
+            _Fit(np.array([[1.0, 0.5]])), 0, np.linspace(-2.0, 2.0, 9), q_nuisance=bad_q
+        )
+
+
+def test_a_single_node_places_all_nuisance_mass_at_the_mean() -> None:
+    """The degenerate ``q_nuisance=1`` rule is valid: the nuisance offset is
+    zero, so the curve is the plain focal curve."""
+    slope = np.array([[1.2, 0.5], [0.9, 0.7]])
+    grid = np.linspace(-3.0, 3.0, 25)
+
+    report = focal_expected_total_score_monotonicity(
+        _Fit(slope), 0, grid, q_nuisance=1
+    )
+
+    plain = np.zeros(grid.size)
+    for item in range(slope.shape[0]):
+        plain += _expected_item(slope[item, 0] * grid)
+    np.testing.assert_allclose(report.expected_total, plain, rtol=1e-12)
+    assert report.monotone
+
+
+def test_malformed_fits_fail_closed() -> None:
+    grid = np.linspace(-2.0, 2.0, 9)
+    with pytest.raises(TypeError):
+        focal_expected_total_score_monotonicity(object(), 0, grid)
+    bad_slope = _Fit(np.array([[1.0, 0.5]]))
+    bad_slope.slope = np.array([1.0, 0.5])
+    with pytest.raises(ValueError, match="n_items x n_dims"):
+        focal_expected_total_score_monotonicity(bad_slope, 0, grid)
+    bad_threshold = _Fit(np.array([[1.0, 0.5]]))
+    bad_threshold.threshold = np.array([1.2, 0.0, -1.2])
+    with pytest.raises(ValueError, match="n_cat - 1"):
+        focal_expected_total_score_monotonicity(bad_threshold, 0, grid)
+    nonfinite = _Fit(np.array([[1.0, np.inf]]))
+    with pytest.raises(ValueError, match="finite"):
+        focal_expected_total_score_monotonicity(nonfinite, 0, grid)
+    with pytest.raises(ValueError, match="finite"):
+        focal_expected_total_score_monotonicity(
+            _Fit(np.array([[1.0, 0.5]])), 0, np.array([0.0, np.nan, 1.0])
+        )
