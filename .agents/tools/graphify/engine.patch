@@ -1,0 +1,40 @@
+--- a/graphify/extractors/engine.py
++++ b/graphify/extractors/engine.py
+@@ -5185,7 +5185,7 @@
+     }
+ 
+     def _emit_indirect_by_name(ident_name: str, loc_node, scope_nid: str,
+-                               context: str) -> None:
++                               context: str, *, lexical_scope: bool = False) -> None:
+         """Resolve a name that is referenced AS A VALUE to a real callable def and emit
+         one INFERRED ``indirect_call`` edge — deferring an unknown / foreign name to the
+         cross-file resolver, which applies the single-definition god-node guard and the
+@@ -5195,7 +5195,16 @@
+         string names an ATTRIBUTE and is never shadowed by a local, so that path passes
+         the name straight through. ``loc_node`` supplies the source line.
+         """
+-        ref_nid = label_to_nid.get(ident_name)
++        ref_nid = None
++        if lexical_scope and config.ts_module == "tree_sitter_python":
++            current_scope = scope_nid
++            while current_scope:
++                ref_nid = lexical_nids_by_scope.get(current_scope, {}).get(ident_name)
++                if ref_nid:
++                    break
++                current_scope = scope_parents.get(current_scope)
++        if ref_nid is None:
++            ref_nid = label_to_nid.get(ident_name)
+         # Defer to the cross-file resolver when the name is not defined in this file
+         # (`from .h import fn`), or resolves to an import-surfaced FOREIGN symbol whose
+         # definition (and callability) lives in another file (JS/TS named imports map
+@@ -5264,7 +5273,7 @@
+         # the corpus is what this identifier refers to.
+         if ident_name in js_external_imports:
+             return
+-        _emit_indirect_by_name(ident_name, ident, scope_nid, context)
++        _emit_indirect_by_name(ident_name, ident, scope_nid, context, lexical_scope=True)
+ 
+     def _python_dispatch_value_idents(coll_node):
+         """Yield the identifier value-nodes of a dict/list/set/tuple literal that are
+
+

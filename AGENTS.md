@@ -194,3 +194,11 @@ protection, `require_code_owner_review` in rulesets) are disabled across the Con
 org: there is a single maintainer (solo developer), so a code-owner approval gate can never be
 satisfied. This is ON HOLD until the org has multiple maintainers — do NOT re-enable these
 settings or add CODEOWNERS-based merge gates before then.
+
+## Project-local Graphify
+
+Use the hash-locked local Graphify runtime and reviewed callback-scope patch in
+[`.agents/tools/graphify/README.md`](.agents/tools/graphify/README.md). Run its
+regressions before refreshing graph evidence; record the engine digest from
+`manifest.json` alongside the upstream version. The patch addresses #1862 and
+does not turn AST relationships into verified runtime behavior.

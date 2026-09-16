@@ -195,3 +195,11 @@ examples/enterprise_demo/ Synthetic procurement evidence manifests
   `fuzz` (bounded Atheris runs), `package` (wheel build + release acceptance +
   sales-readiness manifest). Plus ClusterFuzzLite PR fuzzing and the central
   Security Scan described in AGENTS.md.
+
+## Project-local Graphify
+
+Use the hash-locked local Graphify runtime and reviewed callback-scope patch in
+[`.agents/tools/graphify/README.md`](.agents/tools/graphify/README.md). Run its
+regressions before refreshing graph evidence; record the engine digest from
+`manifest.json` alongside the upstream version. The patch addresses #1862 and
+does not turn AST relationships into verified runtime behavior.
