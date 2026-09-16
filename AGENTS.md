@@ -194,3 +194,43 @@ protection, `require_code_owner_review` in rulesets) are disabled across the Con
 org: there is a single maintainer (solo developer), so a code-owner approval gate can never be
 satisfied. This is ON HOLD until the org has multiple maintainers — do NOT re-enable these
 settings or add CODEOWNERS-based merge gates before then.
+
+## Jules-originated pull requests — retire, don't shepherd
+
+Jules (Google's agent service) opens pull requests here under three personas:
+`🎨 Palette`, `⚡ Bolt`, and `🛡️ Sentinel`. As of 2026-09-16 that is **35 of 130
+open pull requests**, and Jules keeps regenerating them: #1909's `marginal.py`
+change is the same git blob as #1897's, opened a day apart, and #1908's whole
+tree hash equals #1864's, opened three days apart.
+
+**Do not review, deduplicate, restack, or shepherd these individually.** The
+supply is renewed faster than the queue drains, so per-PR curation of Jules
+output never converges.
+
+Instead, when a Jules PR identifies something real:
+
+1. Close the Jules PR.
+2. Open a new pull request owned in this repository carrying the substance —
+   with the test the Jules PR omitted, and with any performance claim measured
+   at the shapes the call site actually uses rather than restated from the
+   PR body.
+3. Reference the Jules PR number in the new PR so the origin stays traceable.
+
+This is about ownership and convergence, not about correctness: Jules PRs do
+find real defects (the `llm_judge` adapter accepting `NaN` literals, the
+dark-mode skip-link contrast failing WCAG AA at 2.18). Take the finding, leave
+the pull request.
+
+### The `.jules/` learning files belong to Jules
+
+`.jules/bolt.md`, `.jules/palette.md`, and `.jules/sentinel.md` are Jules's own
+accumulated notes. Do not hand-edit them in repository-owned pull requests —
+edits there conflict with the next regeneration and are lost. A lesson worth
+keeping for humans belongs in `AGENTS.md`, `CLAUDE.md`, or a dated note under
+`docs/`.
+
+Note that `main` currently carries **both** `.jules/palette.md` and
+`.Jules/palette.md` as distinct blobs. On a case-insensitive filesystem (macOS)
+only one materializes, so a clean checkout reports the other as modified and
+`git add -A` silently overwrites it. PR #1860 consolidates them; until it
+merges, do not stage `.Jules/` paths.
