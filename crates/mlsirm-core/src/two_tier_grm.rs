@@ -155,9 +155,10 @@
 //! Quadrature densities (`q_primary`, `q_specific`), `max_iter`, `tol`,
 //! `n_starts`, and `seed` are CALLER ARGUMENTS; any out-of-range value is a
 //! loud `Err`, never a silent clamp. Upper bounds exist only where a real
-//! constraint exists: the quadrature counts must name an embedded
-//! Gauss-Hermite rule (`SUPPORTED_Q`), and working-set sizes that would
-//! overflow `usize` are rejected by checked arithmetic. Everything else is
+//! constraint exists: the quadrature counts must resolve a Gauss-Hermite
+//! rule (`quadrature::require_gh_rule`, any `n >= 1`, no table cap per
+//! #1929), and working-set sizes that would overflow `usize` are rejected
+//! by checked arithmetic. Everything else is
 //! lower-bounded only (`n_primary >= 1`, `n_specific >= 1`, `n_cat >= 2`,
 //! `max_iter >= 1`, `n_starts >= 1`, `newton_iter >= 1`, finite positive
 //! `tol`/`ridge`). `seed` drives ONLY the random-start jitter
@@ -204,7 +205,6 @@
 //! two-tier covariance, `ncol(G) + 1` integration, bifactor special case)
 
 use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
-use crate::quadrature::SUPPORTED_Q;
 
 // NOTE (stage-4 design): this module imposes no magic size caps. Upper
 // bounds without a documented origin are rejected in favor of correctness
@@ -221,15 +221,15 @@ use crate::quadrature::SUPPORTED_Q;
 /// arguments with no `Default` (Project rule, issue #1929): node counts
 /// govern numerical precision and no accuracy target is on file to source a
 /// default against. Study settings use >= 121 nodes per dimension (chosen by
-/// precision convergence, e.g. 121 vs 241); the shared `SUPPORTED_Q` gate
-/// (currently capped at 41) is extended separately — this module imposes no
-/// upper cap of its own and accepts any supported count the gate names.
+/// precision convergence, e.g. 121 vs 241 agreement); any `n >= 1` that
+/// `quadrature::require_gh_rule` resolves is accepted (#1929 removed the
+/// fixed-table cap), so this module imposes no upper cap of its own.
 #[derive(Clone, Copy, Debug)]
 pub struct TwoTierGrmConfig {
-    /// Gauss-Hermite nodes per primary dimension (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes per primary dimension (any `n >= 1`).
     /// The primary product grid has `q_primary^n_primary` nodes.
     pub q_primary: usize,
-    /// Gauss-Hermite nodes per specific factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes per specific factor (any `n >= 1`).
     pub q_specific: usize,
     pub max_iter: usize,
     pub tol: f64,
@@ -328,18 +328,8 @@ fn validate(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if !SUPPORTED_Q.contains(&cfg.q_primary) {
-        return Err(format!(
-            "q_primary must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_primary
-        ));
-    }
-    if !SUPPORTED_Q.contains(&cfg.q_specific) {
-        return Err(format!(
-            "q_specific must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_specific
-        ));
-    }
+    crate::quadrature::require_gh_rule(cfg.q_primary, "q_primary")?;
+    crate::quadrature::require_gh_rule(cfg.q_specific, "q_specific")?;
     if cfg.max_iter < 1 {
         return Err("max_iter must be >= 1".into());
     }

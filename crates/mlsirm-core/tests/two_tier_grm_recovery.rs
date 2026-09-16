@@ -33,10 +33,12 @@
 //! precision with a 121-per-dimension floor, chosen by precision convergence
 //! (121 vs 241 vs ...). Node counts are required caller arguments with no
 //! defaults (Project rule, #1929). The `q_primary = 15` / `q_specific = 11`
-//! below are capped by the shared `SUPPORTED_Q <= 41` gate (still at 41
-//! after #1929, which removed unsourced defaults only); raise to >= 121
-//! with 121-vs-241 convergence evidence once the gate supports it. The
-//! counts are caller arguments (single knob in `fit_config`), not model constants.
+//! below predate the removal of the fixed `SUPPORTED_Q` table (#1929/#1945,
+//! which replaced it with an arbitrary-`n` Golub & Welsch, 1969 rule); this
+//! recovery test's tolerance bands are measured at those counts and are left
+//! as-is, while `two_tier_grm_node_agreement.rs` adds the >= 121-node
+//! numerical-agreement regression this comment used to defer. The counts
+//! here are caller arguments (single knob in `fit_config`), not model constants.
 //!
 //! # References (APA 7th ed.)
 //!

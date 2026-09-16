@@ -15,3 +15,17 @@
   `mirt::bfactor` with a two-tier specification on a committed fixture
   (slopes/intercepts/correlation/loglik agreement bands with measured values
   reported in the tests).
+
+## Changed
+
+- `q_primary`/`q_specific` validation now resolves the shared arbitrary-`n`
+  Gauss-Hermite quadrature (`quadrature::require_gh_rule`, any `n >= 1`,
+  #1929) instead of a fixed `SUPPORTED_Q` membership table, matching the
+  removal of that table's cap. Add a `#[ignore]`d 121-vs-241 node-count
+  numerical-agreement regression (`two_tier_grm_node_agreement.rs`,
+  single-primary/single-specific design to keep the primary product grid
+  tractable), executed locally (`cargo test --release -- --ignored
+  --nocapture`) at both node counts: `q=121` converged in 6 iterations
+  (2.20s, final loglik -1246.539916) and `q=241` converged in 6 iterations
+  (8.12s, final loglik -1246.539916) — `|loglik diff| = 0.000000`, well
+  inside the 5e-3 tolerance.

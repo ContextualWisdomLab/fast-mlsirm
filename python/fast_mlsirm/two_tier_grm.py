@@ -96,8 +96,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
-
 
 def _finite_integer_control(value: object, name: str) -> int:
     """Normalize a trusted finite integer-valued scalar without callbacks."""
@@ -203,12 +201,13 @@ def fit_two_tier_grm(
     loading items); ``specific_map`` is a length-``n_items`` integer array
     with ``-1`` for specific-free items and ``0..n_specific-1`` otherwise
     (every specific factor needs at least two items).
-    ``q_primary``/``q_specific`` are required Gauss-Hermite node counts (one
-    of ``(7, 11, 15, 21, 31, 41)`` — the embedded rules that exist, hence
-    the only accepted values); no default is offered, because no accuracy
-    target is on file to source one against (Project rule, issue #1929).
-    Study settings use >= 121 nodes per dimension once the shared gate
-    supports them (chosen by precision convergence, e.g. 121 vs 241).
+    ``q_primary``/``q_specific`` are required Gauss-Hermite node counts
+    (any ``int >= 1``; #1929 removed the fixed-table cap, so any node count
+    the Rust core's arbitrary-``n`` Golub-Welsch quadrature resolves is
+    accepted); no default is offered, because no accuracy target is on file
+    to source one against (Project rule, issue #1929). Study settings use
+    >= 121 nodes per dimension (chosen by precision convergence, e.g. 121
+    vs 241 agreement).
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik. Out-of-range caller arguments raise ``ValueError``
     (never clamped, and — per the no-magic-caps rule — upper-bounded only
     where a real constraint exists); unobserved categories raise;
@@ -228,11 +227,11 @@ def fit_two_tier_grm(
     if n_specific_int < 1:
         raise ValueError("n_specific must be >= 1")
     q_primary_int = _finite_integer_control(q_primary, "q_primary")
-    if q_primary_int not in _SUPPORTED_Q:
-        raise ValueError(f"q_primary must be one of {_SUPPORTED_Q}")
+    if q_primary_int < 1:
+        raise ValueError("q_primary must be >= 1")
     q_specific_int = _finite_integer_control(q_specific, "q_specific")
-    if q_specific_int not in _SUPPORTED_Q:
-        raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
     max_iter_int = _finite_integer_control(max_iter, "max_iter")
     if max_iter_int < 1:
         raise ValueError("max_iter must be >= 1")

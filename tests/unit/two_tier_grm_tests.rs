@@ -370,9 +370,37 @@ fn oracle_rejects_non_correlation_phi() {
 }
 
 #[test]
-fn rejects_unsupported_quadrature_counts() {
+fn arbitrary_quadrature_counts_above_the_old_fixed_table_are_accepted() {
+    // #1929: node count controls integration precision and must not be
+    // capped at a fixed table; 5/22/100 used to be rejected, now must fit
+    // cleanly (module reuses `quadrature::require_gh_rule`, any n >= 1).
     let (y, n_persons) = tiny_data();
-    for (qp, qs) in [(5, 7), (7, 5), (15, 22)] {
+    for (qp, qs) in [(5, 7), (7, 5), (15, 22), (100, 7)] {
+        let cfg = TwoTierGrmConfig {
+            q_primary: qp,
+            q_specific: qs,
+            ..valid_config()
+        };
+        fit_two_tier_grm(
+            &y,
+            None,
+            &TINY_PRIMARY_MAP,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_PRIMARY,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &cfg,
+        )
+        .unwrap_or_else(|e| panic!("q_primary={qp}, q_specific={qs} must be accepted: {e}"));
+    }
+}
+
+#[test]
+fn rejects_zero_quadrature_counts() {
+    let (y, n_persons) = tiny_data();
+    for (qp, qs) in [(0, 7), (7, 0)] {
         let cfg = TwoTierGrmConfig {
             q_primary: qp,
             q_specific: qs,
@@ -390,9 +418,9 @@ fn rejects_unsupported_quadrature_counts() {
             TINY_N_CAT,
             &cfg,
         )
-        .expect_err("unsupported quadrature counts must fail loudly, never clamp");
+        .expect_err("q_primary/q_specific == 0 must fail loudly, never clamp");
         assert!(
-            err.contains('q'),
+            err.contains("q_primary") || err.contains("q_specific") || err.contains('q'),
             "quadrature error must name the offending argument; got: {err}"
         );
     }

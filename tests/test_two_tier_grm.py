@@ -148,10 +148,12 @@ def test_same_seed_bit_reproduces() -> None:
 
 def test_rejects_out_of_range_caller_arguments() -> None:
     y = _simulate(SEED)
+    # #1929: no node-count cap; q_primary=5/q_specific=22 are now accepted,
+    # only < 1 is not.
     with pytest.raises(ValueError):
-        _fit(y, q_primary=5)
+        _fit(y, q_primary=0)
     with pytest.raises(ValueError):
-        _fit(y, q_specific=22)
+        _fit(y, q_specific=0)
     with pytest.raises(ValueError):
         _fit(y, max_iter=0)
     with pytest.raises(ValueError):

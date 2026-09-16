@@ -37,11 +37,13 @@
 //! precision with a 121-per-dimension floor, chosen by precision convergence
 //! (121 vs 241 vs ...). Node counts are required caller arguments with no
 //! defaults (Project rule, #1929). The fixture's `QUADPTS = 15` and this
-//! test's `q_* = 15` are capped by the shared `SUPPORTED_Q <= 41` gate
-//! (still at 41 after #1929, which removed unsourced defaults only); raise
-//! the fixture and this test to >= 121 with 121-vs-241 convergence evidence
-//! once the gate supports it. The counts below are caller arguments (single
-//! knob), not hardcoded model constants.
+//! test's `q_* = 15` predate the removal of the fixed `SUPPORTED_Q` table
+//! (#1929/#1945, which replaced it with an arbitrary-`n` Golub & Welsch,
+//! 1969 rule); this mirt-agreement test is pinned to the committed R
+//! fixture's own `QUADPTS`, so raising it would require regenerating the
+//! fixture. `two_tier_grm_node_agreement.rs` adds the >= 121-node
+//! numerical-agreement regression this comment used to defer. The counts
+//! below are caller arguments (single knob), not hardcoded model constants.
 //!
 //! # References (APA 7th ed.)
 //!
