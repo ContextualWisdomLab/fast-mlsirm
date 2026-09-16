@@ -102,7 +102,10 @@ def test_a_failed_purification_marks_the_intersection_untrustworthy() -> None:
     )
 
     result = dif_polytomous_anchor_sets(
-        responses, labels, N_CAT, model="gpcm", min_anchor_items=5
+        # max_iter above the 200 default: this fixture's simultaneous
+        # four-item DIF makes the reference-vs-focal-20 two-group fit need
+        # more EM rounds to converge than a well-behaved bank would.
+        responses, labels, N_CAT, model="gpcm", min_anchor_items=5, max_iter=400
     )
 
     assert not result["intersection_trustworthy"]

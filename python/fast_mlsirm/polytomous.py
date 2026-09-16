@@ -1787,6 +1787,42 @@ def dif_polytomous_anchor_sets(
     bank with several focal groups this is minutes rather than seconds; lower
     ``max_rounds`` or ``q_theta`` if that matters more than the last round of
     refinement.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+            (the *iterative backward* anchor class this loop follows per
+            group: start from all other items, exclude flagged items, repeat).
+        Kopf, J., Zeileis, A., & Strobl, C. (2015). Anchor selection strategies
+            for DIF analysis: Review, assessment, and new approaches.
+            *Educational and Psychological Measurement, 75*(1), 22-56.
+            https://doi.org/10.1177/0013164414529792
+            (p. 2: "[e]xcluding DIF items from the anchor by using iterative
+            steps may not solve the problem when the test contains many DIF
+            items" -- the reason a single pooled anchor is checked per focal
+            group here rather than assumed adequate for all of them at once;
+            pp. 9-10 review the *all-other* anchor class this loop's per-item
+            auxiliary test is built on).
+        Woods, C. M. (2009). Empirical selection of anchors for tests of
+            differential item functioning. *Applied Psychological Measurement,
+            33*(1), 42-57. https://doi.org/10.1177/0146621607314044
+            (originated the rank-based, no-prior-knowledge anchor selection
+            this and :func:`dif_polytomous_purified` build on; a constant
+            anchor from the resulting ranking outperformed the all-other
+            method "in the majority of the simulated settings," per Kopf
+            et al., 2015, p. 9, quoting Woods, 2009, p. 53).
+
+        Per-group anchor sets and their intersection are this function's own
+        extension to more than two groups, not a design taken verbatim from
+        the sources above: none of them evaluates more than one focal group
+        against a shared reference, so none states the risk this function
+        guards against directly -- that a pooled, multi-group sweep can average
+        away DIF that is present against one focal group and absent against
+        another. That risk follows from the same two-group contamination logic
+        the sources do state (an anchor is only as trustworthy as the pairwise
+        comparison it was purified on).
     """
     y = np.asarray(responses)
     if y.ndim != 2:
