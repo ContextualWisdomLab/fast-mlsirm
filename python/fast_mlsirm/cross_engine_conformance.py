@@ -889,19 +889,23 @@ def _run_provenance_from_manifest(value: object) -> ConformanceRunProvenance:
     )
 
 
+class _ManifestJsonRejected(ValueError):
+    """A manifest rejection that must keep its own message."""
+
+
 def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
     """Build one JSON object while rejecting duplicate member names."""
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate JSON object key: {key}")
+            raise _ManifestJsonRejected(f"duplicate JSON object key: {key}")
         result[key] = value
     return result
 
 
 def _reject_json_constant(value: str) -> object:
     """Reject non-finite JSON extensions unsupported by the manifest contract."""
-    raise ValueError(f"manifest JSON contains unsupported constant: {value}")
+    raise _ManifestJsonRejected(f"manifest JSON contains unsupported constant: {value}")
 
 
 def _validate_raw_manifest_depth(content: str) -> None:
@@ -1063,7 +1067,7 @@ class ConformanceInventory:
         def _reject_nonfinite_float(val: str) -> float:
             f_val = float(val)
             if not math.isfinite(f_val):
-                raise ValueError("manifest JSON contains a non-finite float")
+                raise _ManifestJsonRejected("manifest JSON contains a non-finite float")
             return f_val
 
         try:
@@ -1073,9 +1077,9 @@ class ConformanceInventory:
                 parse_constant=_reject_json_constant,
                 parse_float=_reject_nonfinite_float,
             )
-        except (json.JSONDecodeError, ValueError) as exc:
-            if "duplicate JSON object key" in str(exc) or "contains unsupported constant" in str(exc) or "non-finite float" in str(exc):
-                raise
+        except _ManifestJsonRejected:
+            raise
+        except ValueError as exc:
             raise ValueError("manifest JSON must contain valid JSON") from exc
         except RecursionError as exc:
             raise ValueError("manifest JSON nesting is too deep") from exc

@@ -412,7 +412,7 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
     def _reject_nonfinite_float(value: str) -> float:
         f_val = float(value)
         if not math.isfinite(f_val):
-            raise ValueError("judge response contains a non-finite JSON numeric value")
+            raise JudgeFormatError("judge response contains a non-finite JSON numeric value")
         return f_val
 
     try:
@@ -423,7 +423,7 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
         )
     except _DuplicateJsonKeyError as exc:
         raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
-    except (json.JSONDecodeError, ValueError) as exc:
+    except ValueError as exc:
         raise JudgeFormatError("judge response JSON is invalid") from exc
     if not isinstance(value, dict):
         raise JudgeFormatError("judge response must be a JSON object")
