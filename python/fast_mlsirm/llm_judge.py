@@ -56,6 +56,20 @@ def _reject_nonfinite(value: str) -> object:
     )
 
 
+def _reject_nonfinite_float(value: str) -> float:
+    """Reject a syntactically valid number that overflows to infinity.
+
+    ``parse_constant`` only intercepts the ``NaN``/``Infinity`` literals; a
+    plain ``1e999`` is well-formed JSON and becomes ``inf`` without this hook.
+    """
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise JudgeFormatError(
+            f"judge response contains a non-finite number: {value}"
+        )
+    return parsed
+
+
 def _category_count(value: Any) -> int:
     if type(value) is not int or not 2 <= value <= MAX_JUDGE_CATEGORIES:
         raise ValueError(
@@ -428,6 +442,7 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
             text,
             object_pairs_hook=_duplicate_free_object,
             parse_constant=_reject_nonfinite,
+            parse_float=_reject_nonfinite_float,
         )
     except _DuplicateJsonKeyError as exc:
         raise JudgeFormatError(
