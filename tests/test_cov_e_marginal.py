@@ -36,9 +36,10 @@ def _binary(n_persons, n_items, seed=0):
 # --- quadrature-node helpers ---
 
 
-def test_gh_rejects_unsupported_quadrature():
-    with pytest.raises(ValueError, match="unsupported quadrature size"):
-        _gh(9)
+def test_gh_rejects_zero_quadrature():
+    # #1929: no node-count cap; q=9 is now accepted, only q < 1 is rejected.
+    with pytest.raises(ValueError, match="q must be >= 1"):
+        _gh(0)
 
 
 def test_xi_grid_rejects_oversized_tensor():

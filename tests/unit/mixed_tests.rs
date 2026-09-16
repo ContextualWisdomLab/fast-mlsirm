@@ -429,8 +429,10 @@ fn mixed_fit_validation_and_helper_boundaries() {
     assert!(call(&[0, 2], None, 2, 1, &[binary.clone()], 1, 1e-6).is_err());
     assert!(call(&[0, 0], None, 2, 1, &[binary.clone()], 1, 1e-6).is_err());
     assert!(build_grid(&[spatial.clone()], 0, 7, 7).is_err());
-    assert!(build_grid(&[binary.clone()], 1, 5, 7).is_err());
-    assert!(build_grid(&[spatial], 1, 7, 5).is_err());
+    // #1929: no node-count cap; q_theta=5 is now accepted, only q_theta=0 is not.
+    assert!(build_grid(&[binary.clone()], 1, 0, 7).is_err());
+    // #1929: no node-count cap; q_xi=5 is now accepted, only q_xi=0 is not.
+    assert!(build_grid(&[spatial], 1, 7, 0).is_err());
     assert!(tensor_grid(41, 4).is_err());
     assert!(ordered_values(&[]).is_empty());
     assert!(ordered_raw(&[]).is_empty());

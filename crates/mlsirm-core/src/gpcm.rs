@@ -53,7 +53,6 @@
 use crate::marginal::XiRuleKind;
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::poly::{gpcm_logprobs, gpcm_node_gradient, solve_small};
-use crate::quadrature::SUPPORTED_Q;
 
 const GP_MAX_NODES: usize = 200_000;
 const GP_MAX_COUNT_CELLS: usize = 60_000_000;
@@ -149,13 +148,16 @@ fn validate(
                      node_rule qmc/mc for D up to {GP_MAX_DIMS_QMC}"
                 ));
             }
-            if !SUPPORTED_Q.contains(&cfg.q) {
-                return Err(format!("q must be one of {SUPPORTED_Q:?}; got {}", cfg.q));
+            if cfg.q < 1 {
+                return Err(format!("q must be >= 1; got {}", cfg.q));
             }
+            // #1929: no node-count cap, so q^n_dims can overflow for a large q;
+            // checked_mul turns that into an Err instead of a wrapped size.
             let mut n = 1usize;
             for _ in 0..n_dims {
-                // SUPPORTED_Q and the three-dimension bound cap this at 41^3 = 68,921.
-                n *= cfg.q;
+                n = n
+                    .checked_mul(cfg.q)
+                    .ok_or_else(|| format!("q^n_dims overflows usize (q={}, n_dims={n_dims})", cfg.q))?;
             }
             n
         }

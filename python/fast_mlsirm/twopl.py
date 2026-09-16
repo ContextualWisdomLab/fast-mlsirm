@@ -19,8 +19,12 @@ from .irt_contract import MAX_IRT_RESPONSE_CELLS, MIN_IRT_ITEMS, validate_irt_re
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
-_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS = 3
+# Mirrors crates/mlsirm-core/src/twopl.rs MIRT_MAX_NODES: bounds the q**n_dims
+# Gauss-Hermite product grid (and per-iteration node x J tables) fail-closed
+# in Python, before any allocation happens in the native core (#1929: no cap
+# on q itself, but the resulting grid size is still bounded).
+_MAX_MIRT_GH_NODES = 200_000
 _NUMPY_INTEGER_TYPES = (
     np.int8,
     np.int16,
@@ -308,7 +312,7 @@ def fit_2pl(
     multidimensional confirmatory structure is supplied with
     ``model=models.confirmatory(loading_pattern)``; a numeric exploratory model greater than
     one is rejected until unrestricted loading rotation and identification are implemented.
-    ``q`` is the Gauss-Hermite node count per dimension (one of ``7, 11, 15, 21, 31, 41``). Convergence requires the absolute
+    ``q`` is the Gauss-Hermite node count per dimension (any integer ``>= 1``; ``q**n_dims`` is bounded). Convergence requires the absolute
     change between consecutive evaluated marginal log-likelihoods to be less than ``tol``;
     the returned fit exposes that value as ``final_loglik_change`` and the terminal state as
     ``termination_reason``.
@@ -327,8 +331,10 @@ def fit_2pl(
     node_rule = normalize_node_rule(node_rule)
     gh_rule = node_rule == "gh"
     q_int = _finite_integer(q, "q")
-    if gh_rule and q_int not in _SUPPORTED_Q:
-        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
+    # #1929: no node-count cap; the Rust core generates any n >= 1
+    # rule on demand (Golub & Welsch, 1969) and guards overflow.
+    if gh_rule and q_int < 1:
+        raise ValueError("q must be >= 1")
     estimate_corr_bool = _boolean(estimate_corr, "estimate_corr")
     max_iter_int = _finite_integer(max_iter, "max_iter")
     if not (1 <= max_iter_int <= MAX_MAX_ITER):
@@ -355,6 +361,16 @@ def fit_2pl(
             f"loading_pattern dimensions must be between 1 and {max_dims} "
             f"(node_rule={node_rule!r})"
         )
+    if gh_rule:
+        # Overflow-safe q**n_dims bound (repeated multiply-with-division-check,
+        # same technique as estimators.marginal._bounded_tensor_node_count).
+        grid_nodes = 1
+        for _ in range(n_dims):
+            if grid_nodes > _MAX_MIRT_GH_NODES // max(q_int, 1):
+                raise ValueError(f"q**n_dims exceeds the node cap {_MAX_MIRT_GH_NODES}")
+            grid_nodes *= q_int
+        if grid_nodes > _MAX_MIRT_GH_NODES:
+            raise ValueError(f"q**n_dims exceeds the node cap {_MAX_MIRT_GH_NODES}")
 
     observed = ~np.isnan(y)
     from .fitstats import _core_module

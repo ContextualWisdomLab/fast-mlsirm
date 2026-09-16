@@ -276,7 +276,8 @@ fn gpcm_validation_sampling_rules_and_missing_paths() {
     .is_err());
     assert!(validate(&y, None, &[], 4, 2, 0, 2, &base).is_err());
     assert!(validate(&y, None, &[1; 8], 4, 2, 4, 2, &base).is_err());
-    assert!(validate(&y, None, &pattern, 4, 2, 1, 2, &GpcmConfig { q: 3, ..base }).is_err());
+    // #1929: no node-count cap; q=3 is now accepted, only q=0 is rejected.
+    assert!(validate(&y, None, &pattern, 4, 2, 1, 2, &GpcmConfig { q: 0, ..base }).is_err());
     let halton = GpcmConfig {
         xi_rule: XiRuleKind::Halton,
         xi_points: 4,

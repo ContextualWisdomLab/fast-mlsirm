@@ -1371,7 +1371,7 @@ def test_score_polytomous_rejects_malformed_scoring_contract():
         loglik=0.0,
         n_iter=0,
     )
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         score_polytomous(np.array([[0.0]]), fit, q_theta=21.5)
 
     fit.slope[0] = np.nan
@@ -4993,8 +4993,9 @@ def test_fit_facets_rejects_malformed_and_flags_disconnected():
         bad = valid.copy()
         bad[:, :, 1] = np.nan
         fit_facets(bad, n_cat=2)
+    # #1929: no node-count cap; q_theta=10 is now accepted, only < 1 is not.
     with pytest.raises(ValueError, match="q_theta"):
-        fit_facets(valid, n_cat=2, q_theta=10)
+        fit_facets(valid, n_cat=2, q_theta=0)
     with pytest.raises(ValueError, match="max_iter"):
         fit_facets(valid, n_cat=2, max_iter=0)
     with pytest.raises(ValueError, match="tol"):
