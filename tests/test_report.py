@@ -259,8 +259,8 @@ def test_render_report_requires_html_output(tmp_path):
         render_diagnostics_report(source, out)
 
 
-def test_bar_chart_encodes_distinct_values_as_distinct_widths(tmp_path):
-    """The bar width carries the value, and the CSP must permit the attribute."""
+def test_bar_chart_encodes_distinct_values_as_distinct_magnitudes(tmp_path):
+    """Distinct candidate values must render as distinct bar magnitudes."""
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
     source.write_text(
@@ -280,18 +280,22 @@ def test_bar_chart_encodes_distinct_values_as_distinct_widths(tmp_path):
     render_diagnostics_report(source, out)
 
     html = out.read_text(encoding="utf-8")
-    widths = re.findall(r'<div class="bar-fill" style="width: ([\d.]+)%">', html)
-    assert len(widths) == 3, html
-    assert len(set(widths)) == 3, widths
+    # The magnitude may be carried by an inline width or by a native <progress>
+    # value; the contract is that three distinct inputs produce three distinct
+    # bars, not which element carries them.
+    magnitudes = re.findall(r'class="bar-(?:fill|track)"[^>]*?(?:width: |value=")([\d.]+)', html)
+    assert len(magnitudes) == 3, html
+    assert len(set(magnitudes)) == 3, magnitudes
 
-    # The widths live in an inline style attribute. CSP hashes cover <style>
-    # elements but never style attributes, so whichever directive governs
-    # attributes has to keep allowing them or every bar collapses to
+    # Whatever carries it, a CSP hash covers <style> elements but never style
+    # attributes. If the markup still uses one, the directive governing
+    # attributes has to keep allowing them, or every bar collapses to
     # `.bar-fill { min-width: 8px }` and the chart silently reads flat.
-    policy = unescape(html.split('Content-Security-Policy" content="')[1].split('"')[0])
-    governing = "style-src-attr" if "style-src-attr" in policy else "style-src"
-    directive = policy.split(governing, 1)[1].split(";")[0]
-    assert "'unsafe-inline'" in directive, policy
+    if 'style="' in html:
+        policy = unescape(html.split('Content-Security-Policy" content="')[1].split('"')[0])
+        governing = "style-src-attr" if "style-src-attr" in policy else "style-src"
+        directive = policy.split(governing, 1)[1].split(";")[0]
+        assert "'unsafe-inline'" in directive, policy
 
 
 def test_render_table_region_has_keyboard_focus_style(tmp_path):
