@@ -121,13 +121,19 @@ def test_rejects_out_of_range_caller_arguments() -> None:
     with pytest.raises(ValueError):
         _fit(y, n_starts=0)
     with pytest.raises(ValueError):
-        _fit(y, n_starts=33)
-    with pytest.raises(ValueError):
         fit_bifactor_grm(y, np.array([0, 0, 0, 1, 1]), N_CAT, N_SPECIFIC)
     with pytest.raises(ValueError):
         fit_bifactor_grm(
             y, np.array([0, 0, 0, 1, 1, 5], dtype=np.int64), N_CAT, N_SPECIFIC
         )
+
+
+def test_uncapped_start_budget_is_accepted() -> None:
+    # Stage-1 review fix-up: no magic upper cap on n_starts.
+    y = _simulate(SEED)
+    fit = _fit(y, max_iter=1, tol=1e-12, n_starts=40)
+    assert not fit.converged
+    assert 0 <= fit.best_start < 40
 
 
 def test_unobserved_category_fails_loudly() -> None:
